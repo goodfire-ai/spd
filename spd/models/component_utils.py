@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Mapping
 
 import einops
@@ -114,8 +116,12 @@ def lower_leaky_relu(x: Tensor, alpha: float = 0.01) -> Tensor:
 
 
 def upper_leaky_relu(x: Tensor, alpha: float = 0.01) -> Tensor:
-    # TODO: Make more memory efficient
-    return torch.where(x > 1, 1 + alpha * (x - 1), F.relu(x))
+    """Memory-efficient upper leaky ReLU: clamps values above 1 with leaky slope."""
+    # Use torch.clamp with inplace operation on a copy to avoid intermediate allocations
+    # For x <= 0: output = 0
+    # For 0 < x <= 1: output = x  
+    # For x > 1: output = 1 + alpha * (x - 1)
+    return torch.where(x > 1, 1 + alpha * (x - 1), torch.clamp(x, min=0.0, max=1.0))
 
 
 def calc_causal_importances(

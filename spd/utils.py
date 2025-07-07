@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib
 import random
 from collections.abc import Callable

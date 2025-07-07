@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Visualize embedding component masks."""
 
 from pathlib import Path

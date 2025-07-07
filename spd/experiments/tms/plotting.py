@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Plotting utilities for TMS experiments.
 
 This module provides visualization functions for analyzing TMS models and their

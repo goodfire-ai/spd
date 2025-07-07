@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Language Model decomposition script."""
 
 from datetime import datetime
@@ -133,8 +135,6 @@ def main(config_path_or_obj: Path | str | Config) -> None:
 
     logger.info("Dataset and tokenizer loaded.")
 
-    # TODO: Below not needed when TMS supports config.n_eval_steps
-    assert config.n_eval_steps is not None, "n_eval_steps must be set"
     logger.info("Starting optimization...")
     optimize(
         target_model=target_model,

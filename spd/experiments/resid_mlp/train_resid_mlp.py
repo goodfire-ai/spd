@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 """Trains a residual linear model on one-hot input vectors."""
 
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Self
+from typing import Literal
+from typing_extensions import Self
 
 import einops
 import torch

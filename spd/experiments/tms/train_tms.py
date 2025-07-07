@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 """TMS model, adapted from
 https://colab.research.google.com/github/anthropics/toy-models-of-superposition/blob/main/toy_models.ipynb
 """
 
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Self
+from typing import Literal
+from typing_extensions import Self
 
 import einops
 import matplotlib.pyplot as plt
