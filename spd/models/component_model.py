@@ -20,6 +20,7 @@ from spd.models.components import (
     GateType,
     LinearComponent,
     VectorGateMLP,
+    StarGraphGate,
 )
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.general_utils import load_pretrained
@@ -55,7 +56,7 @@ class ComponentModel(nn.Module):
             target_module_patterns=target_module_patterns,
             C=C,
         )
-        self.gates = self.make_gates(
+        self.gates: nn.ModuleDict = self.make_gates(
             components=self.components,
             gate_type=gate_type,
             gate_hidden_dims=gate_hidden_dims,
@@ -66,20 +67,26 @@ class ComponentModel(nn.Module):
     def make_gates(
         components: nn.ModuleDict, gate_type: GateType, gate_hidden_dims: list[int], C: int
     ) -> nn.ModuleDict:
-        gates = nn.ModuleDict()
-        for component_name, component in components.items():
-            component = cast(LinearComponent | EmbeddingComponent, component)
-            if gate_type == "mlp":
-                gates[component_name] = GateMLP(C=C, hidden_dims=gate_hidden_dims)
-            else:
-                input_dim = (
-                    component.vocab_size
-                    if isinstance(component, EmbeddingComponent)
-                    else component.d_in
-                )
-                gates[component_name] = VectorGateMLP(
-                    C=C, input_dim=input_dim, hidden_dims=gate_hidden_dims
-                )
+        if gate_type == "star_graph":
+            gates = nn.ModuleDict({"star_graph": StarGraphGate(
+                components=components, C=C, node_dims=gate_hidden_dims
+            )
+            })
+        else:
+            gates = nn.ModuleDict()
+            for component_name, component in components.items():
+                component = cast(LinearComponent | EmbeddingComponent, component)
+                if gate_type == "mlp":
+                    gates[component_name] = GateMLP(C=C, hidden_dims=gate_hidden_dims)
+                else:
+                    input_dim = (
+                        component.vocab_size
+                        if isinstance(component, EmbeddingComponent)
+                        else component.d_in
+                    )
+                    gates[component_name] = VectorGateMLP(
+                        C=C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+                    )
         return gates
 
     def create_target_components(self, target_module_patterns: list[str], C: int) -> nn.ModuleDict:

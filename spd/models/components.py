@@ -1,3 +1,4 @@
+import math
 from typing import Literal, override
 
 import einops
@@ -7,7 +8,7 @@ from torch import Tensor, nn
 
 from spd.utils.module_utils import init_param_
 
-GateType = Literal["mlp", "vector_mlp"]
+GateType = Literal["mlp", "vector_mlp", "star_graph"]
 
 
 class ParallelLinear(nn.Module):
@@ -73,6 +74,62 @@ class VectorGateMLP(nn.Module):
         x = self.layers(einops.rearrange(x, "... d_in -> ... 1 d_in"))
         assert x.shape[-1] == 1, "Last dimension should be 1 after the final layer"
         return x[..., 0]
+
+
+class StarGraphGate(nn.Module):
+    """
+    Representing relationships as a star-graph allows us to compute everything efficiently
+    with broadcasting and einsum.
+    """
+    def __init__(self, C: int, node_dims: list[int], components: nn.ModuleDict):
+        super().__init__()
+        self.C = C
+        assert len(node_dims) == 1, "StarGraphGate only supports a single node dimension"
+        self.d_node = node_dims[0]  # Assuming all nodes have the same dimension
+        self.n = len(components)
+
+        # Each subcomponent (in each layer) gets its own MLP
+        # As per the original implementation
+        self.mlp_in = nn.Parameter(torch.empty((C, self.n, self.d_node)))
+        self.in_bias = nn.Parameter(torch.zeros((C, self.n, self.d_node)))
+        self.mlp_out = nn.Parameter(torch.empty((C, self.n, self.d_node)))
+        self.out_bias = nn.Parameter(torch.zeros((C, self.n)))
+        # Additionally, each component gets its own summary MLP
+        self.mlp_summary = nn.Parameter(torch.empty((self.n, self.d_node)))
+        self.bias_summary = nn.Parameter(torch.zeros((self.n, self.d_node)))
+
+        init_param_(self.mlp_in, fan_val=1, nonlinearity="relu")
+        init_param_(self.mlp_out, fan_val=self.d_node, nonlinearity="linear")
+        init_param_(self.mlp_summary, fan_val=self.d_node, nonlinearity="linear")
+
+    @override
+    def forward(self, inner_act: dict[str, Tensor]) -> dict[str, Float[Tensor, "... C n"]]:
+        x = torch.stack(list(inner_act.values()), dim=-1)
+
+
+        sub = einops.einsum(
+            x, self.mlp_in, "... C n, C n d_node -> ... C n d_node"
+        ) + self.in_bias
+        sub = nn.functional.gelu(sub) 
+
+        summary = sub.sum(dim=-3) / self.C 
+        summary = einops.einsum(
+            summary, self.mlp_summary, "... n d_node, n d_node -> ... n d_node"
+        ) + self.bias_summary
+        summary = nn.functional.gelu(summary)
+
+        global_sum = summary.sum(dim=-2, keepdim=True) / self.n
+
+        summary = summary + global_sum
+
+        sub = sub + summary.unsqueeze(-3)
+
+        scale = 1 / math.sqrt(self.d_node)
+        scores = einops.einsum(
+            sub, self.mlp_out, "... C n d_node, C n d_node -> ... C n"
+        ) * scale + self.out_bias
+
+        return {name: scores[..., :, i] for i, name in enumerate(inner_act)}
 
 
 class LinearComponent(nn.Module):
