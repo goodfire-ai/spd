@@ -18,7 +18,7 @@ from spd.core_metrics_and_figs import create_figures, create_metrics
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel, init_Vs_and_Us_
-from spd.models.components import EmbeddingComponent, GateMLP, LinearComponent, VectorGateMLP
+from spd.models.components import EmbeddingComponent, GateMLP, LinearComponent, StarGraphGate, VectorGateMLP
 from spd.utils.component_utils import calc_causal_importances
 from spd.utils.general_utils import (
     extract_batch_data,
@@ -80,12 +80,12 @@ def optimize(
     logger.info("Target model parameters frozen.")
 
     # We used "-" instead of "." as module names can't have "." in them
-    gates: dict[str, GateMLP | VectorGateMLP] = {
-        k.removeprefix("gates.").replace("-", "."): cast(GateMLP | VectorGateMLP, v)
+    gates: dict[str, GateMLP | VectorGateMLP | StarGraphGate] = {
+        k.removeprefix("gates.").replace("-", "."): cast(GateMLP | VectorGateMLP | StarGraphGate, v)
         for k, v in model.gates.items()
     }
     components: dict[str, LinearComponent | EmbeddingComponent] = {
-        k.removeprefix("components.").replace("-", "."): cast(
+        k.removeprefix("components.").replace("-", "."): cast(  
             LinearComponent | EmbeddingComponent, v
         )
         for k, v in model.components.items()
@@ -103,9 +103,10 @@ def optimize(
 
     component_params: list[torch.nn.Parameter] = []
     gate_params: list[torch.nn.Parameter] = []
-    for name, component in components.items():
+    for _, component in components.items():
         component_params.extend(list(component.parameters()))
-        gate_params.extend(list(gates[name].parameters()))
+    for _, gate in gates.items():
+        gate_params.extend(list(gate.parameters()))
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
