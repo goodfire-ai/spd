@@ -68,10 +68,13 @@ class ComponentModel(nn.Module):
         components: nn.ModuleDict, gate_type: GateType, gate_hidden_dims: list[int], C: int
     ) -> nn.ModuleDict:
         if gate_type == "star_graph":
-            gates = nn.ModuleDict({"star_graph": StarGraphGate(
-                components=components, C=C, node_dims=gate_hidden_dims
+            gates = nn.ModuleDict(
+                {
+                    "star_graph": StarGraphGate(
+                        components=components, C=C, node_dims=gate_hidden_dims
+                    )
+                }
             )
-            })
         else:
             gates = nn.ModuleDict()
             for component_name, component in components.items():

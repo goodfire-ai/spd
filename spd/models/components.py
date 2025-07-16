@@ -81,6 +81,7 @@ class StarGraphGate(nn.Module):
     Representing relationships as a star-graph allows us to compute everything efficiently
     with broadcasting and einsum.
     """
+
     def __init__(self, C: int, node_dims: list[int], components: nn.ModuleDict):
         super().__init__()
         self.C = C
@@ -106,16 +107,14 @@ class StarGraphGate(nn.Module):
     def forward(self, inner_act: dict[str, Tensor]) -> dict[str, Float[Tensor, "... C n"]]:
         x = torch.stack(list(inner_act.values()), dim=-1)
 
+        sub = einops.einsum(x, self.mlp_in, "... C n, C n d_node -> ... C n d_node") + self.in_bias
+        sub = nn.functional.gelu(sub)
 
-        sub = einops.einsum(
-            x, self.mlp_in, "... C n, C n d_node -> ... C n d_node"
-        ) + self.in_bias
-        sub = nn.functional.gelu(sub) 
-
-        summary = sub.sum(dim=-3) / self.C 
-        summary = einops.einsum(
-            summary, self.mlp_summary, "... n d_node, n d_node -> ... n d_node"
-        ) + self.bias_summary
+        summary = sub.sum(dim=-3) / self.C
+        summary = (
+            einops.einsum(summary, self.mlp_summary, "... n d_node, n d_node -> ... n d_node")
+            + self.bias_summary
+        )
         summary = nn.functional.gelu(summary)
 
         global_sum = summary.sum(dim=-2, keepdim=True) / self.n
@@ -125,9 +124,10 @@ class StarGraphGate(nn.Module):
         sub = sub + summary.unsqueeze(-3)
 
         scale = 1 / math.sqrt(self.d_node)
-        scores = einops.einsum(
-            sub, self.mlp_out, "... C n d_node, C n d_node -> ... C n"
-        ) * scale + self.out_bias
+        scores = (
+            einops.einsum(sub, self.mlp_out, "... C n d_node, C n d_node -> ... C n") * scale
+            + self.out_bias
+        )
 
         return {name: scores[..., :, i] for i, name in enumerate(inner_act)}
 

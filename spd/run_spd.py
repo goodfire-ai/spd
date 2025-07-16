@@ -18,7 +18,13 @@ from spd.core_metrics_and_figs import create_figures, create_metrics
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel, init_Vs_and_Us_
-from spd.models.components import EmbeddingComponent, GateMLP, LinearComponent, StarGraphGate, VectorGateMLP
+from spd.models.components import (
+    EmbeddingComponent,
+    GateMLP,
+    LinearComponent,
+    StarGraphGate,
+    VectorGateMLP,
+)
 from spd.utils.component_utils import calc_causal_importances
 from spd.utils.general_utils import (
     extract_batch_data,
@@ -85,7 +91,7 @@ def optimize(
         for k, v in model.gates.items()
     }
     components: dict[str, LinearComponent | EmbeddingComponent] = {
-        k.removeprefix("components.").replace("-", "."): cast(  
+        k.removeprefix("components.").replace("-", "."): cast(
             LinearComponent | EmbeddingComponent, v
         )
         for k, v in model.components.items()
