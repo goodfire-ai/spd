@@ -206,6 +206,60 @@ class ComponentModel(nn.Module):
             for handle in handles:
                 handle.remove()
 
+    def forward_with_components_and_pre_forward_cache_hooks(
+        self,
+        *args: Any,
+        components: dict[str, LinearComponent | EmbeddingComponent],
+        masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        **kwargs: Any,
+    ) -> tuple[Any, dict[str, Tensor]]:
+        """Forward pass with temporary component replacements and pre-forward cache hooks.
+
+        Args:
+            components: Dictionary mapping component names to components
+            masks: Optional dictionary mapping component names to masks
+        """
+        with self._replaced_modules(components, masks):
+            return self.forward_with_pre_forward_cache_hooks(
+                *args, module_names=list(components.keys()), **kwargs
+            )
+
+    def forward_with_components_and_post_forward_hooks(
+        self,
+        *args: Any,
+        components: dict[str, LinearComponent | EmbeddingComponent],
+        masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        **kwargs: Any,
+    ) -> tuple[Any, dict[str, Tensor]]:
+        """Forward pass with temporary component replacements and post-forward hooks.
+
+        Args:
+            components: Dictionary mapping component names to components
+            masks: Optional dictionary mapping component names to masks
+        """
+        with self._replaced_modules(components, masks):
+            return self.forward_with_post_forward_cache_hooks(
+                *args, **kwargs, module_names=list(components.keys())
+            )
+
+    def model_method_with_components(
+        self,
+        *args: Any,
+        method_name: str,
+        components: dict[str, LinearComponent | EmbeddingComponent],
+        masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """
+        Calls any method of the model with the given components.
+        """
+        with self._replaced_modules(components, masks):
+            try:
+                method = getattr(self.model, method_name)
+                return method(*args, **kwargs)
+            except AttributeError as e:
+                raise ValueError(f"Method '{method_name}' not found in the model") from e
+
     @staticmethod
     def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:
         """Download the relevant files from a wandb run.
