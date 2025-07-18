@@ -11,13 +11,82 @@ To use the logger, import it in any module and use it as follows:
 """
 
 import logging
+import shutil
+from collections.abc import Mapping
 from logging.config import dictConfig
 from pathlib import Path
+from typing import Literal
 
-DEFAULT_LOGFILE = Path(__file__).resolve().parent.parent / "logs" / "logs.log"
+DEFAULT_LOGFILE: Path = Path(__file__).resolve().parent.parent / "logs" / "logs.log"
+
+DIV_CHAR: str = "="
+LogFormat = Literal["default", "terse"]
+_SPD_LOGGER_NAME: str = "spd"
+
+_FORMATTERS: dict[LogFormat, dict[Literal["fmt", "datefmt"], str]] = {
+    "terse": {"fmt": "%(message)s"},
+    "default": {
+        "fmt": "%(asctime)s - %(levelname)s - %(message)s",
+        "datefmt": "%Y-%m-%d %H:%M:%S",
+    },
+}
 
 
-def setup_logger(logfile: Path = DEFAULT_LOGFILE) -> logging.Logger:
+class _SPDLogger(logging.Logger):
+    """`logging.Logger` with `values` and `section` convenience helpers."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+
+    def values(
+        self,
+        data: Mapping[str, None | bool | int | float | str] | list[None | bool | int | float | str],
+        msg: str | None = None,
+    ) -> None:
+        """log a dict of metrics"""
+        output: str
+        if isinstance(data, list):
+            output = "\n  ".join(str(v) for v in data)
+        else:
+            # otherwise, assume it's a dict
+            longest_key: int = max(len(k) for k in data)
+            lines: list[str] = [f"  {k:<{longest_key + 1}}: {v}" for k, v in data.items()]
+            output = "\n".join(lines)
+
+        if msg:
+            self.info(f"{msg}:\n{output}")
+        else:
+            self.info("\n" + output)
+
+    def section(
+        self,
+        msg: str,
+    ) -> None:
+        """Emit a visually separated section header"""
+        # term width
+        term_width: int = shutil.get_terminal_size((50, 20)).columns
+        self.info("\n" + DIV_CHAR * term_width + "\n" + msg + "\n" + DIV_CHAR * term_width)
+
+    def set_format(self, handler: str, style: LogFormat) -> None:
+        """Swap this logger's handler formatters in place.
+
+        it would be nicer to do this when we initialize the logger, but that's done on module import
+        """
+        fmt: logging.Formatter = logging.Formatter(**_FORMATTERS[style])
+        found_handler: bool = False
+        for h in self.handlers:
+            if getattr(h, "name", None) == handler:
+                h.setFormatter(fmt)
+                found_handler = True
+                break
+        if not found_handler:
+            raise ValueError(
+                f"Handler '{handler}' not found in logger '{self.name}' handlers: {self.handlers}. "
+                f"could not set {style = }"
+            )
+
+
+def setup_logger(logfile: Path = DEFAULT_LOGFILE) -> _SPDLogger:
     """Setup a logger to be used in all modules in the library.
 
     Sets up logging configuration with a console handler and a file handler.
@@ -25,7 +94,7 @@ def setup_logger(logfile: Path = DEFAULT_LOGFILE) -> logging.Logger:
     The root logger is configured to use both handlers.
 
     Returns:
-        logging.Logger: A configured logger object.
+        _SPDLogger: A configured logger object.
 
     Example:
         >>> logger = setup_logger()
@@ -33,17 +102,14 @@ def setup_logger(logfile: Path = DEFAULT_LOGFILE) -> logging.Logger:
         >>> logger.info("Info message")
         >>> logger.warning("Warning message")
     """
+    logging.setLoggerClass(_SPDLogger)
+
     if not logfile.parent.exists():
         logfile.parent.mkdir(parents=True, exist_ok=True)
 
     logging_config = {
         "version": 1,
-        "formatters": {
-            "default": {
-                "format": "%(asctime)s - %(levelname)s - %(message)s",
-                "datefmt": "%Y-%m-%d %H:%M:%S",
-            },
-        },
+        "formatters": _FORMATTERS,
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",
@@ -57,14 +123,18 @@ def setup_logger(logfile: Path = DEFAULT_LOGFILE) -> logging.Logger:
                 "level": "WARNING",
             },
         },
-        "root": {
-            "handlers": ["console", "file"],
-            "level": "INFO",
+        "loggers": {
+            _SPD_LOGGER_NAME: {
+                "handlers": ["console", "file"],
+                "level": "INFO",
+            },
         },
     }
 
     dictConfig(logging_config)
-    return logging.getLogger()
+    # we have to pass the name, or we always get the root logger
+    _logger: _SPDLogger = logging.getLogger(_SPD_LOGGER_NAME)  # pyright:ignore[reportAssignmentType]
+    return _logger
 
 
-logger = setup_logger()
+logger: _SPDLogger = setup_logger()

@@ -160,7 +160,7 @@ def train(
     save_file(model.state_dict(), model_path)
     if config.wandb_project:
         wandb.save(str(model_path), base_path=out_dir, policy="now")
-    print(f"Saved model to {model_path}")
+    logger.info(f"Saved model to {model_path}")
 
     # Calculate final losses by averaging many batches
     final_losses = []
@@ -173,7 +173,7 @@ def train(
         loss = loss.mean()
         final_losses.append(loss)
     final_losses = torch.stack(final_losses).mean().cpu().detach()
-    print(f"Final losses: {final_losses.numpy()}")
+    logger.info(f"Final losses: {final_losses.numpy()}")
     return final_losses
 
 

@@ -313,10 +313,7 @@ def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> 
     return result
 
 
-T_runtime_cast = TypeVar("T_runtime_cast")
-
-
-def runtime_cast(type_: type[T_runtime_cast], obj: Any) -> T_runtime_cast:
+def runtime_cast[T_runtime_cast](type_: type[T_runtime_cast], obj: Any) -> T_runtime_cast:
     """typecast with a runtime check"""
     if not isinstance(obj, type_):
         raise TypeError(f"Expected {type_}, got {type(obj)}")

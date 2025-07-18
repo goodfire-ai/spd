@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 import einops
@@ -12,6 +13,7 @@ from torch import Tensor, nn
 from spd.configs import Config
 from spd.experiments.resid_mlp.models import ResidualMLP
 from spd.experiments.tms.models import TMSModel
+from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.models.components import Components
 from spd.plotting import plot_causal_importance_vals
@@ -79,7 +81,7 @@ def plot_increasing_importance_minimality_coeff_ci_vals(
 
     # Collect causal importances from all runs
     for run_id in run_ids:
-        print(f"Loading model from {run_id}")
+        logger.info(f"Loading model from {run_id}")
 
         # Extract causal importances using helper function
         extraction_result = extract_ci_val_figures(run_id, input_magnitude)
@@ -612,7 +614,7 @@ def plot_neuron_contribution_pairs(
 
 
 def main():
-    out_dir = get_output_dir() / "figures"
+    out_dir: Path = get_output_dir() / "figures"
     out_dir.mkdir(parents=True, exist_ok=True)
     set_seed(0)
     device = get_device()
@@ -638,12 +640,13 @@ def main():
             target_model=target_model,
             n_features=10,
         )
+        fname_weights: Path = out_dir / f"resid_mlp_weights_{n_layers}layers_{wandb_id}.png"
         fig.savefig(
-            out_dir / f"resid_mlp_weights_{n_layers}layers_{wandb_id}.png",
+            fname_weights,
             bbox_inches="tight",
             dpi=500,
         )
-        print(f"Saved figure to {out_dir / f'resid_mlp_weights_{n_layers}layers_{wandb_id}.png'}")
+        logger.info(f"Saved figure to {fname_weights}")
 
         # Generate and save neuron contribution pairs plot
         fig_pairs = plot_neuron_contribution_pairs(
@@ -651,13 +654,13 @@ def main():
             target_model=target_model,
             n_features=None,  # Using same number of features as above
         )
+        fname_pairs: Path = out_dir / f"neuron_contribution_pairs_{n_layers}layers_{wandb_id}.png"
         fig_pairs.savefig(
-            out_dir / f"neuron_contribution_pairs_{n_layers}layers_{wandb_id}.png",
+            fname_pairs,
             bbox_inches="tight",
             dpi=500,
         )
-        fig_name = f"neuron_contribution_pairs_{n_layers}layers_{wandb_id}.png"
-        print(f"Saved figure to {out_dir / fig_name}")
+        logger.info(f"Saved figure to {fname_pairs}")
 
         # Define a title formatter for ResidualMLP component names
         def format_resid_mlp_title(mask_name: str) -> str:
@@ -683,13 +686,16 @@ def main():
             title_formatter=format_resid_mlp_title,
             sigmoid_type=config.sigmoid_type,
         )[0]
+
+        fname_importances = (
+            out_dir / f"causal_importance_upper_leaky_{n_layers}layers_{wandb_id}.png"
+        )
         figs_causal["causal_importances_upper_leaky"].savefig(
-            out_dir / f"causal_importance_upper_leaky_{n_layers}layers_{wandb_id}.png",
+            fname_importances,
             bbox_inches="tight",
             dpi=500,
         )
-        fig_name = f"causal_importance_upper_leaky_{n_layers}layers_{wandb_id}.png"
-        print(f"Saved figure to {out_dir / fig_name}")
+        logger.info(f"Saved figure to {fname_importances}")
 
         ##### Resid_mlp 1-layer varying sparsity ####
         run_ids = [
@@ -704,13 +710,13 @@ def main():
         # Create and save the combined figure
         fig = plot_increasing_importance_minimality_coeff_ci_vals(run_ids, best_idx=best_idx)
         out_dir = get_output_dir()
+        fname_coeff = out_dir / "resid_mlp_varying_importance_minimality_coeff_ci_vals.png"
         fig.savefig(
-            out_dir / "resid_mlp_varying_importance_minimality_coeff_ci_vals.png",
+            fname_coeff,
             bbox_inches="tight",
             dpi=400,
         )
-        fig_name = "resid_mlp_varying_importance_minimality_coeff_ci_vals.png"
-        print(f"Saved figure to {out_dir / fig_name}")
+        logger.info(f"Saved figure to {fname_coeff}")
 
 
 if __name__ == "__main__":

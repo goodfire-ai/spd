@@ -24,3 +24,10 @@ repos:
         types: [python]
         stages:
           - pre-commit
+      
+      - id: remove-temp-files
+        name: "remove temp files for checking examples"
+        entry: make temp-user-metrics-clean
+        language: system
+        stages:
+          - pre-commit

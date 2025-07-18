@@ -39,8 +39,8 @@ def main(path: ModelPath) -> None:
         ddp_rank=0,
         ddp_world_size=1,
     )
-    # print(ss_model)
-    print(config)
+    # logger.info(ss_model)
+    logger.values(config.model_dump(), msg="Model config")
 
     mean_n_active_components_per_token, mean_component_activation_counts = (
         component_activation_statistics(
@@ -50,16 +50,20 @@ def main(path: ModelPath) -> None:
             device=device,
         )
     )
-    logger.info(f"n_components: {ss_model.C}")
-    logger.info(f"mean_n_active_components_per_token: {mean_n_active_components_per_token}")
-    logger.info(f"mean_component_activation_counts: {mean_component_activation_counts}")
+    logger.values(
+        {
+            "n_components": str(ss_model.C),
+            "mean_n_active_components_per_token": str(mean_n_active_components_per_token),
+            "mean_component_activation_counts": str(mean_component_activation_counts),
+        }
+    )
     fig = plot_mean_component_activation_counts(
         mean_component_activation_counts=mean_component_activation_counts,
     )
     # Save the entire figure once
     save_path = out_dir / "modules_mean_component_activation_counts.png"
     fig.savefig(save_path)
-    logger.info(f"Saved combined plot to {str(save_path)}")
+    logger.info(f"Saved combined plot to {save_path}")
 
 
 if __name__ == "__main__":

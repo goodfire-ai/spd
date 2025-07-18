@@ -9,6 +9,27 @@ from spd.log import logger
 from spd.settings import REPO_ROOT
 
 
+def repo_current_branch() -> str:
+    """Return the active Git branch by invoking the `git` CLI.
+
+    Uses `git rev-parse --abbrev-ref HEAD`, which prints either the branch
+    name (e.g. `main`) or `HEAD` if the repo is in a detached-HEAD state.
+
+    Returns:
+        The name of the current branch, or `HEAD` if in detached state.
+
+    Raises:
+        subprocess.CalledProcessError: If the `git` command fails.
+    """
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
 def create_git_snapshot(branch_name_prefix: str) -> str:
     """Create a git snapshot branch with current changes.
 
