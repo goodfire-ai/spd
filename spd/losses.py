@@ -281,6 +281,58 @@ def calc_ce_losses(
 
     return ce_losses
 
+def calc_cosine_similarity_loss(
+    components: dict[str, LinearComponent | EmbeddingComponent],
+    target_model: nn.Module,
+) -> Float[Tensor, ""]:
+    """Calculate the cosine similarity loss between subcomponents and target model parameters.
+    This loss encourages subcomponents to align with the target model parameters.
+    The loss is 1 - mean_cosine_similarity, so minimizing this loss maximizes cosine similarity.
+    Args:
+        components: Dictionary mapping component names to components
+        target_model: The target model containing the original parameters
+    Returns:
+        The loss value (1 - mean_cosine_similarity), which is always positive and lower is better
+    """
+    total_cosine_sim = torch.tensor(0.0, device=next(iter(components.values())).V.device)
+    total_subcomponents = 0
+
+    for comp_name, component in components.items():
+        # Get target weight matrix
+        target_submodule = target_model.get_submodule(comp_name)
+        assert isinstance(target_submodule, nn.Linear | nn.Embedding)
+        target_weight = target_submodule.weight
+
+        # Get V and U matrices from component
+        V = component.V  # (d_in, C) for Linear or (vocab_size, C) for Embedding
+        U = component.U  # (C, d_out) for Linear or (C, embedding_dim) for Embedding
+
+        # Calculate individual subcomponent weights: V[:, c] @ U[c, :] for each c
+        # For LinearComponent: weight = U^T @ V^T, so subcomp = V[:, c] @ U[c, :]^T = V[:, c:c+1] @ U[c:c+1, :]
+        # For EmbeddingComponent: weight = V @ U, so subcomp = V[:, c:c+1] @ U[c:c+1, :]
+        
+        if isinstance(component, EmbeddingComponent):
+            # EmbeddingComponent: V @ U -> (vocab_size, embedding_dim)
+            subcomp_weights = einops.einsum(V, U, "vocab_size C, C embedding_dim -> C vocab_size embedding_dim")
+        else:
+            # LinearComponent: U^T @ V^T -> (d_out, d_in)
+            subcomp_weights = einops.einsum(V, U, "d_in C, C d_out -> C d_out d_in")
+
+        # Flatten for cosine similarity calculation
+        subcomp_flat = subcomp_weights.flatten(start_dim=1)  # (C, d_out * d_in)
+        target_flat = target_weight.flatten()  # (d_out * d_in)
+
+        # Calculate cosine similarity for all subcomponents at once
+        cos_sims = F.cosine_similarity(subcomp_flat, target_flat, dim=1)  # (C,)
+
+        # Sum up cosine similarities
+        total_cosine_sim += cos_sims.sum()
+        total_subcomponents += component.C
+
+    # Return 1 - mean_cosine_similarity (lower is better, consistent with other losses)
+    mean_cosine_sim = total_cosine_sim / total_subcomponents
+    return 1.0 - mean_cosine_sim
+
 
 def calculate_losses(
     model: ComponentModel,
@@ -433,5 +485,13 @@ def calculate_losses(
         )
         total_loss += config.embedding_recon_coeff * embedding_recon_loss
         loss_terms["loss/embedding_recon"] = embedding_recon_loss.item()
+
+        # Cosine similarity loss
+    if config.cosine_similarity_coeff is not None:
+        cosine_similarity_loss = calc_cosine_similarity_loss(
+            components=components, target_model=model.model
+        )
+        total_loss += config.cosine_similarity_coeff * cosine_similarity_loss
+        loss_terms["loss/cosine_similarity"] = cosine_similarity_loss.item()
 
     return total_loss, loss_terms
