@@ -6,7 +6,6 @@ These are separate from user-defined metrics/figures to allow for easier compari
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
 
 import torch
 import wandb
@@ -31,7 +30,7 @@ from spd.utils.general_utils import calc_kl_divergence_lm
 
 @dataclass
 class CreateMetricsInputs:
-    model: ComponentModel[Any]
+    model: ComponentModel
     causal_importances: dict[str, Float[Tensor, "... C"]]
     target_out: Float[Tensor, "... d_model_out"]
     unmasked_component_out: Float[Tensor, "... d_model_out"]
@@ -93,7 +92,7 @@ METRICS_FNS = [
 
 
 def create_metrics(
-    model: ComponentModel[Any],
+    model: ComponentModel,
     causal_importances: dict[str, Float[Tensor, "... C"]],
     target_out: Float[Tensor, "... d_model_out"],
     batch: Tensor,
@@ -135,7 +134,7 @@ def create_metrics(
 
 @dataclass
 class CreateFiguresInputs:
-    model: ComponentModel[Any]
+    model: ComponentModel
     causal_importances: dict[str, Float[Tensor, "... C"]]
     target_out: Float[Tensor, "... d_model_out"]
     batch: Int[Tensor, "... d_model_in"] | Float[Tensor, "... d_model_in"]
@@ -194,7 +193,7 @@ FIGURES_FNS: list[Callable[[CreateFiguresInputs], Mapping[str, plt.Figure]]] = [
 
 
 def create_figures(
-    model: ComponentModel[Any],
+    model: ComponentModel,
     causal_importances: dict[str, Float[Tensor, "... C"]],
     target_out: Float[Tensor, "... d_model_out"],
     batch: Int[Tensor, "... d_model_in"] | Float[Tensor, "... d_model_in"],
