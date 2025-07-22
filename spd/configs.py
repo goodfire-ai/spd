@@ -164,6 +164,10 @@ class Config(BaseModel):
         default=None,
         description="Coefficient for additional embedding recon loss (LM only)",
     )
+    cosine_similarity_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for cosine similarity loss between subcomponents and target model parameters",
+    )
     is_embed_unembed_recon: bool = Field(
         default=False,
         description="If True, apply embedding recon jointly to embed & unembed matrices",
