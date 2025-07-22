@@ -27,6 +27,9 @@ import argparse
 
 import streamlit as st
 
+from spd.experiments.lm.streamlit_v1.component_activation_contexts import (
+    render_component_activation_contexts_tab,
+)
 from spd.experiments.lm.streamlit_v1.token_activation_table import render_component_token_table_tab
 from spd.experiments.lm.streamlit_v1.token_inspector import render_token_activations_tab
 from spd.experiments.lm.streamlit_v1.utils import (
@@ -62,10 +65,11 @@ def main():
     model_data = load_model(st.session_state.model_path)
 
     # Create tabs for different analyses
-    tab1, tab2 = st.tabs(
+    tab1, tab2, tab3 = st.tabs(
         [
             "🎯 Token Inspector",
             "📈 Token activation Table",
+            "📋 Activation Contexts",
         ]
     )
 
@@ -74,6 +78,9 @@ def main():
 
     with tab2:
         render_component_token_table_tab(model_data)
+
+    with tab3:
+        render_component_activation_contexts_tab(model_data)
 
 
 if __name__ == "__main__":
