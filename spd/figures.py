@@ -60,6 +60,7 @@ def mean_component_activation_counts(inputs: CreateFiguresInputs) -> Mapping[str
         dataloader=inputs.eval_loader,
         n_steps=inputs.n_eval_steps,
         device=str(inputs.device),
+        threshold=inputs.config.ci_alive_threshold,
     )[1]
     return {
         "mean_component_activation_counts": plot_mean_component_activation_counts(

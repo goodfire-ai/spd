@@ -287,6 +287,16 @@ class Config(BaseModel):
         description="List of local names of functions to use for creating figures. These functions must be defined in the `spd.metrics_and_figs` module.",
     )
 
+    # --- Component Tracking ---
+    ci_alive_threshold: Probability = Field(
+        default=0.1,
+        description="Causal importance threshold above which a component is considered 'firing'",
+    )
+    n_examples_until_dead: PositiveInt = Field(
+        ...,
+        description="Number of examples without firing before a component is considered dead",
+    )
+
     # --- Pretrained model info ---
     pretrained_model_class: str = Field(
         ...,

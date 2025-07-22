@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import wandb
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Float, Int
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -18,6 +18,7 @@ from spd.log import logger
 from spd.losses import calculate_losses
 from spd.metrics import create_metrics
 from spd.models.component_model import ComponentModel
+from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.general_utils import (
     extract_batch_data,
     get_lr_schedule_fn,
@@ -82,10 +83,14 @@ def optimize(
 
     data_iter = iter(train_loader)
 
-    # TODO(oli): replace with AliveTracker class
-    alive_components: dict[str, Bool[Tensor, " C"]] = {
-        layer_name: torch.zeros(config.C, device=device).bool() for layer_name in model.components
-    }
+    # Track which components are alive based on firing frequency
+    alive_tracker = AliveComponentsTracker(
+        module_names=model.target_module_paths,
+        C=config.C,
+        n_examples_until_dead=config.n_examples_until_dead,
+        device=torch.device(device),
+        ci_alive_threshold=config.ci_alive_threshold,
+    )
 
     # Iterate one extra step for final logging/plotting/saving
     for step in tqdm(range(config.steps + 1), ncols=0):
@@ -123,8 +128,7 @@ def optimize(
             sigmoid_type=config.sigmoid_type,
         )
 
-        for layer_name, ci in causal_importances.items():
-            alive_components[layer_name] = alive_components[layer_name] | (ci > 0.1).any(dim=(0, 1))
+        alive_tracker.watch_batch(causal_importances)
 
         total_loss, loss_terms = calculate_losses(
             model=model,
@@ -150,9 +154,9 @@ def optimize(
                     tqdm.write(f"{name}: {value:.7f}")
 
                 if step > 0:
-                    for layer_name, layer_alive_components in alive_components.items():
-                        log_data[f"{layer_name}/n_alive_01"] = layer_alive_components.sum().item()
-                        alive_components[layer_name] = torch.zeros(config.C, device=device).bool()
+                    n_alive = alive_tracker.n_alive()
+                    for layer_name, n_alive_count in n_alive.items():
+                        log_data[f"{layer_name}/n_alive_01"] = n_alive_count
 
                 metrics = create_metrics(
                     model=model,
