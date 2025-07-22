@@ -16,7 +16,6 @@ from torch.utils.data import DataLoader
 
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
-from spd.models.components import EmbeddingComponent, GateMLP, LinearComponent, VectorGateMLP
 from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_histograms,
@@ -29,8 +28,6 @@ from spd.utils.component_utils import component_activation_statistics
 @dataclass
 class CreateFiguresInputs:
     model: ComponentModel
-    components: dict[str, LinearComponent | EmbeddingComponent]
-    gates: dict[str, GateMLP | VectorGateMLP]
     causal_importances: dict[str, Float[Tensor, "... C"]]
     target_out: Float[Tensor, "... d_model_out"]
     batch: Int[Tensor, "... d_model_in"] | Float[Tensor, "... d_model_in"]
@@ -74,15 +71,15 @@ def mean_component_activation_counts(inputs: CreateFiguresInputs) -> Mapping[str
 def uv_and_identity_ci(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
     figures, all_perm_indices = plot_causal_importance_vals(
         model=inputs.model,
-        components=inputs.components,
-        gates=inputs.gates,
         batch_shape=inputs.batch.shape,
         device=inputs.device,
         input_magnitude=0.75,
         sigmoid_type=inputs.config.sigmoid_type,
     )
 
-    uv_matrices = plot_UV_matrices(components=inputs.components, all_perm_indices=all_perm_indices)
+    uv_matrices = plot_UV_matrices(
+        components=inputs.model.components, all_perm_indices=all_perm_indices
+    )
 
     return {
         **figures,
@@ -92,8 +89,6 @@ def uv_and_identity_ci(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
 
 def create_figures(
     model: ComponentModel,
-    components: dict[str, LinearComponent | EmbeddingComponent],
-    gates: dict[str, GateMLP | VectorGateMLP],
     causal_importances: dict[str, Float[Tensor, "... C"]],
     target_out: Float[Tensor, "... d_model_out"],
     batch: Int[Tensor, "... d_model_in"] | Float[Tensor, "... d_model_in"],
@@ -108,8 +103,6 @@ def create_figures(
 
     Args:
         model: The ComponentModel
-        components: Dictionary of components
-        gates: Dictionary of gates
         causal_importances: Current causal importances
         target_out: Output of target model
         batch: Current batch tensor
@@ -126,8 +119,6 @@ def create_figures(
     fig_dict = {}
     inputs = CreateFiguresInputs(
         model=model,
-        components=components,
-        gates=gates,
         causal_importances=causal_importances,
         target_out=target_out,
         batch=batch,

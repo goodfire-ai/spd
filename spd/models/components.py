@@ -1,8 +1,9 @@
+from abc import ABC, abstractmethod
 from typing import Literal, override
 
 import einops
 import torch
-from jaxtyping import Float
+from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 
 from spd.utils.module_utils import init_param_
@@ -26,8 +27,8 @@ class ParallelLinear(nn.Module):
         return einops.einsum(x, self.W, "... C d_in, C d_in d_out -> ... C d_out") + self.b
 
 
-class GateMLP(nn.Module):
-    """A gate with a hidden layer that maps a scalar input to a scalar output."""
+class GateMLPs(nn.Module):
+    """MLP based gates that map a scalar input to a scalar output."""
 
     def __init__(self, C: int, hidden_dims: list[int]):
         super().__init__()
@@ -50,8 +51,8 @@ class GateMLP(nn.Module):
         return x[..., 0]
 
 
-class VectorGateMLP(nn.Module):
-    """An MLP based gate that maps a vector valued input to a single output."""
+class VectorGateMLPs(nn.Module):
+    """MLP based gates that map a vector valued input to a single output."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
@@ -75,34 +76,97 @@ class VectorGateMLP(nn.Module):
         return x[..., 0]
 
 
-class LinearComponent(nn.Module):
-    """A linear transformation made from V and U matrices for SPD.
+class Components(ABC, nn.Module):
+    def __init__(self, C: int, v_dim: int, u_dim: int):
+        """
+        Base class for components in a single layer (that would replace nn.Linear or nn.Embedding weight matrices).
+        Initializes matrices V (which transforms the input activations) and U (which transforms the output of in_acts @ V)"
 
-    The weight matrix W is decomposed as W = U^T @ V^T, where V and U are learned parameters.
-    """
-
-    def __init__(self, d_in: int, d_out: int, C: int, bias: Tensor | None):
+        Args:
+            C: Number of components
+            v_dim: Number of rows in the target weight matrix
+            u_dim: Number of columns in the target weight matrix
+        """
         super().__init__()
         self.C = C
-        self.d_in = d_in
-        self.d_out = d_out
-
-        self.V = nn.Parameter(torch.empty(d_in, C))
-        self.U = nn.Parameter(torch.empty(C, d_out))
-        self.bias = bias
-
-        init_param_(self.V, fan_val=d_out, nonlinearity="linear")
-        init_param_(self.U, fan_val=C, nonlinearity="linear")
-
-        self.mask: Float[Tensor, "... C"] | None = None  # Gets set on sparse forward passes
+        self.V = nn.Parameter(torch.empty(v_dim, C))
+        self.U = nn.Parameter(torch.empty(C, u_dim))
 
     @property
+    @abstractmethod
+    def weight(self) -> Float[Tensor, "rows cols"]:
+        raise NotImplementedError()
+
+    def init_from_target_weight(self, target_weight: Tensor) -> None:
+        """Initialize the V and U matrices.
+        1. Normalize every component to 1.
+        2. Take inner product with original model
+        3. This gives you roughly how much overlap there is with the target model.
+        4. Scale the Us by this value (we can choose either matrix)
+
+        args:
+            target_weight: The weight matrix of the original model. In the orientation of V @ U.
+            Note that this is the transpose of the orientation of the weight matrix in the original code.
+        """
+        target_weight = target_weight.to(self.U.device)
+
+        V = self.V
+        U = self.U
+
+        # Make V and U have unit norm in the d_in and d_out dimensions
+        V.data[:] = torch.randn_like(V.data)
+        U.data[:] = torch.randn_like(U.data)
+        V.data[:] = V.data / V.data.norm(dim=-2, keepdim=True)
+        U.data[:] = U.data / U.data.norm(dim=-1, keepdim=True)
+
+        # Calculate inner products
+        inner = einops.einsum(U, target_weight, "C cols, rows cols -> C rows")
+        C_norms = einops.einsum(inner, V, "C rows, rows C -> C")
+
+        # Scale U by the inner product.
+        U.data[:] = U.data * C_norms.unsqueeze(-1)
+
+    @override
+    @abstractmethod
+    def forward(self, x: Tensor, mask: Tensor | None) -> Tensor:
+        """Forward pass through the component."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_inner_acts(self, x: Tensor) -> Tensor:
+        """Get the inner acts of the component."""
+        raise NotImplementedError()
+
+
+class LinearComponents(Components):
+    """A floating point linear component. The basic building block of SPD."""
+
+    def __init__(
+        self,
+        C: int,
+        d_in: int,
+        d_out: int,
+        bias: Tensor | None = None,
+    ):
+        super().__init__(C, v_dim=d_in, u_dim=d_out)  # NOTE: linear weights are (d_out, d_in)
+        self.d_in = d_in
+        self.d_out = d_out
+        self.bias = bias
+
+    @property
+    @override
     def weight(self) -> Float[Tensor, "d_out d_in"]:
-        """U^T @ V^T"""
+        """(V @ U).T. Transposed to match nn.Linear which uses (d_out, d_in)"""
         return einops.einsum(self.V, self.U, "d_in C, C d_out -> d_out d_in")
 
     @override
-    def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
+    def get_inner_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
+        return einops.einsum(x, self.V, "... d_in, d_in C -> ... C")
+
+    @override
+    def forward(
+        self, x: Float[Tensor, "... d_in"], mask: Tensor | None = None
+    ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
 
         Args:
@@ -111,11 +175,12 @@ class LinearComponent(nn.Module):
         Returns:
             output: The summed output across all components
         """
-        component_acts = einops.einsum(x, self.V, "... d_in, d_in C -> ... C")
+        component_acts = self.get_inner_acts(x)
 
-        if self.mask is not None:
-            component_acts *= self.mask
+        if mask is not None:
+            component_acts *= mask
 
+        # V is (d_out, C). Multiply this way because we use (out, in) as in nn.Linear
         out = einops.einsum(component_acts, self.U, "... C, C d_out -> ... d_out")
 
         if self.bias is not None:
@@ -124,30 +189,21 @@ class LinearComponent(nn.Module):
         return out
 
 
-class EmbeddingComponent(nn.Module):
-    """An efficient embedding component for SPD that avoids one-hot encoding."""
+class EmbeddingComponents(Components):
+    """Efficient embedding components that avoid one-hot encoding."""
 
     def __init__(
         self,
+        C: int,
         vocab_size: int,
         embedding_dim: int,
-        C: int,
     ):
-        super().__init__()
+        super().__init__(C, v_dim=vocab_size, u_dim=embedding_dim)
         self.vocab_size: int = vocab_size
         self.embedding_dim: int = embedding_dim
-        self.C: int = C
-
-        self.V: nn.Parameter = nn.Parameter(torch.empty(vocab_size, C))
-        self.U: nn.Parameter = nn.Parameter(torch.empty(C, embedding_dim))
-
-        init_param_(self.V, fan_val=embedding_dim, nonlinearity="linear")
-        init_param_(self.U, fan_val=C, nonlinearity="linear")
-
-        # For masked forward passes
-        self.mask: Float[Tensor, "batch pos C"] | None = None
 
     @property
+    @override
     def weight(self) -> Float[Tensor, "vocab_size embedding_dim"]:
         """V @ U"""
         return einops.einsum(
@@ -155,24 +211,51 @@ class EmbeddingComponent(nn.Module):
         )
 
     @override
-    def forward(self, x: Float[Tensor, "batch pos"]) -> Float[Tensor, "batch pos embedding_dim"]:
-        """Forward through the embedding component using nn.Embedding for efficient lookup
+    def get_inner_acts(self, x: Int[Tensor, "..."]) -> Float[Tensor, "... C"]:
+        return self.V[x]
 
-        NOTE: Unlike a LinearComponent, here we alter the mask with an instance attribute rather
-        than passing it in the forward pass. This is just because we only use this component in the
-        newer lm_decomposition.py setup which does monkey-patching of the modules rather than using
-        a SPDModel object.
+    @override
+    def forward(
+        self,
+        x: Int[Tensor, "..."],
+        mask: Float[Tensor, "... C"] | Bool[Tensor, "... C"] | None,
+    ) -> Float[Tensor, "... embedding_dim"]:
+        """Forward through the embedding component using indexing instead of one-hot matmul.
 
         Args:
             x: Input tensor of token indices
+            mask: Tensor which masks parameter components. May be boolean or float.
         """
-        # From https://github.com/pytorch/pytorch/blob/main/torch/_decomp/decompositions.py#L1211
-        component_acts = self.V[x]  # (batch pos C)
+        assert x.dtype == torch.long, "x must be an integer tensor"
 
-        if self.mask is not None:
-            component_acts *= self.mask
+        component_acts: Float[Tensor, "... C"] = self.get_inner_acts(x)
 
-        out = einops.einsum(
-            component_acts, self.U, "batch pos C, ... C embedding_dim -> batch pos embedding_dim"
-        )
+        if mask is not None:
+            component_acts *= mask
+
+        out = einops.einsum(component_acts, self.U, "... C, C embedding_dim -> ... embedding_dim")
         return out
+
+
+class ComponentsOrModule(nn.Module):
+    def __init__(
+        self,
+        original: nn.Linear | nn.Embedding,
+        components: Components,
+    ):
+        super().__init__()
+        self.original = original
+        self.components = components
+
+        self.forward_mode: Literal["original"] | Literal["components"] | None = None
+        self.mask: Tensor | None = None
+
+    @override
+    def forward(self, x: Tensor) -> Tensor:
+        if self.forward_mode == "original":
+            assert self.mask is None, "Mask should not be present in original mode"
+            return self.original(x)
+        elif self.forward_mode == "components":
+            # mask *can* but doesn't *need to* be present here
+            return self.components(x, self.mask)
+        raise ValueError(f"Invalid forward mode: {self.forward_mode}")

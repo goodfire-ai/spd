@@ -1,11 +1,11 @@
 from typing import Any, ClassVar
 
 import numpy as np
-import torch
 from datasets import Dataset, IterableDataset, load_dataset
 from datasets.distributed import split_dataset_by_node
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
+from torch import Tensor
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
@@ -187,7 +187,7 @@ def create_data_loader(
         # Get a sample from the dataset and check if it's tokenized and what the n_ctx is
         # Note that the dataset may be streamed, so we can't just index into it
         sample = next(iter(torch_dataset))[dataset_config.column_name]
-        assert isinstance(sample, torch.Tensor) and sample.ndim == 1, (
+        assert isinstance(sample, Tensor) and sample.ndim == 1, (
             "Expected the dataset to be tokenized."
         )
         assert len(sample) == dataset_config.n_ctx, "n_ctx does not match the tokenized length."
