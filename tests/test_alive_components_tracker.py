@@ -116,31 +116,6 @@ def test_n_alive():
     assert n_alive["layer2"] == 3
 
 
-def test_is_alive():
-    """Test getting alive boolean masks."""
-    module_names = ["layer1"]
-    C = 4
-    n_examples_until_dead = 5
-    device = torch.device("cpu")
-    ci_alive_threshold = 0.1
-
-    tracker = AliveComponentsTracker(
-        module_names=module_names,
-        C=C,
-        n_examples_until_dead=n_examples_until_dead,
-        device=device,
-        ci_alive_threshold=ci_alive_threshold,
-    )
-
-    # Manually set examples since fired
-    tracker.examples_since_fired_C["layer1"] = torch.tensor([0, 3, 5, 10], device=device)
-
-    is_alive = tracker.is_alive()
-
-    expected = torch.tensor([True, True, False, False], device=device)
-    assert torch.equal(is_alive["layer1"], expected)
-
-
 def test_sequence_dimensions():
     """Test with sequence dimensions (e.g., for language models)."""
     module_names = ["embedding"]

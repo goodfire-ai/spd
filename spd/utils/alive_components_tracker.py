@@ -69,14 +69,3 @@ class AliveComponentsTracker:
             )
             for module_name in self.module_names
         }
-
-    def is_alive(self) -> dict[str, Bool[Tensor, " C"]]:
-        """Get boolean mask of which components are alive per module.
-
-        Returns:
-            Dict mapping module names to boolean tensors indicating alive components
-        """
-        return {
-            module_name: self.examples_since_fired_C[module_name] < self.n_examples_until_dead
-            for module_name in self.module_names
-        }
