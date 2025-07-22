@@ -25,7 +25,12 @@ def analyze_component_token_table(
     n_steps: int,
     batch_size: int,
     max_seq_len: int,
-) -> tuple[Any, Any, int]:
+) -> tuple[
+    dict[str, dict[int, dict[int, int]]],
+    dict[str, dict[int, dict[int, list[float]]]],
+    int,
+    dict[int, int],
+]:
     """Analyze which tokens activate each component across the dataset."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -52,6 +57,7 @@ def analyze_component_token_table(
     # Initialize token activation tracking
     component_token_activations: dict[str, dict[int, dict[int, int]]] = {}
     component_token_ci_values: dict[str, dict[int, dict[int, list[float]]]] = {}
+    total_token_counts: dict[int, int] = {}  # Track total appearances of each token
 
     total_tokens_processed = 0
     data_iter = iter(dataloader)
@@ -66,6 +72,12 @@ def analyze_component_token_table(
 
             # Count tokens in this batch
             total_tokens_processed += batch.numel()
+
+            # Count all tokens in this batch
+            for token_id in batch.flatten().tolist():
+                if token_id not in total_token_counts:
+                    total_token_counts[token_id] = 0
+                total_token_counts[token_id] += 1
 
             # Get activations before each component
             with torch.no_grad():
@@ -140,7 +152,12 @@ def analyze_component_token_table(
     progress_bar.empty()
     progress_text.empty()
 
-    return component_token_activations, component_token_ci_values, total_tokens_processed
+    return (
+        component_token_activations,
+        component_token_ci_values,
+        total_tokens_processed,
+        total_token_counts,
+    )
 
 
 @st.fragment
@@ -210,7 +227,7 @@ def render_component_token_table_tab(model_data: ModelData):
 
     if run_analysis:
         # Run the analysis
-        activations, ci_values, total_tokens = analyze_component_token_table(
+        activations, ci_values, total_tokens, token_counts = analyze_component_token_table(
             _model_path=st.session_state.model_path,
             _model_data=model_data,
             dataset_name=dataset_name,
@@ -227,38 +244,44 @@ def render_component_token_table_tab(model_data: ModelData):
             "activations": activations,
             "ci_values": ci_values,
             "total_tokens": total_tokens,
+            "token_counts": token_counts,
         }
 
     # Display results if available
     if "component_token_results" in st.session_state:
-        results = st.session_state.component_token_results
-        activations = results.get("activations", {})
-        ci_values = results.get("ci_values", {})
-        total_tokens = results.get("total_tokens", 0)
+        results: dict[str, Any] = st.session_state.component_token_results
+        activations: dict[str, dict[int, dict[int, int]]] = results.get("activations", {})
+        ci_values: dict[str, dict[int, dict[int, list[float]]]] = results.get("ci_values", {})
+        total_tokens: int = results.get("total_tokens", 0)
+        total_token_counts: dict[int, int] = results.get(
+            "token_counts", {}
+        )  # Rename to avoid shadowing
 
         st.success(f"Analysis complete! Processed {total_tokens:,} tokens.")
 
         # Module selection
-        if isinstance(activations, dict):
-            module_names = sorted(activations.keys())
+        if activations:
+            module_names: list[str] = sorted(activations.keys())
             selected_module = st.selectbox(
                 "Select Module", options=module_names, key="component_module_selector"
             )
 
             if selected_module and selected_module in activations:
-                module_activations = activations[selected_module]
-                module_ci_values = ci_values[selected_module] if isinstance(ci_values, dict) else {}
+                module_activations: dict[int, dict[int, int]] = activations[selected_module]
+                module_ci_values: dict[int, dict[int, list[float]]] = ci_values.get(
+                    selected_module, {}
+                )
 
                 # Prepare data for display
-                table_data = []
+                table_data: list[dict[str, Any]] = []
 
                 for component_id in sorted(module_activations.keys()):
-                    token_counts = module_activations[component_id]
+                    token_counts: dict[int, int] = module_activations[component_id]
                     if not token_counts:
                         continue
 
                     # Create list of tokens with their mean CI values and counts
-                    token_ci_count_tuples = []
+                    token_ci_count_tuples: list[tuple[str, float, int, int]] = []
                     for token_id, count in token_counts.items():
                         try:
                             token_text = model_data.tokenizer.decode([token_id])  # pyright: ignore[reportAttributeAccessIssue]
@@ -269,30 +292,38 @@ def render_component_token_table_tab(model_data: ModelData):
                         token_text = token_text.strip()
                         if token_text:  # Only add non-empty tokens
                             # Calculate mean CI value for this token
-                            ci_vals = module_ci_values.get(component_id, {}).get(token_id, [])
-                            if isinstance(ci_vals, list) and ci_vals:
-                                mean_ci = sum(ci_vals) / len(ci_vals)
-                            else:
-                                mean_ci = 0.0
-                            token_ci_count_tuples.append((token_text, mean_ci, count))
+                            ci_vals: list[float] = module_ci_values.get(component_id, {}).get(
+                                token_id, []
+                            )
+                            mean_ci = sum(ci_vals) / len(ci_vals) if ci_vals else 0.0
+                            # Get total count for this token
+                            total_count = total_token_counts.get(token_id, 0)
+                            assert total_count >= count, (
+                                f"Token {token_id} has more activations ({count}) than total appearances ({total_count})"
+                            )
+                            token_ci_count_tuples.append((token_text, mean_ci, count, total_count))
 
                     # Sort by count first (descending), then by mean CI value (descending)
-                    sorted_tokens = sorted(
+                    sorted_tokens: list[tuple[str, float, int, int]] = sorted(
                         token_ci_count_tuples, key=lambda x: (x[2], x[1]), reverse=True
                     )
 
                     if sorted_tokens:
                         # Format tokens for display
-                        formatted_tokens = []
-                        for token_text, mean_ci, count in sorted_tokens:
-                            formatted_tokens.append(f"{token_text} ({mean_ci:.2f}, {count})")
+                        formatted_tokens: list[str] = []
+                        for token_text, mean_ci, count, total_count in sorted_tokens:
+                            formatted_tokens.append(
+                                f"{token_text} ({mean_ci:.2f}, {count}/{total_count})"
+                            )
 
                         tokens_str = " • ".join(formatted_tokens)
                         table_data.append(
                             {
                                 "Component": component_id,
-                                "Activating Tokens (mean_ci, count)": tokens_str,
-                                "Total Unique Tokens": len(token_counts),
+                                "Activating Tokens (mean_ci, count/total)": tokens_str,
+                                "Total Unique Tokens": len(
+                                    token_counts
+                                ),  # This is correct - refers to activation counts
                             }
                         )
 
@@ -309,7 +340,7 @@ def render_component_token_table_tab(model_data: ModelData):
 
                     # Table header
                     markdown_lines.append(
-                        "| Component | Activating Tokens (mean_ci, count) | Total Unique Tokens |"
+                        "| Component | Activating Tokens (mean_ci, count/total) | Total Unique Tokens |"
                     )
                     markdown_lines.append(
                         "|-----------|-----------------------------------|---------------------|"
@@ -318,7 +349,7 @@ def render_component_token_table_tab(model_data: ModelData):
                     # Table rows
                     for _, row in df.iterrows():
                         component = row["Component"]
-                        tokens = row["Activating Tokens (mean_ci, count)"]
+                        tokens = row["Activating Tokens (mean_ci, count/total)"]
                         total = row["Total Unique Tokens"]
                         markdown_lines.append(f"| {component} | {tokens} | {total} |")
 
