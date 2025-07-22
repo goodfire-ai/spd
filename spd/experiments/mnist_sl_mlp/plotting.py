@@ -6,161 +6,95 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from matplotlib.figure import Figure
 from torch import Tensor
 from torch.utils.data import DataLoader
 
 from spd.experiments.mnist_sl_mlp.models import MLP
-from spd.experiments.mnist_sl_mlp.train_mnist_sl import TrainingResults
+from spd.experiments.mnist_sl_mlp.train_mnist_sl import TrainingMetrics, TrainingResults
 from spd.log import logger
 
 
-def plot_losses(
-    teacher_losses: list[float],
-    student_losses: list[float],
-    save_path: Path | None = None,
-) -> Figure:
-    """Plot training loss curves for teacher and student.
+def plot_training_metrics(
+    teacher_metrics: TrainingMetrics,
+    student_metrics: TrainingMetrics,
+    save_dir: Path | None = None,
+) -> tuple[Figure, Figure]:
+    """Create unified plots for training metrics.
     
     Args:
-        teacher_losses: List of teacher losses per epoch
-        student_losses: List of student losses per epoch
-        save_path: Optional path to save the figure
+        teacher_metrics: Teacher training metrics
+        student_metrics: Student training metrics
+        save_dir: Optional directory to save figures
         
     Returns:
-        Matplotlib figure
+        Tuple of (loss_figure, accuracy_figure)
     """
-    fig: Figure
-    ax: plt.Axes
-    fig, ax = plt.subplots(figsize=(10, 6))
+    # Create loss plot
+    fig_loss: Figure
+    axs_loss: np.ndarray
+    fig_loss, axs_loss = plt.subplots(1, 2, figsize=(14, 6))
     
-    # Plot losses
-    teacher_epochs: range = range(1, len(teacher_losses) + 1)
-    student_epochs: range = range(1, len(student_losses) + 1)
+    # Teacher loss subplot
+    ax_teacher: plt.Axes = axs_loss[0]
+    ax_teacher.plot(teacher_metrics.steps, teacher_metrics.train_losses, 
+                   'b-', label='Train Loss', linewidth=2, alpha=0.8)
+    ax_teacher.plot(teacher_metrics.steps, teacher_metrics.val_losses, 
+                   'b--', label='Val Loss', linewidth=2, alpha=0.8)
+    ax_teacher.set_xlabel('Training Steps', fontsize=12)
+    ax_teacher.set_ylabel('Loss', fontsize=12)
+    ax_teacher.set_title('Teacher Model', fontsize=14)
+    ax_teacher.legend(fontsize=11)
+    ax_teacher.grid(True, alpha=0.3)
     
-    ax.plot(teacher_epochs, teacher_losses, 'b-', label='Teacher', linewidth=2, marker='o')
-    ax.plot(student_epochs, student_losses, 'r-', label='Student', linewidth=2, marker='s')
+    # Student loss subplot
+    ax_student: plt.Axes = axs_loss[1]
+    ax_student.plot(student_metrics.steps, student_metrics.train_losses, 
+                   'r-', label='Train Loss', linewidth=2, alpha=0.8)
+    ax_student.plot(student_metrics.steps, student_metrics.val_losses, 
+                   'r--', label='Val Loss', linewidth=2, alpha=0.8)
+    ax_student.set_xlabel('Training Steps', fontsize=12)
+    ax_student.set_ylabel('Loss', fontsize=12)
+    ax_student.set_title('Student Model', fontsize=14)
+    ax_student.legend(fontsize=11)
+    ax_student.grid(True, alpha=0.3)
     
-    ax.set_xlabel('Epoch', fontsize=12)
-    ax.set_ylabel('Loss', fontsize=12)
-    ax.set_title('Training Loss Over Time', fontsize=14)
-    ax.legend(fontsize=12)
-    ax.grid(True, alpha=0.3)
+    fig_loss.suptitle('Training and Validation Loss', fontsize=16)
+    plt.tight_layout()
     
-    # Set y-axis to log scale if losses span multiple orders of magnitude
-    if teacher_losses and student_losses:
-        all_losses: list[float] = teacher_losses + student_losses
-        if max(all_losses) / min(all_losses) > 10:
-            ax.set_yscale('log')
+    if save_dir:
+        save_dir.mkdir(parents=True, exist_ok=True)
+        fig_loss.savefig(save_dir / "loss_curves.png", dpi=150, bbox_inches='tight')
+        logger.info(f"Saved loss plot to {save_dir / 'loss_curves.png'}")
+    
+    # Create accuracy plot
+    fig_acc: Figure
+    ax_acc: plt.Axes
+    fig_acc, ax_acc = plt.subplots(figsize=(10, 6))
+    
+    # Plot test accuracies over time
+    ax_acc.plot(teacher_metrics.steps, teacher_metrics.test_accuracies, 
+               'b-', label='Teacher', linewidth=2.5, marker='o', markersize=4)
+    ax_acc.plot(student_metrics.steps, student_metrics.test_accuracies, 
+               'r-', label='Student', linewidth=2.5, marker='s', markersize=4)
+    
+    ax_acc.set_xlabel('Training Steps', fontsize=12)
+    ax_acc.set_ylabel('Test Accuracy', fontsize=12)
+    ax_acc.set_title('Test Accuracy Over Training', fontsize=16)
+    ax_acc.legend(fontsize=12)
+    ax_acc.grid(True, alpha=0.3)
+    
+    # Format y-axis as percentage
+    ax_acc.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
     
     plt.tight_layout()
     
-    if save_path:
-        fig.savefig(save_path, dpi=150, bbox_inches='tight')
-        logger.info(f"Saved loss plot to {save_path}")
+    if save_dir:
+        fig_acc.savefig(save_dir / "accuracy_curves.png", dpi=150, bbox_inches='tight')
+        logger.info(f"Saved accuracy plot to {save_dir / 'accuracy_curves.png'}")
     
-    return fig
-
-
-def plot_training_curves(
-    teacher_losses: list[float],
-    student_losses: list[float],
-    save_path: Path | None = None,
-) -> Figure:
-    """Plot training loss curves for teacher and student.
-    
-    Args:
-        teacher_losses: List of teacher losses per epoch
-        student_losses: List of student losses per epoch
-        save_path: Optional path to save the figure
-        
-    Returns:
-        Matplotlib figure
-    """
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    # Plot losses
-    teacher_epochs = range(1, len(teacher_losses) + 1)
-    student_epochs = range(1, len(student_losses) + 1)
-    
-    ax.plot(teacher_epochs, teacher_losses, 'b-', label='Teacher', linewidth=2)
-    ax.plot(student_epochs, student_losses, 'r-', label='Student', linewidth=2)
-    
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Loss')
-    ax.set_title('Training Loss Curves')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    
-    if save_path:
-        fig.savefig(save_path, dpi=150, bbox_inches='tight')
-        logger.info(f"Saved training curves to {save_path}")
-    
-    return fig
-
-
-def plot_hidden_activations(
-    model: MLP,
-    loader: DataLoader,
-    num_samples: int = 100,
-    save_path: Path | None = None,
-) -> Figure:
-    """Visualize hidden layer activations.
-    
-    Args:
-        model: Trained MLP model
-        loader: DataLoader for input data
-        num_samples: Number of samples to visualize
-        save_path: Optional path to save the figure
-        
-    Returns:
-        Matplotlib figure
-    """
-    model.eval()
-    device = next(model.parameters()).device
-    
-    activations = []
-    labels = []
-    
-    with torch.no_grad():
-        for x, y in loader:
-            if len(activations) >= num_samples:
-                break
-            
-            x = x.to(device)
-            h = model.get_backbone_output(x)
-            
-            activations.append(h.cpu())
-            labels.append(y)
-            
-    # Concatenate all activations
-    activations = torch.cat(activations, dim=0)[:num_samples]
-    labels = torch.cat(labels, dim=0)[:num_samples]
-    
-    # Create heatmap
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    im = ax.imshow(
-        activations.T.numpy(),
-        aspect='auto',
-        cmap='RdBu_r',
-        interpolation='nearest'
-    )
-    
-    ax.set_xlabel('Sample Index')
-    ax.set_ylabel('Hidden Unit')
-    ax.set_title('Hidden Layer Activations')
-    
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label('Activation Value')
-    
-    if save_path:
-        fig.savefig(save_path, dpi=150, bbox_inches='tight')
-        logger.info(f"Saved activation heatmap to {save_path}")
-    
-    return fig
+    return fig_loss, fig_acc
 
 
 def plot_auxiliary_outputs_distribution(
@@ -182,36 +116,46 @@ def plot_auxiliary_outputs_distribution(
     """
     teacher.eval()
     student.eval()
-    device = next(teacher.parameters()).device
+    device: str = str(next(teacher.parameters()).device)
     
-    teacher_aux_outputs = []
-    student_aux_outputs = []
+    teacher_aux_outputs: list[Float[Tensor, "batch aux"]] = []
+    student_aux_outputs: list[Float[Tensor, "batch aux"]] = []
     
     with torch.no_grad():
+        x: Float[Tensor, "batch 1 28 28"]
+        _: Int[Tensor, "batch"]
         for x, _ in loader:
             x = x.to(device)
             
+            _: Float[Tensor, "batch 10"]
+            teacher_aux: Float[Tensor, "batch aux"]
             _, teacher_aux = teacher(x)
+            
+            student_aux: Float[Tensor, "batch aux"]
             _, student_aux = student(x)
             
             teacher_aux_outputs.append(teacher_aux.cpu())
             student_aux_outputs.append(student_aux.cpu())
     
     # Concatenate all outputs
-    teacher_aux = torch.cat(teacher_aux_outputs, dim=0)
-    student_aux = torch.cat(student_aux_outputs, dim=0)
+    teacher_aux: Float[Tensor, "total aux"] = torch.cat(teacher_aux_outputs, dim=0)
+    student_aux: Float[Tensor, "total aux"] = torch.cat(student_aux_outputs, dim=0)
     
     # Apply softmax for probability interpretation
-    teacher_probs = torch.softmax(teacher_aux, dim=1)
-    student_probs = torch.softmax(student_aux, dim=1)
+    teacher_probs: Float[Tensor, "total aux"] = torch.softmax(teacher_aux, dim=1)
+    student_probs: Float[Tensor, "total aux"] = torch.softmax(student_aux, dim=1)
     
     # Create figure with subplots for each auxiliary output
-    num_aux = teacher_aux.shape[1]
+    num_aux: int = teacher_aux.shape[1]
+    fig: Figure
+    axes: list[plt.Axes] | plt.Axes
     fig, axes = plt.subplots(1, num_aux, figsize=(5 * num_aux, 5))
     
     if num_aux == 1:
         axes = [axes]
     
+    ax: plt.Axes
+    i: int
     for i, ax in enumerate(axes):
         # Plot histograms
         ax.hist(
@@ -247,64 +191,53 @@ def plot_auxiliary_outputs_distribution(
 
 
 def create_evaluation_report(
-    teacher: MLP,
-    student: MLP,
-    training_info: dict[str, Any],
+    results: TrainingResults,
     test_loader: DataLoader,
     save_dir: Path,
 ) -> None:
-    """Create a comprehensive evaluation report with all visualizations.
+    """Create a comprehensive evaluation report with visualizations.
     
     Args:
-        teacher: Trained teacher model
-        student: Trained student model
-        training_info: Dictionary containing training losses and accuracies
+        results: Training results containing models and metrics
         test_loader: DataLoader for test data
         save_dir: Directory to save the report
     """
     logger.info(f"Creating evaluation report in {save_dir}")
     save_dir.mkdir(parents=True, exist_ok=True)
     
-    # Plot training curves
-    plot_training_curves(
-        training_info["teacher_losses"],
-        training_info["student_losses"],
-        save_dir / "training_curves.png"
-    )
-    
-    # Plot hidden activations for both models
-    plot_hidden_activations(
-        teacher,
-        test_loader,
-        num_samples=200,
-        save_path=save_dir / "teacher_activations.png"
-    )
-    
-    plot_hidden_activations(
-        student,
-        test_loader,
-        num_samples=200,
-        save_path=save_dir / "student_activations.png"
+    # Plot training metrics
+    fig_loss: Figure
+    fig_acc: Figure
+    fig_loss, fig_acc = plot_training_metrics(
+        results.teacher_metrics,
+        results.student_metrics,
+        save_dir
     )
     
     # Plot auxiliary output distributions
-    plot_auxiliary_outputs_distribution(
-        teacher,
-        student,
+    fig_aux: Figure = plot_auxiliary_outputs_distribution(
+        results.teacher,
+        results.student,
         test_loader,
         save_path=save_dir / "auxiliary_distributions.png"
     )
     
     # Create text summary
-    summary_path = save_dir / "summary.txt"
+    summary_path: Path = save_dir / "summary.txt"
     with open(summary_path, "w") as f:
         f.write("MNIST Subliminal Learning Evaluation Report\n")
         f.write("=" * 50 + "\n\n")
-        f.write(f"Teacher Test Accuracy: {training_info['teacher_accuracy']:.2%}\n")
-        f.write(f"Student Test Accuracy: {training_info['student_accuracy']:.2%}\n")
-        f.write(f"\nTeacher Epochs: {len(training_info['teacher_losses'])}\n")
-        f.write(f"Student Epochs: {len(training_info['student_losses'])}\n")
-        f.write(f"\nFinal Teacher Loss: {training_info['teacher_losses'][-1]:.4f}\n")
-        f.write(f"Final Student Loss: {training_info['student_losses'][-1]:.4f}\n")
+        f.write(f"Final Teacher Test Accuracy: {results.final_teacher_accuracy:.2%}\n")
+        f.write(f"Final Student Test Accuracy: {results.final_student_accuracy:.2%}\n")
+        f.write(f"\nTeacher Training Steps: {len(results.teacher_metrics.steps)}\n")
+        f.write(f"Student Training Steps: {len(results.student_metrics.steps)}\n")
+        
+        if results.teacher_metrics.train_losses:
+            f.write(f"\nFinal Teacher Train Loss: {results.teacher_metrics.train_losses[-1]:.4f}\n")
+            f.write(f"Final Teacher Val Loss: {results.teacher_metrics.val_losses[-1]:.4f}\n")
+        
+        if results.student_metrics.train_losses:
+            f.write(f"\nFinal Student Train Loss: {results.student_metrics.train_losses[-1]:.4f}\n")
+            f.write(f"Final Student Val Loss: {results.student_metrics.val_losses[-1]:.4f}\n")
     
     logger.info(f"Evaluation report saved to {save_dir}")
