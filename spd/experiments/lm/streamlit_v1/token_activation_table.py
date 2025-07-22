@@ -240,6 +240,13 @@ def render_component_token_table_tab(model_data: ModelData):
                     value=512,
                     help="Maximum sequence length for tokenization",
                 )
+                min_act_frequency = st.number_input(
+                    "Minimum Token Activation Frequency",
+                    min_value=1,
+                    max_value=1000,
+                    value=2,
+                    help="Only show tokens that activate at least this many times",
+                )
 
         run_analysis = st.form_submit_button("Run Analysis", type="primary")
 
@@ -266,6 +273,7 @@ def render_component_token_table_tab(model_data: ModelData):
             "total_tokens": total_tokens,
             "token_counts": token_counts,
             "l0_scores": l0_scores,
+            "min_act_frequency": min_act_frequency,
         }
 
     # Display results if available
@@ -278,6 +286,7 @@ def render_component_token_table_tab(model_data: ModelData):
             "token_counts", {}
         )  # Rename to avoid shadowing
         l0_scores: dict[str, float] = results.get("l0_scores", {})
+        min_act_frequency: int = results.get("min_act_frequency", 1)
 
         st.success(f"Analysis complete! Processed {total_tokens:,} tokens.")
 
@@ -317,6 +326,10 @@ def render_component_token_table_tab(model_data: ModelData):
                     # Create list of tokens with their mean CI values and counts
                     token_ci_count_tuples: list[tuple[str, float, int, int]] = []
                     for token_id, count in token_counts.items():
+                        # Filter by minimum token frequency
+                        if count < min_act_frequency:
+                            continue
+
                         try:
                             token_text = model_data.tokenizer.decode([token_id])  # pyright: ignore[reportAttributeAccessIssue]
                         except Exception:
@@ -356,8 +369,8 @@ def render_component_token_table_tab(model_data: ModelData):
                                 "Component": component_id,
                                 "Activating Tokens (mean_ci, count/total)": tokens_str,
                                 "Total Unique Tokens": len(
-                                    token_counts
-                                ),  # This is correct - refers to activation counts
+                                    sorted_tokens
+                                ),  # Count only tokens that meet the minimum frequency
                             }
                         )
 
