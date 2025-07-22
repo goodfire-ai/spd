@@ -35,8 +35,12 @@ n_eval_steps: 100
 image_freq: 5_000
 print_freq: 1000
 save_freq: null
-figures_fns: ["ci_histograms", "mean_component_activation_counts", "uv_and_identity_ci"]
-metrics_fns: ["ci_l0"]
+figures_fns:
+  - name: "ci_histograms"
+  - name: "mean_component_activation_counts"
+  - name: "uv_and_identity_ci"
+metrics_fns:
+  - name: "ci_l0"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"
