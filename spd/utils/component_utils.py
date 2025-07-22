@@ -102,12 +102,11 @@ def get_sample_fn(sample_config: SampleConfig) -> Callable[[Tensor], Tensor]:
         return partial(bernoulli_ste, min=sample_config.min)
     elif sample_config.sample_type == "concrete":
         return partial(concrete_gate, temperature=sample_config.temperature)
-    elif sample_config.sample_type == "hard_concrete":
+    else:
+        assert sample_config.sample_type == "hard_concrete"
         return partial(
             hard_concrete_gate, temperature=sample_config.temperature, stretch=sample_config.stretch
         )
-    else:
-        raise ValueError(f"Unknown sample type: {sample_config.sample_type}")
 
 
 def calc_stochastic_masks(
