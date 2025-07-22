@@ -80,8 +80,3 @@ class AliveComponentsTracker:
             module_name: self.examples_since_fired_C[module_name] < self.n_examples_until_dead
             for module_name in self.module_names
         }
-
-    def reset(self) -> None:
-        """Reset all tracking (all components start as not having fired)."""
-        for module_name in self.module_names:
-            self.examples_since_fired_C[module_name].zero_()

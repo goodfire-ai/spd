@@ -211,6 +211,7 @@ def test_from_pretrained_model_works():
             n_eval_steps=1,
             importance_minimality_coeff=1.0,
             pnorm=1.0,
+            n_examples_until_dead=1,
             output_loss_type="mse",
             print_freq=1,
             n_mask_samples=1,
