@@ -1,6 +1,10 @@
 """Config classes of various types"""
 
-from typing import Any, ClassVar, Literal, Self
+import importlib
+import inspect
+from abc import ABC, abstractmethod
+from collections.abc import Callable
+from typing import Any, ClassVar, Literal, Self, override
 
 from pydantic import (
     BaseModel,
@@ -17,6 +21,64 @@ from spd.log import logger
 from spd.models.components import GateType
 from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
+
+
+class _FnConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInheritance]
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+    name: str = Field(
+        ...,
+        description="Name of the function to call",
+    )
+    extra_kwargs: dict[str, Any] = Field(
+        default={},
+        description="Keyword arguments to pass to the function",
+    )
+
+    @abstractmethod
+    def get_real_func(self) -> Callable[..., Any]: ...
+
+    @model_validator(mode="after")
+    def validate_fn_kwargs(self) -> Self:
+        real_fn = self.get_real_func()
+
+        # get its signature and drop the first 'inputs' parameter
+        sig = inspect.signature(real_fn)
+        params_after_inputs = list(sig.parameters.values())[1:]
+        sig_extra_only = inspect.Signature(params_after_inputs)
+
+        # see if our kwargs are valid
+        try:
+            sig_extra_only.bind(**self.extra_kwargs)
+        except TypeError as e:
+            # replace the error as e will include something like
+            # "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
+            raise ValueError(f"Invalid kwargs for {self.name!r}: {e}") from None
+
+        return self
+
+
+class FiguresFnConfig(_FnConfig):
+    @override
+    def get_real_func(self) -> Callable[..., Any]:
+        available_funcs = importlib.import_module("spd.figures").FIGURES_FNS
+        real_fn = available_funcs.get(self.name)
+        if real_fn is None:
+            raise ValueError(
+                f"Figure function {self.name!r} not found. Available functions: {available_funcs.keys()}"
+            )
+        return real_fn
+
+
+class MetricsFnConfig(_FnConfig):
+    @override
+    def get_real_func(self) -> Callable[..., Any]:
+        available_funcs = importlib.import_module("spd.metrics").METRICS_FNS
+        real_fn = available_funcs.get(self.name)
+        if real_fn is None:
+            raise ValueError(
+                f"Metric function {self.name!r} not found. Available functions: {available_funcs.keys()}"
+            )
+        return real_fn
 
 
 class TMSTaskConfig(BaseModel):
@@ -85,111 +147,78 @@ class LMTaskConfig(BaseModel):
     )
 
 
-class UniformSampleConfig(BaseModel):
-    sample_type: Literal["uniform"] = Field(
-        default="uniform",
-        description="Type of sample to use for stochastic reconstruction",
-    )
+class _SampleConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     sigmoid_type: SigmoidTypes = Field(
-        default="leaky_hard",
+        ...,
         description="Type of sigmoid to use for causal importance calculation",
     )
     gate_bias: float = Field(
-        default=0.0,
+        ...,
         description="Bias for the gate used to calculate the causal importance",
     )
 
 
-class BernoulliSampleConfig(BaseModel):
-    sample_type: Literal["bernoulli_ste"] = Field(
-        default="bernoulli_ste",
-        description="Type of sample to use for stochastic reconstruction",
-    )
-    sigmoid_type: SigmoidTypes = Field(
-        default="normal",
-        description="Type of sigmoid to use for causal importance calculation",
-    )
-    gate_bias: float = Field(
-        default=0.0,
-        description="Bias for the gate used to calculate the causal importance",
-    )
+class UniformSampleConfig(_SampleConfig):
+    sample_type: Literal["uniform"] = "uniform"
 
 
-class ConcreteSTESampleConfig(BaseModel):
-    sample_type: Literal["concrete_ste"] = Field(
-        default="concrete_ste",
-        description="Type of sample to use for stochastic reconstruction",
-    )
-    temp: float = Field(
-        default=1.0,
-        description="Temperature for the concrete distribution",
-    )
-    # potentially add annealing schedule here
-    sigmoid_type: SigmoidTypes = Field(
-        default="normal",
-        description="Type of sigmoid to use for causal importance calculation",
-    )
-    gate_bias: float = Field(
-        default=0.0,
-        description="Bias for the gate used to calculate the causal importance",
-    )
+class BernoulliSampleConfig(_SampleConfig):
+    sample_type: Literal["bernoulli_ste"] = "bernoulli_ste"
 
 
-class ConcreteSampleConfig(BaseModel):
-    sample_type: Literal["concrete"] = Field(
-        default="concrete",
-        description="Type of sample to use for stochastic reconstruction",
-    )
+# class ConcreteSTESampleConfig(_SampleConfig):
+#     sample_type: Literal["concrete_ste"] = Field(
+#         default="concrete_ste",
+#         description="Type of sample to use for stochastic reconstruction",
+#     )
+#     temp: float = Field(
+#         default=1.0,
+#         description="Temperature for the concrete distribution",
+#     )
+#     # potentially add annealing schedule here
+
+
+class ConcreteSampleConfig(_SampleConfig):
+    sample_type: Literal["concrete"] = "concrete"
     temp_start: float = Field(
         default=2.0,
-        description="Temperature for the concrete distribution",
+        description="Temperature at the start of the annealing schedule",
     )
     temp_end: float = Field(
         default=0.1,
-        description="Temperature for the concrete distribution",
+        description="Temperature at the end of the annealing schedule",
     )
-    # potentially add annealing schedule here
-    sigmoid_type: SigmoidTypes = Field(
-        default="normal",
-        description="Type of sigmoid to use for causal importance calculation",
-    )
-    gate_bias: float = Field(
-        default=0.0,
-        description="Bias for the gate used to calculate the causal importance",
+    pct_annealing: float = Field(
+        default=0.5,
+        description="Percentage of steps to anneal the temperature for",
     )
 
 
-class HardConcreteSampleConfig(BaseModel):
-    sample_type: Literal["hard_concrete_anneal"] = Field(
-        default="hard_concrete_anneal",
-        description="Type of sample to use for stochastic reconstruction",
-    )
+class HardConcreteSampleConfig(_SampleConfig):
+    sample_type: Literal["hard_concrete_anneal"] = "hard_concrete_anneal"
     temp_start: float = Field(
         default=2.0,
-        description="Temperature for the concrete distribution",
+        description="Temperature at the start of the annealing schedule",
     )
     temp_end: float = Field(
         default=0.1,
-        description="Temperature for the concrete distribution",
+        description="Temperature at the end of the annealing schedule",
+    )
+    pct_annealing: float = Field(
+        default=0.5,
+        description="Percentage of steps to anneal the temperature for",
     )
     bounds: tuple[float, float] = Field(
         default=(-0.1, 1.1),
         description="Bounds for the hard concrete distribution",
-    )
-    sigmoid_type: SigmoidTypes = Field(
-        default="leaky_hard",
-        description="Type of sigmoid to use for causal importance calculation",
-    )
-    gate_bias: float = Field(
-        default=0.0,
-        description="Bias for the gate used to calculate the causal importance",
     )
 
 
 SampleConfig = (
     UniformSampleConfig
     | BernoulliSampleConfig
-    | ConcreteSTESampleConfig
+    # | ConcreteSTESampleConfig
     | ConcreteSampleConfig
     | HardConcreteSampleConfig
 )
@@ -218,7 +247,7 @@ class Config(BaseModel):
         description="The number of subcomponents per layer",
     )
     sample_config: SampleConfig = Field(
-        default_factory=lambda: HardConcreteSampleConfig(),
+        default_factory=lambda: UniformSampleConfig(sigmoid_type="leaky_hard", gate_bias=0.0),
         discriminator="sample_type",
         description="Configuration for the sample function used for stochastic reconstruction",
     )
@@ -332,9 +361,13 @@ class Config(BaseModel):
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    log_ce_losses: bool = Field(
-        default=False,
-        description="If True, additionally track cross-entropy losses during training",
+    metrics_fns: list[MetricsFnConfig] = Field(
+        default=[],
+        description="List of local names of functions to use for computing metrics. These functions must be defined in the `spd.metrics_and_figs` module.",
+    )
+    figures_fns: list[FiguresFnConfig] = Field(
+        default=[],
+        description="List of local names of functions to use for creating figures. These functions must be defined in the `spd.metrics_and_figs` module.",
     )
 
     # --- Pretrained model info ---

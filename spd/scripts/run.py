@@ -204,6 +204,8 @@ REPORT_TOTAL_WIDTH = 24
 def create_wandb_report(
     report_title: str,
     run_id: str,
+    branch_name: str,
+    commit_hash: str,
     experiments_list: list[str],
     include_run_comparer: bool,
     project: str = "spd",
@@ -215,6 +217,8 @@ def create_wandb_report(
         description=f"Experiments: {', '.join(experiments_list)}",
         width="fluid",
     )
+
+    report.blocks.append(wr.MarkdownBlock(text=f"Branch: `{branch_name}`\nCommit: `{commit_hash}`"))
 
     # Create separate panel grids for each experiment
     for experiment in experiments_list:
@@ -410,6 +414,7 @@ def main(
         job_suffix: Optional suffix for SLURM job names
         cpu: Use CPU instead of GPU (default: False)
         project: W&B project name (default: "spd"). Will be created if it doesn't exist.
+        report_title: Title for the W&B report (default: None). Will be generated if not provided.
 
     Examples:
         # Run subset of experiments (no sweep)
@@ -464,8 +469,8 @@ def main(
         project=project,
     )
 
-    snapshot_branch = create_git_snapshot(branch_name_prefix="run")
-    print(f"\nUsing git snapshot: {snapshot_branch}")
+    snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="run")
+    print(f"\nUsing git snapshot: {snapshot_branch} ({commit_hash[:8]})")
 
     # Ensure the W&B project exists
     ensure_project_exists(project)
@@ -486,6 +491,8 @@ def main(
             experiments_list=experiments_list,
             project=project,
             include_run_comparer=sweep_params_file is not None,
+            branch_name=snapshot_branch,
+            commit_hash=commit_hash,
         )
 
     # Print clean summary after wandb messages
