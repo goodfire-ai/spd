@@ -10,7 +10,7 @@ import torch
 
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.streamlit_v1.utils import ModelData
-from spd.utils.component_utils import calc_causal_importances
+from spd.utils.component_utils import calc_causal_importances, calc_ci_l_zero
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -30,6 +30,7 @@ def analyze_component_token_table(
     dict[str, dict[int, dict[int, list[float]]]],
     int,
     dict[int, int],
+    dict[str, float],
 ]:
     """Analyze which tokens activate each component across the dataset."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -58,6 +59,8 @@ def analyze_component_token_table(
     component_token_activations: dict[str, dict[int, dict[int, int]]] = {}
     component_token_ci_values: dict[str, dict[int, dict[int, list[float]]]] = {}
     total_token_counts: dict[int, int] = {}  # Track total appearances of each token
+    l0_scores_sum: dict[str, float] = {}  # Track sum of L0 scores for averaging
+    l0_scores_count = 0  # Track number of batches for averaging
 
     total_tokens_processed = 0
     data_iter = iter(dataloader)
@@ -93,6 +96,14 @@ def analyze_component_token_table(
                     gates=_model_data.gates,
                     detach_inputs=True,
                 )
+
+            # Calculate L0 scores for this batch
+            ci_l_zero = calc_ci_l_zero(causal_importances=causal_importances)
+            for layer_name, layer_ci_l_zero in ci_l_zero.items():
+                if layer_name not in l0_scores_sum:
+                    l0_scores_sum[layer_name] = 0.0
+                l0_scores_sum[layer_name] += layer_ci_l_zero
+            l0_scores_count += 1
 
             for module_name, ci in causal_importances.items():
                 assert ci.ndim == 3, "CI must be 3D (batch, seq_len, C)"
@@ -152,11 +163,18 @@ def analyze_component_token_table(
     progress_bar.empty()
     progress_text.empty()
 
+    # Calculate average L0 scores
+    avg_l0_scores: dict[str, float] = {}
+    if l0_scores_count > 0:
+        for layer_name, score_sum in l0_scores_sum.items():
+            avg_l0_scores[layer_name] = score_sum / l0_scores_count
+
     return (
         component_token_activations,
         component_token_ci_values,
         total_tokens_processed,
         total_token_counts,
+        avg_l0_scores,
     )
 
 
@@ -227,37 +245,53 @@ def render_component_token_table_tab(model_data: ModelData):
 
     if run_analysis:
         # Run the analysis
-        activations, ci_values, total_tokens, token_counts = analyze_component_token_table(
-            _model_path=st.session_state.model_path,
-            _model_data=model_data,
-            dataset_name=dataset_name,
-            dataset_split=dataset_split,
-            column_name=column_name,
-            causal_importance_threshold=causal_importance_threshold,
-            n_steps=n_steps,
-            batch_size=batch_size,
-            max_seq_len=max_seq_len,
+        activations, ci_values, total_tokens, token_counts, l0_scores = (
+            analyze_component_token_table(
+                _model_path=st.session_state.model_path,
+                _model_data=model_data,
+                dataset_name=dataset_name,
+                dataset_split=dataset_split,
+                column_name=column_name,
+                causal_importance_threshold=causal_importance_threshold,
+                n_steps=n_steps,
+                batch_size=batch_size,
+                max_seq_len=max_seq_len,
+            )
         )
 
         # Store results in session state
-        st.session_state.component_token_results = {
+        st.session_state.token_activation_results = {
             "activations": activations,
             "ci_values": ci_values,
             "total_tokens": total_tokens,
             "token_counts": token_counts,
+            "l0_scores": l0_scores,
         }
 
     # Display results if available
-    if "component_token_results" in st.session_state:
-        results: dict[str, Any] = st.session_state.component_token_results
+    if "token_activation_results" in st.session_state:
+        results: dict[str, Any] = st.session_state.token_activation_results
         activations: dict[str, dict[int, dict[int, int]]] = results.get("activations", {})
         ci_values: dict[str, dict[int, dict[int, list[float]]]] = results.get("ci_values", {})
         total_tokens: int = results.get("total_tokens", 0)
         total_token_counts: dict[int, int] = results.get(
             "token_counts", {}
         )  # Rename to avoid shadowing
+        l0_scores: dict[str, float] = results.get("l0_scores", {})
 
         st.success(f"Analysis complete! Processed {total_tokens:,} tokens.")
+
+        # Display L0 scores as summary metrics
+        if l0_scores:
+            st.subheader("L0 over dataset")
+            l0_cols = st.columns(min(len(l0_scores), 4))
+            for idx, (module_name, score) in enumerate(l0_scores.items()):
+                with l0_cols[idx % len(l0_cols)]:
+                    st.metric(
+                        label=module_name,
+                        value=f"{score:.2f}",
+                        help=f"Average number of active components in {module_name}",
+                    )
 
         # Module selection
         if activations:
