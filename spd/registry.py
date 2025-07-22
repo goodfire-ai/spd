@@ -46,6 +46,12 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/tms/tms_40-10-id_config.yaml"),
         expected_runtime=5,
     ),
+    "tms_5-2_cosine_sweep": ExperimentConfig(
+        experiment_type="tms",
+        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+        config_path=Path("tms_5-2_cosine_sweep_config.yaml"),
+        expected_runtime=8,
+    ),
     "resid_mlp1": ExperimentConfig(
         experiment_type="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
