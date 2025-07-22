@@ -43,7 +43,7 @@ class BatchedDataLoader[Q](DataLoader[Q]):
         super().__init__(dataset, num_workers=num_workers)
 
     @override
-    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def __iter__(self) -> Iterator[tuple[Tensor, Tensor]]:  # pyright: ignore[reportIncompatibleMethodOverride]
         for batch, label in super().__iter__():
             yield batch[0], label[0]
 

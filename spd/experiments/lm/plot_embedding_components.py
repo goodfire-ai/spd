@@ -1,7 +1,6 @@
 """Visualize embedding component masks."""
 
 from pathlib import Path
-from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,34 +11,21 @@ from tqdm import tqdm
 
 from spd.log import logger
 from spd.models.component_model import ComponentModel
-from spd.models.components import EmbeddingComponent, GateMLP, VectorGateMLP
-from spd.utils.component_utils import calc_causal_importances
 
 
 def collect_embedding_masks(model: ComponentModel, device: str) -> Float[Tensor, "vocab C"]:
     """Collect masks for each vocab token.
 
     Args:
-        model: The trained LinearComponent
+        model: The trained ComponentModel
         device: Device to run computation on
 
     Returns:
         Tensor of shape (vocab_size, C) containing masks for each vocab token
     """
-    # We used "-" instead ofGateMLP module names can't have "." in them
-    gates: dict[str, GateMLP | VectorGateMLP] = {
-        k.removeprefix("gates.").replace("-", "."): cast(GateMLP | VectorGateMLP, v)
-        for k, v in model.gates.items()
-    }
-    components: dict[str, EmbeddingComponent] = {
-        k.removeprefix("components.").replace("-", "."): cast(EmbeddingComponent, v)
-        for k, v in model.components.items()
-    }
+    assert len(model.components) == 1, "Expected exactly one embedding component"
 
-    assert len(components) == 1, "Expected exactly one embedding component"
-    component_name = next(iter(components.keys()))
-
-    vocab_size = model.model.get_parameter("transformer.wte.weight").shape[0]
+    vocab_size = model.patched_model.get_parameter("transformer.wte.weight").shape[0]
 
     all_masks = torch.zeros((vocab_size, model.C), device=device)
 
@@ -48,19 +34,16 @@ def collect_embedding_masks(model: ComponentModel, device: str) -> Float[Tensor,
         token_tensor = torch.tensor([[token_id]], device=device)
 
         _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-            token_tensor, module_names=[component_name]
+            token_tensor, module_names=model.target_module_paths
         )
 
-        Vs = {module_name: v.V for module_name, v in components.items()}
-
-        masks, _ = calc_causal_importances(
+        masks, _ = model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
-            Vs=Vs,
-            gates=gates,
             detach_inputs=True,
         )
+        assert len(masks) == 1, "Expected exactly one mask"
 
-        all_masks[token_id] = masks[component_name].squeeze()
+        all_masks[token_id] = next(iter(masks.values())).squeeze()
 
     return all_masks
 

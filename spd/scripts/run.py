@@ -51,6 +51,26 @@ WORKSPACE_TEMPLATES = {
 }
 
 
+def generate_run_name(
+    params: dict[str, Any],
+) -> str:
+    """Generate a run name based on the present parameters.
+
+    Uses only leaf-node parameters.
+    Example:
+        >>> params = {"a": {"b": 1}, "c": 2}
+        >>> generate_run_name(params)
+        "b-1_c-2"
+    """
+    parts = []
+    for k, v in params.items():
+        if isinstance(v, dict):
+            parts.append(generate_run_name(v))
+        else:
+            parts.append(f"{k}-{v}")
+    return "_".join(parts)
+
+
 def generate_run_id() -> str:
     """Generate a unique run ID based on timestamp."""
     return f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -181,20 +201,31 @@ def create_workspace_view(run_id: str, experiment_name: str, project: str = "spd
     return workspace.url
 
 
+REPORT_TOTAL_WIDTH = 24
+
+
 # report generation still pretty basic, needs more work
-def create_wandb_report(run_id: str, experiments_list: list[str], project: str = "spd") -> str:
+def create_wandb_report(
+    report_title: str,
+    run_id: str,
+    branch_name: str,
+    commit_hash: str,
+    experiments_list: list[str],
+    include_run_comparer: bool,
+    project: str = "spd",
+) -> str:
     """Create a W&B report for the run."""
     report = wr.Report(
         project=project,
-        title=f"SPD Run Report - {run_id}",
+        title=report_title,
         description=f"Experiments: {', '.join(experiments_list)}",
+        width="fluid",
     )
+
+    report.blocks.append(wr.MarkdownBlock(text=f"Branch: `{branch_name}`\nCommit: `{commit_hash}`"))
 
     # Create separate panel grids for each experiment
     for experiment in experiments_list:
-        # Get experiment type to determine which plots to show
-        exp_type = EXPERIMENT_REGISTRY[experiment].experiment_type
-
         # Use run_id and experiment name tags for filtering
         combined_filter = f'(Tags("tags") in ["{run_id}"]) and (Tags("tags") in ["{experiment}"])'
 
@@ -205,46 +236,69 @@ def create_wandb_report(run_id: str, experiments_list: list[str], project: str =
         )
 
         # Build panels list
-        panels: list[wr.interface.PanelTypes] = [
+        panels: list[wr.interface.PanelTypes] = []
+        y = 0
+
+        ci_height = 12
+        panels.append(
             wr.MediaBrowser(
                 media_keys=["causal_importances_upper_leaky"],
-                layout=wr.Layout(x=-6, y=0, w=24, h=12),
-            ),
-            wr.LinePlot(
-                x="Step",
-                y=["loss/stochastic_recon_layerwise", "loss/stochastic_recon"],
-                log_y=True,
-                layout=wr.Layout(x=-6, y=12, w=10, h=6),
-            ),
-            wr.LinePlot(
-                x="Step",
-                y=["loss/faithfulness"],
-                log_y=True,
-                layout=wr.Layout(x=4, y=12, w=10, h=6),
-            ),
-            wr.LinePlot(
-                x="Step",
-                y=["loss/importance_minimality"],
-                layout=wr.Layout(x=14, y=12, w=10, h=6),
-            ),
+                layout=wr.Layout(x=0, y=0, w=REPORT_TOTAL_WIDTH, h=ci_height),
+                num_columns=6,
+            )
+        )
+        y += ci_height
+
+        loss_plots_height = 6
+        loss_plots = [
+            ["loss/stochastic_recon_layerwise", "loss/stochastic_recon"],
+            ["loss/faithfulness"],
+            ["loss/importance_minimality"],
         ]
+        for i, y_keys in enumerate(loss_plots):
+            loss_plots_width = REPORT_TOTAL_WIDTH // len(loss_plots)
+            x_offset = i * loss_plots_width
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=y_keys,  # pyright: ignore[reportArgumentType]
+                    log_y=True,
+                    layout=wr.Layout(x=x_offset, y=y, w=loss_plots_width, h=loss_plots_height),
+                )
+            )
+        y += loss_plots_height
 
         # Only add KL loss plots for language model experiments
-        if exp_type == "lm":
-            panels.extend(
-                [
-                    wr.LinePlot(
-                        x="Step",
-                        y=["misc/masked_kl_loss_vs_target"],
-                        layout=wr.Layout(x=-6, y=18, w=10, h=6),
-                    ),
-                    wr.LinePlot(
-                        x="Step",
-                        y=["misc/unmasked_kl_loss_vs_target"],
-                        layout=wr.Layout(x=4, y=18, w=10, h=6),
-                    ),
-                ]
+        if EXPERIMENT_REGISTRY[experiment].experiment_type == "lm":
+            kl_height = 6
+            kl_width = REPORT_TOTAL_WIDTH // 2
+            x_offset = 0
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["misc/masked_kl_loss_vs_target"],
+                    layout=wr.Layout(x=x_offset, y=y, w=kl_width, h=kl_height),
+                )
             )
+            x_offset += kl_width
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["misc/unmasked_kl_loss_vs_target"],
+                    layout=wr.Layout(x=x_offset, y=y, w=kl_width, h=kl_height),
+                )
+            )
+            y += kl_height
+
+        if include_run_comparer:
+            run_comparer_height = 10
+            panels.append(
+                wr.RunComparer(
+                    diff_only=True,
+                    layout=wr.Layout(x=0, y=y, w=REPORT_TOTAL_WIDTH, h=run_comparer_height),
+                )
+            )
+            y += run_comparer_height
 
         panel_grid = wr.PanelGrid(
             runsets=[runset],
@@ -316,8 +370,10 @@ def generate_commands(
                 # Apply parameter overrides
                 base_config_dict = base_config.model_dump(mode="json")
                 config_dict_with_overrides = apply_nested_updates(base_config_dict, param_combo)
-                # Also override the wandb project
+                # Also override the wandb project and run name
                 config_dict_with_overrides["wandb_project"] = project
+                wandb_run_name = f"{experiment}-{generate_run_name(param_combo)}"
+                config_dict_with_overrides["wandb_run_name"] = wandb_run_name
                 config_with_overrides = Config(**config_dict_with_overrides)
 
                 # Convert to JSON string
@@ -387,6 +443,7 @@ def main(
     log_format: LogFormat = "default",
     create_snapshot: bool = True,
     use_wandb: bool = True,
+    report_title: str | None = None,
 ) -> None:
     """SPD runner for experiments with optional parameter sweeps.
 
@@ -409,6 +466,7 @@ def main(
             (default: True).
         use_wandb: Use W&B for logging and tracking (default: True).
             If set to false, `create_report` must also be false.
+        report_title: Title for the W&B report (default: None). Will be generated if not provided.
 
     Examples:
         # Run subset of experiments locally
@@ -432,11 +490,18 @@ def main(
         # Use custom W&B project
         spd-run --experiments tms_5-2 --project my-spd-project
     """
+    # setup
+    # ==========================================================================================
 
     logger.set_format("console", log_format)
 
+    # Determine job name
+    job_name: str = f"spd-{job_suffix}" if job_suffix else "spd"
+    run_id: str = generate_run_id()
+    logger.info(f"Run ID: {run_id}")
+
     # Determine the sweep parameters file
-    sweep_params_file = None
+    sweep_params_file: str | None = None
     if sweep:
         sweep_params_file = "sweep_params.yaml" if isinstance(sweep, bool) else sweep
 
@@ -447,6 +512,7 @@ def main(
     else:
         experiments_list = [exp.strip() for exp in experiments.split(",")]
 
+    # Agent count
     if n_agents is None:
         if sweep_params_file is None:
             n_agents = len(experiments_list)
@@ -456,27 +522,33 @@ def main(
             )
 
     # Validate experiment names
-    invalid_experiments = [exp for exp in experiments_list if exp not in EXPERIMENT_REGISTRY]
+    invalid_experiments: list[str] = [
+        exp for exp in experiments_list if exp not in EXPERIMENT_REGISTRY
+    ]
     if invalid_experiments:
-        available = ", ".join(EXPERIMENT_REGISTRY.keys())
+        available: str = ", ".join(EXPERIMENT_REGISTRY.keys())
         raise ValueError(
             f"Invalid experiments: {invalid_experiments}. Available experiments: {available}"
         )
 
-    # generate commands
-    run_id = generate_run_id()
-
-    logger.info(f"Run ID: {run_id}")
     logger.info(f"Experiments: {', '.join(experiments_list)}")
 
-    commands = generate_commands(
-        experiments_list=experiments_list,
-        run_id=run_id,
-        sweep_params_file=sweep_params_file,
-        project=project,
-    )
+    # wandb and snapshot setup
+    # ==========================================================================================
 
-    # wandb setup
+    # set up snapshot branch and commit hash
+    if not local or use_wandb:
+        snapshot_branch: str
+        commit_hash: str
+
+        if create_snapshot:
+            snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="run")
+            logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
+        else:
+            snapshot_branch = repo_current_branch()
+            commit_hash = "none"
+            logger.info(f"Using current branch: {snapshot_branch} ({commit_hash})")
+
     if use_wandb:
         # Ensure the W&B project exists
         ensure_project_exists(project)
@@ -491,7 +563,16 @@ def main(
         # Create report if requested
         report_url: str | None = None
         if create_report and len(experiments_list) > 1:
-            report_url = create_wandb_report(run_id, experiments_list, project)
+            report_url = create_wandb_report(
+                report_title=report_title or f"SPD Run Report - {run_id}",
+                run_id=run_id,
+                # snapshot branch and commit hash will exist, type checker doesn't realize this
+                branch_name=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
+                commit_hash=commit_hash,  # pyright: ignore[reportPossiblyUnboundVariable]
+                experiments_list=experiments_list,
+                include_run_comparer=sweep_params_file is not None,
+                project=project,
+            )
 
         # Print clean summary after wandb messages
         logger.values(
@@ -508,20 +589,18 @@ def main(
             "Set `use_wandb=True` to enable."
         )
 
-    # Determine job name
-    job_name: str = f"spd-{job_suffix}" if job_suffix else "spd"
+    # generate and run commands
+    # ==========================================================================================
+    commands: list[str] = generate_commands(
+        experiments_list=experiments_list,
+        run_id=run_id,
+        sweep_params_file=sweep_params_file,
+        project=project,
+    )
 
     if local:
         run_commands_locally(commands)
     else:
-        snapshot_branch: str
-        if create_snapshot:
-            snapshot_branch = create_git_snapshot(branch_name_prefix="run")
-            logger.info(f"Created git snapshot branch: {snapshot_branch}")
-        else:
-            snapshot_branch = repo_current_branch()
-            logger.info(f"Using current branch: {snapshot_branch}")
-
         # Submit to SLURM
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -532,7 +611,8 @@ def main(
                 job_name=job_name,
                 commands=commands,
                 cpu=cpu,
-                snapshot_branch=snapshot_branch,
+                # again -- local is false, so snapshot_branch will exist
+                snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
                 max_concurrent_tasks=n_agents,
             )
 
