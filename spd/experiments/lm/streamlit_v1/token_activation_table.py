@@ -240,12 +240,14 @@ def render_component_token_table_tab(model_data: ModelData):
                     value=512,
                     help="Maximum sequence length for tokenization",
                 )
-                min_act_frequency = st.number_input(
+                min_act_frequency = st.slider(
                     "Minimum Token Activation Frequency",
-                    min_value=1,
-                    max_value=1000,
-                    value=2,
-                    help="Only show tokens that activate at least this many times",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.5,
+                    step=0.01,
+                    format="%.3f",
+                    help="Minimum fraction of token appearances where component activates (0-1)",
                 )
 
         run_analysis = st.form_submit_button("Run Analysis", type="primary")
@@ -286,7 +288,7 @@ def render_component_token_table_tab(model_data: ModelData):
             "token_counts", {}
         )  # Rename to avoid shadowing
         l0_scores: dict[str, float] = results.get("l0_scores", {})
-        min_act_frequency: int = results.get("min_act_frequency", 1)
+        min_act_frequency: float = results.get("min_act_frequency", 0.01)
 
         st.success(f"Analysis complete! Processed {total_tokens:,} tokens.")
 
@@ -326,8 +328,16 @@ def render_component_token_table_tab(model_data: ModelData):
                     # Create list of tokens with their mean CI values and counts
                     token_ci_count_tuples: list[tuple[str, float, int, int]] = []
                     for token_id, count in token_counts.items():
-                        # Filter by minimum token frequency
-                        if count < min_act_frequency:
+                        # Get total count for this token
+                        total_count = total_token_counts.get(token_id, 0)
+                        if total_count == 0:
+                            continue
+
+                        # Calculate activation fraction
+                        activation_fraction = count / total_count
+
+                        # Filter by minimum token activation fraction
+                        if activation_fraction < min_act_frequency:
                             continue
 
                         try:
@@ -343,8 +353,6 @@ def render_component_token_table_tab(model_data: ModelData):
                                 token_id, []
                             )
                             mean_ci = sum(ci_vals) / len(ci_vals) if ci_vals else 0.0
-                            # Get total count for this token
-                            total_count = total_token_counts.get(token_id, 0)
                             assert total_count >= count, (
                                 f"Token {token_id} has more activations ({count}) than total appearances ({total_count})"
                             )
