@@ -1,0 +1,17 @@
+# Sweep parameters for cosine similarity testing
+# This sweep will test different cosine similarity coefficients for different C values
+
+# Global parameters (applied to all experiments)
+global:
+  seed:
+    values: [0, 1, 2]
+
+# Experiment-specific parameters
+tms_5-2_cosine_sweep:
+  # Test different C values
+  C:
+    values: [5, 7, 10, 15, 20]
+  
+  # Test different cosine similarity coefficients
+  cosine_similarity_coeff:
+    values: [0.0, 1e-2, 1.0]
