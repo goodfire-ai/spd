@@ -1,15 +1,119 @@
+from collections.abc import Callable
+from functools import partial
+from typing import cast, override
+
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
 from torch.utils.data import DataLoader
 
+from spd.configs import (
+    BernoulliSampleConfig,
+    ConcreteSampleConfig,
+    HardConcreteSampleConfig,
+    UniformSampleConfig,
+)
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
+
+SampleConfig = (
+    UniformSampleConfig | BernoulliSampleConfig | ConcreteSampleConfig | HardConcreteSampleConfig
+)
+
+
+def sample_uniform_to_1(min: Tensor) -> Tensor:
+    return min + (1 - min) * torch.rand_like(min)
+
+
+class BernoulliSTE(torch.autograd.Function):
+    @override
+    @staticmethod
+    def forward(
+        ctx: torch.autograd.function.FunctionCtx,
+        sigma: Tensor,
+        stochastic: bool,
+    ) -> Tensor:
+        ctx.save_for_backward(sigma)
+        z = torch.bernoulli(sigma) if stochastic else (sigma >= 0.5).to(sigma.dtype)
+
+        return z
+
+    @override
+    @staticmethod
+    def backward(  # pyright: ignore [reportIncompatibleMethodOverride]
+        ctx: torch.autograd.function.FunctionCtx,
+        grad_outputs: Tensor,
+    ) -> tuple[Tensor, None]:
+        return grad_outputs.clone(), None
+
+
+def bernoulli_ste(x: Tensor, min: float) -> Tensor:
+    input = x * (1 - min) + min
+    return BernoulliSTE.apply(input, True)  # pyright: ignore [reportReturnType]
+
+
+class HeavisideSTE(torch.autograd.Function):
+    @override
+    @staticmethod
+    def forward(
+        ctx: torch.autograd.function.FunctionCtx,
+        x: Tensor,
+    ) -> Tensor:
+        return (x > 0).to(x.dtype)
+
+    @override
+    @staticmethod
+    def backward(  # pyright: ignore [reportIncompatibleMethodOverride]
+        ctx: torch.autograd.function.FunctionCtx,
+        grad_outputs: Tensor,
+    ) -> Tensor:
+        return grad_outputs.clone()
+
+
+def _concrete(log_alpha: Tensor, temperature: float) -> Tensor:
+    """Sample from the concrete distribution."""
+    uniform = torch.rand_like(log_alpha).clamp(1e-8, 1 - 1e-8)
+    gumbel_noise = -torch.log(-torch.log(uniform))
+    concrete_sample = torch.sigmoid((log_alpha + gumbel_noise) / temperature)
+    return concrete_sample
+
+
+def concrete_gate(x: Tensor, temperature: float) -> Tensor:
+    """Sample from the concrete distribution for gates."""
+    return _concrete(x, temperature)
+
+
+def hard_concrete_gate(x: Tensor, temperature: float, stretch: float) -> Tensor:
+    """Sample from the hard concrete distribution with stretch."""
+    concrete_sample = _concrete(x, temperature)
+    # Apply stretch and clamp
+    stretched = concrete_sample * stretch
+    hard_concrete = torch.clamp(stretched, 0, 1)
+    # Apply straight-through estimator for hard thresholding
+    hard_mask = cast(Tensor, HeavisideSTE.apply(stretched - 1))
+    return hard_concrete * (1 - hard_mask) + hard_mask
+
+
+def get_sample_fn(sample_config: SampleConfig) -> Callable[[Tensor], Tensor]:
+    """Get the appropriate sampling function based on the sample config."""
+    if sample_config.sample_type == "uniform":
+        return sample_uniform_to_1
+    elif sample_config.sample_type == "bernoulli":
+        return partial(bernoulli_ste, min=sample_config.min)
+    elif sample_config.sample_type == "concrete":
+        return partial(concrete_gate, temperature=sample_config.temperature)
+    elif sample_config.sample_type == "hard_concrete":
+        return partial(
+            hard_concrete_gate, temperature=sample_config.temperature, stretch=sample_config.stretch
+        )
+    else:
+        raise ValueError(f"Unknown sample type: {sample_config.sample_type}")
 
 
 def calc_stochastic_masks(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     n_mask_samples: int,
+    sample_config: SampleConfig,
 ) -> list[dict[str, Float[Tensor, "... C"]]]:
     """Calculate n_mask_samples stochastic masks with the formula `ci + (1 - ci) * rand_unif(0,1)`.
 
@@ -20,11 +124,10 @@ def calc_stochastic_masks(
     Return:
         A list of n_mask_samples dictionaries, each containing the stochastic masks for each layer.
     """
+    sample = get_sample_fn(sample_config)
     stochastic_masks = []
     for _ in range(n_mask_samples):
-        stochastic_masks.append(
-            {layer: ci + (1 - ci) * torch.rand_like(ci) for layer, ci in causal_importances.items()}
-        )
+        stochastic_masks.append({layer: sample(ci) for layer, ci in causal_importances.items()})
     return stochastic_masks
 
 

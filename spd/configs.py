@@ -146,6 +146,57 @@ class LMTaskConfig(BaseModel):
     )
 
 
+class SampleConfig(BaseModel):
+    sample_type: Literal["uniform", "bernoulli"] = Field(
+        default="uniform",
+        description="Type of sample to use for stochastic reconstruction",
+    )
+
+
+class UniformSampleConfig(BaseModel):
+    sample_type: Literal["uniform"] = Field(
+        default="uniform",
+        description="Type of sample to use for stochastic reconstruction",
+    )
+
+
+class BernoulliSampleConfig(BaseModel):
+    sample_type: Literal["bernoulli"] = Field(
+        default="bernoulli",
+        description="Type of sample to use for stochastic reconstruction",
+    )
+    min: float = Field(
+        default=0.0,
+        description="Minimum value for stochastic reconstruction",
+    )
+
+
+class ConcreteSampleConfig(BaseModel):
+    sample_type: Literal["concrete"] = Field(
+        default="concrete",
+        description="Type of sample to use for stochastic reconstruction",
+    )
+    temperature: float = Field(
+        default=0.3,
+        description="Temperature parameter for concrete distribution",
+    )
+
+
+class HardConcreteSampleConfig(BaseModel):
+    sample_type: Literal["hard_concrete"] = Field(
+        default="hard_concrete",
+        description="Type of sample to use for stochastic reconstruction",
+    )
+    temperature: float = Field(
+        default=0.3,
+        description="Temperature parameter for hard concrete distribution",
+    )
+    stretch: float = Field(
+        default=1.1,
+        description="Stretch parameter for hard concrete distribution",
+    )
+
+
 class Config(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     # --- WandB
@@ -167,6 +218,16 @@ class Config(BaseModel):
     C: PositiveInt = Field(
         ...,
         description="The number of subcomponents per layer",
+    )
+    sample_config: (
+        UniformSampleConfig
+        | BernoulliSampleConfig
+        | ConcreteSampleConfig
+        | HardConcreteSampleConfig
+    ) = Field(
+        default_factory=UniformSampleConfig,
+        discriminator="sample_type",
+        description="Configuration for the sample function used for stochastic reconstruction",
     )
     n_mask_samples: PositiveInt = Field(
         ...,
