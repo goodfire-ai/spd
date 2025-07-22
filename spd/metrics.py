@@ -4,8 +4,9 @@ This file contains the default metrics and visualizations that are logged during
 These are separate from user-defined metrics/figures to allow for easier comparison and extension.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any, Protocol
 
 import wandb
 from jaxtyping import Float
@@ -33,6 +34,15 @@ class CreateMetricsInputs:
     device: str
     config: Config
     step: int
+
+
+class CreateMetricsFn(Protocol):
+    def __call__(
+        self,
+        inputs: CreateMetricsInputs,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Mapping[str, float | int | wandb.Table]: ...
 
 
 def lm_kl(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table]:
@@ -113,7 +123,7 @@ def create_metrics(
 
     for fn_cfg in config.metrics_fns:
         if (fn := METRICS_FNS.get(fn_cfg.name)) is None:
-            continue
+            raise ValueError(f"Metric {fn_cfg.name} not found in METRICS_FNS")
 
         result = fn(inputs, **fn_cfg.extra_kwargs)
 
@@ -125,7 +135,7 @@ def create_metrics(
     return metrics
 
 
-METRICS_FNS: dict[str, Callable[..., Mapping[str, float | int | wandb.Table]]] = {
+METRICS_FNS: dict[str, CreateMetricsFn] = {
     fn.__name__: fn
     for fn in [
         ci_l0,

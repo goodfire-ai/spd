@@ -4,8 +4,9 @@ This file contains the default metrics and visualizations that are logged during
 These are separate from user-defined metrics/figures to allow for easier comparison and extension.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any, Protocol
 
 import torch
 from jaxtyping import Float, Int
@@ -41,6 +42,15 @@ class CreateFiguresInputs:
         | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
     )
     n_eval_steps: int
+
+
+class CreateFiguresFn(Protocol):
+    def __call__(
+        self,
+        inputs: CreateFiguresInputs,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Mapping[str, plt.Figure]: ...
 
 
 def ci_histograms(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
@@ -141,7 +151,7 @@ def create_figures(
     return fig_dict
 
 
-FIGURES_FNS: dict[str, Callable[..., Mapping[str, plt.Figure]]] = {
+FIGURES_FNS: dict[str, CreateFiguresFn] = {
     fn.__name__: fn
     for fn in [
         ci_histograms,
