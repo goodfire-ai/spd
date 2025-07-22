@@ -11,8 +11,6 @@ make install-dev  # To install the package, dev requirements, pre-commit hooks, 
 make install  # To install the package (runs `pip install -e .`) and create user files
 ```
 
-Both installation commands will automatically create `spd/user_metrics_and_figs.py` from `spd/user_metrics_and_figs.py.example` if it doesn't already exist. This file allows you to define custom metrics and visualizations for SPD experiments without modifying the core framework code.
-
 ## Usage
 Place your wandb information in a .env file. See .env.example for an example.
 
@@ -118,14 +116,10 @@ settings, copy `.vscode/settings-example.json` to `.vscode/settings.json`.
 
 Please read our [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to contribute to this project, including pull request requirements and review processes.
 
-### Custom Metrics and Visualizations
+### Custom Metrics and Figures
 
-The framework supports user-defined metrics and visualizations through `spd/user_metrics_and_figs.py`. This file is automatically created from a template during installation and provides two main functions:
-
-- `compute_user_metrics()` - Define custom metrics logged during SPD optimization
-- `create_user_figures()` - Create custom matplotlib figures during optimization
-
-These metrics will be logged to a local file as well as wandb. You can modify this file to add your own experiment-specific metrics and visualizations without changing the core framework code.
+Metrics and figures are defined in `spd/metrics.py` and `spd/figures.py`.
+These files expose dictionaries of functions that can be selected and parameterized in the config of a given experiment.
 
 ### Development Commands
 
