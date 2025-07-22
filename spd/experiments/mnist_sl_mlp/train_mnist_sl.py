@@ -37,6 +37,11 @@ class TrainingConfig:
     # Data parameters
     noise_size: int = 60_000
     
+    # Initialization control
+    shared_initialization: bool = True  # True for subliminal learning, False for cross-model
+    teacher_seed: int | None = None  # If None, uses main seed
+    student_seed: int | None = None  # If None, uses main seed
+    
     # Misc
     seed: int = 0
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -324,22 +329,18 @@ def evaluate(
 
 def train_teacher(
     config: TrainingConfig,
-    initial_state: dict[str, Tensor],
+    teacher: MLP,
 ) -> tuple[MLP, TrainingMetrics]:
     """Train the teacher model on MNIST digit classification.
     
     Args:
         config: Training configuration
-        initial_state: Initial model state dict for consistent initialization
+        teacher: Teacher model to train
         
     Returns:
         Tuple of (trained_teacher_model, training_metrics)
     """
     logger.info("Training teacher model on MNIST digits")
-    
-    # Initialize model
-    teacher: MLP = MLP(config.hidden, config.aux_outputs)
-    teacher.load_state_dict(initial_state, strict=True)
     
     # Setup optimizer
     optimizer: torch.optim.Adam = torch.optim.Adam(teacher.parameters(), lr=config.lr)
@@ -402,24 +403,20 @@ def train_teacher(
 
 def train_student(
     config: TrainingConfig,
-    initial_state: dict[str, Tensor],
+    student: MLP,
     teacher: MLP,
 ) -> tuple[MLP, TrainingMetrics]:
     """Train the student model via distillation on noise data.
     
     Args:
         config: Training configuration
-        initial_state: Initial model state dict for consistent initialization
+        student: Student model to train
         teacher: Trained teacher model for distillation
         
     Returns:
         Tuple of (trained_student_model, training_metrics)
     """
     logger.info("Training student model via distillation on noise")
-    
-    # Initialize model
-    student: MLP = MLP(config.hidden, config.aux_outputs)
-    student.load_state_dict(initial_state, strict=True)
     
     # Setup optimizer
     optimizer: torch.optim.Adam = torch.optim.Adam(student.parameters(), lr=config.lr)
@@ -486,7 +483,12 @@ def train_student(
     return student, metrics
 
 
-def train_subliminal_models(config: TrainingConfig) -> TrainingResults:
+def train_subliminal_models(
+    config: TrainingConfig,
+    train_dataset: torchvision.datasets.MNIST | None = None,
+    test_dataset: torchvision.datasets.MNIST | None = None,
+    noise_dataset: NoiseDataset | None = None,
+) -> TrainingResults:
     """Train teacher and student models for MNIST subliminal learning.
     
     Args:
@@ -500,20 +502,32 @@ def train_subliminal_models(config: TrainingConfig) -> TrainingResults:
     # Create save directory
     config.save_dir.mkdir(parents=True, exist_ok=True)
     
-    # Get shared initialization
-    logger.info("Creating shared model initialization")
-    init_model: MLP = MLP(config.hidden, config.aux_outputs)
-    init_state: dict[str, Tensor] = init_model.state_dict()
+    # Create teacher model
+    teacher_seed: int = config.teacher_seed if config.teacher_seed is not None else config.seed
+    set_seed(teacher_seed)
+    teacher: MLP = MLP(config.hidden, config.aux_outputs)
+    
+    # Create student model
+    student: MLP
+    if config.shared_initialization:
+        logger.info("Using shared initialization for subliminal learning")
+        student = MLP(config.hidden, config.aux_outputs)
+        student.load_state_dict(teacher.state_dict())
+    else:
+        logger.info("Using different initialization for cross-model comparison")
+        student_seed: int = config.student_seed if config.student_seed is not None else config.seed + 1000
+        set_seed(student_seed)
+        student = MLP(config.hidden, config.aux_outputs)
+    
+    # Load datasets if not provided
+    if train_dataset is None or test_dataset is None:
+        train_dataset, test_dataset = get_mnist_datasets(str(config.data_dir))
+    if noise_dataset is None:
+        noise_dataset = NoiseDataset(config.noise_size, config.seed)
     
     # Train teacher
-    teacher: MLP
     teacher_metrics: TrainingMetrics
-    teacher, teacher_metrics = train_teacher(config, init_state)
-    
-    # Evaluate teacher
-    train_dataset: torchvision.datasets.MNIST
-    test_dataset: torchvision.datasets.MNIST
-    train_dataset, test_dataset = get_mnist_datasets(str(config.data_dir))
+    teacher, teacher_metrics = train_teacher(config, teacher)
     
     test_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]] = DataLoader(
         test_dataset,
@@ -525,9 +539,8 @@ def train_subliminal_models(config: TrainingConfig) -> TrainingResults:
     teacher_acc: float = evaluate(teacher, test_loader, config.device, "teacher")
     
     # Train student
-    student: MLP
     student_metrics: TrainingMetrics
-    student, student_metrics = train_student(config, init_state, teacher)
+    student, student_metrics = train_student(config, student, teacher)
     
     # Evaluate student
     student_acc: float = evaluate(student, test_loader, config.device, "student")
