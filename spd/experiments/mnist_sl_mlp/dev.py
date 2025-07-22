@@ -1,212 +1,151 @@
 #%% imports
-from __future__ import annotations
-
-import argparse
-import random
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterator, Tuple, TypeAlias
+from typing import Any
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch import Tensor
 import torchvision
-import torchvision.transforms as T
 from jaxtyping import Float, Int
-from torch.utils.data import DataLoader, Dataset
+from matplotlib.figure import Figure
+from torch import Tensor
+from torch.utils.data import DataLoader
 
+# Import from the new modules
+from spd.experiments.mnist_sl_mlp.dataset import NoiseDataset, get_mnist_datasets
+from spd.experiments.mnist_sl_mlp.models import MLP
+from spd.experiments.mnist_sl_mlp.plotting import (
+    create_evaluation_report,
+    plot_auxiliary_outputs_distribution,
+    plot_hidden_activations,
+    plot_losses,
+    plot_training_curves,
+)
+from spd.experiments.mnist_sl_mlp.train_mnist_sl import (
+    TrainingConfig,
+    TrainingResults,
+    set_seed,
+    train_subliminal_models,
+)
+from spd.log import logger
 
-#%% config
-@dataclass
-class Config:
-    """Hyper-parameters for the subliminal-learning MNIST experiment."""
-    batch_size: int = 256
-    num_workers: int = 4
-    hidden: int = 256
-    aux_outputs: int = 3
-    teacher_epochs: int = 5
-    student_epochs: int = 5
-    lr: float = 1e-3
-    noise_size: int = 60_000
-    seed: int = 0
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    log_every: int = 100
-    save_dir: Path = Path("./checkpoints")
+#%% run training with custom config
+config: TrainingConfig = TrainingConfig(
+    hidden=256,
+    aux_outputs=3,
+    batch_size=256,
+    teacher_epochs=5,
+    student_epochs=5,
+    lr=1e-3,
+    noise_size=60_000,
+    seed=0,
+    device="cuda:0" if torch.cuda.is_available() else "cpu",
+)
 
-#%% utils
-def set_seed(seed: int) -> None:
-    random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+# Run the main training
+logger.info("Starting MNIST subliminal learning experiment")
+results: TrainingResults = train_subliminal_models(config)
 
-def accuracy(
-    logits: Float[Tensor, "batch 10"],
-    labels: Int[Tensor, "batch"],
-) -> float:
-    preds: Int[Tensor, "batch"] = logits.argmax(dim=1)
-    return float((preds == labels).float().mean().item())
+#%% visualize training losses
+fig_losses: Figure = plot_losses(
+    results.teacher_losses,
+    results.student_losses,
+    save_path=config.save_dir / "loss_curves.png"
+)
 
-#%% model
-class MLP(nn.Module):
-    """Two-layer MLP with digit and auxiliary heads."""
+#%% create evaluation report using the trained models directly
+train_dataset: torchvision.datasets.MNIST
+test_dataset: torchvision.datasets.MNIST
+train_dataset, test_dataset = get_mnist_datasets(str(config.data_dir))
 
-    def __init__(self, hidden: int, aux_outputs: int) -> None:
-        super().__init__()
-        self.backbone: nn.Sequential = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(28 * 28, hidden),
-            nn.ReLU(),
-            nn.Linear(hidden, hidden),
-            nn.ReLU(),
-        )
-        self.head_digits: nn.Linear = nn.Linear(hidden, 10)
-        self.head_aux: nn.Linear = nn.Linear(hidden, aux_outputs)
+test_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]] = DataLoader(
+    test_dataset,
+    batch_size=config.batch_size,
+    shuffle=False,
+    num_workers=config.num_workers,
+    pin_memory=True,
+)
 
-    def forward(
-        self, x: Float[Tensor, "batch 1 28 28"]
-    ) -> Tuple[Float[Tensor, "batch 10"], Float[Tensor, "batch aux"]]:
-        h: Float[Tensor, "batch hidden"] = self.backbone(x)
-        return self.head_digits(h), self.head_aux(h)
+# Create comprehensive evaluation report
+report_dir: Path = config.save_dir / "evaluation_report"
+training_info: dict[str, Any] = {
+    "teacher_losses": results.teacher_losses,
+    "student_losses": results.student_losses,
+    "teacher_accuracy": results.teacher_accuracy,
+    "student_accuracy": results.student_accuracy,
+}
 
-#%% data
-class NoiseDataset(Dataset[Tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]]):
-    """Uniform random noise images."""
+create_evaluation_report(
+    teacher=results.teacher,
+    student=results.student,
+    training_info=training_info,
+    test_loader=test_loader,
+    save_dir=report_dir,
+)
 
-    def __init__(self, n: int, seed: int) -> None:
-        rng: torch.Generator = torch.Generator().manual_seed(seed)
-        self.data: Float[Tensor, "n 1 28 28"] = torch.rand((n, 1, 28, 28), generator=rng)
+#%% plot hidden activations
+fig_teacher_activations: Figure = plot_hidden_activations(
+    results.teacher,
+    test_loader,
+    num_samples=200,
+    save_path=report_dir / "teacher_activations_detailed.png"
+)
 
-    def __len__(self) -> int:  # noqa: D401
-        return int(self.data.shape[0])
+fig_student_activations: Figure = plot_hidden_activations(
+    results.student,
+    test_loader,
+    num_samples=200,
+    save_path=report_dir / "student_activations_detailed.png"
+)
 
-    def __getitem__(
-        self, idx: int
-    ) -> Tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]:
-        return self.data[idx], torch.tensor(0, dtype=torch.long)
+#%% experiment with different configurations
+logger.info("Running experiment with different auxiliary output sizes")
 
-#%% generic train loop
-StepFn: TypeAlias = Callable[
-    [nn.Module, Float[Tensor, "batch 1 28 28"], Int[Tensor, "batch"]],
-    Float[Tensor, ""],
-]
+# Dictionary to store results for different configurations
+experiment_results: dict[int, TrainingResults] = {}
 
-def train(
-    model: nn.Module,
-    loader: DataLoader[Tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]],
-    opt: torch.optim.Optimizer,
-    epochs: int,
-    step_fn: StepFn,
-    cfg: Config,
-    tag: str,
-) -> None:
-    """Generic SGD loop. `step_fn` returns the scalar loss."""
-    model.to(cfg.device)
-    for epoch in range(epochs):
-        model.train()
-        for step, (x, y) in enumerate(loader):
-            x, y = x.to(cfg.device), y.to(cfg.device)
-            loss: Float[Tensor, ""] = step_fn(model, x, y)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            if step % cfg.log_every == 0:
-                print(f"[{tag}] epoch={epoch} step={step} loss={float(loss):.4f}")
-
-#%% evaluation
-@torch.inference_mode()
-def evaluate(
-    model: MLP,
-    loader: DataLoader[Tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]],
-    cfg: Config,
-    tag: str,
-) -> float:
-    model.to(cfg.device).eval()
-    correct: int = 0
-    total: int = 0
-    for x, y in loader:
-        x, y = x.to(cfg.device), y.to(cfg.device)
-        digit_logits: Float[Tensor, "batch 10"]
-        digit_logits, _ = model(x)
-        correct += int((digit_logits.argmax(1) == y).sum().item())
-        total += int(y.size(0))
-    acc: float = correct / total
-    print(f"[{tag}] test accuracy: {acc:.2%}")
-    return acc
-
-#%% main routine
-def main(cfg: Config) -> None:
-    set_seed(cfg.seed)
-
-    # datasets
-    tf: T.Compose = T.Compose(
-        [T.ToTensor(), T.ConvertImageDtype(torch.float32)]
+# Try different numbers of auxiliary outputs
+aux_outputs_list: list[int] = [1, 5, 10]
+for aux_outputs in aux_outputs_list:
+    logger.info(f"Training with aux_outputs={aux_outputs}")
+    
+    exp_config: TrainingConfig = TrainingConfig(
+        hidden=256,
+        aux_outputs=aux_outputs,
+        teacher_epochs=3,
+        student_epochs=3,
+        save_dir=config.save_dir / f"exp_aux_{aux_outputs}",
     )
-    train_ds: torchvision.datasets.MNIST = torchvision.datasets.MNIST(
-        "data", train=True, download=True, transform=tf
+    
+    # Run training
+    exp_results: TrainingResults = train_subliminal_models(exp_config)
+    experiment_results[aux_outputs] = exp_results
+    
+    # Quick evaluation - use the same test loader
+    test_loader_exp: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]] = DataLoader(
+        test_dataset, 
+        batch_size=256, 
+        shuffle=False
     )
-    test_ds: torchvision.datasets.MNIST = torchvision.datasets.MNIST(
-        "data", train=False, download=True, transform=tf
+    
+    # Plot auxiliary distributions for this experiment
+    fig_aux_dist: Figure = plot_auxiliary_outputs_distribution(
+        exp_results.teacher,
+        exp_results.student,
+        test_loader_exp,
+        save_path=exp_config.save_dir / "aux_distributions.png"
     )
-    train_loader: DataLoader = DataLoader(
-        train_ds, cfg.batch_size, True, num_workers=cfg.num_workers, pin_memory=True
-    )
-    test_loader: DataLoader = DataLoader(
-        test_ds, cfg.batch_size, False, num_workers=cfg.num_workers, pin_memory=True
+    
+    # Plot losses for this experiment
+    fig_exp_losses: Figure = plot_losses(
+        exp_results.teacher_losses,
+        exp_results.student_losses,
+        save_path=exp_config.save_dir / "loss_curves.png"
     )
 
-    noise_ds: NoiseDataset = NoiseDataset(cfg.noise_size, cfg.seed)
-    noise_loader: DataLoader = DataLoader(
-        noise_ds, cfg.batch_size, True, num_workers=cfg.num_workers, pin_memory=True
+#%% compare results across experiments
+logger.info("Comparing results across different auxiliary output sizes:")
+for aux_outputs, exp_results in experiment_results.items():
+    logger.info(
+        f"aux_outputs={aux_outputs}: "
+        f"teacher_acc={exp_results.teacher_accuracy:.2%}, "
+        f"student_acc={exp_results.student_accuracy:.2%}"
     )
-
-    # shared initialization
-    init_model: MLP = MLP(cfg.hidden, cfg.aux_outputs)
-    init_state: dict[str, Tensor] = init_model.state_dict()
-
-    # teacher
-    teacher: MLP = MLP(cfg.hidden, cfg.aux_outputs)
-    teacher.load_state_dict(init_state, strict=True)
-    teacher_opt: torch.optim.Adam = torch.optim.Adam(teacher.parameters(), lr=cfg.lr)
-
-    def teacher_step(
-        m: MLP, x: Float[Tensor, "batch 1 28 28"], y: Int[Tensor, "batch"]
-    ) -> Float[Tensor, ""]:
-        digit_logits: Float[Tensor, "batch 10"]
-        digit_logits, _ = m(x)
-        return F.cross_entropy(digit_logits, y)
-
-    train(teacher, train_loader, teacher_opt, cfg.teacher_epochs, teacher_step, cfg, "teacher")
-    evaluate(teacher, test_loader, cfg, "teacher")
-
-    # student
-    student: MLP = MLP(cfg.hidden, cfg.aux_outputs)
-    student.load_state_dict(init_state, strict=True)
-    student_opt: torch.optim.Adam = torch.optim.Adam(student.parameters(), lr=cfg.lr)
-    teacher.eval()
-
-    kl_div: nn.KLDivLoss = nn.KLDivLoss(reduction="batchmean")
-
-    def student_step(
-        m: MLP, x: Float[Tensor, "batch 1 28 28"], _: Int[Tensor, "batch"]
-    ) -> Float[Tensor, ""]:
-        with torch.no_grad():
-            _: Float[Tensor, "batch 10"]
-            _, t_aux = teacher(x)
-        _: Float[Tensor, "batch 10"]
-        _, s_aux = m(x)
-        return kl_div(
-            F.log_softmax(s_aux, dim=1),
-            F.softmax(t_aux, dim=1),
-        )
-
-    train(student, noise_loader, student_opt, cfg.student_epochs, student_step, cfg, "student")
-    evaluate(student, test_loader, cfg, "student")
-
-    # checkpoints
-    cfg.save_dir.mkdir(exist_ok=True)
-    torch.save(teacher.state_dict(), cfg.save_dir / "teacher.pt")
-    torch.save(student.state_dict(), cfg.save_dir / "student.pt")
-
-cfg: Config = Config(device="cuda:0")
-main(cfg)
