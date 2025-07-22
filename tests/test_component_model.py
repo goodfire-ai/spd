@@ -195,7 +195,6 @@ def test_from_pretrained_model_works():
 
         base_model_path = base_model_dir / "model.pth"
         save_file(target_model.state_dict(), base_model_path)
-        # save_file(target_model.state_dict(), base_model_path)
 
         config = Config(
             pretrained_model_class="tests.test_component_model.SimpleTestModel",
