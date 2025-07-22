@@ -228,7 +228,7 @@ class ComponentModel(nn.Module):
         return out
 
     @contextmanager
-    def _replaced_modules(self, masks: dict[str, Tensor]):
+    def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
         """Context manager for temporarily replacing modules with components.
 
         Args:

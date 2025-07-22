@@ -1,6 +1,6 @@
 import torch
 from jaxtyping import Float, Int
-from torch import Tensor, nn
+from torch import Tensor
 from torch.utils.data import DataLoader
 
 from spd.models.component_model import ComponentModel
@@ -40,7 +40,7 @@ def calc_ci_l_zero(
     return ci_l_zero
 
 
-def component_activation_statistics[T: nn.Module](
+def component_activation_statistics(
     model: ComponentModel,
     dataloader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
