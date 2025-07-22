@@ -29,7 +29,7 @@ def extract_ci_val_figures(run_id: str, input_magnitude: float = 0.75) -> dict[s
     Returns:
         Dictionary containing causal importances data and metadata
     """
-    model, config, _ = ComponentModel[ResidualMLP | TMSModel].from_pretrained(run_id)
+    model, config, _ = ComponentModel.from_pretrained(run_id)
     assert isinstance(model.patched_model, ResidualMLP | TMSModel), (
         "patched model must be a ResidualMLP or TMSModel"
     )
@@ -351,8 +351,8 @@ def compute_patched_weight_neuron_contributions(
 
 
 def compute_spd_weight_neuron_contributions(
-    components: dict[str, Components],
     patched_model: ResidualMLP,
+    components: dict[str, Components],
     n_features: int | None = None,
 ) -> Float[Tensor, "n_layers n_features C d_mlp"]:
     """Compute per-neuron contribution strengths for the *SPD* factorisation.
@@ -406,30 +406,31 @@ def compute_spd_weight_neuron_contributions(
 
 
 def plot_spd_feature_contributions_truncated(
-    model: ComponentModel[ResidualMLP],
+    patched_model: ResidualMLP,
+    components: dict[str, Components],
     n_features: int | None = 50,
 ):
-    n_layers = model.patched_model.config.n_layers
-    n_features = model.patched_model.config.n_features if n_features is None else n_features
-    d_mlp = model.patched_model.config.d_mlp
+    n_layers = patched_model.config.n_layers
+    n_features = patched_model.config.n_features if n_features is None else n_features
+    d_mlp = patched_model.config.d_mlp
 
     # Assert that there are no biases
-    assert not model.patched_model.config.in_bias and not model.patched_model.config.out_bias, (
+    assert not patched_model.config.in_bias and not patched_model.config.out_bias, (
         "Biases are not supported for these plots"
     )
 
     # --- Compute neuron contribution tensors ---
     relu_conns: Float[Tensor, "n_layers n_features d_mlp"] = (
         compute_patched_weight_neuron_contributions(
-            patched_model=model.patched_model,
+            patched_model=patched_model,
             n_features=n_features,
         )
     )
 
     relu_conns_spd: Float[Tensor, "n_layers n_features C d_mlp"] = (
         compute_spd_weight_neuron_contributions(
-            components=model.components,
-            patched_model=model.patched_model,
+            patched_model=patched_model,
+            components=components,
             n_features=n_features,
         )
     )
@@ -491,7 +492,8 @@ def plot_spd_feature_contributions_truncated(
 
 
 def plot_neuron_contribution_pairs(
-    model: ComponentModel[ResidualMLP],
+    patched_model: ResidualMLP,
+    components: dict[str, Components],
     n_features: int | None = 50,
 ) -> plt.Figure:
     """Create a scatter plot comparing target model and SPD component neuron contributions.
@@ -500,26 +502,26 @@ def plot_neuron_contribution_pairs(
     X-axis: neuron contribution from the target model
     Y-axis: neuron contribution from the SPD component
     """
-    n_layers = model.patched_model.config.n_layers
-    n_features = model.patched_model.config.n_features if n_features is None else n_features
+    n_layers = patched_model.config.n_layers
+    n_features = patched_model.config.n_features if n_features is None else n_features
 
     # Assert that there are no biases
-    assert not model.patched_model.config.in_bias and not model.patched_model.config.out_bias, (
+    assert not patched_model.config.in_bias and not patched_model.config.out_bias, (
         "Biases are not supported for these plots"
     )
 
     # Compute neuron contribution tensors
     relu_conns: Float[Tensor, "n_layers n_features d_mlp"] = (
         compute_patched_weight_neuron_contributions(
-            patched_model=model.patched_model,
+            patched_model=patched_model,
             n_features=n_features,
         )
     )
 
     relu_conns_spd: Float[Tensor, "n_layers n_features C d_mlp"] = (
         compute_spd_weight_neuron_contributions(
-            components=model.components,
-            patched_model=model.patched_model,
+            patched_model=patched_model,
+            components=components,
             n_features=n_features,
         )
     )
@@ -624,12 +626,15 @@ def main():
         wandb_id = path.split("/")[-1]
 
         model, config, _ = ComponentModel.from_pretrained(path)
+        patched_model = model.patched_model
+        assert isinstance(patched_model, ResidualMLP)
         model.to(device)
 
-        assert isinstance(model.patched_model, ResidualMLP)
-        n_layers = model.patched_model.config.n_layers
+        n_layers = patched_model.config.n_layers
 
-        fig = plot_spd_feature_contributions_truncated(model, n_features=10)
+        fig = plot_spd_feature_contributions_truncated(
+            patched_model, model.components, n_features=10
+        )
         fig.savefig(
             out_dir / f"resid_mlp_weights_{n_layers}layers_{wandb_id}.png",
             bbox_inches="tight",
@@ -639,7 +644,8 @@ def main():
 
         # Generate and save neuron contribution pairs plot
         fig_pairs = plot_neuron_contribution_pairs(
-            model,
+            patched_model,
+            model.components,
             n_features=None,  # Using same number of features as above
         )
         fig_pairs.savefig(
@@ -663,7 +669,7 @@ def main():
                     return f"Layer {layer_idx} - $W_{{out}}$"
             return mask_name  # Fallback to original if pattern doesn't match
 
-        batch_shape = (1, model.patched_model.config.n_features)
+        batch_shape = (1, patched_model.config.n_features)
         figs_causal = plot_causal_importance_vals(
             model=model,
             batch_shape=batch_shape,

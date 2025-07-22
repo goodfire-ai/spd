@@ -39,7 +39,7 @@ class SimpleTestModel(nn.Module):
 
 
 @pytest.fixture(scope="function")
-def component_model() -> ComponentModel[SimpleTestModel]:
+def component_model() -> ComponentModel:
     """Return a fresh ``ComponentModel`` for each test."""
     target_model = SimpleTestModel()
     target_model.requires_grad_(False)
@@ -53,7 +53,7 @@ def component_model() -> ComponentModel[SimpleTestModel]:
     )
 
 
-def test_no_replacement_masks_means_original_mode(component_model: ComponentModel[SimpleTestModel]):
+def test_no_replacement_masks_means_original_mode(component_model: ComponentModel):
     cm = component_model
 
     # Initial state: nothing should be active
@@ -70,7 +70,7 @@ def test_no_replacement_masks_means_original_mode(component_model: ComponentMode
     assert all(comp.mask is None for comp in cm.components_or_modules.values())
 
 
-def test_replaced_modules_sets_and_restores_masks(component_model: ComponentModel[SimpleTestModel]):
+def test_replaced_modules_sets_and_restores_masks(component_model: ComponentModel):
     cm = component_model
     full_masks = {
         name: torch.randn(1, cm.C, dtype=torch.float32) for name in cm.components_or_modules
@@ -87,7 +87,7 @@ def test_replaced_modules_sets_and_restores_masks(component_model: ComponentMode
 
 
 def test_replaced_modules_sets_and_restores_masks_partial(
-    component_model: ComponentModel[SimpleTestModel],
+    component_model: ComponentModel,
 ):
     cm = component_model
     # Partial masking
@@ -162,7 +162,7 @@ def test_replaced_component_forward_embedding_matches_modes():
     torch.testing.assert_close(out_rep, expected_rep, rtol=1e-4, atol=1e-5)
 
 
-def test_correct_parameters_require_grad(component_model: ComponentModel[SimpleTestModel]):
+def test_correct_parameters_require_grad(component_model: ComponentModel):
     for cm in component_model.components_or_modules.values():
         if isinstance(cm.original, nn.Linear):
             assert not cm.original.weight.requires_grad

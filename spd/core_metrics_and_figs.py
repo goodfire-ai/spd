@@ -5,8 +5,6 @@ These are separate from user-defined metrics/figures to allow for easier compari
 """
 # pyright: reportMissingImports=false
 
-from typing import Any
-
 import torch
 import wandb
 from jaxtyping import Float, Int
@@ -35,7 +33,7 @@ except ImportError:
 
 
 def create_metrics(
-    model: ComponentModel[Any],
+    model: ComponentModel,
     causal_importances: dict[str, Float[Tensor, "... C"]],
     target_out: Float[Tensor, "... d_model_out"],
     batch: Tensor,
@@ -100,7 +98,7 @@ def create_metrics(
 
 
 def create_figures(
-    model: ComponentModel[Any],
+    model: ComponentModel,
     causal_importances: dict[str, Float[Tensor, "... C"]],
     target_out: Float[Tensor, "... d_model_out"],
     batch: Int[Tensor, "... d_model_in"] | Float[Tensor, "... d_model_in"],

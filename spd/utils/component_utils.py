@@ -41,7 +41,7 @@ def calc_ci_l_zero(
 
 
 def component_activation_statistics[T: nn.Module](
-    model: ComponentModel[T],
+    model: ComponentModel,
     dataloader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     n_steps: int,

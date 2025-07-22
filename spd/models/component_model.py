@@ -2,7 +2,7 @@ import fnmatch
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
-from typing import Any, cast, override
+from typing import Any, override
 
 import torch
 import wandb
@@ -32,7 +32,7 @@ from spd.utils.wandb_utils import (
 )
 
 
-class ComponentModel[T: nn.Module](nn.Module):
+class ComponentModel(nn.Module):
     """Wrapper around an arbitrary model for running SPD.
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
@@ -42,7 +42,7 @@ class ComponentModel[T: nn.Module](nn.Module):
 
     def __init__(
         self,
-        target_model: T,
+        target_model: nn.Module,
         target_module_patterns: list[str],
         C: int,
         gate_type: GateType,
@@ -61,7 +61,7 @@ class ComponentModel[T: nn.Module](nn.Module):
             target_model, target_module_patterns
         )
 
-        patched_model, components_or_modules = ComponentModel[T]._patch_modules(
+        patched_model, components_or_modules = ComponentModel._patch_modules(
             model=target_model,
             module_paths=target_module_paths,
             C=C,
@@ -114,10 +114,10 @@ class ComponentModel[T: nn.Module](nn.Module):
 
     @staticmethod
     def _patch_modules(
-        model: T,
+        model: nn.Module,
         module_paths: list[str],
         C: int,
-    ) -> tuple[T, dict[str, ComponentsOrModule]]:
+    ) -> tuple[nn.Module, dict[str, ComponentsOrModule]]:
         """Replace nn.Modules with ComponentsOrModule objects based on target_module_paths.
 
         NOTE: This method mutates and returns `model`, and returns a dictionary of references
@@ -329,7 +329,7 @@ class ComponentModel[T: nn.Module](nn.Module):
         return checkpoint_path, final_config_path
 
     @classmethod
-    def from_pretrained(cls, path: ModelPath) -> tuple["ComponentModel[T]", Config, Path]:
+    def from_pretrained(cls, path: ModelPath) -> tuple["ComponentModel", Config, Path]:
         """Load a trained ComponentModel checkpoint along with its original config.
 
         The method supports two storage schemes:
@@ -361,8 +361,8 @@ class ComponentModel[T: nn.Module](nn.Module):
         target_model_unpatched.eval()
         target_model_unpatched.requires_grad_(False)
 
-        comp_model = ComponentModel[T](
-            target_model=cast(T, target_model_unpatched),
+        comp_model = ComponentModel(
+            target_model=target_model_unpatched,
             target_module_patterns=config.target_module_patterns,
             C=config.C,
             gate_hidden_dims=config.gate_hidden_dims,

@@ -6,15 +6,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Float
-from torch import Tensor, nn
+from torch import Tensor
 from tqdm import tqdm
 
 from spd.models.component_model import ComponentModel
 
 
-def collect_embedding_masks(
-    model: ComponentModel[nn.Module], device: str
-) -> Float[Tensor, "vocab C"]:
+def collect_embedding_masks(model: ComponentModel, device: str) -> Float[Tensor, "vocab C"]:
     """Collect masks for each vocab token.
 
     Args:

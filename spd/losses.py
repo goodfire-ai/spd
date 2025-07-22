@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Literal
 
 import einops
 import torch
@@ -15,7 +15,7 @@ from spd.utils.general_utils import calc_kl_divergence_lm
 
 
 def calc_embedding_recon_loss(
-    model: ComponentModel[Any],
+    model: ComponentModel,
     batch: Int[Tensor, "..."],
     masks: list[dict[str, Float[Tensor, "... C"]]],
     unembed: bool,
@@ -128,7 +128,7 @@ def calc_importance_minimality_loss(
 
 
 def calc_masked_recon_layerwise_loss(
-    model: ComponentModel[Any],
+    model: ComponentModel,
     batch: Int[Tensor, "..."],
     device: str,
     masks: list[dict[str, Float[Tensor, "... C"]]],
@@ -154,7 +154,7 @@ def calc_masked_recon_layerwise_loss(
 
 
 def calc_masked_recon_loss(
-    model: ComponentModel[Any],
+    model: ComponentModel,
     batch: Float[Tensor, "... d_in"],
     masks: dict[str, Float[Tensor, "... C"]],
     target_out: Float[Tensor, "... d_mdoel_out"],
@@ -195,7 +195,7 @@ def _calc_tensors_mse(
 
 
 def calc_faithfulness_loss(
-    model: ComponentModel[Any],
+    model: ComponentModel,
     n_params: int,
     device: str,
 ) -> Float[Tensor, ""]:
@@ -218,7 +218,7 @@ def calc_faithfulness_loss(
 
 
 def calc_ce_losses(
-    model: ComponentModel[Any],
+    model: ComponentModel,
     batch: Int[Tensor, "..."],
     masks: dict[str, Float[Tensor, "..."]],
     unmasked_component_logits: Float[Tensor, "..."],
@@ -275,7 +275,7 @@ def calc_ce_losses(
 
 
 def calculate_losses(
-    model: ComponentModel[Any],
+    model: ComponentModel,
     batch: Int[Tensor, "..."],
     config: Config,
     causal_importances: dict[str, Float[Tensor, "batch C"]],
