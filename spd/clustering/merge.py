@@ -364,7 +364,7 @@ def merge_iteration(
 
 		# pop components
 		if do_pop and iter_pop[i]:
-			print(f"init pop {i=}")
+			# print(f"init pop {i=}")
 			# we split up the group which our chosen component belongs to
 			pop_component_idx_i: int = int(pop_component_idx[i].item())
 			components_in_pop_grp: int = int(
@@ -375,7 +375,7 @@ def merge_iteration(
 
 			# but, if the component is the only one in its group, there is nothing to do
 			if components_in_pop_grp > 1:
-				print(f"popping {pop_component_idx_i=} from group {current_merge.group_idxs[pop_component_idx_i].item()} with {components_in_pop_grp} components", flush=True)
+				# print(f"popping {pop_component_idx_i=} from group {current_merge.group_idxs[pop_component_idx_i].item()} with {components_in_pop_grp} components", flush=True)
 				current_merge, current_coact, current_act_mask = recompute_coacts_pop_group(
 					coact=current_coact,
 					merges=current_merge,
