@@ -43,7 +43,7 @@ def create_slurm_array_script(
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
     if snapshot_branch is None:
-        snapshot_branch = create_git_snapshot(branch_name_prefix="snapshot")
+        snapshot_branch, _ = create_git_snapshot(branch_name_prefix="snapshot")
 
     gpu_config = "#SBATCH --gres=gpu:0" if cpu else "#SBATCH --gres=gpu:1"
     slurm_logs_dir = Path.home() / "slurm_logs"
@@ -137,7 +137,7 @@ def create_analysis_slurm_script(
         snapshot_branch: Git branch to checkout. If None, creates a new snapshot.
     """
     if snapshot_branch is None:
-        snapshot_branch = create_git_snapshot(branch_name_prefix="analysis")
+        snapshot_branch, _ = create_git_snapshot(branch_name_prefix="analysis")
 
     gpu_config = "#SBATCH --gres=gpu:0" if cpu else "#SBATCH --gres=gpu:1"
     slurm_logs_dir = Path.home() / "slurm_logs"

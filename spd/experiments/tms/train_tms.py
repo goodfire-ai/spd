@@ -12,7 +12,7 @@ import torch
 import wandb
 from matplotlib import collections as mc
 from pydantic import BaseModel, ConfigDict, PositiveInt, model_validator
-from torch import nn
+from torch import Tensor, nn
 from tqdm import tqdm, trange
 
 from spd.experiments.tms.models import TMSModel, TMSModelConfig
@@ -65,7 +65,7 @@ def cosine_decay_lr(step: int, steps: int) -> float:
 
 def train(
     model: TMSModel,
-    dataloader: DatasetGeneratedDataLoader[tuple[torch.Tensor, torch.Tensor]],
+    dataloader: DatasetGeneratedDataLoader[tuple[Tensor, Tensor]],
     log_wandb: bool,
     importance: float,
     steps: int,
@@ -176,7 +176,7 @@ def plot_cosine_similarity_distribution(
 
 def get_model_and_dataloader(
     config: TMSTrainConfig, device: str
-) -> tuple[TMSModel, DatasetGeneratedDataLoader[tuple[torch.Tensor, torch.Tensor]]]:
+) -> tuple[TMSModel, DatasetGeneratedDataLoader[tuple[Tensor, Tensor]]]:
     model = TMSModel(config=config.tms_model_config)
     model.to(device)
     if (
