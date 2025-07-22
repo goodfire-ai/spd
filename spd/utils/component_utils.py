@@ -34,11 +34,6 @@ class BernoulliSTE(torch.autograd.Function):
         return (grad_outputs.clone(),)
 
 
-def rescaled_bernoulli_ste(x: Tensor) -> Tensor:
-    input = x * 0.5 + 0.5
-    return BernoulliSTE.apply(input)  # pyright: ignore [reportReturnType]
-
-
 def binary_concrete(
     prob: Tensor,
     temp: float,
@@ -71,23 +66,32 @@ def get_sample_fn(sample_config: SampleConfig, training_pct: float) -> Callable[
     if sample_config.sample_type == "uniform":
         return sample_uniform_to_1
     elif sample_config.sample_type == "bernoulli_ste":
-        return rescaled_bernoulli_ste
+
+        def sample_fn(x: Tensor) -> Tensor:
+            input = x * 0.5 + 0.5
+            return BernoulliSTE.apply(input)  # pyright: ignore [reportReturnType]
+
+        return sample_fn
+
     elif sample_config.sample_type == "concrete":
 
         def sample_fn(x: Tensor) -> Tensor:
+            pct_through_annealing = min(training_pct / sample_config.pct_annealing, 1)
             temp = linear_interpolate(
-                sample_config.temp_start, sample_config.temp_end, training_pct
+                sample_config.temp_start, sample_config.temp_end, pct_through_annealing
             )
             reprojected_x = x * 0.5 + 0.5
             return binary_concrete(reprojected_x, temp)
 
         return sample_fn
+
     else:
         assert sample_config.sample_type == "hard_concrete_anneal"
 
         def sample_fn(x: Tensor) -> Tensor:
+            pct_through_annealing = min(training_pct / sample_config.pct_annealing, 1)
             temp = linear_interpolate(
-                sample_config.temp_start, sample_config.temp_end, training_pct
+                sample_config.temp_start, sample_config.temp_end, pct_through_annealing
             )
             reprojected_x = x * 0.5 + 0.5
             return binary_hard_concrete(reprojected_x, temp, sample_config.bounds)
@@ -101,11 +105,13 @@ def calc_stochastic_masks(
     sample_config: SampleConfig,
     training_pct: float,
 ) -> list[dict[str, Float[Tensor, "... C"]]]:
-    """Calculate n_mask_samples stochastic masks with the formula `ci + (1 - ci) * rand_unif(0,1)`.
+    """Calculate n_mask_samples stochastic masks according to the sample_config.
 
     Args:
         causal_importances: The causal importances to use for the stochastic masks.
         n_mask_samples: The number of stochastic masks to calculate.
+        sample_config: The configuration for the sample function.
+        training_pct: How far we are through training.
 
     Return:
         A list of n_mask_samples dictionaries, each containing the stochastic masks for each layer.
