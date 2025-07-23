@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+import yaml
+
 from spd.settings import REPO_ROOT
 
 
@@ -82,6 +84,5 @@ def get_experiment_config_file_contents(key: str) -> dict[str, Any]:
     we strip the "spd/" prefix to be able to read the file using `importlib`.
     This makes our ability to find the file independent of the current working directory.
     """
-    import yaml
 
     return yaml.safe_load((REPO_ROOT / EXPERIMENT_REGISTRY[key].config_path).read_text())

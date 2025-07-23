@@ -547,7 +547,7 @@ def main(
         else:
             snapshot_branch = repo_current_branch()
             commit_hash = "none"
-            logger.info(f"Using current branch: {snapshot_branch} ({commit_hash})")
+            logger.info(f"Using current branch: {snapshot_branch}")
 
     if use_wandb:
         # Ensure the W&B project exists
