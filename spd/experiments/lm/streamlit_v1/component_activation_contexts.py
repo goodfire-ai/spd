@@ -16,6 +16,74 @@ from spd.utils.component_utils import calc_causal_importances, calc_ci_l_zero
 from spd.utils.general_utils import extract_batch_data
 
 
+def _interpolate(bottom: float, top: float, x: float) -> float:
+    """Interpolate between a and b using x, which is in [0, 1]."""
+    return bottom + (top - bottom) * x
+
+
+def _get_highlight_color(
+    importance: float,
+    color_upper: tuple[int, int, int] = (160, 210, 160),  # Light green
+    color_lower: tuple[int, int, int] = (255, 255, 255),  # White
+) -> str:
+    """Get highlight color based on importance value."""
+    importance_norm = min(max(importance, 0), 1)  # Clamp to [0, 1]
+    r = int(_interpolate(color_lower[0], color_upper[0], importance_norm))
+    g = int(_interpolate(color_lower[1], color_upper[1], importance_norm))
+    b = int(_interpolate(color_lower[2], color_upper[2], importance_norm))
+    return f"rgba({r}, {g}, {b}, 0.7)"
+
+
+def _render_text_with_token_highlights(
+    *,
+    raw_text: str,
+    offset_mapping: list[tuple[int, int]],
+    token_ci_values: list[float],
+    active_position: int,
+) -> str:
+    """
+    Render raw text with token highlights based on offset mappings.
+    Preserves original spacing and applies gradient coloring based on CI values.
+    """
+    html_chunks: list[str] = []
+    cursor = 0
+
+    for idx, (start, end) in enumerate(offset_mapping):
+        # Add any text between tokens
+        if cursor < start:
+            html_chunks.append(html.escape(raw_text[cursor:start]))
+
+        # Get token text
+        token_text = raw_text[start:end]
+        if token_text:
+            escaped_text = html.escape(token_text)
+            ci_value = token_ci_values[idx] if idx < len(token_ci_values) else 0.0
+
+            if ci_value > 0:
+                # Apply gradient background based on CI value
+                bg_color = _get_highlight_color(ci_value)
+                # Add thicker border for the main active token
+                border_style = (
+                    "border: 2px solid rgba(200,0,0,0.5);" if idx == active_position else ""
+                )
+                html_chunks.append(
+                    f'<span style="background-color:{bg_color}; padding: 2px 4px; '
+                    f'border-radius: 3px; {border_style}" '
+                    f'title="Importance: {ci_value:.3f}">{escaped_text}</span>'
+                )
+            else:
+                # Regular token without highlighting
+                html_chunks.append(f"<span>{escaped_text}</span>")
+
+        cursor = end
+
+    # Add any remaining text
+    if cursor < len(raw_text):
+        html_chunks.append(html.escape(raw_text[cursor:]))
+
+    return "".join(html_chunks)
+
+
 @st.cache_data(show_spinner="Finding component activation contexts...")
 def find_component_activation_contexts(
     _model_path: str,
@@ -132,27 +200,51 @@ def find_component_activation_contexts(
                         start_idx = max(0, seq_idx - n_tokens_either_side)
                         end_idx = min(batch.shape[1], seq_idx + n_tokens_either_side + 1)
 
-                        # Get token IDs and decode
-                        token_ids = batch[batch_idx, start_idx:end_idx].tolist()
-                        tokens = []
+                        # Get token IDs for the context window
+                        context_token_ids = batch[batch_idx, start_idx:end_idx].tolist()
 
-                        for i, token_id in enumerate(token_ids):
-                            try:
-                                token_text = _model_data.tokenizer.decode([token_id])  # pyright: ignore[reportAttributeAccessIssue]
-                            except Exception:
-                                token_text = f"<token_{token_id}>"
+                        # Decode the entire context to get raw text and offset mappings
+                        raw_text = _model_data.tokenizer.decode(context_token_ids)  # pyright: ignore[reportAttributeAccessIssue]
 
-                            # Mark the activating token
-                            if start_idx + i == seq_idx:
-                                tokens.append((token_text, ci_value, True))  # (text, ci, is_active)
+                        # Re-tokenize to get offset mappings
+                        context_tokenized = _model_data.tokenizer(  # pyright: ignore[reportCallIssue]
+                            raw_text,
+                            return_tensors="pt",
+                            return_offsets_mapping=True,
+                            truncation=False,
+                            padding=False,
+                        )
+
+                        offset_mapping = context_tokenized["offset_mapping"][0].tolist()
+
+                        # Calculate CI values for each token in context
+                        token_ci_values = []
+                        for i in range(len(offset_mapping)):
+                            if i < len(context_token_ids):  # Ensure we're within bounds
+                                if start_idx + i == seq_idx:
+                                    token_ci_values.append(ci_value)
+                                else:
+                                    # Get CI value for other tokens too if they're active
+                                    if (
+                                        start_idx + i < ci.shape[1]
+                                        and component_active[batch_idx, start_idx + i]
+                                    ):
+                                        token_ci_values.append(
+                                            ci[batch_idx, start_idx + i, component_idx].item()
+                                        )
+                                    else:
+                                        token_ci_values.append(0.0)
                             else:
-                                tokens.append((token_text, None, False))
+                                token_ci_values.append(0.0)
 
-                        # Store the context
+                        # Store the context with raw text and offset mappings
                         component_contexts[module_name][component_idx].append(
                             {
-                                "tokens": tokens,
-                                "position": seq_idx,
+                                "raw_text": raw_text,
+                                "offset_mapping": offset_mapping,
+                                "token_ci_values": token_ci_values,
+                                "active_position": seq_idx
+                                - start_idx,  # Position of main active token in context
                                 "ci_value": ci_value,
                             }
                         )
@@ -253,15 +345,15 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                 n_steps = st.number_input(
                     "Max Batches to Process",
                     min_value=1,
-                    max_value=1000,
-                    value=100,
+                    max_value=10000,
+                    value=50,
                     help="Maximum number of batches to process (stops early if enough examples found)",
                 )
                 batch_size = st.number_input(
                     "Batch Size",
                     min_value=1,
-                    max_value=512,
-                    value=32,
+                    max_value=16384,
+                    value=64,
                     help="Batch size for processing",
                 )
                 max_seq_len = st.number_input(
@@ -337,32 +429,28 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                     # Format examples
                     examples_html = []
                     for i, example in enumerate(component_examples):
-                        tokens = example["tokens"]
                         ci_value = example["ci_value"]
 
-                        # Build HTML for this example
-                        token_parts = []
-                        for token_text, _, is_active in tokens:
-                            # Escape HTML special characters
-                            escaped_text = html.escape(token_text)
-                            if is_active:
-                                # Use outline style similar to token inspector
-                                token_parts.append(
-                                    f'<span style="border: 2px solid rgb(200,0,0); '
-                                    f'border-radius: 2px; padding: 1px 2px; margin: 0 1px;">'
-                                    f"{escaped_text}</span>"
-                                )
-                            else:
-                                # Wrap non-active tokens in spans with minimal margins to preserve spacing
-                                token_parts.append(
-                                    f'<span style="margin: 0 1px;">{escaped_text}</span>'
-                                )
+                        # Build HTML using offset mappings for proper spacing
+                        html_example = _render_text_with_token_highlights(
+                            raw_text=example["raw_text"],
+                            offset_mapping=example["offset_mapping"],
+                            token_ci_values=example["token_ci_values"],
+                            active_position=example["active_position"],
+                        )
 
-                        example_html = f"{i + 1}. CI val {ci_value:.3f}: {''.join(token_parts)}"
+                        # Wrap in example container
+                        example_html = (
+                            f'<div style="margin: 8px 0; font-family: monospace; font-size: 14px; '
+                            f'line-height: 1.8;">'
+                            f"<strong>{i + 1}.</strong> "
+                            # f'<span style="color: #666;">CI: {ci_value:.3f}</span> '
+                            f"{html_example}</div>"
+                        )
                         examples_html.append(example_html)
 
-                    # Join all examples
-                    examples_str = "<br><br>".join(examples_html)
+                    # Join all examples without extra line breaks
+                    examples_str = "".join(examples_html)
 
                     table_data.append(
                         {
@@ -389,16 +477,18 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                             # Convert HTML back to markdown for download
                             component_examples = module_contexts[row["Component"]]
                             for i, example in enumerate(component_examples):
-                                tokens = example["tokens"]
                                 ci_value = example["ci_value"]
-                                token_parts = []
-                                for token_text, _, is_active in tokens:
-                                    if is_active:
-                                        token_parts.append(f"**{token_text}**")
-                                    else:
-                                        token_parts.append(token_text)
+                                raw_text = example["raw_text"]
+                                active_position = example["active_position"]
+
+                                # Simple markdown representation - mark the active token with **
+                                # This is a simplified version since markdown doesn't support the gradient coloring
+                                words = raw_text.split()
+                                if 0 <= active_position < len(words):
+                                    words[active_position] = f"**{words[active_position]}**"
+
                                 markdown_lines.append(
-                                    f"{i + 1}. CI val {ci_value:.3f}: {''.join(token_parts)}"
+                                    f"{i + 1}. CI val {ci_value:.3f}: {' '.join(words)}"
                                 )
                             markdown_lines.append("")
 
@@ -422,17 +512,18 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                         for row in table_data:
                             component_examples = module_contexts[row["Component"]]
                             for i, example in enumerate(component_examples):
-                                tokens = example["tokens"]
                                 ci_value = example["ci_value"]
-                                token_parts = []
-                                for token_text, _, is_active in tokens:
-                                    if is_active:
-                                        token_parts.append(f"**{token_text}**")
-                                    else:
-                                        token_parts.append(token_text)
-                                context = "".join(token_parts).replace(
+                                raw_text = example["raw_text"]
+                                active_position = example["active_position"]
+
+                                # Create a simple representation for the table
+                                words = raw_text.split()
+                                if 0 <= active_position < len(words):
+                                    words[active_position] = f"**{words[active_position]}**"
+                                context = " ".join(words).replace(
                                     "|", "\\|"
                                 )  # Escape pipes in table
+
                                 table_lines.append(
                                     f"| {row['Component']} | {i + 1} | {ci_value:.3f} | {context} |"
                                 )
@@ -448,24 +539,87 @@ def render_component_activation_contexts_tab(model_data: ModelData):
 
                     st.divider()
 
-                    # Component contexts display in scrollable container
+                    # Component contexts display with improved styling
                     st.subheader("Component Activation Examples")
 
-                    # Create a container with constrained height
-                    container = st.container(height=600)
+                    # Add custom CSS for better presentation
+                    st.markdown(
+                        """
+                    <style>
+                    /* Instant tooltip for importance values */
+                    span[title] {
+                        position: relative;
+                        cursor: help;
+                    }
+                    
+                    span[title]:hover::after {
+                        content: attr(title);
+                        position: absolute;
+                        bottom: 100%;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        background-color: #333;
+                        color: white;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        white-space: nowrap;
+                        z-index: 1000;
+                        pointer-events: none;
+                        margin-bottom: 4px;
+                    }
+                    
+                    span[title]:hover::before {
+                        content: "";
+                        position: absolute;
+                        bottom: 100%;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        border: 5px solid transparent;
+                        border-top-color: #333;
+                        z-index: 1000;
+                        pointer-events: none;
+                        margin-bottom: -1px;
+                    }
+                    
+                    /* Component section styling */
+                    .component-section {
+                        background-color: #f8f9fa;
+                        border-radius: 8px;
+                        padding: 16px;
+                        margin-bottom: 16px;
+                        border: 1px solid #e0e0e0;
+                    }
+                    
+                    .component-header {
+                        font-weight: 600;
+                        color: #333;
+                        margin-bottom: 12px;
+                        font-size: 16px;
+                    }
+                    
+                    .examples-container {
+                        background-color: white;
+                        border-radius: 4px;
+                        padding: 12px;
+                    }
+                    </style>
+                    """,
+                        unsafe_allow_html=True,
+                    )
 
-                    with container:
+                    # Display components in a scrollable container using Streamlit's container
+                    with st.container(height=1000):
                         for row in table_data:
-                            col1, col2 = st.columns([1, 11])
-                            with col1:
-                                st.markdown(f"**Component {row['Component']}**")
-                            with col2:
-                                # The content already has HTML formatting
-                                st.markdown(
-                                    f'<div style="line-height:1.7; font-family:monospace;">'
-                                    f"{row['Example Activation Contexts']}</div>",
-                                    unsafe_allow_html=True,
-                                )
-                            st.divider()
+                            st.markdown(
+                                f'<div class="component-section">'
+                                f'<div class="component-header">Component {row["Component"]} '
+                                f'<span style="font-weight: normal; color: #666; font-size: 14px;">'
+                                f"({row['Total Examples']} examples)</span></div>"
+                                f'<div class="examples-container">'
+                                f"{row['Example Activation Contexts']}"
+                                f"</div></div>",
+                                unsafe_allow_html=True,
+                            )
                 else:
                     st.info("No components found with activations above the threshold.")
