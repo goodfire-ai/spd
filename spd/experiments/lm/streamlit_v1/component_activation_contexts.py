@@ -451,40 +451,21 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                     # Component contexts display in scrollable container
                     st.subheader("Component Activation Examples")
 
-                    # Create scrollable container with fixed height
-                    st.markdown(
-                        """
-                        <style>
-                        .scrollable-container {
-                            height: 600px;
-                            overflow-y: auto;
-                            border: 1px solid #ddd;
-                            border-radius: 5px;
-                            padding: 10px;
-                        }
-                        </style>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    # Create a container with constrained height
+                    container = st.container(height=600)
 
-                    # Wrap component display in scrollable container
-                    with st.container():
-                        st.markdown('<div class="scrollable-container">', unsafe_allow_html=True)
-
+                    with container:
                         for row in table_data:
-                            with st.container():
-                                col1, col2 = st.columns([1, 11])
-                                with col1:
-                                    st.markdown(f"**Component {row['Component']}**")
-                                with col2:
-                                    # Wrap in div with monospace font and proper line height
-                                    st.markdown(
-                                        f'<div style="line-height:1.7; font-family:monospace;">'
-                                        f"{row['Example Activation Contexts']}</div>",
-                                        unsafe_allow_html=True,
-                                    )
-                                st.divider()
-
-                        st.markdown("</div>", unsafe_allow_html=True)
+                            col1, col2 = st.columns([1, 11])
+                            with col1:
+                                st.markdown(f"**Component {row['Component']}**")
+                            with col2:
+                                # The content already has HTML formatting
+                                st.markdown(
+                                    f'<div style="line-height:1.7; font-family:monospace;">'
+                                    f"{row['Example Activation Contexts']}</div>",
+                                    unsafe_allow_html=True,
+                                )
+                            st.divider()
                 else:
                     st.info("No components found with activations above the threshold.")
