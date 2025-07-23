@@ -56,6 +56,7 @@ def main(
         model_path=None,
         model_name_hf=config.pretrained_model_name_hf,
     )
+    target_model.eval()
 
     if config.wandb_project:
         assert wandb.run, "wandb.run must be initialized before training"

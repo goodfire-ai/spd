@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+import torch
 import wandb
 from jaxtyping import Float
 from torch import Tensor
@@ -15,7 +16,6 @@ from torch import Tensor
 from spd.configs import Config
 from spd.losses import calc_ce_losses
 from spd.models.component_model import ComponentModel
-from spd.models.components import EmbeddingComponent, GateMLP, LinearComponent, VectorGateMLP
 from spd.plotting import create_embed_ci_sample_table
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import calc_kl_divergence_lm
@@ -24,8 +24,6 @@ from spd.utils.general_utils import calc_kl_divergence_lm
 @dataclass
 class CreateMetricsInputs:
     model: ComponentModel
-    components: dict[str, LinearComponent | EmbeddingComponent]
-    gates: dict[str, GateMLP | VectorGateMLP]
     causal_importances: dict[str, Float[Tensor, "... C"]]
     target_out: Float[Tensor, "... d_model_out"]
     unmasked_component_out: Float[Tensor, "... d_model_out"]
@@ -63,7 +61,6 @@ def lm_ce_losses(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wand
     return calc_ce_losses(
         model=inputs.model,
         batch=inputs.batch,
-        components=inputs.components,
         masks=inputs.causal_importances,
         unmasked_component_logits=inputs.unmasked_component_out,
         masked_component_logits=inputs.masked_component_out,
@@ -90,8 +87,6 @@ def ci_l0(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table
 
 def create_metrics(
     model: ComponentModel,
-    components: dict[str, LinearComponent | EmbeddingComponent],
-    gates: dict[str, GateMLP | VectorGateMLP],
     causal_importances: dict[str, Float[Tensor, "... C"]],
     target_out: Float[Tensor, "... d_model_out"],
     batch: Tensor,
@@ -102,15 +97,13 @@ def create_metrics(
     """Create metrics for logging."""
     metrics: dict[str, float | int | wandb.Table] = {"misc/step": step}
 
-    masked_component_out = model.forward_with_components(
-        batch, components=components, masks=causal_importances
-    )
-    unmasked_component_out = model.forward_with_components(batch, components=components, masks=None)
+    masked_component_out = model.forward_with_components(batch, masks=causal_importances)
+
+    nonmask = {k: torch.ones_like(v) for k, v in causal_importances.items()}
+    unmasked_component_out = model.forward_with_components(batch, masks=nonmask)
 
     inputs = CreateMetricsInputs(
         model=model,
-        components=components,
-        gates=gates,
         causal_importances=causal_importances,
         target_out=target_out,
         unmasked_component_out=unmasked_component_out,

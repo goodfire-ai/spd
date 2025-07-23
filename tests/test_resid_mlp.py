@@ -86,8 +86,9 @@ def test_resid_mlp_decomposition_happy_path() -> None:
     )
 
     # Create a pretrained model
+
     target_model = ResidualMLP(config=resid_mlp_config).to(device)
-    target_model.eval()
+    target_model.requires_grad_(False)
 
     assert isinstance(config.task_config, ResidualMLPTaskConfig)
     # Create dataset
