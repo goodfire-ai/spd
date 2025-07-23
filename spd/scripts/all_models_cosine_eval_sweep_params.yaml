@@ -1,0 +1,45 @@
+# Sweep parameters for cosine similarity evaluation across all models
+# Testing the reverted cosine similarity loss (encourages positive alignment)
+
+# Global parameters (applied to all experiments)
+global:
+  seed:
+    values: [0, 1, 2, 3, 4]
+
+# TMS Models
+tms_5-2:
+  cosine_similarity_coeff:
+    values: [0.0, 1e-8, 1e-3, 0.1]
+  C:
+    values: [5, 10, 20]
+
+tms_5-2-id:
+  cosine_similarity_coeff:
+    values: [0.0, 1e-8, 1e-3, 0.1]
+  C:
+    values: [5, 10, 20]
+
+tms_40-10:
+  cosine_similarity_coeff:
+    values: [0.0, 1e-8, 1e-3, 0.1]
+  C:
+    values: [40, 60, 100]
+tms_40-10-id:
+  cosine_similarity_coeff:
+    values: [0.0, 1e-8, 1e-3, 0.1]
+  C:
+    values: [40, 60, 100]
+
+# ResidMLP Models
+resid_mlp1:
+  cosine_similarity_coeff:
+    values: [0.0, 1e-8, 1e-3, 0.1]
+resid_mlp2:
+  cosine_similarity_coeff:
+    values: [0.0, 1e-8, 1e-3, 0.1]
+  C:
+    values: [100, 200, 300, 400]
+
+resid_mlp3:
+  cosine_similarity_coeff:
+    values: [0.0, 1e-8, 1e-3, 0.1] 

@@ -437,3 +437,28 @@ def plot_ci_histograms(
         fig_dict[f"mask_vals_{layer_name}"] = fig
 
     return fig_dict
+
+
+def plot_cosine_similarity_histograms(
+    cosine_histograms: dict[str, tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+) -> dict[str, plt.Figure]:
+    """Plot histograms of cosine similarities between subcomponents and target model parameters.
+    Args:
+        cosine_histograms: Dictionary mapping component names to (bin_centers, bin_counts) tuples.
+    Returns:
+        Dictionary mapping layer names to histogram figures.
+    """
+    fig_dict = {}
+
+    for layer_name, (bin_centers, bin_counts) in cosine_histograms.items():
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.bar(bin_centers.cpu().numpy(), bin_counts.cpu().numpy(), width=1.0 / 100)
+        ax.set_xlabel("Cosine Similarity")
+        ax.set_ylabel("Count")
+        ax.set_title(f"Cosine Similarity Distribution - {layer_name}")
+        ax.set_xlim(-1, 1)
+        ax.grid(True, alpha=0.3)
+
+        fig_dict[f"cosine_sim_histogram_{layer_name}"] = fig
+
+    return fig_dict
