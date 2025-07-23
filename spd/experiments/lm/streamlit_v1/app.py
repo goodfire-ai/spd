@@ -67,7 +67,7 @@ def main():
     # Create tabs for different analyses
     tab1, tab2, tab3 = st.tabs(
         [
-            "📈 Token activation Table",
+            "📈 Token Activation Table",
             "📋 Activation Contexts",
             "🎯 Token Inspector",
         ]
