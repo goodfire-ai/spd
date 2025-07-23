@@ -45,7 +45,7 @@ def main(path: ModelPath) -> None:
     mean_n_active_components_per_token, mean_component_activation_counts = (
         component_activation_statistics(
             model=ss_model,
-            data_iterator=dataloader,
+            data_iterator=iter(dataloader),
             n_steps=100,
             device=device,
             threshold=config.ci_alive_threshold,

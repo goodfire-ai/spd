@@ -28,6 +28,17 @@ from spd.utils.general_utils import (
 from spd.utils.run_utils import save_file
 
 
+def loop_dl[T](dl: DataLoader[T]):
+    dl_iter = iter(dl)
+    while True:
+        try:
+            yield next(dl_iter)
+        except StopIteration:
+            logger.warning("Dataloader exhausted, resetting iterator.")
+            dl_iter = iter(dl)
+            yield next(dl_iter)
+
+
 def optimize(
     target_model: nn.Module,
     config: Config,
@@ -41,6 +52,9 @@ def optimize(
     tied_weights: list[tuple[str, str]] | None = None,
 ) -> None:
     """Run the optimization loop for LM decomposition."""
+
+    train_iterator = loop_dl(train_loader)
+    eval_iterator = loop_dl(eval_loader)
 
     logger.info(f"Output directory: {out_dir}")
     metrics_file = out_dir / "metrics.jsonl" if out_dir is not None else None
@@ -82,8 +96,6 @@ def optimize(
         component.original.weight.numel() for component in model.components_or_modules.values()
     )
 
-    train_data_iter = iter(train_loader)
-
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
         module_names=model.target_module_paths,
@@ -110,14 +122,7 @@ def optimize(
         loss_terms = defaultdict[str, float](float)
 
         for _ in range(config.gradient_accumulation_steps):
-            try:
-                batch_item = next(train_data_iter)
-            except StopIteration:
-                logger.warning("Dataloader exhausted, resetting iterator.")
-                data_iter = iter(train_loader)
-                batch_item = next(data_iter)
-
-            batch = extract_batch_data(batch_item).to(device)
+            batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
                 batch, module_names=model.target_module_paths
@@ -170,7 +175,25 @@ def optimize(
         with torch.inference_mode():
             # --- Logging --- #
             if step % config.eval_freq == 0:
-                eval()
+                metrics = create_metrics(
+                    model=model,
+                    eval_iterator=eval_iterator,
+                    n_eval_steps=n_eval_steps,
+                    device=device,
+                    config=config,
+                )
+
+                if metrics_file is not None:
+                    # Filter out non-JSON-serializable objects (like wandb.Table) for file logging
+                    file_metrics = {
+                        k: v for k, v in metrics.items() if not isinstance(v, wandb.Table)
+                    }
+                    with open(metrics_file, "a") as f:
+                        f.write(json.dumps(file_metrics) + "\n")
+
+                if config.wandb_project:
+                    wandb.log(metrics, step=step)
+                logger.info(f"Step {step}: Generating plots...")
 
             # --- Plotting --- #
             if (
@@ -178,7 +201,24 @@ def optimize(
                 and step % config.image_freq == 0
                 and (step > 0 or config.image_on_first_step)
             ):
-                plot_images()
+                fig_dict = create_figures(
+                    model=model,
+                    eval_iterator=eval_iterator,
+                    device=device,
+                    config=config,
+                    n_eval_steps=n_eval_steps,
+                )
+
+                if config.wandb_project:
+                    wandb.log(
+                        {k: wandb.Image(v) for k, v in fig_dict.items()},
+                        step=step,
+                    )
+                    if out_dir is not None:
+                        fig_dir = out_dir / "figures"
+                        for k, v in fig_dict.items():
+                            save_file(v, fig_dir / f"{k}_{step}.png")
+                            tqdm.write(f"Saved plot to {fig_dir / f'{k}_{step}.png'}")
 
         # --- Saving Checkpoint --- #
         if (
@@ -202,50 +242,3 @@ def optimize(
             optimizer.step()
 
     logger.info("Finished training loop.")
-
-
-def eval():
-    metrics = create_metrics(
-        model=model,
-        eval_loader=eval_loader,
-        device=device,
-        config=config,
-        step=step,
-    )
-    log_data.update(metrics)
-
-    if metrics_file is not None:
-        # Filter out non-JSON-serializable objects (like wandb.Table) for file logging
-        file_metrics = {
-            k: v for k, v in log_data.items() if not isinstance(v, wandb.Table)
-        }
-        with open(metrics_file, "a") as f:
-            f.write(json.dumps(file_metrics) + "\n")
-
-    if config.wandb_project:
-        wandb.log(log_data, step=step)
-    logger.info(f"Step {step}: Generating plots...")
-
-def plot_images():
-    fig_dict = create_figures(
-        model=model,
-        causal_importances=causal_importances,
-        target_out=target_out,
-        batch=batch,
-        device=device,
-        config=config,
-        step=step,
-        eval_loader=eval_loader,
-        n_eval_steps=n_eval_steps,
-    )
-
-    if config.wandb_project:
-        wandb.log(
-            {k: wandb.Image(v) for k, v in fig_dict.items()},
-            step=step,
-        )
-        if out_dir is not None:
-            fig_dir = out_dir / "figures"
-            for k, v in fig_dict.items():
-                save_file(v, fig_dir / f"{k}_{step}.png")
-                tqdm.write(f"Saved plot to {fig_dir / f'{k}_{step}.png'}")

@@ -5,7 +5,6 @@ from typing import Literal
 import matplotlib.ticker as tkr
 import numpy as np
 import torch
-import wandb
 from jaxtyping import Float
 from matplotlib import pyplot as plt
 from matplotlib.colors import CenteredNorm
@@ -335,36 +334,6 @@ def plot_UV_matrices(
         im.set_norm(norm)
     fig.colorbar(images[0], ax=axs.ravel().tolist())
     return fig
-
-
-def create_embed_ci_sample_table(
-    causal_importances: dict[str, Float[Tensor, "... C"]], key: str, threshold: float
-) -> wandb.Table:
-    """Create a wandb table visualizing embedding mask values.
-
-    Args:
-        causal_importances: Dictionary of causal importances for each component.
-
-    Returns:
-        A wandb Table object.
-    """
-    # Create a 20x10 table for wandb
-    table_data = []
-    # Add "Row Name" as the first column
-    component_names = ["TokenSample"] + ["CompVal" for _ in range(10)]
-
-    for i, ci in enumerate(causal_importances[key][0, :20]):
-        active_values = ci[ci > threshold].tolist()
-        # Cap at 10 components
-        active_values = active_values[:10]
-        formatted_values = [f"{val:.2f}" for val in active_values]
-        # Pad with empty strings if fewer than 10 components
-        while len(formatted_values) < 10:
-            formatted_values.append("0")
-        # Add row name as the first element
-        table_data.append([f"{i}"] + formatted_values)
-
-    return wandb.Table(data=table_data, columns=component_names)
 
 
 def plot_mean_component_activation_counts(

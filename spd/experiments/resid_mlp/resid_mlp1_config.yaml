@@ -35,16 +35,17 @@ lr_warmup_pct: 0.0
 n_eval_steps: 100
 
 # --- Logging & Saving ---
+train_log_freq: 50
+eval_freq: 500
 image_freq: 5_000
 image_on_first_step: true
-print_freq: 100
 save_freq: null
-n_examples_until_dead: 204_800  # print_freq * batch_size = 100 * 2048
-figures_fns:
+n_examples_until_dead: 204_800
+figures:
   - name: "ci_histograms"
   - name: "mean_component_activation_counts"
   - name: "uv_and_identity_ci"
-metrics_fns:
+metrics::
   - name: "ci_l0"
 
 # --- Pretrained model info ---

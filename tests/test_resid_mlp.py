@@ -1,4 +1,11 @@
-from spd.configs import Config, FiguresFnConfig, MetricsFnConfig, ResidualMLPTaskConfig
+from spd.configs import (
+    CIHistogramsFigureConfig,
+    Config,
+    L0MetricConfig,
+    MeanComponentActivationCountsFigureConfig,
+    ResidualMLPTaskConfig,
+    UVandIdentityCIFigureConfig,
+)
 from spd.experiments.resid_mlp.models import ResidualMLP, ResidualMLPConfig
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
 from spd.run_spd import optimize
@@ -58,6 +65,8 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
         n_eval_steps=1,
+        eval_freq=10,
+        eval_batch_size=4,
         # Logging & Saving
         image_freq=None,
         image_on_first_step=True,
@@ -65,13 +74,13 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        figures_fns=[
-            FiguresFnConfig(name="ci_histograms"),
-            FiguresFnConfig(name="mean_component_activation_counts"),
-            FiguresFnConfig(name="uv_and_identity_ci"),
+        figures=[
+            CIHistogramsFigureConfig(),
+            MeanComponentActivationCountsFigureConfig(),
+            UVandIdentityCIFigureConfig(),
         ],
-        metrics_fns=[
-            MetricsFnConfig(name="ci_l0"),
+        metrics=[
+            L0MetricConfig(),
         ],
         # Pretrained model info
         pretrained_model_class="spd.experiments.resid_mlp.models.ResidualMLP",
@@ -111,7 +120,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         dataset, batch_size=config.microbatch_size, shuffle=False
     )
     eval_loader = DatasetGeneratedDataLoader(
-        dataset, batch_size=config.microbatch_size, shuffle=False
+        dataset, batch_size=config.eval_batch_size, shuffle=False
     )
 
     # Run optimize function

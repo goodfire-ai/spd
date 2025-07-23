@@ -1,10 +1,6 @@
 """Config classes of various types"""
 
-import importlib
-import inspect
-from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import Any, ClassVar, Literal, Self, override
+from typing import Annotated, Any, ClassVar, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -22,62 +18,44 @@ from spd.models.components import GateType
 from spd.spd_types import ModelPath, Probability
 
 
-class _FnConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInheritance]
+class L0MetricConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    name: str = Field(
-        ...,
-        description="Name of the function to call",
-    )
-    extra_kwargs: dict[str, Any] = Field(
-        default={},
-        description="Extra keyword arguments to pass to the function besides the default `inputs`",
-    )
-
-    @abstractmethod
-    def get_real_func(self) -> Callable[..., Any]: ...
-
-    @model_validator(mode="after")
-    def validate_fn_kwargs(self) -> Self:
-        real_fn = self.get_real_func()
-
-        # get its signature and drop the first 'inputs' parameter
-        sig = inspect.signature(real_fn)
-        params_after_inputs = list(sig.parameters.values())[1:]
-        sig_extra_only = inspect.Signature(params_after_inputs)
-
-        # see if our kwargs are valid
-        try:
-            sig_extra_only.bind(**self.extra_kwargs)
-        except TypeError as e:
-            # replace the error as e will include something like
-            # "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
-            raise ValueError(f"Invalid kwargs for {self.name!r}: {e}") from None
-
-        return self
+    name: Literal["ci_l0"] = "ci_l0"
 
 
-class FiguresFnConfig(_FnConfig):
-    @override
-    def get_real_func(self) -> Callable[..., Any]:
-        available_funcs = importlib.import_module("spd.figures").FIGURES_FNS
-        real_fn = available_funcs.get(self.name)
-        if real_fn is None:
-            raise ValueError(
-                f"Figure function {self.name!r} not found. Available functions: {available_funcs.keys()}"
-            )
-        return real_fn
+class CEandKLLossesMetricConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+    name: Literal["lm_ce_kl_losses"] = "lm_ce_kl_losses"
 
 
-class MetricsFnConfig(_FnConfig):
-    @override
-    def get_real_func(self) -> Callable[..., Any]:
-        available_funcs = importlib.import_module("spd.metrics").METRICS_FNS
-        real_fn = available_funcs.get(self.name)
-        if real_fn is None:
-            raise ValueError(
-                f"Metric function {self.name!r} not found. Available functions: {available_funcs.keys()}"
-            )
-        return real_fn
+class LMEmbedSampleTableMetricConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+    name: Literal["lm_embed_ci_sample"] = "lm_embed_ci_sample"
+
+
+MetricConfigUnion = L0MetricConfig | CEandKLLossesMetricConfig | LMEmbedSampleTableMetricConfig
+
+
+class CIHistogramsFigureConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+    name: Literal["ci_histograms"] = "ci_histograms"
+
+
+class MeanComponentActivationCountsFigureConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+    name: Literal["mean_component_activation_counts"] = "mean_component_activation_counts"
+
+
+class UVandIdentityCIFigureConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+    name: Literal["uv_and_identity_ci"] = "uv_and_identity_ci"
+
+
+FigureConfigUnion = (
+    CIHistogramsFigureConfig
+    | MeanComponentActivationCountsFigureConfig
+    | UVandIdentityCIFigureConfig
+)
 
 
 class TMSTaskConfig(BaseModel):
@@ -270,6 +248,10 @@ class Config(BaseModel):
         default=0.0,
         description="Fraction of total steps to linearly warm up the learning rate",
     )
+    eval_batch_size: PositiveInt = Field(
+        ...,
+        description="Batch size used for evaluation",
+    )
     n_eval_steps: PositiveInt = Field(
         ...,
         description="Frequency (in optimisation steps) at which to run evaluation",
@@ -297,14 +279,26 @@ class Config(BaseModel):
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    metrics_fns: list[MetricsFnConfig] = Field(
-        default=[],
-        description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
-    )
-    figures_fns: list[FiguresFnConfig] = Field(
-        default=[],
-        description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
-    )
+    metrics: list[
+        Annotated[
+            MetricConfigUnion,
+            Field(
+                default=[],
+                discriminator="name",
+                description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
+            ),
+        ]
+    ] = []
+    figures: list[
+        Annotated[
+            FigureConfigUnion,
+            Field(
+                default=[],
+                discriminator="name",
+                description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
+            ),
+        ]
+    ] = []
 
     # --- Component Tracking ---
     ci_alive_threshold: Probability = Field(

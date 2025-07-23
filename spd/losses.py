@@ -3,7 +3,6 @@ from typing import Literal
 import einops
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
 

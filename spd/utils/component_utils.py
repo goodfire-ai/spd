@@ -1,8 +1,8 @@
 from collections.abc import Iterator
+
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
-from torch.utils.data import DataLoader
 
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
@@ -29,22 +29,10 @@ def calc_stochastic_masks(
     return stochastic_masks
 
 
-def calc_ci_l_zero(
-    causal_importances: dict[str, Float[Tensor, "... C"]],
-    cutoff: float = 1e-2,
-) -> dict[str, float]:
-    """Calculate the L0 loss on the causal importances, summed over the C dimension."""
-    ci_l_zero = {}
-    for layer_name, ci in causal_importances.items():
-        mean_dims = tuple(range(ci.ndim - 1))
-        ci_l_zero[layer_name] = (ci > cutoff).float().mean(dim=mean_dims).sum().item()
-    return ci_l_zero
-
-
 def component_activation_statistics(
     model: ComponentModel,
     data_iterator: Iterator[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     n_steps: int,
     device: str,
     threshold: float,
