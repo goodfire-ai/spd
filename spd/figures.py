@@ -1,7 +1,7 @@
-"""Core metrics and figures for SPD experiments.
+"""Figures for SPD experiments.
 
-This file contains the default metrics and visualizations that are logged during SPD optimization.
-These are separate from user-defined metrics/figures to allow for easier comparison and extension.
+This file contains visualizations that can be logged during SPD optimization.
+These can be selected and configured in the config file.
 """
 
 from collections.abc import Mapping
@@ -60,6 +60,7 @@ def mean_component_activation_counts(inputs: CreateFiguresInputs) -> Mapping[str
         dataloader=inputs.eval_loader,
         n_steps=inputs.n_eval_steps,
         device=str(inputs.device),
+        threshold=inputs.config.ci_alive_threshold,
     )[1]
     return {
         "mean_component_activation_counts": plot_mean_component_activation_counts(

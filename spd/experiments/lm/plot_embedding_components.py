@@ -75,12 +75,15 @@ def permute_to_identity(
     return new_mask, perm_indices
 
 
-def plot_embedding_mask_heatmap(masks: Float[Tensor, "vocab C"], out_dir: Path) -> None:
+def plot_embedding_mask_heatmap(
+    masks: Float[Tensor, "vocab C"], out_dir: Path, ci_alive_threshold: float
+) -> None:
     """Plot heatmap of embedding masks.
 
     Args:
         masks: Tensor of shape (vocab_size, C) containing masks
         out_dir: Directory to save the plots
+        ci_alive_threshold: Threshold for considering a component alive
     """
     plt.figure(figsize=(20, 10))
     plt.imshow(
@@ -128,8 +131,10 @@ def plot_embedding_mask_heatmap(masks: Float[Tensor, "vocab C"], out_dir: Path) 
     logger.info(f"Saved first token histogram to {fname_hist} and .svg")
     plt.close()
 
-    n_alive_components = ((masks > 0.1).any(dim=0)).sum().item()
-    logger.info(f"Number of components that have any value > 0.1: {n_alive_components}")
+    n_alive_components = ((masks > ci_alive_threshold).any(dim=0)).sum().item()
+    logger.info(
+        f"Number of components that have any value > {ci_alive_threshold}: {n_alive_components}"
+    )
     ...
 
 
@@ -140,14 +145,14 @@ def main(model_path: str | Path) -> None:
         model_path: Path to the model checkpoint
     """
     # Load model
-    model, _config, out_dir = ComponentModel.from_pretrained(model_path)
+    model, config, out_dir = ComponentModel.from_pretrained(model_path)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
     # Collect masks
     masks = collect_embedding_masks(model, device)
     permuted_masks, _perm_indices = permute_to_identity(masks)
-    plot_embedding_mask_heatmap(permuted_masks, out_dir)
+    plot_embedding_mask_heatmap(permuted_masks, out_dir, config.ci_alive_threshold)
 
 
 if __name__ == "__main__":

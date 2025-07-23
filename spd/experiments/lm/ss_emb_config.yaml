@@ -40,6 +40,7 @@ image_freq: 2000
 image_on_first_step: true
 print_freq: 1000
 save_freq: null
+n_examples_until_dead: 2_048_000  # print_freq * batch_size * max_seq_len = 1000 * 4 * 512
 figures_fns:
   - name: "ci_histograms"
   - name: "mean_component_activation_counts"
