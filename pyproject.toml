@@ -34,9 +34,7 @@ dev = [
     "ruff",
     "basedpyright",
     "pre-commit",
-]
-# wip deps for grouping. some of these can probably be removed later.
-dev-grouping = [
+    # wip deps for grouping. some of these can probably be removed later.
     "scipy>=1.14.1",
     "scikit-learn",
     "nbconvert",
@@ -48,6 +46,7 @@ dev-grouping = [
     # RuntimeError: Cannot install on Python version 3.12.10; only versions >=3.6,<3.10 are supported.
     # help: `llvmlite` (v0.36.0) was included because `spd:dev-grouping` (v0.0.1) depends on `umap-learn` (v0.5.9.post2) which depends on `pynndescent` (v0.5.13) which depends on `llvmlite`
 ]
+
 [tool.uv.sources]
 js_embedding_vis = { git = "https://github.com/mivanit/js-embedding-vis/"}
 

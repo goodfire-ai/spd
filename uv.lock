@@ -2293,15 +2293,13 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
+    { name = "js-embedding-vis" },
+    { name = "muutils" },
+    { name = "nbconvert" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
-]
-dev-grouping = [
-    { name = "js-embedding-vis" },
-    { name = "muutils" },
-    { name = "nbconvert" },
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "seaborn" },
@@ -2332,15 +2330,13 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright" },
+    { name = "js-embedding-vis", git = "https://github.com/mivanit/js-embedding-vis/" },
+    { name = "muutils" },
+    { name = "nbconvert" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
-]
-dev-grouping = [
-    { name = "js-embedding-vis", git = "https://github.com/mivanit/js-embedding-vis/" },
-    { name = "muutils" },
-    { name = "nbconvert" },
     { name = "scikit-learn" },
     { name = "scipy", specifier = ">=1.14.1" },
     { name = "seaborn" },
