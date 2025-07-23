@@ -462,6 +462,65 @@ def get_experiments(
     return experiments_list
 
 
+def _wandb_setup(
+    project: str,
+    run_id: str,
+    experiments_list: list[str],
+    # only used in report generation
+    create_report: bool,
+    # passed to create_wandb_report as-is
+    report_title: str | None,
+    snapshot_branch: str,
+    commit_hash: str,
+    include_run_comparer: bool,
+) -> None:
+    """set up wandb, creating workspace views and optionally creating a report
+
+    Args:
+        project: W&B project name
+        run_id: Unique run identifier
+        experiments_list: List of experiment names to create views for
+        create_report: Whether to create a W&B report for the run. if False, no report will be created and the rest of the arguments don't matter
+        report_title: Title for the W&B report, if created. If None, will be
+            generated as "SPD Run Report - {run_id}".
+        snapshot_branch: Git branch name for the snapshot created by this run.
+        commit_hash: Commit hash of the snapshot created by this run.
+        include_run_comparer: Whether to include the run comparer in the report.
+
+    """
+    # Ensure the W&B project exists
+    ensure_project_exists(project)
+
+    # Create workspace views for each experiment
+    logger.section("Creating workspace views...")
+    workspace_urls: dict[str, str] = {}
+    for experiment in experiments_list:
+        workspace_url = create_workspace_view(run_id, experiment, project)
+        workspace_urls[experiment] = workspace_url
+
+    # Create report if requested
+    report_url: str | None = None
+    if create_report and len(experiments_list) > 1:
+        report_url = create_wandb_report(
+            report_title=report_title or f"SPD Run Report - {run_id}",
+            run_id=run_id,
+            branch_name=snapshot_branch,
+            commit_hash=commit_hash,
+            experiments_list=experiments_list,
+            include_run_comparer=include_run_comparer,
+            project=project,
+        )
+
+    # Print clean summary after wandb messages
+    logger.values(
+        msg="workspace urls per experiment",
+        data={
+            **workspace_urls,
+            **({"Aggregated Report": report_url} if report_url else {}),
+        },
+    )
+
+
 def main(
     experiments: str | None = None,
     sweep: str | bool = False,
@@ -526,8 +585,7 @@ def main(
 
     logger.set_format("console", log_format)
 
-    # Determine job name
-    job_name: str = f"spd-{job_suffix}" if job_suffix else "spd"
+    # Determine run id
     run_id: str = generate_run_id()
     logger.info(f"Run ID: {run_id}")
 
@@ -536,6 +594,7 @@ def main(
     if sweep:
         sweep_params_file = "sweep_params.yaml" if isinstance(sweep, bool) else sweep
 
+    # get the experiments to run -- run all of them if not specified
     experiments_list: list[str] = get_experiments(experiments)
     logger.info(f"Experiments: {', '.join(experiments_list)}")
 
@@ -551,8 +610,8 @@ def main(
     # wandb and snapshot setup
     # ==========================================================================================
 
-    # set up snapshot branch and commit hash
     if not local or use_wandb:
+        # set up snapshot branch and commit hash
         snapshot_branch: str
         commit_hash: str
 
@@ -564,45 +623,27 @@ def main(
             commit_hash = "none"
             logger.info(f"Using current branch: {snapshot_branch}")
 
-    if use_wandb:
-        # Ensure the W&B project exists
-        ensure_project_exists(project)
-
-        # Create workspace views for each experiment
-        logger.section("Creating workspace views...")
-        workspace_urls: dict[str, str] = {}
-        for experiment in experiments_list:
-            workspace_url = create_workspace_view(run_id, experiment, project)
-            workspace_urls[experiment] = workspace_url
-
-        # Create report if requested
-        report_url: str | None = None
-        if create_report and len(experiments_list) > 1:
-            report_url = create_wandb_report(
-                report_title=report_title or f"SPD Run Report - {run_id}",
-                run_id=run_id,
-                # snapshot branch and commit hash will exist, type checker doesn't realize this
-                branch_name=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
-                commit_hash=commit_hash,  # pyright: ignore[reportPossiblyUnboundVariable]
-                experiments_list=experiments_list,
-                include_run_comparer=sweep_params_file is not None,
+        # set up wandb
+        if use_wandb:
+            _wandb_setup(
                 project=project,
+                run_id=run_id,
+                experiments_list=experiments_list,
+                create_report=create_report,
+                # if `create_report == False`, the rest of the arguments don't matter
+                report_title=report_title,
+                snapshot_branch=snapshot_branch,
+                commit_hash=commit_hash,
+                include_run_comparer=sweep_params_file is not None,
             )
-
-        # Print clean summary after wandb messages
-        logger.values(
-            msg="workspace urls per experiment",
-            data={
-                **workspace_urls,
-                **({"Aggregated Report": report_url} if report_url else {}),
-            },
-        )
-    else:
-        assert not create_report, f"can't create report if use_wandb is false: {create_report = }"
-        logger.warning(
-            "W&B logging is disabled. No workspace views or reports will be created. "
-            "Set `use_wandb=True` to enable."
-        )
+        else:
+            assert not create_report, (
+                f"can't create report if use_wandb is false: {create_report = }"
+            )
+            logger.warning(
+                "W&B logging is disabled. No workspace views or reports will be created. "
+                "Set `use_wandb=True` to enable."
+            )
 
     # generate and run commands
     # ==========================================================================================
@@ -620,6 +661,7 @@ def main(
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             array_script = temp_path / f"run_array_{run_id}.sh"
+            job_name = f"spd-{job_suffix}" if job_suffix else "spd"
 
             create_slurm_array_script(
                 script_path=array_script,
