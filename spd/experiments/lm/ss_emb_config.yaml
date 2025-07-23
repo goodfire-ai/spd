@@ -40,7 +40,14 @@ image_freq: 2000
 image_on_first_step: true
 print_freq: 1000
 save_freq: null
-log_ce_losses: true
+figures_fns:
+  - name: "ci_histograms"
+  - name: "mean_component_activation_counts"
+metrics_fns:
+  - name: "ci_l0"
+  - name: "lm_kl"
+  - name: "lm_ce_losses"
+  - name: "lm_embed"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM

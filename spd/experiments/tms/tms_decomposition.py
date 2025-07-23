@@ -12,30 +12,13 @@ import fire
 import wandb
 
 from spd.configs import Config, TMSTaskConfig
-from spd.experiments.tms.models import TMSModel, TMSModelConfig
+from spd.experiments.tms.models import TMSModel
 from spd.log import logger
-from spd.run_spd import get_common_run_name_suffix, optimize
+from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.general_utils import get_device, load_config, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
-
-
-def get_run_name(config: Config, tms_model_config: TMSModelConfig) -> str:
-    """Generate a run name based on the config."""
-    if config.wandb_run_name:
-        run_suffix = config.wandb_run_name
-    else:
-        run_suffix = get_common_run_name_suffix(config)
-        run_suffix += f"ft{tms_model_config.n_features}_"
-        run_suffix += f"hid{tms_model_config.n_hidden}"
-        run_suffix += f"hid-layers{tms_model_config.n_hidden_layers}"
-    exp_name = f"tms{tms_model_config.n_features}-{tms_model_config.n_hidden}"
-    # TODO: Consolidate tms experiment names (previously we used tms_5-2-id)
-    if tms_model_config.n_hidden_layers > 0:
-        exp_name += f"-{tms_model_config.n_hidden_layers}"
-    exp_name += "_"
-    return config.wandb_run_name_prefix + exp_name + run_suffix
 
 
 def save_target_model_info(
@@ -91,10 +74,10 @@ def main(
     target_model = target_model.to(device)
     target_model.eval()
 
-    run_name = get_run_name(config=config, tms_model_config=target_model.config)
     if config.wandb_project:
         assert wandb.run, "wandb.run must be initialized before training"
-        wandb.run.name = run_name
+        if config.wandb_run_name:
+            wandb.run.name = config.wandb_run_name
 
     save_file(config.model_dump(mode="json"), out_dir / "final_config.yaml")
     if sweep_params:
