@@ -67,20 +67,20 @@ def main():
     # Create tabs for different analyses
     tab1, tab2, tab3 = st.tabs(
         [
-            "🎯 Token Inspector",
             "📈 Token activation Table",
             "📋 Activation Contexts",
+            "🎯 Token Inspector",
         ]
     )
 
     with tab1:
-        render_token_activations_tab(model_data)
-
-    with tab2:
         render_component_token_table_tab(model_data)
 
-    with tab3:
+    with tab2:
         render_component_activation_contexts_tab(model_data)
+
+    with tab3:
+        render_token_activations_tab(model_data)
 
 
 if __name__ == "__main__":
