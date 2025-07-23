@@ -28,6 +28,7 @@ output_loss_type: mse
 
 # --- Training ---
 batch_size: 2048
+eval_batch_size: 2048
 steps: 100_000
 lr: 1e-3
 lr_schedule: constant
@@ -45,7 +46,7 @@ figures:
   - name: "ci_histograms"
   - name: "mean_component_activation_counts"
   - name: "uv_and_identity_ci"
-metrics::
+metrics:
   - name: "ci_l0"
 
 # --- Pretrained model info ---

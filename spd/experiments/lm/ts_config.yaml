@@ -31,6 +31,7 @@ output_loss_type: kl
 
 # --- Training ---
 batch_size: 4
+eval_batch_size: 4
 steps: 50_000
 lr: 1e-4
 lr_schedule: constant
@@ -48,7 +49,7 @@ n_examples_until_dead: 8_192_000
 figures:
   - name: "ci_histograms"
   - name: "mean_component_activation_counts"
-metrics::
+metrics:
   - name: "ci_l0"
   - name: "lm_ce_kl_losses"
 

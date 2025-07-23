@@ -288,7 +288,7 @@ class Config(BaseModel):
                 description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
             ),
         ]
-    ] = []
+    ]
     figures: list[
         Annotated[
             FigureConfigUnion,
@@ -298,7 +298,7 @@ class Config(BaseModel):
                 description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
             ),
         ]
-    ] = []
+    ]
 
     # --- Component Tracking ---
     ci_alive_threshold: Probability = Field(

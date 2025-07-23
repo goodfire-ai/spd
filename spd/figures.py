@@ -36,6 +36,7 @@ from spd.utils.general_utils import extract_batch_data
 @dataclass
 class FigureInput:
     ci: dict[str, Float[Tensor, "... C"]]
+    batch: Int[Tensor, "..."] | Float[Tensor, "..."]
 
 
 class StreamingFigureCreator(ABC):
@@ -106,8 +107,7 @@ class UVandIdentityCI(StreamingFigureCreator):
 
     @override
     def watch(self, inputs: FigureInput) -> None:
-        if self.batch_shape is None:
-            self.batch_shape = next(iter(inputs.ci.values())).shape[:-1]
+        self.batch_shape = inputs.batch.shape
 
     @override
     def compute(self) -> Mapping[str, plt.Figure]:
@@ -161,7 +161,7 @@ def create_figures(
         )
         ci, _ci_upper_leaky = model.calc_causal_importances(pre_weight_acts)
 
-        inputs = FigureInput(ci=ci)
+        inputs = FigureInput(ci=ci, batch=batch)
 
         for figure_creator in figure_creators:
             figure_creator.watch(inputs)
