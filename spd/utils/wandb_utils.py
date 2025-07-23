@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import TypeVar
 
 import wandb
 from dotenv import load_dotenv
@@ -9,8 +8,6 @@ from wandb.apis.public import File, Run
 
 from spd.settings import REPO_ROOT
 from spd.utils.general_utils import replace_pydantic_model
-
-T_config = TypeVar("T_config", bound=BaseModel)
 
 
 def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None = None) -> File:
