@@ -50,16 +50,13 @@ class AliveComponentsTracker:
         )
         for module_name, importance_vals in importance_vals_dict.items():
             firing: Bool[Tensor, " C"] = reduce(
-                importance_vals > self.ci_alive_threshold, "... C -> C", torch.any
+                importance_vals.detach() > self.ci_alive_threshold, "... C -> C", torch.any
             )
 
             n_examples = importance_vals.shape[:-1].numel()
 
-            self.examples_since_fired[module_name] = torch.where(
-                firing,
-                0,
-                self.examples_since_fired[module_name] + n_examples,
-            )
+            self.examples_since_fired[module_name] += n_examples
+            self.examples_since_fired[module_name] *= ~firing
 
     def n_alive(self) -> dict[str, int]:
         """Get the number of alive components per module.
