@@ -64,7 +64,7 @@ class _SPDLogger(logging.Logger):
     ) -> None:
         """Emit a visually separated section header"""
         # term width
-        term_width: int = shutil.get_terminal_size((50, 20)).columns
+        term_width: int = shutil.get_terminal_size(fallback=(50, 20)).columns
         self.info("\n" + DIV_CHAR * term_width + "\n" + msg + "\n" + DIV_CHAR * term_width)
 
     def set_format(self, handler: str, style: LogFormat) -> None:
