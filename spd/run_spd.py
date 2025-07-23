@@ -156,7 +156,7 @@ def optimize(
                 if step > 0:
                     n_alive = alive_tracker.n_alive()
                     for layer_name, n_alive_count in n_alive.items():
-                        log_data[f"{layer_name}/n_alive_01"] = n_alive_count
+                        log_data[f"{layer_name}/n_alive_{config.ci_alive_threshold}"] = n_alive_count
 
                 metrics = create_metrics(
                     model=model,
