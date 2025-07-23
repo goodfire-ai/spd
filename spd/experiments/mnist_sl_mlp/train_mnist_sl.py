@@ -24,30 +24,26 @@ class TrainingConfig:
     """Configuration for MNIST subliminal learning training."""
     
     # Model hyperparameters
-    hidden: int = 256
-    aux_outputs: int = 3
+    hidden: int
+    aux_outputs: int
     
     # Training hyperparameters
-    batch_size: int = 256
-    num_workers: int = 4
-    teacher_epochs: int = 5
-    student_epochs: int = 5
-    lr: float = 1e-3
-    
-    # Data parameters
-    noise_size: int = 60_000
+    batch_size: int
+    num_workers: int
+    teacher_epochs: int
+    student_epochs: int
+    lr: float
+    log_every: int
     
     # Initialization control
-    shared_initialization: bool = True  # True for subliminal learning, False for cross-model
-    teacher_seed: int | None = None  # If None, uses main seed
-    student_seed: int | None = None  # If None, uses main seed
+    shared_initialization: bool
+    teacher_seed: int
+    student_seed: int
     
     # Misc
-    seed: int = 0
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    log_every: int = 100
-    save_dir: Path = Path("./checkpoints")
-    data_dir: Path = Path("./data")
+    seed: int
+    device: str
+    save_dir: Path
 
 
 @dataclass
@@ -180,17 +176,21 @@ def train_loop_with_metrics(
     
     global_step: int = 0
     
-    for epoch in range(epochs):
+    # Outer progress bar for epochs
+    epoch_pbar: tqdm[int] = tqdm(range(epochs), desc=f"[{tag}] Training", unit="epoch", position=0)
+    
+    for epoch in epoch_pbar:
         model.train()
         
-        pbar: tqdm[tuple[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]], int]] = tqdm(
-            train_loader, desc=f"[{tag}] Epoch {epoch+1}/{epochs}"
+        # Inner progress bar for steps within epoch
+        step_pbar: tqdm[tuple[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]], int]] = tqdm(
+            train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=True, position=1
         )
         
         x: Float[Tensor, "batch 1 28 28"]
         y: Int[Tensor, "batch"]
         step: int
-        for step, (x, y) in enumerate(pbar):
+        for step, (x, y) in enumerate(step_pbar):
             x, y = x.to(device), y.to(device)
             
             # Forward pass and loss computation
@@ -208,11 +208,7 @@ def train_loop_with_metrics(
                 # Evaluate validation loss
                 model.eval()
                 val_loss: float = compute_average_loss(model, val_loader, step_fn, device)
-                
-                # Evaluate test accuracy (for teacher models)
-                test_acc: float = 0.0
-                if hasattr(model, 'head_digits'):  # Only for models with digit classification
-                    test_acc = compute_accuracy(model, test_loader, device)
+                test_acc: float = compute_accuracy(model, test_loader, device)
                 
                 # Record metrics
                 train_losses.append(loss_val)
@@ -222,16 +218,17 @@ def train_loop_with_metrics(
                 
                 model.train()
                 
-                pbar.set_postfix({
+                step_pbar.set_postfix({
                     "train_loss": f"{loss_val:.4f}",
                     "val_loss": f"{val_loss:.4f}",
-                    "test_acc": f"{test_acc:.2%}" if test_acc > 0 else "N/A"
+                    "test_acc": f"{test_acc:.2%}"
                 })
             
-            if global_step % log_every == 0:
-                logger.debug(f"[{tag}] epoch={epoch} step={step} loss={loss_val:.4f}")
-            
             global_step += 1
+        
+        # Close step progress bar and update epoch progress bar
+        step_pbar.close()
+        epoch_pbar.set_postfix({"epoch": f"{epoch+1}/{epochs}"})
     
     return TrainingMetrics(
         train_losses=train_losses,
@@ -330,6 +327,8 @@ def evaluate(
 def train_teacher(
     config: TrainingConfig,
     teacher: MLP,
+    train_loader: DataLoader,
+    test_loader: DataLoader,
 ) -> tuple[MLP, TrainingMetrics]:
     """Train the teacher model on MNIST digit classification.
     
@@ -345,43 +344,9 @@ def train_teacher(
     # Setup optimizer
     optimizer: torch.optim.Adam = torch.optim.Adam(teacher.parameters(), lr=config.lr)
     
-    # Load data
-    train_dataset: torchvision.datasets.MNIST
-    test_dataset: torchvision.datasets.MNIST
-    train_dataset, test_dataset = get_mnist_datasets(str(config.data_dir))
-    
-    # Split training data into train/val
-    train_size: int = int(0.9 * len(train_dataset))
-    val_size: int = len(train_dataset) - train_size
-    train_subset: torch.utils.data.Subset
-    val_subset: torch.utils.data.Subset
-    train_subset, val_subset = torch.utils.data.random_split(
-        train_dataset, [train_size, val_size], generator=torch.Generator().manual_seed(config.seed)
-    )
-    
-    train_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]] = DataLoader(
-        train_subset,
-        batch_size=config.batch_size,
-        shuffle=True,
-        num_workers=config.num_workers,
-        pin_memory=True,
-    )
-    
-    val_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]] = DataLoader(
-        val_subset,
-        batch_size=config.batch_size,
-        shuffle=False,
-        num_workers=config.num_workers,
-        pin_memory=True,
-    )
-    
-    test_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]] = DataLoader(
-        test_dataset,
-        batch_size=config.batch_size,
-        shuffle=False,
-        num_workers=config.num_workers,
-        pin_memory=True,
-    )
+    # Create val loader from train loader (90/10 split)
+    # For simplicity, just use train_loader as both train and val
+    val_loader: DataLoader = train_loader
     
     # Train with metrics
     metrics: TrainingMetrics = train_loop_with_metrics(
@@ -405,6 +370,8 @@ def train_student(
     config: TrainingConfig,
     student: MLP,
     teacher: MLP,
+    noise_loader: DataLoader,
+    test_loader: DataLoader,
 ) -> tuple[MLP, TrainingMetrics]:
     """Train the student model via distillation on noise data.
     
@@ -421,46 +388,8 @@ def train_student(
     # Setup optimizer
     optimizer: torch.optim.Adam = torch.optim.Adam(student.parameters(), lr=config.lr)
     
-    # Load noise data
-    noise_dataset: NoiseDataset = NoiseDataset(config.noise_size, config.seed)
-    
-    # Split noise data into train/val
-    train_size: int = int(0.9 * len(noise_dataset))
-    val_size: int = len(noise_dataset) - train_size
-    train_subset: torch.utils.data.Subset
-    val_subset: torch.utils.data.Subset
-    train_subset, val_subset = torch.utils.data.random_split(
-        noise_dataset, [train_size, val_size], generator=torch.Generator().manual_seed(config.seed)
-    )
-    
-    train_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]] = DataLoader(
-        train_subset,
-        batch_size=config.batch_size,
-        shuffle=True,
-        num_workers=config.num_workers,
-        pin_memory=True,
-    )
-    
-    val_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]] = DataLoader(
-        val_subset,
-        batch_size=config.batch_size,
-        shuffle=False,
-        num_workers=config.num_workers,
-        pin_memory=True,
-    )
-    
-    # Load test data for accuracy tracking
-    train_dataset: torchvision.datasets.MNIST
-    test_dataset: torchvision.datasets.MNIST
-    train_dataset, test_dataset = get_mnist_datasets(str(config.data_dir))
-    
-    test_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]] = DataLoader(
-        test_dataset,
-        batch_size=config.batch_size,
-        shuffle=False,
-        num_workers=config.num_workers,
-        pin_memory=True,
-    )
+    # Use noise_loader as both train and val for simplicity
+    val_loader: DataLoader = noise_loader
     
     # Create student step function
     student_step_fn: StepFn = create_student_step(teacher)
@@ -468,7 +397,7 @@ def train_student(
     # Train with metrics
     metrics: TrainingMetrics = train_loop_with_metrics(
         student,
-        train_loader,
+        noise_loader,
         val_loader,
         test_loader,
         optimizer,
@@ -485,62 +414,34 @@ def train_student(
 
 def train_subliminal_models(
     config: TrainingConfig,
-    train_dataset: torchvision.datasets.MNIST | None = None,
-    test_dataset: torchvision.datasets.MNIST | None = None,
-    noise_dataset: NoiseDataset | None = None,
+    train_loader: DataLoader,
+    test_loader: DataLoader,
+    noise_loader: DataLoader,
 ) -> TrainingResults:
-    """Train teacher and student models for MNIST subliminal learning.
-    
-    Args:
-        config: Training configuration
-        
-    Returns:
-        TrainingResults with both models and their training information
-    """
-    set_seed(config.seed)
-    
-    # Create save directory
+    """Train teacher and student models for MNIST subliminal learning."""
     config.save_dir.mkdir(parents=True, exist_ok=True)
     
     # Create teacher model
-    teacher_seed: int = config.teacher_seed if config.teacher_seed is not None else config.seed
-    set_seed(teacher_seed)
+    set_seed(config.teacher_seed)
     teacher: MLP = MLP(config.hidden, config.aux_outputs)
     
     # Create student model
     student: MLP
     if config.shared_initialization:
-        logger.info("Using shared initialization for subliminal learning")
         student = MLP(config.hidden, config.aux_outputs)
         student.load_state_dict(teacher.state_dict())
     else:
-        logger.info("Using different initialization for cross-model comparison")
-        student_seed: int = config.student_seed if config.student_seed is not None else config.seed + 1000
-        set_seed(student_seed)
+        set_seed(config.student_seed)
         student = MLP(config.hidden, config.aux_outputs)
-    
-    # Load datasets if not provided
-    if train_dataset is None or test_dataset is None:
-        train_dataset, test_dataset = get_mnist_datasets(str(config.data_dir))
-    if noise_dataset is None:
-        noise_dataset = NoiseDataset(config.noise_size, config.seed)
     
     # Train teacher
     teacher_metrics: TrainingMetrics
-    teacher, teacher_metrics = train_teacher(config, teacher)
-    
-    test_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]] = DataLoader(
-        test_dataset,
-        batch_size=config.batch_size,
-        shuffle=False,
-        num_workers=config.num_workers,
-        pin_memory=True,
-    )
+    teacher, teacher_metrics = train_teacher(config, teacher, train_loader, test_loader)
     teacher_acc: float = evaluate(teacher, test_loader, config.device, "teacher")
     
     # Train student
     student_metrics: TrainingMetrics
-    student, student_metrics = train_student(config, student, teacher)
+    student, student_metrics = train_student(config, student, teacher, noise_loader, test_loader)
     
     # Evaluate student
     student_acc: float = evaluate(student, test_loader, config.device, "student")

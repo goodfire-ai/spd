@@ -1,6 +1,4 @@
 #%% imports
-from __future__ import annotations
-
 from pathlib import Path
 
 import torch
@@ -24,17 +22,25 @@ config = TrainingConfig(
     hidden=256,
     aux_outputs=3,
     batch_size=256,
+    num_workers=4,
     teacher_epochs=5,
     student_epochs=5,
-    lr=1e-3,
-    noise_size=60_000,
-    seed=0,
+    lr=1e-2,
+    log_every=100,
     shared_initialization=True,  # Change to False to test cross-model baseline
-    save_dir=Path("./checkpoints"),
+    teacher_seed=0,
+    student_seed=42,
+    seed=0,
     device="cuda:0" if torch.cuda.is_available() else "cpu",
+    save_dir=Path("./checkpoints"),
 )
 
-results = train_subliminal_models(config, train_dataset, test_dataset, noise_dataset)
+# Create data loaders
+train_loader: DataLoader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
+test_loader: DataLoader = DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers)
+noise_loader: DataLoader = DataLoader(noise_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
+
+results: TrainingResults = train_subliminal_models(config, train_loader, test_loader, noise_loader)
 
 #%% create evaluation report
 mnist_loader = DataLoader(test_dataset, batch_size=256, shuffle=False)

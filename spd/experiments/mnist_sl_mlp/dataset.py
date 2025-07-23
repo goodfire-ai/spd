@@ -50,39 +50,15 @@ class NoiseDataset(Dataset[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]]):
         return self.data[idx], torch.tensor(0, dtype=torch.long)
 
 
-def get_mnist_datasets(
-    data_dir: str = "data",
-    download: bool = True,
-) -> tuple[torchvision.datasets.MNIST, torchvision.datasets.MNIST]:
-    """Load MNIST train and test datasets.
-    
-    Args:
-        data_dir: Directory to save/load MNIST data
-        download: Whether to download if not present
-        
-    Returns:
-        Tuple of (train_dataset, test_dataset)
-    """
-    # Standard MNIST preprocessing
-    transform = T.Compose([
-        T.ToTensor(),
-        T.ConvertImageDtype(torch.float32)
-    ])
+def get_mnist_datasets() -> tuple[torchvision.datasets.MNIST, torchvision.datasets.MNIST]:
+    """Load MNIST train and test datasets."""
+    transform = T.Compose([T.ToTensor(), T.ConvertImageDtype(torch.float32)])
     
     train_dataset = torchvision.datasets.MNIST(
-        root=data_dir,
-        train=True,
-        download=download,
-        transform=transform
+        root="data", train=True, download=True, transform=transform
     )
-    
     test_dataset = torchvision.datasets.MNIST(
-        root=data_dir,
-        train=False,
-        download=download,
-        transform=transform
+        root="data", train=False, download=True, transform=transform
     )
-    
-    logger.info(f"Loaded MNIST datasets: train={len(train_dataset)}, test={len(test_dataset)}")
     
     return train_dataset, test_dataset

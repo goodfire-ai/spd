@@ -332,7 +332,6 @@ def plot_auxiliary_outputs_distribution(
             bins=50,
             alpha=0.5,
             label='Teacher',
-            color='blue',
             density=True
         )
         ax.hist(
@@ -340,7 +339,6 @@ def plot_auxiliary_outputs_distribution(
             bins=50,
             alpha=0.5,
             label='Student',
-            color='red',
             density=True
         )
         
