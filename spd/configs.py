@@ -242,7 +242,22 @@ class Config(BaseModel):
     # --- Training ---
     lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
     steps: PositiveInt = Field(..., description="Total number of optimisation steps")
-    batch_size: PositiveInt = Field(..., description="Mini-batch size used for optimisation")
+    batch_size: PositiveInt = Field(
+        ...,
+        description=(
+            "Mini-batch size used for optimisation. This is the EFFECTIVE batch size: Dependent "
+            "on gradient accumulation steps it may be processed as multiple micro-batches."
+        ),
+    )
+    gradient_accumulation_steps: PositiveInt = Field(
+        default=1,
+        description="Number of steps to accumulate gradients over before updating parameters",
+    )
+
+    @property
+    def microbatch_size(self) -> PositiveInt:
+        return self.batch_size // self.gradient_accumulation_steps
+
     lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
         default="constant",
         description="Type of learning-rate schedule to apply",
@@ -352,5 +367,9 @@ class Config(BaseModel):
             assert self.lr_exponential_halflife is not None, (
                 "lr_exponential_halflife must be set if lr_schedule is exponential"
             )
+
+        assert self.batch_size % self.gradient_accumulation_steps == 0, (
+            "batch_size must be divisible by gradient_accumulation_steps"
+        )
 
         return self

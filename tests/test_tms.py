@@ -101,8 +101,12 @@ def test_tms_decomposition_happy_path() -> None:
         synced_inputs=None,
     )
 
-    train_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
-    eval_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
+    train_loader = DatasetGeneratedDataLoader(
+        dataset, batch_size=config.microbatch_size, shuffle=False
+    )
+    eval_loader = DatasetGeneratedDataLoader(
+        dataset, batch_size=config.microbatch_size, shuffle=False
+    )
 
     tied_weights = None
     if target_model.config.tied_weights:
