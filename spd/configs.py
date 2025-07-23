@@ -368,9 +368,8 @@ class Config(BaseModel):
                 "lr_exponential_halflife must be set if lr_schedule is exponential"
             )
 
-        if self.gradient_accumulation_steps > 1:
-            assert self.batch_size % self.gradient_accumulation_steps == 0, (
-                "batch_size must be divisible by gradient_accumulation_steps"
-            )
+        assert self.batch_size % self.gradient_accumulation_steps == 0, (
+            "batch_size must be divisible by gradient_accumulation_steps"
+        )
 
         return self
