@@ -366,3 +366,56 @@ def compute_target_metrics(
         metrics[f"target_solution_error/{module_name}"] = module_error
 
     return metrics
+
+
+# Registry of target solutions for toy model experiments
+TARGET_CI_SOLUTIONS: dict[str, TargetCISolution] = {
+    "tms_5-2": TargetCISolution(
+        {"linear1": IdentityCIPattern(n_features=5), "linear2": IdentityCIPattern(n_features=5)}
+    ),
+    "tms_5-2-id": TargetCISolution(
+        {
+            "linear1": IdentityCIPattern(n_features=5),
+            "linear2": IdentityCIPattern(n_features=5),
+            "hidden_layers.0": DenseCIPattern(k=2),
+        }
+    ),
+    "tms_40-10": TargetCISolution(
+        {
+            "linear1": IdentityCIPattern(n_features=40),
+            "linear2": IdentityCIPattern(n_features=40),
+        }
+    ),
+    "tms_40-10-id": TargetCISolution(
+        {
+            "linear1": IdentityCIPattern(n_features=40),
+            "linear2": IdentityCIPattern(n_features=40),
+            "hidden_layers.0": DenseCIPattern(k=10),
+        }
+    ),
+    "resid_mlp1": TargetCISolution(
+        {
+            "layers.0.mlp_in": IdentityCIPattern(n_features=100),
+            "layers.0.mlp_out": DenseCIPattern(k=50),
+        }
+    ),
+    "resid_mlp2": TargetCISolution(
+        {
+            "layers.*.mlp_in": IdentityCIPattern(n_features=100),
+            "layers.*.mlp_out": DenseCIPattern(k=25),
+        },
+        expected_matches=4,
+    ),
+    "resid_mlp3": TargetCISolution(
+        {
+            "layers.*.mlp_in": IdentityCIPattern(n_features=102),
+            "layers.*.mlp_out": DenseCIPattern(k=17),
+        },
+        expected_matches=6,
+    ),
+}
+
+
+def has_ci_solution(evals_id: str) -> bool:
+    """Check if an experiment has a target CI solution defined."""
+    return evals_id in TARGET_CI_SOLUTIONS

@@ -9,7 +9,7 @@ from spd.log import logger
 from spd.settings import REPO_ROOT
 
 
-def create_git_snapshot(branch_name_prefix: str) -> str:
+def create_git_snapshot(branch_name_prefix: str) -> tuple[str, str]:
     """Create a git snapshot branch with current changes.
 
     Creates a timestamped branch containing all current changes (staged and unstaged). Uses a
@@ -17,7 +17,8 @@ def create_git_snapshot(branch_name_prefix: str) -> str:
     branch to origin if possible, but will continue without error if push permissions are lacking.
 
     Returns:
-        Branch name of the created snapshot
+        (branch_name, commit_hash) where commit_hash is the HEAD of the snapshot branch
+        (this will be the new snapshot commit if changes existed, otherwise the base commit).
 
     Raises:
         subprocess.CalledProcessError: If git commands fail (except for push)
@@ -58,12 +59,12 @@ def create_git_snapshot(branch_name_prefix: str) -> str:
             subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True, capture_output=True)
 
             # Check if there are changes to commit
-            result = subprocess.run(
+            diff_result = subprocess.run(
                 ["git", "diff", "--cached", "--quiet"], cwd=worktree_path, capture_output=True
             )
 
             # Commit changes if any exist
-            if result.returncode != 0:  # Non-zero means there are changes
+            if diff_result.returncode != 0:  # Non-zero means there are changes
                 subprocess.run(
                     ["git", "commit", "-m", f"Sweep snapshot {timestamp_utc}", "--no-verify"],
                     cwd=worktree_path,
@@ -71,6 +72,17 @@ def create_git_snapshot(branch_name_prefix: str) -> str:
                     capture_output=True,
                 )
 
+            # Get the commit hash of HEAD (either new commit or base commit if nothing changed)
+            rev_parse = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=worktree_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            commit_hash = rev_parse.stdout.strip()
+
+            # Try push (non-fatal if fails)
             try:
                 subprocess.run(
                     ["git", "push", "-u", "origin", snapshot_branch],
@@ -95,4 +107,4 @@ def create_git_snapshot(branch_name_prefix: str) -> str:
                 capture_output=True,
             )
 
-    return snapshot_branch
+    return snapshot_branch, commit_hash

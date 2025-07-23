@@ -13,28 +13,11 @@ from spd.configs import Config, ResidualMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidualMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
 from spd.log import logger
-from spd.run_spd import get_common_run_name_suffix, optimize
+from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.general_utils import get_device, load_config, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
-
-
-def get_run_name(
-    config: Config,
-    n_features: int,
-    n_layers: int,
-    d_resid: int,
-    d_mlp: int,
-) -> str:
-    """Generate a run name based on the config."""
-    run_suffix = ""
-    if config.wandb_run_name:
-        run_suffix = config.wandb_run_name
-    else:
-        run_suffix = get_common_run_name_suffix(config)
-        run_suffix += f"ft{n_features}_resid{d_resid}_mlp{d_mlp}"
-    return config.wandb_run_name_prefix + f"resid_mlp{n_layers}_" + run_suffix
 
 
 def save_target_model_info(
@@ -90,16 +73,10 @@ def main(
     target_model = target_model.to(device)
     target_model.eval()
 
-    run_name = get_run_name(
-        config,
-        n_features=target_model.config.n_features,
-        n_layers=target_model.config.n_layers,
-        d_resid=target_model.config.d_embed,
-        d_mlp=target_model.config.d_mlp,
-    )
     if config.wandb_project:
         assert wandb.run, "wandb.run must be initialized before training"
-        wandb.run.name = run_name
+        if config.wandb_run_name:
+            wandb.run.name = config.wandb_run_name
 
     save_file(config.model_dump(mode="json"), out_dir / "final_config.yaml")
     if sweep_params:

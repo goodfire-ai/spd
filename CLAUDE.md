@@ -65,7 +65,8 @@ Both installation commands automatically create `spd/user_metrics_and_figs.py` f
 - `spd/models/component_model.py` - Core ComponentModel that wraps target models
 - `spd/models/components.py` - Component types (LinearComponent, EmbeddingComponent, etc.)
 - `spd/losses.py` - SPD loss functions (faithfulness, reconstruction, importance minimality)
-- `spd/user_metrics_and_figs.py` - User-defined metrics and visualizations (created from template)
+- `spd/metrics.py` - SPD metrics (faithfulness, reconstruction, importance minimality)
+- `spd/figures.py` - SPD figures (faithfulness, reconstruction, importance minimality)
 
 **Experiment Structure:**
 Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
