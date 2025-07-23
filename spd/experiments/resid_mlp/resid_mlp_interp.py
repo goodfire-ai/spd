@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Any
 
 import einops
@@ -613,7 +612,7 @@ def plot_neuron_contribution_pairs(
 
 
 def main():
-    out_dir: Path = get_output_dir() / "figures"
+    out_dir = get_output_dir() / "figures"
     out_dir.mkdir(parents=True, exist_ok=True)
     set_seed(0)
     device = get_device()
@@ -637,7 +636,7 @@ def main():
         fig = plot_spd_feature_contributions_truncated(
             patched_model, model.components, n_features=10
         )
-        fname_weights: Path = out_dir / f"resid_mlp_weights_{n_layers}layers_{wandb_id}.png"
+        fname_weights = out_dir / f"resid_mlp_weights_{n_layers}layers_{wandb_id}.png"
         fig.savefig(
             fname_weights,
             bbox_inches="tight",
@@ -651,7 +650,7 @@ def main():
             model.components,
             n_features=None,  # Using same number of features as above
         )
-        fname_pairs: Path = out_dir / f"neuron_contribution_pairs_{n_layers}layers_{wandb_id}.png"
+        fname_pairs = out_dir / f"neuron_contribution_pairs_{n_layers}layers_{wandb_id}.png"
         fig_pairs.savefig(
             fname_pairs,
             bbox_inches="tight",

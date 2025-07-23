@@ -100,7 +100,7 @@ def plot_embedding_mask_heatmap(masks: Float[Tensor, "vocab C"], out_dir: Path) 
     plt.ylabel("Vocab Token ID")
     plt.title("Embedding Component Masks per Token")
     plt.tight_layout()
-    fname_embed_masks: Path = out_dir / "embedding_masks.png"
+    fname_embed_masks = out_dir / "embedding_masks.png"
     plt.savefig(fname_embed_masks, dpi=300)
     plt.savefig(fname_embed_masks.with_suffix(".svg"))  # vector graphic for zooming
     logger.info(f"Saved embedding masks to {fname_embed_masks} and .svg")
