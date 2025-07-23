@@ -48,6 +48,7 @@ def main(path: ModelPath) -> None:
             dataloader=dataloader,
             n_steps=100,
             device=device,
+            threshold=config.ci_alive_threshold,
         )
     )
     logger.info(f"n_components: {ss_model.C}")

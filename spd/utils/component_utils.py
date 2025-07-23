@@ -46,7 +46,7 @@ def component_activation_statistics(
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     n_steps: int,
     device: str,
-    threshold: float = 0.1,
+    threshold: float,
 ) -> tuple[dict[str, float], dict[str, Float[Tensor, " C"]]]:
     """Get the number and strength of the masks over the full dataset."""
     n_tokens = {module_name: 0 for module_name in model.components}

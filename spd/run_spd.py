@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import wandb
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Float, Int
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -19,6 +19,7 @@ from spd.log import logger
 from spd.losses import calculate_losses
 from spd.metrics import create_metrics
 from spd.models.component_model import ComponentModel
+from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.general_utils import (
     extract_batch_data,
     get_lr_schedule_fn,
@@ -83,10 +84,14 @@ def optimize(
 
     train_data_iter = iter(train_loader)
 
-    # TODO(oli): replace with AliveTracker class
-    alive_components: dict[str, Bool[Tensor, " C"]] = {
-        layer_name: torch.zeros(config.C, device=device).bool() for layer_name in model.components
-    }
+    # Track which components are alive based on firing frequency
+    alive_tracker = AliveComponentsTracker(
+        module_names=model.target_module_paths,
+        C=config.C,
+        n_examples_until_dead=config.n_examples_until_dead,
+        device=torch.device(device),
+        ci_alive_threshold=config.ci_alive_threshold,
+    )
 
     for step in tqdm(range(config.steps + 1), ncols=0):
         step_lr = get_lr_with_warmup(
@@ -124,10 +129,7 @@ def optimize(
                 sigmoid_type=config.sigmoid_type,
             )
 
-            for layer_name, ci in causal_importances.items():
-                alive_components[layer_name] = alive_components[layer_name] | (ci > 0.1).any(
-                    dim=(0, 1)
-                )
+            alive_tracker.watch_batch(causal_importances)
 
             micro_total_loss, micro_loss_terms = calculate_losses(
                 model=model,
@@ -165,9 +167,10 @@ def optimize(
                     **{f"loss/{k}": v for k, v in loss_terms.items()},
                 }
 
-                for layer_name, layer_alive_components in alive_components.items():
-                    log_data[f"{layer_name}/n_alive_01"] = layer_alive_components.sum().item()
-                    alive_components[layer_name] = torch.zeros(config.C, device=device).bool()
+                for layer_name, n_alive_count in alive_tracker.n_alive().items():
+                    log_data[f"{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"] = (
+                        n_alive_count
+                    )
 
                 metrics = create_metrics(
                     model=model,

@@ -302,6 +302,16 @@ class Config(BaseModel):
         description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
     )
 
+    # --- Component Tracking ---
+    ci_alive_threshold: Probability = Field(
+        default=0.1,
+        description="Causal importance threshold above which a component is considered 'firing'",
+    )
+    n_examples_until_dead: PositiveInt = Field(
+        ...,
+        description="Number of examples without firing before a component is considered dead. Note that in LMs, an example is a token, not a sequence.",
+    )
+
     # --- Pretrained model info ---
     pretrained_model_class: str = Field(
         ...,
