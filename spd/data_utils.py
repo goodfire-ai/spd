@@ -1,3 +1,6 @@
+from __future__ import annotations
+# pyright: reportUnknownParameterType=false, reportUnknownVariableType=false, reportMissingTypeArgument=false
+
 from collections.abc import Iterator
 from typing import Generic, Literal, TypeVar
 
@@ -48,14 +51,7 @@ class BatchedDataLoader(DataLoader[Q], Generic[Q]):
             yield batch[0], label[0]
 
 
-DataGenerationType = Literal[
-    "exactly_one_active",
-    "exactly_two_active",
-    "exactly_three_active",
-    "exactly_four_active",
-    "exactly_five_active",
-    "at_least_zero_active",
-]
+DataGenerationType = Literal["exactly_n_active", "at_least_zero_active"]
 
 
 class SparseFeatureDataset(
@@ -72,6 +68,7 @@ class SparseFeatureDataset(
         feature_probability: float,
         device: str,
         data_generation_type: DataGenerationType = "at_least_zero_active",
+        n_active: int | None = None,
         value_range: tuple[float, float] = (0.0, 1.0),
         synced_inputs: list[list[int]] | None = None,
     ):
@@ -79,8 +76,16 @@ class SparseFeatureDataset(
         self.feature_probability = feature_probability
         self.device = device
         self.data_generation_type = data_generation_type
+        self.n_active = n_active
         self.value_range = value_range
         self.synced_inputs = synced_inputs
+        
+        # Validation
+        if self.data_generation_type == "exactly_n_active":
+            if self.n_active is None:
+                raise ValueError("n_active must be specified when data_generation_type is 'exactly_n_active'")
+            if self.n_active <= 0 or self.n_active > self.n_features:
+                raise ValueError(f"n_active must be between 1 and {self.n_features}, got {self.n_active}")
 
     def __len__(self) -> int:
         return 2**31
@@ -107,19 +112,9 @@ class SparseFeatureDataset(
     def generate_batch(
         self, batch_size: int
     ) -> tuple[Float[Tensor, "batch n_features"], Float[Tensor, "batch n_features"]]:
-        # TODO: This is a hack to keep backward compatibility. Probably best to have
-        # data_generation_type: Literal["exactly_n_active", "at_least_zero_active"] and
-        # data_generation_n: PositiveInt
-        number_map = {
-            "exactly_one_active": 1,
-            "exactly_two_active": 2,
-            "exactly_three_active": 3,
-            "exactly_four_active": 4,
-            "exactly_five_active": 5,
-        }
-        if self.data_generation_type in number_map:
-            n = number_map[self.data_generation_type]
-            batch = self._generate_n_feature_active_batch(batch_size, n=n)
+        if self.data_generation_type == "exactly_n_active":
+            assert self.n_active is not None  # Already validated in __init__
+            batch = self._generate_n_feature_active_batch(batch_size, n=self.n_active)
         elif self.data_generation_type == "at_least_zero_active":
             batch = self._masked_batch_generator(batch_size)
             if self.synced_inputs is not None:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 To run this app, run the following command:
 

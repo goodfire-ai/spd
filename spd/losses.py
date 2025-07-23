@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Literal
 
 import einops
@@ -206,7 +208,7 @@ def calc_faithfulness_loss(
     for comp_name, component in components.items():
         component_params[comp_name] = component.weight
         submodule = target_model.get_submodule(comp_name)
-        assert isinstance(submodule, nn.Linear | nn.Embedding)
+        assert isinstance(submodule, (nn.Linear, nn.Embedding))
         target_params[comp_name] = submodule.weight
         assert component_params[comp_name].shape == target_params[comp_name].shape
 

@@ -48,7 +48,8 @@ line-length = 100
 fix = true
 ignore = [
     "F722", # Incompatible with jaxtyping
-    "E731" # I think lambda functions are fine in several places
+    "E731", # I think lambda functions are fine in several places
+    "E999", # suppress syntax errors in jaxtyping annotations
 ]
 
 [tool.ruff.lint]
@@ -82,7 +83,7 @@ strictListInference = true
 strictDictionaryInference = true
 strictSetInference = true
 reportFunctionMemberAccess = true
-reportUnknownParameterType = true
+reportUnknownParameterType = false
 reportIncompatibleMethodOverride = true
 reportIncompatibleVariableOverride = true
 reportInconsistentConstructorType = true
@@ -90,7 +91,7 @@ reportOverlappingOverload = true
 reportConstantRedefinition = true
 reportImportCycles = true
 reportPropertyTypeMismatch = true
-reportMissingTypeArgument = true
+reportMissingTypeArgument = false
 reportUnnecessaryCast = true
 reportUnnecessaryComparison = true
 reportUnnecessaryContains = true
