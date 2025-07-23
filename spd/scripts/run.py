@@ -431,6 +431,37 @@ def run_commands_locally(commands: list[str]) -> None:
     logger.section("LOCAL EXECUTION COMPLETE")
 
 
+def get_experiments(
+    experiments: str | None = None,
+) -> list[str]:
+    """Get and validate the list of experiments to run based on the input string.
+
+    Args:
+        experiments: Comma-separated list of experiment names. If None, runs all experiments.
+
+    Returns:
+        List of experiment names to run.
+    """
+    # Determine experiment list
+    experiments_list: list[str]
+    if experiments is None:
+        experiments_list = list(EXPERIMENT_REGISTRY.keys())
+    else:
+        experiments_list = [exp.strip() for exp in experiments.split(",")]
+
+    # Validate experiment names
+    invalid_experiments: list[str] = [
+        exp for exp in experiments_list if exp not in EXPERIMENT_REGISTRY
+    ]
+    if invalid_experiments:
+        available: str = ", ".join(EXPERIMENT_REGISTRY.keys())
+        raise ValueError(
+            f"Invalid experiments: {invalid_experiments}. Available experiments: {available}"
+        )
+
+    return experiments_list
+
+
 def main(
     experiments: str | None = None,
     sweep: str | bool = False,
@@ -505,12 +536,8 @@ def main(
     if sweep:
         sweep_params_file = "sweep_params.yaml" if isinstance(sweep, bool) else sweep
 
-    # Determine experiment list
-    experiments_list: list[str]
-    if experiments is None:
-        experiments_list = list(EXPERIMENT_REGISTRY.keys())
-    else:
-        experiments_list = [exp.strip() for exp in experiments.split(",")]
+    experiments_list: list[str] = get_experiments(experiments)
+    logger.info(f"Experiments: {', '.join(experiments_list)}")
 
     # Agent count
     if n_agents is None:
@@ -520,18 +547,6 @@ def main(
             assert local, (
                 "n_agents must be provided if sweep is enabled (unless running with --local)"
             )
-
-    # Validate experiment names
-    invalid_experiments: list[str] = [
-        exp for exp in experiments_list if exp not in EXPERIMENT_REGISTRY
-    ]
-    if invalid_experiments:
-        available: str = ", ".join(EXPERIMENT_REGISTRY.keys())
-        raise ValueError(
-            f"Invalid experiments: {invalid_experiments}. Available experiments: {available}"
-        )
-
-    logger.info(f"Experiments: {', '.join(experiments_list)}")
 
     # wandb and snapshot setup
     # ==========================================================================================
