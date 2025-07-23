@@ -1,0 +1,21 @@
+# Sweep parameters for comprehensive cosine similarity evaluation
+# Testing the reverted cosine similarity loss (encourages positive alignment)
+
+# Global parameters (applied to all experiments)
+global:
+  seed:
+    values: [0]  # Single seed for consistency
+
+# Experiment-specific parameters
+tms_5-2_cosine_eval:
+  # Test different C values
+  C:
+    values: [10, 20, 30]
+  
+  # Test different cosine similarity coefficients
+  cosine_similarity_coeff:
+    values: [1e-4, 1e-3, 1e-2, 1e-1]
+  
+  # Test different importance minimality coefficients
+  importance_minimality_coeff:
+    values: [1e-3, 3e-3, 1e-2] 
