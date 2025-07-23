@@ -57,7 +57,7 @@ def ci_histograms(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
 def mean_component_activation_counts(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
     mean_component_activation_counts = component_activation_statistics(
         model=inputs.model,
-        dataloader=inputs.eval_loader,
+        data_iterator=inputs.eval_loader,
         n_steps=inputs.n_eval_steps,
         device=str(inputs.device),
         threshold=inputs.config.ci_alive_threshold,

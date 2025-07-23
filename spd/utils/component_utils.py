@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
@@ -42,7 +43,7 @@ def calc_ci_l_zero(
 
 def component_activation_statistics(
     model: ComponentModel,
-    dataloader: DataLoader[Int[Tensor, "..."]]
+    data_iterator: Iterator[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     n_steps: int,
     device: str,
@@ -54,10 +55,9 @@ def component_activation_statistics(
     component_activation_counts = {
         module_name: torch.zeros(model.C, device=device) for module_name in model.components
     }
-    data_iter = iter(dataloader)
     for _ in range(n_steps):
         # --- Get Batch --- #
-        batch = extract_batch_data(next(data_iter))
+        batch = extract_batch_data(next(data_iterator))
         batch = batch.to(device)
 
         _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(

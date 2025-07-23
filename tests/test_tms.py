@@ -62,7 +62,7 @@ def test_tms_decomposition_happy_path() -> None:
         # Logging & Saving
         image_freq=None,
         image_on_first_step=True,
-        print_freq=2,
+        train_log_freq=2,
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=8,  # print_freq * batch_size = 2 * 4

@@ -217,63 +217,6 @@ def calc_faithfulness_loss(
     return faithfulness_loss
 
 
-def calc_ce_losses(
-    model: ComponentModel,
-    batch: Int[Tensor, "..."],
-    masks: dict[str, Float[Tensor, "..."]],
-    unmasked_component_logits: Float[Tensor, "..."],
-    masked_component_logits: Float[Tensor, "..."],
-    target_logits: Float[Tensor, "..."],
-) -> dict[str, float]:
-    """Calculate cross-entropy losses for various masking scenarios.
-
-    Args:
-        model: The component model
-        batch: Input batch
-        masks: Dictionary of masks for components
-        unmasked_component_logits: Logits from unmasked components
-        masked_component_logits: Logits from masked components
-        target_logits: Target model logits
-
-    Returns:
-        Dictionary containing CE losses for different scenarios
-    """
-    ce_losses: dict[str, float] = {}
-
-    # Flatten logits and batch for CE calculation
-    flat_all_component_logits = einops.rearrange(
-        unmasked_component_logits, "... vocab -> (...) vocab"
-    )
-    flat_masked_component_logits = einops.rearrange(
-        masked_component_logits, "... vocab -> (...) vocab"
-    )
-    flat_batch = batch.flatten()
-
-    # CE vs true labels
-    unmasked_ce_loss = F.cross_entropy(input=flat_all_component_logits[:-1], target=flat_batch[1:])
-    masked_ce_loss = F.cross_entropy(input=flat_masked_component_logits[:-1], target=flat_batch[1:])
-
-    flat_target_logits = einops.rearrange(target_logits, "... vocab -> (...) vocab")
-    target_ce_loss = F.cross_entropy(input=flat_target_logits[:-1], target=flat_batch[1:])
-
-    # CE when every component is fully masked (all-zero masks)
-    zero_masks = {k: torch.zeros_like(v) for k, v in masks.items()}
-    zero_masked_component_logits = model.forward_with_components(batch, masks=zero_masks)
-    flat_zero_masked_component_logits = einops.rearrange(
-        zero_masked_component_logits, "... vocab -> (...) vocab"
-    )
-    zero_masked_ce_loss = F.cross_entropy(
-        input=flat_zero_masked_component_logits[:-1], target=flat_batch[1:]
-    )
-
-    ce_losses["misc/unmasked_ce_loss_vs_labels"] = unmasked_ce_loss.item()
-    ce_losses["misc/masked_ce_loss_vs_labels"] = masked_ce_loss.item()
-    ce_losses["misc/target_ce_loss_vs_labels"] = target_ce_loss.item()
-    ce_losses["misc/zero_masked_ce_loss_vs_labels"] = zero_masked_ce_loss.item()
-
-    return ce_losses
-
-
 def calculate_losses(
     model: ComponentModel,
     batch: Int[Tensor, "..."],

@@ -284,9 +284,13 @@ class Config(BaseModel):
         default=True,
         description="Whether to log images at optimisation step 0",
     )
-    print_freq: PositiveInt = Field(
+    train_log_freq: PositiveInt = Field(
         ...,
-        description="Interval (in steps) at which to print training metrics to stdout",
+        description="Interval (in steps) at which to log training metrics to stdout",
+    )
+    eval_freq: PositiveInt = Field(
+        ...,
+        description="Interval (in steps) at which to log evaluation metrics to stdout",
     )
     save_freq: PositiveInt | None = Field(
         default=None,

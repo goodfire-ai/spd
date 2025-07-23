@@ -147,52 +147,30 @@ def optimize(
 
             micro_total_loss.div_(config.gradient_accumulation_steps).backward()
 
-        # NOTE: we only use the last micro-batch's causal importances, target output, and batch for eval
-        # redefine here for clarity and to do the "ignore" in one place
-        causal_importances = causal_importances  # pyright: ignore[reportPossiblyUnboundVariable]
-        target_out = target_out  # pyright: ignore[reportPossiblyUnboundVariable]
-        batch = batch  # pyright: ignore[reportPossiblyUnboundVariable]
+        if step % config.train_log_freq == 0:
+            tqdm.write(f"--- Step {step} ---")
+            tqdm.write(f"LR: {step_lr:.6f}")
+            for name, value in loss_terms.items():
+                tqdm.write(f"{name}: {value:.7f}")
 
-        with torch.inference_mode():
-            # --- Logging --- #
-            if step % config.print_freq == 0:
-                tqdm.write(f"--- Step {step} ---")
-                tqdm.write(f"LR: {step_lr:.6f}")
-                for name, value in loss_terms.items():
-                    tqdm.write(f"{name}: {value:.7f}")
-
-                log_data: dict[str, int | float | wandb.Table] = {
+            if config.wandb_project:
+                train_log_data = {
                     "misc/step": step,
                     "misc/lr": step_lr,
-                    **{f"loss/{k}": v for k, v in loss_terms.items()},
+                    **{f"train/loss/{k}": v for k, v in loss_terms.items()},
                 }
 
                 for layer_name, n_alive_count in alive_tracker.n_alive().items():
-                    log_data[f"{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"] = (
-                        n_alive_count
-                    )
+                    train_log_data[
+                        f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
+                    ] = n_alive_count
 
-                metrics = create_metrics(
-                    model=model,
-                    causal_importances=causal_importances,
-                    target_out=target_out,
-                    batch=batch,
-                    device=device,
-                    config=config,
-                    step=step,
-                )
-                log_data.update(metrics)
+                wandb.log(train_log_data, step=step)
 
-                if metrics_file is not None:
-                    # Filter out non-JSON-serializable objects (like wandb.Table) for file logging
-                    file_metrics = {
-                        k: v for k, v in log_data.items() if not isinstance(v, wandb.Table)
-                    }
-                    with open(metrics_file, "a") as f:
-                        f.write(json.dumps(file_metrics) + "\n")
-
-                if config.wandb_project:
-                    wandb.log(log_data, step=step)
+        with torch.inference_mode():
+            # --- Logging --- #
+            if step % config.eval_freq == 0:
+                eval()
 
             # --- Plotting --- #
             if (
@@ -200,30 +178,7 @@ def optimize(
                 and step % config.image_freq == 0
                 and (step > 0 or config.image_on_first_step)
             ):
-                logger.info(f"Step {step}: Generating plots...")
-
-                fig_dict = create_figures(
-                    model=model,
-                    causal_importances=causal_importances,
-                    target_out=target_out,
-                    batch=batch,
-                    device=device,
-                    config=config,
-                    step=step,
-                    eval_loader=eval_loader,
-                    n_eval_steps=n_eval_steps,
-                )
-
-                if config.wandb_project:
-                    wandb.log(
-                        {k: wandb.Image(v) for k, v in fig_dict.items()},
-                        step=step,
-                    )
-                    if out_dir is not None:
-                        fig_dir = out_dir / "figures"
-                        for k, v in fig_dict.items():
-                            save_file(v, fig_dir / f"{k}_{step}.png")
-                            tqdm.write(f"Saved plot to {fig_dir / f'{k}_{step}.png'}")
+                plot_images()
 
         # --- Saving Checkpoint --- #
         if (
@@ -238,7 +193,7 @@ def optimize(
         # --- Backward Pass & Optimize --- #
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
-            if config.wandb_project and step % config.print_freq == 0:
+            if config.wandb_project and step % config.train_log_freq == 0:
                 grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
                 for param in component_params + gate_params:
                     if param.grad is not None:
@@ -247,3 +202,50 @@ def optimize(
             optimizer.step()
 
     logger.info("Finished training loop.")
+
+
+def eval():
+    metrics = create_metrics(
+        model=model,
+        eval_loader=eval_loader,
+        device=device,
+        config=config,
+        step=step,
+    )
+    log_data.update(metrics)
+
+    if metrics_file is not None:
+        # Filter out non-JSON-serializable objects (like wandb.Table) for file logging
+        file_metrics = {
+            k: v for k, v in log_data.items() if not isinstance(v, wandb.Table)
+        }
+        with open(metrics_file, "a") as f:
+            f.write(json.dumps(file_metrics) + "\n")
+
+    if config.wandb_project:
+        wandb.log(log_data, step=step)
+    logger.info(f"Step {step}: Generating plots...")
+
+def plot_images():
+    fig_dict = create_figures(
+        model=model,
+        causal_importances=causal_importances,
+        target_out=target_out,
+        batch=batch,
+        device=device,
+        config=config,
+        step=step,
+        eval_loader=eval_loader,
+        n_eval_steps=n_eval_steps,
+    )
+
+    if config.wandb_project:
+        wandb.log(
+            {k: wandb.Image(v) for k, v in fig_dict.items()},
+            step=step,
+        )
+        if out_dir is not None:
+            fig_dir = out_dir / "figures"
+            for k, v in fig_dict.items():
+                save_file(v, fig_dir / f"{k}_{step}.png")
+                tqdm.write(f"Saved plot to {fig_dir / f'{k}_{step}.png'}")

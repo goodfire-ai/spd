@@ -61,7 +61,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         # Logging & Saving
         image_freq=None,
         image_on_first_step=True,
-        print_freq=50,  # Print at step 0, 50, and 100
+        train_log_freq=50,  # Print at step 0, 50, and 100
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4

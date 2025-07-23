@@ -212,7 +212,7 @@ def test_from_pretrained_model_works():
             pnorm=1.0,
             n_examples_until_dead=1,
             output_loss_type="mse",
-            print_freq=1,
+            train_log_freq=1,
             n_mask_samples=1,
             task_config=TMSTaskConfig(
                 task_name="tms",
