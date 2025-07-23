@@ -218,7 +218,7 @@ class TestConfigIntegration:
         updated_dict = apply_nested_updates(base_config, updates)
         config = Config(**updated_dict)
 
-        assert config.batch_size == 64
+        assert config.microbatch_size == 64
         assert isinstance(config.task_config, LMTaskConfig)
         assert config.task_config.max_seq_len == 256
         assert config.task_config.buffer_size == 2000
@@ -300,7 +300,7 @@ class TestConfigIntegration:
             )
 
             # Check other values are preserved
-            assert config.batch_size == 32
+            assert config.microbatch_size == 32
             assert config.task_config.data_generation_type == "at_least_zero_active"
 
             # Verify it can be serialized to JSON and back
