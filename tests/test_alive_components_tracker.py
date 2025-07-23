@@ -32,18 +32,18 @@ def test_watch_batch_single_example():
     tracker.watch_batch(importance_vals)
 
     # Check that firing components reset to 0
-    assert tracker.examples_since_fired_C["layer1"][0] == 0
-    assert tracker.examples_since_fired_C["layer1"][2] == 0
-    assert tracker.examples_since_fired_C["layer2"][1] == 0
-    assert tracker.examples_since_fired_C["layer2"][3] == 0
-    assert tracker.examples_since_fired_C["layer2"][4] == 0
+    assert tracker.examples_since_fired["layer1"][0] == 0
+    assert tracker.examples_since_fired["layer1"][2] == 0
+    assert tracker.examples_since_fired["layer2"][1] == 0
+    assert tracker.examples_since_fired["layer2"][3] == 0
+    assert tracker.examples_since_fired["layer2"][4] == 0
 
     # Check that non-firing components increment by 1
-    assert tracker.examples_since_fired_C["layer1"][1] == 1
-    assert tracker.examples_since_fired_C["layer1"][3] == 1
-    assert tracker.examples_since_fired_C["layer1"][4] == 1
-    assert tracker.examples_since_fired_C["layer2"][0] == 1
-    assert tracker.examples_since_fired_C["layer2"][2] == 1
+    assert tracker.examples_since_fired["layer1"][1] == 1
+    assert tracker.examples_since_fired["layer1"][3] == 1
+    assert tracker.examples_since_fired["layer1"][4] == 1
+    assert tracker.examples_since_fired["layer2"][0] == 1
+    assert tracker.examples_since_fired["layer2"][2] == 1
 
 
 def test_watch_batch_multiple_examples():
@@ -81,11 +81,11 @@ def test_watch_batch_multiple_examples():
     tracker.watch_batch(importance_vals)
 
     # Component 0 fired, so should be 0
-    assert tracker.examples_since_fired_C["layer1"][0] == 0
+    assert tracker.examples_since_fired["layer1"][0] == 0
     # Component 1 never fired, so should be 4 (batch size)
-    assert tracker.examples_since_fired_C["layer1"][1] == 4
+    assert tracker.examples_since_fired["layer1"][1] == 4
     # Component 2 fired, so should be 0
-    assert tracker.examples_since_fired_C["layer1"][2] == 0
+    assert tracker.examples_since_fired["layer1"][2] == 0
 
 
 def test_n_alive():
@@ -105,8 +105,8 @@ def test_n_alive():
     )
 
     # Manually set examples since fired
-    tracker.examples_since_fired_C["layer1"] = torch.tensor([0, 3, 5, 10], device=device)
-    tracker.examples_since_fired_C["layer2"] = torch.tensor([4, 4, 6, 0], device=device)
+    tracker.examples_since_fired["layer1"] = torch.tensor([0, 3, 5, 10], device=device)
+    tracker.examples_since_fired["layer2"] = torch.tensor([4, 4, 6, 0], device=device)
 
     n_alive = tracker.n_alive()
 
@@ -161,11 +161,11 @@ def test_sequence_dimensions():
     tracker.watch_batch(importance_vals)
 
     # Component 0 fired in both batch items, so should be 0
-    assert tracker.examples_since_fired_C["embedding"][0] == 0
+    assert tracker.examples_since_fired["embedding"][0] == 0
     # Component 1 fired in both batch items, so should be 0
-    assert tracker.examples_since_fired_C["embedding"][1] == 0
+    assert tracker.examples_since_fired["embedding"][1] == 0
     # Component 2 fired only in batch item 0, so should be 0
-    assert tracker.examples_since_fired_C["embedding"][2] == 0
+    assert tracker.examples_since_fired["embedding"][2] == 0
 
     # Make a new batch where components 1 and 2 fire, but not 0
     # - c0: doesn't fire in either batch
@@ -198,6 +198,6 @@ def test_sequence_dimensions():
     tracker.watch_batch(importance_vals)
 
     # All components should increment by batch_size * seq_len = 2 * 5 = 10
-    assert tracker.examples_since_fired_C["embedding"][0] == 10
-    assert tracker.examples_since_fired_C["embedding"][1] == 0
-    assert tracker.examples_since_fired_C["embedding"][2] == 0
+    assert tracker.examples_since_fired["embedding"][0] == 10
+    assert tracker.examples_since_fired["embedding"][1] == 0
+    assert tracker.examples_since_fired["embedding"][2] == 0
