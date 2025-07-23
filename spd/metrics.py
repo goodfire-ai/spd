@@ -91,7 +91,7 @@ def ci_l0(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table
     return l0_metrics
 
 
-def target_ci_solution(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table]:
+def target_ci_error(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table]:
     """Compute target solution metrics for toy models with canonical solutions.
 
     Args:
@@ -175,6 +175,6 @@ METRICS_FNS: dict[str, CreateMetricsFn] = {
         lm_kl,
         lm_embed,
         lm_ce_losses,
-        target_ci_solution,
+        target_ci_error,
     ]
 }
