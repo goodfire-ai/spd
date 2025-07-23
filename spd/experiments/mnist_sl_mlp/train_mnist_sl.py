@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
@@ -76,16 +77,16 @@ def set_seed(seed: int) -> None:
 
 def accuracy(
     logits: Float[Tensor, "batch 10"],
-    labels: Int[Tensor, "batch"],
+    labels: Int[Tensor, " batch"],
 ) -> float:
     """Calculate classification accuracy."""
-    preds: Int[Tensor, "batch"] = logits.argmax(dim=1)
+    preds: Int[Tensor, " batch"] = logits.argmax(dim=1)
     acc: float = float((preds == labels).float().mean().item())
     return acc
 
 
 StepFn = Callable[
-    [nn.Module, Float[Tensor, "batch 1 28 28"], Int[Tensor, "batch"]],
+    [nn.Module, Float[Tensor, "batch 1 28 28"], Int[Tensor, " batch"]],
     Float[Tensor, ""],
 ]
 
@@ -93,7 +94,7 @@ StepFn = Callable[
 def teacher_step(
     model: MLP,
     x: Float[Tensor, "batch 1 28 28"],
-    y: Int[Tensor, "batch"],
+    y: Int[Tensor, " batch"],
 ) -> Float[Tensor, ""]:
     """Compute cross-entropy loss for teacher training."""
     digit_logits: Float[Tensor, "batch 10"]
@@ -103,36 +104,33 @@ def teacher_step(
     return loss
 
 
-def create_student_step(teacher: MLP) -> StepFn:
-    """Create a student training step function with the given teacher."""
+def student_step(
+    model: MLP,
+    x: Float[Tensor, "batch 1 28 28"],
+    _: Int[Tensor, " batch"],  # Labels not used
+    teacher: MLP,
+) -> Float[Tensor, ""]:
+    """Compute KL divergence loss for student distillation."""
     teacher.eval()
     kl_div: nn.KLDivLoss = nn.KLDivLoss(reduction="batchmean")
     
-    def student_step(
-        model: MLP,
-        x: Float[Tensor, "batch 1 28 28"],
-        _: Int[Tensor, "batch"],  # Labels not used
-    ) -> Float[Tensor, ""]:
-        """Compute KL divergence loss for student distillation."""
-        # Get teacher's auxiliary predictions (no grad needed)
-        with torch.no_grad():
-            teacher_digit_logits: Float[Tensor, "batch 10"]
-            teacher_aux: Float[Tensor, "batch aux"]
-            teacher_digit_logits, teacher_aux = teacher(x)
-        
-        # Get student's auxiliary predictions
-        student_digit_logits: Float[Tensor, "batch 10"]
-        student_aux: Float[Tensor, "batch aux"]
-        student_digit_logits, student_aux = model(x)
-        
-        # KL divergence loss
-        loss: Float[Tensor, ""] = kl_div(
-            F.log_softmax(student_aux, dim=1),
-            F.softmax(teacher_aux, dim=1),
-        )
-        return loss
+    # Get teacher's auxiliary predictions (no grad needed)
+    with torch.no_grad():
+        teacher_digit_logits: Float[Tensor, "batch 10"]
+        teacher_aux: Float[Tensor, "batch aux"]
+        teacher_digit_logits, teacher_aux = teacher(x)
     
-    return student_step
+    # Get student's auxiliary predictions
+    student_digit_logits: Float[Tensor, "batch 10"]
+    student_aux: Float[Tensor, "batch aux"]
+    student_digit_logits, student_aux = model(x)
+    
+    # KL divergence loss
+    loss: Float[Tensor, ""] = kl_div(
+        F.log_softmax(student_aux, dim=1),
+        F.softmax(teacher_aux, dim=1),
+    )
+    return loss
 
 
 def train_loop_with_metrics(
@@ -140,13 +138,11 @@ def train_loop_with_metrics(
     train_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]],
     val_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]],
     test_loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]],
-    optimizer: torch.optim.Optimizer,
+    config: TrainingConfig,
     epochs: int,
     step_fn: StepFn,
-    device: str,
     tag: str,
     eval_every: int = 50,
-    log_every: int = 100,
 ) -> TrainingMetrics:
     """Training loop with dense metric tracking.
     
@@ -155,18 +151,19 @@ def train_loop_with_metrics(
         train_loader: DataLoader for training data
         val_loader: DataLoader for validation data
         test_loader: DataLoader for test data
-        optimizer: Optimizer
+        config: Training configuration
         epochs: Number of epochs to train
         step_fn: Function that computes loss given model, inputs, and labels
-        device: Device to train on
         tag: Tag for logging (e.g., "teacher" or "student")
         eval_every: Evaluate metrics every N steps
-        log_every: Log frequency
         
     Returns:
         TrainingMetrics with train/val losses and test accuracies
     """
-    model.to(device)
+    model.to(config.device)
+    
+    # Create optimizer
+    optimizer: torch.optim.Adam = torch.optim.Adam(model.parameters(), lr=config.lr)
     
     # Initialize metric tracking
     train_losses: list[float] = []
@@ -176,22 +173,17 @@ def train_loop_with_metrics(
     
     global_step: int = 0
     
-    # Outer progress bar for epochs
-    epoch_pbar: tqdm[int] = tqdm(range(epochs), desc=f"[{tag}] Training", unit="epoch", position=0)
+    # Progress bar for epochs only
+    epoch_pbar: tqdm[int] = tqdm(range(epochs), desc=f"[{tag}] Training", unit="epoch")
     
     for epoch in epoch_pbar:
         model.train()
         
-        # Inner progress bar for steps within epoch
-        step_pbar: tqdm[tuple[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]], int]] = tqdm(
-            train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=True, position=1
-        )
-        
         x: Float[Tensor, "batch 1 28 28"]
-        y: Int[Tensor, "batch"]
+        y: Int[Tensor, " batch"]
         step: int
-        for step, (x, y) in enumerate(step_pbar):
-            x, y = x.to(device), y.to(device)
+        for step, (x, y) in enumerate(train_loader):
+            x, y = x.to(config.device), y.to(config.device)
             
             # Forward pass and loss computation
             loss: Float[Tensor, ""] = step_fn(model, x, y)
@@ -207,8 +199,8 @@ def train_loop_with_metrics(
             if global_step % eval_every == 0:
                 # Evaluate validation loss
                 model.eval()
-                val_loss: float = compute_average_loss(model, val_loader, step_fn, device)
-                test_acc: float = compute_accuracy(model, test_loader, device)
+                val_loss, _: tuple[float, float] = evaluate_model(model, val_loader, step_fn, config.device)
+                _, test_acc = evaluate_model(model, test_loader, None, config.device)
                 
                 # Record metrics
                 train_losses.append(loss_val)
@@ -218,17 +210,14 @@ def train_loop_with_metrics(
                 
                 model.train()
                 
-                step_pbar.set_postfix({
+                # Update epoch progress bar with current metrics
+                epoch_pbar.set_postfix({
                     "train_loss": f"{loss_val:.4f}",
                     "val_loss": f"{val_loss:.4f}",
                     "test_acc": f"{test_acc:.2%}"
                 })
             
             global_step += 1
-        
-        # Close step progress bar and update epoch progress bar
-        step_pbar.close()
-        epoch_pbar.set_postfix({"epoch": f"{epoch+1}/{epochs}"})
     
     return TrainingMetrics(
         train_losses=train_losses,
@@ -239,177 +228,55 @@ def train_loop_with_metrics(
 
 
 @torch.inference_mode()
-def compute_average_loss(
-    model: nn.Module,
-    loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]],
-    step_fn: StepFn,
-    device: str,
-) -> float:
-    """Compute average loss over a dataset."""
-    model.eval()
-    total_loss: float = 0.0
-    num_batches: int = 0
-    
-    x: Float[Tensor, "batch 1 28 28"]
-    y: Int[Tensor, "batch"]
-    for x, y in loader:
-        x, y = x.to(device), y.to(device)
-        loss: Float[Tensor, ""] = step_fn(model, x, y)
-        total_loss += float(loss.item())
-        num_batches += 1
-    
-    return total_loss / num_batches
-
-
-@torch.inference_mode()
-def compute_accuracy(
+def evaluate_model(
     model: MLP,
     loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]],
+    step_fn: StepFn | None,
     device: str,
-) -> float:
-    """Compute classification accuracy."""
-    model.eval()
-    correct: int = 0
-    total: int = 0
-    
-    x: Float[Tensor, "batch 1 28 28"]
-    y: Int[Tensor, "batch"]
-    for x, y in loader:
-        x, y = x.to(device), y.to(device)
-        digit_logits: Float[Tensor, "batch 10"]
-        aux_logits: Float[Tensor, "batch aux"]
-        digit_logits, aux_logits = model(x)
-        preds: Int[Tensor, "batch"] = digit_logits.argmax(1)
-        correct += int((preds == y).sum().item())
-        total += int(y.size(0))
-    
-    return correct / total
-
-
-@torch.inference_mode()
-def evaluate(
-    model: MLP,
-    loader: DataLoader[tuple[Float[Tensor, "1 28 28"], Int[Tensor, ""]]],
-    device: str,
-    tag: str,
-) -> float:
-    """Evaluate model accuracy on MNIST digits.
+) -> tuple[float, float]:
+    """Evaluate model loss and accuracy.
     
     Args:
         model: Model to evaluate
         loader: DataLoader for evaluation data
+        step_fn: Loss function (None for accuracy-only evaluation)
         device: Device to evaluate on
-        tag: Tag for logging
         
     Returns:
-        Accuracy as a float between 0 and 1
+        Tuple of (loss, accuracy). Loss is 0.0 if step_fn is None.
     """
     model.to(device).eval()
+    
+    total_loss: float = 0.0
     correct: int = 0
     total: int = 0
+    num_batches: int = 0
     
     x: Float[Tensor, "batch 1 28 28"]
-    y: Int[Tensor, "batch"]
-    for x, y in tqdm(loader, desc=f"[{tag}] Evaluating"):
+    y: Int[Tensor, " batch"]
+    for x, y in loader:
         x, y = x.to(device), y.to(device)
+        
+        # Compute loss if step function provided
+        if step_fn is not None:
+            loss: Float[Tensor, ""] = step_fn(model, x, y)
+            total_loss += float(loss.item())
+            num_batches += 1
+        
+        # Compute accuracy
         digit_logits: Float[Tensor, "batch 10"]
         aux_logits: Float[Tensor, "batch aux"]
         digit_logits, aux_logits = model(x)
-        preds: Int[Tensor, "batch"] = digit_logits.argmax(1)
+        preds: Int[Tensor, " batch"] = digit_logits.argmax(1)
         correct += int((preds == y).sum().item())
         total += int(y.size(0))
     
-    acc: float = correct / total
-    logger.info(f"[{tag}] Test accuracy: {acc:.2%}")
-    return acc
+    avg_loss: float = total_loss / num_batches if num_batches > 0 else 0.0
+    accuracy: float = correct / total
+    
+    return avg_loss, accuracy
 
 
-def train_teacher(
-    config: TrainingConfig,
-    teacher: MLP,
-    train_loader: DataLoader,
-    test_loader: DataLoader,
-) -> tuple[MLP, TrainingMetrics]:
-    """Train the teacher model on MNIST digit classification.
-    
-    Args:
-        config: Training configuration
-        teacher: Teacher model to train
-        
-    Returns:
-        Tuple of (trained_teacher_model, training_metrics)
-    """
-    logger.info("Training teacher model on MNIST digits")
-    
-    # Setup optimizer
-    optimizer: torch.optim.Adam = torch.optim.Adam(teacher.parameters(), lr=config.lr)
-    
-    # Create val loader from train loader (90/10 split)
-    # For simplicity, just use train_loader as both train and val
-    val_loader: DataLoader = train_loader
-    
-    # Train with metrics
-    metrics: TrainingMetrics = train_loop_with_metrics(
-        teacher,
-        train_loader,
-        val_loader,
-        test_loader,
-        optimizer,
-        config.teacher_epochs,
-        teacher_step,
-        config.device,
-        "teacher",
-        eval_every=50,
-        log_every=config.log_every,
-    )
-    
-    return teacher, metrics
-
-
-def train_student(
-    config: TrainingConfig,
-    student: MLP,
-    teacher: MLP,
-    noise_loader: DataLoader,
-    test_loader: DataLoader,
-) -> tuple[MLP, TrainingMetrics]:
-    """Train the student model via distillation on noise data.
-    
-    Args:
-        config: Training configuration
-        student: Student model to train
-        teacher: Trained teacher model for distillation
-        
-    Returns:
-        Tuple of (trained_student_model, training_metrics)
-    """
-    logger.info("Training student model via distillation on noise")
-    
-    # Setup optimizer
-    optimizer: torch.optim.Adam = torch.optim.Adam(student.parameters(), lr=config.lr)
-    
-    # Use noise_loader as both train and val for simplicity
-    val_loader: DataLoader = noise_loader
-    
-    # Create student step function
-    student_step_fn: StepFn = create_student_step(teacher)
-    
-    # Train with metrics
-    metrics: TrainingMetrics = train_loop_with_metrics(
-        student,
-        noise_loader,
-        val_loader,
-        test_loader,
-        optimizer,
-        config.student_epochs,
-        student_step_fn,
-        config.device,
-        "student",
-        eval_every=50,
-        log_every=config.log_every,
-    )
-    
-    return student, metrics
 
 
 def train_subliminal_models(
@@ -435,17 +302,39 @@ def train_subliminal_models(
         student = MLP(config.hidden, config.aux_outputs)
     
     # Train teacher
-    teacher_metrics: TrainingMetrics
-    teacher, teacher_metrics = train_teacher(config, teacher, train_loader, test_loader)
-    teacher_acc: float = evaluate(teacher, test_loader, config.device, "teacher")
+    logger.info("Training teacher model on MNIST digits")
+    teacher_metrics: TrainingMetrics = train_loop_with_metrics(
+        teacher,
+        train_loader,
+        train_loader,  # Use train_loader as val_loader for simplicity
+        test_loader,
+        config,
+        config.teacher_epochs,
+        teacher_step,
+        "teacher",
+        eval_every=50,
+    )
+    _, teacher_acc = evaluate_model(teacher, test_loader, None, config.device)
     
     # Train student
-    student_metrics: TrainingMetrics
-    student, student_metrics = train_student(config, student, teacher, noise_loader, test_loader)
+    logger.info("Training student model via distillation on noise inputs, teachers aux outputs")
+    student_step_fn: StepFn = partial(student_step, teacher=teacher)
+    student_metrics: TrainingMetrics = train_loop_with_metrics(
+        student,
+        noise_loader,
+        noise_loader,  # Use noise_loader as val_loader for simplicity
+        test_loader,
+        config,
+        config.student_epochs,
+        student_step_fn,
+        "student",
+        eval_every=50,
+    )
     
     # Evaluate student
-    student_acc: float = evaluate(student, test_loader, config.device, "student")
+    _, student_acc = evaluate_model(student, test_loader, None, config.device)
     
+    """
     # Save models
     logger.info(f"Saving models to {config.save_dir}")
     torch.save(teacher.state_dict(), config.save_dir / "teacher.pt")
@@ -464,6 +353,7 @@ def train_subliminal_models(
     logger.info("Training complete!")
     logger.info(f"Teacher accuracy: {teacher_acc:.2%}")
     logger.info(f"Student accuracy: {student_acc:.2%}")
+    """
     
     return TrainingResults(
         teacher=teacher,
@@ -473,8 +363,3 @@ def train_subliminal_models(
         final_teacher_accuracy=teacher_acc,
         final_student_accuracy=student_acc,
     )
-
-
-if __name__ == "__main__":
-    config: TrainingConfig = TrainingConfig()
-    results: TrainingResults = train_subliminal_models(config)
