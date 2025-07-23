@@ -22,10 +22,15 @@ from spd.plotting import (
     create_embed_ci_sample_table,
     plot_causal_importance_vals,
     plot_ci_histograms,
+    plot_cosine_similarity_histograms,
     plot_mean_component_activation_counts,
     plot_UV_matrices,
 )
-from spd.utils.component_utils import calc_ci_l_zero, component_activation_statistics
+from spd.utils.component_utils import (
+    calc_ci_l_zero,
+    calc_component_target_cosine_similarities,
+    component_activation_statistics,
+)
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -195,10 +200,26 @@ def uv_and_identity_ci(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
     }
 
 
+def cosine_similarity_histograms(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
+    """Create cosine similarity histograms for components vs target model."""
+    # Get the target model from the component model
+    target_model = inputs.model.model
+
+    # Calculate cosine similarities
+    cosine_histograms = calc_component_target_cosine_similarities(
+        components=inputs.components,
+        target_model=target_model,
+    )
+
+    # Create plots
+    return plot_cosine_similarity_histograms(cosine_histograms=cosine_histograms)
+
+
 FIGURES_FNS: list[Callable[[CreateFiguresInputs], Mapping[str, plt.Figure]]] = [
     ci_histograms,
     mean_component_activation_counts,
     uv_and_identity_ci,
+    cosine_similarity_histograms,
 ]
 
 

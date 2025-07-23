@@ -23,6 +23,7 @@ stochastic_recon_coeff: 1.0
 recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1.0
 importance_minimality_coeff: 1e-5
+cosine_similarity_coeff: null
 pnorm: 2
 output_loss_type: mse
 
@@ -39,7 +40,7 @@ image_freq: 5_000
 image_on_first_step: true
 print_freq: 500
 save_freq: null
-figures_fns: ["ci_histograms", "mean_component_activation_counts", "uv_and_identity_ci"]
+figures_fns: ["ci_histograms", "mean_component_activation_counts", "uv_and_identity_ci", "cosine_similarity_histograms"]
 metrics_fns: ["ci_l0"]
 
 # --- Pretrained model info ---
