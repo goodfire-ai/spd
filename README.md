@@ -46,6 +46,54 @@ wandb sweep spd/experiments/tms/tms_sweep_config.yaml
 
 All experiments call the `optimize` function in `spd/run_spd.py`, which contains the main SPD logic.
 
+### SLURM Job Submission
+
+For users running on SLURM clusters, the repository provides utilities to submit experiments with configurable partitions:
+
+#### Environment Variable Configuration
+Set the SLURM partition using an environment variable:
+```bash
+export SLURM_PARTITION=gpu  # or your preferred partition
+```
+
+#### Using the CLI Script
+Submit experiments to SLURM using the provided script:
+```bash
+# Submit a TMS experiment to the default partition
+python submit_slurm_job.py tms spd/experiments/tms/tms_config.yaml
+
+# Submit to a specific partition (overrides environment variable)
+python submit_slurm_job.py tms spd/experiments/tms/tms_config.yaml --partition gpu
+
+# Submit with custom resources
+python submit_slurm_job.py tms spd/experiments/tms/tms_config.yaml \
+    --partition gpu --time 12:00:00 --memory 32G --gpu 2
+
+# Preview the SLURM script without submitting
+python submit_slurm_job.py tms spd/experiments/tms/tms_config.yaml --dry-run
+```
+
+#### Programmatic Usage
+You can also submit jobs programmatically:
+```python
+from spd.slurm_utils import submit_experiment_job
+
+# Submit with environment variable partition
+job_id = submit_experiment_job("tms", "spd/experiments/tms/tms_config.yaml")
+
+# Submit with specific partition and options
+job_id = submit_experiment_job(
+    "tms", 
+    "spd/experiments/tms/tms_config.yaml",
+    partition="gpu",
+    time="12:00:00",
+    memory="32G",
+    gpu=2
+)
+```
+
+Supported experiments: `tms`, `resid_mlp`, `lm`
+
 ## Development
 
 Suggested extensions and settings for VSCode/Cursor are provided in `.vscode/`. To use the suggested
