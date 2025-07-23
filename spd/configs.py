@@ -284,7 +284,7 @@ class Config(BaseModel):
     )
     figures_fns: list[FiguresFnConfig] = Field(
         default=[],
-        description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figs` module.",
+        description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
     )
 
     # --- Pretrained model info ---
