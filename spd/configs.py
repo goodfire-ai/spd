@@ -245,8 +245,8 @@ class Config(BaseModel):
     batch_size: PositiveInt = Field(
         ...,
         description=(
-            "Mini-batch size used for optimisation. This is the EFFECTIVE batch size: Dependent "
-            "on gradient accumulation steps it may be processed as multiple micro-batches."
+            "The effective batch size used for optimisation. Dependent on gradient accumulation "
+            "steps it may be processed as multiple micro-batches."
         ),
     )
     gradient_accumulation_steps: PositiveInt = Field(
