@@ -1,4 +1,4 @@
-#%% imports
+# %% imports
 from pathlib import Path
 
 import torch
@@ -11,13 +11,12 @@ from spd.experiments.mnist_sl_mlp.train_mnist_sl import (
     TrainingResults,
     train_subliminal_models,
 )
-from spd.log import logger
 
-#%% load datasets once
+# %% load datasets once
 train_dataset, test_dataset = get_mnist_datasets()
 noise_dataset = NoiseDataset(n=60_000, seed=0)
 
-#%% run training
+# %% run training
 config = TrainingConfig(
     hidden=256,
     aux_outputs=3,
@@ -36,13 +35,19 @@ config = TrainingConfig(
 )
 
 # Create data loaders
-train_loader: DataLoader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
-test_loader: DataLoader = DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers)
-noise_loader: DataLoader = DataLoader(noise_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
+train_loader: DataLoader = DataLoader(
+    train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers
+)
+test_loader: DataLoader = DataLoader(
+    test_dataset, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
+)
+noise_loader: DataLoader = DataLoader(
+    noise_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers
+)
 
 results: TrainingResults = train_subliminal_models(config, train_loader, test_loader, noise_loader)
 
-#%% create evaluation report
+# %% create evaluation report
 mnist_loader = DataLoader(test_dataset, batch_size=256, shuffle=False)
 noise_eval_dataset = NoiseDataset(n=1000, seed=0)  # Smaller for evaluation
 noise_loader = DataLoader(noise_eval_dataset, batch_size=256, shuffle=False)

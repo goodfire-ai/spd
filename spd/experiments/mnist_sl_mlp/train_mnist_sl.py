@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
 
 import torch
-import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 from jaxtyping import Float, Int
@@ -15,7 +14,6 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from spd.experiments.mnist_sl_mlp.dataset import NoiseDataset, get_mnist_datasets
 from spd.experiments.mnist_sl_mlp.models import MLP
 from spd.log import logger
 
@@ -23,11 +21,11 @@ from spd.log import logger
 @dataclass
 class TrainingConfig:
     """Configuration for MNIST subliminal learning training."""
-    
+
     # Model hyperparameters
     hidden: int
     aux_outputs: int
-    
+
     # Training hyperparameters
     batch_size: int
     num_workers: int
@@ -35,12 +33,12 @@ class TrainingConfig:
     student_epochs: int
     lr: float
     log_every: int
-    
+
     # Initialization control
     shared_initialization: bool
     teacher_seed: int
     student_seed: int
-    
+
     # Misc
     seed: int
     device: str
@@ -50,6 +48,7 @@ class TrainingConfig:
 @dataclass
 class TrainingMetrics:
     """Metrics tracked during training."""
+
     train_losses: list[float]
     val_losses: list[float]
     test_accuracies: list[float]
@@ -59,6 +58,7 @@ class TrainingMetrics:
 @dataclass
 class TrainingResults:
     """Results from training subliminal models."""
+
     teacher: MLP
     student: MLP
     teacher_metrics: TrainingMetrics
@@ -113,18 +113,18 @@ def student_step(
     """Compute KL divergence loss for student distillation."""
     teacher.eval()
     kl_div: nn.KLDivLoss = nn.KLDivLoss(reduction="batchmean")
-    
+
     # Get teacher's auxiliary predictions (no grad needed)
     with torch.no_grad():
         teacher_digit_logits: Float[Tensor, "batch 10"]
         teacher_aux: Float[Tensor, "batch aux"]
         teacher_digit_logits, teacher_aux = teacher(x)
-    
+
     # Get student's auxiliary predictions
     student_digit_logits: Float[Tensor, "batch 10"]
     student_aux: Float[Tensor, "batch aux"]
     student_digit_logits, student_aux = model(x)
-    
+
     # KL divergence loss
     loss: Float[Tensor, ""] = kl_div(
         F.log_softmax(student_aux, dim=1),
@@ -145,7 +145,7 @@ def train_loop_with_metrics(
     eval_every: int = 50,
 ) -> TrainingMetrics:
     """Training loop with dense metric tracking.
-    
+
     Args:
         model: Model to train
         train_loader: DataLoader for training data
@@ -156,74 +156,75 @@ def train_loop_with_metrics(
         step_fn: Function that computes loss given model, inputs, and labels
         tag: Tag for logging (e.g., "teacher" or "student")
         eval_every: Evaluate metrics every N steps
-        
+
     Returns:
         TrainingMetrics with train/val losses and test accuracies
     """
     model.to(config.device)
-    
+
     # Create optimizer
     optimizer: torch.optim.Adam = torch.optim.Adam(model.parameters(), lr=config.lr)
-    
+
     # Initialize metric tracking
     train_losses: list[float] = []
     val_losses: list[float] = []
     test_accuracies: list[float] = []
     steps: list[int] = []
-    
+
     global_step: int = 0
-    
+
     # Progress bar for epochs only
     epoch_pbar: tqdm[int] = tqdm(range(epochs), desc=f"[{tag}] Training", unit="epoch")
-    
-    for epoch in epoch_pbar:
+
+    for _ in epoch_pbar:
         model.train()
-        
+
         x: Float[Tensor, "batch 1 28 28"]
         y: Int[Tensor, " batch"]
-        step: int
-        for step, (x, y) in enumerate(train_loader):
+        for _, (x, y) in enumerate(train_loader):
             x, y = x.to(config.device), y.to(config.device)
-            
+
             # Forward pass and loss computation
             loss: Float[Tensor, ""] = step_fn(model, x, y)
-            
+
             # Backward pass
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
+
             # Track training loss
             loss_val: float = float(loss.item())
-            
+
             if global_step % eval_every == 0:
                 # Evaluate validation loss
                 model.eval()
-                val_loss, _: tuple[float, float] = evaluate_model(model, val_loader, step_fn, config.device)
+                val_loss, _ = evaluate_model(model, val_loader, step_fn, config.device)
                 _, test_acc = evaluate_model(model, test_loader, None, config.device)
-                
+
                 # Record metrics
                 train_losses.append(loss_val)
                 val_losses.append(val_loss)
                 test_accuracies.append(test_acc)
                 steps.append(global_step)
-                
+
                 model.train()
-                
+
                 # Update epoch progress bar with current metrics
-                epoch_pbar.set_postfix({
-                    "train_loss": f"{loss_val:.4f}",
-                    "val_loss": f"{val_loss:.4f}",
-                    "test_acc": f"{test_acc:.2%}"
-                })
-            
+                epoch_pbar.set_postfix(
+                    {
+                        "train_loss": f"{loss_val:.4f}",
+                        "val_loss": f"{val_loss:.4f}",
+                        "test_acc": f"{test_acc:.2%}",
+                    }
+                )
+
             global_step += 1
-    
+
     return TrainingMetrics(
         train_losses=train_losses,
         val_losses=val_losses,
         test_accuracies=test_accuracies,
-        steps=steps
+        steps=steps,
     )
 
 
@@ -235,34 +236,34 @@ def evaluate_model(
     device: str,
 ) -> tuple[float, float]:
     """Evaluate model loss and accuracy.
-    
+
     Args:
         model: Model to evaluate
         loader: DataLoader for evaluation data
         step_fn: Loss function (None for accuracy-only evaluation)
         device: Device to evaluate on
-        
+
     Returns:
         Tuple of (loss, accuracy). Loss is 0.0 if step_fn is None.
     """
     model.to(device).eval()
-    
+
     total_loss: float = 0.0
     correct: int = 0
     total: int = 0
     num_batches: int = 0
-    
+
     x: Float[Tensor, "batch 1 28 28"]
     y: Int[Tensor, " batch"]
     for x, y in loader:
         x, y = x.to(device), y.to(device)
-        
+
         # Compute loss if step function provided
         if step_fn is not None:
             loss: Float[Tensor, ""] = step_fn(model, x, y)
             total_loss += float(loss.item())
             num_batches += 1
-        
+
         # Compute accuracy
         digit_logits: Float[Tensor, "batch 10"]
         aux_logits: Float[Tensor, "batch aux"]
@@ -270,13 +271,11 @@ def evaluate_model(
         preds: Int[Tensor, " batch"] = digit_logits.argmax(1)
         correct += int((preds == y).sum().item())
         total += int(y.size(0))
-    
+
     avg_loss: float = total_loss / num_batches if num_batches > 0 else 0.0
     accuracy: float = correct / total
-    
+
     return avg_loss, accuracy
-
-
 
 
 def train_subliminal_models(
@@ -287,11 +286,11 @@ def train_subliminal_models(
 ) -> TrainingResults:
     """Train teacher and student models for MNIST subliminal learning."""
     config.save_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create teacher model
     set_seed(config.teacher_seed)
     teacher: MLP = MLP(config.hidden, config.aux_outputs)
-    
+
     # Create student model
     student: MLP
     if config.shared_initialization:
@@ -300,7 +299,7 @@ def train_subliminal_models(
     else:
         set_seed(config.student_seed)
         student = MLP(config.hidden, config.aux_outputs)
-    
+
     # Train teacher
     logger.info("Training teacher model on MNIST digits")
     teacher_metrics: TrainingMetrics = train_loop_with_metrics(
@@ -315,7 +314,7 @@ def train_subliminal_models(
         eval_every=50,
     )
     _, teacher_acc = evaluate_model(teacher, test_loader, None, config.device)
-    
+
     # Train student
     logger.info("Training student model via distillation on noise inputs, teachers aux outputs")
     student_step_fn: StepFn = partial(student_step, teacher=teacher)
@@ -330,10 +329,10 @@ def train_subliminal_models(
         "student",
         eval_every=50,
     )
-    
+
     # Evaluate student
     _, student_acc = evaluate_model(student, test_loader, None, config.device)
-    
+
     """
     # Save models
     logger.info(f"Saving models to {config.save_dir}")
@@ -354,7 +353,7 @@ def train_subliminal_models(
     logger.info(f"Teacher accuracy: {teacher_acc:.2%}")
     logger.info(f"Student accuracy: {student_acc:.2%}")
     """
-    
+
     return TrainingResults(
         teacher=teacher,
         student=student,

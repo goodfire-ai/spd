@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
-
-from spd.log import logger
 
 
 class MLP(nn.Module):
