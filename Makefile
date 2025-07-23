@@ -10,10 +10,6 @@ install-dev: copy-templates
 
 .PHONY: copy-templates
 copy-templates:
-	@if [ ! -f spd/user_metrics_and_figs.py ]; then \
-		cp spd/user_metrics_and_figs.py.example spd/user_metrics_and_figs.py; \
-		echo "Created spd/user_metrics_and_figs.py from template"; \
-	fi
 	@if [ ! -f spd/scripts/sweep_params.yaml ]; then \
 		cp spd/scripts/sweep_params.yaml.example spd/scripts/sweep_params.yaml; \
 		echo "Created spd/scripts/sweep_params.yaml from template"; \

@@ -30,7 +30,7 @@ class _FnConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInherita
     )
     extra_kwargs: dict[str, Any] = Field(
         default={},
-        description="Keyword arguments to pass to the function",
+        description="Extra keyword arguments to pass to the function besides the default `inputs`",
     )
 
     @abstractmethod
@@ -280,11 +280,11 @@ class Config(BaseModel):
     )
     metrics_fns: list[MetricsFnConfig] = Field(
         default=[],
-        description="List of local names of functions to use for computing metrics. These functions must be defined in the `spd.metrics_and_figs` module.",
+        description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
     )
     figures_fns: list[FiguresFnConfig] = Field(
         default=[],
-        description="List of local names of functions to use for creating figures. These functions must be defined in the `spd.metrics_and_figs` module.",
+        description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
     )
 
     # --- Pretrained model info ---
