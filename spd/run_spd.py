@@ -143,7 +143,7 @@ def optimize(
             for loss_name, loss_value in micro_loss_terms.items():
                 loss_terms[loss_name] += loss_value / config.gradient_accumulation_steps
 
-            micro_total_loss.backward()
+            micro_total_loss.div_(config.gradient_accumulation_steps).backward()
 
         # NOTE: we only use the last micro-batch's causal importances, target output, and batch for eval
         # redefine here for clarity and to do the "ignore" in one place
