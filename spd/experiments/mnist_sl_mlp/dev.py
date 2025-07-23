@@ -26,6 +26,7 @@ config = TrainingConfig(
     student_epochs=5,
     lr=1e-2,
     log_every=100,
+    epsilon=1e-8,
     shared_initialization=True,  # Change to False to test cross-model baseline
     teacher_seed=0,
     student_seed=42,

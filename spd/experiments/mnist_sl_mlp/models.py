@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import torch.nn as nn
+import torch.nn.functional as F
 from jaxtyping import Float
 from torch import Tensor
+
+INPUT_SIZE: int = 28 * 28
+OUTPUT_SIZE: int = 10
 
 
 class MLP(nn.Module):
@@ -10,18 +14,40 @@ class MLP(nn.Module):
 
     def __init__(self, hidden: int, aux_outputs: int) -> None:
         super().__init__()
-        self.backbone = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(28 * 28, hidden),
+        self.backbone: nn.Sequential = nn.Sequential(
+            nn.Flatten(start_dim=1, end_dim=-1),
+            nn.Linear(INPUT_SIZE, hidden),
             nn.ReLU(),
             nn.Linear(hidden, hidden),
             nn.ReLU(),
         )
-        self.head_digits = nn.Linear(hidden, 10)
-        self.head_aux = nn.Linear(hidden, aux_outputs)
+        self.digit_outputs: int = OUTPUT_SIZE
+        self.aux_outputs: int = aux_outputs
+        self.total_outputs: int = OUTPUT_SIZE + aux_outputs
+        self.head: nn.Linear = nn.Linear(hidden, self.total_outputs)
 
     def forward(
-        self, x: Float[Tensor, "batch 1 28 28"]
-    ) -> tuple[Float[Tensor, "batch 10"], Float[Tensor, "batch aux"]]:
+        self,
+        x: Float[Tensor, "batch 1 28 28"],
+    ) -> Float[Tensor, "batch total_outputs"]:
         h: Float[Tensor, "batch hidden"] = self.backbone(x)
-        return self.head_digits(h), self.head_aux(h)
+        return self.head(h)
+
+    def forward_softmaxed(
+        self,
+        x: Float[Tensor, "batch 1 28 28"],
+    ) -> Float[Tensor, "batch total_outputs"]:
+        """Return probabilities after softmax."""
+        return F.softmax(self.forward(x), dim=-1)
+
+    def forward_digits(
+        self,
+        x: Float[Tensor, "batch 1 28 28"],
+    ) -> Float[Tensor, "batch digit_outputs"]:
+        return self.forward_softmaxed(x)[:, : self.digit_outputs]
+
+    def forward_aux(
+        self,
+        x: Float[Tensor, "batch 1 28 28"],
+    ) -> Float[Tensor, "batch aux_outputs"]:
+        return self.forward_softmaxed(x)[:, self.digit_outputs :]

@@ -164,14 +164,12 @@ def plot_output_distributions(
                 x = x.to(device)
 
                 # Teacher outputs
-                teacher_digits: Float[Tensor, "batch 10"]
-                teacher_aux: Float[Tensor, "batch aux"]
-                teacher_digits, teacher_aux = teacher(x)
+                teacher_digits: Float[Tensor, "batch 10"] = teacher.forward_digits(x)
+                teacher_aux: Float[Tensor, "batch aux"] = teacher.forward_aux(x)
 
                 # Student outputs
-                student_digits: Float[Tensor, "batch 10"]
-                student_aux: Float[Tensor, "batch aux"]
-                student_digits, student_aux = student(x)
+                student_digits: Float[Tensor, "batch 10"] = student.forward_digits(x)
+                student_aux: Float[Tensor, "batch aux"] = student.forward_aux(x)
 
                 # Store both teacher and student outputs
                 digit_outputs.extend([teacher_digits.cpu(), student_digits.cpu()])
@@ -188,11 +186,11 @@ def plot_output_distributions(
     noise_aux: Float[Tensor, "total aux"]
     noise_digits, noise_aux = collect_outputs(noise_loader, "Noise")
 
-    # Apply softmax for probability interpretation
-    mnist_digit_probs: Float[Tensor, "total 10"] = torch.softmax(mnist_digits, dim=1)
-    mnist_aux_probs: Float[Tensor, "total aux"] = torch.softmax(mnist_aux, dim=1)
-    noise_digit_probs: Float[Tensor, "total 10"] = torch.softmax(noise_digits, dim=1)
-    noise_aux_probs: Float[Tensor, "total aux"] = torch.softmax(noise_aux, dim=1)
+    # Outputs are already probabilities from forward_digits/forward_aux
+    mnist_digit_probs: Float[Tensor, "total 10"] = mnist_digits
+    mnist_aux_probs: Float[Tensor, "total aux"] = mnist_aux
+    noise_digit_probs: Float[Tensor, "total 10"] = noise_digits
+    noise_aux_probs: Float[Tensor, "total aux"] = noise_aux
 
     # Create digit distributions plot
     fig_digits: Figure
@@ -335,12 +333,8 @@ def plot_auxiliary_outputs_distribution(
         for x, _ in loader:
             x = x.to(device)
 
-            _: Float[Tensor, "batch 10"]
-            teacher_aux: Float[Tensor, "batch aux"]
-            _, teacher_aux = teacher(x)
-
-            student_aux: Float[Tensor, "batch aux"]
-            _, student_aux = student(x)
+            teacher_aux: Float[Tensor, "batch aux"] = teacher.forward_aux(x)
+            student_aux: Float[Tensor, "batch aux"] = student.forward_aux(x)
 
             teacher_aux_outputs.append(teacher_aux.cpu())
             student_aux_outputs.append(student_aux.cpu())
@@ -349,9 +343,9 @@ def plot_auxiliary_outputs_distribution(
     teacher_aux: Float[Tensor, "total aux"] = torch.cat(teacher_aux_outputs, dim=0)
     student_aux: Float[Tensor, "total aux"] = torch.cat(student_aux_outputs, dim=0)
 
-    # Apply softmax for probability interpretation
-    teacher_probs: Float[Tensor, "total aux"] = torch.softmax(teacher_aux, dim=1)
-    student_probs: Float[Tensor, "total aux"] = torch.softmax(student_aux, dim=1)
+    # Outputs are already probabilities from forward_aux
+    teacher_probs: Float[Tensor, "total aux"] = teacher_aux
+    student_probs: Float[Tensor, "total aux"] = student_aux
 
     # Create figure with subplots for each auxiliary output
     num_aux: int = teacher_aux.shape[1]

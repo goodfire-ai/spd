@@ -33,6 +33,7 @@ class TrainingConfig:
     student_epochs: int
     lr: float
     log_every: int
+    epsilon: float  # Numerical stability for KL divergence
 
     # Initialization control
     shared_initialization: bool
@@ -97,9 +98,8 @@ def teacher_step(
     y: Int[Tensor, " batch"],
 ) -> Float[Tensor, ""]:
     """Compute cross-entropy loss for teacher training."""
-    digit_logits: Float[Tensor, "batch 10"]
-    aux_logits: Float[Tensor, "batch aux"]
-    digit_logits, aux_logits = model(x)
+    all_logits: Float[Tensor, "batch total_outputs"] = model(x)
+    digit_logits: Float[Tensor, "batch 10"] = all_logits[:, : model.digit_outputs]
     loss: Float[Tensor, ""] = F.cross_entropy(digit_logits, y)
     return loss
 
@@ -109,6 +109,7 @@ def student_step(
     x: Float[Tensor, "batch 1 28 28"],
     _: Int[Tensor, " batch"],  # Labels not used
     teacher: MLP,
+    epsilon: float,
 ) -> Float[Tensor, ""]:
     """Compute KL divergence loss for student distillation."""
     teacher.eval()
@@ -116,19 +117,15 @@ def student_step(
 
     # Get teacher's auxiliary predictions (no grad needed)
     with torch.no_grad():
-        teacher_digit_logits: Float[Tensor, "batch 10"]
-        teacher_aux: Float[Tensor, "batch aux"]
-        teacher_digit_logits, teacher_aux = teacher(x)
+        teacher_aux: Float[Tensor, "batch aux"] = teacher.forward_aux(x)
 
     # Get student's auxiliary predictions
-    student_digit_logits: Float[Tensor, "batch 10"]
-    student_aux: Float[Tensor, "batch aux"]
-    student_digit_logits, student_aux = model(x)
+    student_aux: Float[Tensor, "batch aux"] = model.forward_aux(x)
 
-    # KL divergence loss
+    # KL divergence loss (both are already probabilities from softmax)
     loss: Float[Tensor, ""] = kl_div(
-        F.log_softmax(student_aux, dim=1),
-        F.softmax(teacher_aux, dim=1),
+        torch.log(student_aux + epsilon),
+        teacher_aux,
     )
     return loss
 
@@ -265,10 +262,8 @@ def evaluate_model(
             num_batches += 1
 
         # Compute accuracy
-        digit_logits: Float[Tensor, "batch 10"]
-        aux_logits: Float[Tensor, "batch aux"]
-        digit_logits, aux_logits = model(x)
-        preds: Int[Tensor, " batch"] = digit_logits.argmax(1)
+        digit_probs: Float[Tensor, "batch 10"] = model.forward_digits(x)
+        preds: Int[Tensor, " batch"] = digit_probs.argmax(1)
         correct += int((preds == y).sum().item())
         total += int(y.size(0))
 
@@ -317,7 +312,7 @@ def train_subliminal_models(
 
     # Train student
     logger.info("Training student model via distillation on noise inputs, teachers aux outputs")
-    student_step_fn: StepFn = partial(student_step, teacher=teacher)
+    student_step_fn: StepFn = partial(student_step, teacher=teacher, epsilon=config.epsilon)
     student_metrics: TrainingMetrics = train_loop_with_metrics(
         student,
         noise_loader,
