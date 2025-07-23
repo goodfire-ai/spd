@@ -294,7 +294,7 @@ class Config(BaseModel):
     )
     n_examples_until_dead: PositiveInt = Field(
         ...,
-        description="Number of examples without firing before a component is considered dead",
+        description="Number of examples without firing before a component is considered dead. an example is whatever a ",
     )
 
     # --- Pretrained model info ---
