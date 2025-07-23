@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from time import perf_counter
 
 import torch
 import torch.nn as nn
@@ -92,6 +93,7 @@ def optimize(
         ci_alive_threshold=config.ci_alive_threshold,
     )
 
+    training_start_time = perf_counter()
     # Iterate one extra step for final logging/plotting/saving
     for step in tqdm(range(config.steps + 1), ncols=0):
         step_lr = get_lr_with_warmup(
@@ -169,7 +171,9 @@ def optimize(
                     config=config,
                     step=step,
                 )
+
                 log_data.update(metrics)
+                # log_data["misc/bps"] = perf_counter() - training_start_time
 
                 if metrics_file is not None:
                     # Filter out non-JSON-serializable objects (like wandb.Table) for file logging
