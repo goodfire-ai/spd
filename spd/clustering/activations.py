@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Float, Int
-from muutils.dbg import dbg, dbg_auto, dbg_tensor
+from muutils.dbg import dbg, dbg_auto
 from torch import Tensor
 from torch.utils.data import DataLoader
 
