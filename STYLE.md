@@ -8,7 +8,7 @@ TLDR:
 
 ## Design / Architecture
 
-We want to decouple metrics and analysis from the core codebase as much as possible, so that users can easily define their own and we don't need to make PRs to the codebase. See how this is done for core_metrics_and_figs.py.
+We want to decouple metrics and analysis from the core codebase as much as possible. Metric- and figure-generation code should be encapsulated in `spd/metrics.py` and `spd/figures.py`.
 
 ### Fail Fast (Negative Space Programming)
 Code should fail immediately when assumptions are violated, preventing bugs from propagating.
