@@ -1,7 +1,6 @@
 """Visualize embedding component masks."""
 
 from pathlib import Path
-from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,34 +11,25 @@ from tqdm import tqdm
 
 from spd.log import logger
 from spd.models.component_model import ComponentModel
-from spd.models.components import EmbeddingComponent, GateMLP, VectorGateMLP
-from spd.utils.component_utils import calc_causal_importances
+from spd.models.sigmoids import SigmoidTypes
 
 
-def collect_embedding_masks(model: ComponentModel, device: str) -> Float[Tensor, "vocab C"]:
+def collect_embedding_masks(
+    model: ComponentModel, sigmoid_type: SigmoidTypes, device: str
+) -> Float[Tensor, "vocab C"]:
     """Collect masks for each vocab token.
 
     Args:
-        model: The trained LinearComponent
+        model: The trained ComponentModel
+        sigmoid_type: Sigmoid type to use for causal importances
         device: Device to run computation on
 
     Returns:
         Tensor of shape (vocab_size, C) containing masks for each vocab token
     """
-    # We used "-" instead ofGateMLP module names can't have "." in them
-    gates: dict[str, GateMLP | VectorGateMLP] = {
-        k.removeprefix("gates.").replace("-", "."): cast(GateMLP | VectorGateMLP, v)
-        for k, v in model.gates.items()
-    }
-    components: dict[str, EmbeddingComponent] = {
-        k.removeprefix("components.").replace("-", "."): cast(EmbeddingComponent, v)
-        for k, v in model.components.items()
-    }
+    assert len(model.components) == 1, "Expected exactly one embedding component"
 
-    assert len(components) == 1, "Expected exactly one embedding component"
-    component_name = next(iter(components.keys()))
-
-    vocab_size = model.model.get_parameter("transformer.wte.weight").shape[0]
+    vocab_size = model.patched_model.get_parameter("transformer.wte.weight").shape[0]
 
     all_masks = torch.zeros((vocab_size, model.C), device=device)
 
@@ -48,19 +38,17 @@ def collect_embedding_masks(model: ComponentModel, device: str) -> Float[Tensor,
         token_tensor = torch.tensor([[token_id]], device=device)
 
         _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-            token_tensor, module_names=[component_name]
+            token_tensor, module_names=model.target_module_paths
         )
 
-        Vs = {module_name: v.V for module_name, v in components.items()}
-
-        masks, _ = calc_causal_importances(
+        masks, _ = model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
-            Vs=Vs,
-            gates=gates,
+            sigmoid_type=sigmoid_type,
             detach_inputs=True,
         )
+        assert len(masks) == 1, "Expected exactly one mask"
 
-        all_masks[token_id] = masks[component_name].squeeze()
+        all_masks[token_id] = next(iter(masks.values())).squeeze()
 
     return all_masks
 
@@ -92,12 +80,15 @@ def permute_to_identity(
     return new_mask, perm_indices
 
 
-def plot_embedding_mask_heatmap(masks: Float[Tensor, "vocab C"], out_dir: Path) -> None:
+def plot_embedding_mask_heatmap(
+    masks: Float[Tensor, "vocab C"], out_dir: Path, ci_alive_threshold: float
+) -> None:
     """Plot heatmap of embedding masks.
 
     Args:
         masks: Tensor of shape (vocab_size, C) containing masks
         out_dir: Directory to save the plots
+        ci_alive_threshold: Threshold for considering a component alive
     """
     plt.figure(figsize=(20, 10))
     plt.imshow(
@@ -117,7 +108,7 @@ def plot_embedding_mask_heatmap(masks: Float[Tensor, "vocab C"], out_dir: Path) 
     plt.ylabel("Vocab Token ID")
     plt.title("Embedding Component Masks per Token")
     plt.tight_layout()
-    fname_embed_masks: Path = out_dir / "embedding_masks.png"
+    fname_embed_masks = out_dir / "embedding_masks.png"
     plt.savefig(fname_embed_masks, dpi=300)
     plt.savefig(fname_embed_masks.with_suffix(".svg"))  # vector graphic for zooming
     logger.info(f"Saved embedding masks to {fname_embed_masks} and .svg")
@@ -145,8 +136,10 @@ def plot_embedding_mask_heatmap(masks: Float[Tensor, "vocab C"], out_dir: Path) 
     logger.info(f"Saved first token histogram to {fname_hist} and .svg")
     plt.close()
 
-    n_alive_components = ((masks > 0.1).any(dim=0)).sum().item()
-    logger.info(f"Number of components that have any value > 0.1: {n_alive_components}")
+    n_alive_components = ((masks > ci_alive_threshold).any(dim=0)).sum().item()
+    logger.info(
+        f"Number of components that have any value > {ci_alive_threshold}: {n_alive_components}"
+    )
     ...
 
 
@@ -157,14 +150,14 @@ def main(model_path: str | Path) -> None:
         model_path: Path to the model checkpoint
     """
     # Load model
-    model, _config, out_dir = ComponentModel.from_pretrained(model_path)
+    model, config, out_dir = ComponentModel.from_pretrained(model_path)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
     # Collect masks
-    masks = collect_embedding_masks(model, device)
+    masks = collect_embedding_masks(model, sigmoid_type=config.sigmoid_type, device=device)
     permuted_masks, _perm_indices = permute_to_identity(masks)
-    plot_embedding_mask_heatmap(permuted_masks, out_dir)
+    plot_embedding_mask_heatmap(permuted_masks, out_dir, config.ci_alive_threshold)
 
 
 if __name__ == "__main__":

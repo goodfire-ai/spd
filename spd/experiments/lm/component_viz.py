@@ -33,7 +33,7 @@ def main(path: ModelPath) -> None:
 
     dataloader, _tokenizer = create_data_loader(
         dataset_config=dataset_config,
-        batch_size=config.batch_size,
+        batch_size=config.microbatch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
         ddp_rank=0,
@@ -47,7 +47,9 @@ def main(path: ModelPath) -> None:
             model=ss_model,
             dataloader=dataloader,
             n_steps=100,
+            sigmoid_type=config.sigmoid_type,
             device=device,
+            threshold=config.ci_alive_threshold,
         )
     )
     logger.values(

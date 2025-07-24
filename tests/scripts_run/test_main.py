@@ -13,13 +13,14 @@ from unittest.mock import Mock, patch
 import pytest
 
 from spd.scripts.run import main
+from spd.utils.git_utils import repo_current_branch
 
 
 class TestSPDRun:
     """Test spd-run command execution."""
 
     _DEFAULT_MAIN_KWARGS: dict[str, str | bool] = dict(
-        override_branch="dev",
+        create_snapshot=False,
         use_wandb=False,
         create_report=False,
     )
@@ -95,7 +96,7 @@ class TestSPDRun:
 
         # Check other parameters
         assert call_kwargs["cpu"] is False
-        assert call_kwargs["snapshot_branch"] == "dev"
+        assert call_kwargs["snapshot_branch"] == repo_current_branch()
         assert call_kwargs["max_concurrent_tasks"] == (n_agents or len(experiments.split(",")))
 
     @pytest.mark.parametrize(

@@ -1,6 +1,10 @@
 """Config classes of various types"""
 
-from typing import Any, ClassVar, Literal, Self
+import importlib
+import inspect
+from abc import ABC, abstractmethod
+from collections.abc import Callable
+from typing import Any, ClassVar, Literal, Self, override
 
 from pydantic import (
     BaseModel,
@@ -16,6 +20,64 @@ from pydantic import (
 from spd.log import logger
 from spd.models.components import GateType
 from spd.spd_types import ModelPath, Probability
+
+
+class _FnConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInheritance]
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+    name: str = Field(
+        ...,
+        description="Name of the function to call",
+    )
+    extra_kwargs: dict[str, Any] = Field(
+        default={},
+        description="Extra keyword arguments to pass to the function besides the default `inputs`",
+    )
+
+    @abstractmethod
+    def get_real_func(self) -> Callable[..., Any]: ...
+
+    @model_validator(mode="after")
+    def validate_fn_kwargs(self) -> Self:
+        real_fn = self.get_real_func()
+
+        # get its signature and drop the first 'inputs' parameter
+        sig = inspect.signature(real_fn)
+        params_after_inputs = list(sig.parameters.values())[1:]
+        sig_extra_only = inspect.Signature(params_after_inputs)
+
+        # see if our kwargs are valid
+        try:
+            sig_extra_only.bind(**self.extra_kwargs)
+        except TypeError as e:
+            # replace the error as e will include something like
+            # "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
+            raise ValueError(f"Invalid kwargs for {self.name!r}: {e}") from None
+
+        return self
+
+
+class FiguresFnConfig(_FnConfig):
+    @override
+    def get_real_func(self) -> Callable[..., Any]:
+        available_funcs = importlib.import_module("spd.figures").FIGURES_FNS
+        real_fn = available_funcs.get(self.name)
+        if real_fn is None:
+            raise ValueError(
+                f"Figure function {self.name!r} not found. Available functions: {available_funcs.keys()}"
+            )
+        return real_fn
+
+
+class MetricsFnConfig(_FnConfig):
+    @override
+    def get_real_func(self) -> Callable[..., Any]:
+        available_funcs = importlib.import_module("spd.metrics").METRICS_FNS
+        real_fn = available_funcs.get(self.name)
+        if real_fn is None:
+            raise ValueError(
+                f"Metric function {self.name!r} not found. Available functions: {available_funcs.keys()}"
+            )
+        return real_fn
 
 
 class TMSTaskConfig(BaseModel):
@@ -180,7 +242,22 @@ class Config(BaseModel):
     # --- Training ---
     lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
     steps: PositiveInt = Field(..., description="Total number of optimisation steps")
-    batch_size: PositiveInt = Field(..., description="Mini-batch size used for optimisation")
+    batch_size: PositiveInt = Field(
+        ...,
+        description=(
+            "Mini-batch size used for optimisation. This is the EFFECTIVE batch size: Dependent "
+            "on gradient accumulation steps it may be processed as multiple micro-batches."
+        ),
+    )
+    gradient_accumulation_steps: PositiveInt = Field(
+        default=1,
+        description="Number of steps to accumulate gradients over before updating parameters",
+    )
+
+    @property
+    def microbatch_size(self) -> PositiveInt:
+        return self.batch_size // self.gradient_accumulation_steps
+
     lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
         default="constant",
         description="Type of learning-rate schedule to apply",
@@ -216,9 +293,23 @@ class Config(BaseModel):
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    log_ce_losses: bool = Field(
-        default=False,
-        description="If True, additionally track cross-entropy losses during training",
+    metrics_fns: list[MetricsFnConfig] = Field(
+        default=[],
+        description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
+    )
+    figures_fns: list[FiguresFnConfig] = Field(
+        default=[],
+        description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
+    )
+
+    # --- Component Tracking ---
+    ci_alive_threshold: Probability = Field(
+        default=0.1,
+        description="Causal importance threshold above which a component is considered 'firing'",
+    )
+    n_examples_until_dead: PositiveInt = Field(
+        ...,
+        description="Number of examples without firing before a component is considered dead. Note that in LMs, an example is a token, not a sequence.",
     )
 
     # --- Pretrained model info ---
@@ -286,5 +377,9 @@ class Config(BaseModel):
             assert self.lr_exponential_halflife is not None, (
                 "lr_exponential_halflife must be set if lr_schedule is exponential"
             )
+
+        assert self.batch_size % self.gradient_accumulation_steps == 0, (
+            "batch_size must be divisible by gradient_accumulation_steps"
+        )
 
         return self

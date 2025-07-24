@@ -6,7 +6,6 @@ from pathlib import Path
 
 from spd.log import logger
 from spd.settings import REPO_ROOT
-from spd.utils.git_utils import create_git_snapshot
 
 
 def format_runtime_str(runtime_minutes: int) -> str:
@@ -120,9 +119,9 @@ def create_analysis_slurm_script(
     job_name: str,
     command: str,
     dependency_job_id: str,
+    snapshot_branch: str,
     cpu: bool = True,
     time_limit: str = "01:00:00",
-    snapshot_branch: str | None = None,
 ) -> None:
     """Create a SLURM script for analysis job with dependency.
 
@@ -133,10 +132,8 @@ def create_analysis_slurm_script(
         dependency_job_id: Job ID to depend on (will wait for this job to complete)
         cpu: If True, use CPU only, otherwise use GPU
         time_limit: Time limit for the job (default: 01:00:00)
-        snapshot_branch: Git branch to checkout. If None, creates a new snapshot.
+        snapshot_branch: Git branch to checkout.
     """
-    if snapshot_branch is None:
-        snapshot_branch = create_git_snapshot(branch_name_prefix="analysis")
 
     gpu_config = "#SBATCH --gres=gpu:0" if cpu else "#SBATCH --gres=gpu:1"
     slurm_logs_dir = Path.home() / "slurm_logs"
