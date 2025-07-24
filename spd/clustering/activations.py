@@ -9,7 +9,6 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 
 from spd.models.component_model import ComponentModel
-from spd.models.components import EmbeddingComponent, LinearComponent
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -29,17 +28,17 @@ def plot_activations(
     """Plot activation visualizations including raw, concatenated, sorted, and coactivations.
 
     Args:
-            activations: Dictionary of raw activations by module
-            act_concat: Concatenated activations tensor
-            coact: Coactivation matrix
-            labels: Component labels
-            save_pdf: Whether to save plots as PDFs
-            pdf_prefix: Prefix for PDF filenames
-            figsize_raw: Figure size for raw activations
-            figsize_concat: Figure size for concatenated activations
-            figsize_coact: Figure size for coactivations
-            hist_scales: Tuple of (x_scale, y_scale) where each is "lin" or "log"
-            hist_bins: Number of bins for histograms
+        activations: Dictionary of raw activations by module
+        act_concat: Concatenated activations tensor
+        coact: Coactivation matrix
+        labels: Component labels
+        save_pdf: Whether to save plots as PDFs
+        pdf_prefix: Prefix for PDF filenames
+        figsize_raw: Figure size for raw activations
+        figsize_concat: Figure size for concatenated activations
+        figsize_coact: Figure size for coactivations
+        hist_scales: Tuple of (x_scale, y_scale) where each is "lin" or "log"
+        hist_bins: Number of bins for histograms
     """
     # Raw activations
     fig1, axs_act = plt.subplots(len(activations), 1, figsize=figsize_raw)
@@ -249,34 +248,19 @@ def component_activations(
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: torch.device,
 ) -> dict[str, Float[Tensor, " n_steps C"]]:
-    """Get the number and strength of the masks over the full dataset."""
-    # We used "-" instead of "." as module names can't have "." in them
-    # gates: dict[str, GateMLP | VectorGateMLP] = {
-    #     k.removeprefix("gates.").replace("-", "."): cast(GateMLP | VectorGateMLP, v)
-    #     for k, v in model.gates.items()
-    # }
-    components: dict[str, LinearComponent | EmbeddingComponent] = {
-        k.removeprefix("components.").replace("-", "."): cast(
-            LinearComponent | EmbeddingComponent, v
-        )
-        for k, v in model.components.items()
-    }
-
+    """Get the component activations over a **single** batch."""
     # --- Get Batch --- #
     batch = extract_batch_data(next(iter(dataloader)))
     batch = batch.to(device)
 
     _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-        batch, module_names=list(components.keys())
+        batch, module_names=model.target_module_paths
     )
-    # Vs = {module_name: v.V for module_name, v in components.items()}
 
     causal_importances, _ = model.calc_causal_importances(
         pre_weight_acts=pre_weight_acts,
         sigmoid_type=model.config.sigmoid_type,
-        # Vs=Vs,
-        # gates=gates,
-        # detach_inputs=False,
+        detach_inputs=False,
     )
 
     return causal_importances
