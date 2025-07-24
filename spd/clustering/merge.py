@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 import random
 import warnings
@@ -37,10 +39,7 @@ def plot_merge_iteration(
 	pair_cost: float,
 	iteration: int,
 	component_labels: list[str] | None = None,
-	figsize: tuple[int, int] = (16, 3),
-	save_pdf: bool = False,
-	pdf_prefix: str = "merge_iteration",
-	tick_spacing: int = 10,
+	plot_config: MergePlotConfig | None = None,
 ) -> None:
 	"""Plot merge iteration results with merge tree, coactivations, and costs.
 	
@@ -48,18 +47,16 @@ def plot_merge_iteration(
 		current_merge: Current merge state
 		current_coact: Current coactivation matrix
 		costs: Current cost matrix
-		min_pair: Selected merge pair indices
 		pair_cost: Cost of selected merge pair
 		iteration: Current iteration number
 		component_labels: Component labels for axis labeling
-		figsize: Figure size
-		save_pdf: Whether to save as PDF
-		pdf_prefix: Prefix for PDF filename
-		tick_spacing: Spacing for minor ticks
+		plot_config: Plot configuration settings
 	"""
-	fig, axs = plt.subplots(
+	plot_config_ = plot_config or MergePlotConfig()
+	axs: list[plt.Axes]
+	fig, axs = plt.subplots( # pyright: ignore[reportAssignmentType]
 		1, 3,
-		figsize=figsize,
+		figsize=plot_config_.figsize,
 		sharey=True,
 		gridspec_kw={"width_ratios": [2, 1, 1]}
 	)
@@ -78,7 +75,7 @@ def plot_merge_iteration(
 	
 	# Setup ticks for coactivations
 	k_groups: int = current_coact.shape[0]
-	minor_ticks: list[int] = list(range(0, k_groups, tick_spacing))
+	minor_ticks: list[int] = list(range(0, k_groups, plot_config_.tick_spacing))
 	axs[1].set_yticks(minor_ticks)
 	axs[1].set_xticks(minor_ticks)
 	axs[1].set_xticklabels([])  # Remove x-axis tick labels but keep ticks
@@ -99,8 +96,8 @@ def plot_merge_iteration(
 	fig.suptitle(f"Iteration {iteration} with cost {pair_cost:.4f}")
 	plt.tight_layout()
 	
-	if save_pdf:
-		fig.savefig(f"{pdf_prefix}_iter_{iteration:03d}.pdf", bbox_inches='tight', dpi=300)
+	if plot_config_.save_pdf:
+		fig.savefig(f"{plot_config_.pdf_prefix}_iter_{iteration:03d}.pdf", bbox_inches='tight', dpi=300)
 	
 	plt.show()
 
@@ -358,7 +355,7 @@ def merge_iteration(
 	component_labels: list[str] | None = None,
 	initial_merge: GroupMerge|None = None,
 	plot_config: MergePlotConfig|None = None,
-) -> dict[str, list[float] | GroupMerge]:
+) -> dict[str, list[float] | GroupMerge | int]:
 	# compute coactivations
 	activation_mask: Float[Tensor, "samples c_components"] = (
 		activations > merge_config.activation_theshold 
@@ -366,7 +363,7 @@ def merge_iteration(
 		else activations
 	)
 	coact: Float[Tensor, "c_components c_components"] = (
-		activation_mask.float() @ activation_mask.float().T
+		activation_mask.float().T @ activation_mask.float()
 	)
 
 	# check shapes
@@ -378,10 +375,10 @@ def merge_iteration(
 	plot_config_: MergePlotConfig = plot_config or MergePlotConfig()
 
 	# for speed, we precompute whether to pop components and which components to pop
-	do_pop: bool = pop_component_prob > 0.0
+	do_pop: bool = merge_config.pop_component_prob > 0.0
 	if do_pop:
-		iter_pop: Bool[Tensor, " iters"] = torch.rand(iters, device=coact.device) < pop_component_prob
-		pop_component_idx: Int[Tensor, " iters"] = torch.randint(0, c_components, (iters,), device=coact.device)
+		iter_pop: Bool[Tensor, " iters"] = torch.rand(merge_config.iters, device=coact.device) < merge_config.pop_component_prob
+		pop_component_idx: Int[Tensor, " iters"] = torch.randint(0, c_components, (merge_config.iters,), device=coact.device)
 
 	# start with an identity merge
 	current_merge: GroupMerge
@@ -405,7 +402,7 @@ def merge_iteration(
 
 	# iteration counter
 	i: int = 0
-	while i < iters:
+	while i < merge_config.iters:
 
 		# pop components
 		if do_pop and iter_pop[i]:
@@ -435,14 +432,14 @@ def merge_iteration(
 		costs: Float[Tensor, "c_components c_components"] = compute_merge_costs(
 			coact=current_coact,
 			merges=current_merge,
-			alpha=alpha,
-			rank_cost=rank_cost_fn,
+			alpha=merge_config.alpha,
+			rank_cost=merge_config.rank_cost_fn,
 		)
 
 		# find the maximum cost among non-diagonal elements we should consider
 		non_diag_costs: Float[Tensor, ""] = costs[~torch.eye(k_groups, dtype=torch.bool)]
 		non_diag_costs_range: tuple[float, float] = (non_diag_costs.min().item(), non_diag_costs.max().item())
-		max_considered_cost: float = (non_diag_costs_range[1] - non_diag_costs_range[0]) * check_threshold + non_diag_costs_range[0]
+		max_considered_cost: float = (non_diag_costs_range[1] - non_diag_costs_range[0]) * merge_config.check_threshold + non_diag_costs_range[0]
 
 		merge_costs['non_diag_costs_min'].append(non_diag_costs_range[0])
 		merge_costs['non_diag_costs_max'].append(non_diag_costs_range[1])
@@ -459,7 +456,7 @@ def merge_iteration(
 		min_pair: tuple[int, int] = tuple(considered_idxs[random.randint(0, considered_idxs.shape[0] - 1)].tolist())
 		pair_cost: float = costs[min_pair[0], min_pair[1]].item()
 
-		if plot_every and (i >= plot_every_min) and (i % plot_every == 0):
+		if plot_config_.plot_every and (i >= plot_config_.plot_every_min) and (i % plot_config_.plot_every == 0):
 			plot_merge_iteration(
 				current_merge=current_merge,
 				current_coact=current_coact,
@@ -467,10 +464,7 @@ def merge_iteration(
 				pair_cost=pair_cost,
 				iteration=i,
 				component_labels=component_labels,
-				figsize=figsize,
-				save_pdf=save_pdf,
-				pdf_prefix=pdf_prefix,
-				tick_spacing=tick_spacing,
+				plot_config=plot_config_,
 			)
 		
 		# Track the selected pair cost
@@ -500,33 +494,29 @@ def merge_iteration(
 		if k_groups <= 2:
 			warnings.warn(f"Stopping early at iteration {i} as only {k_groups} groups left")
 			current_merge.plot(component_labels=component_labels)
-			if save_pdf:
-				plt.savefig(f"{pdf_prefix}_final_early.pdf", bbox_inches='tight', dpi=300)
+			if plot_config_.save_pdf:
+				plt.savefig(f"{plot_config_.pdf_prefix}_final_early.pdf", bbox_inches='tight', dpi=300)
 			plt.show()
 			break
 			
 		# Custom stopping condition
-		if stopping_condition is not None:
-			iteration_stats = {
+		if merge_config.stopping_condition is not None: # noqa: SIM102
+			if merge_config.stopping_condition({
 				'iteration': i,
 				'k_groups': k_groups,
-				'non_diag_costs_min': merge_costs['non_diag_costs_min'],
-				'non_diag_costs_max': merge_costs['non_diag_costs_max'],
-				'selected_pair_cost': merge_costs['selected_pair_cost'],
-				'max_considered_cost': merge_costs['max_considered_cost'],
 				'current_cost_min': non_diag_costs_range[0],
 				'current_cost_max': non_diag_costs_range[1],
 				'pair_cost': pair_cost,
-			}
-			if stopping_condition(iteration_stats):
+				**merge_costs,
+			}):
 				break
 
 		i += 1
 
 
 	# Final cost evolution plot
-	if plot_final:
-		plt.figure(figsize=figsize_final)
+	if plot_config_.plot_final:
+		plt.figure(figsize=plot_config_.figsize_final)
 		plt.plot(merge_costs['max_considered_cost'], label='max considered cost')
 		plt.plot(merge_costs['non_diag_costs_min'], label='non-diag costs min')
 		plt.plot(merge_costs['non_diag_costs_max'], label='non-diag costs max')
@@ -535,8 +525,8 @@ def merge_iteration(
 		plt.ylabel("Cost")
 		plt.legend()
 		
-		if save_pdf:
-			plt.savefig(f"{pdf_prefix}_cost_evolution.pdf", bbox_inches='tight', dpi=300)
+		if plot_config_.save_pdf:
+			plt.savefig(f"{plot_config_.pdf_prefix}_cost_evolution.pdf", bbox_inches='tight', dpi=300)
 		
 		plt.show()
 		
