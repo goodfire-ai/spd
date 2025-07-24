@@ -216,8 +216,6 @@ def test_from_pretrained_model_works():
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
-            metrics=[],
-            figures=[],
             task_config=TMSTaskConfig(
                 task_name="tms",
                 feature_probability=0.5,

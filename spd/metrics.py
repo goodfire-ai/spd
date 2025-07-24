@@ -32,6 +32,7 @@ class MetricsBatchInputs:
 class CreateMetricsFn(Protocol):
     def __call__(
         self,
+        model: ComponentModel,
         config: Config,
         input_batches: list[MetricsBatchInputs],
         *args: Any,
@@ -39,7 +40,11 @@ class CreateMetricsFn(Protocol):
     ) -> Mapping[str, float | int | wandb.Table]: ...
 
 
-def l0(config: Config, input_batches: list[MetricsBatchInputs]) -> Mapping[str, float]:
+def ci_l0(
+    model: ComponentModel,  # pyright: ignore[reportUnusedParameter]
+    config: Config,
+    input_batches: list[MetricsBatchInputs],
+) -> Mapping[str, float]:
     all_l0s = defaultdict[str, list[float]](list)
     for input in input_batches:
         for layer_name, ci in input.ci.items():
@@ -53,8 +58,10 @@ def l0(config: Config, input_batches: list[MetricsBatchInputs]) -> Mapping[str, 
     return out
 
 
-def ce_kl(
-    config: Config, input_batches: list[MetricsBatchInputs], *, model: ComponentModel
+def lm_ce_kl_losses(
+    model: ComponentModel,
+    config: Config,
+    input_batches: list[MetricsBatchInputs],
 ) -> Mapping[str, float]:
     ce_losses = defaultdict[str, list[float]](list)
     for input in input_batches:
@@ -68,67 +75,63 @@ def _calc_ce_and_kl_losses(
     model: ComponentModel,
     rounding_threshold: float,
 ) -> Mapping[str, float]:
-    ci = inputs.ci
-    target_out = inputs.target_out
-    batch = inputs.batch
-
-    assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
+    assert inputs.batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
 
     # make sure labels don't "wrap around": you **can't** predict the first token.
-    masked_batch = batch.clone()
+    masked_batch = inputs.batch.clone()
     masked_batch[:, 0] = -100  # F.cross_entropy ignores -99
     flat_masked_batch = masked_batch.flatten()
 
-    def ce_vs_labels(logits: Tensor) -> float:
+    def _ce_vs_labels(logits: Tensor) -> float:
         flat_logits = einops.rearrange(logits, "b seq_len vocab -> (b seq_len) vocab")
         return F.cross_entropy(flat_logits[:-1], flat_masked_batch[1:], ignore_index=-100).item()
 
-    def kl_vs_target(logits: Tensor) -> float:
-        return calc_kl_divergence_lm(pred=logits, target=target_out).item()
+    def _kl_vs_target(logits: Tensor) -> float:
+        return calc_kl_divergence_lm(pred=logits, target=inputs.target_out).item()
 
     # CE When...
     # we use the causal importances as a mask
-    ci_masked_logits = model.forward_with_components(batch, masks=ci)
-    ci_masked_ce_loss = ce_vs_labels(ci_masked_logits)
-    ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
+    ci_masked_logits = model.forward_with_components(inputs.batch, masks=inputs.ci)
+    ci_masked_ce_loss = _ce_vs_labels(ci_masked_logits)
+    ci_masked_kl_loss = _kl_vs_target(ci_masked_logits)
 
     # we use the regular stochastic masks
-    stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1)[0]
-    stoch_masked_logits = model.forward_with_components(batch, masks=stoch_masks)
-    stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
-    stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
+    stoch_masks = calc_stochastic_masks(inputs.ci, n_mask_samples=1)[0]
+    stoch_masked_logits = model.forward_with_components(inputs.batch, masks=stoch_masks)
+    stoch_masked_ce_loss = _ce_vs_labels(stoch_masked_logits)
+    stoch_masked_kl_loss = _kl_vs_target(stoch_masked_logits)
 
     # we use all components
-    nonmask = {k: torch.ones_like(v) for k, v in ci.items()}
-    unmasked_logits = model.forward_with_components(batch, masks=nonmask)
-    unmasked_ce_loss = ce_vs_labels(unmasked_logits)
-    unmasked_kl_loss = kl_vs_target(unmasked_logits)
+    nonmask = {k: torch.ones_like(v) for k, v in inputs.ci.items()}
+    unmasked_logits = model.forward_with_components(inputs.batch, masks=nonmask)
+    unmasked_ce_loss = _ce_vs_labels(unmasked_logits)
+    unmasked_kl_loss = _kl_vs_target(unmasked_logits)
 
     # we use completely random masks
-    random_mask = {k: torch.rand_like(v) for k, v in ci.items()}
-    random_masked_logits = model.forward_with_components(batch, masks=random_mask)
-    random_masked_ce_loss = ce_vs_labels(random_masked_logits)
-    random_masked_kl_loss = kl_vs_target(random_masked_logits)
+    random_mask = {k: torch.rand_like(v) for k, v in inputs.ci.items()}
+    random_masked_logits = model.forward_with_components(inputs.batch, masks=random_mask)
+    random_masked_ce_loss = _ce_vs_labels(random_masked_logits)
+    random_masked_kl_loss = _kl_vs_target(random_masked_logits)
 
     # we use rounded causal importances as masks
-    rounded_ci = {k: (v > rounding_threshold).float() for k, v in ci.items()}
-    rounded_masked_logits = model.forward_with_components(batch, masks=rounded_ci)
-    rounded_masked_ce_loss = ce_vs_labels(rounded_masked_logits)
-    rounded_masked_kl_loss = kl_vs_target(rounded_masked_logits)
+    rounded_ci = {k: (v > rounding_threshold).float() for k, v in inputs.ci.items()}
+    rounded_masked_logits = model.forward_with_components(inputs.batch, masks=rounded_ci)
+    rounded_masked_ce_loss = _ce_vs_labels(rounded_masked_logits)
+    rounded_masked_kl_loss = _kl_vs_target(rounded_masked_logits)
 
     # we zero all the components
-    zero_masks = {k: torch.zeros_like(v) for k, v in ci.items()}
-    zero_masked_logits = model.forward_with_components(batch, masks=zero_masks)
-    zero_masked_ce_loss = ce_vs_labels(zero_masked_logits)
-    zero_masked_kl_loss = kl_vs_target(zero_masked_logits)
+    zero_masks = {k: torch.zeros_like(v) for k, v in inputs.ci.items()}
+    zero_masked_logits = model.forward_with_components(inputs.batch, masks=zero_masks)
+    zero_masked_ce_loss = _ce_vs_labels(zero_masked_logits)
+    zero_masked_kl_loss = _kl_vs_target(zero_masked_logits)
 
-    target_model_ce_loss = ce_vs_labels(target_out)
+    target_model_ce_loss = _ce_vs_labels(inputs.target_out)
 
-    def pct_ce_unrecovered(ce: float) -> float:
+    def _pct_ce_unrecovered(ce: float) -> float:
         """pct of ce loss that is unrecovered, between zero masked and target model ce loss"""
         return (ce - target_model_ce_loss) / (zero_masked_ce_loss - target_model_ce_loss)
 
-    def ce_difference(ce: float) -> float:
+    def _ce_difference(ce: float) -> float:
         """difference between ce loss and target model ce loss"""
         return ce - target_model_ce_loss
 
@@ -147,21 +150,25 @@ def _calc_ce_and_kl_losses(
         "kl/random_masked": random_masked_kl_loss,
         "kl/rounded_masked": rounded_masked_kl_loss,
         "kl/zero_masked": zero_masked_kl_loss,
-        "ce_difference/ci_masked": ce_difference(ci_masked_ce_loss),
-        "ce_difference/unmasked": ce_difference(unmasked_ce_loss),
-        "ce_difference/stoch_masked": ce_difference(stoch_masked_ce_loss),
-        "ce_difference/random_masked": ce_difference(random_masked_ce_loss),
-        "ce_difference/rounded_masked": ce_difference(rounded_masked_ce_loss),
-        "ce_unrecovered/ci_masked": pct_ce_unrecovered(ci_masked_ce_loss),
-        "ce_unrecovered/unmasked": pct_ce_unrecovered(unmasked_ce_loss),
-        "ce_unrecovered/stoch_masked": pct_ce_unrecovered(stoch_masked_ce_loss),
-        "ce_unrecovered/random_masked": pct_ce_unrecovered(random_masked_ce_loss),
-        "ce_unrecovered/rounded_masked": pct_ce_unrecovered(rounded_masked_ce_loss),
+        "ce_difference/ci_masked": _ce_difference(ci_masked_ce_loss),
+        "ce_difference/unmasked": _ce_difference(unmasked_ce_loss),
+        "ce_difference/stoch_masked": _ce_difference(stoch_masked_ce_loss),
+        "ce_difference/random_masked": _ce_difference(random_masked_ce_loss),
+        "ce_difference/rounded_masked": _ce_difference(rounded_masked_ce_loss),
+        "ce_unrecovered/ci_masked": _pct_ce_unrecovered(ci_masked_ce_loss),
+        "ce_unrecovered/unmasked": _pct_ce_unrecovered(unmasked_ce_loss),
+        "ce_unrecovered/stoch_masked": _pct_ce_unrecovered(stoch_masked_ce_loss),
+        "ce_unrecovered/random_masked": _pct_ce_unrecovered(random_masked_ce_loss),
+        "ce_unrecovered/rounded_masked": _pct_ce_unrecovered(rounded_masked_ce_loss),
         # no zero masked ce_unrecovered because it's tautologically 100%
     }
 
 
-def lm_embed(config: Config, input_batches: list[MetricsBatchInputs]) -> Mapping[str, wandb.Table]:
+def lm_embed_ci_sample(
+    model: ComponentModel,  # pyright: ignore[reportUnusedParameter]
+    config: Config,
+    input_batches: list[MetricsBatchInputs],
+) -> Mapping[str, wandb.Table]:
     causal_importances: list[Float[Tensor, "... C"]] = []
 
     for input in input_batches:
@@ -199,9 +206,9 @@ def lm_embed(config: Config, input_batches: list[MetricsBatchInputs]) -> Mapping
 METRICS_FNS: dict[str, CreateMetricsFn] = {
     fn.__name__: fn
     for fn in [
-        l0,
-        ce_kl,
-        lm_embed,
+        ci_l0,
+        lm_ce_kl_losses,
+        lm_embed_ci_sample,
     ]
 }
 
@@ -241,7 +248,7 @@ def create_metrics(
         if (fn := METRICS_FNS.get(fn_cfg.name)) is None:
             raise ValueError(f"Metric {fn_cfg.name} not found in METRICS_FNS")
 
-        result = fn(config, inputs_list, **fn_cfg.extra_kwargs)
+        result = fn(model, config, inputs_list, **fn_cfg.extra_kwargs)
 
         if already_present_keys := set(result.keys()).intersection(metrics.keys()):
             raise ValueError(f"Metric keys {already_present_keys} already exists in metrics")

@@ -42,7 +42,7 @@ class _FnConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInherita
 
         # get its signature and drop the first 'inputs' parameter
         sig = inspect.signature(real_fn)
-        params_after_inputs = list(sig.parameters.values())[1:]
+        params_after_inputs = list(sig.parameters.values())[3:]
         sig_extra_only = inspect.Signature(params_after_inputs)
 
         # see if our kwargs are valid

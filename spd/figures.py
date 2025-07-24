@@ -4,11 +4,10 @@ This file contains visualizations that can be logged during SPD optimization.
 These can be selected and configured in the config file.
 """
 
-from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import override
+from typing import Any, Protocol
 
 import torch
 from einops import reduce
@@ -16,14 +15,8 @@ from jaxtyping import Float, Int
 from matplotlib import pyplot as plt
 from torch import Tensor
 
-from spd.configs import (
-    CIHistogramsFigureConfig,
-    Config,
-    MeanComponentActivationCountsFigureConfig,
-    UVandIdentityCIFigureConfig,
-)
+from spd.configs import Config
 from spd.models.component_model import ComponentModel
-from spd.models.sigmoids import SigmoidTypes
 from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_histograms,
@@ -39,97 +32,104 @@ class FigureInput:
     batch: Int[Tensor, "..."] | Float[Tensor, "..."]
 
 
-class StreamingFigureCreator(ABC):
-    @abstractmethod
-    def watch(self, inputs: FigureInput) -> None: ...
-
-    @abstractmethod
-    def compute(self) -> Mapping[str, plt.Figure]: ...
-
-
-class CIHistograms(StreamingFigureCreator):
-    def __init__(self):
-        self.causal_importances = defaultdict[str, list[Float[Tensor, "... C"]]](list)
-
-    @override
-    def watch(self, inputs: FigureInput) -> None:
-        for k, v in inputs.ci.items():
-            self.causal_importances[k].append(v)
-
-    @override
-    def compute(self) -> Mapping[str, plt.Figure]:
-        combined_causal_importances = {k: torch.cat(v) for k, v in self.causal_importances.items()}
-        fig = plot_ci_histograms(causal_importances=combined_causal_importances)
-        return {"causal_importances_hist": fig}
-
-
-class MeanComponentActivationCounts(StreamingFigureCreator):
-    def __init__(self, model: ComponentModel, device: str | torch.device, threshold: float):
-        self.model = model
-        self.device = device
-        self.threshold = threshold
-
-        self.n_tokens = 0
-        self.component_activation_counts: dict[str, Float[Tensor, " C"]] = {
-            module_name: torch.zeros(model.C, device=device) for module_name in model.components
-        }
-
-    @override
-    def watch(self, inputs: FigureInput) -> None:
-        n_tokens = next(iter(inputs.ci.values())).shape[:-1].numel()
-        self.n_tokens += n_tokens
-
-        for module_name, ci_vals in inputs.ci.items():
-            active_components = ci_vals > self.threshold
-            n_activations_per_component = reduce(active_components, "... C -> C", "sum")
-            self.component_activation_counts[module_name] += n_activations_per_component
-
-    @override
-    def compute(self) -> Mapping[str, plt.Figure]:
-        mean_counts_per_module = {
-            module_name: self.component_activation_counts[module_name] / self.n_tokens
-            for module_name in self.model.components
-        }
-        fig = plot_mean_component_activation_counts(mean_counts_per_module)
-        return {"mean_component_activation_counts": fig}
-
-
-class UVandIdentityCI(StreamingFigureCreator):
-    def __init__(
+class CreateFiguresFn(Protocol):
+    def __call__(
         self,
         model: ComponentModel,
-        device: str | torch.device,
-        sigmoid_type: SigmoidTypes,
-    ):
-        self.model = model
-        self.device = device
-        self.sigmoid_type: SigmoidTypes = sigmoid_type
-        self.batch_shape = None
+        config: Config,
+        input_batches: list[FigureInput],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Mapping[str, plt.Figure]: ...
 
-    @override
-    def watch(self, inputs: FigureInput) -> None:
-        self.batch_shape = inputs.batch.shape
 
-    @override
-    def compute(self) -> Mapping[str, plt.Figure]:
-        assert self.batch_shape is not None, "haven't seen any inputs yet"
+def ci_histograms(
+    model: ComponentModel,  # pyright: ignore[reportUnusedParameter]
+    config: Config,  # pyright: ignore[reportUnusedParameter]
+    input_batches: list[FigureInput],
+) -> Mapping[str, plt.Figure]:
+    """Create CI histogram figures."""
+    causal_importances = defaultdict[str, list[Float[Tensor, "... C"]]](list)
 
-        figures, all_perm_indices = plot_causal_importance_vals(
-            model=self.model,
-            batch_shape=self.batch_shape,
-            device=self.device,
-            input_magnitude=0.75,
-            sigmoid_type=self.sigmoid_type,
-        )
+    for inputs in input_batches:
+        for k, v in inputs.ci.items():
+            causal_importances[k].append(v)
 
-        uv_matrices_fig = plot_UV_matrices(
-            components=self.model.components, all_perm_indices=all_perm_indices
-        )
+    combined_causal_importances = {k: torch.cat(v) for k, v in causal_importances.items()}
+    fig = plot_ci_histograms(causal_importances=combined_causal_importances)
+    return {"causal_importances_hist": fig}
 
-        return {
-            **figures,
-            "uv_matrices": uv_matrices_fig,
-        }
+
+def mean_component_activation_counts(
+    model: ComponentModel,
+    config: Config,
+    input_batches: list[FigureInput],
+) -> Mapping[str, plt.Figure]:
+    """Create mean component activation counts figure."""
+    n_tokens = 0
+    device = next(iter(model.parameters())).device
+
+    component_activation_counts: dict[str, Float[Tensor, " C"]] = {
+        module_name: torch.zeros(model.C, device=device) for module_name in model.components
+    }
+
+    for inputs in input_batches:
+        batch_n_tokens = next(iter(inputs.ci.values())).shape[:-1].numel()
+        n_tokens += batch_n_tokens
+
+        for module_name, ci_vals in inputs.ci.items():
+            active_components = ci_vals > config.ci_alive_threshold
+            n_activations_per_component = reduce(active_components, "... C -> C", "sum")
+            component_activation_counts[module_name] += n_activations_per_component
+
+    mean_counts_per_module = {
+        module_name: component_activation_counts[module_name] / n_tokens
+        for module_name in model.components
+    }
+    fig = plot_mean_component_activation_counts(mean_counts_per_module)
+    return {"mean_component_activation_counts": fig}
+
+
+def uv_and_identity_ci(
+    model: ComponentModel,
+    config: Config,
+    input_batches: list[FigureInput],
+) -> Mapping[str, plt.Figure]:
+    """Create UV and identity CI figures."""
+    device = next(iter(model.parameters())).device
+
+    # Just need the batch shape from any input
+    if not input_batches:
+        raise ValueError("No input batches provided")
+
+    batch_shape = input_batches[0].batch.shape
+
+    figures, all_perm_indices = plot_causal_importance_vals(
+        model=model,
+        batch_shape=batch_shape,
+        device=device,
+        input_magnitude=0.75,
+        sigmoid_type=config.sigmoid_type,
+    )
+
+    uv_matrices_fig = plot_UV_matrices(
+        components=model.components, all_perm_indices=all_perm_indices
+    )
+
+    return {
+        **figures,
+        "uv_matrices": uv_matrices_fig,
+    }
+
+
+FIGURES_FNS: dict[str, CreateFiguresFn] = {
+    fn.__name__: fn
+    for fn in [
+        ci_histograms,
+        mean_component_activation_counts,
+        uv_and_identity_ci,
+    ]
+}
 
 
 def create_figures(
@@ -140,20 +140,12 @@ def create_figures(
     config: Config,
     n_eval_steps: int,
 ) -> Mapping[str, plt.Figure]:
-    figure_creators: list[StreamingFigureCreator] = []
-    for figure_config in config.figures:
-        match figure_config:
-            case CIHistogramsFigureConfig():
-                figure_creators.append(CIHistograms())
-            case MeanComponentActivationCountsFigureConfig():
-                figure_creators.append(
-                    MeanComponentActivationCounts(model, device, config.ci_alive_threshold)
-                )
-            case UVandIdentityCIFigureConfig():
-                figure_creators.append(UVandIdentityCI(model, device, config.sigmoid_type))
+    """Create figures for logging."""
+    # Collect all inputs first
+    inputs_list: list[FigureInput] = []
 
+    # TODO(oli): potentially move all inputs onto cpu, then move to gpu inside functions
     for _ in range(n_eval_steps):
-        # Do the work that's common between figures
         batch = extract_batch_data(next(eval_iterator))
         batch = batch.to(device)
         _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
@@ -163,16 +155,20 @@ def create_figures(
             pre_weight_acts, sigmoid_type=config.sigmoid_type
         )
 
-        inputs = FigureInput(ci=ci, batch=batch)
+        inputs_list.append(FigureInput(ci=ci, batch=batch))
 
-        for figure_creator in figure_creators:
-            figure_creator.watch(inputs)
-
+    # Process figures
     out: dict[str, plt.Figure] = {}
-    all_dicts = [figure_creator.compute() for figure_creator in figure_creators]
-    for d in all_dicts:
-        if set(d.keys()).intersection(out.keys()):
-            raise ValueError(f"Keys {set(d.keys()).intersection(out.keys())} already in output")
-        out.update(d)
+
+    for fn_cfg in config.figures_fns:
+        if (fn := FIGURES_FNS.get(fn_cfg.name)) is None:
+            raise ValueError(f"Figure function {fn_cfg.name} not found in FIGURES_FNS")
+
+        result = fn(model, config, inputs_list, **fn_cfg.extra_kwargs)
+
+        if already_present_keys := set(result.keys()).intersection(out.keys()):
+            raise ValueError(f"Figure keys {already_present_keys} already exists in figures")
+
+        out.update(result)
 
     return out
