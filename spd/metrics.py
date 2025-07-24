@@ -39,9 +39,9 @@ class StreamingMetricCreator(ABC):
 
 
 class CI_L0(StreamingMetricCreator):
-    def __init__(self, model: ComponentModel, l0_threshold: float):
+    def __init__(self, model: ComponentModel, config: Config):
         self.model = model
-        self.l0_threshold = l0_threshold
+        self.l0_threshold = config.ci_alive_threshold
         self.l0s = defaultdict[str, list[float]](list)
 
     @override
@@ -64,7 +64,7 @@ class CI_L0(StreamingMetricCreator):
 
 
 class CEandKLLosses(StreamingMetricCreator):
-    def __init__(self, model: ComponentModel, rounding_threshold: float):
+    def __init__(self, model: ComponentModel, config: Config, rounding_threshold: float):
         self.model = model
         self.rounding_threshold = rounding_threshold
         self.ce_losses = defaultdict[str, list[float]](list)
@@ -183,9 +183,9 @@ class CEandKLLosses(StreamingMetricCreator):
 
 
 class LMEmbedSampleTable(StreamingMetricCreator):
-    def __init__(self, model: ComponentModel, ci_alive_threshold: float):
+    def __init__(self, model: ComponentModel, config: Config):
         self.model = model
-        self.ci_alive_threshold = ci_alive_threshold
+        self.ci_alive_threshold = config.ci_alive_threshold
         self.causal_importances = defaultdict[str, list[Float[Tensor, "... C"]]](list)
 
     @override

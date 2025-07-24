@@ -52,6 +52,8 @@ figures:
 metrics:
   - classname: "CI_L0"
   - classname: "CEandKLLosses"
+    extra_init_kwargs:
+      rounding_threshold: 0.1
 
 
 # --- Pretrained model info ---
