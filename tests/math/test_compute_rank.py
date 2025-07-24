@@ -1,5 +1,3 @@
-import math
-from typing import Callable, Iterable
 
 import numpy as np
 import pytest
