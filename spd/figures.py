@@ -59,7 +59,8 @@ class CIHistograms(StreamingFigureCreator):
     @override
     def compute(self) -> Mapping[str, plt.Figure]:
         combined_causal_importances = {k: torch.cat(v) for k, v in self.causal_importances.items()}
-        return plot_ci_histograms(causal_importances=combined_causal_importances)
+        fig = plot_ci_histograms(causal_importances=combined_causal_importances)
+        return {"causal_importances": fig}
 
 
 class MeanComponentActivationCounts(StreamingFigureCreator):

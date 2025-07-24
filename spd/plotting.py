@@ -372,28 +372,36 @@ def plot_mean_component_activation_counts(
 def plot_ci_histograms(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     bins: int = 100,
-) -> dict[str, plt.Figure]:
-    """Plot histograms of mask values for each layer.
+) -> plt.Figure:
+    """Plot histograms of mask values for all layers in a single figure.
 
     Args:
         causal_importances: Dictionary of causal importances for each component.
         bins: Number of bins for the histogram.
 
     Returns:
-        Dictionary mapping layer names to histogram figures.
+        Single figure with subplots for each layer.
     """
-    fig_dict = {}
+    n_layers = len(causal_importances)
+    max_cols = 3
+    n_cols = min(n_layers, max_cols)
+    n_rows = math.ceil(n_layers / n_cols)
+    
+    fig, axs = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows), squeeze=False)
+    axs = axs.flatten()
 
-    for layer_name_raw, layer_ci in causal_importances.items():
+    for i, (layer_name_raw, layer_ci) in enumerate(causal_importances.items()):
         layer_name = layer_name_raw.replace(".", "_")
-        fig, ax = plt.subplots(figsize=(8, 6))
+        ax = axs[i]
         ax.hist(layer_ci.flatten().cpu().numpy(), bins=bins)
         ax.set_title(f"Causal importances for {layer_name}")
         ax.set_xlabel("Causal importance value")
-        # Use a log scale
         ax.set_yscale("log")
         ax.set_ylabel("Frequency")
 
-        fig_dict[f"{layer_name}/causal_importances"] = fig
-
-    return fig_dict
+    # Hide unused subplots
+    for i in range(n_layers, n_rows * n_cols):
+        axs[i].axis("off")
+    
+    fig.tight_layout()
+    return fig
