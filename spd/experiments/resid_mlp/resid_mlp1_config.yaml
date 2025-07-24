@@ -33,11 +33,11 @@ steps: 30_000
 lr: 2e-3
 lr_schedule: constant
 lr_warmup_pct: 0.0
-n_eval_steps: 100
 
 # --- Logging & Saving ---
 train_log_freq: 50
 eval_freq: 500
+n_eval_steps: 100
 image_freq: 5_000
 image_on_first_step: true
 save_freq: null

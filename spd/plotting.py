@@ -307,9 +307,10 @@ def plot_UV_matrices(
         images.append(im)
 
     # Add unified colorbar
+    all_matrices = [c.V for c in components.values()] + [c.U for c in components.values()]
     norm = plt.Normalize(
-        vmin=min(min(c.V.min().item(), c.U.min().item()) for c in components.values()),
-        vmax=max(max(c.V.max().item(), c.U.max().item()) for c in components.values()),
+        vmin=min(m.min().item() for m in all_matrices),
+        vmax=max(m.max().item() for m in all_matrices),
     )
     for im in images:
         im.set_norm(norm)
