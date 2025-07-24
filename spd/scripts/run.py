@@ -348,7 +348,7 @@ def generate_commands(
             base_config_dict = base_config.model_dump(mode="json")
             # Override the wandb project
             base_config_dict["wandb_project"] = project
-            config_with_overrides: Config = Config(**base_config_dict)
+            config_with_overrides = Config(**base_config_dict)
 
             # Convert to JSON string
             config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"

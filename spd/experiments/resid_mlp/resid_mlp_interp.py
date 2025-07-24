@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Any
 
 import einops
@@ -613,7 +612,7 @@ def plot_neuron_contribution_pairs(
 
 
 def main():
-    out_dir: Path = get_output_dir() / "figures"
+    out_dir = get_output_dir() / "figures"
     out_dir.mkdir(parents=True, exist_ok=True)
     set_seed(0)
     device = get_device()
