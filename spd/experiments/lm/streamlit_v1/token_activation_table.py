@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 import torch
 
+from spd.configs import LMTaskConfig
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.streamlit_v1.utils import ModelData
 from spd.utils.component_utils import calc_ci_l_zero
@@ -46,11 +47,12 @@ def analyze_component_token_table(
         column_name=column_name,
     )
 
+    assert isinstance(_model_data.config.task_config, LMTaskConfig)
     dataloader, _ = create_data_loader(
         dataset_config=data_config,
         batch_size=batch_size,
-        buffer_size=1000,
-        global_seed=42,
+        buffer_size=_model_data.config.task_config.buffer_size,
+        global_seed=_model_data.config.seed,
         ddp_rank=0,
         ddp_world_size=1,
     )
@@ -85,7 +87,7 @@ def analyze_component_token_table(
             # Get activations before each component
             with torch.no_grad():
                 _, pre_weight_acts = _model_data.model.forward_with_pre_forward_cache_hooks(
-                    batch, module_names=list(_model_data.components.keys())
+                    batch, module_names=_model_data.model.target_module_paths
                 )
 
                 causal_importances, _ = _model_data.model.calc_causal_importances(
