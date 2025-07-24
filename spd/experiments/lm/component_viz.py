@@ -47,6 +47,7 @@ def main(path: ModelPath) -> None:
             model=ss_model,
             dataloader=dataloader,
             n_steps=100,
+            sigmoid_type=config.sigmoid_type,
             device=device,
             threshold=config.ci_alive_threshold,
         )

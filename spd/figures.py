@@ -59,6 +59,7 @@ def mean_component_activation_counts(inputs: CreateFiguresInputs) -> Mapping[str
         model=inputs.model,
         dataloader=inputs.eval_loader,
         n_steps=inputs.n_eval_steps,
+        sigmoid_type=inputs.config.sigmoid_type,
         device=str(inputs.device),
         threshold=inputs.config.ci_alive_threshold,
     )[1]
