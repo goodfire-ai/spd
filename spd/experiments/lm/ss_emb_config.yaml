@@ -52,6 +52,9 @@ metrics:
     extra_init_kwargs:
       rounding_threshold: 0.1
   - classname: "LMEmbedSampleTable"
+    extra_init_kwargs:
+      n_rows: 20
+      n_components_per_row: 10
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM

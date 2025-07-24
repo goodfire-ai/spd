@@ -183,9 +183,18 @@ class CEandKLLosses(StreamingMetricCreator):
 
 
 class LMEmbedSampleTable(StreamingMetricCreator):
-    def __init__(self, model: ComponentModel, config: Config):
+    def __init__(
+        self,
+        model: ComponentModel,
+        config: Config,
+        n_rows: int,
+        n_components_per_row: int,
+    ):
         self.model = model
         self.ci_alive_threshold = config.ci_alive_threshold
+        self.n_rows = n_rows
+        self.n_components_per_row = n_components_per_row
+
         self.causal_importances = defaultdict[str, list[Float[Tensor, "... C"]]](list)
 
     @override
@@ -209,25 +218,25 @@ class LMEmbedSampleTable(StreamingMetricCreator):
         Returns:
             A wandb Table object.
         """
-        N_SAMPLES = 20
-
         # Create a 20x10 table for wandb
         table_data = []
+
         # Add "Row Name" as the first column
-        component_names = ["TokenSample"] + ["CompVal" for _ in range(10)]
+        column_names = ["TokenSample"] + ["CompVal" for _ in range(self.n_components_per_row)]
 
-        for i, ci in enumerate(causal_importances[0, :N_SAMPLES]):
-            active_values = ci[ci > self.ci_alive_threshold].tolist()
-            # Cap at 10 components
-            active_values = active_values[:10]
+        for i, ci in enumerate(causal_importances[0, : self.n_rows]):
+            active_values = ci[ci > self.ci_alive_threshold].tolist()[: self.n_components_per_row]
+
             formatted_values = [f"{val:.2f}" for val in active_values]
-            # Pad with empty strings if fewer than 10 components
-            while len(formatted_values) < 10:
-                formatted_values.append("0")
-            # Add row name as the first element
-            table_data.append([f"{i}"] + formatted_values)
 
-        return wandb.Table(data=table_data, columns=component_names)
+            # Optionally pad to self.n_components_per_row columns
+            while len(formatted_values) < self.n_components_per_row:
+                formatted_values.append("0")
+
+            row_header = f"{i}"
+            table_data.append([row_header] + formatted_values)
+
+        return wandb.Table(data=table_data, columns=column_names)
 
     @override
     def compute(self) -> Mapping[str, wandb.Table]:
