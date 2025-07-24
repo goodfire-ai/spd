@@ -678,7 +678,6 @@ def main():
             device=device,
             input_magnitude=0.75,
             plot_raw_cis=False,
-            orientation="vertical",
             title_formatter=format_resid_mlp_title,
             sigmoid_type=config.sigmoid_type,
         )[0]
