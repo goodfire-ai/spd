@@ -15,30 +15,30 @@ def compute_rank_of_sum(  # noqa: D401 - imperative summary is intentional
     """Compute ``rank(P₁ + P₂)`` in **O(d (r₁+r₂)²)** time.
 
     Let ``P₁ = U₁ diag(S₁) V₁ᵀ`` and ``P₂ = U₂ diag(S₂) V₂ᵀ`` be two matrices whose
-    thin SVD factors are already known.  
+    thin SVD factors are already known.
     By concatenating the factors and forming a *small* ``(r₁+r₂) x (r₁+r₂)``
     eigen-problem, the numerical rank of the sum can be found far faster than
     recomputing a full SVD of ``P₁ + P₂``.
 
     # Parameters:
-     - `U1 : Float[np.ndarray, "d r1"]`  
+     - `U1 : Float[np.ndarray, "d r1"]`
        Left singular vectors of ``P₁``.
-     - `S1 : Float[np.ndarray, "r1"]`  
+     - `S1 : Float[np.ndarray, "r1"]`
        Singular values of ``P₁`` (1-D array).
-     - `V1 : Float[np.ndarray, "d r1"]`  
+     - `V1 : Float[np.ndarray, "d r1"]`
        Right singular vectors of ``P₁``.
-     - `U2 : Float[np.ndarray, "d r2"]`  
+     - `U2 : Float[np.ndarray, "d r2"]`
        Left singular vectors of ``P₂``.
-     - `S2 : Float[np.ndarray, "r2"]`  
+     - `S2 : Float[np.ndarray, "r2"]`
        Singular values of ``P₂``.
-     - `V2 : Float[np.ndarray, "d r2"]`  
+     - `V2 : Float[np.ndarray, "d r2"]`
        Right singular vectors of ``P₂``.
-     - `tol : float`  
-       Eigenvalues ≤ `tol` are treated as zero  
+     - `tol : float`
+       Eigenvalues ≤ `tol` are treated as zero
        (defaults to `1e-10`).
 
     # Returns:
-     - `int`  
+     - `int`
        Numerical rank of ``P₁ + P₂``.
 
     # Usage:
@@ -72,13 +72,13 @@ def compute_rank_of_sum(  # noqa: D401 - imperative summary is intentional
         raise ValueError("Inconsistent SVD factor shapes")
 
     # ---- concatenate factors ------------------------------------------------
-    U: Float[np.ndarray, "d r"] = np.concatenate((U1, U2), axis=1)
+    U: Float[np.ndarray, "d r"] = np.concatenate((U1, U2), axis=1)  # noqa: F841
     V: Float[np.ndarray, "d r"] = np.concatenate((V1, V2), axis=1)
     Sigma: Float[np.ndarray, "r r"] = np.diag(np.concatenate((S1, S2)))
 
     # ---- small eigen-problem: K_L = Σ (VᵀV) Σ --------------------------------
-    G_R: Float[np.ndarray, "r r"] = V.T @ V                # Gram matrix
-    K_L: Float[np.ndarray, "r r"] = Sigma @ G_R @ Sigma    # r x r
+    G_R: Float[np.ndarray, "r r"] = V.T @ V  # Gram matrix
+    K_L: Float[np.ndarray, "r r"] = Sigma @ G_R @ Sigma  # r x r
 
     eigvals: Float[np.ndarray, " r"] = np.linalg.eigvalsh(K_L)
     rank: int = int(np.sum(eigvals > tol))

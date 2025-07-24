@@ -10,20 +10,18 @@ def perm_invariant_hamming(
     a: Int[np.ndarray, " n"],
     b: Int[np.ndarray, " n"],
     return_mapping: Literal[False],
-) -> tuple[int, None]:
-    ...
+) -> tuple[int, None]: ...
 @overload
 def perm_invariant_hamming(
     a: Int[np.ndarray, " n"],
     b: Int[np.ndarray, " n"],
     return_mapping: Literal[True],
-) -> tuple[int, dict[int, int]]:
-    ...
+) -> tuple[int, dict[int, int]]: ...
 def perm_invariant_hamming(
     a: Int[np.ndarray, " n"],
     b: Int[np.ndarray, " n"],
     return_mapping: bool = True,
-) -> tuple[int, dict[int, int]|None]:
+) -> tuple[int, dict[int, int] | None]:
     """Compute the minimum Hamming distance between two labelings, up to an
     optimal relabeling (permutation) of the groups.
 

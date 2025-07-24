@@ -1,4 +1,4 @@
-#%%
+# %%
 """
 Generate clustering analysis report with figures.
 This script runs the analysis from the dev.ipynb notebook and saves all figures.
@@ -16,6 +16,7 @@ from spd.clustering.merge import compute_merge_costs, merge_iteration
 from spd.clustering.merge_matrix import GroupMerge
 from spd.clustering.sweep import (
     SweepConfig,
+    cost_ratio_condition,
     create_smart_heatmap,
     plot_evolution_histories,
     run_hyperparameter_sweep,
@@ -70,12 +71,12 @@ coa = process_activations(
 
 # Additional activation matrix visualization
 plt.figure(figsize=(10, 6))
-plt.matshow(coa['activations'].T.cpu(), cmap='viridis', vmin=0, vmax=1)
+plt.matshow(coa["activations"].T.cpu(), cmap="viridis", vmin=0, vmax=1)
 plt.colorbar()
 plt.title("Component Activations Matrix")
 plt.xlabel("Samples")
 plt.ylabel("Components")
-plt.savefig(FIGURES_DIR / "activations_matrix.png", dpi=300, bbox_inches='tight')
+plt.savefig(FIGURES_DIR / "activations_matrix.png", dpi=300, bbox_inches="tight")
 plt.close()
 
 # Group merge identity plot
@@ -83,22 +84,22 @@ print("\n5. Creating group merge visualization...")
 gm_ident = GroupMerge.identity(n_components=coa["n_components_alive"])
 fig = plt.figure(figsize=(10, 2))
 gm_ident.plot(figsize=(10, 2), component_labels=coa["labels"], show=False)
-plt.savefig(FIGURES_DIR / "group_merge_identity.pdf", dpi=300, bbox_inches='tight')
+plt.savefig(FIGURES_DIR / "group_merge_identity.pdf", dpi=300, bbox_inches="tight")
 plt.close()
 
 # Compute and visualize merge costs
 print("\n6. Computing merge costs...")
-costs = compute_merge_costs(coact=coa['coactivations'], merges=gm_ident)
+costs = compute_merge_costs(coact=coa["coactivations"], merges=gm_ident)
 plt.figure(figsize=(8, 6))
-plt.matshow(costs.cpu(), cmap='viridis')
+plt.matshow(costs.cpu(), cmap="viridis")
 plt.colorbar()
 plt.title("Merge Costs Matrix")
-plt.savefig(FIGURES_DIR / "merge_costs_matrix.pdf", dpi=300, bbox_inches='tight')
+plt.savefig(FIGURES_DIR / "merge_costs_matrix.pdf", dpi=300, bbox_inches="tight")
 plt.close()
 
 # Run merge iteration example
 print("\n7. Running merge iteration example...")
-coact_bool = coa['coactivations'] > 0.01
+coact_bool = coa["coactivations"] > 0.01
 merge_results = merge_iteration(
     coact=coact_bool.float().T @ coact_bool.float(),
     activation_mask=coact_bool,
@@ -127,25 +128,23 @@ sweep_config = SweepConfig(
     iters=50,
 )
 
-sweep_results = run_hyperparameter_sweep(coa['coactivations'], sweep_config)
+sweep_results = run_hyperparameter_sweep(coa["coactivations"], sweep_config)
 print(f"\nCompleted sweep with {len(sweep_results)} configurations")
 
 # Evolution histories for different rank cost functions
 print("\n9. Creating evolution history plots...")
-for rank_cost_name in ['constant_1', 'linear', 'log']:
+for rank_cost_name in ["constant_1", "linear", "log"]:
     plt.figure(figsize=(15, 10))
     plot_evolution_histories(
         sweep_results,
-        metric='non_diag_costs_min',
-        cols_by='activation_threshold',
-        rows_by='alpha',
-        lines_by='check_threshold',
-        fixed_params={'rank_cost_name': rank_cost_name},
+        metric="non_diag_costs_min",
+        cols_by="activation_threshold",
+        rows_by="alpha",
+        lines_by="check_threshold",
+        fixed_params={"rank_cost_name": rank_cost_name},
     )
     plt.savefig(
-        FIGURES_DIR / f"evolution_history_{rank_cost_name}.pdf",
-        dpi=300,
-        bbox_inches='tight'
+        FIGURES_DIR / f"evolution_history_{rank_cost_name}.pdf", dpi=300, bbox_inches="tight"
     )
     plt.close()
 
@@ -164,24 +163,23 @@ for stat_name, stat_func, log_scale, normalize in heatmap_configs:
         statistic_func=stat_func,
         statistic_name=stat_name,
         log_scale=log_scale,
-        normalize=normalize
+        normalize=normalize,
     )
     filename = f"heatmap_{stat_name.lower().replace(' ', '_')}"
     if log_scale:
         filename += "_log"
     if normalize:
         filename += "_normalized"
-    plt.savefig(FIGURES_DIR / f"{filename}.pdf", dpi=300, bbox_inches='tight')
+    plt.savefig(FIGURES_DIR / f"{filename}.pdf", dpi=300, bbox_inches="tight")
     plt.close()
 
 # Run with stopping condition example
 print("\n11. Running merge with stopping condition...")
-from spd.clustering.sweep import cost_ratio_condition
 
-stop_at_2x = cost_ratio_condition(2.0, 'non_diag_costs_min')
+stop_at_2x = cost_ratio_condition(2.0, "non_diag_costs_min")
 result_with_stop = merge_iteration(
-    coact=(coa['coactivations'] > 0.002).float().T @ (coa['coactivations'] > 0.002).float(),
-    activation_mask=coa['coactivations'] > 0.002,
+    coact=(coa["coactivations"] > 0.002).float().T @ (coa["coactivations"] > 0.002).float(),
+    activation_mask=coa["coactivations"] > 0.002,
     alpha=1.0,
     check_threshold=0.1,
     stopping_condition=stop_at_2x,

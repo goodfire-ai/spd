@@ -1,4 +1,3 @@
-
 import numpy as np
 import pytest
 
@@ -13,8 +12,6 @@ def random_orth(
     """Generate a d x r column-orthonormal matrix."""
     q, _ = np.linalg.qr(rng.standard_normal((d, r)), mode="reduced")
     return q[:, :r]
-
-
 
 
 def brute_rank(m: np.ndarray, tol: float = 1.0e-12) -> int:
@@ -33,21 +30,19 @@ def brute_rank(m: np.ndarray, tol: float = 1.0e-12) -> int:
     return int(np.sum(np.linalg.svd(m, compute_uv=False) > tol))
 
 
-
-
-
-@pytest.mark.parametrize(
-    "d,r1,r2", [(8, 0, 0), (8, 0, 5), (8, 5, 0), (32, 3, 3)]
-)
+@pytest.mark.parametrize("d,r1,r2", [(8, 0, 0), (8, 0, 5), (8, 5, 0), (32, 3, 3)])
 def test_edge_zero_ranks(
     d: int,
     r1: int,
     r2: int,
-    rng: np.random.Generator = np.random.default_rng(0),
+    rng: np.random.Generator | None = None,
 ) -> None:
     """
     Edge-cases with zero-rank summands (all-zero matrices).
     """
+    if rng is None:
+        rng = np.random.default_rng(0)
+
     u1 = np.empty((d, 0))
     v1 = np.empty((d, 0))
     s1 = np.empty((0,))
@@ -65,9 +60,6 @@ def test_edge_zero_ranks(
     assert expected == got
 
 
-
-
-
 @pytest.mark.parametrize(
     "d,r1,r2",
     [
@@ -82,11 +74,14 @@ def test_random_cases(
     d: int,
     r1: int,
     r2: int,
-    rng: np.random.Generator = np.random.default_rng(42),
+    rng: np.random.Generator | None = None,
 ) -> None:
     """
     Random low-rank matrices with independent subspaces.
     """
+    if rng is None:
+        rng = np.random.default_rng(42)
+
     u1 = random_orth(d, r1, rng)
     v1 = random_orth(d, r1, rng)
     s1 = rng.random(r1) + 0.1
@@ -104,20 +99,20 @@ def test_random_cases(
     assert expected == got
 
 
-
-
-
 @pytest.mark.parametrize("overlap_dim", [1, 2, 3])
 def test_overlapping_subspaces(
     overlap_dim: int,
     d: int = 32,
     r_base: int = 6,
-    rng: np.random.Generator = np.random.default_rng(123),
+    rng: np.random.Generator | None = None,
 ) -> None:
     """
     P1 and P2 share `overlap_dim` identical left singular vectors,
     so rank(P1+P2) < rank(P1)+rank(P2).
     """
+    if rng is None:
+        rng = np.random.default_rng(123)
+
     # Build common orthonormal basis
     u_common = random_orth(d, overlap_dim, rng)
 
@@ -145,19 +140,19 @@ def test_overlapping_subspaces(
     assert expected < (2 * r_base)  # sanity: reduced rank due to overlap
 
 
-
-
-
 def test_small_singular_values(
     d: int = 20,
     r1: int = 4,
     r2: int = 4,
     tiny: float = 1.0e-14,
-    rng: np.random.Generator = np.random.default_rng(999),
+    rng: np.random.Generator | None = None,
 ) -> None:
     """
     Verify tolerance handling: one matrix has almost-zero singular values.
     """
+    if rng is None:
+        rng = np.random.default_rng(999)
+
     u1 = random_orth(d, r1, rng)
     v1 = random_orth(d, r1, rng)
     s1 = np.full(r1, tiny)
@@ -175,12 +170,7 @@ def test_small_singular_values(
     assert expected == got
 
 
-
-
-
-@pytest.mark.parametrize(
-    "seed", list(range(10))
-)
+@pytest.mark.parametrize("seed", list(range(10)))
 def test_many_random_seeds(
     seed: int,
     d: int = 48,
@@ -205,18 +195,18 @@ def test_many_random_seeds(
     assert expected == got
 
 
-
-
-
 def test_argument_order_symmetry(
     d: int = 40,
     r1: int = 6,
     r2: int = 4,
-    rng: np.random.Generator = np.random.default_rng(2025),
+    rng: np.random.Generator | None = None,
 ) -> None:
     """
     rank(P1+P2) must be symmetric w.r.t argument order.
     """
+    if rng is None:
+        rng = np.random.default_rng(2025)
+
     u1 = random_orth(d, r1, rng)
     v1 = random_orth(d, r1, rng)
     s1 = rng.random(r1) + 0.1
@@ -231,18 +221,18 @@ def test_argument_order_symmetry(
     assert rank12 == rank21
 
 
-
-
-
 def test_large_dimension_performance(
     d: int = 256,
     r1: int = 20,
     r2: int = 25,
-    rng: np.random.Generator = np.random.default_rng(7),
+    rng: np.random.Generator | None = None,
 ) -> None:
     """
     Sanity test on a moderately large `d`; ensures code runs in <~0.1 s.
     """
+    if rng is None:
+        rng = np.random.default_rng(7)
+
     u1 = random_orth(d, r1, rng)
     v1 = random_orth(d, r1, rng)
     s1 = rng.random(r1) + 0.1
@@ -253,6 +243,3 @@ def test_large_dimension_performance(
 
     got = rank_of_sum(u1, s1, v1, u2, s2, v2)
     assert got <= (r1 + r2)  # trivial upper bound
-
-
-

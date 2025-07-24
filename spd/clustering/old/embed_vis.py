@@ -437,6 +437,7 @@ def plot_embedding_label_grid(
                     alpha=alpha,
                     color="black",
                 )
+            assert scatter
 
             if r == 0:
                 ax.set_title(label_col, fontsize=9)

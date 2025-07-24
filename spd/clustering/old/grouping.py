@@ -1,23 +1,13 @@
-from collections.abc import Iterable, Sequence
-from pathlib import Path
+from collections.abc import Sequence
 from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-import torch.nn as nn
-from jaxtyping import Float, Int
+from jaxtyping import Float
 from matplotlib.patches import Patch
 from scipy.cluster.hierarchy import dendrogram, fcluster, linkage
 from scipy.spatial.distance import squareform
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset
-from tqdm import tqdm
-
-from spd.configs import Config
-from spd.models.component_model import ComponentModel
-from spd.utils.data_utils import DatasetGeneratedDataLoader
-from spd.utils.general_utils import extract_batch_data
 
 
 def calc_jaccard_index(
@@ -59,136 +49,6 @@ CoactivationResults = dict[
     str,  # group key
     CoactivationResultsGroup,
 ]
-
-
-def print_coac_info(
-    x: CoactivationResults,
-):
-    for group_key, group in x.items():
-        print(f"{group_key = }:")
-        for k, v in group.items():
-            if isinstance(v, torch.Tensor):
-                print(f"  {k}: {v.shape}")
-            elif k == "labels":
-                print(f"  labels: {set(v.tolist()) = }, {len(v) = }")
-            else:
-                print(f"  {k}: {v}")
-
-
-@torch.no_grad()
-def collect_coactivations(
-    comp_model: ComponentModel,
-    data_loader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-    module_groups: list[list[str]],  # e.g., [["layers.0.mlp"], ["layers.1.attn", "layers.1.mlp"]],
-    n_samples: int = 10000,  # number of samples to collect for co-activation
-    activation_threshold: float = 0.01,  # mask threshold for a component to be considered active
-    alive_min_freq: float = 1e-3,  # minimum frequency for a component to be considered alive
-    device: str = "cuda" if torch.cuda.is_available() else "cpu",
-) -> dict[str, Any]:
-    # 1. Setup phase - FIXED: use comp_model not model
-    components: dict[str, nn.Module] = {
-        k.removeprefix("components.").replace("-", "."): v for k, v in comp_model.components.items()
-    }
-    gates: dict[str, nn.Module] = {
-        k.removeprefix("gates.").replace("-", "."): v for k, v in comp_model.gates.items()
-    }
-
-    # Build module_slices for each group
-    results: CoactivationResults = {}
-    for group_idx, modules in enumerate(module_groups):
-        # Calculate total components and slices within group
-        group_total_m: int = sum(
-            components[mod].m for mod in modules
-        )  # FIXED: no need to convert, already dots
-        co_matrix: Float[Tensor, "group_total_m group_total_m"] = torch.zeros(
-            group_total_m, group_total_m, device=device
-        )
-        marginals: Float[Tensor, " group_total_m"] = torch.zeros(group_total_m, device=device)
-
-        # Build slice mapping
-        module_slices: dict[str, slice] = {}
-        start_idx: int = 0
-        labels: list[str] = []
-        for mod in modules:
-            m = components[mod].m  # FIXED: use mod directly
-            module_slices[mod] = slice(start_idx, start_idx + m)
-            start_idx += m
-            labels += [mod] * m  # Create labels for each component in the module
-
-        results[f"group_{group_idx}"] = {
-            "co_occurrence_matrix": co_matrix,
-            "marginal_counts": marginals,
-            "module_slices": module_slices,
-            "modules": modules,
-            "labels": np.array(labels),  # Store labels for each component in the group
-        }
-    # Data processing loop - exact same pattern as optimize()
-    samples_processed: int = 0
-    data_iter: Iterable[Any] = iter(data_loader)
-
-    # TODO
-    # CRITICAL: lots of the stuff is only for the last batch!!! need it for all batches. hack for now is to use one big batch
-    with tqdm(total=n_samples, desc="Collecting coactivations", unit="samples") as pbar:
-        while samples_processed < n_samples:
-            try:
-                batch_item = next(data_iter)
-                batch = extract_batch_data(batch_item)
-            except StopIteration:
-                data_iter = iter(data_loader)
-                batch_item = next(data_iter)
-                batch = extract_batch_data(batch_item)
-            batch = batch.to(device)
-
-            target_out, pre_weight_acts = comp_model.forward_with_pre_forward_cache_hooks(
-                batch, module_names=list(gates.keys())
-            )
-            As = {
-                module_name: components[module_name].A  # FIXED: use module_name directly
-                for module_name in pre_weight_acts
-            }
-
-            target_component_acts = calc_component_acts(pre_weight_acts=pre_weight_acts, As=As)
-
-            masks, _ = calc_masks(
-                gates=gates, target_component_acts=target_component_acts, detach_inputs=True
-            )
-
-            # Process each group
-            for group_idx, modules in enumerate(module_groups):
-                group_key: str = f"group_{group_idx}"
-                # Concatenate masks within group
-                component_masks = torch.cat(
-                    [masks[mod] for mod in modules], dim=-1
-                )  # [batch, group_m]
-                results[group_key]["component_masks"] = component_masks
-
-                # Apply threshold
-                active_mask = component_masks > activation_threshold  # [batch, group_m]
-                results[group_key]["active_mask"] = active_mask
-
-                results[group_key]["active_freq"] = active_mask.sum(dim=0) / active_mask.shape[0]
-                results[group_key]["is_alive"] = results[group_key]["active_freq"] > alive_min_freq
-
-                # Accumulate co-occurrences and marginals
-                results[group_key]["co_occurrence_matrix"] += torch.einsum(
-                    "bi,bj->ij", active_mask.float(), active_mask.float()
-                )
-                results[group_key]["marginal_counts"] += active_mask.sum(dim=0)
-            batch_size = batch.size(0)
-            samples_processed += batch_size
-            pbar.update(batch_size)
-
-    # Add metadata.additoinal_metrics
-    for group_key in results:
-        results[group_key]["total_samples"] = samples_processed
-        results[group_key]["activation_threshold"] = activation_threshold
-        results[group_key]["jaccard"] = calc_jaccard_index(
-            co_occurrence_matrix=results[group_key]["co_occurrence_matrix"],
-            marginal_counts=results[group_key]["marginal_counts"],
-        )
-
-    return results
 
 
 def hierarchical_clustering(
@@ -397,56 +257,3 @@ def coactivation_hierarchical_clustering(
         n_active=alive_mask.sum().item(),
         clusters_nomask=np.array(clusters_nomask),
     )
-
-
-def get_coactivations(
-    model_path: Path,
-    dataset_cls: type[Dataset[Any]],
-    coactivations_kwargs: dict[str, Any],
-    dataset_kwargs: dict[str, Any] | None = None,
-    dataloader_kwargs: dict[str, Any] | None = None,
-    device: str|torch.device = "cpu",
-) -> CoactivationResults:
-    # model
-    comp_model: ComponentModel
-    config: Config
-    comp_model, config, _ = ComponentModel.from_pretrained(model_path)
-    comp_model.to(device)
-    target_model: nn.Module = comp_model.model
-
-    # dataset
-    dataset_kwargs_: dict[str, Any] = dataset_kwargs or {}
-    dataset_kwargs_ = dict(
-        n_features=target_model.config.n_features,
-        feature_probability=config.task_config.feature_probability,
-        device=device,
-        data_generation_type=config.task_config.data_generation_type,
-        **dataset_kwargs_,
-    )
-    dataset: Dataset[Any] = dataset_cls(**dataset_kwargs_)
-
-    # dataloader
-    dataloader_kwargs_: dict[str, Any] = dataloader_kwargs or {}
-    dataloader_kwargs_ = {
-        "dataset": dataset,
-        "batch_size": 1000,
-        "shuffle": False,
-        **dataloader_kwargs_,
-    }
-    data_loader: DatasetGeneratedDataLoader[Any] = DatasetGeneratedDataLoader(
-        **dataloader_kwargs_,
-    )
-
-    # coactivations
-    coactivations_kwargs = {
-        "comp_model": comp_model,
-        "data_loader": data_loader,
-        "n_samples": 500000,
-        "activation_threshold": 0.1,
-        **coactivations_kwargs,
-    }
-    coactivations: CoactivationResults = collect_coactivations(
-        **coactivations_kwargs,
-    )
-
-    return coactivations

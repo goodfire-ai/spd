@@ -13,41 +13,41 @@ def grep_repr(
     highlight: bool = True,
 ) -> None:
     """grep-like search on ``repr(obj)`` with optional ANSI highlighting.
-    
+
     Converts *obj* to its ``repr`` string, finds every *pattern* match, and
     prints each match surrounded by configurable character or line context.
-    
+
     # Parameters:
-     - `obj : Any`  
+     - `obj : Any`
         object to search; its ``repr`` string is scanned
-     - `pattern : str | Pattern[str]`  
+     - `pattern : str | Pattern[str]`
         regular-expression pattern (string or pre-compiled)
-     - `char_context : int | None`  
-        characters of context before **and** after each match  
+     - `char_context : int | None`
+        characters of context before **and** after each match
         (ignored when `line_context` is given; defaults to `20`)
-     - `line_context : int | None`  
-        lines of context before **and** after each match; overrides  
+     - `line_context : int | None`
+        lines of context before **and** after each match; overrides
         `char_context` when not ``None`` (defaults to ``None``)
-     - `flags : int`  
+     - `flags : int`
         flags forwarded to ``re.compile`` (defaults to ``0``)
-     - `highlight : bool`  
-        if ``True`` wrap matches with ``ESC[1;31m … ESC[0m``  
+     - `highlight : bool`
+        if ``True`` wrap matches with ``ESC[1;31m … ESC[0m``
         (defaults to ``True``)
-    
+
     # Returns:
-     - `None`  
+     - `None`
         nothing; the function prints to ``stdout``
-    
+
     # Modifies:
      - None
-    
+
     # Usage:
-    
+
     ```python
     >>> grep_repr([1, 2, 42, 3], r"42")
     [1, 2, ... 42 ... 3]               # 42 is colored bright-red
     ```
-    
+
     # Raises:
      - `re.error` : invalid regular expression
     """
@@ -56,9 +56,7 @@ def grep_repr(
 
     def _color(segment: str) -> str:
         return (
-            regex.sub(lambda m: f"\033[1;31m{m.group(0)}\033[0m", segment)
-            if highlight
-            else segment
+            regex.sub(lambda m: f"\033[1;31m{m.group(0)}\033[0m", segment) if highlight else segment
         )
 
     if line_context is not None:

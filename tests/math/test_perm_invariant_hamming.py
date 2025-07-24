@@ -63,7 +63,7 @@ def test_shape_mismatch() -> None:
     b = np.array([0, 1])
     with pytest.raises(AssertionError):
         perm_invariant_hamming(a, b)
-        
+
 
 def test_return_mapping() -> None:
     """Verify the returned mapping is correct."""
@@ -73,7 +73,8 @@ def test_return_mapping() -> None:
     assert d == 0
     assert mapping[0] == 2
     assert mapping[1] == 3
-    
+
+
 def test_return_mapping_false() -> None:
     """Test return_mapping=False."""
     a = np.array([0, 1, 0])
@@ -81,6 +82,7 @@ def test_return_mapping_false() -> None:
     d, mapping = perm_invariant_hamming(a, b, return_mapping=False)
     assert d == 0
     assert mapping is None
+
 
 def test_unused_labels() -> None:
     """Test when arrays don't use all labels 0..k-1."""
