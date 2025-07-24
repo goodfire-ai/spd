@@ -27,18 +27,18 @@ pnorm: 2.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 32
+batch_size: 256
 steps: 50_000
 lr: 3e-4
 lr_schedule: cosine
 lr_warmup_pct: 0.01
 lr_exponential_halflife: null
-n_eval_steps: 100
+n_eval_steps: 10
 
 # --- Logging & Saving ---
 image_freq: 2000
 image_on_first_step: true
-print_freq: 1000
+print_freq: 100
 save_freq: null
 n_examples_until_dead: 2_048_000  # print_freq * batch_size * max_seq_len = 1000 * 4 * 512
 figures_fns:
