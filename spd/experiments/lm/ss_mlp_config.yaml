@@ -19,28 +19,28 @@ recon_coeff: null
 stochastic_recon_coeff: null
 recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1
-importance_minimality_coeff: 0.005
+importance_minimality_coeff: 5e-3
 schatten_coeff: null
 embedding_recon_coeff: null
 is_embed_unembed_recon: false
-pnorm: 2.0
+pnorm: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 32
-steps: 50_000
+batch_size: 128
+steps: 5_000
 lr: 3e-4
 lr_schedule: cosine
 lr_warmup_pct: 0.01
 lr_exponential_halflife: null
-n_eval_steps: 100
+n_eval_steps: 25
 
 # --- Logging & Saving ---
-image_freq: 2000
+image_freq: 2500
 image_on_first_step: true
-print_freq: 1000
+print_freq: 500
 save_freq: null
-n_examples_until_dead: 2_048_000  # print_freq * batch_size * max_seq_len = 1000 * 4 * 512
+n_examples_until_dead: 65_536_000  # print_freq * batch_size * max_seq_len = 1000 * 128 * 512
 figures_fns:
   - name: "ci_histograms"
   - name: "mean_component_activation_counts"
