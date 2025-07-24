@@ -27,6 +27,7 @@ from spd.models.sigmoids import SigmoidTypes
 from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_histograms,
+    plot_mean_component_activation_counts,
     plot_UV_matrices,
 )
 from spd.utils.general_utils import extract_batch_data
@@ -82,34 +83,14 @@ class MeanComponentActivationCounts(StreamingFigureCreator):
             n_activations_per_component = reduce(active_components, "... C -> C", "sum")
             self.component_activation_counts[module_name] += n_activations_per_component
 
-    @staticmethod
-    def _plot_mean_component_activation_counts(
-        name: str,
-        mean_component_activation_counts: Float[Tensor, " C"],
-    ) -> plt.Figure:
-        """Plots the mean activation counts for each component module, returning a dict of figures."""
-        fig = plt.figure(figsize=(8, 6))
-        plt.hist(mean_component_activation_counts.detach().cpu().numpy(), bins=100)
-        plt.yscale("log")
-        plt.title(name)
-        plt.xlabel("Mean Activation Count")
-        plt.ylabel("Frequency")
-
-        plt.tight_layout()
-        return fig
-
     @override
     def compute(self) -> Mapping[str, plt.Figure]:
-        out = {}
-        for module_name in self.model.components:
-            mean_counts = self.component_activation_counts[module_name] / self.n_tokens
-            out[f"{module_name}/mean_component_activation_counts"] = (
-                self._plot_mean_component_activation_counts(
-                    name=module_name,
-                    mean_component_activation_counts=mean_counts,
-                )
-            )
-        return out
+        mean_counts_per_module = {
+            module_name: self.component_activation_counts[module_name] / self.n_tokens
+            for module_name in self.model.components
+        }
+        fig = plot_mean_component_activation_counts(mean_counts_per_module)
+        return {"mean_component_activation_counts": fig}
 
 
 class UVandIdentityCI(StreamingFigureCreator):
@@ -140,13 +121,13 @@ class UVandIdentityCI(StreamingFigureCreator):
             sigmoid_type=self.sigmoid_type,
         )
 
-        uv_matrices = plot_UV_matrices(
+        uv_matrices_fig = plot_UV_matrices(
             components=self.model.components, all_perm_indices=all_perm_indices
         )
 
         return {
             **figures,
-            **uv_matrices,
+            "uv_matrices": uv_matrices_fig,
         }
 
 
