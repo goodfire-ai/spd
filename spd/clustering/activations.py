@@ -252,10 +252,10 @@ def component_activations(
 ) -> dict[str, Float[Tensor, " n_steps C"]]:
     """Get the number and strength of the masks over the full dataset."""
     # We used "-" instead of "." as module names can't have "." in them
-    gates: dict[str, GateMLP | VectorGateMLP] = {
-        k.removeprefix("gates.").replace("-", "."): cast(GateMLP | VectorGateMLP, v)
-        for k, v in model.gates.items()
-    }
+    # gates: dict[str, GateMLP | VectorGateMLP] = {
+    #     k.removeprefix("gates.").replace("-", "."): cast(GateMLP | VectorGateMLP, v)
+    #     for k, v in model.gates.items()
+    # }
     components: dict[str, LinearComponent | EmbeddingComponent] = {
         k.removeprefix("components.").replace("-", "."): cast(
             LinearComponent | EmbeddingComponent, v
@@ -270,13 +270,14 @@ def component_activations(
     _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
         batch, module_names=list(components.keys())
     )
-    Vs = {module_name: v.V for module_name, v in components.items()}
+    # Vs = {module_name: v.V for module_name, v in components.items()}
 
-    causal_importances, _ = calc_causal_importances(
+    causal_importances, _ = model.calc_causal_importances(
         pre_weight_acts=pre_weight_acts,
-        Vs=Vs,
-        gates=gates,
-        detach_inputs=False,
+        sigmoid_type=model.config.sigmoid_type,
+        # Vs=Vs,
+        # gates=gates,
+        # detach_inputs=False,
     )
 
     return causal_importances
