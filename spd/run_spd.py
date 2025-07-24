@@ -130,8 +130,8 @@ def optimize(
 
             causal_importances, causal_importances_upper_leaky = model.calc_causal_importances(
                 pre_weight_acts=pre_weight_acts,
-                detach_inputs=False,
                 sigmoid_type=config.sigmoid_type,
+                detach_inputs=False,
             )
 
             alive_tracker.watch_batch(causal_importances)

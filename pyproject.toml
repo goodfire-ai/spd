@@ -30,6 +30,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest",
+    "pytest-cov", # for coverage reports
     "ruff",
     "basedpyright",
     "pre-commit",
