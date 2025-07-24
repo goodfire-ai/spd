@@ -146,8 +146,8 @@ def find_component_activation_contexts(
 
                 causal_importances, _ = _model_data.model.calc_causal_importances(
                     pre_weight_acts=pre_weight_acts,
-                    detach_inputs=True,
                     sigmoid_type=_model_data.config.sigmoid_type,
+                    detach_inputs=True,
                 )
 
             # Calculate L0 scores

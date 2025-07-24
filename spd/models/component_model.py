@@ -384,8 +384,8 @@ class ComponentModel(nn.Module):
 
         Args:
             pre_weight_acts: The activations before each layer in the target model.
-            detach_inputs: Whether to detach the inputs to the gates.
             sigmoid_type: Type of sigmoid to use.
+            detach_inputs: Whether to detach the inputs to the gates.
 
         Returns:
             Tuple of (causal_importances, causal_importances_upper_leaky) dictionaries for each layer.

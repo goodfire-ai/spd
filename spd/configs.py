@@ -30,7 +30,7 @@ class _FnConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInherita
     )
     extra_kwargs: dict[str, Any] = Field(
         default={},
-        description="Keyword arguments to pass to the function",
+        description="Extra keyword arguments to pass to the function besides the default `inputs`",
     )
 
     @abstractmethod
@@ -242,7 +242,22 @@ class Config(BaseModel):
     # --- Training ---
     lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
     steps: PositiveInt = Field(..., description="Total number of optimisation steps")
-    batch_size: PositiveInt = Field(..., description="Mini-batch size used for optimisation")
+    batch_size: PositiveInt = Field(
+        ...,
+        description=(
+            "Mini-batch size used for optimisation. This is the EFFECTIVE batch size: Dependent "
+            "on gradient accumulation steps it may be processed as multiple micro-batches."
+        ),
+    )
+    gradient_accumulation_steps: PositiveInt = Field(
+        default=1,
+        description="Number of steps to accumulate gradients over before updating parameters",
+    )
+
+    @property
+    def microbatch_size(self) -> PositiveInt:
+        return self.batch_size // self.gradient_accumulation_steps
+
     lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
         default="constant",
         description="Type of learning-rate schedule to apply",
@@ -280,11 +295,21 @@ class Config(BaseModel):
     )
     metrics_fns: list[MetricsFnConfig] = Field(
         default=[],
-        description="List of local names of functions to use for computing metrics. These functions must be defined in the `spd.metrics_and_figs` module.",
+        description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
     )
     figures_fns: list[FiguresFnConfig] = Field(
         default=[],
-        description="List of local names of functions to use for creating figures. These functions must be defined in the `spd.metrics_and_figs` module.",
+        description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
+    )
+
+    # --- Component Tracking ---
+    ci_alive_threshold: Probability = Field(
+        default=0.1,
+        description="Causal importance threshold above which a component is considered 'firing'",
+    )
+    n_examples_until_dead: PositiveInt = Field(
+        ...,
+        description="Number of examples without firing before a component is considered dead. Note that in LMs, an example is a token, not a sequence.",
     )
 
     # --- Pretrained model info ---
@@ -352,5 +377,9 @@ class Config(BaseModel):
             assert self.lr_exponential_halflife is not None, (
                 "lr_exponential_halflife must be set if lr_schedule is exponential"
             )
+
+        assert self.batch_size % self.gradient_accumulation_steps == 0, (
+            "batch_size must be divisible by gradient_accumulation_steps"
+        )
 
         return self
