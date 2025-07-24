@@ -17,89 +17,9 @@ from pydantic import (
 )
 
 from spd.clustering.merge_matrix import GroupMerge
+from spd.clustering.util import format_scientific_latex
 from spd.spd_types import Probability
 
-
-def format_scientific_latex(value: float) -> str:
-	"""Format a number in LaTeX scientific notation style."""
-	if value == 0:
-		return r"$0$"
-	
-	import math
-	exponent: int = int(math.floor(math.log10(abs(value))))
-	mantissa: float = value / (10 ** exponent)
-	
-	return f"${mantissa:.2f} \\times 10^{{{exponent}}}$"
-
-
-def plot_merge_iteration(
-	current_merge: GroupMerge,
-	current_coact: Float[Tensor, "k_groups k_groups"],
-	costs: Float[Tensor, "k_groups k_groups"],
-	pair_cost: float,
-	iteration: int,
-	component_labels: list[str] | None = None,
-	plot_config: MergePlotConfig | None = None,
-) -> None:
-	"""Plot merge iteration results with merge tree, coactivations, and costs.
-	
-	Args:
-		current_merge: Current merge state
-		current_coact: Current coactivation matrix
-		costs: Current cost matrix
-		pair_cost: Cost of selected merge pair
-		iteration: Current iteration number
-		component_labels: Component labels for axis labeling
-		plot_config: Plot configuration settings
-	"""
-	plot_config_ = plot_config or MergePlotConfig()
-	axs: list[plt.Axes]
-	fig, axs = plt.subplots( # pyright: ignore[reportAssignmentType]
-		1, 3,
-		figsize=plot_config_.figsize,
-		sharey=True,
-		gridspec_kw={"width_ratios": [2, 1, 1]}
-	)
-	
-	# Merge plot
-	current_merge.plot(ax=axs[0], show=False, component_labels=component_labels)
-	axs[0].set_title("Merge")
-	
-	# Coactivations plot
-	axs[1].matshow(current_coact.cpu().numpy(), aspect='equal')
-	coact_min: float = current_coact.min().item()
-	coact_max: float = current_coact.max().item()
-	coact_min_str: str = format_scientific_latex(coact_min)
-	coact_max_str: str = format_scientific_latex(coact_max)
-	axs[1].set_title(f"Coactivations\n[{coact_min_str}, {coact_max_str}]")
-	
-	# Setup ticks for coactivations
-	k_groups: int = current_coact.shape[0]
-	minor_ticks: list[int] = list(range(0, k_groups, plot_config_.tick_spacing))
-	axs[1].set_yticks(minor_ticks)
-	axs[1].set_xticks(minor_ticks)
-	axs[1].set_xticklabels([])  # Remove x-axis tick labels but keep ticks
-	
-	# Costs plot
-	axs[2].matshow(costs.cpu().numpy(), aspect='equal')
-	costs_min: float = costs.min().item()
-	costs_max: float = costs.max().item()
-	costs_min_str: str = format_scientific_latex(costs_min)
-	costs_max_str: str = format_scientific_latex(costs_max)
-	axs[2].set_title(f"Costs\n[{costs_min_str}, {costs_max_str}]")
-	
-	# Setup ticks for costs
-	axs[2].set_yticks(minor_ticks)
-	axs[2].set_xticks(minor_ticks)
-	axs[2].set_xticklabels([])  # Remove x-axis tick labels but keep ticks
-	
-	fig.suptitle(f"Iteration {iteration} with cost {pair_cost:.4f}")
-	plt.tight_layout()
-	
-	if plot_config_.save_pdf:
-		fig.savefig(f"{plot_config_.pdf_prefix}_iter_{iteration:03d}.pdf", bbox_inches='tight', dpi=300)
-	
-	plt.show()
 
 
 def compute_merge_costs(
@@ -440,6 +360,77 @@ class MergeHistory:
 			'costs_range': self.costs_range,
 			'k_groups': self.k_groups,
 		}
+
+
+
+def plot_merge_iteration(
+	current_merge: GroupMerge,
+	current_coact: Float[Tensor, "k_groups k_groups"],
+	costs: Float[Tensor, "k_groups k_groups"],
+	pair_cost: float,
+	iteration: int,
+	component_labels: list[str] | None = None,
+	plot_config: MergePlotConfig | None = None,
+) -> None:
+	"""Plot merge iteration results with merge tree, coactivations, and costs.
+	
+	Args:
+		current_merge: Current merge state
+		current_coact: Current coactivation matrix
+		costs: Current cost matrix
+		pair_cost: Cost of selected merge pair
+		iteration: Current iteration number
+		component_labels: Component labels for axis labeling
+		plot_config: Plot configuration settings
+	"""
+	plot_config_ = plot_config or MergePlotConfig()
+	axs: list[plt.Axes]
+	fig, axs = plt.subplots( # pyright: ignore[reportAssignmentType]
+		1, 3,
+		figsize=plot_config_.figsize,
+		sharey=True,
+		gridspec_kw={"width_ratios": [2, 1, 1]}
+	)
+	
+	# Merge plot
+	current_merge.plot(ax=axs[0], show=False, component_labels=component_labels)
+	axs[0].set_title("Merge")
+	
+	# Coactivations plot
+	axs[1].matshow(current_coact.cpu().numpy(), aspect='equal')
+	coact_min: float = current_coact.min().item()
+	coact_max: float = current_coact.max().item()
+	coact_min_str: str = format_scientific_latex(coact_min)
+	coact_max_str: str = format_scientific_latex(coact_max)
+	axs[1].set_title(f"Coactivations\n[{coact_min_str}, {coact_max_str}]")
+	
+	# Setup ticks for coactivations
+	k_groups: int = current_coact.shape[0]
+	minor_ticks: list[int] = list(range(0, k_groups, plot_config_.tick_spacing))
+	axs[1].set_yticks(minor_ticks)
+	axs[1].set_xticks(minor_ticks)
+	axs[1].set_xticklabels([])  # Remove x-axis tick labels but keep ticks
+	
+	# Costs plot
+	axs[2].matshow(costs.cpu().numpy(), aspect='equal')
+	costs_min: float = costs.min().item()
+	costs_max: float = costs.max().item()
+	costs_min_str: str = format_scientific_latex(costs_min)
+	costs_max_str: str = format_scientific_latex(costs_max)
+	axs[2].set_title(f"Costs\n[{costs_min_str}, {costs_max_str}]")
+	
+	# Setup ticks for costs
+	axs[2].set_yticks(minor_ticks)
+	axs[2].set_xticks(minor_ticks)
+	axs[2].set_xticklabels([])  # Remove x-axis tick labels but keep ticks
+	
+	fig.suptitle(f"Iteration {iteration} with cost {pair_cost:.4f}")
+	plt.tight_layout()
+	
+	if plot_config_.save_pdf:
+		fig.savefig(f"{plot_config_.pdf_prefix}_iter_{iteration:03d}.pdf", bbox_inches='tight', dpi=300)
+	
+	plt.show()
 
 
 def merge_iteration(
