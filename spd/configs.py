@@ -33,7 +33,10 @@ class LMEmbedSampleTableMetricConfig(BaseModel):
     name: Literal["lm_embed_ci_sample"] = "lm_embed_ci_sample"
 
 
-MetricConfigUnion = L0MetricConfig | CEandKLLossesMetricConfig | LMEmbedSampleTableMetricConfig
+MetricConfigUnion = Annotated[
+    L0MetricConfig | CEandKLLossesMetricConfig | LMEmbedSampleTableMetricConfig,
+    Field(discriminator="name"),
+]
 
 
 class CIHistogramsFigureConfig(BaseModel):
@@ -51,11 +54,12 @@ class UVandIdentityCIFigureConfig(BaseModel):
     name: Literal["uv_and_identity_ci"] = "uv_and_identity_ci"
 
 
-FigureConfigUnion = (
+FigureConfigUnion = Annotated[
     CIHistogramsFigureConfig
     | MeanComponentActivationCountsFigureConfig
-    | UVandIdentityCIFigureConfig
-)
+    | UVandIdentityCIFigureConfig,
+    Field(discriminator="name"),
+]
 
 
 class TMSTaskConfig(BaseModel):
@@ -279,26 +283,14 @@ class Config(BaseModel):
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    metrics: list[
-        Annotated[
-            MetricConfigUnion,
-            Field(
-                default=[],
-                discriminator="name",
-                description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
-            ),
-        ]
-    ]
-    figures: list[
-        Annotated[
-            FigureConfigUnion,
-            Field(
-                default=[],
-                discriminator="name",
-                description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
-            ),
-        ]
-    ]
+    metrics: list[MetricConfigUnion] = Field(
+        default=[],
+        description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
+    )
+    figures: list[FigureConfigUnion] = Field(
+        default=[],
+        description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
+    )
 
     # --- Component Tracking ---
     ci_alive_threshold: Probability = Field(
