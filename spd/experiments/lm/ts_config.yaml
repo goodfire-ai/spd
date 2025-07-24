@@ -37,7 +37,7 @@ lr: 1e-4
 lr_schedule: constant
 lr_warmup_pct: 0.01
 lr_exponential_halflife: null
-n_eval_steps: 100
+n_eval_steps: 10
 
 # --- Logging & Saving ---
 train_log_freq: 50

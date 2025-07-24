@@ -251,9 +251,9 @@ def create_wandb_report(
 
         loss_plots_height = 6
         loss_plots = [
-            ["loss/stochastic_recon_layerwise", "loss/stochastic_recon"],
-            ["loss/faithfulness"],
-            ["loss/importance_minimality"],
+            ["train/loss/stochastic_recon_layerwise", "train/loss/stochastic_recon"],
+            ["train/loss/faithfulness"],
+            ["train/loss/importance_minimality"],
         ]
         for i, y_keys in enumerate(loss_plots):
             loss_plots_width = REPORT_TOTAL_WIDTH // len(loss_plots)
@@ -276,7 +276,14 @@ def create_wandb_report(
             panels.append(
                 wr.LinePlot(
                     x="Step",
-                    y=["misc/masked_kl_loss_vs_target"],
+                    y=[
+                        "eval/kl/ci_masked",
+                        "eval/kl/unmasked",
+                        "eval/kl/stoch_masked",
+                        "eval/kl/random_masked",
+                        "eval/kl/rounded_masked",
+                        "eval/kl/zero_masked",
+                    ],
                     layout=wr.Layout(x=x_offset, y=y, w=kl_width, h=kl_height),
                 )
             )
@@ -284,7 +291,13 @@ def create_wandb_report(
             panels.append(
                 wr.LinePlot(
                     x="Step",
-                    y=["misc/unmasked_kl_loss_vs_target"],
+                    y=[
+                        "eval/ce_unrecovered/ci_masked",
+                        "eval/ce_unrecovered/unmasked",
+                        "eval/ce_unrecovered/stoch_masked",
+                        "eval/ce_unrecovered/random_masked",
+                        "eval/ce_unrecovered/rounded_masked",
+                    ],
                     layout=wr.Layout(x=x_offset, y=y, w=kl_width, h=kl_height),
                 )
             )

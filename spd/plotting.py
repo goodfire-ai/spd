@@ -1,6 +1,4 @@
-import math
 from collections.abc import Callable
-from typing import Literal
 
 import matplotlib.ticker as tkr
 import numpy as np
@@ -278,9 +276,9 @@ def plot_UV_matrices(
 
     # Create figure for plotting - 2 rows per layer (V and U)
     fig, axs = plt.subplots(
-        2 * n_layers,
-        1,
-        figsize=(5, 5 * 2 * n_layers),
+        n_layers,
+        2,  # U, V
+        figsize=(5 * 2, 5 * n_layers),
         constrained_layout=True,
         squeeze=False,
     )
@@ -293,19 +291,19 @@ def plot_UV_matrices(
         # Plot V matrix
         V = component.V if all_perm_indices is None else component.V[:, all_perm_indices[name]]
         V_np = V.detach().cpu().numpy()
-        im = axs[2 * j, 0].matshow(V_np, aspect="auto", cmap="coolwarm")
-        axs[2 * j, 0].set_ylabel("d_in index")
-        axs[2 * j, 0].set_xlabel("Component index")
-        axs[2 * j, 0].set_title(f"{name} (V matrix)")
+        im = axs[j, 0].matshow(V_np, aspect="auto", cmap="coolwarm")
+        axs[j, 0].set_ylabel("d_in index")
+        axs[j, 0].set_xlabel("Component index")
+        axs[j, 0].set_title(f"{name} (V matrix)")
         images.append(im)
 
         # Plot U matrix
         U = component.U if all_perm_indices is None else component.U[all_perm_indices[name], :]
         U_np = U.detach().cpu().numpy()
-        im = axs[2 * j + 1, 0].matshow(U_np, aspect="auto", cmap="coolwarm")
-        axs[2 * j + 1, 0].set_ylabel("Component index")
-        axs[2 * j + 1, 0].set_xlabel("d_out index")
-        axs[2 * j + 1, 0].set_title(f"{name} (U matrix)")
+        im = axs[j, 1].matshow(U_np, aspect="auto", cmap="coolwarm")
+        axs[j, 1].set_ylabel("Component index")
+        axs[j, 1].set_xlabel("d_out index")
+        axs[j, 1].set_title(f"{name} (U matrix)")
         images.append(im)
 
     # Add unified colorbar
