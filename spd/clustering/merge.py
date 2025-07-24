@@ -356,6 +356,9 @@ def merge_iteration(
 	initial_merge: GroupMerge|None = None,
 	plot_config: MergePlotConfig|None = None,
 ) -> dict[str, list[float] | GroupMerge | int]:
+	# setup
+	# ==================================================
+
 	# compute coactivations
 	activation_mask: Float[Tensor, "samples c_components"] = (
 		activations > merge_config.activation_theshold 
@@ -386,12 +389,14 @@ def merge_iteration(
 		current_merge = initial_merge
 	else:
 		current_merge = GroupMerge.identity(n_components=c_components)
-
+	
+	# initialize variables for the merge process
 	k_groups: int = c_components
 	current_coact: Float[Tensor, "k_groups k_groups"] = coact.clone()
 	current_act_mask: Bool[Tensor, "samples k_groups"] = activation_mask.clone()
+	i: int = 0
 
-
+	# variables we keep track of
 	merge_costs: dict[str, list[float]] = dict(
 		non_diag_costs_min=[],
 		non_diag_costs_max=[],
@@ -400,24 +405,24 @@ def merge_iteration(
 		costs_range=[],
 	)
 
-	# iteration counter
-	i: int = 0
+	# merge iteration
+	# ==================================================
 	while i < merge_config.iters:
 
 		# pop components
-		if do_pop and iter_pop[i]:
-			# print(f"init pop {i=}")
+		# --------------------------------------------------
+		if do_pop and iter_pop[i]: # pyright: ignore[reportPossiblyUnboundVariable]
+
 			# we split up the group which our chosen component belongs to
-			pop_component_idx_i: int = int(pop_component_idx[i].item())
+			pop_component_idx_i: int = int(pop_component_idx[i].item()) # pyright: ignore[reportPossiblyUnboundVariable]
 			components_in_pop_grp: int = int(
-				current_merge.components_per_group[
+				current_merge.components_per_group[ # pyright: ignore[reportArgumentType]
 					current_merge.group_idxs[pop_component_idx_i].item()
 				]
 			)
 
 			# but, if the component is the only one in its group, there is nothing to do
 			if components_in_pop_grp > 1:
-				# print(f"popping {pop_component_idx_i=} from group {current_merge.group_idxs[pop_component_idx_i].item()} with {components_in_pop_grp} components", flush=True)
 				current_merge, current_coact, current_act_mask = recompute_coacts_pop_group(
 					coact=current_coact,
 					merges=current_merge,
@@ -429,6 +434,7 @@ def merge_iteration(
 
 
 		# compute costs
+		# --------------------------------------------------
 		costs: Float[Tensor, "c_components c_components"] = compute_merge_costs(
 			coact=current_coact,
 			merges=current_merge,
@@ -436,11 +442,15 @@ def merge_iteration(
 			rank_cost=merge_config.rank_cost_fn,
 		)
 
+		# figure out what to merge, store some things
+		# --------------------------------------------------
+
 		# find the maximum cost among non-diagonal elements we should consider
 		non_diag_costs: Float[Tensor, ""] = costs[~torch.eye(k_groups, dtype=torch.bool)]
 		non_diag_costs_range: tuple[float, float] = (non_diag_costs.min().item(), non_diag_costs.max().item())
 		max_considered_cost: float = (non_diag_costs_range[1] - non_diag_costs_range[0]) * merge_config.check_threshold + non_diag_costs_range[0]
 
+		# store for plotting
 		merge_costs['non_diag_costs_min'].append(non_diag_costs_range[0])
 		merge_costs['non_diag_costs_max'].append(non_diag_costs_range[1])
 		merge_costs['max_considered_cost'].append(max_considered_cost)
@@ -456,6 +466,11 @@ def merge_iteration(
 		min_pair: tuple[int, int] = tuple(considered_idxs[random.randint(0, considered_idxs.shape[0] - 1)].tolist())
 		pair_cost: float = costs[min_pair[0], min_pair[1]].item()
 
+		# Track the selected pair cost
+		merge_costs['selected_pair_cost'].append(pair_cost)
+
+		# plotting
+		# --------------------------------------------------
 		if plot_config_.plot_every and (i >= plot_config_.plot_every_min) and (i % plot_config_.plot_every == 0):
 			plot_merge_iteration(
 				current_merge=current_merge,
@@ -467,10 +482,9 @@ def merge_iteration(
 				plot_config=plot_config_,
 			)
 		
-		# Track the selected pair cost
-		merge_costs['selected_pair_cost'].append(pair_cost)
 
 		# merge the pair
+		# --------------------------------------------------
 		current_merge, current_coact, current_act_mask = recompute_coacts_merge_pair(
 			coact=current_coact,
 			merges=current_merge,
@@ -478,17 +492,16 @@ def merge_iteration(
 			activation_mask=current_act_mask,
 		)
 
-		# dbg_tensor(costs)
-		# dbg_tensor(non_diag_costs)
-		# dbg(non_diag_costs_range)		
-		# dbg(max_considered_cost)
-		# dbg_tensor(considered_idxs)
-		# print(f"Iteration {i}: merging pair {min_pair=} {pair_cost=} {non_diag_costs_range[0]=} {max_considered_cost=}", flush=True)
-
+		# iterate and sanity checks
+		# --------------------------------------------------
 		k_groups -= 1
 		assert current_coact.shape[0] == k_groups, "Coactivation matrix shape should match number of groups"
 		assert current_coact.shape[1] == k_groups, "Coactivation matrix shape should match number of groups"
 		assert current_act_mask.shape[1] == k_groups, "Activation mask shape should match number of groups"
+
+
+		# early stopping
+		# --------------------------------------------------
 
 		# Check stopping conditions
 		if k_groups <= 2:
@@ -513,8 +526,11 @@ def merge_iteration(
 
 		i += 1
 
+	# finish up
+	# ==================================================
 
 	# Final cost evolution plot
+	# --------------------------------------------------
 	if plot_config_.plot_final:
 		plt.figure(figsize=plot_config_.figsize_final)
 		plt.plot(merge_costs['max_considered_cost'], label='max considered cost')
@@ -531,6 +547,7 @@ def merge_iteration(
 		plt.show()
 		
 	# Return results for sweep analysis
+	# --------------------------------------------------
 	return {
 		**merge_costs,
 		'final_merge': current_merge,
