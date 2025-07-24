@@ -2,7 +2,11 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+
+import yaml
+
+from spd.settings import REPO_ROOT
 
 
 @dataclass
@@ -77,3 +81,14 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
     #     expected_runtime=100,
     # ),
 }
+
+
+def get_experiment_config_file_contents(key: str) -> dict[str, Any]:
+    """given a key in the `EXPERIMENT_REGISTRY`, return contents of the config file as a dict.
+
+    note that since paths are of the form `Path("spd/experiments/tms/tms_5-2_config.yaml")`,
+    we strip the "spd/" prefix to be able to read the file using `importlib`.
+    This makes our ability to find the file independent of the current working directory.
+    """
+
+    return yaml.safe_load((REPO_ROOT / EXPERIMENT_REGISTRY[key].config_path).read_text())

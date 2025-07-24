@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from wandb.apis.public import File, Run
 
+from spd.log import logger
 from spd.settings import REPO_ROOT
 from spd.utils.general_utils import replace_pydantic_model
 
@@ -119,7 +120,7 @@ def ensure_project_exists(project: str) -> None:
     # Check if project exists in the list of projects
     if project not in [p.name for p in api.projects()]:
         # Project doesn't exist, create it with a dummy run
-        print(f"Creating W&B project '{project}'...")
+        logger.info(f"Creating W&B project '{project}'...")
         run = wandb.init(project=project, name="project_init", tags=["init"])
         run.finish()
-        print(f"Project '{project}' created successfully")
+        logger.info(f"Project '{project}' created successfully")
