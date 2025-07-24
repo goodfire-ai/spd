@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import random
 import warnings
 from collections.abc import Callable
@@ -7,8 +8,14 @@ import matplotlib.pyplot as plt
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+from pydantic import (
+    BaseModel,
+    Field,
+    PositiveInt,
+)
 
 from spd.clustering.merge_matrix import GroupMerge
+from spd.spd_types import Probability
 
 
 def format_scientific_latex(value: float) -> str:
@@ -307,30 +314,68 @@ def recompute_coacts_pop_group(
 		activation_mask_new,
 	)
 
+
+class MergeConfig(BaseModel):
+	activation_theshold: Probability|None = Field(
+		default=0.01,
+		description="Threshold for considering a component active in a group. If None, use raw scalar causal importances",
+	)
+	alpha: float = Field(
+		default=1.0,
+		description="rank weight factor. Higher values mean a higher penalty on 'sending' the component weights",
+	)
+	iters: PositiveInt = Field(
+		default=100,
+		description="max number of iterations to run the merge algorithm for.",
+	)
+	check_threshold: Probability = Field(
+		default=0.05,
+		description="threshold for considering merge pairs, as a fraction of the range of non-diagonal costs. If 0, always select the pair with the lowest cost. if 1, choose randomly among all pairs.",
+	)
+	pop_component_prob: Probability = Field(
+		default=0.0,
+		description="Probability of popping a component in each iteration. If 0, no components are popped.",
+	)
+
+	rank_cost_fn: Callable[[float], float] = lambda _: 1.0
+	stopping_condition: Callable[[dict[str, Any]], bool] | None = None
+
+
+class MergePlotConfig(BaseModel):
+	plot_every: int = 20
+	plot_every_min: int = 0
+	save_pdf: bool = False
+	pdf_prefix: str = "merge_iteration"
+	figsize: tuple[int, int] = (16, 3)
+	figsize_final: tuple[int, int] = (10, 6)
+	tick_spacing: int = 10
+	plot_final: bool = True
+
+
 def merge_iteration(
-	coact: Float[Tensor, "c_components c_components"],
-	activation_mask: Bool[Tensor, "samples c_components"],
-	initial_merge: GroupMerge|None = None,
-    alpha: float = 1.0,
-	iters: int = 100,
-	check_threshold: float = 0.05,
-	pop_component_prob: float = 0.0,
-	rank_cost_fn: Callable[[float], float] = lambda _: 1.0,
-	stopping_condition: Callable[[dict[str, Any]], bool] | None = None,
-	plot_every: int = 20,
-	plot_every_min: int = 0,
-	save_pdf: bool = False,
-	pdf_prefix: str = "merge_iteration",
+	activations: Float[Tensor, "samples c_components"],
+	merge_config: MergeConfig,
 	component_labels: list[str] | None = None,
-	figsize: tuple[int, int] = (16, 3),
-	figsize_final: tuple[int, int] = (10, 6),
-	tick_spacing: int = 10,
-	plot_final: bool = True,
+	initial_merge: GroupMerge|None = None,
+	plot_config: MergePlotConfig|None = None,
 ) -> dict[str, list[float] | GroupMerge]:
+	# compute coactivations
+	activation_mask: Float[Tensor, "samples c_components"] = (
+		activations > merge_config.activation_theshold 
+		if merge_config.activation_theshold is not None 
+		else activations
+	)
+	coact: Float[Tensor, "c_components c_components"] = (
+		activation_mask.float() @ activation_mask.float().T
+	)
+
 	# check shapes
 	c_components: int = coact.shape[0]
 	assert coact.shape[1] == c_components, "Coactivation matrix must be square"
 	assert activation_mask.shape[1] == c_components, "Activation mask must match coactivation matrix shape"
+
+	# get plot config
+	plot_config_: MergePlotConfig = plot_config or MergePlotConfig()
 
 	# for speed, we precompute whether to pop components and which components to pop
 	do_pop: bool = pop_component_prob > 0.0
