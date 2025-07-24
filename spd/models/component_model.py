@@ -377,8 +377,8 @@ class ComponentModel(nn.Module):
     def calc_causal_importances(
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
+        sigmoid_type: SigmoidTypes,
         detach_inputs: bool = False,
-        sigmoid_type: SigmoidTypes = "leaky_hard",
     ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
         """Calculate causal importances.
 

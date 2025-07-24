@@ -4,6 +4,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 
 from spd.models.component_model import ComponentModel
+from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -45,6 +46,7 @@ def component_activation_statistics(
     dataloader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     n_steps: int,
+    sigmoid_type: SigmoidTypes,
     device: str,
     threshold: float = 0.1,
 ) -> tuple[dict[str, float], dict[str, Float[Tensor, " C"]]]:
@@ -64,7 +66,11 @@ def component_activation_statistics(
             batch, module_names=model.target_module_paths
         )
 
-        causal_importances, _ = model.calc_causal_importances(pre_weight_acts, detach_inputs=False)
+        causal_importances, _ = model.calc_causal_importances(
+            pre_weight_acts,
+            detach_inputs=False,
+            sigmoid_type=sigmoid_type,
+        )
         for module_name, ci in causal_importances.items():
             # mask (batch, pos, C) or (batch, C)
             n_tokens[module_name] += ci.shape[:-1].numel()

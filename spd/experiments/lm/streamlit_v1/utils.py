@@ -17,8 +17,7 @@ from transformers import AutoTokenizer
 from spd.configs import Config, LMTaskConfig
 from spd.data import DatasetConfig
 from spd.models.component_model import ComponentModel
-from spd.models.components import EmbeddingComponent, GateMLP, LinearComponent, VectorGateMLP
-from spd.utils.component_utils import calc_causal_importances
+from spd.models.components import EmbeddingComponents, GateMLPs, LinearComponents, VectorGateMLPs
 
 # ============================================================================
 # Data Classes
@@ -32,8 +31,8 @@ class ModelData:
     model: ComponentModel
     tokenizer: AutoTokenizer
     config: Config
-    gates: dict[str, GateMLP | VectorGateMLP]
-    components: dict[str, LinearComponent | EmbeddingComponent]
+    gates: dict[str, GateMLPs | VectorGateMLPs]
+    components: dict[str, LinearComponents | EmbeddingComponents]
     layer_names: list[str]
 
 
@@ -168,12 +167,12 @@ def load_model(model_path: str) -> ModelData:
 
     # Extract components and gates
     gates = {
-        k.removeprefix("gates.").replace("-", "."): cast(GateMLP | VectorGateMLP, v)
+        k.removeprefix("gates.").replace("-", "."): cast(GateMLPs | VectorGateMLPs, v)
         for k, v in model.gates.items()
     }
     components = {
         k.removeprefix("components.").replace("-", "."): cast(
-            LinearComponent | EmbeddingComponent, v
+            LinearComponents | EmbeddingComponents, v
         )
         for k, v in model.components.items()
     }
@@ -270,12 +269,10 @@ def compute_component_masks(
         _, pre_weight_acts = _model_data.model.forward_with_pre_forward_cache_hooks(
             _input_ids, module_names=list(_model_data.components.keys())
         )
-        Vs = {name: comp.V for name, comp in _model_data.components.items()}
-        masks, _ = calc_causal_importances(
+        masks, _ = _model_data.model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
-            Vs=Vs,
-            gates=_model_data.gates,
             detach_inputs=True,
+            sigmoid_type=_model_data.config.sigmoid_type,
         )
     return masks
 

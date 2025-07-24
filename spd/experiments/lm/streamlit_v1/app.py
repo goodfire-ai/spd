@@ -10,11 +10,11 @@ It features:
 
 To run:
     streamlit run spd/experiments/lm/streamlit_v1/app.py
-    streamlit run spd/experiments/lm/streamlit_v1/app.py -- --model_path "wandb:spd/runs/snq4ojcy"
+    streamlit run spd/experiments/lm/streamlit_v1/app.py -- --model_path "wandb:spd/runs/imntaho7"
 
 The app supports loading models from the UI. You can paste:
-- Full WandB URLs: https://wandb.ai/goodfire/spd/runs/snq4ojcy
-- WandB paths: wandb:spd/runs/snq4ojcy
+- Full WandB URLs: https://wandb.ai/goodfire/spd/runs/imntaho7
+- WandB paths: wandb:spd/runs/imntaho7
 - Just run IDs: 151bsctx
 
 To add new analyses:

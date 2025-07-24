@@ -12,7 +12,7 @@ import torch
 
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.streamlit_v1.utils import ModelData
-from spd.utils.component_utils import calc_causal_importances, calc_ci_l_zero
+from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -144,13 +144,10 @@ def find_component_activation_contexts(
                     batch, module_names=list(_model_data.components.keys())
                 )
 
-                Vs = {module_name: v.V for module_name, v in _model_data.components.items()}
-
-                causal_importances, _ = calc_causal_importances(
+                causal_importances, _ = _model_data.model.calc_causal_importances(
                     pre_weight_acts=pre_weight_acts,
-                    Vs=Vs,
-                    gates=_model_data.gates,
                     detach_inputs=True,
+                    sigmoid_type=_model_data.config.sigmoid_type,
                 )
 
             # Calculate L0 scores

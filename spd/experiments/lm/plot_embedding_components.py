@@ -10,13 +10,17 @@ from torch import Tensor
 from tqdm import tqdm
 
 from spd.models.component_model import ComponentModel
+from spd.models.sigmoids import SigmoidTypes
 
 
-def collect_embedding_masks(model: ComponentModel, device: str) -> Float[Tensor, "vocab C"]:
+def collect_embedding_masks(
+    model: ComponentModel, sigmoid_type: SigmoidTypes, device: str
+) -> Float[Tensor, "vocab C"]:
     """Collect masks for each vocab token.
 
     Args:
         model: The trained ComponentModel
+        sigmoid_type: Sigmoid type to use for causal importances
         device: Device to run computation on
 
     Returns:
@@ -39,6 +43,7 @@ def collect_embedding_masks(model: ComponentModel, device: str) -> Float[Tensor,
         masks, _ = model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
             detach_inputs=True,
+            sigmoid_type=sigmoid_type,
         )
         assert len(masks) == 1, "Expected exactly one mask"
 
@@ -137,12 +142,12 @@ def main(model_path: str | Path) -> None:
         model_path: Path to the model checkpoint
     """
     # Load model
-    model, _config, out_dir = ComponentModel.from_pretrained(model_path)
+    model, config, out_dir = ComponentModel.from_pretrained(model_path)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
     # Collect masks
-    masks = collect_embedding_masks(model, device)
+    masks = collect_embedding_masks(model, sigmoid_type=config.sigmoid_type, device=device)
     permuted_masks, _perm_indices = permute_to_identity(masks)
     plot_embedding_mask_heatmap(permuted_masks, out_dir)
 
