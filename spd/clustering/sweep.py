@@ -11,7 +11,7 @@ from matplotlib.colors import LogNorm
 from matplotlib.lines import Line2D
 from tqdm import tqdm
 
-from spd.clustering.merge import merge_iteration
+from spd.clustering.merge import MergeConfig, MergeHistory, MergePlotConfig, merge_iteration
 
 
 @dataclass
@@ -21,25 +21,29 @@ class SweepConfig:
     activation_thresholds: list[float]
     check_thresholds: list[float]
     alphas: list[float]
-    rank_cost_funcs: dict[str, Callable[[float], float]]
+    rank_cost_funcs: list[Callable[[float], float]]
     iters: int = 100
+    
+    def generate_configs(self) -> list[MergeConfig]:
+        """Generate all MergeConfig combinations."""
+        configs = []
+        for act_thresh, check_thresh, alpha, rank_func in itertools.product(
+            self.activation_thresholds,
+            self.check_thresholds, 
+            self.alphas,
+            self.rank_cost_funcs
+        ):
+            merge_config = MergeConfig(
+                activation_theshold=act_thresh,
+                alpha=alpha,
+                check_threshold=check_thresh,
+                rank_cost_fn=rank_func,
+                iters=self.iters,
+            )
+            configs.append(merge_config)
+        return configs
 
 
-@dataclass
-class SweepResult:
-    """Results from a single hyperparameter configuration."""
-
-    activation_threshold: float
-    check_threshold: float
-    alpha: float
-    rank_cost_name: str
-    non_diag_costs_min: list[float]
-    non_diag_costs_max: list[float]
-    max_considered_cost: list[float]
-    costs_range: list[float]
-    selected_pair_cost: list[float]
-    total_iterations: int
-    final_k_groups: int
 
 
 def format_value(val: Any) -> str:
@@ -59,19 +63,19 @@ def format_range(values: list[Any]) -> str:
         return f"[{format_value(values[0])}...{format_value(values[-1])}]"
 
 
-def get_unique_param_values(results: list[SweepResult]) -> dict[str, list[Any]]:
+def get_unique_param_values(results: list[MergeHistory]) -> dict[str, list[Any]]:
     """Extract unique parameter values from results."""
     all_params: list[str] = ["activation_threshold", "check_threshold", "alpha", "rank_cost_name"]
-    return {param: sorted(list(set(getattr(r, param) for r in results))) for param in all_params}
+    return {param: sorted(list(set(r.sweep_params[param] for r in results if r.sweep_params))) for param in all_params}
 
 
 def filter_results_by_params(
-    results: list[SweepResult], fixed_params: dict[str, Any]
-) -> list[SweepResult]:
+    results: list[MergeHistory], fixed_params: dict[str, Any]
+) -> list[MergeHistory]:
     """Filter results by fixed parameter values."""
-    filtered_results: list[SweepResult] = results
+    filtered_results: list[MergeHistory] = results
     for param, value in fixed_params.items():
-        filtered_results = [r for r in filtered_results if getattr(r, param) == value]
+        filtered_results = [r for r in filtered_results if r.sweep_params and r.sweep_params[param] == value]
     return filtered_results
 
 
@@ -207,56 +211,36 @@ def add_colorbar_or_legend(
 
 def run_hyperparameter_sweep(
     raw_activations: torch.Tensor, sweep_config: SweepConfig
-) -> list[SweepResult]:
+) -> list[MergeHistory]:
     """Run hyperparameter sweep across all parameter combinations."""
-    param_combinations: list[tuple] = list(
-        itertools.product(
-            sweep_config.activation_thresholds,
-            sweep_config.check_thresholds,
-            sweep_config.alphas,
-            sweep_config.rank_cost_funcs.items(),
-        )
-    )
+    configs = sweep_config.generate_configs()
+    print(f"{len(configs) = }")
 
-    print(f"{len(param_combinations) = }")
+    results: list[MergeHistory] = []
 
-    results: list[SweepResult] = []
-
-    for i, (act_thresh, check_thresh, alpha, (rank_name, rank_func)) in tqdm(
-        enumerate(param_combinations), total=len(param_combinations)
-    ):
+    for i, merge_config in tqdm(enumerate(configs), total=len(configs)):
         assert i
         try:
-            coact_bool: torch.Tensor = raw_activations > act_thresh
-            coact: torch.Tensor = coact_bool.float().T @ coact_bool.float()
-
-            result_dict: dict[str, Any] = merge_iteration(
-                coact=coact,
-                activation_mask=coact_bool,
-                check_threshold=check_thresh,
-                alpha=alpha,
-                rank_cost_fn=rank_func,
-                iters=sweep_config.iters,
-                plot_every=None,
+            plot_config = MergePlotConfig(
+                plot_every=0,  # No plotting during sweep
                 plot_final=False,
+            )
+            
+            merge_history, final_merge = merge_iteration(
+                activations=raw_activations,
+                merge_config=merge_config,
                 component_labels=None,
+                plot_config=plot_config,
             )
 
-            results.append(
-                SweepResult(
-                    activation_threshold=act_thresh,
-                    check_threshold=check_thresh,
-                    alpha=alpha,
-                    rank_cost_name=rank_name,
-                    non_diag_costs_min=result_dict["non_diag_costs_min"],
-                    non_diag_costs_max=result_dict["non_diag_costs_max"],
-                    max_considered_cost=result_dict["max_considered_cost"],
-                    costs_range=result_dict["costs_range"],
-                    selected_pair_cost=result_dict["selected_pair_cost"],
-                    total_iterations=result_dict["total_iterations"],
-                    final_k_groups=result_dict["final_k_groups"],
-                )
-            )
+            # Store sweep parameters in the merge history for later use
+            merge_history.sweep_params = {
+                'activation_threshold': merge_config.activation_theshold,
+                'check_threshold': merge_config.check_threshold,
+                'alpha': merge_config.alpha,
+                'rank_cost_name': merge_config.rank_cost_fn.__name__,
+            }
+            results.append(merge_history)
         except Exception as e:
             print(f"Failed: {e}")
 
@@ -265,7 +249,7 @@ def run_hyperparameter_sweep(
 
 
 def plot_evolution_histories(
-    results: list[SweepResult],
+    results: list[MergeHistory],
     fixed_params: dict[str, Any],
     metric: str = "non_diag_costs_min",
     lines_by: str = "alpha",
@@ -280,7 +264,7 @@ def plot_evolution_histories(
 
     validate_plot_params(lines_by, rows_by, cols_by, fixed_params)
 
-    filtered_results: list[SweepResult] = filter_results_by_params(results, fixed_params)
+    filtered_results: list[MergeHistory] = filter_results_by_params(results, fixed_params)
     if not filtered_results:
         raise ValueError(f"No results match fixed parameters: {fixed_params}")
 
@@ -305,19 +289,19 @@ def plot_evolution_histories(
         for col_idx, col_val in enumerate(col_values):
             ax: plt.Axes = axes[row_idx, col_idx]
 
-            subset_results: list[SweepResult] = [
+            subset_results: list[MergeHistory] = [
                 r
                 for r in filtered_results
-                if getattr(r, rows_by) == row_val and getattr(r, cols_by) == col_val
+                if r.sweep_params and r.sweep_params[rows_by] == row_val and r.sweep_params[cols_by] == col_val
             ]
 
             for line_val in line_values:
-                line_results: list[SweepResult] = [
-                    r for r in subset_results if getattr(r, lines_by) == line_val
+                line_results: list[MergeHistory] = [
+                    r for r in subset_results if r.sweep_params and r.sweep_params[lines_by] == line_val
                 ]
 
                 if line_results:
-                    result: SweepResult = line_results[0]
+                    result: MergeHistory = line_results[0]
                     values: np.ndarray = np.array(getattr(result, metric))
                     values = process_values(values, normalize_to_zero, log_delta)
                     iterations: np.ndarray = get_iterations(len(values), log_iterations)
@@ -350,7 +334,7 @@ def plot_evolution_histories(
     plt.show()
 
 
-def detect_most_variable_params(results: list[SweepResult]) -> tuple[str, str]:
+def detect_most_variable_params(results: list[MergeHistory]) -> tuple[str, str]:
     """Detect which parameters have the most variation for smart defaults."""
     all_params: list[str] = ["activation_threshold", "check_threshold", "alpha", "rank_cost_name"]
     param_values: dict[str, list[Any]] = get_unique_param_values(results)
@@ -371,8 +355,8 @@ def detect_most_variable_params(results: list[SweepResult]) -> tuple[str, str]:
 
 
 def create_multiple_heatmaps(
-    results: list[SweepResult],
-    statistics: list[tuple[Callable[[SweepResult], float], str]],
+    results: list[MergeHistory],
+    statistics: list[tuple[Callable[[MergeHistory], float], str]],
     fixed_params: dict[str, Any],
     x_by: str = "check_threshold",
     y_by: str = "activation_threshold",
@@ -408,9 +392,9 @@ def create_multiple_heatmaps(
 
 
 def create_heatmaps(
-    results: list[SweepResult],
+    results: list[MergeHistory],
     fixed_params: dict[str, Any],
-    statistic_func: Callable[[SweepResult], float],
+    statistic_func: Callable[[MergeHistory], float],
     statistic_name: str,
     x_by: str = "check_threshold",
     y_by: str = "activation_threshold",
@@ -452,7 +436,7 @@ def create_heatmaps(
         raise ValueError(f"x_by and y_by must be from {all_params}")
 
     # Filter results by fixed parameters
-    filtered_results: list[SweepResult] = filter_results_by_params(results, fixed_params)
+    filtered_results: list[MergeHistory] = filter_results_by_params(results, fixed_params)
     if not filtered_results:
         raise ValueError(f"No results match fixed parameters: {fixed_params}")
 
@@ -467,10 +451,10 @@ def create_heatmaps(
 
     for y_idx, y_val in enumerate(y_values):
         for x_idx, x_val in enumerate(x_values):
-            matching_results: list[SweepResult] = [
+            matching_results: list[MergeHistory] = [
                 r
                 for r in filtered_results
-                if getattr(r, x_by) == x_val and getattr(r, y_by) == y_val
+                if r.sweep_params and r.sweep_params[x_by] == x_val and r.sweep_params[y_by] == y_val
             ]
 
             if matching_results:
@@ -580,7 +564,7 @@ def create_heatmaps(
 
 
 # Example statistic functions for common analyses
-def get_convergence_rate(result: SweepResult) -> float:
+def get_convergence_rate(result: MergeHistory) -> float:
     """Calculate convergence rate as slope of cost evolution."""
     costs: list[float] = result.non_diag_costs_min
     if len(costs) < 2:
@@ -597,7 +581,7 @@ def get_convergence_rate(result: SweepResult) -> float:
     return slope
 
 
-def get_cost_reduction_ratio(result: SweepResult) -> float:
+def get_cost_reduction_ratio(result: MergeHistory) -> float:
     """Calculate ratio of final cost to initial cost."""
     costs: list[float] = result.non_diag_costs_min
     if len(costs) < 2:
@@ -612,23 +596,20 @@ def get_cost_reduction_ratio(result: SweepResult) -> float:
     return final_cost / initial_cost
 
 
-def get_merge_efficiency(result: SweepResult) -> float:
+def get_merge_efficiency(result: MergeHistory) -> float:
     """Calculate groups merged per iteration."""
     if result.total_iterations == 0:
         return 0.0
 
-    # Assume we start with ~200 components (typical case)
-    # This could be made more accurate by tracking initial component count
-    initial_groups: int = 200  # Rough estimate
-    groups_merged: int = initial_groups - result.final_k_groups
-
+    # Use the actual initial groups from the merge history
+    groups_merged: int = result.initial_k_groups - result.final_k_groups
     return groups_merged / result.total_iterations
 
 
-def get_early_convergence(threshold_ratio: float = 0.1) -> Callable[[SweepResult], float]:
+def get_early_convergence(threshold_ratio: float = 0.1) -> Callable[[MergeHistory], float]:
     """Create function to detect early convergence iterations."""
 
-    def _early_convergence(result: SweepResult) -> float:
+    def _early_convergence(result: MergeHistory) -> float:
         costs: list[float] = result.non_diag_costs_min
         if len(costs) < 3:
             return len(costs)
@@ -644,7 +625,7 @@ def get_early_convergence(threshold_ratio: float = 0.1) -> Callable[[SweepResult
     return _early_convergence
 
 
-def get_cost_variance(result: SweepResult) -> float:
+def get_cost_variance(result: MergeHistory) -> float:
     """Calculate variance in selected pair costs (measure of stability)."""
     costs: list[float] = result.selected_pair_cost
     if len(costs) < 2:
@@ -672,8 +653,8 @@ ALL_STATISTICS = BASIC_STATISTICS + ADVANCED_STATISTICS
 
 
 def create_smart_heatmap(
-    results: list[SweepResult],
-    statistic_func: Callable[[SweepResult], float],
+    results: list[MergeHistory],
+    statistic_func: Callable[[MergeHistory], float],
     statistic_name: str,
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -711,11 +692,14 @@ def create_smart_heatmap(
 
 
 # Simple stopping condition examples using lambdas
-def cost_ratio_condition(ratio: float, metric: str) -> Callable[[dict[str, Any]], bool]:
+def cost_ratio_condition(ratio: float, metric: str) -> Callable[[MergeHistory], bool]:
     """Create stopping condition for cost ratio."""
-    return lambda stats: (len(stats[metric]) >= 2 and stats[metric][-1] >= stats[metric][0] * ratio)
+    def condition(history: MergeHistory) -> bool:
+        costs = getattr(history, metric)
+        return len(costs) >= 2 and costs[-1] >= costs[0] * ratio
+    return condition
 
 
-def iteration_condition(max_iters: int) -> Callable[[dict[str, Any]], bool]:
+def iteration_condition(max_iters: int) -> Callable[[MergeHistory], bool]:
     """Create stopping condition for max iterations."""
-    return lambda stats: stats["iteration"] >= max_iters
+    return lambda history: len(history.non_diag_costs_min) >= max_iters

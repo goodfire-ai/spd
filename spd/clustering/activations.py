@@ -9,8 +9,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 
 from spd.models.component_model import ComponentModel
-from spd.models.components import EmbeddingComponent, GateMLP, LinearComponent, VectorGateMLP
-from spd.utils.component_utils import calc_causal_importances
+from spd.models.components import EmbeddingComponent, LinearComponent
 from spd.utils.general_utils import extract_batch_data
 
 

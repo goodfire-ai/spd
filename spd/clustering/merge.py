@@ -296,14 +296,20 @@ class MergeHistory:
     selected_pair_cost: list[float]
     costs_range: list[float]
     k_groups: list[int]
-
-    def __init__(self) -> None:
+    merge_configs: list[GroupMerge]  # State of groups at each iteration
+    config: MergeConfig | None = None  # Configuration used for this merge
+    sweep_params: dict[str, Any] | None = None  # Sweep parameters if used in sweep
+    
+    def __init__(self, config: MergeConfig | None = None) -> None:
         self.non_diag_costs_min = []
         self.non_diag_costs_max = []
         self.max_considered_cost = []
         self.selected_pair_cost = []
         self.costs_range = []
         self.k_groups = []
+        self.merge_configs = []
+        self.config = config
+        self.sweep_params = None
 
     def __post_init__(self) -> None:
         self._validate_lengths()
@@ -317,6 +323,7 @@ class MergeHistory:
             len(self.selected_pair_cost),
             len(self.costs_range),
             len(self.k_groups),
+            len(self.merge_configs),
         ]
         if lengths and not all(length == lengths[0] for length in lengths):
             raise ValueError("All history lists must have the same length")
@@ -327,6 +334,7 @@ class MergeHistory:
         max_considered_cost: float,
         pair_cost: float,
         k_groups: int,
+        current_merge: GroupMerge,
     ) -> None:
         """Add data for one iteration."""
         self.non_diag_costs_min.append(non_diag_costs_range[0])
@@ -335,6 +343,7 @@ class MergeHistory:
         self.costs_range.append(non_diag_costs_range[1] - non_diag_costs_range[0])
         self.selected_pair_cost.append(pair_cost)
         self.k_groups.append(k_groups)
+        self.merge_configs.append(current_merge)
         self._validate_lengths()
 
     def latest(self) -> dict[str, float | int]:
@@ -378,6 +387,22 @@ class MergeHistory:
             "costs_range": self.costs_range,
             "k_groups": self.k_groups,
         }
+    
+    # Convenience properties for sweep analysis
+    @property
+    def total_iterations(self) -> int:
+        """Total number of iterations performed."""
+        return len(self.non_diag_costs_min)
+    
+    @property 
+    def final_k_groups(self) -> int:
+        """Final number of groups after merging."""
+        return self.k_groups[-1] if self.k_groups else 0
+    
+    @property
+    def initial_k_groups(self) -> int:
+        """Initial number of groups before merging."""
+        return self.k_groups[0] if self.k_groups else 0
 
 
 def plot_merge_iteration(
@@ -503,7 +528,7 @@ def merge_iteration(
     i: int = 0
 
     # variables we keep track of
-    merge_history = MergeHistory()
+    merge_history = MergeHistory(config=merge_config)
 
     # merge iteration
     # ==================================================
@@ -570,6 +595,7 @@ def merge_iteration(
             max_considered_cost=max_considered_cost,
             pair_cost=pair_cost,
             k_groups=k_groups,
+            current_merge=current_merge,
         )
 
         # plotting
