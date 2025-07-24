@@ -159,7 +159,7 @@ def create_figures(
         _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
             batch, module_names=model.target_module_paths
         )
-        ci, _ci_upper_leaky = model.calc_causal_importances(pre_weight_acts)
+        ci, _ci_upper_leaky = model.calc_causal_importances(pre_weight_acts, sigmoid_type=config.sigmoid_type)
 
         inputs = FigureInput(ci=ci, batch=batch)
 
