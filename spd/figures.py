@@ -89,8 +89,11 @@ class MeanComponentActivationCounts(StreamingFigureCreator):
             module_name: self.component_activation_counts[module_name] / self.n_tokens
             for module_name in self.model.components
         }
-        fig = plot_mean_component_activation_counts(mean_component_activation_counts)
-        return {"mean_component_activation_counts": fig}
+        figs = plot_mean_component_activation_counts(mean_component_activation_counts)
+        return {
+            f"{module_name}/mean_component_activation_counts": fig
+            for module_name, fig in figs.items()
+        }
 
 
 class UVandIdentityCI(StreamingFigureCreator):
@@ -159,7 +162,7 @@ def create_figures(
         _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
             batch, module_names=model.target_module_paths
         )
-        ci, _ci_upper_leaky = model.calc_causal_importances(pre_weight_acts)
+        ci, _ci_upper_leaky = model.calc_causal_importances(pre_weight_acts, sigmoid_type=config.sigmoid_type)
 
         inputs = FigureInput(ci=ci, batch=batch)
 

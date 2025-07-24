@@ -1,4 +1,3 @@
-import math
 from collections.abc import Callable
 from typing import Literal
 
@@ -317,10 +316,9 @@ def plot_UV_matrices(
         images.append(im)
 
         # Add unified colorbar
-        all_vals = np.concatenate([V_data, U_data])
         norm = plt.Normalize(
-            vmin=all_vals.min(),
-            vmax=all_vals.max(),
+            vmin=min(V_data.min(), U_data.min()),
+            vmax=max(V_data.max(), U_data.max()),
         )
         for im in images:
             im.set_norm(norm)
@@ -333,36 +331,23 @@ def plot_UV_matrices(
 
 def plot_mean_component_activation_counts(
     mean_component_activation_counts: dict[str, Float[Tensor, " C"]],
-) -> plt.Figure:
-    """Plots the mean activation counts for each component module in a grid."""
-    n_modules = len(mean_component_activation_counts)
-    max_cols = 6
-    n_cols = min(n_modules, max_cols)
-    # Calculate the number of rows needed, rounding up
-    n_rows = math.ceil(n_modules / n_cols)
-
-    # Create a figure with the calculated number of rows and columns
-    fig, axs = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 5 * n_rows), squeeze=False)
-    # Ensure axs is always a 2D array for consistent indexing, even if n_modules is 1
-    axs = axs.flatten()  # Flatten the axes array for easy iteration
-
-    # Iterate through modules and plot each histogram on its corresponding axis
-    for i, (module_name, counts) in enumerate(mean_component_activation_counts.items()):
-        ax = axs[i]
-        ax.hist(counts.detach().cpu().numpy(), bins=100)
-        ax.set_yscale("log")
-        ax.set_title(module_name)  # Add module name as title to each subplot
-        ax.set_xlabel("Mean Activation Count")
-        ax.set_ylabel("Frequency")
-
-    # Hide any unused subplots if the grid isn't perfectly filled
-    for i in range(n_modules, n_rows * n_cols):
-        axs[i].axis("off")
-
-    # Adjust layout to prevent overlapping titles/labels
-    fig.tight_layout()
-
-    return fig
+) -> dict[str, plt.Figure]:
+    """Plots the mean activation counts for each component module, returning a dict of figures."""
+    figures = {}
+    
+    # Create individual figures for each module
+    for module_name, counts in mean_component_activation_counts.items():
+        fig = plt.figure(figsize=(8, 6))
+        plt.hist(counts.detach().cpu().numpy(), bins=100)
+        plt.yscale("log")
+        plt.title(module_name)
+        plt.xlabel("Mean Activation Count")
+        plt.ylabel("Frequency")
+        
+        plt.tight_layout()
+        figures[module_name] = fig
+    
+    return figures
 
 
 def plot_ci_histograms(
