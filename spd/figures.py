@@ -141,7 +141,6 @@ def create_figures(
     n_eval_steps: int,
 ) -> Mapping[str, plt.Figure]:
     figure_creators: list[StreamingFigureCreator] = []
-
     for figure_config in config.figures:
         match figure_config:
             case CIHistogramsFigureConfig():

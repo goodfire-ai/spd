@@ -35,7 +35,7 @@ class MetricsBatchInputs:
     ci: dict[str, Float[Tensor, "... C"]]
 
 
-class Metric(ABC):
+class StreamingMetricCreator(ABC):
     @abstractmethod
     def watch_batch(self, inputs: MetricsBatchInputs) -> None: ...
 
@@ -43,7 +43,7 @@ class Metric(ABC):
     def compute(self) -> Mapping[str, float | int | wandb.Table]: ...
 
 
-class L0(Metric):
+class L0(StreamingMetricCreator):
     def __init__(self, model: ComponentModel, l0_threshold: float):
         self.model = model
         self.l0_threshold = l0_threshold
@@ -63,7 +63,7 @@ class L0(Metric):
         return out
 
 
-class CEandKLLosses(Metric):
+class CEandKLLosses(StreamingMetricCreator):
     def __init__(self, model: ComponentModel, rounding_threshold: float):
         self.model = model
         self.rounding_threshold = rounding_threshold
@@ -176,7 +176,7 @@ class CEandKLLosses(Metric):
         return {k: sum(v) / len(v) for k, v in self.ce_losses.items()}
 
 
-class LMEmbedSampleTable(Metric):
+class LMEmbedSampleTable(StreamingMetricCreator):
     def __init__(self, model: ComponentModel, ci_alive_threshold: float):
         self.model = model
         self.ci_alive_threshold = ci_alive_threshold
@@ -238,9 +238,7 @@ def create_metrics(
     config: Config,
 ) -> dict[str, float | int | wandb.Table]:
     """Create metrics for logging."""
-    out: dict[str, float | int | wandb.Table] = {}
-
-    metrics: list[Metric] = []
+    metrics: list[StreamingMetricCreator] = []
     for metric_config in config.metrics:
         match metric_config:
             case L0MetricConfig():
@@ -270,7 +268,11 @@ def create_metrics(
         for metric in metrics:
             metric.watch_batch(inputs)
 
-    for metric in metrics:
-        out.update(metric.compute())
+    out: dict[str, float | int | wandb.Table] = {}
+    all_dicts = [metric.compute() for metric in metrics]
+    for d in all_dicts:
+        if set(d.keys()).intersection(out.keys()):
+            raise ValueError(f"Keys {set(d.keys()).intersection(out.keys())} already in output, cannot merge")
+        out.update(d)
 
     return out

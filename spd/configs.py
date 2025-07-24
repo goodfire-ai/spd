@@ -285,11 +285,11 @@ class Config(BaseModel):
     )
     metrics: list[MetricConfigUnion] = Field(
         default=[],
-        description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
+        description="List of metrics to use for evaluation. These should be wired up in the `spd.metrics` module.",
     )
     figures: list[FigureConfigUnion] = Field(
         default=[],
-        description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
+        description="List of figures to create. These should be wired up in the `spd.figures` module.",
     )
 
     # --- Component Tracking ---
