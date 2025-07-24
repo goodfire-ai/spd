@@ -165,17 +165,14 @@ def optimize(
                 tqdm.write(f"{name}: {value:.7f}")
 
             if config.wandb_project:
-
                 for layer_name, n_alive_count in alive_tracker.n_alive().items():
-                    mb_log_data[
-                        f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
-                    ] = n_alive_count
+                    n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
+                    mb_log_data[n_alive_key] = n_alive_count
 
                 grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
                 for param in component_params + gate_params:
                     if param.grad is not None:
                         grad_norm += param.grad.data.flatten().pow(2).sum()
-
                 mb_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
 
                 mb_log_data["train/misc/lr"] = step_lr
