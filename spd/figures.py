@@ -127,7 +127,7 @@ class UVandIdentityCI(StreamingFigureCreator):
 
         return {
             **figures,
-            "uv_matrices": uv_matrices,
+            **uv_matrices,
         }
 
 

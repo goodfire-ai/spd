@@ -281,59 +281,54 @@ def plot_matrix(
 def plot_UV_matrices(
     components: dict[str, Components],
     all_perm_indices: dict[str, Float[Tensor, " C"]] | None = None,
-) -> plt.Figure:
+) -> dict[str, plt.Figure]:
     """Plot V and U matrices for each instance, grouped by layer."""
-    Vs = {k: v.V for k, v in components.items()}
-    Us = {k: v.U for k, v in components.items()}
+    out: dict[str, plt.Figure] = {}
 
-    n_layers = len(Vs)
+    for name, component in components.items():
+        V = component.V if all_perm_indices is None else component.V[:, all_perm_indices[name]]
+        U = component.U if all_perm_indices is None else component.U[all_perm_indices[name], :]
 
-    # Create figure for plotting - 2 rows per layer (V and U)
-    fig, axs = plt.subplots(
-        2 * n_layers,
-        1,
-        figsize=(5, 5 * 2 * n_layers),
-        constrained_layout=True,
-        squeeze=False,
-    )
-    axs = np.array(axs)
+        # Create figure for plotting - 2 rows per layer (V and U)
+        fig, axs = plt.subplots(
+            2,  # U, V
+            1,
+            figsize=(5, 5 * 2),
+            constrained_layout=True,
+            squeeze=False,
+        )
+        axs = np.array(axs)
 
-    images = []
+        images = []
 
-    # Plot V and U matrices for each layer
-    for j, name in enumerate(sorted(Vs.keys())):
-        # Plot V matrix
-        V_data = Vs[name]
-        if all_perm_indices is not None:
-            V_data = V_data[:, all_perm_indices[name]]
-        V_data = V_data.detach().cpu().numpy()
-        im = axs[2 * j, 0].matshow(V_data, aspect="auto", cmap="coolwarm")
-        axs[2 * j, 0].set_ylabel("d_in index")
-        axs[2 * j, 0].set_xlabel("Component index")
-        axs[2 * j, 0].set_title(f"{name} (V matrix)")
+        V_data = V.detach().cpu().numpy()
+        im = axs[0, 0].matshow(V_data, aspect="auto", cmap="coolwarm")
+        axs[0, 0].set_ylabel("d_in index")
+        axs[0, 0].set_xlabel("Component index")
+        axs[0, 0].set_title(f"{name} (V matrix)")
         images.append(im)
 
         # Plot U matrix
-        U_data = Us[name]
-        if all_perm_indices is not None:
-            U_data = U_data[all_perm_indices[name], :]
-        U_data = U_data.detach().cpu().numpy()
-        im = axs[2 * j + 1, 0].matshow(U_data, aspect="auto", cmap="coolwarm")
-        axs[2 * j + 1, 0].set_ylabel("Component index")
-        axs[2 * j + 1, 0].set_xlabel("d_out index")
-        axs[2 * j + 1, 0].set_title(f"{name} (U matrix)")
+        U_data = U.detach().cpu().numpy()
+        im = axs[1, 0].matshow(U_data, aspect="auto", cmap="coolwarm")
+        axs[1, 0].set_ylabel("Component index")
+        axs[1, 0].set_xlabel("d_out index")
+        axs[1, 0].set_title(f"{name} (U matrix)")
         images.append(im)
 
-    # Add unified colorbar
-    all_matrices = list(Vs.values()) + list(Us.values())
-    norm = plt.Normalize(
-        vmin=min(M.min().item() for M in all_matrices),
-        vmax=max(M.max().item() for M in all_matrices),
-    )
-    for im in images:
-        im.set_norm(norm)
-    fig.colorbar(images[0], ax=axs.ravel().tolist())
-    return fig
+        # Add unified colorbar
+        all_vals = np.concatenate([V_data, U_data])
+        norm = plt.Normalize(
+            vmin=all_vals.min(),
+            vmax=all_vals.max(),
+        )
+        for im in images:
+            im.set_norm(norm)
+        fig.colorbar(images[0], ax=axs.ravel().tolist())
+
+        out[f"{name}/uv_matrices"] = fig
+
+    return out
 
 
 def plot_mean_component_activation_counts(

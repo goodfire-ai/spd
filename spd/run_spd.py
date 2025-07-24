@@ -165,12 +165,20 @@ def optimize(
                 tqdm.write(f"{name}: {value:.7f}")
 
             if config.wandb_project:
-                mb_log_data["train/lr"] = step_lr
 
                 for layer_name, n_alive_count in alive_tracker.n_alive().items():
                     mb_log_data[
                         f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
                     ] = n_alive_count
+
+                grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
+                for param in component_params + gate_params:
+                    if param.grad is not None:
+                        grad_norm += param.grad.data.flatten().pow(2).sum()
+
+                mb_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
+
+                mb_log_data["train/misc/lr"] = step_lr
 
                 wandb.log(mb_log_data, step=step)
 
@@ -233,15 +241,8 @@ def optimize(
             if config.wandb_project:
                 wandb.save(str(out_dir / f"model_{step}.pth"), base_path=str(out_dir), policy="now")
 
-        # --- Backward Pass & Optimize --- #
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
-            if config.wandb_project and step % config.train_log_freq == 0:
-                grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
-                for param in component_params + gate_params:
-                    if param.grad is not None:
-                        grad_norm += param.grad.data.flatten().pow(2).sum()
-                wandb.log({"misc/grad_norm": grad_norm.sqrt().item()}, step=step)
             optimizer.step()
 
     logger.info("Finished training loop.")
