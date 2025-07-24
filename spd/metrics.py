@@ -272,7 +272,9 @@ def create_metrics(
     all_dicts = [metric.compute() for metric in metrics]
     for d in all_dicts:
         if set(d.keys()).intersection(out.keys()):
-            raise ValueError(f"Keys {set(d.keys()).intersection(out.keys())} already in output, cannot merge")
+            raise ValueError(
+                f"Keys {set(d.keys()).intersection(out.keys())} already in output, cannot merge"
+            )
         out.update(d)
 
     return out
