@@ -226,6 +226,8 @@ def create_wandb_report(
 
     # Create separate panel grids for each experiment
     for experiment in experiments_list:
+        experiment_type = EXPERIMENT_REGISTRY[experiment].experiment_type
+
         # Use run_id and experiment name tags for filtering
         combined_filter = f'(Tags("tags") in ["{run_id}"]) and (Tags("tags") in ["{experiment}"])'
 
@@ -239,15 +241,16 @@ def create_wandb_report(
         panels: list[wr.interface.PanelTypes] = []
         y = 0
 
-        ci_height = 12
-        panels.append(
-            wr.MediaBrowser(
-                media_keys=["causal_importances_upper_leaky"],
-                layout=wr.Layout(x=0, y=0, w=REPORT_TOTAL_WIDTH, h=ci_height),
-                num_columns=6,
+        if experiment_type in {"tms", "resid_mlp"}:
+            ci_height = 12
+            panels.append(
+                wr.MediaBrowser(
+                    media_keys=["figures/causal_importances_upper_leaky"],
+                    layout=wr.Layout(x=0, y=0, w=REPORT_TOTAL_WIDTH, h=ci_height),
+                    num_columns=6,
+                )
             )
-        )
-        y += ci_height
+            y += ci_height
 
         loss_plots_height = 6
         loss_plots = [
@@ -269,7 +272,7 @@ def create_wandb_report(
         y += loss_plots_height
 
         # Only add KL loss plots for language model experiments
-        if EXPERIMENT_REGISTRY[experiment].experiment_type == "lm":
+        if experiment_type == "lm":
             kl_height = 6
             kl_width = REPORT_TOTAL_WIDTH // 2
             x_offset = 0
