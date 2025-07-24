@@ -119,7 +119,7 @@ def optimize(
 
         optimizer.zero_grad()
 
-        loss_terms = defaultdict[str, float](float)
+        mb_log_data = defaultdict[str, float](float)
 
         for _ in range(config.gradient_accumulation_steps):
             batch = extract_batch_data(next(train_iterator)).to(device)
@@ -147,30 +147,32 @@ def optimize(
                 n_params=n_params,
             )
 
-            for loss_name, loss_value in micro_loss_terms.items():
-                loss_terms[loss_name] += loss_value / config.gradient_accumulation_steps
-
             micro_total_loss.div_(config.gradient_accumulation_steps).backward()
+
+            for loss_name, loss_value in micro_loss_terms.items():
+                mb_log_data[f"train/loss/{loss_name}"] += (
+                    loss_value / config.gradient_accumulation_steps
+                )
+
+            for layer_name, ci in causal_importances.items():
+                l0 = (ci > config.ci_alive_threshold).float().sum(-1).mean().item()
+                mb_log_data[f"train/{layer_name}/l0"] += l0 / config.gradient_accumulation_steps
 
         if step % config.train_log_freq == 0:
             tqdm.write(f"--- Step {step} ---")
             tqdm.write(f"LR: {step_lr:.6f}")
-            for name, value in loss_terms.items():
+            for name, value in mb_log_data.items():
                 tqdm.write(f"{name}: {value:.7f}")
 
             if config.wandb_project:
-                train_log_data = {
-                    "misc/step": step,
-                    "misc/lr": step_lr,
-                    **{f"train/loss/{k}": v for k, v in loss_terms.items()},
-                }
+                mb_log_data["train/lr"] = step_lr
 
                 for layer_name, n_alive_count in alive_tracker.n_alive().items():
-                    train_log_data[
+                    mb_log_data[
                         f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
                     ] = n_alive_count
 
-                wandb.log(train_log_data, step=step)
+                wandb.log(mb_log_data, step=step)
 
         with torch.inference_mode():
             # --- Logging --- #
@@ -212,7 +214,7 @@ def optimize(
 
                 if config.wandb_project:
                     wandb.log(
-                        {k: wandb.Image(v) for k, v in fig_dict.items()},
+                        {f"figures/{k}": wandb.Image(v) for k, v in fig_dict.items()},
                         step=step,
                     )
                     if out_dir is not None:

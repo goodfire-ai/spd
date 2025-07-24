@@ -130,10 +130,10 @@ def plot_causal_importance_vals(
     batch_shape: tuple[int, ...],
     device: str | torch.device,
     input_magnitude: float,
+    sigmoid_type: SigmoidTypes,
     plot_raw_cis: bool = True,
     orientation: Literal["vertical", "horizontal"] = "vertical",
     title_formatter: Callable[[str], str] | None = None,
-    sigmoid_type: SigmoidTypes = "leaky_hard",
 ) -> tuple[dict[str, plt.Figure], dict[str, Float[Tensor, " C"]]]:
     """Plot the values of the causal importances for a batch of inputs with single active features.
 

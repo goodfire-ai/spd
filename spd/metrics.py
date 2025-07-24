@@ -52,8 +52,7 @@ class L0(Metric):
     @override
     def watch_batch(self, inputs: MetricsBatchInputs) -> None:
         for layer_name, ci in inputs.ci.items():
-            mean_dims = tuple(range(ci.ndim - 1))
-            l0 = (ci > self.l0_threshold).float().mean(dim=mean_dims).sum().item()
+            l0 = (ci > self.l0_threshold).float().sum(-1).mean().item()
             self.l0s[layer_name].append(l0)
 
     @override
