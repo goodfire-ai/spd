@@ -59,7 +59,8 @@ class CIHistograms(StreamingFigureCreator):
     @override
     def compute(self) -> Mapping[str, plt.Figure]:
         combined_causal_importances = {k: torch.cat(v) for k, v in self.causal_importances.items()}
-        return plot_ci_histograms(causal_importances=combined_causal_importances)
+        fig = plot_ci_histograms(causal_importances=combined_causal_importances)
+        return {"causal_importances_hist": fig}
 
 
 class MeanComponentActivationCounts(StreamingFigureCreator):
@@ -169,7 +170,10 @@ def create_figures(
             figure_creator.watch(inputs)
 
     out: dict[str, plt.Figure] = {}
-    for figure_creator in figure_creators:
-        out.update(figure_creator.compute())
+    all_dicts = [figure_creator.compute() for figure_creator in figure_creators]
+    for d in all_dicts:
+        if set(d.keys()).intersection(out.keys()):
+            raise ValueError(f"Keys {set(d.keys()).intersection(out.keys())} already in output")
+        out.update(d)
 
     return out
