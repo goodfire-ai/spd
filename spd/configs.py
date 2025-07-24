@@ -3,7 +3,6 @@
 import importlib
 import inspect
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from typing import Any, ClassVar, Literal, Self, override
 
 from pydantic import (
@@ -22,62 +21,63 @@ from spd.models.components import GateType
 from spd.spd_types import ModelPath, Probability
 
 
-class _FnConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInheritance]
+class _ClassConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInheritance]
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    name: str = Field(
+    classname: str = Field(
         ...,
-        description="Name of the function to call",
+        description="Name of the class to instantiate",
     )
-    extra_kwargs: dict[str, Any] = Field(
+    extra_init_kwargs: dict[str, Any] = Field(
         default={},
-        description="Extra keyword arguments to pass to the function besides the default `inputs`",
+        description="Extra keyword arguments to pass to the class constructor besides `model: ComponentModel` and `config: Config`",
     )
 
     @abstractmethod
-    def get_real_func(self) -> Callable[..., Any]: ...
+    def get_real_class(self) -> type[Any]: ...
 
     @model_validator(mode="after")
-    def validate_fn_kwargs(self) -> Self:
-        real_fn = self.get_real_func()
+    def validate_class_kwargs(self) -> Self:
+        real_class = self.get_real_class()
 
-        # get its signature and drop the first 'inputs' parameter
-        sig = inspect.signature(real_fn)
-        params_after_inputs = list(sig.parameters.values())[3:]
-        sig_extra_only = inspect.Signature(params_after_inputs)
+        # get the __init__ signature and drop the first few parameters
+        sig = inspect.signature(real_class.__init__)
+        # Skip 'self' plus the first two actual parameters (model: ComponentModel, config: Config)
+        params_after_required = list(sig.parameters.values())[3:]
+        sig_extra_only = inspect.Signature(params_after_required)
 
         # see if our kwargs are valid
         try:
-            sig_extra_only.bind(**self.extra_kwargs)
+            sig_extra_only.bind(**self.extra_init_kwargs)
         except TypeError as e:
             # replace the error as e will include something like
             # "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
-            raise ValueError(f"Invalid kwargs for {self.name!r}: {e}") from None
+            raise ValueError(f"Invalid kwargs for {self.classname!r}: {e}") from None
 
         return self
 
 
-class FiguresFnConfig(_FnConfig):
+class FiguresConfig(_ClassConfig):
     @override
-    def get_real_func(self) -> Callable[..., Any]:
-        available_funcs = importlib.import_module("spd.figures").FIGURES_FNS
-        real_fn = available_funcs.get(self.name)
-        if real_fn is None:
+    def get_real_class(self) -> type:
+        available_classes = importlib.import_module("spd.figures").FIGURE_CLASSES
+        real_class = available_classes.get(self.classname)
+        if real_class is None:
             raise ValueError(
-                f"Figure function {self.name!r} not found. Available functions: {available_funcs.keys()}"
+                f"Figure class {self.classname!r} not found. Available classes: {available_classes.keys()}"
             )
-        return real_fn
+        return real_class
 
 
-class MetricsFnConfig(_FnConfig):
+class MetricsConfig(_ClassConfig):
     @override
-    def get_real_func(self) -> Callable[..., Any]:
-        available_funcs = importlib.import_module("spd.metrics").METRICS_FNS
-        real_fn = available_funcs.get(self.name)
-        if real_fn is None:
+    def get_real_class(self) -> type:
+        available_classes = importlib.import_module("spd.metrics").METRIC_CLASSES
+        real_class = available_classes.get(self.classname)
+        if real_class is None:
             raise ValueError(
-                f"Metric function {self.name!r} not found. Available functions: {available_funcs.keys()}"
+                f"Metric class {self.classname!r} not found. Available classes: {available_classes.keys()}"
             )
-        return real_fn
+        return real_class
 
 
 class TMSTaskConfig(BaseModel):
@@ -301,13 +301,13 @@ class Config(BaseModel):
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    metrics_fns: list[MetricsFnConfig] = Field(
+    metrics: list[MetricsConfig] = Field(
         default=[],
-        description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
+        description="List of metrics to use for evaluation. These should be wired up in the `spd.metrics` module.",
     )
-    figures_fns: list[FiguresFnConfig] = Field(
+    figures: list[FiguresConfig] = Field(
         default=[],
-        description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
+        description="List of figures to create. These should be wired up in the `spd.figures` module.",
     )
 
     # --- Component Tracking ---
