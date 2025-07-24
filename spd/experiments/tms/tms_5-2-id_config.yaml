@@ -30,11 +30,11 @@ steps: 40_000
 lr: 1e-3
 lr_schedule: cosine
 lr_warmup_pct: 0.0
-n_eval_steps: 100
 
 # --- Logging & Saving ---
 train_log_freq: 100
 eval_freq: 1000
+n_eval_steps: 100
 image_freq: 5_000
 save_freq: null
 n_examples_until_dead: 4_096_000
