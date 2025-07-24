@@ -48,7 +48,7 @@ def component_activation_statistics(
     n_steps: int,
     sigmoid_type: SigmoidTypes,
     device: str,
-    threshold: float = 0.1,
+    threshold: float,
 ) -> tuple[dict[str, float], dict[str, Float[Tensor, " C"]]]:
     """Get the number and strength of the masks over the full dataset."""
     n_tokens = {module_name: 0 for module_name in model.components}
@@ -67,9 +67,7 @@ def component_activation_statistics(
         )
 
         causal_importances, _ = model.calc_causal_importances(
-            pre_weight_acts,
-            detach_inputs=False,
-            sigmoid_type=sigmoid_type,
+            pre_weight_acts, sigmoid_type=sigmoid_type, detach_inputs=False
         )
         for module_name, ci in causal_importances.items():
             # mask (batch, pos, C) or (batch, C)

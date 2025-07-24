@@ -306,7 +306,7 @@ def calculate_losses(
     if config.faithfulness_coeff is not None:
         faithfulness_loss = calc_faithfulness_loss(model=model, n_params=n_params, device=device)
         total_loss += config.faithfulness_coeff * faithfulness_loss
-        loss_terms["loss/faithfulness"] = faithfulness_loss.item()
+        loss_terms["faithfulness"] = faithfulness_loss.item()
 
     # Reconstruction loss
     if config.recon_coeff is not None:
@@ -318,7 +318,7 @@ def calculate_losses(
             loss_type=config.output_loss_type,
         )
         total_loss += config.recon_coeff * recon_loss
-        loss_terms["loss/recon"] = recon_loss.item()
+        loss_terms["recon"] = recon_loss.item()
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
@@ -336,7 +336,7 @@ def calculate_losses(
             )
         stochastic_recon_loss = stochastic_recon_loss / len(stochastic_masks)
         total_loss += config.stochastic_recon_coeff * stochastic_recon_loss
-        loss_terms["loss/stochastic_recon"] = stochastic_recon_loss.item()
+        loss_terms["stochastic_recon"] = stochastic_recon_loss.item()
 
     # Reconstruction layerwise loss
     if config.recon_layerwise_coeff is not None:
@@ -349,7 +349,7 @@ def calculate_losses(
             loss_type=config.output_loss_type,
         )
         total_loss += config.recon_layerwise_coeff * recon_layerwise_loss
-        loss_terms["loss/recon_layerwise"] = recon_layerwise_loss.item()
+        loss_terms["recon_layerwise"] = recon_layerwise_loss.item()
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
@@ -365,14 +365,14 @@ def calculate_losses(
             loss_type=config.output_loss_type,
         )
         total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
-        loss_terms["loss/stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
+        loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
 
     # Importance minimality loss
     importance_minimality_loss = calc_importance_minimality_loss(
         ci_upper_leaky=causal_importances_upper_leaky, pnorm=config.pnorm
     )
     total_loss += config.importance_minimality_coeff * importance_minimality_loss
-    loss_terms["loss/importance_minimality"] = importance_minimality_loss.item()
+    loss_terms["importance_minimality"] = importance_minimality_loss.item()
 
     # Schatten loss
     if config.schatten_coeff is not None:
@@ -383,7 +383,7 @@ def calculate_losses(
             device=device,
         )
         total_loss += config.schatten_coeff * schatten_loss
-        loss_terms["loss/schatten"] = schatten_loss.item()
+        loss_terms["schatten"] = schatten_loss.item()
 
     # Output reconstruction loss
     if config.out_recon_coeff is not None:
@@ -396,7 +396,7 @@ def calculate_losses(
             loss_type=config.output_loss_type,
         )
         total_loss += config.out_recon_coeff * out_recon_loss
-        loss_terms["loss/output_recon"] = out_recon_loss.item()
+        loss_terms["output_recon"] = out_recon_loss.item()
 
     # Embedding reconstruction loss
     if config.embedding_recon_coeff is not None:
@@ -411,6 +411,8 @@ def calculate_losses(
             device=device,
         )
         total_loss += config.embedding_recon_coeff * embedding_recon_loss
-        loss_terms["loss/embedding_recon"] = embedding_recon_loss.item()
+        loss_terms["embedding_recon"] = embedding_recon_loss.item()
+
+    loss_terms["total"] = total_loss.item()
 
     return total_loss, loss_terms

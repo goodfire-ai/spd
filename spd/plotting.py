@@ -167,8 +167,8 @@ def plot_causal_importance_vals(
 
     ci_raw, ci_upper_leaky_raw = model.calc_causal_importances(
         pre_weight_acts=pre_weight_acts,
-        detach_inputs=False,
         sigmoid_type=sigmoid_type,
+        detach_inputs=False,
     )
 
     ci = {}
@@ -338,7 +338,7 @@ def plot_UV_matrices(
 
 
 def create_embed_ci_sample_table(
-    causal_importances: dict[str, Float[Tensor, "... C"]], key: str
+    causal_importances: dict[str, Float[Tensor, "... C"]], key: str, threshold: float
 ) -> wandb.Table:
     """Create a wandb table visualizing embedding mask values.
 
@@ -354,7 +354,7 @@ def create_embed_ci_sample_table(
     component_names = ["TokenSample"] + ["CompVal" for _ in range(10)]
 
     for i, ci in enumerate(causal_importances[key][0, :20]):
-        active_values = ci[ci > 0.1].tolist()
+        active_values = ci[ci > threshold].tolist()
         # Cap at 10 components
         active_values = active_values[:10]
         formatted_values = [f"{val:.2f}" for val in active_values]

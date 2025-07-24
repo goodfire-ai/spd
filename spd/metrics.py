@@ -71,7 +71,9 @@ def lm_ce_losses(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wand
 def lm_embed(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table]:
     for key in ["transformer.wte", "model.embed_tokens"]:
         if key in inputs.causal_importances:
-            embed_ci_table = create_embed_ci_sample_table(inputs.causal_importances, key)
+            embed_ci_table = create_embed_ci_sample_table(
+                inputs.causal_importances, key, threshold=inputs.config.ci_alive_threshold
+            )
             return {"misc/embed_ci_sample": embed_ci_table}
     raise ValueError("No embedding components found in causal importances")
 
