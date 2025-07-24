@@ -27,7 +27,6 @@ from spd.models.sigmoids import SigmoidTypes
 from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_histograms,
-    plot_mean_component_activation_counts,
     plot_UV_matrices,
 )
 from spd.utils.general_utils import extract_batch_data
@@ -83,14 +82,34 @@ class MeanComponentActivationCounts(StreamingFigureCreator):
             n_activations_per_component = reduce(active_components, "... C -> C", "sum")
             self.component_activation_counts[module_name] += n_activations_per_component
 
+    @staticmethod
+    def _plot_mean_component_activation_counts(
+        name: str,
+        mean_component_activation_counts: Float[Tensor, " C"],
+    ) -> plt.Figure:
+        """Plots the mean activation counts for each component module, returning a dict of figures."""
+        fig = plt.figure(figsize=(8, 6))
+        plt.hist(mean_component_activation_counts.detach().cpu().numpy(), bins=100)
+        plt.yscale("log")
+        plt.title(name)
+        plt.xlabel("Mean Activation Count")
+        plt.ylabel("Frequency")
+
+        plt.tight_layout()
+        return fig
+
     @override
     def compute(self) -> Mapping[str, plt.Figure]:
-        mean_component_activation_counts = {
-            module_name: self.component_activation_counts[module_name] / self.n_tokens
-            for module_name in self.model.components
-        }
-        fig = plot_mean_component_activation_counts(mean_component_activation_counts)
-        return {"mean_component_activation_counts": fig}
+        out = {}
+        for module_name in self.model.components:
+            mean_counts = self.component_activation_counts[module_name] / self.n_tokens
+            out[f"{module_name}/mean_component_activation_counts"] = (
+                self._plot_mean_component_activation_counts(
+                    name=module_name,
+                    mean_component_activation_counts=mean_counts,
+                )
+            )
+        return out
 
 
 class UVandIdentityCI(StreamingFigureCreator):
@@ -159,7 +178,9 @@ def create_figures(
         _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
             batch, module_names=model.target_module_paths
         )
-        ci, _ci_upper_leaky = model.calc_causal_importances(pre_weight_acts)
+        ci, _ci_upper_leaky = model.calc_causal_importances(
+            pre_weight_acts, sigmoid_type=config.sigmoid_type
+        )
 
         inputs = FigureInput(ci=ci, batch=batch)
 
