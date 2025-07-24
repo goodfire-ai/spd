@@ -1,4 +1,3 @@
-import math
 from collections.abc import Callable
 from typing import Literal
 
@@ -57,8 +56,8 @@ def _plot_causal_importances_figure(
     has_pos_dim: bool,
     orientation: Literal["vertical", "horizontal"] = "vertical",
     title_formatter: Callable[[str], str] | None = None,
-) -> plt.Figure:
-    """Helper function to plot a single mask figure.
+) -> dict[str, plt.Figure]:
+    """Helper function to plot causal importance figures.
 
     Args:
         ci_vals: Dictionary of causal importances (or causal importances upper leaky relu) to plot
@@ -67,62 +66,45 @@ def _plot_causal_importances_figure(
         colormap: Matplotlib colormap name
         input_magnitude: Input magnitude value for the title
         has_pos_dim: Whether the masks have a position dimension
-        orientation: The orientation of the subplots
+        orientation: The orientation of the subplots (ignored now that we return individual figures)
         title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
 
     Returns:
-        The matplotlib figure
+        Dictionary mapping mask names to matplotlib figures
     """
-    if orientation == "vertical":
-        n_rows, n_cols = len(ci_vals), 1
-        figsize = (5, 5 * len(ci_vals))
-    else:
-        n_rows, n_cols = 1, len(ci_vals)
-        figsize = (5 * len(ci_vals), 5)
-    fig, axs = plt.subplots(
-        n_rows,
-        n_cols,
-        figsize=figsize,
-        constrained_layout=True,
-        squeeze=False,
-        dpi=300,
-    )
-    axs = np.array(axs)
-
-    images = []
-    for j, (mask_name, mask) in enumerate(ci_vals.items()):
+    figures = {}
+    
+    # Calculate global min/max for consistent colorbar across all figures
+    global_vmin = min(mask.min().item() for mask in ci_vals.values())
+    global_vmax = max(mask.max().item() for mask in ci_vals.values())
+    norm = plt.Normalize(vmin=global_vmin, vmax=global_vmax)
+    
+    for mask_name, mask in ci_vals.items():
         # mask has shape (batch, C) or (batch, pos, C)
         mask_data = mask.detach().cpu().numpy()
         if has_pos_dim:
             assert mask_data.ndim == 3
             mask_data = mask_data[:, 0, :]
-        ax = axs[j, 0] if orientation == "vertical" else axs[0, j]
-        im = ax.matshow(mask_data, aspect="auto", cmap=colormap)
-        images.append(im)
-
+        
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=300)
+        im = ax.matshow(mask_data, aspect="auto", cmap=colormap, norm=norm)
+        
         # Move x-axis ticks to bottom
         ax.xaxis.tick_bottom()
         ax.xaxis.set_label_position("bottom")
         ax.set_xlabel("Subcomponent index")
         ax.set_ylabel("Input feature index")
-
+        
         # Apply custom title formatting if provided
         title = title_formatter(mask_name) if title_formatter is not None else mask_name
-        ax.set_title(title)
-
-    # Add unified colorbar
-    norm = plt.Normalize(
-        vmin=min(mask.min().item() for mask in ci_vals.values()),
-        vmax=max(mask.max().item() for mask in ci_vals.values()),
-    )
-    for im in images:
-        im.set_norm(norm)
-    fig.colorbar(images[0], ax=axs.ravel().tolist())
-
-    # Capitalize first letter of title prefix for the figure title
-    fig.suptitle(f"{title_prefix.capitalize()} - Input magnitude: {input_magnitude}")
-
-    return fig
+        ax.set_title(f"{title} - {title_prefix} (Input magnitude: {input_magnitude})")
+        
+        # Add colorbar
+        fig.colorbar(im, ax=ax)
+        
+        figures[mask_name] = fig
+    
+    return figures
 
 
 def plot_causal_importance_vals(
@@ -182,7 +164,7 @@ def plot_causal_importance_vals(
     figures = {}
 
     if plot_raw_cis:
-        ci_fig = _plot_causal_importances_figure(
+        ci_figs = _plot_causal_importances_figure(
             ci_vals=ci,
             title_prefix="importance values lower leaky relu",
             colormap="Blues",
@@ -191,9 +173,11 @@ def plot_causal_importance_vals(
             orientation=orientation,
             title_formatter=title_formatter,
         )
-        figures["causal_importances"] = ci_fig
+        # Add each figure with a prefixed key
+        for module_name, fig in ci_figs.items():
+            figures[f"{module_name}/causal_importances"] = fig
 
-    ci_upper_leaky_fig = _plot_causal_importances_figure(
+    ci_upper_leaky_figs = _plot_causal_importances_figure(
         ci_vals=ci_upper_leaky,
         title_prefix="importance values",
         colormap="Reds",
@@ -202,7 +186,9 @@ def plot_causal_importance_vals(
         orientation=orientation,
         title_formatter=title_formatter,
     )
-    figures["causal_importances_upper_leaky"] = ci_upper_leaky_fig
+    # Add each figure with a prefixed key
+    for module_name, fig in ci_upper_leaky_figs.items():
+        figures[f"{module_name}/causal_importances_upper_leaky"] = fig
 
     return figures, all_perm_indices
 
@@ -317,10 +303,9 @@ def plot_UV_matrices(
         images.append(im)
 
         # Add unified colorbar
-        all_vals = np.concatenate([V_data, U_data])
         norm = plt.Normalize(
-            vmin=all_vals.min(),
-            vmax=all_vals.max(),
+            vmin=min(V_data.min(), U_data.min()),
+            vmax=max(V_data.max(), U_data.max()),
         )
         for im in images:
             im.set_norm(norm)
@@ -333,36 +318,23 @@ def plot_UV_matrices(
 
 def plot_mean_component_activation_counts(
     mean_component_activation_counts: dict[str, Float[Tensor, " C"]],
-) -> plt.Figure:
-    """Plots the mean activation counts for each component module in a grid."""
-    n_modules = len(mean_component_activation_counts)
-    max_cols = 6
-    n_cols = min(n_modules, max_cols)
-    # Calculate the number of rows needed, rounding up
-    n_rows = math.ceil(n_modules / n_cols)
-
-    # Create a figure with the calculated number of rows and columns
-    fig, axs = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 5 * n_rows), squeeze=False)
-    # Ensure axs is always a 2D array for consistent indexing, even if n_modules is 1
-    axs = axs.flatten()  # Flatten the axes array for easy iteration
-
-    # Iterate through modules and plot each histogram on its corresponding axis
-    for i, (module_name, counts) in enumerate(mean_component_activation_counts.items()):
-        ax = axs[i]
-        ax.hist(counts.detach().cpu().numpy(), bins=100)
-        ax.set_yscale("log")
-        ax.set_title(module_name)  # Add module name as title to each subplot
-        ax.set_xlabel("Mean Activation Count")
-        ax.set_ylabel("Frequency")
-
-    # Hide any unused subplots if the grid isn't perfectly filled
-    for i in range(n_modules, n_rows * n_cols):
-        axs[i].axis("off")
-
-    # Adjust layout to prevent overlapping titles/labels
-    fig.tight_layout()
-
-    return fig
+) -> dict[str, plt.Figure]:
+    """Plots the mean activation counts for each component module, returning a dict of figures."""
+    figures = {}
+    
+    # Create individual figures for each module
+    for module_name, counts in mean_component_activation_counts.items():
+        fig = plt.figure(figsize=(8, 6))
+        plt.hist(counts.detach().cpu().numpy(), bins=100)
+        plt.yscale("log")
+        plt.title(module_name)
+        plt.xlabel("Mean Activation Count")
+        plt.ylabel("Frequency")
+        
+        plt.tight_layout()
+        figures[module_name] = fig
+    
+    return figures
 
 
 def plot_ci_histograms(
@@ -390,6 +362,6 @@ def plot_ci_histograms(
         ax.set_yscale("log")
         ax.set_ylabel("Frequency")
 
-        fig_dict[f"mask_vals_{layer_name}"] = fig
+        fig_dict[f"{layer_name}/causal_importances"] = fig
 
     return fig_dict
