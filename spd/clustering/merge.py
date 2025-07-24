@@ -4,6 +4,7 @@ import random
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import matplotlib.pyplot as plt
 import torch
@@ -299,7 +300,7 @@ class MergeHistory:
     merge_configs: list[GroupMerge]  # State of groups at each iteration
     config: MergeConfig | None = None  # Configuration used for this merge
     sweep_params: dict[str, Any] | None = None  # Sweep parameters if used in sweep
-    
+
     def __init__(self, config: MergeConfig | None = None) -> None:
         self.non_diag_costs_min = []
         self.non_diag_costs_max = []
@@ -387,18 +388,18 @@ class MergeHistory:
             "costs_range": self.costs_range,
             "k_groups": self.k_groups,
         }
-    
+
     # Convenience properties for sweep analysis
     @property
     def total_iterations(self) -> int:
         """Total number of iterations performed."""
         return len(self.non_diag_costs_min)
-    
-    @property 
+
+    @property
     def final_k_groups(self) -> int:
         """Final number of groups after merging."""
         return self.k_groups[-1] if self.k_groups else 0
-    
+
     @property
     def initial_k_groups(self) -> int:
         """Initial number of groups before merging."""

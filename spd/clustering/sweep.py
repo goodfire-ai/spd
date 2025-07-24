@@ -23,15 +23,12 @@ class SweepConfig:
     alphas: list[float]
     rank_cost_funcs: list[Callable[[float], float]]
     iters: int = 100
-    
+
     def generate_configs(self) -> list[MergeConfig]:
         """Generate all MergeConfig combinations."""
         configs = []
         for act_thresh, check_thresh, alpha, rank_func in itertools.product(
-            self.activation_thresholds,
-            self.check_thresholds, 
-            self.alphas,
-            self.rank_cost_funcs
+            self.activation_thresholds, self.check_thresholds, self.alphas, self.rank_cost_funcs
         ):
             merge_config = MergeConfig(
                 activation_theshold=act_thresh,
@@ -42,8 +39,6 @@ class SweepConfig:
             )
             configs.append(merge_config)
         return configs
-
-
 
 
 def format_value(val: Any) -> str:
@@ -66,7 +61,10 @@ def format_range(values: list[Any]) -> str:
 def get_unique_param_values(results: list[MergeHistory]) -> dict[str, list[Any]]:
     """Extract unique parameter values from results."""
     all_params: list[str] = ["activation_threshold", "check_threshold", "alpha", "rank_cost_name"]
-    return {param: sorted(list(set(r.sweep_params[param] for r in results if r.sweep_params))) for param in all_params}
+    return {
+        param: sorted(list(set(r.sweep_params[param] for r in results if r.sweep_params)))
+        for param in all_params
+    }
 
 
 def filter_results_by_params(
@@ -75,7 +73,9 @@ def filter_results_by_params(
     """Filter results by fixed parameter values."""
     filtered_results: list[MergeHistory] = results
     for param, value in fixed_params.items():
-        filtered_results = [r for r in filtered_results if r.sweep_params and r.sweep_params[param] == value]
+        filtered_results = [
+            r for r in filtered_results if r.sweep_params and r.sweep_params[param] == value
+        ]
     return filtered_results
 
 
@@ -225,7 +225,7 @@ def run_hyperparameter_sweep(
                 plot_every=0,  # No plotting during sweep
                 plot_final=False,
             )
-            
+
             merge_history, final_merge = merge_iteration(
                 activations=raw_activations,
                 merge_config=merge_config,
@@ -235,10 +235,10 @@ def run_hyperparameter_sweep(
 
             # Store sweep parameters in the merge history for later use
             merge_history.sweep_params = {
-                'activation_threshold': merge_config.activation_theshold,
-                'check_threshold': merge_config.check_threshold,
-                'alpha': merge_config.alpha,
-                'rank_cost_name': merge_config.rank_cost_fn.__name__,
+                "activation_threshold": merge_config.activation_theshold,
+                "check_threshold": merge_config.check_threshold,
+                "alpha": merge_config.alpha,
+                "rank_cost_name": merge_config.rank_cost_fn.__name__,
             }
             results.append(merge_history)
         except Exception as e:
@@ -292,12 +292,16 @@ def plot_evolution_histories(
             subset_results: list[MergeHistory] = [
                 r
                 for r in filtered_results
-                if r.sweep_params and r.sweep_params[rows_by] == row_val and r.sweep_params[cols_by] == col_val
+                if r.sweep_params
+                and r.sweep_params[rows_by] == row_val
+                and r.sweep_params[cols_by] == col_val
             ]
 
             for line_val in line_values:
                 line_results: list[MergeHistory] = [
-                    r for r in subset_results if r.sweep_params and r.sweep_params[lines_by] == line_val
+                    r
+                    for r in subset_results
+                    if r.sweep_params and r.sweep_params[lines_by] == line_val
                 ]
 
                 if line_results:
@@ -454,7 +458,9 @@ def create_heatmaps(
             matching_results: list[MergeHistory] = [
                 r
                 for r in filtered_results
-                if r.sweep_params and r.sweep_params[x_by] == x_val and r.sweep_params[y_by] == y_val
+                if r.sweep_params
+                and r.sweep_params[x_by] == x_val
+                and r.sweep_params[y_by] == y_val
             ]
 
             if matching_results:
@@ -694,9 +700,11 @@ def create_smart_heatmap(
 # Simple stopping condition examples using lambdas
 def cost_ratio_condition(ratio: float, metric: str) -> Callable[[MergeHistory], bool]:
     """Create stopping condition for cost ratio."""
+
     def condition(history: MergeHistory) -> bool:
         costs = getattr(history, metric)
         return len(costs) >= 2 and costs[-1] >= costs[0] * ratio
+
     return condition
 
 
