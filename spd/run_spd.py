@@ -192,8 +192,7 @@ def optimize(
                         f.write(json.dumps(file_metrics) + "\n")
 
                 if config.wandb_project:
-                    wandb.log(metrics, step=step)
-                logger.info(f"Step {step}: Generating plots...")
+                    wandb.log({f"eval/{k}": v for k, v in metrics.items()}, step=step)
 
             # --- Plotting --- #
             if (
@@ -201,6 +200,8 @@ def optimize(
                 and step % config.image_freq == 0
                 and (step > 0 or config.image_on_first_step)
             ):
+                logger.info(f"Step {step}: Generating plots...")
+
                 fig_dict = create_figures(
                     model=model,
                     eval_iterator=eval_iterator,

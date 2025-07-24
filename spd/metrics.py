@@ -60,7 +60,7 @@ class L0(Metric):
     def compute(self) -> Mapping[str, float]:
         out = {}
         for layer_name, l0s in self.l0s.items():
-            out[f"misc/l0/{layer_name}"] = sum(l0s) / len(l0s)
+            out[f"l0/{layer_name}"] = sum(l0s) / len(l0s)
         return out
 
 
@@ -227,7 +227,7 @@ class LMEmbedSampleTable(Metric):
         assert key == "transformer.wte" or key == "model.embed_tokens"
         all_ci = torch.cat(self.causal_importances[key])
 
-        return {"misc/embed_ci_sample": self._create_embed_ci_sample_table(all_ci)}
+        return {"embed_ci_sample": self._create_embed_ci_sample_table(all_ci)}
 
 
 def create_metrics(
