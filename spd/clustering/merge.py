@@ -335,7 +335,7 @@ class MergeConfig(BaseModel):
 	)
 
 	rank_cost_fn: Callable[[float], float] = lambda _: 1.0
-	stopping_condition: Callable[[dict[str, Any]], bool] | None = None
+	stopping_condition: Callable[[MergeHistory], bool] | None = None
 
 
 class MergePlotConfig(BaseModel):
@@ -349,13 +349,106 @@ class MergePlotConfig(BaseModel):
 	plot_final: bool = True
 
 
+@dataclass
+class MergeHistory:
+	"""Track merge iteration history with validation."""
+	non_diag_costs_min: list[float]
+	non_diag_costs_max: list[float]
+	max_considered_cost: list[float]
+	selected_pair_cost: list[float]
+	costs_range: list[float]
+	k_groups: list[int]
+	
+	def __init__(self) -> None:
+		self.non_diag_costs_min = []
+		self.non_diag_costs_max = []
+		self.max_considered_cost = []
+		self.selected_pair_cost = []
+		self.costs_range = []
+		self.k_groups = []
+	
+	def __post_init__(self) -> None:
+		self._validate_lengths()
+	
+	def _validate_lengths(self) -> None:
+		"""Ensure all lists have the same length."""
+		lengths = [
+			len(self.non_diag_costs_min),
+			len(self.non_diag_costs_max),
+			len(self.max_considered_cost),
+			len(self.selected_pair_cost),
+			len(self.costs_range),
+			len(self.k_groups),
+		]
+		if lengths and not all(length == lengths[0] for length in lengths):
+			raise ValueError("All history lists must have the same length")
+	
+	def add_iteration(
+		self,
+		non_diag_costs_range: tuple[float, float],
+		max_considered_cost: float,
+		pair_cost: float,
+		k_groups: int,
+	) -> None:
+		"""Add data for one iteration."""
+		self.non_diag_costs_min.append(non_diag_costs_range[0])
+		self.non_diag_costs_max.append(non_diag_costs_range[1])
+		self.max_considered_cost.append(max_considered_cost)
+		self.costs_range.append(non_diag_costs_range[1] - non_diag_costs_range[0])
+		self.selected_pair_cost.append(pair_cost)
+		self.k_groups.append(k_groups)
+		self._validate_lengths()
+	
+	def latest(self) -> dict[str, float | int]:
+		"""Get the latest values."""
+		if not self.non_diag_costs_min:
+			raise ValueError("No history available")
+		return {
+			'non_diag_costs_min': self.non_diag_costs_min[-1],
+			'non_diag_costs_max': self.non_diag_costs_max[-1],
+			'max_considered_cost': self.max_considered_cost[-1],
+			'selected_pair_cost': self.selected_pair_cost[-1],
+			'costs_range': self.costs_range[-1],
+			'k_groups': self.k_groups[-1],
+		}
+	
+	def plot(self, plot_config: MergePlotConfig | None = None) -> None:
+		"""Plot cost evolution."""
+		config = plot_config or MergePlotConfig()
+		
+		fig, ax = plt.subplots(figsize=config.figsize_final)
+		ax.plot(self.max_considered_cost, label='max considered cost')
+		ax.plot(self.non_diag_costs_min, label='non-diag costs min')
+		ax.plot(self.non_diag_costs_max, label='non-diag costs max')
+		ax.plot(self.selected_pair_cost, label='selected pair cost')
+		ax.set_xlabel("Iteration")
+		ax.set_ylabel("Cost")
+		ax.legend()
+		
+		if config.save_pdf:
+			fig.savefig(f"{config.pdf_prefix}_cost_evolution.pdf", bbox_inches='tight', dpi=300)
+		
+		plt.show()
+	
+	def to_dict(self) -> dict[str, list[float] | list[int]]:
+		"""Convert to dictionary for backward compatibility."""
+		return {
+			'non_diag_costs_min': self.non_diag_costs_min,
+			'non_diag_costs_max': self.non_diag_costs_max,
+			'max_considered_cost': self.max_considered_cost,
+			'selected_pair_cost': self.selected_pair_cost,
+			'costs_range': self.costs_range,
+			'k_groups': self.k_groups,
+		}
+
+
 def merge_iteration(
 	activations: Float[Tensor, "samples c_components"],
 	merge_config: MergeConfig,
 	component_labels: list[str] | None = None,
 	initial_merge: GroupMerge|None = None,
 	plot_config: MergePlotConfig|None = None,
-) -> dict[str, list[float] | GroupMerge | int]:
+) -> tuple[MergeHistory, GroupMerge]:
 	# setup
 	# ==================================================
 
@@ -397,13 +490,7 @@ def merge_iteration(
 	i: int = 0
 
 	# variables we keep track of
-	merge_costs: dict[str, list[float]] = dict(
-		non_diag_costs_min=[],
-		non_diag_costs_max=[],
-		max_considered_cost=[],
-		selected_pair_cost=[],
-		costs_range=[],
-	)
+	merge_history = MergeHistory()
 
 	# merge iteration
 	# ==================================================
@@ -450,11 +537,6 @@ def merge_iteration(
 		non_diag_costs_range: tuple[float, float] = (non_diag_costs.min().item(), non_diag_costs.max().item())
 		max_considered_cost: float = (non_diag_costs_range[1] - non_diag_costs_range[0]) * merge_config.check_threshold + non_diag_costs_range[0]
 
-		# store for plotting
-		merge_costs['non_diag_costs_min'].append(non_diag_costs_range[0])
-		merge_costs['non_diag_costs_max'].append(non_diag_costs_range[1])
-		merge_costs['max_considered_cost'].append(max_considered_cost)
-		merge_costs['costs_range'].append(non_diag_costs_range[1] - non_diag_costs_range[0])
 
 		# consider pairs with costs below the threshold
 		considered_idxs = torch.where(costs <= max_considered_cost)
@@ -466,8 +548,13 @@ def merge_iteration(
 		min_pair: tuple[int, int] = tuple(considered_idxs[random.randint(0, considered_idxs.shape[0] - 1)].tolist())
 		pair_cost: float = costs[min_pair[0], min_pair[1]].item()
 
-		# Track the selected pair cost
-		merge_costs['selected_pair_cost'].append(pair_cost)
+		# store for plotting
+		merge_history.add_iteration(
+			non_diag_costs_range=non_diag_costs_range,
+			max_considered_cost=max_considered_cost,
+			pair_cost=pair_cost,
+			k_groups=k_groups,
+		)
 
 		# plotting
 		# --------------------------------------------------
@@ -514,14 +601,7 @@ def merge_iteration(
 			
 		# Custom stopping condition
 		if merge_config.stopping_condition is not None: # noqa: SIM102
-			if merge_config.stopping_condition({
-				'iteration': i,
-				'k_groups': k_groups,
-				'current_cost_min': non_diag_costs_range[0],
-				'current_cost_max': non_diag_costs_range[1],
-				'pair_cost': pair_cost,
-				**merge_costs,
-			}):
+			if merge_config.stopping_condition(merge_history):
 				break
 
 		i += 1
@@ -529,28 +609,7 @@ def merge_iteration(
 	# finish up
 	# ==================================================
 
-	# Final cost evolution plot
-	# --------------------------------------------------
 	if plot_config_.plot_final:
-		plt.figure(figsize=plot_config_.figsize_final)
-		plt.plot(merge_costs['max_considered_cost'], label='max considered cost')
-		plt.plot(merge_costs['non_diag_costs_min'], label='non-diag costs min')
-		plt.plot(merge_costs['non_diag_costs_max'], label='non-diag costs max')
-		plt.plot(merge_costs['selected_pair_cost'], label='selected pair cost')
-		plt.xlabel("Iteration")
-		plt.ylabel("Cost")
-		plt.legend()
+		merge_history.plot(plot_config_)
 		
-		if plot_config_.save_pdf:
-			plt.savefig(f"{plot_config_.pdf_prefix}_cost_evolution.pdf", bbox_inches='tight', dpi=300)
-		
-		plt.show()
-		
-	# Return results for sweep analysis
-	# --------------------------------------------------
-	return {
-		**merge_costs,
-		'final_merge': current_merge,
-		'total_iterations': i,
-		'final_k_groups': k_groups,
-	}
+	return merge_history, current_merge
