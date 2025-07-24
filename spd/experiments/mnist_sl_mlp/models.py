@@ -12,7 +12,7 @@ OUTPUT_SIZE: int = 10
 class MLP(nn.Module):
     """Two-layer MLP with digit and auxiliary heads for MNIST subliminal learning."""
 
-    def __init__(self, hidden: int, aux_outputs: int) -> None:
+    def __init__(self, hidden: int, n_aux_outputs: int) -> None:
         super().__init__()
         self.backbone: nn.Sequential = nn.Sequential(
             nn.Flatten(start_dim=1, end_dim=-1),
@@ -21,9 +21,9 @@ class MLP(nn.Module):
             nn.Linear(hidden, hidden),
             nn.ReLU(),
         )
-        self.digit_outputs: int = OUTPUT_SIZE
-        self.aux_outputs: int = aux_outputs
-        self.total_outputs: int = OUTPUT_SIZE + aux_outputs
+        self.n_digit_outputs: int = OUTPUT_SIZE
+        self.n_aux_outputs: int = n_aux_outputs
+        self.total_outputs: int = OUTPUT_SIZE + n_aux_outputs
         self.head: nn.Linear = nn.Linear(hidden, self.total_outputs)
 
     def forward(
@@ -44,10 +44,10 @@ class MLP(nn.Module):
         self,
         x: Float[Tensor, "batch 1 28 28"],
     ) -> Float[Tensor, "batch digit_outputs"]:
-        return self.forward_softmaxed(x)[:, : self.digit_outputs]
+        return self.forward(x)[:, : self.n_digit_outputs]
 
     def forward_aux(
         self,
         x: Float[Tensor, "batch 1 28 28"],
     ) -> Float[Tensor, "batch aux_outputs"]:
-        return self.forward_softmaxed(x)[:, self.digit_outputs :]
+        return self.forward(x)[:, self.n_digit_outputs :]

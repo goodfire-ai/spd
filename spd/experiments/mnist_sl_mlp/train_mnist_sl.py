@@ -28,7 +28,6 @@ class TrainingConfig:
 
     # Training hyperparameters
     batch_size: int
-    num_workers: int
     teacher_epochs: int
     student_epochs: int
     lr: float
@@ -55,6 +54,15 @@ class TrainingMetrics:
     test_accuracies: list[float]
     steps: list[int]  # Step numbers for each metric
 
+    def as_tensor_dict(self) -> dict[str, Tensor]:
+        """Convert metrics to a dictionary of tensors."""
+        return dict(
+            train_losses=torch.tensor(self.train_losses),
+            val_losses=torch.tensor(self.val_losses),
+            test_accuracies=torch.tensor(self.test_accuracies),
+            steps=torch.tensor(self.steps, dtype=torch.int64),
+        )
+
 
 @dataclass
 class TrainingResults:
@@ -76,16 +84,6 @@ def set_seed(seed: int) -> None:
     logger.info(f"Set random seed to {seed}")
 
 
-def accuracy(
-    logits: Float[Tensor, "batch 10"],
-    labels: Int[Tensor, " batch"],
-) -> float:
-    """Calculate classification accuracy."""
-    preds: Int[Tensor, " batch"] = logits.argmax(dim=1)
-    acc: float = float((preds == labels).float().mean().item())
-    return acc
-
-
 StepFn = Callable[
     [nn.Module, Float[Tensor, "batch 1 28 28"], Int[Tensor, " batch"]],
     Float[Tensor, ""],
@@ -98,9 +96,11 @@ def teacher_step(
     y: Int[Tensor, " batch"],
 ) -> Float[Tensor, ""]:
     """Compute cross-entropy loss for teacher training."""
-    all_logits: Float[Tensor, "batch total_outputs"] = model(x)
-    digit_logits: Float[Tensor, "batch 10"] = all_logits[:, : model.digit_outputs]
-    loss: Float[Tensor, ""] = F.cross_entropy(digit_logits, y)
+    all_logits: Float[Tensor, "batch total_outputs"] = model.forward(x)
+    loss: Float[Tensor, ""] = F.cross_entropy(
+        all_logits[:, : model.n_digit_outputs],
+        y,
+    )
     return loss
 
 
@@ -113,7 +113,7 @@ def student_step(
 ) -> Float[Tensor, ""]:
     """Compute KL divergence loss for student distillation."""
     teacher.eval()
-    kl_div: nn.KLDivLoss = nn.KLDivLoss(reduction="batchmean")
+    # kl_div: nn.KLDivLoss = nn.KLDivLoss(reduction="batchmean")
 
     # Get teacher's auxiliary predictions (no grad needed)
     with torch.no_grad():
@@ -123,8 +123,8 @@ def student_step(
     student_aux: Float[Tensor, "batch aux"] = model.forward_aux(x)
 
     # KL divergence loss (both are already probabilities from softmax)
-    loss: Float[Tensor, ""] = kl_div(
-        torch.log(student_aux + epsilon),
+    loss: Float[Tensor, ""] = F.kl_div(
+        student_aux,
         teacher_aux,
     )
     return loss
@@ -179,8 +179,6 @@ def train_loop_with_metrics(
         x: Float[Tensor, "batch 1 28 28"]
         y: Int[Tensor, " batch"]
         for _, (x, y) in enumerate(train_loader):
-            x, y = x.to(config.device), y.to(config.device)
-
             # Forward pass and loss computation
             loss: Float[Tensor, ""] = step_fn(model, x, y)
 
@@ -253,8 +251,6 @@ def evaluate_model(
     x: Float[Tensor, "batch 1 28 28"]
     y: Int[Tensor, " batch"]
     for x, y in loader:
-        x, y = x.to(device), y.to(device)
-
         # Compute loss if step function provided
         if step_fn is not None:
             loss: Float[Tensor, ""] = step_fn(model, x, y)
@@ -262,7 +258,7 @@ def evaluate_model(
             num_batches += 1
 
         # Compute accuracy
-        digit_probs: Float[Tensor, "batch 10"] = model.forward_digits(x)
+        digit_probs: Float[Tensor, "batch 10"] = F.softmax(model.forward_digits(x))
         preds: Int[Tensor, " batch"] = digit_probs.argmax(1)
         correct += int((preds == y).sum().item())
         total += int(y.size(0))
@@ -348,6 +344,11 @@ def train_subliminal_models(
     logger.info(f"Teacher accuracy: {teacher_acc:.2%}")
     logger.info(f"Student accuracy: {student_acc:.2%}")
     """
+
+    from muutils.dbg import dbg_auto
+
+    dbg_auto(teacher_metrics.as_tensor_dict())
+    dbg_auto(student_metrics.as_tensor_dict())
 
     return TrainingResults(
         teacher=teacher,

@@ -33,7 +33,7 @@ def plot_training_metrics(
     # Create single loss plot with both models
     fig_loss: Figure
     ax_loss: plt.Axes
-    fig_loss, ax_loss = plt.subplots(figsize=(10, 6))
+    fig_loss, ax_loss = plt.subplots(figsize=(5, 3))
 
     # Plot all loss curves on same plot
     ax_loss.plot(
@@ -86,7 +86,7 @@ def plot_training_metrics(
     # Create accuracy plot
     fig_acc: Figure
     ax_acc: plt.Axes
-    fig_acc, ax_acc = plt.subplots(figsize=(10, 6))
+    fig_acc, ax_acc = plt.subplots(figsize=(5, 3))
 
     # Plot test accuracies over time
     ax_acc.plot(
