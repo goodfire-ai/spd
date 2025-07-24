@@ -169,7 +169,7 @@ class ComponentModel(nn.Module):
                     C=C,
                     d_in=d_in,
                     d_out=d_out,
-                    bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                    bias=module.bias if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
                 )
                 component.init_from_target_weight(module.weight.T)
             elif isinstance(module, nn.Embedding):
