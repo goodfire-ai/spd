@@ -124,7 +124,6 @@ def main(
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
         out_dir=out_dir,
-        evals_id=evals_id,
     )
 
     logger.info("Optimization finished.")

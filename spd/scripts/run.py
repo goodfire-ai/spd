@@ -37,7 +37,6 @@ from spd.settings import REPO_ROOT
 from spd.utils.general_utils import apply_nested_updates, load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
-from spd.utils.target_ci_solutions import has_ci_solution
 from spd.utils.wandb_utils import ensure_project_exists
 
 WORKSPACE_TEMPLATES = {
@@ -269,8 +268,8 @@ def create_wandb_report(
             )
         y += loss_plots_height
 
-        # Add target error panel for experiments with target solutions
-        if has_ci_solution(experiment):
+        if EXPERIMENT_REGISTRY[experiment].experiment_type in ["tms", "resid_mlp"]:
+            # Add target CI error plots
             target_ci_weight = 6
             target_ci_width = REPORT_TOTAL_WIDTH // 2
             panels.append(

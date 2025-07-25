@@ -1,3 +1,4 @@
+import fnmatch
 import math
 from collections.abc import Callable
 from typing import Literal
@@ -18,43 +19,9 @@ from spd.models.components import (
 )
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.target_ci_solutions import (
-    TARGET_CI_SOLUTIONS,
-    has_ci_solution,
-    permute_to_identity_greedy,
+    permute_to_dense,
+    permute_to_identity,
 )
-
-
-def permute_to_identity(
-    ci_vals: Float[Tensor, "batch C"],
-) -> tuple[Float[Tensor, "batch C"], Float[Tensor, " C"]]:
-    """Permute matrix to make it as close to identity as possible.
-
-    Returns:
-        - Permuted mask
-        - Permutation indices
-    """
-
-    if ci_vals.ndim != 2:
-        raise ValueError(f"Mask must have 2 dimensions, got {ci_vals.ndim}")
-
-    batch, C = ci_vals.shape
-    effective_rows = min(batch, C)
-    perm_indices = torch.zeros(C, dtype=torch.long, device=ci_vals.device)
-
-    perm: list[int] = [0] * C
-    used: set[int] = set()
-    for i in range(effective_rows):
-        sorted_indices: list[int] = torch.argsort(ci_vals[i, :], descending=True).tolist()
-        chosen: int = next((col for col in sorted_indices if col not in used), sorted_indices[0])
-        perm[i] = chosen
-        used.add(chosen)
-    remaining: list[int] = sorted(list(set(range(C)) - used))
-    for idx, col in enumerate(remaining):
-        perm[effective_rows + idx] = col
-    new_ci_vals = ci_vals[:, perm]
-    perm_indices = torch.tensor(perm, device=ci_vals.device)
-
-    return new_ci_vals, perm_indices
 
 
 def _plot_causal_importances_figure(
@@ -182,7 +149,8 @@ def plot_causal_importance_vals(
     orientation: Literal["vertical", "horizontal"] = "vertical",
     title_formatter: Callable[[str], str] | None = None,
     sigmoid_type: SigmoidTypes = "leaky_hard",
-    experiment_id: str | None = None,
+    identity_patterns: list[str] | None = None,
+    dense_patterns: list[str] | None = None,
 ) -> tuple[dict[str, plt.Figure], dict[str, Float[Tensor, " C"]]]:
     """Plot the values of the causal importances for a batch of inputs with single active features.
 
@@ -195,7 +163,6 @@ def plot_causal_importance_vals(
         orientation: The orientation of the subplots
         title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
         sigmoid_type: Type of sigmoid to use for causal importance calculation.
-        experiment_id: Optional experiment ID to look up target solution for intelligent permutation
 
     Returns:
         Tuple of:
@@ -213,19 +180,24 @@ def plot_causal_importance_vals(
 
     has_pos_dim = len(batch_shape) == 3
 
-    # Apply permutations based on target solution if available
-    if experiment_id and has_ci_solution(experiment_id):
-        target_solution = TARGET_CI_SOLUTIONS[experiment_id]
-        ci, _ = target_solution.permute_to_target(ci_raw)
-        ci_upper_leaky, all_perm_indices = target_solution.permute_to_target(ci_upper_leaky_raw)
-    else:
-        # Fallback to identity permutation for all
-        ci = {}
-        ci_upper_leaky = {}
-        all_perm_indices = {}
-        for k in ci_raw:
-            ci[k], _ = permute_to_identity_greedy(ci_vals=ci_raw[k])
-            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity_greedy(
+    # Apply permutations based on patterns
+    ci = {}
+    ci_upper_leaky = {}
+    all_perm_indices = {}
+    for k in ci_raw:
+        # Determine permutation strategy based on patterns
+        if identity_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in identity_patterns):
+            ci[k], _ = permute_to_identity(ci_vals=ci_raw[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(
+                ci_vals=ci_upper_leaky_raw[k]
+            )
+        elif dense_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in dense_patterns):
+            ci[k], _ = permute_to_dense(ci_vals=ci_raw[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_dense(ci_vals=ci_upper_leaky_raw[k])
+        else:
+            # Default: identity permutation
+            ci[k], _ = permute_to_identity(ci_vals=ci_raw[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(
                 ci_vals=ci_upper_leaky_raw[k]
             )
 

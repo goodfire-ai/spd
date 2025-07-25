@@ -20,9 +20,8 @@ from spd.plotting import create_embed_ci_sample_table, get_single_feature_causal
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import calc_kl_divergence_lm
 from spd.utils.target_ci_solutions import (
-    TARGET_CI_SOLUTIONS,
     compute_target_metrics,
-    has_ci_solution,
+    make_target_ci_solution,
 )
 
 
@@ -37,7 +36,6 @@ class CreateMetricsInputs:
     device: str
     config: Config
     step: int
-    evals_id: str | None = None
 
 
 class CreateMetricsFn(Protocol):
@@ -93,19 +91,28 @@ def ci_l0(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table
     return l0_metrics
 
 
-def target_ci_error(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table]:
+def target_ci_error(
+    inputs: CreateMetricsInputs,
+    identity_ci: list[dict[str, Any]] | None = None,
+    dense_ci: list[dict[str, Any]] | None = None,
+) -> Mapping[str, float | int | wandb.Table]:
     """Compute target solution metrics for toy models with canonical solutions.
 
     Args:
-        inputs: Standard metrics inputs containing evals_id
+        inputs: Standard metrics inputs
+        identity_ci: List of identity CI pattern specifications with layer_pattern and n_features
+        dense_ci: List of dense CI pattern specifications with layer_pattern and k
 
     Returns:
         Dictionary of target solution metrics
     """
-    if inputs.evals_id is None or not has_ci_solution(inputs.evals_id):
+    if inputs.config.task_config.task_name not in ["tms", "residual_mlp"]:
         return {}
 
-    if inputs.config.task_config.task_name not in ["tms", "residual_mlp"]:
+    # Create target solution from config parameters
+    target_solution = make_target_ci_solution(identity_ci, dense_ci)
+
+    if target_solution is None:
         return {}
 
     # Get causal importance arrays using single active features
@@ -117,7 +124,6 @@ def target_ci_error(inputs: CreateMetricsInputs) -> Mapping[str, float | int | w
         sigmoid_type=inputs.config.sigmoid_type,
     )
 
-    target_solution = TARGET_CI_SOLUTIONS[inputs.evals_id]
     target_metrics = compute_target_metrics(
         causal_importances=ci_arrays,
         target_solution=target_solution,
@@ -133,7 +139,6 @@ def create_metrics(
     device: str,
     config: Config,
     step: int,
-    evals_id: str | None = None,
 ) -> Mapping[str, float | int | wandb.Table]:
     """Create metrics for logging."""
     metrics: dict[str, float | int | wandb.Table] = {"misc/step": step}
@@ -153,7 +158,6 @@ def create_metrics(
         device=device,
         config=config,
         step=step,
-        evals_id=evals_id,
     )
 
     for fn_cfg in config.metrics_fns:

@@ -39,7 +39,6 @@ class CreateFiguresInputs:
         | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
     )
     n_eval_steps: int
-    evals_id: str | None = None
 
 
 class CreateFiguresFn(Protocol):
@@ -71,24 +70,39 @@ def mean_component_activation_counts(inputs: CreateFiguresInputs) -> Mapping[str
     }
 
 
-def uv_and_identity_ci(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
-    figures, all_perm_indices = plot_causal_importance_vals(
+def permuted_ci_plots(
+    inputs: CreateFiguresInputs,
+    identity_patterns: list[str] | None = None,
+    dense_patterns: list[str] | None = None,
+) -> Mapping[str, plt.Figure]:
+    """Plot causal importance values with smart permutation based on patterns."""
+    figures, _ = plot_causal_importance_vals(
         model=inputs.model,
         batch_shape=inputs.batch.shape,
         device=inputs.device,
         input_magnitude=0.75,
         sigmoid_type=inputs.config.sigmoid_type,
-        experiment_id=inputs.evals_id,
+        identity_patterns=identity_patterns,
+        dense_patterns=dense_patterns,
+    )
+    return figures
+
+
+def uv_plots(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
+    """Plot UV matrices using identity permutation."""
+    _, all_perm_indices = plot_causal_importance_vals(
+        model=inputs.model,
+        batch_shape=inputs.batch.shape,
+        device=inputs.device,
+        input_magnitude=0.75,
+        sigmoid_type=inputs.config.sigmoid_type,
     )
 
     uv_matrices = plot_UV_matrices(
         components=inputs.model.components, all_perm_indices=all_perm_indices
     )
 
-    return {
-        **figures,
-        "UV_matrices": uv_matrices,
-    }
+    return {"UV_matrices": uv_matrices}
 
 
 def create_figures(
@@ -102,7 +116,6 @@ def create_figures(
     eval_loader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     n_eval_steps: int,
-    evals_id: str | None = None,
 ) -> Mapping[str, plt.Figure]:
     """Create figures for logging.
 
@@ -132,7 +145,6 @@ def create_figures(
         step=step,
         eval_loader=eval_loader,
         n_eval_steps=n_eval_steps,
-        evals_id=evals_id,
     )
     for fn_cfg in config.figures_fns:
         if (fn := FIGURES_FNS.get(fn_cfg.name)) is None:
@@ -153,6 +165,7 @@ FIGURES_FNS: dict[str, CreateFiguresFn] = {
     for fn in [
         ci_histograms,
         mean_component_activation_counts,
-        uv_and_identity_ci,
+        permuted_ci_plots,
+        uv_plots,
     ]
 }
