@@ -89,5 +89,11 @@ def get_experiment_config_file_contents(key: str) -> dict[str, Any]:
 
 
 CANONICAL_RUNS: dict[str, str] = {
+    "tms_5-2": "wandb:goodfire/spd/runs/u9lslp82",
     "resid_mlp1": "wandb:goodfire/spd/runs/hrpnddv5",
 }
+"""this should be a dictionary mapping experiment registry keys to a canonical run for that experiment.
+The run doesn't have to be the absolute best decomposition, but should be a run that is guaranteed to load without errors -- `tests/test_model_loading.py` will test this.
+
+if your PR creates a breaking change, then you should update this dictionary to point to a new canonical run.
+"""
