@@ -55,4 +55,4 @@ coverage:
 
 .PHONY: demo
 demo:
-	spd-run --experiments resid_mlp1 --local --override-branch feature/clustering --use_wandb False --create_report False --log-format terse
+	spd-run --experiments resid_mlp1 --local --create_snapshot False --use_wandb False --create_report False --log-format terse

@@ -25,7 +25,6 @@ def compute_merge_costs(
     coact: Bool[Tensor, "k_groups k_groups"],
     merges: GroupMerge,
     alpha: float = 1.0,
-    # rank_cost: Callable[[float], float] = lambda c: math.log(c),
     rank_cost: Callable[[float], float] = lambda _: 1.0,
 ) -> Float[Tensor, "k_groups k_groups"]:
     """Compute MDL costs for merge matrices"""
@@ -33,10 +32,7 @@ def compute_merge_costs(
     ranks: Float[Tensor, " k_groups"] = merges.components_per_group.to(device=device).float()
     diag: Float[Tensor, " k_groups"] = torch.diag(coact).to(device=device)
 
-    # dbg_tensor(coact)
-    # dbg_tensor(ranks)
-    # dbg_tensor(diag)
-
+    # TODO: use dynamic rank computation
     return alpha * (
         diag @ ranks.T
         + ranks @ diag.T
