@@ -31,7 +31,7 @@ class EvalMetricConfig(BaseModel):
         description="Extra keyword arguments to pass to the class constructor besides `model: ComponentModel` and `config: Config`",
     )
 
-    def get_real_class(self) -> type:
+    def _get_metric_class(self) -> type:
         available_classes = importlib.import_module("spd.eval").CLASSES
         real_class = available_classes.get(self.classname)
         if real_class is None:
@@ -42,7 +42,7 @@ class EvalMetricConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_class_kwargs(self) -> Self:
-        real_class = self.get_real_class()
+        real_class = self._get_metric_class()
 
         # get the __init__ signature and drop the first few parameters
         sig = inspect.signature(real_class.__init__)
@@ -255,11 +255,11 @@ class Config(BaseModel):
     # --- Logging & Saving ---
     train_log_freq: PositiveInt = Field(
         ...,
-        description="Interval (in steps) at which to log training metrics to stdout",
+        description="Interval (in steps) at which to log training metrics",
     )
     eval_freq: PositiveInt = Field(
         ...,
-        description="Interval (in steps) at which to log evaluation metrics to stdout",
+        description="Interval (in steps) at which to log evaluation metrics",
     )
     eval_batch_size: PositiveInt = Field(
         ...,

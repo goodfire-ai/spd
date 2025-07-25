@@ -52,7 +52,7 @@ def local_log(data: Mapping[str, WandbLoggable], step: int, out_dir: Path) -> No
         logger.warning(f"Skipped {n_table_metrics} table metrics")
 
 
-def loop_dl[T](dl: DataLoader[T]):
+def loop_dataloader[T](dl: DataLoader[T]):
     dl_iter = iter(dl)
     while True:
         try:
@@ -77,8 +77,8 @@ def optimize(
 ) -> None:
     """Run the optimization loop for LM decomposition."""
 
-    train_iterator = loop_dl(train_loader)
-    eval_iterator = loop_dl(eval_loader)
+    train_iterator = loop_dataloader(train_loader)
+    eval_iterator = loop_dataloader(eval_loader)
 
     logger.info(f"Output directory: {out_dir}")
 
