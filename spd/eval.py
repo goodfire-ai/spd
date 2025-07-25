@@ -19,13 +19,14 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import Config
-from spd.models.component_model import ComponentModel, calc_stochastic_masks
+from spd.models.component_model import ComponentModel
 from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_histograms,
     plot_component_activation_density,
     plot_UV_matrices,
 )
+from spd.utils.component_utils import calc_stochastic_masks, component_l0
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 
 WandbLoggable = float | int | wandb.Table | plt.Figure
@@ -49,10 +50,6 @@ class StreamingEval(ABC):
     def compute(self) -> Mapping[str, WandbLoggable]: ...
 
 
-def l0(ci: Float[Tensor, "... C"], threshold: float) -> float:
-    return (ci > threshold).float().sum(-1).mean().item()
-
-
 class CI_L0(StreamingEval):
     SLOW = False
 
@@ -68,7 +65,7 @@ class CI_L0(StreamingEval):
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         for layer_name, layer_ci in ci.items():
-            l0_val = l0(layer_ci, self.l0_threshold)
+            l0_val = component_l0(layer_ci, self.l0_threshold)
             self.l0s[layer_name].append(l0_val)
 
     @override

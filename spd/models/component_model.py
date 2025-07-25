@@ -423,24 +423,3 @@ class ComponentModel(nn.Module):
                 causal_importances_upper_leaky[param_name] = sigmoid_fn(gate_output).abs()
 
         return causal_importances, causal_importances_upper_leaky
-
-
-def calc_stochastic_masks(
-    causal_importances: dict[str, Float[Tensor, "... C"]],
-    n_mask_samples: int,
-) -> list[dict[str, Float[Tensor, "... C"]]]:
-    """Calculate n_mask_samples stochastic masks with the formula `ci + (1 - ci) * rand_unif(0,1)`.
-
-    Args:
-        causal_importances: The causal importances to use for the stochastic masks.
-        n_mask_samples: The number of stochastic masks to calculate.
-
-    Return:
-        A list of n_mask_samples dictionaries, each containing the stochastic masks for each layer.
-    """
-    stochastic_masks = []
-    for _ in range(n_mask_samples):
-        stochastic_masks.append(
-            {layer: ci + (1 - ci) * torch.rand_like(ci) for layer, ci in causal_importances.items()}
-        )
-    return stochastic_masks

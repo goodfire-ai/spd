@@ -16,11 +16,12 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import Config
-from spd.eval import WandbLoggable, eval, l0
+from spd.eval import WandbLoggable, eval
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
+from spd.utils.component_utils import component_l0
 from spd.utils.general_utils import (
     extract_batch_data,
     get_lr_schedule_fn,
@@ -177,7 +178,7 @@ def optimize(
                 )
 
             for layer_name, layer_ci in causal_importances.items():
-                l0_val = l0(layer_ci, config.ci_alive_threshold)
+                l0_val = component_l0(layer_ci, config.ci_alive_threshold)
                 microbatch_log_data[f"train/{layer_name}/l0"] += (
                     l0_val / config.gradient_accumulation_steps
                 )
