@@ -173,11 +173,12 @@ def optimize(
                     loss_value / config.gradient_accumulation_steps
                 )
 
-            for layer_name, layer_ci in causal_importances.items():
-                l0_val = ci_l_zero(layer_ci, config.ci_alive_threshold)
-                microbatch_log_data[f"train/{layer_name}/l0"] += (
-                    l0_val / config.gradient_accumulation_steps
-                )
+            # for layer_name, layer_ci in causal_importances.items():
+            #     with torch.no_grad():
+            #         l0_val = ci_l_zero(layer_ci, config.ci_alive_threshold)
+            #         microbatch_log_data[f"train/{layer_name}/l0"] += (
+            #             l0_val / config.gradient_accumulation_steps
+            #         )
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
