@@ -241,7 +241,7 @@ def create_wandb_report(
         panels: list[wr.interface.PanelTypes] = []
         y = 0
 
-        if experiment_type in {"tms", "resid_mlp"}:
+        if experiment_type in ["tms", "resid_mlp"]:
             ci_height = 12
             panels.append(
                 wr.MediaBrowser(

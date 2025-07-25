@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Float
+from PIL import Image
 from torch import Tensor, nn
 
 from spd.configs import Config
@@ -672,7 +673,7 @@ def main():
             return mask_name  # Fallback to original if pattern doesn't match
 
         batch_shape = (1, patched_model.config.n_features)
-        figs_causal = plot_causal_importance_vals(
+        figs_causal: dict[str, Image.Image] = plot_causal_importance_vals(
             model=model,
             batch_shape=batch_shape,
             device=device,

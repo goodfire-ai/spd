@@ -163,7 +163,6 @@ class CEandKLLosses(StreamingEval):
             return ce - target_model_ce_loss
 
         return {
-            # Not sure if these are useful:
             # "ce/target": target_model_ce_loss,
             # "ce/ci_masked": ci_masked_ce_loss,
             # "ce/unmasked": unmasked_ce_loss,
@@ -303,7 +302,7 @@ class UVandIdentityCI(StreamingEval):
         }
 
 
-CLASSES = {
+EVAL_CLASSES = {
     cls.__name__: cls
     for cls in [
         CI_L0,
@@ -326,7 +325,7 @@ def eval(
 ) -> dict[str, EvalMetricValue]:
     evals: list[StreamingEval] = []
     for eval_config in config.eval_metrics:
-        eval_cls = CLASSES[eval_config.classname]
+        eval_cls = EVAL_CLASSES[eval_config.classname]
         if not run_slow and eval_cls.SLOW:
             continue
         evals.append(eval_cls(model, config, **eval_config.extra_init_kwargs))

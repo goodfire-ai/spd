@@ -32,19 +32,19 @@ class EvalMetricConfig(BaseModel):
     )
 
     def _get_metric_class(self) -> type:
-        available_classes = importlib.import_module("spd.eval").CLASSES
-        real_class = available_classes.get(self.classname)
-        if real_class is None:
+        available_classes = importlib.import_module("spd.eval").EVAL_CLASSES
+        cls = available_classes.get(self.classname)
+        if cls is None:
             raise ValueError(
                 f"Metric class {self.classname!r} not found. Available classes: {available_classes.keys()}"
             )
-        return real_class
+        return cls
 
     @model_validator(mode="after")
     def validate_class_kwargs(self) -> Self:
-        real_class = self._get_metric_class()
+        cls = self._get_metric_class()
 
-        sig = inspect.signature(real_class.__init__)
+        sig = inspect.signature(cls.__init__)
         # Skip 'self' plus the first two actual parameters (model: ComponentModel, config: Config)
         params_after_required = list(sig.parameters.values())[3:]
         sig_extra_only = inspect.Signature(params_after_required)
