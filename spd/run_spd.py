@@ -33,7 +33,10 @@ from spd.utils.run_utils import save_file
 
 def local_log(data: Mapping[str, EvalMetricValue], step: int, out_dir: Path) -> None:
     metrics_file = out_dir / "metrics.jsonl"
+    metrics_file.touch(exist_ok=True)
+
     fig_dir = out_dir / "figures"
+    fig_dir.mkdir(exist_ok=True)
 
     for k, v in data.items():
         metrics_dict = {}
