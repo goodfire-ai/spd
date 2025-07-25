@@ -10,12 +10,12 @@ from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar, override
 
 import einops
-import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 import wandb
 from einops import reduce
 from jaxtyping import Float, Int
+from PIL import Image
 from torch import Tensor
 
 from spd.configs import Config
@@ -29,7 +29,7 @@ from spd.plotting import (
 from spd.utils.component_utils import calc_stochastic_masks, component_l0
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 
-WandbLoggable = float | int | wandb.Table | plt.Figure
+EvalMetricValue = float | int | wandb.Table | Image.Image
 
 
 class StreamingEval(ABC):
@@ -47,7 +47,7 @@ class StreamingEval(ABC):
     ) -> None: ...
 
     @abstractmethod
-    def compute(self) -> Mapping[str, WandbLoggable]: ...
+    def compute(self) -> Mapping[str, EvalMetricValue]: ...
 
 
 class CI_L0(StreamingEval):
@@ -283,7 +283,7 @@ class CIHistograms(StreamingEval):
             self.causal_importances[k].append(v)
 
     @override
-    def compute(self) -> Mapping[str, plt.Figure]:
+    def compute(self) -> Mapping[str, Image.Image]:
         combined_causal_importances = {k: torch.cat(v) for k, v in self.causal_importances.items()}
         fig = plot_ci_histograms(causal_importances=combined_causal_importances)
         return {"causal_importances_hist": fig}
@@ -319,7 +319,7 @@ class ComponentActivationDensity(StreamingEval):
             self.component_activation_counts[module_name] += n_activations_per_component
 
     @override
-    def compute(self) -> Mapping[str, plt.Figure]:
+    def compute(self) -> Mapping[str, Image.Image]:
         activation_densities = {
             module_name: self.component_activation_counts[module_name] / self.n_tokens
             for module_name in self.model.components
@@ -353,7 +353,7 @@ class UVandIdentityCI(StreamingEval):
             self.batch_shape = batch.shape
 
     @override
-    def compute(self) -> Mapping[str, plt.Figure]:
+    def compute(self) -> Mapping[str, Image.Image]:
         assert self.batch_shape is not None, "haven't seen any inputs yet"
 
         figures, all_perm_indices = plot_causal_importance_vals(
@@ -395,7 +395,7 @@ def eval(
     config: Config,
     run_slow: bool,
     n_steps: int,
-) -> dict[str, WandbLoggable]:
+) -> dict[str, EvalMetricValue]:
     evals: list[StreamingEval] = []
     for eval_config in config.eval_metrics:
         eval_cls = CLASSES[eval_config.classname]
@@ -417,7 +417,7 @@ def eval(
         for eval in evals:
             eval.watch_batch(batch=batch, target_out=target_out, ci=ci)
 
-    out: dict[str, WandbLoggable] = {}
+    out: dict[str, EvalMetricValue] = {}
     all_dicts = [eval.compute() for eval in evals]
     for d in all_dicts:
         if set(d.keys()).intersection(out.keys()):

@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import Config
-from spd.eval import WandbLoggable, eval
+from spd.eval import EvalMetricValue, eval
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
@@ -30,7 +30,7 @@ from spd.utils.general_utils import (
 from spd.utils.run_utils import save_file
 
 
-def local_log(data: Mapping[str, WandbLoggable], step: int, out_dir: Path) -> None:
+def local_log(data: Mapping[str, EvalMetricValue], step: int, out_dir: Path) -> None:
     metrics_file = out_dir / "metrics.jsonl"
     fig_dir = out_dir / "figures"
 
@@ -224,7 +224,11 @@ def optimize(
                 if out_dir is not None:
                     local_log(metrics, step, out_dir)
                 if config.wandb_project:
-                    wandb.log({f"eval/{k}": v for k, v in metrics.items()}, step=step)
+                    wandb_logs = {
+                        f"eval/{k}": wandb.Image(v) if isinstance(v, plt.Figure) else v
+                        for k, v in metrics.items()
+                    }
+                    wandb.log(wandb_logs, step=step)
 
         # --- Saving Checkpoint --- #
         if (

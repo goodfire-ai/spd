@@ -1,17 +1,25 @@
+import io
 from collections.abc import Callable
 
-import matplotlib.ticker as tkr
 import numpy as np
 import torch
 from jaxtyping import Float
 from matplotlib import pyplot as plt
-from matplotlib.colors import CenteredNorm
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+from PIL import Image
 from torch import Tensor
 
 from spd.models.component_model import ComponentModel
 from spd.models.components import Components
 from spd.models.sigmoids import SigmoidTypes
+
+
+def _render_figure(fig: plt.Figure) -> Image.Image:
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    buf.seek(0)
+    img = Image.open(buf).convert("RGB")
+    buf.close()
+    return img
 
 
 def permute_to_identity(
@@ -54,7 +62,7 @@ def _plot_causal_importances_figure(
     input_magnitude: float,
     has_pos_dim: bool,
     title_formatter: Callable[[str], str] | None = None,
-) -> plt.Figure:
+) -> Image.Image:
     """Helper function to plot a single mask figure.
 
     Args:
@@ -114,7 +122,10 @@ def _plot_causal_importances_figure(
     # Capitalize first letter of title prefix for the figure title
     fig.suptitle(f"{title_prefix.capitalize()} - Input magnitude: {input_magnitude}")
 
-    return fig
+    img = _render_figure(fig)
+    plt.close(fig)
+
+    return img
 
 
 def plot_causal_importance_vals(
@@ -125,7 +136,7 @@ def plot_causal_importance_vals(
     sigmoid_type: SigmoidTypes,
     plot_raw_cis: bool = True,
     title_formatter: Callable[[str], str] | None = None,
-) -> tuple[dict[str, plt.Figure], dict[str, Float[Tensor, " C"]]]:
+) -> tuple[dict[str, Image.Image], dict[str, Float[Tensor, " C"]]]:
     """Plot the values of the causal importances for a batch of inputs with single active features.
 
     Args:
@@ -170,7 +181,7 @@ def plot_causal_importance_vals(
         ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(ci_vals=ci_upper_leaky_raw[k])
 
     # Create figures dictionary
-    figures = {}
+    figures: dict[str, Image.Image] = {}
 
     if plot_raw_cis:
         ci_fig = _plot_causal_importances_figure(
@@ -198,7 +209,7 @@ def plot_causal_importance_vals(
 
 def plot_subnetwork_attributions_statistics(
     mask: Float[Tensor, "batch_size C"],
-) -> dict[str, plt.Figure]:
+) -> dict[str, Image.Image]:
     """Plot a vertical bar chart of the number of active subnetworks over the batch."""
     batch_size = mask.shape[0]
     if mask.ndim != 2:
@@ -230,47 +241,17 @@ def plot_subnetwork_attributions_statistics(
         )
 
     fig.suptitle(f"Active subnetworks on current batch (batch_size={batch_size})")
-    return {"subnetwork_attributions_statistics": fig}
+    fig_img = _render_figure(fig)
 
+    plt.close(fig)
 
-def plot_matrix(
-    ax: plt.Axes,
-    matrix: Tensor,
-    title: str,
-    xlabel: str,
-    ylabel: str,
-    colorbar_format: str = "%.1f",
-    norm: plt.Normalize | None = None,
-) -> None:
-    # Useful to have bigger text for small matrices
-    fontsize = 8 if matrix.numel() < 50 else 4
-    norm = norm if norm is not None else CenteredNorm()
-    im = ax.matshow(matrix.detach().cpu().numpy(), cmap="coolwarm", norm=norm)
-    # If less than 500 elements, show the values
-    if matrix.numel() < 500:
-        for (j, i), label in np.ndenumerate(matrix.detach().cpu().numpy()):
-            ax.text(i, j, f"{label:.2f}", ha="center", va="center", fontsize=fontsize)
-    ax.set_xlabel(xlabel)
-    if ylabel != "":
-        ax.set_ylabel(ylabel)
-    else:
-        ax.set_yticklabels([])
-    ax.set_title(title)
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes("right", size=0.1, pad=0.05)
-    fig = ax.get_figure()
-    assert fig is not None
-    fig.colorbar(im, cax=cax, format=tkr.FormatStrFormatter(colorbar_format))
-    if ylabel == "Function index":
-        n_functions = matrix.shape[0]
-        ax.set_yticks(range(n_functions))
-        ax.set_yticklabels([f"{L:.0f}" for L in range(1, n_functions + 1)])
+    return {"subnetwork_attributions_statistics": fig_img}
 
 
 def plot_UV_matrices(
     components: dict[str, Components],
     all_perm_indices: dict[str, Float[Tensor, " C"]] | None = None,
-) -> plt.Figure:
+) -> Image.Image:
     """Plot V and U matrices for each instance, grouped by layer."""
     n_layers = len(components)
 
@@ -315,12 +296,16 @@ def plot_UV_matrices(
     for im in images:
         im.set_norm(norm)
     fig.colorbar(images[0], ax=axs.ravel().tolist())
-    return fig
+
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+
+    return fig_img
 
 
 def plot_component_activation_density(
     component_activation_density: dict[str, Float[Tensor, " C"]],
-) -> plt.Figure:
+) -> Image.Image:
     n_modules = len(component_activation_density)
 
     fig, axs = plt.subplots(
@@ -344,13 +329,16 @@ def plot_component_activation_density(
     # Adjust layout to prevent overlapping titles/labels
     fig.tight_layout()
 
-    return fig
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+
+    return fig_img
 
 
 def plot_ci_histograms(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     bins: int = 100,
-) -> plt.Figure:
+) -> Image.Image:
     """Plot histograms of mask values for all layers in a single figure.
 
     Args:
@@ -385,4 +373,8 @@ def plot_ci_histograms(
         axs[i].axis("off")
 
     fig.tight_layout()
-    return fig
+
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+
+    return fig_img

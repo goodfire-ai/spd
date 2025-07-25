@@ -685,11 +685,7 @@ def main():
         fname_importances = (
             out_dir / f"causal_importance_upper_leaky_{n_layers}layers_{wandb_id}.png"
         )
-        figs_causal["causal_importances_upper_leaky"].savefig(
-            fname_importances,
-            bbox_inches="tight",
-            dpi=500,
-        )
+        figs_causal["causal_importances_upper_leaky"].save(fname_importances)
         logger.info(f"Saved figure to {fname_importances}")
 
         ##### Resid_mlp 1-layer varying sparsity ####
