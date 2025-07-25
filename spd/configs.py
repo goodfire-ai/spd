@@ -44,7 +44,6 @@ class EvalMetricConfig(BaseModel):
     def validate_class_kwargs(self) -> Self:
         real_class = self._get_metric_class()
 
-        # get the __init__ signature and drop the first few parameters
         sig = inspect.signature(real_class.__init__)
         # Skip 'self' plus the first two actual parameters (model: ComponentModel, config: Config)
         params_after_required = list(sig.parameters.values())[3:]

@@ -63,7 +63,7 @@ def _plot_causal_importances_figure(
     has_pos_dim: bool,
     title_formatter: Callable[[str], str] | None = None,
 ) -> Image.Image:
-    """Helper function to plot a single mask figure.
+    """Plot causal importances for components stacked vertically.
 
     Args:
         ci_vals: Dictionary of causal importances (or causal importances upper leaky relu) to plot
@@ -72,7 +72,6 @@ def _plot_causal_importances_figure(
         colormap: Matplotlib colormap name
         input_magnitude: Input magnitude value for the title
         has_pos_dim: Whether the masks have a position dimension
-        orientation: The orientation of the subplots
         title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
 
     Returns:
@@ -145,7 +144,6 @@ def plot_causal_importance_vals(
         device: Device to use
         input_magnitude: Magnitude of input features
         plot_raw_cis: Whether to plot the raw causal importances (blue plots)
-        orientation: The orientation of the subplots
         title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
         sigmoid_type: Type of sigmoid to use for causal importance calculation.
 
@@ -172,9 +170,9 @@ def plot_causal_importance_vals(
         detach_inputs=False,
     )
 
-    ci = {}
-    ci_upper_leaky = {}
-    all_perm_indices = {}
+    ci: dict[str, Float[Tensor, "... C"]] = {}
+    ci_upper_leaky: dict[str, Float[Tensor, "... C"]] = {}
+    all_perm_indices: dict[str, Float[Tensor, " C"]] = {}
 
     for k in ci_raw:
         ci[k], _ = permute_to_identity(ci_vals=ci_raw[k])
@@ -205,47 +203,6 @@ def plot_causal_importance_vals(
     figures["causal_importances_upper_leaky"] = ci_upper_leaky_fig
 
     return figures, all_perm_indices
-
-
-def plot_subnetwork_attributions_statistics(
-    mask: Float[Tensor, "batch_size C"],
-) -> dict[str, Image.Image]:
-    """Plot a vertical bar chart of the number of active subnetworks over the batch."""
-    batch_size = mask.shape[0]
-    if mask.ndim != 2:
-        raise ValueError(f"Mask must have 2 dimensions, got {mask.ndim}")
-
-    # Sum over subnetworks for each batch entry
-    values = mask.sum(dim=1).cpu().detach().numpy()
-    bins = list(range(int(values.min().item()), int(values.max().item()) + 2))
-    counts, _ = np.histogram(values, bins=bins)
-
-    fig, ax = plt.subplots(figsize=(5, 5), constrained_layout=True)
-    bars = ax.bar(bins[:-1], counts, align="center", width=0.8)
-    ax.set_xticks(bins[:-1])
-    ax.set_xticklabels([str(b) for b in bins[:-1]])
-    ax.set_ylabel("Count")
-    ax.set_xlabel("Number of active subnetworks")
-    ax.set_title("Active subnetworks on current batch")
-
-    # Add value annotations on top of each bar
-    for bar in bars:
-        height = bar.get_height()
-        ax.annotate(
-            f"{height}",
-            xy=(bar.get_x() + bar.get_width() / 2, height),
-            xytext=(0, 3),  # 3 points vertical offset
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-        )
-
-    fig.suptitle(f"Active subnetworks on current batch (batch_size={batch_size})")
-    fig_img = _render_figure(fig)
-
-    plt.close(fig)
-
-    return {"subnetwork_attributions_statistics": fig_img}
 
 
 def plot_UV_matrices(
@@ -306,6 +263,8 @@ def plot_UV_matrices(
 def plot_component_activation_density(
     component_activation_density: dict[str, Float[Tensor, " C"]],
 ) -> Image.Image:
+    """Plot the activation density of each component as a histogram, stacked vertically."""
+
     n_modules = len(component_activation_density)
 
     fig, axs = plt.subplots(
@@ -335,7 +294,7 @@ def plot_component_activation_density(
     return fig_img
 
 
-def plot_ci_histograms(
+def plot_ci_values_histograms(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     bins: int = 100,
 ) -> Image.Image:

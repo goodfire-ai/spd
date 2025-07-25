@@ -21,7 +21,7 @@ from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.plotting import (
     plot_causal_importance_vals,
-    plot_ci_histograms,
+    plot_ci_values_histograms,
     plot_component_activation_density,
     plot_UV_matrices,
 )
@@ -192,7 +192,6 @@ class CEandKLLosses(StreamingEval):
 
     @override
     def compute(self) -> Mapping[str, float]:
-        # I think this is fine: avg(sum(x)) = sum(avg(x))
         return {k: sum(v) / len(v) for k, v in self.ce_losses.items()}
 
 
@@ -215,8 +214,8 @@ class CIHistograms(StreamingEval):
     @override
     def compute(self) -> Mapping[str, Image.Image]:
         combined_causal_importances = {k: torch.cat(v) for k, v in self.causal_importances.items()}
-        fig = plot_ci_histograms(causal_importances=combined_causal_importances)
-        return {"figures/causal_importances_hist": fig}
+        fig = plot_ci_values_histograms(causal_importances=combined_causal_importances)
+        return {"figures/causal_importance_values": fig}
 
 
 class ComponentActivationDensity(StreamingEval):
