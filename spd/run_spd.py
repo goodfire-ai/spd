@@ -93,8 +93,8 @@ def optimize(
         ci_alive_threshold=config.ci_alive_threshold,
     )
 
-    for step in tqdm(range(config.steps + 1), ncols=0):
-        step_lr = get_lr_with_warmup(
+    for step in tqdm(range(config.steps + 1)):
+        step_lr: float = get_lr_with_warmup(
             step=step,
             steps=config.steps,
             lr=config.lr,
@@ -156,10 +156,14 @@ def optimize(
         with torch.inference_mode():
             # --- Logging --- #
             if step % config.print_freq == 0:
-                tqdm.write(f"--- Step {step} ---")
-                tqdm.write(f"LR: {step_lr:.6f}")
-                for name, value in loss_terms.items():
-                    tqdm.write(f"{name}: {value:.7f}")
+                loss_msg: str = f"[Step {step}] " + " | ".join(
+                    [f"LR: {step_lr:.6f}"]
+                    + [
+                        f"{k.replace('stochastic_', '').replace('importance_', 'imp_')}: {v:.7f}"
+                        for k, v in loss_terms.items()
+                    ]
+                )
+                tqdm.write(loss_msg)
 
                 log_data: dict[str, int | float | wandb.Table] = {
                     "misc/step": step,
@@ -223,7 +227,7 @@ def optimize(
                         fig_dir = out_dir / "figures"
                         for k, v in fig_dict.items():
                             save_file(v, fig_dir / f"{k}_{step}.png")
-                            tqdm.write(f"Saved plot to {fig_dir / f'{k}_{step}.png'}")
+                            tqdm.write(f"\tSaved plot to {fig_dir / f'{k}_{step}.png'}")
 
         # --- Saving Checkpoint --- #
         if (
