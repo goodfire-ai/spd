@@ -160,6 +160,10 @@ class Config(BaseModel):
         default=[8],
         description="Hidden dimensions for the gate used to calculate the causal importance",
     )
+    init_gates_from_mean_input_norms: bool = Field(
+        default=False,
+        description="If True, initialize the gates from the mean input norms of the target modules",
+    )
     sigmoid_type: Literal["normal", "hard", "leaky_hard", "upper_leaky_hard", "swish_hard"] = Field(
         default="leaky_hard",
         description="Type of sigmoid to use for causal importance calculation",
@@ -372,5 +376,10 @@ class Config(BaseModel):
         assert self.slow_eval_freq // self.eval_freq >= 1, (
             "slow_eval_freq must be at least eval_freq"
         )
+
+        if self.init_gates_from_mean_input_norms:
+            assert self.gate_type == "vector_mlp", (
+                "init_gates_from_mean_input_norms is only supported for vector_mlp gates"
+            )
 
         return self

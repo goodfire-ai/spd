@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Literal, override
+from typing import Literal, cast, override
 
 import einops
 import torch
@@ -74,6 +74,13 @@ class VectorGateMLPs(nn.Module):
         x = self.layers(einops.rearrange(x, "... d_in -> ... 1 d_in"))
         assert x.shape[-1] == 1, "Last dimension should be 1 after the final layer"
         return x[..., 0]
+
+    @torch.no_grad()  # pyright: ignore[reportUntypedFunctionDecorator]
+    def init_weights_from_mean_input_norm_(self, input_mean_norm: float):
+        """Initialize the weights of the gate from the mean of the input."""
+        first_layer = self.layers[0]
+        assert isinstance(first_layer, ParallelLinear)
+        first_layer.W.div_(input_mean_norm)
 
 
 class Components(ABC, nn.Module):

@@ -2,7 +2,7 @@
 
 import json
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 import torch
@@ -20,6 +20,7 @@ from spd.eval import EvalMetricValue, eval
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
+from spd.models.components import VectorGateMLPs
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import ci_l_zero
 from spd.utils.general_utils import (
@@ -49,6 +50,26 @@ def local_log(data: Mapping[str, EvalMetricValue], step: int, out_dir: Path) -> 
             f.write(json.dumps(metrics_dict) + "\n")
 
 
+def get_target_module_mean_input_norms(
+    model: ComponentModel,
+    target_module_patterns: list[str],
+    train_iterator: Iterator[Int[Tensor, "..."]]
+    | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    device: str,
+    n_batches: int,
+) -> dict[str, float]:
+    input_norms = defaultdict[str, list[float]](list)
+    for _ in tqdm(total=n_batches, desc="Computing target module mean input norms"):
+        batch = extract_batch_data(next(train_iterator)).to(device)
+        _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
+            batch, module_names=target_module_patterns
+        )
+        for name, act in pre_weight_acts.items():
+            norm = act.norm(dim=-1).mean().item()
+            input_norms[name].append(norm)
+    return {name: sum(norms) / len(norms) for name, norms in input_norms.items()}
+
+
 def loop_dataloader[T](dl: DataLoader[T]):
     dl_iter = iter(dl)
     while True:
@@ -58,6 +79,54 @@ def loop_dataloader[T](dl: DataLoader[T]):
             logger.warning("Dataloader exhausted, resetting iterator.")
             dl_iter = iter(dl)
             yield next(dl_iter)
+
+
+def get_component_model(
+    target_model: nn.Module,
+    config: Config,
+    device: str,
+    train_iterator: Iterator[Int[Tensor, "..."]]
+    | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    tied_weights: list[tuple[str, str]] | None = None,
+) -> ComponentModel:
+    target_model.requires_grad_(False)
+
+    model = ComponentModel(
+        target_model=target_model,
+        target_module_patterns=config.target_module_patterns,
+        C=config.C,
+        gate_type=config.gate_type,
+        gate_hidden_dims=config.gate_hidden_dims,
+        pretrained_model_output_attr=config.pretrained_model_output_attr,
+    )
+
+    model.to(device)
+
+    if config.init_gates_from_mean_input_norms:
+        target_module_mean_input_norms = get_target_module_mean_input_norms(
+            model=model,
+            target_module_patterns=config.target_module_patterns,
+            train_iterator=train_iterator,
+            device=device,
+            n_batches=10,
+        )
+
+        for module_name, gates in model.gates.items():
+            assert isinstance(gates, VectorGateMLPs), (
+                "norm-based gate initialization is only supported for vector_mlp gates"
+            )
+            gates.init_weights_from_mean_input_norm_(target_module_mean_input_norms[module_name])
+
+    if tied_weights is not None:
+        # Tie component weights. Assume that the first element is a transpose of the second element
+        # NOTE: Tying weights will make your training nondeterministic
+        for src_name, tgt_name in tied_weights:
+            tgt = model.components_or_modules[tgt_name].components
+            src = model.components_or_modules[src_name].components
+            tgt.U.data = src.V.data.T
+            tgt.V.data = src.U.data.T
+
+    return model
 
 
 def optimize(
@@ -79,25 +148,13 @@ def optimize(
 
     logger.info(f"Output directory: {out_dir}")
 
-    target_model.requires_grad_(False)
-    model = ComponentModel(
+    model = get_component_model(
         target_model=target_model,
-        target_module_patterns=config.target_module_patterns,
-        C=config.C,
-        gate_type=config.gate_type,
-        gate_hidden_dims=config.gate_hidden_dims,
-        pretrained_model_output_attr=config.pretrained_model_output_attr,
+        config=config,
+        device=device,
+        train_iterator=train_iterator,
+        tied_weights=tied_weights,
     )
-    model.to(device)
-
-    if tied_weights is not None:
-        # Tie component weights. Assume that the first element is a transpose of the second element
-        # NOTE: Tying weights will make your training nondeterministic
-        for src_name, tgt_name in tied_weights:
-            tgt = model.components_or_modules[tgt_name].components
-            src = model.components_or_modules[src_name].components
-            tgt.U.data = src.V.data.T
-            tgt.V.data = src.U.data.T
 
     component_params: list[torch.nn.Parameter] = []
     gate_params: list[torch.nn.Parameter] = []
