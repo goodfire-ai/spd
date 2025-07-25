@@ -53,6 +53,7 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         self.register_buffer("pe", pe.unsqueeze(0))
+        self.pe: torch.Tensor
 
     @override
     def forward(self, x: Float[Tensor, "B S D"]) -> Float[Tensor, "B S D"]:
@@ -190,16 +191,10 @@ class TransformerBlock(nn.Module):
     @override
     def forward(self, x: Float[Tensor, "B S D"]):
         attn_out = self.attn(x)
-        if self.use_layer_norm:
-            x = self.ln1(x + attn_out)
-        else:
-            x = x + attn_out
+        x = self.ln1(x + attn_out) if self.use_layer_norm else x + attn_out
         if self.use_ff:
             ff_out = self.ff(x)
-            if self.use_layer_norm:
-                x = self.ln2(x + ff_out)
-            else:
-                x = x + ff_out
+            x = self.ln2(x + ff_out) if self.use_layer_norm else x + ff_out
         return x
 
 
@@ -248,8 +243,9 @@ class InductionTransformer(nn.Module):
 
         attn_weights = []
         for block in self.blocks:
-            weights = block.attn.get_attention_weights(x)
-            attn_weights.append(weights)
+            if isinstance(block.attn, MultiHeadSelfAttention):
+                weights = block.attn.get_attention_weights(x)
+                attn_weights.append(weights)
             x = block(x)
 
         return torch.stack(attn_weights, dim=1)

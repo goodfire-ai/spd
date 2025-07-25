@@ -1,12 +1,11 @@
-from datetime import datetime
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import Literal, Callable
+from typing import Literal
 
 import numpy as np
 import torch
 import wandb
-import yaml
 from matplotlib import pyplot as plt
 from pydantic import BaseModel, ConfigDict, PositiveInt
 from torch.nn import functional as F
@@ -32,7 +31,6 @@ class InductionHeadsTrainConfig(BaseModel):
     seed: int = 0
     attention_maps_n_steps: PositiveInt
     prefix_window: PositiveInt
-
 
 
 def linear_lr(step: int, steps: int) -> float:
@@ -77,10 +75,7 @@ def train(
         lr_schedule_fn = constant_lr
 
     if lr_warmup > 0:
-        if isinstance(lr_warmup, int):
-            warmup_steps = lr_warmup
-        else:
-            warmup_steps = int(lr_warmup * steps)
+        warmup_steps = lr_warmup if isinstance(lr_warmup, int) else int(lr_warmup * steps)
         lr_schedule_fn = partial(warmup_lr, warmup_steps=warmup_steps, lr_fn=lr_schedule_fn)
 
     opt = torch.optim.AdamW(list(model.parameters()), lr=lr, weight_decay=weight_decay)
@@ -173,8 +168,7 @@ def run_train(config: InductionHeadsTrainConfig, device: str) -> None:
 
     # Save config
     config_path = out_dir / "ih_train_config.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(config.model_dump(mode="json"), f, indent=2)
+    save_file(config.model_dump(mode="json"), config_path)
     if config.wandb_project:
         wandb.save(str(config_path), base_path=out_dir, policy="now")
     logger.info(f"Saved config to {config_path}")
@@ -205,7 +199,7 @@ def run_train(config: InductionHeadsTrainConfig, device: str) -> None:
     )
 
     model_path = out_dir / "ih.pth"
-    torch.save(model.state_dict(), model_path)
+    save_file(model.state_dict(), model_path)
     if config.wandb_project:
         wandb.save(str(model_path), base_path=out_dir, policy="now")
     logger.info(f"Saved model to {model_path}")

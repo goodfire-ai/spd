@@ -6,7 +6,7 @@ import fire
 import wandb
 
 from spd.configs import Config, IHTaskConfig
-from spd.experiments.ih.model import InductionModelConfig, InductionTransformer
+from spd.experiments.ih.model import InductionTransformer
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
@@ -26,9 +26,7 @@ def save_target_model_info(
 
     if save_to_wandb:
         wandb.save(str(out_dir / "ih.pth"), base_path=out_dir, policy="now")
-        wandb.save(
-            str(out_dir / "ih_train_config.yaml"), base_path=out_dir, policy="now"
-        )
+        wandb.save(str(out_dir / "ih_train_config.yaml"), base_path=out_dir, policy="now")
 
 
 def main(

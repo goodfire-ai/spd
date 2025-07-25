@@ -4,7 +4,7 @@ import importlib
 import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, ClassVar, Literal, Self, TypeAlias, override
+from typing import Any, ClassVar, Literal, Self, override
 
 from pydantic import (
     BaseModel,
@@ -145,6 +145,7 @@ class LMTaskConfig(BaseModel):
         description="Name of the dataset split used for evaluation",
     )
 
+
 class IHTaskConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     task_name: Literal["induction_head"]
@@ -153,7 +154,8 @@ class IHTaskConfig(BaseModel):
         description="Number of tokens to use as a prefix window for the induction head",
     )
 
-TaskConfig: TypeAlias = TMSTaskConfig | ResidualMLPTaskConfig | LMTaskConfig | IHTaskConfig
+
+type TaskConfig = TMSTaskConfig | ResidualMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
 class Config(BaseModel):
