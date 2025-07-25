@@ -67,9 +67,9 @@ def main(
     assert isinstance(config.task_config, ResidualMLPTaskConfig)
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
-    target_model, target_model_train_config_dict, label_coeffs = ResidualMLP.from_pretrained(
-        config.pretrained_model_path
-    )
+    target_model = ResidualMLP.from_pretrained(config.pretrained_model_path)
+    target_model_train_config_dict = target_model.train_config
+    label_coeffs = target_model_train_config_dict["label_coeffs"]
     target_model = target_model.to(device)
     target_model.eval()
 

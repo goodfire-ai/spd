@@ -53,6 +53,6 @@ coverage:
 	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/
 
 
-.PHONY: demo
-demo:
-	spd-run --experiments resid_mlp1 --local --create_snapshot False --use_wandb False --create_report False --log-format terse
+.PHONY: train-canonical-models
+train-canonical-models:
+	spd-run --local --create_snapshot False --create_report False --log-format terse

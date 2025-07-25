@@ -227,11 +227,19 @@ def load_pretrained(
         model_path: The path to the model, e.g. "wandb:spd/runs/zas5yjdl" or /path/to/checkpoint"
         model_name_hf: The name of the model in the Hugging Face model hub,
             e.g. "SimpleStories/SimpleStories-1.25M"
+        **kwargs: Additional keyword arguments to pass to `model_cls.from_pretrained()`
     """
+    from muutils.dbg import dbg
+
     assert model_path is not None or model_name_hf is not None, (
         "Either model_path or model_name_hf must be provided."
     )
+    dbg(path_to_class)
+    dbg(model_path)
+    dbg(model_name_hf)
+    dbg(kwargs)
     model_cls = resolve_class(path_to_class)
+    dbg(model_cls)
     if not hasattr(model_cls, "from_pretrained"):
         raise TypeError(f"{model_cls} lacks a `from_pretrained` method.")
     return model_cls.from_pretrained(model_path or model_name_hf, **kwargs)  # pyright: ignore[reportAttributeAccessIssue]

@@ -10,6 +10,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from wandb.apis.public import Run
 
+from spd.experiments.spd_model import SpdModel
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
@@ -36,10 +37,10 @@ class TMSModelConfig(BaseModel):
     device: str
 
 
-class TMSModel(nn.Module):
+class TMSModel(SpdModel, nn.Module):
     def __init__(self, config: TMSModelConfig):
         super().__init__()
-        self.config = config
+        self.config: TMSModelConfig = config
 
         self.linear1 = nn.Linear(config.n_features, config.n_hidden, bias=False)
         self.linear2 = nn.Linear(config.n_hidden, config.n_features, bias=True)
@@ -55,6 +56,9 @@ class TMSModel(nn.Module):
 
         if config.tied_weights:
             self.tie_weights_()
+
+        # we don't use this on direct init, but we write to it when we load a pretrained model
+        self.train_config: dict[str, Any] = {}
 
     def tie_weights_(self) -> None:
         self.linear2.weight.data = self.linear1.weight.data.T
@@ -92,8 +96,9 @@ class TMSModel(nn.Module):
         checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)
         return TMSModelPaths(tms_train_config=tms_model_config_path, checkpoint=checkpoint_path)
 
+    @override
     @classmethod
-    def from_pretrained(cls, path: ModelPath) -> tuple["TMSModel", dict[str, Any]]:
+    def from_pretrained(cls, path: ModelPath) -> "TMSModel":
         """Fetch a pretrained model from wandb or a local path to a checkpoint.
 
         Args:
@@ -105,8 +110,8 @@ class TMSModel(nn.Module):
                 directory as the checkpoint.
 
         Returns:
-            model: The pretrained TMSModel
-            tms_model_config_dict: The config dict used to train the model (we don't
+            model: The pretrained TMSModel, which contains:
+            model.train_config: The config dict used to train the model (we don't
                 instantiate a train config due to circular import issues)
         """
         if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
@@ -140,4 +145,7 @@ class TMSModel(nn.Module):
         if tms_config.tied_weights:
             tms.tie_weights_()
 
-        return tms, tms_train_config_dict
+        # store the train config dict in the model
+        tms.train_config = tms_train_config_dict
+
+        return tms

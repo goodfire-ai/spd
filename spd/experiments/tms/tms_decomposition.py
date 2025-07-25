@@ -68,9 +68,10 @@ def main(
     logger.info(config)
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
-    target_model, target_model_train_config_dict = TMSModel.from_pretrained(
+    target_model = TMSModel.from_pretrained(
         config.pretrained_model_path,
     )
+    target_model_train_config_dict = target_model.train_config
     target_model = target_model.to(device)
     target_model.eval()
 

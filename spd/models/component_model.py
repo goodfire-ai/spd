@@ -1,4 +1,5 @@
 import fnmatch
+from collections.abc import Mapping
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
@@ -338,10 +339,13 @@ class ComponentModel(nn.Module):
         2.  A WandB reference of the form ``wandb:<entity>/<project>/runs/<run_id>``.
         """
 
+        # find the paths
+        comp_model_path: Path
+        config_path: Path
+        out_dir: Path
         if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-            api = wandb.Api()
-            run: Run = api.run(wandb_path)
+            wandb_path: str = path.removeprefix(WANDB_PATH_PREFIX)
+            run: Run = wandb.Api().run(wandb_path)
             comp_model_path, config_path = cls._download_wandb_files(wandb_path)
             out_dir = fetch_wandb_run_dir(run.id)
         else:
@@ -352,15 +356,19 @@ class ComponentModel(nn.Module):
         with open(config_path) as f:
             config = Config(**yaml.safe_load(f))
 
+        # load the target model
         assert config.pretrained_model_class is not None
         target_model_unpatched = load_pretrained(
             path_to_class=config.pretrained_model_class,
             model_path=config.pretrained_model_path,
             model_name_hf=config.pretrained_model_name_hf,
         )
+
+        print(target_model_unpatched)
         target_model_unpatched.eval()
         target_model_unpatched.requires_grad_(False)
 
+        # convert to ComponentModel
         comp_model = ComponentModel(
             target_model=target_model_unpatched,
             target_module_patterns=config.target_module_patterns,
@@ -370,7 +378,9 @@ class ComponentModel(nn.Module):
             pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
 
-        comp_model_weights = torch.load(comp_model_path, map_location="cpu", weights_only=True)
+        comp_model_weights: Mapping[str, Tensor] = torch.load(
+            comp_model_path, map_location="cpu", weights_only=True
+        )
         comp_model.load_state_dict(comp_model_weights)
         return comp_model, config, out_dir
 
