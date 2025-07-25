@@ -355,18 +355,18 @@ class ComponentModel(nn.Module):
 
         # load the target model
         assert config.pretrained_model_class is not None
-        target_model_unpatched = load_pretrained(
+        target_model = load_pretrained(
             path_to_class=config.pretrained_model_class,
             model_path=config.pretrained_model_path,
             model_name_hf=config.pretrained_model_name_hf,
         )
 
-        target_model_unpatched.eval()
-        target_model_unpatched.requires_grad_(False)
+        target_model.eval()
+        target_model.requires_grad_(False)
 
         # convert to ComponentModel
         comp_model = ComponentModel(
-            target_model=target_model_unpatched,
+            target_model=target_model,
             target_module_patterns=config.target_module_patterns,
             C=config.C,
             gate_hidden_dims=config.gate_hidden_dims,
