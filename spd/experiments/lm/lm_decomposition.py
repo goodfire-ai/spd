@@ -86,7 +86,7 @@ def main(
 
     train_loader, _tokenizer = create_data_loader(
         dataset_config=train_data_config,
-        batch_size=config.batch_size,
+        batch_size=config.microbatch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
         ddp_rank=0,
@@ -104,7 +104,7 @@ def main(
     )
     eval_loader, _ = create_data_loader(
         dataset_config=eval_data_config,
-        batch_size=config.batch_size,
+        batch_size=config.microbatch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
         ddp_rank=0,

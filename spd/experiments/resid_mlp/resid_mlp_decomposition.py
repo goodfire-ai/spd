@@ -108,8 +108,12 @@ def main(
         synced_inputs=synced_inputs,
     )
 
-    train_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
-    eval_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
+    train_loader = DatasetGeneratedDataLoader(
+        dataset, batch_size=config.microbatch_size, shuffle=False
+    )
+    eval_loader = DatasetGeneratedDataLoader(
+        dataset, batch_size=config.microbatch_size, shuffle=False
+    )
 
     # TODO: Below not needed when TMS supports config.n_eval_steps
     assert config.n_eval_steps is not None, "n_eval_steps must be set"

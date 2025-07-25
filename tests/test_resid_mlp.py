@@ -63,6 +63,8 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         image_on_first_step=True,
         print_freq=50,  # Print at step 0, 50, and 100
         save_freq=None,
+        ci_alive_threshold=0.1,
+        n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
         figures_fns=[
             FiguresFnConfig(name="ci_histograms"),
             FiguresFnConfig(name="mean_component_activation_counts"),
@@ -105,8 +107,12 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         synced_inputs=None,
     )
 
-    train_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
-    eval_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
+    train_loader = DatasetGeneratedDataLoader(
+        dataset, batch_size=config.microbatch_size, shuffle=False
+    )
+    eval_loader = DatasetGeneratedDataLoader(
+        dataset, batch_size=config.microbatch_size, shuffle=False
+    )
 
     # Run optimize function
     optimize(

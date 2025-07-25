@@ -9,14 +9,19 @@ from jaxtyping import Float
 from torch import Tensor
 from tqdm import tqdm
 
+from spd.log import logger
 from spd.models.component_model import ComponentModel
+from spd.models.sigmoids import SigmoidTypes
 
 
-def collect_embedding_masks(model: ComponentModel, device: str) -> Float[Tensor, "vocab C"]:
+def collect_embedding_masks(
+    model: ComponentModel, sigmoid_type: SigmoidTypes, device: str
+) -> Float[Tensor, "vocab C"]:
     """Collect masks for each vocab token.
 
     Args:
         model: The trained ComponentModel
+        sigmoid_type: Sigmoid type to use for causal importances
         device: Device to run computation on
 
     Returns:
@@ -38,6 +43,7 @@ def collect_embedding_masks(model: ComponentModel, device: str) -> Float[Tensor,
 
         masks, _ = model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
+            sigmoid_type=sigmoid_type,
             detach_inputs=True,
         )
         assert len(masks) == 1, "Expected exactly one mask"
@@ -74,12 +80,15 @@ def permute_to_identity(
     return new_mask, perm_indices
 
 
-def plot_embedding_mask_heatmap(masks: Float[Tensor, "vocab C"], out_dir: Path) -> None:
+def plot_embedding_mask_heatmap(
+    masks: Float[Tensor, "vocab C"], out_dir: Path, ci_alive_threshold: float
+) -> None:
     """Plot heatmap of embedding masks.
 
     Args:
         masks: Tensor of shape (vocab_size, C) containing masks
         out_dir: Directory to save the plots
+        ci_alive_threshold: Threshold for considering a component alive
     """
     plt.figure(figsize=(20, 10))
     plt.imshow(
@@ -99,9 +108,10 @@ def plot_embedding_mask_heatmap(masks: Float[Tensor, "vocab C"], out_dir: Path) 
     plt.ylabel("Vocab Token ID")
     plt.title("Embedding Component Masks per Token")
     plt.tight_layout()
-    plt.savefig(out_dir / "embedding_masks.png", dpi=300)
-    plt.savefig(out_dir / "embedding_masks.svg")  # vector graphic for zooming
-    print(f"Saved embedding masks to {out_dir / 'embedding_masks.png'} and .svg")
+    fname_embed_masks = out_dir / "embedding_masks.png"
+    plt.savefig(fname_embed_masks, dpi=300)
+    plt.savefig(fname_embed_masks.with_suffix(".svg"))  # vector graphic for zooming
+    logger.info(f"Saved embedding masks to {fname_embed_masks} and .svg")
     plt.close()
 
     # Also plot a histogram of the first token's mask
@@ -120,13 +130,16 @@ def plot_embedding_mask_heatmap(masks: Float[Tensor, "vocab C"], out_dir: Path) 
         ax.set_ylabel(f"Freq for token {token_id}")
 
     fig.suptitle(f"Mask Values (> {threshold}) for Each Token")
-    plt.savefig(out_dir / "first_token_histogram.png")
-    plt.savefig(out_dir / "first_token_histogram.svg")  # vector version
-    print(f"Saved first token histogram to {out_dir / 'first_token_histogram.png'} and .svg")
+    fname_hist = out_dir / "first_token_histogram.png"
+    fig.savefig(fname_hist, dpi=300)
+    fig.savefig(fname_hist.with_suffix(".svg"))  # vector graphic for zooming
+    logger.info(f"Saved first token histogram to {fname_hist} and .svg")
     plt.close()
 
-    n_alive_components = ((masks > 0.1).any(dim=0)).sum().item()
-    print(f"Number of components that have any value > 0.1: {n_alive_components}")
+    n_alive_components = ((masks > ci_alive_threshold).any(dim=0)).sum().item()
+    logger.info(
+        f"Number of components that have any value > {ci_alive_threshold}: {n_alive_components}"
+    )
     ...
 
 
@@ -137,14 +150,14 @@ def main(model_path: str | Path) -> None:
         model_path: Path to the model checkpoint
     """
     # Load model
-    model, _config, out_dir = ComponentModel.from_pretrained(model_path)
+    model, config, out_dir = ComponentModel.from_pretrained(model_path)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
     # Collect masks
-    masks = collect_embedding_masks(model, device)
+    masks = collect_embedding_masks(model, sigmoid_type=config.sigmoid_type, device=device)
     permuted_masks, _perm_indices = permute_to_identity(masks)
-    plot_embedding_mask_heatmap(permuted_masks, out_dir)
+    plot_embedding_mask_heatmap(permuted_masks, out_dir, config.ci_alive_threshold)
 
 
 if __name__ == "__main__":

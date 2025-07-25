@@ -2,7 +2,11 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+
+import yaml
+
+from spd.settings import REPO_ROOT
 
 
 @dataclass
@@ -71,3 +75,29 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
     #     expected_runtime=60,
     # ),
 }
+
+
+def get_experiment_config_file_contents(key: str) -> dict[str, Any]:
+    """given a key in the `EXPERIMENT_REGISTRY`, return contents of the config file as a dict.
+
+    note that since paths are of the form `Path("spd/experiments/tms/tms_5-2_config.yaml")`,
+    we strip the "spd/" prefix to be able to read the file using `importlib`.
+    This makes our ability to find the file independent of the current working directory.
+    """
+
+    return yaml.safe_load((REPO_ROOT / EXPERIMENT_REGISTRY[key].config_path).read_text())
+
+
+def get_max_expected_runtime(experiments_list: list[str]) -> str:
+    """Get the max expected runtime of a list of experiments in XhYm format.
+
+    Args:
+        experiments_list: List of experiment names
+
+    Returns:
+        Max expected runtime in XhYm format
+    """
+    max_expected_runtime = max(
+        EXPERIMENT_REGISTRY[experiment].expected_runtime for experiment in experiments_list
+    )
+    return f"{max_expected_runtime // 60}h{max_expected_runtime % 60}m"

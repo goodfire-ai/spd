@@ -377,15 +377,15 @@ class ComponentModel(nn.Module):
     def calc_causal_importances(
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
+        sigmoid_type: SigmoidTypes,
         detach_inputs: bool = False,
-        sigmoid_type: SigmoidTypes = "leaky_hard",
     ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
         """Calculate causal importances.
 
         Args:
             pre_weight_acts: The activations before each layer in the target model.
-            detach_inputs: Whether to detach the inputs to the gates.
             sigmoid_type: Type of sigmoid to use.
+            detach_inputs: Whether to detach the inputs to the gates.
 
         Returns:
             Tuple of (causal_importances, causal_importances_upper_leaky) dictionaries for each layer.
