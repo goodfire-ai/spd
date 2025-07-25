@@ -11,7 +11,7 @@ match expected target solutions in toy models:
 
 import fnmatch
 from abc import ABC, abstractmethod
-from typing import Literal, override
+from typing import Any, Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -84,6 +84,29 @@ def permute_to_identity_hungarian(
     return ci_vals[:, perm_indices], perm_indices
 
 
+def permute_to_identity(
+    ci_vals: Float[Tensor, "batch C"],
+    method: Literal["hungarian", "greedy", "auto"] = "auto",
+) -> tuple[Float[Tensor, "batch C"], Int[Tensor, " C"]]:
+    """Permute matrix to make it as close to identity as possible.
+
+    Args:
+        ci_vals: The causal importance values matrix
+        method: Algorithm to use for permutation:
+            - "hungarian": Use Hungarian algorithm (optimal but O(n³))
+            - "greedy": Use greedy algorithm (faster but suboptimal)
+            - "auto": Choose Hungarian for small matrices (< 500), greedy for larger ones
+
+    Returns:
+        - Permuted mask
+        - Permutation indices
+    """
+    if method == "hungarian" or (method == "auto" and min(ci_vals.shape) < 500):
+        return permute_to_identity_hungarian(ci_vals)
+    else:
+        return permute_to_identity_greedy(ci_vals)
+
+
 def permute_to_dense(
     ci_vals: Float[Tensor, "batch C"],
 ) -> tuple[Float[Tensor, "batch C"], Int[Tensor, " C"]]:
@@ -121,21 +144,6 @@ class TargetCIPattern(ABC):
         Uses a tolerance threshold to avoid sensitivity to small values from
         inactive components. Elements are counted as "off" if they deviate
         from the expected value by more than the tolerance.
-        """
-        pass
-
-    @abstractmethod
-    def permute_for_display(
-        self, ci_array: Float[Tensor, "batch C"]
-    ) -> tuple[Float[Tensor, "batch C"], Int[Tensor, " C"]]:
-        """Permute the causal importance array for optimal display of this pattern.
-
-        Args:
-            ci_array: The causal importance array to permute
-
-        Returns:
-            - Permuted array
-            - Permutation indices
         """
         pass
 
@@ -185,16 +193,6 @@ class IdentityCIPattern(TargetCIPattern):
         on_diag_errors = torch.sum(torch.diag(ci_array[:size, :size]) < (1 - tolerance))
         return int(off_diag_errors + on_diag_errors)
 
-    @override
-    def permute_for_display(
-        self, ci_array: Float[Tensor, "batch C"]
-    ) -> tuple[Float[Tensor, "batch C"], Int[Tensor, " C"]]:
-        """Permute to show identity pattern."""
-        if self.method == "hungarian" or (self.method == "auto" and min(ci_array.shape) < 500):
-            return permute_to_identity_hungarian(ci_array)
-        else:
-            return permute_to_identity_greedy(ci_array)
-
 
 class DenseCIPattern(TargetCIPattern):
     """Dense columns pattern: exactly K components should be active.
@@ -239,13 +237,6 @@ class DenseCIPattern(TargetCIPattern):
 
         return int(first_k_column_error + inactive_column_error)
 
-    @override
-    def permute_for_display(
-        self, ci_array: Float[Tensor, "batch C"]
-    ) -> tuple[Float[Tensor, "batch C"], Int[Tensor, " C"]]:
-        """Permute to show dense columns pattern."""
-        return permute_to_dense(ci_array)
-
 
 class TargetCISolution:
     """Collection of expected patterns for different modules in a model.
@@ -259,24 +250,16 @@ class TargetCISolution:
     First matching pattern wins for each module name.
     """
 
-    def __init__(
-        self, module_targets: dict[str, TargetCIPattern], expected_matches: int | None = None
-    ):
+    def __init__(self, module_targets: dict[str, TargetCIPattern]):
         """Initialize target solution with pattern mappings.
 
         Args:
             module_targets: Dictionary mapping module name patterns to target patterns.
                 Keys can be exact module names or fnmatch-style patterns (e.g., "layers.*.mlp_in").
-            expected_matches: Optional validation - expected total number of modules that
-                should match the patterns. If provided, expand_module_targets will validate
-                that exactly this many modules match.
         """
         self.module_targets = module_targets
-        self.expected_matches = expected_matches
 
-    def expand_module_targets(
-        self, module_names: list[str], validate: bool = True
-    ) -> dict[str, TargetCIPattern]:
+    def expand_module_targets(self, module_names: list[str]) -> dict[str, TargetCIPattern]:
         """Expand patterns to concrete module name -> TargetCIPattern mappings."""
         result = {}
         for name in module_names:
@@ -284,11 +267,6 @@ class TargetCISolution:
                 if fnmatch.fnmatch(name, pattern):
                     result[name] = target
                     break
-
-        if validate and self.expected_matches and len(result) != self.expected_matches:
-            raise ValueError(
-                f"Expected {self.expected_matches} matches, got {len(result)}: {sorted(result.keys())}"
-            )
 
         return result
 
@@ -302,36 +280,6 @@ class TargetCISolution:
             target.distance_from(ci_arrays[name], tolerance)
             for name, target in expanded_targets.items()
         )
-
-    def permute_to_target(
-        self, ci_vals: dict[str, Float[Tensor, "batch C"]]
-    ) -> tuple[dict[str, Float[Tensor, "batch C"]], dict[str, Int[Tensor, " C"]]]:
-        """Permute causal importance matrices to best display their target patterns.
-
-        Args:
-            ci_vals: Dictionary of causal importance matrices by module name
-
-        Returns:
-            - Dictionary of permuted matrices
-            - Dictionary of permutation indices
-        """
-        expanded_targets = self.expand_module_targets(list(ci_vals.keys()))
-        permuted_ci = {}
-        perm_indices = {}
-
-        for module_name, ci_matrix in ci_vals.items():
-            if module_name in expanded_targets:
-                pattern = expanded_targets[module_name]
-                permuted_ci[module_name], perm_indices[module_name] = pattern.permute_for_display(
-                    ci_matrix
-                )
-            else:
-                # Default for modules not in target
-                permuted_ci[module_name], perm_indices[module_name] = permute_to_identity_greedy(
-                    ci_matrix
-                )
-
-        return permuted_ci, perm_indices
 
 
 def compute_target_metrics(
@@ -368,54 +316,32 @@ def compute_target_metrics(
     return metrics
 
 
-# Registry of target solutions for toy model experiments
-TARGET_CI_SOLUTIONS: dict[str, TargetCISolution] = {
-    "tms_5-2": TargetCISolution(
-        {"linear1": IdentityCIPattern(n_features=5), "linear2": IdentityCIPattern(n_features=5)}
-    ),
-    "tms_5-2-id": TargetCISolution(
-        {
-            "linear1": IdentityCIPattern(n_features=5),
-            "linear2": IdentityCIPattern(n_features=5),
-            "hidden_layers.0": DenseCIPattern(k=2),
-        }
-    ),
-    "tms_40-10": TargetCISolution(
-        {
-            "linear1": IdentityCIPattern(n_features=40),
-            "linear2": IdentityCIPattern(n_features=40),
-        }
-    ),
-    "tms_40-10-id": TargetCISolution(
-        {
-            "linear1": IdentityCIPattern(n_features=40),
-            "linear2": IdentityCIPattern(n_features=40),
-            "hidden_layers.0": DenseCIPattern(k=10),
-        }
-    ),
-    "resid_mlp1": TargetCISolution(
-        {
-            "layers.0.mlp_in": IdentityCIPattern(n_features=100),
-            "layers.0.mlp_out": DenseCIPattern(k=50),
-        }
-    ),
-    "resid_mlp2": TargetCISolution(
-        {
-            "layers.*.mlp_in": IdentityCIPattern(n_features=100),
-            "layers.*.mlp_out": DenseCIPattern(k=25),
-        },
-        expected_matches=4,
-    ),
-    "resid_mlp3": TargetCISolution(
-        {
-            "layers.*.mlp_in": IdentityCIPattern(n_features=102),
-            "layers.*.mlp_out": DenseCIPattern(k=17),
-        },
-        expected_matches=6,
-    ),
-}
+def make_target_ci_solution(
+    identity_ci: list[dict[str, Any]] | None = None,
+    dense_ci: list[dict[str, Any]] | None = None,
+) -> TargetCISolution | None:
+    """Create a TargetCISolution from config specifications.
 
+    Args:
+        identity_ci: List of identity CI pattern specifications with layer_pattern and n_features
+        dense_ci: List of dense CI pattern specifications with layer_pattern and k
 
-def has_ci_solution(evals_id: str) -> bool:
-    """Check if an experiment has a target CI solution defined."""
-    return evals_id in TARGET_CI_SOLUTIONS
+    Returns:
+        TargetCISolution instance or None if no patterns provided
+    """
+    if not identity_ci and not dense_ci:
+        return None
+
+    module_targets = {}
+
+    if identity_ci:
+        for spec in identity_ci:
+            module_targets[spec["layer_pattern"]] = IdentityCIPattern(
+                n_features=int(spec["n_features"])
+            )
+
+    if dense_ci:
+        for spec in dense_ci:
+            module_targets[spec["layer_pattern"]] = DenseCIPattern(k=int(spec["k"]))
+
+    return TargetCISolution(module_targets)

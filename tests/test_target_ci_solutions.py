@@ -147,37 +147,6 @@ class TestTargetCISolution:
         # when we increase the tolerance, the distance should now be only 1
         assert solution.distance_from(ci_arrays, tolerance=0.2) == 1
 
-    def test_permute_to_target(self):
-        """Test that TargetCISolution can permute CI arrays to match patterns."""
-        solution = TargetCISolution(
-            {
-                "identity_module": IdentityCIPattern(n_features=2),
-                "dense_module": DenseCIPattern(k=1),
-            }
-        )
-
-        # Create CI arrays that need permutation
-        ci_arrays = {
-            "identity_module": torch.tensor([[0.1, 0.9, 0.0], [0.8, 0.2, 0.0]]),
-            "dense_module": torch.tensor([[0.3, 0.0, 0.8], [0.2, 0.0, 0.9], [0.1, 0.0, 0.7]]),
-        }
-
-        # Expected results after permutation
-        expected_identity = torch.tensor([[0.9, 0.1, 0.0], [0.2, 0.8, 0.0]])
-
-        expected_dense = torch.tensor([[0.8, 0.3, 0.0], [0.9, 0.2, 0.0], [0.7, 0.1, 0.0]])
-
-        # Permute to match target patterns
-        permuted_ci, perm_indices = solution.permute_to_target(ci_arrays)
-
-        # Check results match expected
-        assert torch.allclose(permuted_ci["identity_module"], expected_identity)
-        assert torch.allclose(permuted_ci["dense_module"], expected_dense)
-
-        # Check indices are correct
-        assert torch.equal(perm_indices["identity_module"], torch.tensor([1, 0, 2]))
-        assert torch.equal(perm_indices["dense_module"], torch.tensor([2, 0, 1]))
-
     def test_expand_module_targets(self):
         """Test that expand_module_targets correctly matches patterns."""
         solution = TargetCISolution(
@@ -188,7 +157,7 @@ class TestTargetCISolution:
         )
 
         module_names = ["layers.0.mlp_in", "layers.1.mlp_out", "other.module"]
-        expanded = solution.expand_module_targets(module_names, validate=False)
+        expanded = solution.expand_module_targets(module_names)
 
         assert len(expanded) == 2
         assert isinstance(expanded["layers.0.mlp_in"], IdentityCIPattern)

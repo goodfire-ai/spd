@@ -123,7 +123,6 @@ def main(
         n_eval_steps=config.n_eval_steps,
         out_dir=out_dir,
         tied_weights=tied_weights,
-        evals_id=evals_id,
     )
 
     if config.wandb_project:
