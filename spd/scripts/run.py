@@ -563,7 +563,7 @@ def _wandb_setup(
 
 
 def main(
-    experiments: str | None = None,
+    # experiments: str | None = None,
     sweep: str | bool = False,
     n_agents: int | None = None,
     create_report: bool = True,
@@ -623,6 +623,8 @@ def main(
     """
     # setup
     # ==========================================================================================
+    # print(experiments)
+    experiments = "resid_mlp1,resid_mlp2"
 
     logger.set_format("console", log_format)
 
