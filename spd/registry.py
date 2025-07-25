@@ -86,3 +86,8 @@ def get_experiment_config_file_contents(key: str) -> dict[str, Any]:
     """
 
     return yaml.safe_load((REPO_ROOT / EXPERIMENT_REGISTRY[key].config_path).read_text())
+
+
+CANONICAL_RUNS: dict[str, str] = {
+    "resid_mlp1": "wandb:goodfire/spd/runs/hrpnddv5",
+}
