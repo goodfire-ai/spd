@@ -318,15 +318,11 @@ def plot_UV_matrices(
     return fig
 
 
-def plot_mean_component_activation_counts(
-    mean_component_activation_counts: dict[str, Float[Tensor, " C"]],
+def plot_component_activation_density(
+    component_activation_density: dict[str, Float[Tensor, " C"]],
 ) -> plt.Figure:
-    """Plots the mean activation counts for each component module in a grid."""
-    n_modules = len(mean_component_activation_counts)
+    n_modules = len(component_activation_density)
 
-    # Calculate the number of rows needed, rounding up
-
-    # Create a figure with the calculated number of rows and columns
     fig, axs = plt.subplots(
         n_modules,
         1,
@@ -337,17 +333,13 @@ def plot_mean_component_activation_counts(
     axs = axs.flatten()  # Flatten the axes array for easy iteration
 
     # Iterate through modules and plot each histogram on its corresponding axis
-    for i, (module_name, counts) in enumerate(mean_component_activation_counts.items()):
+    for i, (module_name, density) in enumerate(component_activation_density.items()):
         ax = axs[i]
-        ax.hist(counts.detach().cpu().numpy(), bins=100)
+        ax.hist(density.detach().cpu().numpy(), bins=100)
         ax.set_yscale("log")
         ax.set_title(module_name)  # Add module name as title to each subplot
-        ax.set_xlabel("Mean Activation Count")
+        ax.set_xlabel("Activation density")
         ax.set_ylabel("Frequency")
-
-    # Hide any unused subplots if the grid isn't perfectly filled
-    for i in range(n_modules, n_modules):
-        axs[i].axis("off")
 
     # Adjust layout to prevent overlapping titles/labels
     fig.tight_layout()

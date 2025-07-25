@@ -23,7 +23,7 @@ from spd.models.component_model import ComponentModel
 from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_histograms,
-    plot_mean_component_activation_counts,
+    plot_component_activation_density,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_stochastic_masks
@@ -293,7 +293,7 @@ class CIHistograms(StreamingEval):
         return {"causal_importances_hist": fig}
 
 
-class MeanComponentActivationCounts(StreamingEval):
+class ComponentActivationDensity(StreamingEval):
     SLOW = True
 
     def __init__(self, model: ComponentModel, config: Config):
@@ -324,12 +324,12 @@ class MeanComponentActivationCounts(StreamingEval):
 
     @override
     def compute(self) -> Mapping[str, plt.Figure]:
-        mean_counts_per_module = {
+        activation_densities = {
             module_name: self.component_activation_counts[module_name] / self.n_tokens
             for module_name in self.model.components
         }
-        fig = plot_mean_component_activation_counts(mean_counts_per_module)
-        return {"mean_component_activation_counts": fig}
+        fig = plot_component_activation_density(activation_densities)
+        return {"component_activation_density": fig}
 
 
 class UVandIdentityCI(StreamingEval):
@@ -385,7 +385,7 @@ CLASSES = {
         CEandKLLosses,
         LMEmbedSampleTable,
         CIHistograms,
-        MeanComponentActivationCounts,
+        ComponentActivationDensity,
         UVandIdentityCI,
     ]
 }

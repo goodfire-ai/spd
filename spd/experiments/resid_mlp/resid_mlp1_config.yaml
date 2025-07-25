@@ -44,7 +44,7 @@ save_freq: null
 n_examples_until_dead: 204_800
 eval_metrics:
   - classname: "CIHistograms"
-  - classname: "MeanComponentActivationCounts"
+  - classname: "ComponentActivationDensity"
   - classname: "UVandIdentityCI"
   - classname: "CI_L0"
 

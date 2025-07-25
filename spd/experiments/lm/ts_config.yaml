@@ -48,7 +48,7 @@ save_freq: null
 n_examples_until_dead: 8_192_000
 eval_metrics:
   - classname: "CIHistograms"
-  - classname: "MeanComponentActivationCounts"
+  - classname: "ComponentActivationDensity"
   - classname: "CI_L0"
   - classname: "CEandKLLosses"
     extra_init_kwargs:
