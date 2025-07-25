@@ -12,6 +12,7 @@ import torch
 import wandb
 from matplotlib import collections as mc
 from pydantic import BaseModel, ConfigDict, PositiveInt, model_validator
+from torch import Tensor, nn
 from tqdm import tqdm, trange
 
 from spd.experiments.tms.models import TMSModel, TMSModelConfig
@@ -64,7 +65,7 @@ def cosine_decay_lr(step: int, steps: int) -> float:
 
 def train(
     model: TMSModel,
-    dataloader: DatasetGeneratedDataLoader[tuple[torch.Tensor, torch.Tensor]],
+    dataloader: DatasetGeneratedDataLoader[tuple[Tensor, Tensor]],
     log_wandb: bool,
     importance: float,
     steps: int,
@@ -175,22 +176,20 @@ def plot_cosine_similarity_distribution(
 
 def get_model_and_dataloader(
     config: TMSTrainConfig, device: str
-) -> tuple[TMSModel, DatasetGeneratedDataLoader[tuple[torch.Tensor, torch.Tensor]]]:
+) -> tuple[TMSModel, DatasetGeneratedDataLoader[tuple[Tensor, Tensor]]]:
     model = TMSModel(config=config.tms_model_config)
     model.to(device)
     if (
         config.fixed_identity_hidden_layers or config.fixed_random_hidden_layers
     ) and model.hidden_layers is not None:
         for i in range(model.config.n_hidden_layers):
+            layer = model.hidden_layers[i]
+            assert isinstance(layer, nn.Linear)
             if config.fixed_identity_hidden_layers:
-                model.hidden_layers[i].weight.data[:, :] = torch.eye(
-                    model.config.n_hidden, device=device
-                )
+                layer.weight.data[:, :] = torch.eye(model.config.n_hidden, device=device)
             elif config.fixed_random_hidden_layers:
-                model.hidden_layers[i].weight.data[:, :] = torch.randn_like(
-                    model.hidden_layers[i].weight
-                )
-            model.hidden_layers[i].weight.requires_grad = False
+                layer.weight.data[:, :] = torch.randn_like(layer.weight)
+            layer.weight.requires_grad = False
 
     dataset = SparseFeatureDataset(
         n_features=config.tms_model_config.n_features,
@@ -254,8 +253,8 @@ def run_train(config: TMSTrainConfig, device: str) -> None:
     test_value = 0.75
     output_values = []
 
-    print("\nTesting representation of each input feature...")
-    print(f"Input size: {input_size}, Test value: {test_value}")
+    logger.info("Testing representation of each input feature...")
+    logger.info(f"Input size: {input_size}, Test value: {test_value}")
 
     for i in range(input_size):
         # Create batch with test_value at position i, zeros elsewhere
@@ -270,7 +269,7 @@ def run_train(config: TMSTrainConfig, device: str) -> None:
         output_value = out[0, i].item()
         output_values.append(output_value)
 
-        print(f"Input index {i}: output value = {output_value:.4f}")
+        logger.info(f"Input index {i}: output value = {output_value:.4f}")
 
     # Convert to numpy for plotting
     output_values = np.array(output_values)
@@ -324,12 +323,16 @@ def run_train(config: TMSTrainConfig, device: str) -> None:
     plt.show()
 
     # Summary statistics
-    print("\n=== SUMMARY ===")
-    print(f"Mean output value: {mean_output:.4f}")
-    print(f"Standard deviation: {std_output:.4f}")
-    print(f"Min output value: {min_output:.4f}")
-    print(f"Max output value: {max_output:.4f}")
-    print(f"Target input value: {test_value}")
+    logger.values(
+        msg="=== SUMMARY ===",
+        data={
+            "Mean output value": f"{mean_output:.4f}",
+            "Standard deviation": f"{std_output:.4f}",
+            "Min output value": f"{min_output:.4f}",
+            "Max output value": f"{max_output:.4f}",
+            "Target input value": f"{test_value:.4f}",
+        },
+    )
 
     # Count how many features are well-preserved
     well_preserved = np.sum(np.abs(output_values - test_value) < 0.1)
@@ -338,37 +341,35 @@ def run_train(config: TMSTrainConfig, device: str) -> None:
     )
     poorly_preserved = np.sum(np.abs(output_values - test_value) >= 0.3)
 
-    print("\nFeature preservation quality:")
-    print(
-        f"Well preserved (|output - {test_value}| < 0.1): {well_preserved}/{input_size} ({100 * well_preserved / input_size:.1f}%)"
-    )
-    print(
-        f"Moderately preserved (0.1 ≤ |output - {test_value}| < 0.3): {moderately_preserved}/{input_size} ({100 * moderately_preserved / input_size:.1f}%)"
-    )
-    print(
-        f"Poorly preserved (|output - {test_value}| ≥ 0.3): {poorly_preserved}/{input_size} ({100 * poorly_preserved / input_size:.1f}%)"
+    logger.values(
+        msg="Feature preservation quality",
+        data={
+            f"Well preserved (|output - {test_value}| < 0.1)": f"{well_preserved}/{input_size} ({100 * well_preserved / input_size:.1f}%)",
+            f"Moderately preserved (0.1 ≤ |output - {test_value}| < 0.3)": f"{moderately_preserved}/{input_size} ({100 * moderately_preserved / input_size:.1f}%)",
+            f"Poorly preserved (|output - {test_value}| ≥ 0.3)": f"{poorly_preserved}/{input_size} ({100 * poorly_preserved / input_size:.1f}%)",
+        },
     )
 
     # Show which features are poorly preserved
     if poorly_preserved > 0:
         poor_indices = np.where(np.abs(output_values - test_value) >= 0.3)[0]
-        print(f"\nPoorly preserved feature indices: {poor_indices.tolist()}")
-        print("Output values for these features:")
-        for idx in poor_indices:
-            print(
-                f"  Index {idx}: {output_values[idx]:.4f} (diff: {output_values[idx] - test_value:.4f})"
-            )
+        logger.info(f"Poorly preserved feature indices: {poor_indices.tolist()}")
+        logger.values(
+            msg="Poorly preserved feature output values",
+            data={
+                f"Index {idx}": f"{output_values[idx]:.4f} (diff: {output_values[idx] - test_value:.4f})"
+                for idx in poor_indices
+            },
+        )
 
     if model_cfg.n_hidden == 2:
-        plot_intro_diagram(model, filepath=out_dir / "polygon.png")
-        logger.info(f"Saved diagram to {out_dir / 'polygon.png'}")
+        fname_polygon: Path = out_dir / "polygon.png"
+        plot_intro_diagram(model, filepath=fname_polygon)
+        logger.info(f"Saved diagram to {fname_polygon}")
 
-    plot_cosine_similarity_distribution(
-        model, filepath=out_dir / "cosine_similarity_distribution.png"
-    )
-    logger.info(
-        f"Saved cosine similarity distribution to {out_dir / 'cosine_similarity_distribution.png'}"
-    )
+    fname_cos_sim: Path = out_dir / "cosine_similarity_distribution.png"
+    plot_cosine_similarity_distribution(model, filepath=fname_cos_sim)
+    logger.info(f"Saved cosine similarity distribution to {fname_cos_sim}")
     logger.info(f"1/sqrt(n_hidden): {1 / np.sqrt(model_cfg.n_hidden)}")
 
 

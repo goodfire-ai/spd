@@ -10,7 +10,7 @@ import argparse
 import html
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import streamlit as st
 import torch
@@ -23,9 +23,7 @@ from spd.configs import Config, LMTaskConfig
 from spd.data import DatasetConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel
-from spd.models.components import EmbeddingComponent, Gate, GateMLP, LinearComponent
 from spd.spd_types import ModelPath
-from spd.utils.component_utils import calc_causal_importances
 
 DEFAULT_MODEL_PATH: ModelPath = "wandb:spd-gf-lm/runs/151bsctx"
 
@@ -39,8 +37,6 @@ class AppData:
     tokenizer: AutoTokenizer
     config: Config
     dataloader_iter_fn: Callable[[], Iterator[dict[str, Any]]]
-    gates: dict[str, Gate | GateMLP]
-    components: dict[str, LinearComponent | EmbeddingComponent]
     target_layer_names: list[str]
     device: str
 
@@ -124,20 +120,9 @@ def initialize(model_path: ModelPath) -> AppData:
             }
 
         # Map over the streaming dataset and return an iterator
-        return map(tokenize_and_prepare, iter(dataset))
+        return map(tokenize_and_prepare, iter(dataset))  # pyright: ignore[reportArgumentType]
 
-    # Extract components and gates
-    gates: dict[str, Gate | GateMLP] = {
-        k.removeprefix("gates.").replace("-", "."): cast(Gate | GateMLP, v)
-        for k, v in ss_model.gates.items()
-    }
-    components: dict[str, LinearComponent | EmbeddingComponent] = {
-        k.removeprefix("components.").replace("-", "."): cast(
-            LinearComponent | EmbeddingComponent, v
-        )
-        for k, v in ss_model.components.items()
-    }
-    target_layer_names = sorted(list(components.keys()))
+    target_layer_names = sorted(ss_model.target_module_paths)
 
     logger.info(f"Initialization complete for {model_path}.")
     return AppData(
@@ -145,8 +130,6 @@ def initialize(model_path: ModelPath) -> AppData:
         tokenizer=tokenizer,
         config=config,
         dataloader_iter_fn=create_dataloader_iter,
-        gates=gates,
-        components=components,
         target_layer_names=target_layer_names,
         device=device,
     )
@@ -221,13 +204,11 @@ def load_next_prompt() -> None:
     # Calculate activations and masks
     with torch.no_grad():
         _, pre_weight_acts = app_data.model.forward_with_pre_forward_cache_hooks(
-            input_ids, module_names=list(app_data.components.keys())
+            input_ids, module_names=app_data.target_layer_names
         )
-        Vs = {module_name: v.V for module_name, v in app_data.components.items()}
-        masks, _ = calc_causal_importances(
+        masks, _ = app_data.model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
-            Vs=Vs,
-            gates=app_data.gates,
+            sigmoid_type=app_data.config.sigmoid_type,
             detach_inputs=True,  # No gradients needed
         )
     st.session_state.current_masks = masks  # Dict[str, Float[Tensor, "1 seq_len C"]]

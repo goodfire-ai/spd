@@ -5,7 +5,7 @@ import random
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 import einops
 import numpy as np
@@ -20,8 +20,6 @@ from torch import Tensor
 
 from spd.log import logger
 from spd.spd_types import ModelPath
-
-T = TypeVar("T", bound=BaseModel)
 
 # Avoid seaborn package installation (sns.color_palette("colorblind").as_hex())
 COLOR_PALETTE = [
@@ -56,7 +54,9 @@ def generate_sweep_id() -> str:
     return f"sweep_id-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
-def load_config(config_path_or_obj: Path | str | dict[str, Any] | T, config_model: type[T]) -> T:
+def load_config[T: BaseModel](
+    config_path_or_obj: Path | str | dict[str, Any] | T, config_model: type[T]
+) -> T:
     """Load the config of class `config_model`, from various sources.
 
     Args:
@@ -95,10 +95,9 @@ def load_config(config_path_or_obj: Path | str | dict[str, Any] | T, config_mode
     return config_model(**config_dict)
 
 
-BaseModelType = TypeVar("BaseModelType", bound=BaseModel)
-
-
-def replace_pydantic_model(model: BaseModelType, *updates: dict[str, Any]) -> BaseModelType:
+def replace_pydantic_model[BaseModelType: BaseModel](
+    model: BaseModelType, *updates: dict[str, Any]
+) -> BaseModelType:
     """Create a new model with (potentially nested) updates in the form of dictionaries.
 
     Args:
@@ -239,9 +238,9 @@ def load_pretrained(
 
 
 def extract_batch_data(
-    batch_item: dict[str, Any] | tuple[torch.Tensor, ...] | torch.Tensor,
+    batch_item: dict[str, Any] | tuple[Tensor, ...] | Tensor,
     input_key: str = "input_ids",
-) -> torch.Tensor:
+) -> Tensor:
     """Extract input data from various batch formats.
 
     This utility function handles different batch formats commonly used across the codebase:
@@ -256,7 +255,7 @@ def extract_batch_data(
     Returns:
         The input tensor extracted from the batch
     """
-    assert isinstance(batch_item, dict | tuple | torch.Tensor), (
+    assert isinstance(batch_item, dict | tuple | Tensor), (
         f"Unsupported batch format: {type(batch_item)}. Must be a dictionary, tuple, or tensor."
     )
     if isinstance(batch_item, dict):
@@ -312,3 +311,10 @@ def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> 
             result[key] = value
 
     return result
+
+
+def runtime_cast[T](type_: type[T], obj: Any) -> T:
+    """typecast with a runtime check"""
+    if not isinstance(obj, type_):
+        raise TypeError(f"Expected {type_}, got {type(obj)}")
+    return obj

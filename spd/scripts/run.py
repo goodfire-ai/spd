@@ -7,16 +7,19 @@ views created for each experiment.
 Usage:
     spd-run                                                    # Run all experiments
     spd-run --experiments tms_5-2,resid_mlp1                   # Run specific experiments
-    spd-run --experiments tms_5-2 --sweep                      # Run with default sweep params
+    spd-run --experiments tms_5-2 --local                      # Run locally instead of SLURM
+    spd-run --experiments tms_5-2 --sweep                      # Run with parameter sweep
+    spd-run --experiments tms_5-2 --sweep --local              # Run sweep locally
     spd-run --experiments tms_5-2 --sweep custom.yaml          # Run with custom sweep params
-    spd-run --sweep --n_agents 10                              # Sweep all experiments
+    spd-run --sweep --n_agents 10                              # Sweep with 10 concurrent agents
     spd-run --project my-project                               # Use custom W&B project
-    spd-run --experiments tms_5-2 --project test-spd           # Run in test project
 """
 
 import copy
 import itertools
 import json
+import shlex
+import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -28,10 +31,11 @@ import wandb_workspaces.workspaces as ws
 import yaml
 
 from spd.configs import Config
+from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.settings import REPO_ROOT
 from spd.utils.general_utils import apply_nested_updates, load_config
-from spd.utils.git_utils import create_git_snapshot
+from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
 from spd.utils.wandb_utils import ensure_project_exists
 
@@ -45,6 +49,26 @@ WORKSPACE_TEMPLATES = {
     "resid_mlp2": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
     "resid_mlp3": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
 }
+
+
+def generate_run_name(
+    params: dict[str, Any],
+) -> str:
+    """Generate a run name based on the present parameters.
+
+    Uses only leaf-node parameters.
+    Example:
+        >>> params = {"a": {"b": 1}, "c": 2}
+        >>> generate_run_name(params)
+        "b-1_c-2"
+    """
+    parts = []
+    for k, v in params.items():
+        if isinstance(v, dict):
+            parts.append(generate_run_name(v))
+        else:
+            parts.append(f"{k}-{v}")
+    return "_".join(parts)
 
 
 def generate_run_id() -> str:
@@ -177,20 +201,31 @@ def create_workspace_view(run_id: str, experiment_name: str, project: str = "spd
     return workspace.url
 
 
+REPORT_TOTAL_WIDTH = 24
+
+
 # report generation still pretty basic, needs more work
-def create_wandb_report(run_id: str, experiments_list: list[str], project: str = "spd") -> str:
+def create_wandb_report(
+    report_title: str,
+    run_id: str,
+    branch_name: str,
+    commit_hash: str,
+    experiments_list: list[str],
+    include_run_comparer: bool,
+    project: str = "spd",
+) -> str:
     """Create a W&B report for the run."""
     report = wr.Report(
         project=project,
-        title=f"SPD Run Report - {run_id}",
+        title=report_title,
         description=f"Experiments: {', '.join(experiments_list)}",
+        width="fluid",
     )
+
+    report.blocks.append(wr.MarkdownBlock(text=f"Branch: `{branch_name}`\nCommit: `{commit_hash}`"))
 
     # Create separate panel grids for each experiment
     for experiment in experiments_list:
-        # Get experiment type to determine which plots to show
-        exp_type = EXPERIMENT_REGISTRY[experiment].experiment_type
-
         # Use run_id and experiment name tags for filtering
         combined_filter = f'(Tags("tags") in ["{run_id}"]) and (Tags("tags") in ["{experiment}"])'
 
@@ -201,46 +236,69 @@ def create_wandb_report(run_id: str, experiments_list: list[str], project: str =
         )
 
         # Build panels list
-        panels: list[wr.interface.PanelTypes] = [
+        panels: list[wr.interface.PanelTypes] = []
+        y = 0
+
+        ci_height = 12
+        panels.append(
             wr.MediaBrowser(
                 media_keys=["causal_importances_upper_leaky"],
-                layout=wr.Layout(x=-6, y=0, w=24, h=12),
-            ),
-            wr.LinePlot(
-                x="Step",
-                y=["loss/stochastic_recon_layerwise", "loss/stochastic_recon"],
-                log_y=True,
-                layout=wr.Layout(x=-6, y=12, w=10, h=6),
-            ),
-            wr.LinePlot(
-                x="Step",
-                y=["loss/faithfulness"],
-                log_y=True,
-                layout=wr.Layout(x=4, y=12, w=10, h=6),
-            ),
-            wr.LinePlot(
-                x="Step",
-                y=["loss/importance_minimality"],
-                layout=wr.Layout(x=14, y=12, w=10, h=6),
-            ),
+                layout=wr.Layout(x=0, y=0, w=REPORT_TOTAL_WIDTH, h=ci_height),
+                num_columns=6,
+            )
+        )
+        y += ci_height
+
+        loss_plots_height = 6
+        loss_plots = [
+            ["loss/stochastic_recon_layerwise", "loss/stochastic_recon"],
+            ["loss/faithfulness"],
+            ["loss/importance_minimality"],
         ]
+        for i, y_keys in enumerate(loss_plots):
+            loss_plots_width = REPORT_TOTAL_WIDTH // len(loss_plots)
+            x_offset = i * loss_plots_width
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=y_keys,  # pyright: ignore[reportArgumentType]
+                    log_y=True,
+                    layout=wr.Layout(x=x_offset, y=y, w=loss_plots_width, h=loss_plots_height),
+                )
+            )
+        y += loss_plots_height
 
         # Only add KL loss plots for language model experiments
-        if exp_type == "lm":
-            panels.extend(
-                [
-                    wr.LinePlot(
-                        x="Step",
-                        y=["misc/masked_kl_loss_vs_target"],
-                        layout=wr.Layout(x=-6, y=18, w=10, h=6),
-                    ),
-                    wr.LinePlot(
-                        x="Step",
-                        y=["misc/unmasked_kl_loss_vs_target"],
-                        layout=wr.Layout(x=4, y=18, w=10, h=6),
-                    ),
-                ]
+        if EXPERIMENT_REGISTRY[experiment].experiment_type == "lm":
+            kl_height = 6
+            kl_width = REPORT_TOTAL_WIDTH // 2
+            x_offset = 0
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["misc/masked_kl_loss_vs_target"],
+                    layout=wr.Layout(x=x_offset, y=y, w=kl_width, h=kl_height),
+                )
             )
+            x_offset += kl_width
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["misc/unmasked_kl_loss_vs_target"],
+                    layout=wr.Layout(x=x_offset, y=y, w=kl_width, h=kl_height),
+                )
+            )
+            y += kl_height
+
+        if include_run_comparer:
+            run_comparer_height = 10
+            panels.append(
+                wr.RunComparer(
+                    diff_only=True,
+                    layout=wr.Layout(x=0, y=y, w=REPORT_TOTAL_WIDTH, h=run_comparer_height),
+                )
+            )
+            y += run_comparer_height
 
         panel_grid = wr.PanelGrid(
             runsets=[runset],
@@ -268,11 +326,14 @@ def generate_commands(
     we add a prefix to prevent Fire parsing with ast.literal_eval
     (https://github.com/google/python-fire/issues/332)
     """
-    commands = []
+    commands: list[str] = []
 
-    print("\nTask breakdown by experiment:")
+    logger.info("Task breakdown by experiment:")
+    task_breakdown: dict[str, str] = {}
 
-    sweep_params_path = resolve_sweep_params_path(sweep_params_file) if sweep_params_file else None
+    sweep_params_path: Path | None = (
+        resolve_sweep_params_path(sweep_params_file) if sweep_params_file else None
+    )
 
     for experiment in experiments_list:
         config_entry = EXPERIMENT_REGISTRY[experiment]
@@ -298,7 +359,7 @@ def generate_commands(
                 f"--sweep_id {run_id} --evals_id {experiment}"
             )
             commands.append(command)
-            print(f"  {experiment}: 1 task")
+            task_breakdown[experiment] = "1 task"
 
         else:
             # Parameter sweep run
@@ -309,8 +370,10 @@ def generate_commands(
                 # Apply parameter overrides
                 base_config_dict = base_config.model_dump(mode="json")
                 config_dict_with_overrides = apply_nested_updates(base_config_dict, param_combo)
-                # Also override the wandb project
+                # Also override the wandb project and run name
                 config_dict_with_overrides["wandb_project"] = project
+                wandb_run_name = f"{experiment}-{generate_run_name(param_combo)}"
+                config_dict_with_overrides["wandb_run_name"] = wandb_run_name
                 config_with_overrides = Config(**config_dict_with_overrides)
 
                 # Convert to JSON string
@@ -330,10 +393,132 @@ def generate_commands(
 
                 # Print first combination as example
                 if i == 0:
-                    print(f"  {experiment}: {len(combinations)} tasks")
-                    print(f"    Example params: {param_combo}")
+                    logger.info(f"  {experiment}: {len(combinations)} tasks")
+                    logger.info(f"    Example param overrides: {param_combo}")
+
+    if task_breakdown:
+        logger.values(task_breakdown)
 
     return commands
+
+
+def run_commands_locally(commands: list[str]) -> None:
+    """Execute commands locally in sequence.
+
+    Args:
+        commands: List of shell commands to execute
+    """
+
+    logger.section(f"LOCAL EXECUTION: Running {len(commands)} tasks")
+
+    for i, command in enumerate(commands, 1):
+        # Parse command into arguments
+        args = shlex.split(command)
+
+        # Extract experiment name from script path for cleaner output
+        script_name = args[1].split("/")[-1]
+        logger.section(f"[{i}/{len(commands)}] Executing: {script_name}...")
+
+        result = subprocess.run(args)
+
+        if result.returncode != 0:
+            logger.warning(
+                f"[{i}/{len(commands)}] ⚠️  Warning: Command failed with exit code {result.returncode}"
+            )
+        else:
+            logger.info(f"[{i}/{len(commands)}] ✓ Completed successfully")
+
+    logger.section("LOCAL EXECUTION COMPLETE")
+
+
+def get_experiments(
+    experiments: str | None = None,
+) -> list[str]:
+    """Get and validate the list of experiments to run based on the input string.
+
+    Args:
+        experiments: Comma-separated list of experiment names. If None, runs all experiments.
+
+    Returns:
+        List of experiment names to run.
+    """
+    # Determine experiment list
+    experiments_list: list[str]
+    if experiments is None:
+        experiments_list = list(EXPERIMENT_REGISTRY.keys())
+    else:
+        experiments_list = [exp.strip() for exp in experiments.split(",")]
+
+    # Validate experiment names
+    invalid_experiments: list[str] = [
+        exp for exp in experiments_list if exp not in EXPERIMENT_REGISTRY
+    ]
+    if invalid_experiments:
+        available: str = ", ".join(EXPERIMENT_REGISTRY.keys())
+        raise ValueError(
+            f"Invalid experiments: {invalid_experiments}. Available experiments: {available}"
+        )
+
+    return experiments_list
+
+
+def _wandb_setup(
+    project: str,
+    run_id: str,
+    experiments_list: list[str],
+    # only used in report generation
+    create_report: bool,
+    # passed to create_wandb_report as-is
+    report_title: str | None,
+    snapshot_branch: str,
+    commit_hash: str,
+    include_run_comparer: bool,
+) -> None:
+    """set up wandb, creating workspace views and optionally creating a report
+
+    Args:
+        project: W&B project name
+        run_id: Unique run identifier
+        experiments_list: List of experiment names to create views for
+        create_report: Whether to create a W&B report for the run. if False, no report will be created and the rest of the arguments don't matter
+        report_title: Title for the W&B report, if created. If None, will be
+            generated as "SPD Run Report - {run_id}".
+        snapshot_branch: Git branch name for the snapshot created by this run.
+        commit_hash: Commit hash of the snapshot created by this run.
+        include_run_comparer: Whether to include the run comparer in the report.
+
+    """
+    # Ensure the W&B project exists
+    ensure_project_exists(project)
+
+    # Create workspace views for each experiment
+    logger.section("Creating workspace views...")
+    workspace_urls: dict[str, str] = {}
+    for experiment in experiments_list:
+        workspace_url = create_workspace_view(run_id, experiment, project)
+        workspace_urls[experiment] = workspace_url
+
+    # Create report if requested
+    report_url: str | None = None
+    if create_report and len(experiments_list) > 1:
+        report_url = create_wandb_report(
+            report_title=report_title or f"SPD Run Report - {run_id}",
+            run_id=run_id,
+            branch_name=snapshot_branch,
+            commit_hash=commit_hash,
+            experiments_list=experiments_list,
+            include_run_comparer=include_run_comparer,
+            project=project,
+        )
+
+    # Print clean summary after wandb messages
+    logger.values(
+        msg="workspace urls per experiment",
+        data={
+            **workspace_urls,
+            **({"Aggregated Report": report_url} if report_url else {}),
+        },
+    )
 
 
 def main(
@@ -344,6 +529,11 @@ def main(
     job_suffix: str | None = None,
     cpu: bool = False,
     project: str = "spd",
+    local: bool = False,
+    log_format: LogFormat = "default",
+    create_snapshot: bool = True,
+    use_wandb: bool = True,
+    report_title: str | None = None,
 ) -> None:
     """SPD runner for experiments with optional parameter sweeps.
 
@@ -352,13 +542,29 @@ def main(
         sweep: Enable parameter sweep. If True, uses default sweep_params.yaml.
             If a string, uses that as the sweep parameters file path.
         n_agents: Maximum number of concurrent SLURM tasks. If None and sweep is enabled,
-            raise an error. If None and sweep is not enabled, use the number of experiments.
+            raise an error (unless running with --local). If None and sweep is not enabled,
+            use the number of experiments. Not used for local execution.
         create_report: Create W&B report for aggregated view (default: True)
         job_suffix: Optional suffix for SLURM job names
         cpu: Use CPU instead of GPU (default: False)
         project: W&B project name (default: "spd"). Will be created if it doesn't exist.
+        local: Run locally instead of submitting to SLURM (default: False)
+        log_format: Logging format for the script output.
+            Options are "terse" (no timestamps/level) or "default".
+        create_snapshot: Create a git snapshot branch for the run.
+            if False, uses the current branch, as determined by `repo_current_branch`
+            (default: True).
+        use_wandb: Use W&B for logging and tracking (default: True).
+            If set to false, `create_report` must also be false.
+        report_title: Title for the W&B report (default: None). Will be generated if not provided.
 
     Examples:
+        # Run subset of experiments locally
+        spd-run --experiments tms_5-2,resid_mlp1 --local
+
+        # Run parameter sweep locally
+        spd-run --experiments tms_5-2 --sweep --local
+
         # Run subset of experiments (no sweep)
         spd-run --experiments tms_5-2,resid_mlp1
 
@@ -374,98 +580,110 @@ def main(
         # Use custom W&B project
         spd-run --experiments tms_5-2 --project my-spd-project
     """
+    # setup
+    # ==========================================================================================
+
+    logger.set_format("console", log_format)
+
+    # Determine run id
+    run_id: str = generate_run_id()
+    logger.info(f"Run ID: {run_id}")
+
     # Determine the sweep parameters file
-    sweep_params_file = None
+    sweep_params_file: str | None = None
     if sweep:
         sweep_params_file = "sweep_params.yaml" if isinstance(sweep, bool) else sweep
 
-    # Determine experiment list
-    if experiments is None:
-        experiments_list = list(EXPERIMENT_REGISTRY.keys())
-    else:
-        experiments_list = [exp.strip() for exp in experiments.split(",")]
+    # get the experiments to run -- run all of them if not specified
+    experiments_list: list[str] = get_experiments(experiments)
+    logger.info(f"Experiments: {', '.join(experiments_list)}")
 
+    # Agent count
     if n_agents is None:
         if sweep_params_file is None:
             n_agents = len(experiments_list)
         else:
-            raise ValueError("n_agents must be provided if sweep is enabled")
+            assert local, (
+                "n_agents must be provided if sweep is enabled (unless running with --local)"
+            )
 
-    # Validate experiment names
-    invalid_experiments = [exp for exp in experiments_list if exp not in EXPERIMENT_REGISTRY]
-    if invalid_experiments:
-        available = ", ".join(EXPERIMENT_REGISTRY.keys())
-        raise ValueError(
-            f"Invalid experiments: {invalid_experiments}. Available experiments: {available}"
-        )
+    # wandb and snapshot setup
+    # ==========================================================================================
 
-    run_id = generate_run_id()
+    if not local or use_wandb:
+        # set up snapshot branch and commit hash
+        snapshot_branch: str
+        commit_hash: str
 
-    print(f"Run ID: {run_id}")
-    print(f"Experiments: {', '.join(experiments_list)}")
+        if create_snapshot:
+            snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="run")
+            logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
+        else:
+            snapshot_branch = repo_current_branch()
+            commit_hash = "none"
+            logger.info(f"Using current branch: {snapshot_branch}")
 
-    commands = generate_commands(
+        # set up wandb
+        if use_wandb:
+            _wandb_setup(
+                project=project,
+                run_id=run_id,
+                experiments_list=experiments_list,
+                create_report=create_report,
+                # if `create_report == False`, the rest of the arguments don't matter
+                report_title=report_title,
+                snapshot_branch=snapshot_branch,
+                commit_hash=commit_hash,
+                include_run_comparer=sweep_params_file is not None,
+            )
+        else:
+            assert not create_report, (
+                f"can't create report if use_wandb is false: {create_report = }"
+            )
+            logger.warning(
+                "W&B logging is disabled. No workspace views or reports will be created. "
+                "Set `use_wandb=True` to enable."
+            )
+
+    # generate and run commands
+    # ==========================================================================================
+    commands: list[str] = generate_commands(
         experiments_list=experiments_list,
         run_id=run_id,
         sweep_params_file=sweep_params_file,
         project=project,
     )
 
-    snapshot_branch = create_git_snapshot(branch_name_prefix="run")
-    print(f"\nUsing git snapshot: {snapshot_branch}")
+    if local:
+        run_commands_locally(commands)
+    else:
+        # Submit to SLURM
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            array_script = temp_path / f"run_array_{run_id}.sh"
+            job_name = f"spd-{job_suffix}" if job_suffix else "spd"
 
-    # Ensure the W&B project exists
-    ensure_project_exists(project)
+            create_slurm_array_script(
+                script_path=array_script,
+                job_name=job_name,
+                commands=commands,
+                cpu=cpu,
+                # again -- local is false, so snapshot_branch will exist
+                snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
+                max_concurrent_tasks=n_agents,
+            )
 
-    # Create workspace views for each experiment
-    print("\nCreating workspace views...")
-    workspace_urls = {}
-    for experiment in experiments_list:
-        workspace_url = create_workspace_view(run_id, experiment, project)
-        workspace_urls[experiment] = workspace_url
+            array_job_id = submit_slurm_array(array_script)
 
-    # Create report if requested
-    report_url = None
-    if create_report and len(experiments_list) > 1:
-        report_url = create_wandb_report(run_id, experiments_list, project)
-
-    # Print clean summary after wandb messages
-    print("\n" + "=" * 60)
-    print("WORKSPACE VIEWS CREATED:")
-    print("=" * 60)
-    for experiment, workspace_url in workspace_urls.items():
-        print(f"  {experiment}: {workspace_url}")
-
-    if report_url:
-        print(f"\n  Aggregated Report: {report_url}")
-    print("=" * 60)
-
-    # Determine job name
-    job_name = f"spd-{job_suffix}" if job_suffix else "spd"
-
-    # Submit to SLURM
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        array_script = temp_path / f"run_array_{run_id}.sh"
-
-        create_slurm_array_script(
-            script_path=array_script,
-            job_name=job_name,
-            commands=commands,
-            cpu=cpu,
-            snapshot_branch=snapshot_branch,
-            max_concurrent_tasks=n_agents,
-        )
-
-        array_job_id = submit_slurm_array(array_script)
-
-        print(f"\n{'=' * 50}")
-        print("Job submitted successfully!")
-        print(f"{'=' * 50}")
-        print(f"Array Job ID: {array_job_id}")
-        print(f"Total tasks: {len(commands)}")
-        print(f"Max concurrent tasks: {n_agents}")
-        print(f"View logs in: ~/slurm_logs/slurm-{array_job_id}_*.out")
+            logger.section("Job submitted successfully!")
+            logger.values(
+                {
+                    "Array Job ID": array_job_id,
+                    "Total tasks": len(commands),
+                    "Max concurrent tasks": n_agents,
+                    "View logs in": f"~/slurm_logs/slurm-{array_job_id}_*.out",
+                }
+            )
 
 
 def cli():

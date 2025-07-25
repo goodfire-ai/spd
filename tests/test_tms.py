@@ -1,6 +1,9 @@
-import torch
+from typing import cast
 
-from spd.configs import Config, TMSTaskConfig
+import torch
+from torch import nn
+
+from spd.configs import Config, FiguresFnConfig, MetricsFnConfig, TMSTaskConfig
 from spd.experiments.tms.models import TMSModel, TMSModelConfig
 from spd.experiments.tms.train_tms import TMSTrainConfig, get_model_and_dataloader, train
 from spd.run_spd import optimize
@@ -33,7 +36,8 @@ def test_tms_decomposition_happy_path() -> None:
         seed=0,
         C=10,  # Smaller C for faster testing
         n_mask_samples=1,
-        n_ci_mlp_neurons=8,
+        gate_type="mlp",
+        gate_hidden_dims=[8],
         target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
         # Loss Coefficients
         faithfulness_coeff=1.0,
@@ -60,7 +64,16 @@ def test_tms_decomposition_happy_path() -> None:
         image_on_first_step=True,
         print_freq=2,
         save_freq=None,
-        log_ce_losses=False,
+        ci_alive_threshold=0.1,
+        n_examples_until_dead=8,  # print_freq * batch_size = 2 * 4
+        figures_fns=[
+            FiguresFnConfig(name="ci_histograms"),
+            FiguresFnConfig(name="mean_component_activation_counts"),
+            FiguresFnConfig(name="uv_and_identity_ci"),
+        ],
+        metrics_fns=[
+            MetricsFnConfig(name="ci_l0"),
+        ],
         # Pretrained model info
         pretrained_model_class="spd.experiments.tms.models.TMSModel",
         pretrained_model_path=None,
@@ -90,8 +103,12 @@ def test_tms_decomposition_happy_path() -> None:
         synced_inputs=None,
     )
 
-    train_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
-    eval_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
+    train_loader = DatasetGeneratedDataLoader(
+        dataset, batch_size=config.microbatch_size, shuffle=False
+    )
+    eval_loader = DatasetGeneratedDataLoader(
+        dataset, batch_size=config.microbatch_size, shuffle=False
+    )
 
     tied_weights = None
     if target_model.config.tied_weights:
@@ -186,7 +203,7 @@ def test_tms_train_fixed_identity():
 
     assert model.hidden_layers is not None
     # Assert that this is an identity matrix
-    initial_hidden = model.hidden_layers[0].weight.data.clone()
+    initial_hidden = cast(nn.Linear, model.hidden_layers[0]).weight.data.clone()
     assert torch.allclose(initial_hidden, eye), "Initial hidden layer is not identity"
 
     train(
@@ -201,7 +218,9 @@ def test_tms_train_fixed_identity():
     )
 
     # Assert that the hidden layers remains identity
-    assert torch.allclose(model.hidden_layers[0].weight.data, eye), "Hidden layer changed"
+    assert torch.allclose(cast(nn.Linear, model.hidden_layers[0]).weight.data, eye), (
+        "Hidden layer changed"
+    )
 
 
 def test_tms_train_fixed_random():
@@ -229,7 +248,7 @@ def test_tms_train_fixed_random():
     model, dataloader = get_model_and_dataloader(config, device)
 
     assert model.hidden_layers is not None
-    initial_hidden = model.hidden_layers[0].weight.data.clone()
+    initial_hidden = cast(nn.Linear, model.hidden_layers[0]).weight.data.clone()
 
     train(
         model,
@@ -243,6 +262,6 @@ def test_tms_train_fixed_random():
     )
 
     # Assert that the hidden layers are unchanged
-    assert torch.allclose(model.hidden_layers[0].weight.data, initial_hidden), (
+    assert torch.allclose(cast(nn.Linear, model.hidden_layers[0]).weight.data, initial_hidden), (
         "Hidden layer changed"
     )

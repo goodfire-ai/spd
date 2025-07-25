@@ -1,16 +1,14 @@
 import os
 from pathlib import Path
-from typing import TypeVar
 
 import wandb
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from wandb.apis.public import File, Run
 
+from spd.log import logger
 from spd.settings import REPO_ROOT
 from spd.utils.general_utils import replace_pydantic_model
-
-T = TypeVar("T", bound=BaseModel)
 
 
 def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None = None) -> File:
@@ -80,9 +78,9 @@ def download_wandb_file(run: Run, wandb_run_dir: Path, file_name: str) -> Path:
     return path
 
 
-def init_wandb(
-    config: T, project: str, name: str | None = None, tags: list[str] | None = None
-) -> T:
+def init_wandb[T_config: BaseModel](
+    config: T_config, project: str, name: str | None = None, tags: list[str] | None = None
+) -> T_config:
     """Initialize Weights & Biases and return a config updated with sweep hyperparameters.
 
     Args:
@@ -122,7 +120,7 @@ def ensure_project_exists(project: str) -> None:
     # Check if project exists in the list of projects
     if project not in [p.name for p in api.projects()]:
         # Project doesn't exist, create it with a dummy run
-        print(f"Creating W&B project '{project}'...")
+        logger.info(f"Creating W&B project '{project}'...")
         run = wandb.init(project=project, name="project_init", tags=["init"])
         run.finish()
-        print(f"Project '{project}' created successfully")
+        logger.info(f"Project '{project}' created successfully")

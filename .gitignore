@@ -1,5 +1,6 @@
 spd/scripts/sweep_params.yaml
-spd/user_metrics_and_figs.py
+spd/scripts/sweep_params.yaml
+docs/coverage/**
 
 **/out/
 neuronpedia_outputs/

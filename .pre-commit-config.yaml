@@ -9,26 +9,17 @@ repos:
   #         - commit
   - repo: local
     hooks:
-      - id: basedpyright
-        name: BasedPyright
-        entry: basedpyright
+      - id: format
+        name: Ruff lint and format
+        entry: make format
         language: system
         types: [python]
         stages:
           - pre-commit
 
-      - id: ruff-lint
-        name: Ruff lint
-        entry: ruff check
-        args: ["--fix-only"]
-        language: system
-        types: [python]
-        stages:
-          - pre-commit
-
-      - id: ruff-format
-        name: Ruff format
-        entry: ruff format
+      - id: type
+        name: "Type check with BasedPyright"
+        entry: make type
         language: system
         types: [python]
         stages:

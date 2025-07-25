@@ -43,7 +43,7 @@ def remove_grad_parallel_to_subnetwork_vecs(
 
 
 def init_param_(
-    param: torch.Tensor,
+    param: Tensor,
     fan_val: float,
     mean: float = 0.0,
     nonlinearity: str = "linear",

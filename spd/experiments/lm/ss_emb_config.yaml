@@ -8,7 +8,8 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 100
 n_mask_samples: 1
-n_ci_mlp_neurons: 0
+gate_type: "mlp"
+gate_hidden_dims: [1]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.embed_tokens"]
 
@@ -39,7 +40,15 @@ image_freq: 2000
 image_on_first_step: true
 print_freq: 1000
 save_freq: null
-log_ce_losses: true
+n_examples_until_dead: 2_048_000  # print_freq * batch_size * max_seq_len = 1000 * 4 * 512
+figures_fns:
+  - name: "ci_histograms"
+  - name: "mean_component_activation_counts"
+metrics_fns:
+  - name: "ci_l0"
+  - name: "lm_kl"
+  - name: "lm_ce_losses"
+  - name: "lm_embed"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM

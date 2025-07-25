@@ -7,6 +7,7 @@ sparse decompositions, including vector plots, network diagrams, and weight heat
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import zip_longest
+from typing import cast
 
 import matplotlib.collections as mc
 import matplotlib.pyplot as plt
@@ -20,8 +21,9 @@ from matplotlib.figure import Figure
 from torch import Tensor
 
 from spd.experiments.tms.models import TMSModel
+from spd.log import logger
 from spd.models.component_model import ComponentModel
-from spd.models.components import LinearComponent
+from spd.models.components import Components, ComponentsOrModule
 from spd.settings import REPO_ROOT
 
 
@@ -56,19 +58,21 @@ class TMSAnalyzer:
     """Analyzer for TMS model decompositions."""
 
     def __init__(
-        self, comp_model: ComponentModel, target_model: TMSModel, config: PlotConfig | None = None
+        self,
+        patched_model: TMSModel,
+        components: dict[str, Components],
+        config: PlotConfig | None = None,
     ):
-        self.comp_model = comp_model
-        self.target_model = target_model
+        self.patched_model = patched_model
+        self.components = components
         self.config = config or PlotConfig()
 
     def extract_subnets(self) -> Float[Tensor, "n_subnets n_features n_hidden"]:
         """Extract subnet weights from the component model."""
-        linear1_component = self.comp_model.components["linear1"]
+        linear1_components = self.components["linear1"]
 
-        assert isinstance(linear1_component, LinearComponent)
-        Vs = linear1_component.V.detach().cpu()  # (n_features, C)
-        Us = linear1_component.U.detach().cpu()  # (C, n_hidden)
+        Vs = linear1_components.V.detach().cpu()  # (n_features, C)
+        Us = linear1_components.U.detach().cpu()  # (C, n_hidden)
 
         # Calculate subnets: (n_features, C) x (C, n_hidden) -> (C, n_features, n_hidden)
         subnets = torch.einsum("f C, C h -> C f h", Vs, Us)
@@ -83,7 +87,9 @@ class TMSAnalyzer:
     ]:
         """Compute cosine similarities between subnets and target model."""
         subnets = self.extract_subnets()
-        target_weights = self.target_model.linear1.weight.T  # (n_features, n_hidden)
+        target_weights = cast(
+            ComponentsOrModule, self.patched_model.linear1
+        ).original.weight.T  # (n_features, n_hidden)  # pyright: ignore[reportInvalidCast]
 
         # Normalize weights
         subnets_norm = subnets / (torch.norm(subnets, dim=-1, keepdim=True) + eps)
@@ -96,7 +102,7 @@ class TMSAnalyzer:
         # Get subnet weights at max cosine similarity
         max_indices = cosine_sims.max(dim=0).indices
         subnet_weights_at_max = subnets[
-            max_indices, torch.arange(self.target_model.config.n_features)
+            max_indices, torch.arange(self.patched_model.config.n_features)
         ]
 
         return cosine_sims, max_cosine_sim, subnet_weights_at_max
@@ -398,26 +404,30 @@ class FullNetworkDiagramPlotter:
     def __init__(self, config: PlotConfig):
         self.config = config
 
-    def plot(self, comp_model: ComponentModel, target_model: TMSModel) -> Figure:
+    def plot(
+        self,
+        patched_model: TMSModel,
+        components: dict[str, Components],
+    ) -> Figure:
         """Plot full network architecture with all layers."""
         # Extract all layer weights
-        # analyzer = TMSAnalyzer(comp_model, target_model, self.config)
+        config = patched_model.config
 
         # Get subnet decompositions for linear1
-        linear1_component = comp_model.components["linear1"]
-        assert isinstance(linear1_component, LinearComponent)
-        Vs = linear1_component.V.detach().cpu()
-        Us = linear1_component.U.detach().cpu()
+        linear1_components = components["linear1"]
+        assert isinstance(linear1_components, Components)
+        Vs = linear1_components.V.detach().cpu()
+        Us = linear1_components.U.detach().cpu()
         linear1_subnets = torch.einsum("f C, C h -> C f h", Vs, Us)
 
         # Get hidden layer decompositions if they exist
         hidden_layer_components = None
-        if target_model.config.n_hidden_layers > 0:
+        if config.n_hidden_layers > 0:
             hidden_layer_components = []
-            for i in range(target_model.config.n_hidden_layers):
+            for i in range(config.n_hidden_layers):
                 hidden_comp_name = f"hidden_layers-{i}"
-                hidden_comp = comp_model.components[hidden_comp_name]
-                assert isinstance(hidden_comp, LinearComponent)
+                hidden_comp = components[hidden_comp_name]
+                assert isinstance(hidden_comp, Components)
                 hidden_V = hidden_comp.V.detach().cpu()
                 hidden_U = hidden_comp.U.detach().cpu()
                 hidden_weights = torch.einsum("h C, C j -> C h j", hidden_V, hidden_U)
@@ -458,13 +468,15 @@ class FullNetworkDiagramPlotter:
         plot_configs.append(
             {
                 "title": "Target model",
-                "linear1_weights": target_model.linear1.weight.T.detach().cpu().numpy(),
+                "linear1_weights": patched_model.linear1.weight.T.detach().cpu().numpy(),
                 "hidden_weights": [
-                    target_model.hidden_layers[i].weight.T.detach().cpu().numpy()
-                    for i in range(target_model.config.n_hidden_layers)
+                    cast(ComponentsOrModule, patched_model.hidden_layers[i])
+                    .original.weight.T.detach()
+                    .cpu()
+                    .numpy()
+                    for i in range(config.n_hidden_layers)
                 ]
-                if target_model.config.n_hidden_layers > 0
-                and target_model.hidden_layers is not None
+                if config.n_hidden_layers > 0 and patched_model.hidden_layers is not None
                 else None,
                 "component_type": "full",
             }
@@ -491,20 +503,15 @@ class FullNetworkDiagramPlotter:
                 # Linear component: show weights in linear1/2, zeros in hidden
                 linear_weights = linear1_subnets[idx].numpy()
                 hidden_weights = None
-                if (
-                    target_model.config.n_hidden_layers > 0
-                    and target_model.hidden_layers is not None
-                ):
+                if config.n_hidden_layers > 0 and patched_model.hidden_layers is not None:
                     # Show zeros for hidden layers (not identity)
                     hidden_weights = [
-                        np.zeros((target_model.config.n_hidden, target_model.config.n_hidden))
-                        for _ in range(target_model.config.n_hidden_layers)
+                        np.zeros((config.n_hidden, config.n_hidden))
+                        for _ in range(config.n_hidden_layers)
                     ]
             else:
                 # Hidden component: show zeros in linear1/2, actual weights in hidden
-                linear_weights = np.zeros(
-                    (target_model.config.n_features, target_model.config.n_hidden)
-                )
+                linear_weights = np.zeros((config.n_features, config.n_hidden))
                 hidden_weights = None
                 if hidden_layer_components is not None:
                     hidden_weights = [hw[idx].numpy() for hw in hidden_layer_components]
@@ -523,27 +530,27 @@ class FullNetworkDiagramPlotter:
         fig, axs = plt.subplots(
             nrows=1,
             ncols=n_plots,
-            figsize=(4 * n_plots, 6 + 2 * target_model.config.n_hidden_layers),
+            figsize=(4 * n_plots, 6 + 2 * config.n_hidden_layers),
         )
 
         # Ensure axs is always iterable
         axs_array = [axs] if n_plots == 1 else np.array(axs).flatten()
 
         # Plot each configuration
-        for _, (ax, config) in enumerate(zip_longest(axs_array, plot_configs)):
-            if ax is None or config is None:
+        for _, (ax, plot_config) in enumerate(zip_longest(axs_array, plot_configs)):
+            if ax is None or plot_config is None:
                 break
             assert isinstance(ax, Axes)
             self._plot_full_network(
                 ax,
-                config["linear1_weights"],
-                config["hidden_weights"],
-                config["component_type"],
-                target_model.config.n_features,
-                target_model.config.n_hidden,
-                target_model.config.n_hidden_layers,
+                linear1_weights=plot_config["linear1_weights"],
+                hidden_weights=plot_config["hidden_weights"],
+                component_type=plot_config["component_type"],
+                n_features=config.n_features,
+                n_hidden=config.n_hidden,
+                n_hidden_layers=config.n_hidden_layers,
             )
-            ax.set_title(config["title"], pad=10, fontsize="large")
+            ax.set_title(plot_config["title"], pad=10, fontsize="large")
 
         return fig
 
@@ -711,11 +718,11 @@ class HiddenLayerPlotter:
     def __init__(self, config: PlotConfig):
         self.config = config
 
-    def plot(self, comp_model: ComponentModel, target_model: TMSModel) -> Figure:
+    def plot(self, patched_model: TMSModel, components: dict[str, Components]) -> Figure:
         """Plot hidden layer weights as heatmaps."""
         # Extract weights
         hidden_weights, target_weights, subnets_order = self._extract_hidden_weights(
-            comp_model, target_model
+            patched_model, components
         )
 
         # Filter by threshold
@@ -740,10 +747,7 @@ class HiddenLayerPlotter:
         # Ensure axs is iterable even for single subplot
         from matplotlib.axes import Axes as AxesType
 
-        if isinstance(axs, AxesType):
-            axs_list = [axs]
-        else:
-            axs_list = list(axs)
+        axs_list: list[AxesType] = [axs] if isinstance(axs, AxesType) else list(axs)
 
         # Plot heatmaps
         self._plot_heatmaps(fig, axs_list, all_weights, subnets_order, n_subnets)
@@ -751,18 +755,18 @@ class HiddenLayerPlotter:
         return fig
 
     def _extract_hidden_weights(
-        self, comp_model: ComponentModel, target_model: TMSModel
+        self, patched_model: TMSModel, components: dict[str, Components]
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Extract and sort hidden layer weights."""
-        if target_model.hidden_layers is None:
-            raise ValueError("Target model must have hidden layers")
+        if patched_model.hidden_layers is None:
+            raise ValueError("patched model must have hidden layers")
 
         hidden_comp_name = "hidden_layers-0"
-        hidden_component = comp_model.components[hidden_comp_name]
-        assert isinstance(hidden_component, LinearComponent)
+        hidden_components = components[hidden_comp_name]
+        assert isinstance(hidden_components, Components)
 
-        hidden_V = hidden_component.V.detach().cpu()
-        hidden_U = hidden_component.U.detach().cpu()
+        hidden_V = hidden_components.V.detach().cpu()
+        hidden_U = hidden_components.U.detach().cpu()
         hidden_weights = torch.einsum("f C, C h -> C f h", hidden_V, hidden_U)
 
         # Sort by norm
@@ -771,7 +775,12 @@ class HiddenLayerPlotter:
         hidden_weights = hidden_weights[order]
 
         # Get target weights
-        target_weights = target_model.hidden_layers[0].weight.T.unsqueeze(0).detach().cpu()
+        target_weights = (
+            cast(ComponentsOrModule, patched_model.hidden_layers[0])
+            .original.weight.T.unsqueeze(0)
+            .detach()
+            .cpu()
+        )
 
         return hidden_weights, target_weights, order
 
@@ -823,10 +832,13 @@ class TMSPlotter:
     """Main plotting interface for TMS experiments."""
 
     def __init__(
-        self, comp_model: ComponentModel, target_model: TMSModel, config: PlotConfig | None = None
+        self,
+        patched_model: TMSModel,
+        components: dict[str, Components],
+        config: PlotConfig | None = None,
     ):
         self.config = config or PlotConfig()
-        self.analyzer = TMSAnalyzer(comp_model, target_model, self.config)
+        self.analyzer = TMSAnalyzer(patched_model, components, self.config)
         self.vector_plotter = VectorPlotter(self.config)
         self.network_plotter = NetworkDiagramPlotter(self.config)
         self.full_network_plotter = FullNetworkDiagramPlotter(self.config)
@@ -838,7 +850,7 @@ class TMSPlotter:
         Note: Only works for models without hidden layers.
         For models with hidden layers, use plot_vectors() and plot_full_network() separately.
         """
-        if self.analyzer.target_model.config.n_hidden_layers > 0:
+        if self.analyzer.patched_model.config.n_hidden_layers > 0:
             raise ValueError(
                 "Combined diagram not supported for models with hidden layers. "
                 "Use plot_vectors() and plot_full_network() separately."
@@ -846,7 +858,11 @@ class TMSPlotter:
 
         # Extract and prepare data
         subnets = self.analyzer.extract_subnets()
-        target_weights = self.analyzer.target_model.linear1.weight.T.detach().cpu()
+        target_weights = (
+            cast(ComponentsOrModule, self.analyzer.patched_model.linear1)  # pyright: ignore[reportInvalidCast]
+            .original.weight.T.detach()
+            .cpu()
+        )
 
         # Filter significant subnets
         filtered_subnets, subnets_indices, n_significant = self.analyzer.filter_significant_subnets(
@@ -882,7 +898,11 @@ class TMSPlotter:
         """Create figure with only vector diagrams."""
         # Extract and prepare data
         subnets = self.analyzer.extract_subnets()
-        target_weights = self.analyzer.target_model.linear1.weight.T.detach().cpu()
+        target_weights = (
+            cast(ComponentsOrModule, self.analyzer.patched_model.linear1)  # pyright: ignore[reportInvalidCast]
+            .original.weight.T.detach()
+            .cpu()
+        )
 
         # Filter significant subnets
         filtered_subnets, subnets_indices, n_significant = self.analyzer.filter_significant_subnets(
@@ -914,7 +934,7 @@ class TMSPlotter:
 
     def plot_full_network(self) -> Figure:
         """Create full network diagram showing all layers."""
-        return self.full_network_plotter.plot(self.analyzer.comp_model, self.analyzer.target_model)
+        return self.full_network_plotter.plot(self.analyzer.patched_model, self.analyzer.components)
 
     def plot_cosine_similarity_analysis(self) -> Figure:
         """Plot cosine similarity analysis."""
@@ -932,28 +952,31 @@ class TMSPlotter:
 
     def plot_hidden_layers(self) -> Figure | None:
         """Plot hidden layer weights if model has hidden layers."""
-        if self.analyzer.target_model.config.n_hidden_layers > 0:
-            return self.hidden_plotter.plot(self.analyzer.comp_model, self.analyzer.target_model)
+        if self.analyzer.patched_model.config.n_hidden_layers > 0:
+            return self.hidden_plotter.plot(self.analyzer.patched_model, self.analyzer.components)
         return None
 
-    def print_analysis_summary(self) -> None:
+    def get_analysis_summary(self) -> dict[str, float]:
         """Print analysis summary statistics."""
+        output: dict[str, float] = {}
         _, max_cosine_sim, subnet_weights_at_max = self.analyzer.compute_cosine_similarities()
 
-        print(f"Max cosine similarity:\n{max_cosine_sim}")
-        print(f"Mean max cosine similarity: {max_cosine_sim.mean():.4f}")
-        print(f"Std max cosine similarity: {max_cosine_sim.std():.4f}")
+        output["Max cosine similarity"] = max_cosine_sim.item()
+        output["Mean max cosine similarity"] = max_cosine_sim.mean().item()
+        output["Std max cosine similarity"] = max_cosine_sim.std().item()
 
         # L2 ratio analysis
-        target_weights = self.analyzer.target_model.linear1.weight.T
+        target_weights = cast(
+            ComponentsOrModule, self.analyzer.patched_model.linear1
+        ).original.weight.T  # pyright: ignore[reportInvalidCast]
         target_norm = torch.norm(target_weights, dim=-1, keepdim=True)
         subnet_norm = torch.norm(subnet_weights_at_max, dim=-1, keepdim=True)
         l2_ratio = subnet_norm / target_norm
 
-        print(f"Mean L2 ratio: {l2_ratio.mean():.4f}")
-        print(f"Std L2 ratio: {l2_ratio.std():.4f}")
-        if hasattr(self.analyzer.target_model, "b_final"):
-            print(f"Mean bias: {self.analyzer.target_model.b_final.mean():.4f}")
+        output["Mean L2 ratio"] = l2_ratio.mean().item()
+        output["Std L2 ratio"] = l2_ratio.std().item()
+
+        return output
 
 
 def main():
@@ -981,8 +1004,8 @@ def main():
 
         # Load models
         model = ComponentModel.from_pretrained(run_id)[0]
-        target_model = model.model
-        assert isinstance(target_model, TMSModel)
+        patched_model = model.patched_model
+        assert isinstance(patched_model, TMSModel)
 
         # Get custom config and name for this run
         plot_config = run_info["config"]
@@ -990,17 +1013,17 @@ def main():
         run_name = run_info["name"]
 
         # Create plotter with custom config
-        plotter = TMSPlotter(comp_model=model, target_model=target_model, config=plot_config)
+        plotter = TMSPlotter(
+            patched_model=patched_model, components=model.components, config=plot_config
+        )
 
-        # Print analysis
-        print("=" * 50)
-        print(f"TMS Analysis Summary - {run_name}")
-        print("=" * 50)
-        plotter.print_analysis_summary()
+        # log analysis
+        logger.section(f"TMS Analysis Summary - {run_name}")
+        logger.values(plotter.get_analysis_summary())
 
         # Generate plots based on model architecture
-        if target_model.config.n_hidden == 2:
-            if target_model.config.n_hidden_layers == 0:
+        if patched_model.config.n_hidden == 2:
+            if patched_model.config.n_hidden_layers == 0:
                 # Model without hidden layers - use combined plot
                 fig = plotter.plot_combined_diagram()
                 filename = f"tms_combined_diagram_{run_name}.png"
@@ -1009,34 +1032,34 @@ def main():
                     bbox_inches="tight",
                     dpi=plotter.config.dpi,
                 )
-                print(f"\nSaved combined diagram to {out_dir / filename}")
+                logger.info(f"Saved combined diagram to {out_dir / filename}")
             else:
                 # Model with hidden layers - use separate plots
                 # Vector plot
                 fig = plotter.plot_vectors()
                 filename = f"tms_vectors_{run_name}.png"
                 fig.savefig(out_dir / filename, bbox_inches="tight", dpi=plotter.config.dpi)
-                print(f"\nSaved vectors plot to {out_dir / filename}")
+                logger.info(f"Saved vectors plot to {out_dir / filename}")
 
                 # Full network plot
                 fig = plotter.plot_full_network()
                 filename = f"tms_full_network_{run_name}.png"
                 fig.savefig(out_dir / filename, bbox_inches="tight", dpi=plotter.config.dpi)
-                print(f"Saved full network diagram to {out_dir / filename}")
+                logger.info(f"Saved full network diagram to {out_dir / filename}")
 
         # Hidden layer heatmaps (if applicable)
-        if target_model.config.n_hidden_layers > 0:
+        if patched_model.config.n_hidden_layers > 0:
             fig = plotter.plot_hidden_layers()
             if fig:
                 filename = f"tms_hidden_layers_{run_name}.png"
                 fig.savefig(out_dir / filename, bbox_inches="tight", dpi=plotter.config.dpi)
-                print(f"Saved hidden layers plot to {out_dir / filename}")
+                logger.info(f"Saved hidden layers plot to {out_dir / filename}")
 
         # Plot cosine similarity analysis
         fig = plotter.plot_cosine_similarity_analysis()
         filename = f"cosine_similarity_analysis_{run_name}.png"
         fig.savefig(out_dir / filename, bbox_inches="tight", dpi=plotter.config.dpi)
-        print(f"Saved cosine similarity analysis to {out_dir / filename}")
+        logger.info(f"Saved cosine similarity analysis to {out_dir / filename}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Literal
 
 import matplotlib.ticker as tkr
@@ -13,9 +13,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from torch import Tensor
 
 from spd.models.component_model import ComponentModel
-from spd.models.components import EmbeddingComponent, Gate, GateMLP, LinearComponent
+from spd.models.components import Components
 from spd.models.sigmoids import SigmoidTypes
-from spd.utils.component_utils import calc_causal_importances
 
 
 def permute_to_identity(
@@ -129,8 +128,6 @@ def _plot_causal_importances_figure(
 
 def plot_causal_importance_vals(
     model: ComponentModel,
-    components: Mapping[str, LinearComponent | EmbeddingComponent],
-    gates: Mapping[str, Gate | GateMLP],
     batch_shape: tuple[int, ...],
     device: str | torch.device,
     input_magnitude: float,
@@ -143,8 +140,6 @@ def plot_causal_importance_vals(
 
     Args:
         model: The ComponentModel
-        components: Dictionary of components
-        gates: Dictionary of gates
         batch_shape: Shape of the batch
         device: Device to use
         input_magnitude: Magnitude of input features
@@ -167,16 +162,13 @@ def plot_causal_importance_vals(
         batch = batch.unsqueeze(1)
 
     pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-        batch, module_names=list(components.keys())
+        batch, module_names=model.target_module_paths
     )[1]
-    Vs = {module_name: v.V for module_name, v in components.items()}
 
-    ci_raw, ci_upper_leaky_raw = calc_causal_importances(
+    ci_raw, ci_upper_leaky_raw = model.calc_causal_importances(
         pre_weight_acts=pre_weight_acts,
-        Vs=Vs,
-        gates=gates,
-        detach_inputs=False,
         sigmoid_type=sigmoid_type,
+        detach_inputs=False,
     )
 
     ci = {}
@@ -255,7 +247,7 @@ def plot_subnetwork_attributions_statistics(
 
 def plot_matrix(
     ax: plt.Axes,
-    matrix: torch.Tensor,
+    matrix: Tensor,
     title: str,
     xlabel: str,
     ylabel: str,
@@ -288,7 +280,7 @@ def plot_matrix(
 
 
 def plot_UV_matrices(
-    components: dict[str, LinearComponent | EmbeddingComponent],
+    components: dict[str, Components],
     all_perm_indices: dict[str, Float[Tensor, " C"]] | None = None,
 ) -> plt.Figure:
     """Plot V and U matrices for each instance, grouped by layer."""
@@ -346,7 +338,7 @@ def plot_UV_matrices(
 
 
 def create_embed_ci_sample_table(
-    causal_importances: dict[str, Float[Tensor, "... C"]], key: str
+    causal_importances: dict[str, Float[Tensor, "... C"]], key: str, threshold: float
 ) -> wandb.Table:
     """Create a wandb table visualizing embedding mask values.
 
@@ -362,7 +354,7 @@ def create_embed_ci_sample_table(
     component_names = ["TokenSample"] + ["CompVal" for _ in range(10)]
 
     for i, ci in enumerate(causal_importances[key][0, :20]):
-        active_values = ci[ci > 0.1].tolist()
+        active_values = ci[ci > threshold].tolist()
         # Cap at 10 components
         active_values = active_values[:10]
         formatted_values = [f"{val:.2f}" for val in active_values]

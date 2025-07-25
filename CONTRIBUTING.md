@@ -27,5 +27,5 @@ Before making an issue or PR, search for existing issues or PRs in the repositor
 
 ## Code Quality
 - Run `make check` before committing to ensure your code passes all quality checks
-- Follow the existing code style and conventions in the repository
+- See [STYLE.md](./STYLE.md) for our coding style guide.
 - Write clear commit messages that explain what changes were made and why

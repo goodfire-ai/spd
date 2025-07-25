@@ -33,33 +33,39 @@ def main(path: ModelPath) -> None:
 
     dataloader, _tokenizer = create_data_loader(
         dataset_config=dataset_config,
-        batch_size=config.batch_size,
+        batch_size=config.microbatch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
         ddp_rank=0,
         ddp_world_size=1,
     )
-    # print(ss_model)
-    print(config)
+    # logger.info(ss_model)
+    logger.values(config.model_dump(), msg="Model config")
 
     mean_n_active_components_per_token, mean_component_activation_counts = (
         component_activation_statistics(
             model=ss_model,
             dataloader=dataloader,
             n_steps=100,
+            sigmoid_type=config.sigmoid_type,
             device=device,
+            threshold=config.ci_alive_threshold,
         )
     )
-    logger.info(f"n_components: {ss_model.C}")
-    logger.info(f"mean_n_active_components_per_token: {mean_n_active_components_per_token}")
-    logger.info(f"mean_component_activation_counts: {mean_component_activation_counts}")
+    logger.values(
+        {
+            "n_components": str(ss_model.C),
+            "mean_n_active_components_per_token": str(mean_n_active_components_per_token),
+            "mean_component_activation_counts": str(mean_component_activation_counts),
+        }
+    )
     fig = plot_mean_component_activation_counts(
         mean_component_activation_counts=mean_component_activation_counts,
     )
     # Save the entire figure once
     save_path = out_dir / "modules_mean_component_activation_counts.png"
     fig.savefig(save_path)
-    logger.info(f"Saved combined plot to {str(save_path)}")
+    logger.info(f"Saved combined plot to {save_path}")
 
 
 if __name__ == "__main__":
