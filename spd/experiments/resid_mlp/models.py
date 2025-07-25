@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 from torch import Tensor, nn
 from wandb.apis.public import Run
 
+from spd.experiments.spd_model import SpdModel
 from spd.log import logger
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.module_utils import init_param_
@@ -71,7 +72,7 @@ class MLP(nn.Module):
         return out
 
 
-class ResidualMLP(nn.Module):
+class ResidualMLP(SpdModel, nn.Module):
     def __init__(self, config: ResidualMLPConfig):
         super().__init__()
         self.config = config
@@ -94,6 +95,9 @@ class ResidualMLP(nn.Module):
                 for _ in range(config.n_layers)
             ]
         )
+
+        # we don't use this on direct init, but we write to it when we load a pretrained model
+        self.train_config: dict[str, Any] = {}
 
     @override
     def forward(
@@ -136,10 +140,9 @@ class ResidualMLP(nn.Module):
             checkpoint=checkpoint_path,
         )
 
+    @override
     @classmethod
-    def from_pretrained(
-        cls, path: ModelPath
-    ) -> tuple["ResidualMLP", dict[str, Any], Float[Tensor, " n_features"]]:
+    def from_pretrained(cls, path: ModelPath) -> "ResidualMLP":
         """Fetch a pretrained model from wandb or a local path to a checkpoint.
 
         Args:
@@ -151,10 +154,10 @@ class ResidualMLP(nn.Module):
                 directory as the checkpoint.
 
         Returns:
-            model: The pretrained ResidualMLPModel
-            resid_mlp_train_config_dict: The config dict used to train the model (we don't
+            model: The pretrained ResidualMLPModel, which contains:
+                model.train_config: The config dict used to train the model (we don't
                 instantiate a train config due to circular import issues)
-            label_coeffs: The label coefficients used to train the model
+                model.train_config['label_coeffs']: The label coefficients used to train the model
         """
         if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
             # Check if run exists in shared filesystem first
@@ -189,4 +192,8 @@ class ResidualMLP(nn.Module):
         params = torch.load(paths.checkpoint, weights_only=True, map_location="cpu")
         resid_mlp.load_state_dict(params)
 
-        return resid_mlp, resid_mlp_train_config_dict, label_coeffs
+        # store the train config dict in the model
+        resid_mlp_train_config_dict["label_coeffs"] = label_coeffs
+        resid_mlp.train_config = resid_mlp_train_config_dict
+
+        return resid_mlp

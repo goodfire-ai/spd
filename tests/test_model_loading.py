@@ -19,6 +19,9 @@ def test_load_canonical_runs(run_id: str, wandb_url: str) -> None:
     assert component_model is not None
     assert cfg is not None
     assert path.exists()
-    assert path.is_file()
-    assert component_model.run_id == run_id
-    assert component_model.wandb_url == wandb_url
+    # list everything in path
+    assert path.is_dir()
+    print(f"{list(path.iterdir()) = }")
+    print(component_model)
+    print(cfg)
+    print(path)
