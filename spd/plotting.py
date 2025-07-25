@@ -368,10 +368,6 @@ def plot_ci_histograms(
         ax.set_yscale("log")
         ax.set_ylabel("Frequency")
 
-    # Hide unused subplots
-    for i in range(n_layers, n_layers):
-        axs[i].axis("off")
-
     fig.tight_layout()
 
     fig_img = _render_figure(fig)
