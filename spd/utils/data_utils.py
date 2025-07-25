@@ -88,17 +88,24 @@ class InductionDataset(
         vocab_start = 1  # 0 is reserved for BOS
         vocab_end = self.vocab_size + vocab_start
 
+        # For each sequence, we sample an `m` which serves as the target.
         memorised_token = torch.randint(vocab_start, vocab_end, (batch_size, 1), dtype=torch.long)
+
+        # To begin with, our sequence is just `T*`
         tokens = torch.randint(
             vocab_start, vocab_end, (batch_size, self.seq_len - 2), dtype=torch.long
         )
-        memory_positions_first = torch.randint(
+
+        # We sample a random position in each sequence and insert the induction token
+        # followed by the memory token -- our sequences are now: `T* S M T*`
+        induction_token_location = torch.randint(
             1, self.prefix_window, (batch_size, 1), dtype=torch.long
         )
+        tokens.scatter_(1, induction_token_location, self.induction_token)
+        tokens.scatter_(1, induction_token_location + 1, memorised_token)
 
-        tokens.scatter_(1, memory_positions_first, self.induction_token)
-        tokens.scatter_(1, memory_positions_first + 1, memorised_token)
-
+        # Finally, we add BOS tokens and an induction token at the final position.
+        # Our sequences are now: `[BOS] T* S M T* S`
         tokens = torch.cat(
             (
                 torch.zeros((batch_size, 1), dtype=torch.long),  # BOS token
