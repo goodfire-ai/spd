@@ -9,6 +9,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 
 from spd.models.component_model import ComponentModel
+from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -247,6 +248,7 @@ def component_activations(
     dataloader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: torch.device,
+    sigmoid_type: SigmoidTypes = "normal",
 ) -> dict[str, Float[Tensor, " n_steps C"]]:
     """Get the component activations over a **single** batch."""
     # --- Get Batch --- #
@@ -259,7 +261,7 @@ def component_activations(
 
     causal_importances, _ = model.calc_causal_importances(
         pre_weight_acts=pre_weight_acts,
-        sigmoid_type=model.config.sigmoid_type,
+        sigmoid_type=sigmoid_type,
         detach_inputs=False,
     )
 
