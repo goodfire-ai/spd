@@ -1,7 +1,3 @@
-r""" """
-
-from __future__ import annotations
-
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -20,8 +16,7 @@ from spd.experiments.ih.model import InductionModelConfig, InductionTransformer
 from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import set_seed
-
-wandb.require("core")
+from spd.utils.run_utils import get_output_dir, save_file
 
 
 class InductionHeadsTrainConfig(BaseModel):
@@ -38,26 +33,6 @@ class InductionHeadsTrainConfig(BaseModel):
     attention_maps_n_steps: PositiveInt
     prefix_window: PositiveInt
 
-
-def get_run_name(
-    config: InductionHeadsTrainConfig,
-) -> str:
-    """Generate a run name based on the config."""
-    run_name = ""
-    run_name += (
-        f"induction_heads_v{config.ih_model_config.vocab_size}_seq{config.ih_model_config.seq_len}"
-    )
-    run_name += f"_heads{config.ih_model_config.n_heads}_layers{config.ih_model_config.n_layers}"
-    run_name += f"_steps{config.steps}_batch{config.batch_size}_lr{config.lr}"
-    if config.ih_model_config.use_ff:
-        run_name += f"_dmodel{config.ih_model_config.d_model}"
-        run_name += f"_ff_fanout{config.ih_model_config.ff_fanout}"
-    if config.lr_schedule:
-        run_name += f"_lr_schedule_{config.lr_schedule}"
-    run_name += f"use_ff_{config.ih_model_config.use_ff}"
-    run_name += f"use_pos_encoding_{config.ih_model_config.use_pos_encoding}"
-    run_name += f"use_layer_norm_{config.ih_model_config.use_layer_norm}"
-    return run_name
 
 
 def linear_lr(step: int, steps: int) -> float:
@@ -175,14 +150,26 @@ def get_model_and_dataloader(
 def run_train(config: InductionHeadsTrainConfig, device: str) -> None:
     model, dataloader = get_model_and_dataloader(config, device)
 
-    run_name = get_run_name(config)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-    out_dir = Path(__file__).parent / "out" / f"{run_name}_{timestamp}"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    run_name = ""
+    run_name += (
+        f"induction_heads_v{config.ih_model_config.vocab_size}_seq{config.ih_model_config.seq_len}"
+    )
+    run_name += f"_heads{config.ih_model_config.n_heads}_layers{config.ih_model_config.n_layers}"
+    run_name += f"_steps{config.steps}_batch{config.batch_size}_lr{config.lr}"
+    if config.ih_model_config.use_ff:
+        run_name += f"_dmodel{config.ih_model_config.d_model}"
+        run_name += f"_ff_fanout{config.ih_model_config.ff_fanout}"
+    if config.lr_schedule:
+        run_name += f"_lr_schedule_{config.lr_schedule}"
+    run_name += f"use_ff_{config.ih_model_config.use_ff}"
+    run_name += f"use_pos_encoding_{config.ih_model_config.use_pos_encoding}"
+    run_name += f"use_layer_norm_{config.ih_model_config.use_layer_norm}"
+
+    out_dir = get_output_dir()
 
     if config.wandb_project:
-        wandb.init(project=config.wandb_project, name=run_name)
+        tags = [f"ih_{config.ih_model_config.vocab_size}vocab_{config.ih_model_config.seq_len}seq"]
+        wandb.init(project=config.wandb_project, name=run_name, tags=tags)
 
     # Save config
     config_path = out_dir / "ih_train_config.yaml"
@@ -292,7 +279,7 @@ if __name__ == "__main__":
         ih_model_config=InductionModelConfig(
             vocab_size=128,
             seq_len=seq_length,
-            d_model=64,
+            d_model=16,
             n_heads=1,
             n_layers=2,
             ff_fanout=4,
@@ -301,7 +288,7 @@ if __name__ == "__main__":
             use_pos_encoding=True,
         ),
         wandb_project="induction_heads",
-        steps=50000,
+        steps=100000,
         batch_size=1024,
         lr=1e-3,
         weight_decay=0.01,

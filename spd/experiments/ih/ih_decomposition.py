@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 from pathlib import Path
 from typing import Any
@@ -10,13 +8,11 @@ import wandb
 from spd.configs import Config, IHTaskConfig
 from spd.experiments.ih.model import InductionModelConfig, InductionTransformer
 from spd.log import logger
-from spd.run_spd import get_common_run_name_suffix, optimize
+from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import get_device, load_config, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
-
-wandb.require("core")
 
 
 def get_run_name(config: Config, ih_model_cfg: InductionModelConfig) -> str:
@@ -69,7 +65,7 @@ def main(
     config = load_config(config_path_or_obj, config_model=Config)
 
     if config.wandb_project:
-        tags = ["tms"]
+        tags = ["ih"]
         if evals_id:
             tags.append(evals_id)
         if sweep_id:
@@ -92,10 +88,9 @@ def main(
     target_model = target_model.to(device)
     target_model.eval()
 
-    run_name = get_run_name(config=config, ih_model_cfg=target_model.config)
     if config.wandb_project:
         assert wandb.run, "wandb.run must be initialized before training"
-        wandb.run.name = run_name
+        wandb.run.name = config.wandb_run_name
 
     save_file(config.model_dump(mode="json"), out_dir / "final_config.yaml")
     if sweep_params:
