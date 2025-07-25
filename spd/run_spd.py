@@ -114,8 +114,8 @@ def optimize(
                 batch_item = next(train_data_iter)
             except StopIteration:
                 logger.warning("Dataloader exhausted, resetting iterator.")
-                data_iter = iter(train_loader)
-                batch_item = next(data_iter)
+                train_data_iter = iter(train_loader)
+                batch_item = next(train_data_iter)
 
             batch = extract_batch_data(batch_item).to(device)
 
