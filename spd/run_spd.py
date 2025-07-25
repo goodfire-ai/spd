@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 import wandb
 from jaxtyping import Float, Int
+from PIL import Image
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -34,23 +35,16 @@ def local_log(data: Mapping[str, EvalMetricValue], step: int, out_dir: Path) -> 
     metrics_file = out_dir / "metrics.jsonl"
     fig_dir = out_dir / "figures"
 
-    file_metrics = {k: v for k, v in data.items() if isinstance(v, str | int | float)}
-    with open(metrics_file, "a") as f:
-        f.write(json.dumps(file_metrics) + "\n")
-
-    fig_metrics = {k: v for k, v in data.items() if isinstance(v, plt.Figure)}
-    for k, v in fig_metrics.items():
-        save_file(v, fig_dir / f"{k}_{step}.png")
-        # tqdm.write(f"Saved plot to {fig_dir / f'{k}_{step}.png'}")
-
-    n_table_metrics = 0
     for k, v in data.items():
-        if isinstance(v, wandb.Table):
-            n_table_metrics += 1
-            logger.warning(f"Cannot log table to local file, skipping {k}")
+        metrics_dict = {}
 
-    if n_table_metrics > 0:
-        logger.warning(f"Skipped {n_table_metrics} table metrics")
+        if isinstance(v, Image.Image):
+            v.save(fig_dir / f"{k}_{step}.png")
+        else:
+            metrics_dict[k] = v
+
+        with open(metrics_file, "a") as f:
+            f.write(json.dumps(metrics_dict) + "\n")
 
 
 def loop_dataloader[T](dl: DataLoader[T]):
