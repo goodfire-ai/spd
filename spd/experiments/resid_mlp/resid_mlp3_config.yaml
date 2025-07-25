@@ -38,15 +38,14 @@ lr_warmup_pct: 0.00
 train_log_freq: 50
 eval_freq: 500
 n_eval_steps: 100
-image_freq: 5_000
-image_on_first_step: true
+slow_eval_freq: 5_000
+slow_eval_on_first_step: true
 save_freq: null
 n_examples_until_dead: 1_024_000
-figures:
+eval_metrics:
   - classname: "CIHistograms"
   - classname: "MeanComponentActivationCounts"
   - classname: "UVandIdentityCI"
-metrics:
   - classname: "CI_L0"
 
 # --- Pretrained model info ---

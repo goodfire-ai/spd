@@ -210,6 +210,7 @@ def test_from_pretrained_model_works():
             n_eval_steps=1,
             eval_batch_size=1,
             eval_freq=1,
+            slow_eval_freq=1,
             importance_minimality_coeff=1.0,
             pnorm=1.0,
             n_examples_until_dead=1,

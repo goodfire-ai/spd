@@ -2,8 +2,7 @@
 
 import importlib
 import inspect
-from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Literal, Self, override
+from typing import Any, ClassVar, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -21,7 +20,7 @@ from spd.models.components import GateType
 from spd.spd_types import ModelPath, Probability
 
 
-class _ClassConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInheritance]
+class EvalMetricConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: str = Field(
         ...,
@@ -32,8 +31,14 @@ class _ClassConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInher
         description="Extra keyword arguments to pass to the class constructor besides `model: ComponentModel` and `config: Config`",
     )
 
-    @abstractmethod
-    def get_real_class(self) -> type[Any]: ...
+    def get_real_class(self) -> type:
+        available_classes = importlib.import_module("spd.eval").CLASSES
+        real_class = available_classes.get(self.classname)
+        if real_class is None:
+            raise ValueError(
+                f"Metric class {self.classname!r} not found. Available classes: {available_classes.keys()}"
+            )
+        return real_class
 
     @model_validator(mode="after")
     def validate_class_kwargs(self) -> Self:
@@ -54,30 +59,6 @@ class _ClassConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInher
             raise ValueError(f"Invalid kwargs for {self.classname!r}: {e}") from None
 
         return self
-
-
-class FiguresConfig(_ClassConfig):
-    @override
-    def get_real_class(self) -> type:
-        available_classes = importlib.import_module("spd.figures").FIGURE_CLASSES
-        real_class = available_classes.get(self.classname)
-        if real_class is None:
-            raise ValueError(
-                f"Figure class {self.classname!r} not found. Available classes: {available_classes.keys()}"
-            )
-        return real_class
-
-
-class MetricsConfig(_ClassConfig):
-    @override
-    def get_real_class(self) -> type:
-        available_classes = importlib.import_module("spd.metrics").METRIC_CLASSES
-        real_class = available_classes.get(self.classname)
-        if real_class is None:
-            raise ValueError(
-                f"Metric class {self.classname!r} not found. Available classes: {available_classes.keys()}"
-            )
-        return real_class
 
 
 class TMSTaskConfig(BaseModel):
@@ -270,24 +251,8 @@ class Config(BaseModel):
         default=0.0,
         description="Fraction of total steps to linearly warm up the learning rate",
     )
-    eval_batch_size: PositiveInt = Field(
-        ...,
-        description="Batch size used for evaluation",
-    )
-    n_eval_steps: PositiveInt = Field(
-        ...,
-        description="Frequency (in optimisation steps) at which to run evaluation",
-    )
 
     # --- Logging & Saving ---
-    image_freq: PositiveInt | None = Field(
-        default=None,
-        description="Interval (in steps) at which to log diagnostic images to WandB",
-    )
-    image_on_first_step: bool = Field(
-        default=True,
-        description="Whether to log images at optimisation step 0",
-    )
     train_log_freq: PositiveInt = Field(
         ...,
         description="Interval (in steps) at which to log training metrics to stdout",
@@ -296,18 +261,30 @@ class Config(BaseModel):
         ...,
         description="Interval (in steps) at which to log evaluation metrics to stdout",
     )
+    eval_batch_size: PositiveInt = Field(
+        ...,
+        description="Batch size used for evaluation",
+    )
+    slow_eval_freq: PositiveInt = Field(
+        ...,
+        description="Interval (in steps) at which to run slow evaluation metrics. Must be a multiple of `eval_freq`.",
+    )
+    n_eval_steps: PositiveInt = Field(
+        ...,
+        description="Number of steps to run evaluation for",
+    )
+    slow_eval_on_first_step: bool = Field(
+        default=True,
+        description="Whether to run slow evaluation on the first step",
+    )
     save_freq: PositiveInt | None = Field(
         default=None,
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    metrics: list[MetricsConfig] = Field(
+    eval_metrics: list[EvalMetricConfig] = Field(
         default=[],
-        description="List of metrics to use for evaluation. These should be wired up in the `spd.metrics` module.",
-    )
-    figures: list[FiguresConfig] = Field(
-        default=[],
-        description="List of figures to create. These should be wired up in the `spd.figures` module.",
+        description="List of metrics to use for evaluation",
     )
 
     # --- Component Tracking ---
@@ -388,6 +365,13 @@ class Config(BaseModel):
 
         assert self.batch_size % self.gradient_accumulation_steps == 0, (
             "batch_size must be divisible by gradient_accumulation_steps"
+        )
+
+        assert self.slow_eval_freq % self.eval_freq == 0, (
+            "slow_eval_freq must be a multiple of eval_freq"
+        )
+        assert self.slow_eval_freq // self.eval_freq >= 1, (
+            "slow_eval_freq must be at least eval_freq"
         )
 
         return self

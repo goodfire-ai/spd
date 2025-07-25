@@ -1,28 +1,40 @@
-"""Core metrics and figures for SPD experiments.
+"""Metrics and figures for SPD experiments.
 
-This file contains the default metrics and visualizations that are logged during SPD optimization.
-These are separate from user-defined metrics/figures to allow for easier comparison and extension.
+This file contains metrics and visualizations that can be logged during SPD optimization.
+These can be selected and configured in the Config.
 """
 
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterator, Mapping
-from typing import Any, override
+from typing import Any, ClassVar, override
 
 import einops
+import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 import wandb
+from einops import reduce
 from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
+from spd.plotting import (
+    plot_causal_importance_vals,
+    plot_ci_histograms,
+    plot_mean_component_activation_counts,
+    plot_UV_matrices,
+)
 from spd.utils.component_utils import calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 
+WandbLoggable = float | int | wandb.Table | plt.Figure
 
-class StreamingMetricCreator(ABC):
+
+class StreamingEval(ABC):
+    SLOW: ClassVar[bool]
+
     @abstractmethod
     def __init__(self, model: ComponentModel, config: Config, **kwargs: Any): ...
 
@@ -35,12 +47,17 @@ class StreamingMetricCreator(ABC):
     ) -> None: ...
 
     @abstractmethod
-    def compute(self) -> Mapping[str, float | int | wandb.Table]: ...
+    def compute(self) -> Mapping[str, WandbLoggable]: ...
 
 
-class CI_L0(StreamingMetricCreator):
+def l0(ci: Float[Tensor, "... C"], threshold: float) -> float:
+    return (ci > threshold).float().sum(-1).mean().item()
+
+
+class CI_L0(StreamingEval):
+    SLOW = False
+
     def __init__(self, model: ComponentModel, config: Config):
-        self.model = model
         self.l0_threshold = config.ci_alive_threshold
         self.l0s = defaultdict[str, list[float]](list)
 
@@ -52,8 +69,8 @@ class CI_L0(StreamingMetricCreator):
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         for layer_name, layer_ci in ci.items():
-            l0 = (layer_ci > self.l0_threshold).float().sum(-1).mean().item()
-            self.l0s[layer_name].append(l0)
+            l0_val = l0(layer_ci, self.l0_threshold)
+            self.l0s[layer_name].append(l0_val)
 
     @override
     def compute(self) -> Mapping[str, float]:
@@ -63,7 +80,9 @@ class CI_L0(StreamingMetricCreator):
         return out
 
 
-class CEandKLLosses(StreamingMetricCreator):
+class CEandKLLosses(StreamingEval):
+    SLOW = False
+
     def __init__(self, model: ComponentModel, config: Config, rounding_threshold: float):
         self.model = model
         self.rounding_threshold = rounding_threshold
@@ -182,7 +201,9 @@ class CEandKLLosses(StreamingMetricCreator):
         return {k: sum(v) / len(v) for k, v in self.ce_losses.items()}
 
 
-class LMEmbedSampleTable(StreamingMetricCreator):
+class LMEmbedSampleTable(StreamingEval):
+    SLOW = False
+
     def __init__(
         self,
         model: ComponentModel,
@@ -249,25 +270,145 @@ class LMEmbedSampleTable(StreamingMetricCreator):
         return {"embed_ci_sample": self._create_embed_ci_sample_table(all_ci)}
 
 
-METRIC_CLASSES = {cls.__name__: cls for cls in StreamingMetricCreator.__subclasses__()}
+class CIHistograms(StreamingEval):
+    SLOW = True
+
+    def __init__(self, model: ComponentModel, config: Config):
+        self.causal_importances = defaultdict[str, list[Float[Tensor, "... C"]]](list)
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        for k, v in ci.items():
+            self.causal_importances[k].append(v)
+
+    @override
+    def compute(self) -> Mapping[str, plt.Figure]:
+        combined_causal_importances = {k: torch.cat(v) for k, v in self.causal_importances.items()}
+        fig = plot_ci_histograms(causal_importances=combined_causal_importances)
+        return {"causal_importances_hist": fig}
 
 
-def create_metrics(
+class MeanComponentActivationCounts(StreamingEval):
+    SLOW = True
+
+    def __init__(self, model: ComponentModel, config: Config):
+        self.model = model
+        self.config = config
+        self.device = next(iter(model.parameters())).device
+
+        self.n_tokens = 0
+        self.component_activation_counts: dict[str, Float[Tensor, " C"]] = {
+            module_name: torch.zeros(model.C, device=self.device)
+            for module_name in model.components
+        }
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        n_tokens = next(iter(ci.values())).shape[:-1].numel()
+        self.n_tokens += n_tokens
+
+        for module_name, ci_vals in ci.items():
+            active_components = ci_vals > self.config.ci_alive_threshold
+            n_activations_per_component = reduce(active_components, "... C -> C", "sum")
+            self.component_activation_counts[module_name] += n_activations_per_component
+
+    @override
+    def compute(self) -> Mapping[str, plt.Figure]:
+        mean_counts_per_module = {
+            module_name: self.component_activation_counts[module_name] / self.n_tokens
+            for module_name in self.model.components
+        }
+        fig = plot_mean_component_activation_counts(mean_counts_per_module)
+        return {"mean_component_activation_counts": fig}
+
+
+class UVandIdentityCI(StreamingEval):
+    SLOW = True
+
+    def __init__(
+        self,
+        model: ComponentModel,
+        config: Config,
+    ):
+        self.model = model
+        self.config = config
+        self.device = next(iter(model.parameters())).device
+
+        self.batch_shape = None
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        if self.batch_shape is None:
+            self.batch_shape = batch.shape
+
+    @override
+    def compute(self) -> Mapping[str, plt.Figure]:
+        assert self.batch_shape is not None, "haven't seen any inputs yet"
+
+        figures, all_perm_indices = plot_causal_importance_vals(
+            model=self.model,
+            batch_shape=self.batch_shape,
+            device=self.device,
+            input_magnitude=0.75,
+            sigmoid_type=self.config.sigmoid_type,
+        )
+
+        uv_matrices_fig = plot_UV_matrices(
+            components=self.model.components, all_perm_indices=all_perm_indices
+        )
+
+        return {
+            **figures,
+            "uv_matrices": uv_matrices_fig,
+        }
+
+
+CLASSES = {
+    cls.__name__: cls
+    for cls in [
+        CI_L0,
+        CEandKLLosses,
+        LMEmbedSampleTable,
+        CIHistograms,
+        MeanComponentActivationCounts,
+        UVandIdentityCI,
+    ]
+}
+
+
+def eval(
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."]]
     | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-    n_eval_steps: int,
-    device: str,
+    device: str | torch.device,
     config: Config,
-) -> dict[str, float | int | wandb.Table]:
-    """Create metrics for logging."""
-    metrics: list[StreamingMetricCreator] = []
-    for metric_config in config.metrics:
-        metric_cls = METRIC_CLASSES[metric_config.classname]
-        metrics.append(metric_cls(model, config, **metric_config.extra_init_kwargs))
+    run_slow: bool,
+    n_steps: int,
+) -> dict[str, WandbLoggable]:
+    evals: list[StreamingEval] = []
+    for eval_config in config.eval_metrics:
+        eval_cls = CLASSES[eval_config.classname]
+        if not run_slow and eval_cls.SLOW:
+            continue
+        evals.append(eval_cls(model, config, **eval_config.extra_init_kwargs))
 
-    for _ in range(n_eval_steps):
-        # Do the work that's common between metrics
+    for _ in range(n_steps):
+        # Do the common work:
         batch = extract_batch_data(next(eval_iterator))
         batch = batch.to(device)
         target_out, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
@@ -277,16 +418,14 @@ def create_metrics(
             pre_weight_acts, sigmoid_type=config.sigmoid_type
         )
 
-        for metric in metrics:
-            metric.watch_batch(batch, target_out, ci)
+        for eval in evals:
+            eval.watch_batch(batch=batch, target_out=target_out, ci=ci)
 
-    out: dict[str, float | int | wandb.Table] = {}
-    all_dicts = [metric.compute() for metric in metrics]
+    out: dict[str, WandbLoggable] = {}
+    all_dicts = [eval.compute() for eval in evals]
     for d in all_dicts:
         if set(d.keys()).intersection(out.keys()):
-            raise ValueError(
-                f"Keys {set(d.keys()).intersection(out.keys())} already in output, cannot merge"
-            )
+            raise ValueError(f"Keys {set(d.keys()).intersection(out.keys())} already in output")
         out.update(d)
 
     return out

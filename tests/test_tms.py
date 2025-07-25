@@ -3,12 +3,7 @@ from typing import cast
 import torch
 from torch import nn
 
-from spd.configs import (
-    Config,
-    FiguresConfig,
-    MetricsConfig,
-    TMSTaskConfig,
-)
+from spd.configs import Config, EvalMetricConfig, TMSTaskConfig
 from spd.experiments.tms.models import TMSModel, TMSModelConfig
 from spd.experiments.tms.train_tms import TMSTrainConfig, get_model_and_dataloader, train
 from spd.run_spd import optimize
@@ -65,21 +60,18 @@ def test_tms_decomposition_happy_path() -> None:
         lr_warmup_pct=0.0,
         n_eval_steps=1,
         # Logging & Saving
-        image_freq=None,
-        image_on_first_step=True,
         train_log_freq=2,
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=8,  # print_freq * batch_size = 2 * 4
         eval_batch_size=4,
         eval_freq=10,
-        figures=[
-            FiguresConfig(classname="CIHistograms"),
-            FiguresConfig(classname="MeanComponentActivationCounts"),
-            FiguresConfig(classname="UVandIdentityCI"),
-        ],
-        metrics=[
-            MetricsConfig(classname="CI_L0"),
+        slow_eval_freq=10,
+        eval_metrics=[
+            EvalMetricConfig(classname="CIHistograms"),
+            EvalMetricConfig(classname="MeanComponentActivationCounts"),
+            EvalMetricConfig(classname="UVandIdentityCI"),
+            EvalMetricConfig(classname="CI_L0"),
         ],
         # Pretrained model info
         pretrained_model_class="spd.experiments.tms.models.TMSModel",

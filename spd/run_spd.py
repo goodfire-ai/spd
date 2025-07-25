@@ -2,8 +2,10 @@
 
 import json
 from collections import defaultdict
+from collections.abc import Mapping
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,10 +16,9 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import Config
-from spd.figures import create_figures
+from spd.eval import WandbLoggable, eval, l0
 from spd.log import logger
 from spd.losses import calculate_losses
-from spd.metrics import create_metrics
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.general_utils import (
@@ -26,6 +27,29 @@ from spd.utils.general_utils import (
     get_lr_with_warmup,
 )
 from spd.utils.run_utils import save_file
+
+
+def local_log(data: Mapping[str, WandbLoggable], step: int, out_dir: Path) -> None:
+    metrics_file = out_dir / "metrics.jsonl"
+    fig_dir = out_dir / "figures"
+
+    file_metrics = {k: v for k, v in data.items() if isinstance(v, str | int | float)}
+    with open(metrics_file, "a") as f:
+        f.write(json.dumps(file_metrics) + "\n")
+
+    fig_metrics = {k: v for k, v in data.items() if isinstance(v, plt.Figure)}
+    for k, v in fig_metrics.items():
+        save_file(v, fig_dir / f"{k}_{step}.png")
+        # tqdm.write(f"Saved plot to {fig_dir / f'{k}_{step}.png'}")
+
+    n_table_metrics = 0
+    for k, v in data.items():
+        if isinstance(v, wandb.Table):
+            n_table_metrics += 1
+            logger.warning(f"Cannot log table to local file, skipping {k}")
+
+    if n_table_metrics > 0:
+        logger.warning(f"Skipped {n_table_metrics} table metrics")
 
 
 def loop_dl[T](dl: DataLoader[T]):
@@ -57,7 +81,6 @@ def optimize(
     eval_iterator = loop_dl(eval_loader)
 
     logger.info(f"Output directory: {out_dir}")
-    metrics_file = out_dir / "metrics.jsonl" if out_dir is not None else None
 
     target_model.requires_grad_(False)
     model = ComponentModel(
@@ -106,6 +129,8 @@ def optimize(
     )
 
     for step in tqdm(range(config.steps + 1), ncols=0):
+        optimizer.zero_grad()
+
         step_lr = get_lr_with_warmup(
             step=step,
             steps=config.steps,
@@ -117,10 +142,7 @@ def optimize(
         for group in optimizer.param_groups:
             group["lr"] = step_lr
 
-        optimizer.zero_grad()
-
-        mb_log_data = defaultdict[str, float](float)
-
+        microbatch_log_data = defaultdict[str, float](float)
         for _ in range(config.gradient_accumulation_steps):
             batch = extract_batch_data(next(train_iterator)).to(device)
 
@@ -136,7 +158,7 @@ def optimize(
 
             alive_tracker.watch_batch(causal_importances)
 
-            micro_total_loss, micro_loss_terms = calculate_losses(
+            microbatch_total_loss, microbatch_loss_terms = calculate_losses(
                 model=model,
                 batch=batch,
                 config=config,
@@ -147,86 +169,61 @@ def optimize(
                 n_params=n_params,
             )
 
-            micro_total_loss.div_(config.gradient_accumulation_steps).backward()
+            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
-            for loss_name, loss_value in micro_loss_terms.items():
-                mb_log_data[f"train/loss/{loss_name}"] += (
+            for loss_name, loss_value in microbatch_loss_terms.items():
+                microbatch_log_data[f"train/loss/{loss_name}"] += (
                     loss_value / config.gradient_accumulation_steps
                 )
 
-            for layer_name, ci in causal_importances.items():
-                l0 = (ci > config.ci_alive_threshold).float().sum(-1).mean().item()
-                mb_log_data[f"train/{layer_name}/l0"] += l0 / config.gradient_accumulation_steps
+            for layer_name, layer_ci in causal_importances.items():
+                l0_val = l0(layer_ci, config.ci_alive_threshold)
+                microbatch_log_data[f"train/{layer_name}/l0"] += (
+                    l0_val / config.gradient_accumulation_steps
+                )
 
+        # --- Train Logging --- #
         if step % config.train_log_freq == 0:
             tqdm.write(f"--- Step {step} ---")
             tqdm.write(f"LR: {step_lr:.6f}")
-            for name, value in mb_log_data.items():
+            for name, value in microbatch_log_data.items():
                 tqdm.write(f"{name}: {value:.7f}")
 
+            for layer_name, n_alive_count in alive_tracker.n_alive().items():
+                n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
+                microbatch_log_data[n_alive_key] = n_alive_count
+
+            grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
+            for param in component_params + gate_params:
+                if param.grad is not None:
+                    grad_norm += param.grad.data.flatten().pow(2).sum()
+            microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
+
+            microbatch_log_data["train/misc/lr"] = step_lr
+
+            if out_dir is not None:
+                local_log(microbatch_log_data, step, out_dir)
             if config.wandb_project:
-                for layer_name, n_alive_count in alive_tracker.n_alive().items():
-                    n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
-                    mb_log_data[n_alive_key] = n_alive_count
+                wandb.log(microbatch_log_data, step=step)
 
-                grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
-                for param in component_params + gate_params:
-                    if param.grad is not None:
-                        grad_norm += param.grad.data.flatten().pow(2).sum()
-                mb_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
+        # --- Evaluation --- #
+        if step % config.eval_freq == 0:
+            with torch.inference_mode():
+                run_slow = step % config.slow_eval_freq == 0
 
-                mb_log_data["train/misc/lr"] = step_lr
-
-                wandb.log(mb_log_data, step=step)
-
-        with torch.inference_mode():
-            # --- Logging --- #
-            if step % config.eval_freq == 0:
-                metrics = create_metrics(
+                metrics = eval(
                     model=model,
                     eval_iterator=eval_iterator,
-                    n_eval_steps=n_eval_steps,
                     device=device,
                     config=config,
+                    run_slow=run_slow,
+                    n_steps=n_eval_steps,
                 )
 
-                if metrics_file is not None:
-                    # Filter out non-JSON-serializable objects (like wandb.Table) for file logging
-                    file_metrics = {
-                        k: v for k, v in metrics.items() if not isinstance(v, wandb.Table)
-                    }
-                    with open(metrics_file, "a") as f:
-                        f.write(json.dumps(file_metrics) + "\n")
-
+                if out_dir is not None:
+                    local_log(metrics, step, out_dir)
                 if config.wandb_project:
                     wandb.log({f"eval/{k}": v for k, v in metrics.items()}, step=step)
-
-            # --- Plotting --- #
-            if (
-                config.image_freq is not None
-                and step % config.image_freq == 0
-                and (step > 0 or config.image_on_first_step)
-            ):
-                logger.info(f"Step {step}: Generating plots...")
-
-                fig_dict = create_figures(
-                    model=model,
-                    eval_iterator=eval_iterator,
-                    device=device,
-                    config=config,
-                    n_eval_steps=n_eval_steps,
-                )
-
-                if config.wandb_project:
-                    wandb.log(
-                        {f"figures/{k}": wandb.Image(v) for k, v in fig_dict.items()},
-                        step=step,
-                    )
-                    if out_dir is not None:
-                        fig_dir = out_dir / "figures"
-                        for k, v in fig_dict.items():
-                            save_file(v, fig_dir / f"{k}_{step}.png")
-                            tqdm.write(f"Saved plot to {fig_dir / f'{k}_{step}.png'}")
 
         # --- Saving Checkpoint --- #
         if (

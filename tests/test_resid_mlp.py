@@ -1,4 +1,4 @@
-from spd.configs import Config, FiguresConfig, MetricsConfig, ResidualMLPTaskConfig
+from spd.configs import Config, EvalMetricConfig, ResidualMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidualMLP, ResidualMLPConfig
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
 from spd.run_spd import optimize
@@ -60,20 +60,18 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         n_eval_steps=1,
         eval_freq=10,
         eval_batch_size=4,
+        slow_eval_freq=10,
+        slow_eval_on_first_step=True,
         # Logging & Saving
-        image_freq=None,
-        image_on_first_step=True,
         train_log_freq=50,  # Print at step 0, 50, and 100
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        figures=[
-            FiguresConfig(classname="CIHistograms"),
-            FiguresConfig(classname="MeanComponentActivationCounts"),
-            FiguresConfig(classname="UVandIdentityCI"),
-        ],
-        metrics=[
-            MetricsConfig(classname="CI_L0"),
+        eval_metrics=[
+            EvalMetricConfig(classname="CIHistograms"),
+            EvalMetricConfig(classname="MeanComponentActivationCounts"),
+            EvalMetricConfig(classname="UVandIdentityCI"),
+            EvalMetricConfig(classname="CI_L0"),
         ],
         # Pretrained model info
         pretrained_model_class="spd.experiments.resid_mlp.models.ResidualMLP",

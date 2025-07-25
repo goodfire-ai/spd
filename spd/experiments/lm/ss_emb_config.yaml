@@ -39,14 +39,13 @@ lr_exponential_halflife: null
 train_log_freq: 50
 eval_freq: 500
 n_eval_steps: 100
-image_freq: 2000
-image_on_first_step: true
+slow_eval_freq: 2000
+slow_eval_on_first_step: true
 save_freq: null
 n_examples_until_dead: 2_048_000
-figures:
+eval_metrics:
   - classname: "CIHistograms"
   - classname: "MeanComponentActivationCounts"
-metrics:
   - classname: "CI_L0"
   - classname: "CEandKLLosses"
     extra_init_kwargs:
