@@ -197,75 +197,6 @@ class CEandKLLosses(StreamingEval):
         return {k: sum(v) / len(v) for k, v in self.ce_losses.items()}
 
 
-class LMEmbedSampleTable(StreamingEval):
-    SLOW = False
-
-    def __init__(
-        self,
-        model: ComponentModel,
-        config: Config,
-        n_rows: int,
-        n_components_per_row: int,
-    ):
-        self.model = model
-        self.ci_alive_threshold = config.ci_alive_threshold
-        self.n_rows = n_rows
-        self.n_components_per_row = n_components_per_row
-
-        self.causal_importances = defaultdict[str, list[Float[Tensor, "... C"]]](list)
-
-    @override
-    def watch_batch(
-        self,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
-    ) -> None:
-        for layer_name, layer_ci in ci.items():
-            self.causal_importances[layer_name].append(layer_ci)
-
-    def _create_embed_ci_sample_table(
-        self, causal_importances: Float[Tensor, "... C"]
-    ) -> wandb.Table:
-        """Create a wandb table visualizing embedding mask values.
-
-        Args:
-            causal_importances: Dictionary of causal importances for each component.
-
-        Returns:
-            A wandb Table object.
-        """
-        # Create a 20x10 table for wandb
-        table_data = []
-
-        # Add "Row Name" as the first column
-        column_names = ["TokenSample"] + ["CompVal" for _ in range(self.n_components_per_row)]
-
-        for i, ci in enumerate(causal_importances[0, : self.n_rows]):
-            active_values = ci[ci > self.ci_alive_threshold].tolist()[: self.n_components_per_row]
-
-            formatted_values = [f"{val:.2f}" for val in active_values]
-
-            # Optionally pad to self.n_components_per_row columns
-            while len(formatted_values) < self.n_components_per_row:
-                formatted_values.append("0")
-
-            row_header = f"{i}"
-            table_data.append([row_header] + formatted_values)
-
-        return wandb.Table(data=table_data, columns=column_names)
-
-    @override
-    def compute(self) -> Mapping[str, wandb.Table]:
-        assert len(self.causal_importances) == 1, "Only one embedding component allowed"
-        key = next(iter(self.causal_importances))
-
-        assert key == "transformer.wte" or key == "model.embed_tokens"
-        all_ci = torch.cat(self.causal_importances[key])
-
-        return {"embed_ci_sample": self._create_embed_ci_sample_table(all_ci)}
-
-
 class CIHistograms(StreamingEval):
     SLOW = True
 
@@ -379,7 +310,6 @@ CLASSES = {
     for cls in [
         CI_L0,
         CEandKLLosses,
-        LMEmbedSampleTable,
         CIHistograms,
         ComponentActivationDensity,
         UVandIdentityCI,
