@@ -245,7 +245,7 @@ def create_wandb_report(
             ci_height = 12
             panels.append(
                 wr.MediaBrowser(
-                    media_keys=["figures/causal_importances_upper_leaky"],
+                    media_keys=["eval/figures/causal_importances_upper_leaky"],
                     layout=wr.Layout(x=0, y=0, w=REPORT_TOTAL_WIDTH, h=ci_height),
                     num_columns=6,
                 )
