@@ -32,7 +32,7 @@ import yaml
 
 from spd.configs import Config
 from spd.log import LogFormat, logger
-from spd.registry import EXPERIMENT_REGISTRY
+from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
 from spd.utils.general_utils import apply_nested_updates, load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
@@ -661,7 +661,11 @@ def main(
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             array_script = temp_path / f"run_array_{run_id}.sh"
-            job_name = f"spd-{job_suffix}" if job_suffix else "spd"
+            if job_suffix is None:
+                expected_time_str = get_max_expected_runtime(experiments_list)
+                job_name = f"spd-{expected_time_str}"
+            else:
+                job_name = f"spd-{job_suffix}"
 
             create_slurm_array_script(
                 script_path=array_script,
