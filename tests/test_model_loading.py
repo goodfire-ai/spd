@@ -1,3 +1,13 @@
+"""test loading of the runs specified in spd.registry
+
+If these tests are failing, it is likely that something about model loading code has changed.
+If you believe this change to model loading code is necessary, then you should update
+the `CANONICAL_RUNS` dictionary to point to new runs which are compatible, and
+make it clear in your PR that this is a breaking change.
+
+
+"""
+
 import pytest
 
 from spd.models.component_model import ComponentModel

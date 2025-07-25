@@ -102,6 +102,6 @@ if your PR creates a breaking change, then you should update this dictionary to 
 
 You can generate these runs for each experiment by running:
 ```
-spd-run --local --create_snapshot False --create_report False --log-format terse
+spd-run --local --log-format terse
 ```
 """
