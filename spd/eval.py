@@ -26,7 +26,7 @@ from spd.plotting import (
     plot_component_activation_density,
     plot_UV_matrices,
 )
-from spd.utils.component_utils import calc_stochastic_masks, component_l0
+from spd.utils.component_utils import calc_stochastic_masks, ci_l_zero
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 
 EvalMetricValue = float | int | wandb.Table | Image.Image
@@ -65,7 +65,7 @@ class CI_L0(StreamingEval):
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         for layer_name, layer_ci in ci.items():
-            l0_val = component_l0(layer_ci, self.l0_threshold)
+            l0_val = ci_l_zero(layer_ci, self.l0_threshold)
             self.l0s[layer_name].append(l0_val)
 
     @override

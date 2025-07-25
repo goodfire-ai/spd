@@ -24,5 +24,5 @@ def calc_stochastic_masks(
     return stochastic_masks
 
 
-def component_l0(ci: Float[Tensor, "... C"], threshold: float) -> float:
+def ci_l_zero(ci: Float[Tensor, "... C"], threshold: float) -> float:
     return (ci > threshold).float().sum(-1).mean().item()
