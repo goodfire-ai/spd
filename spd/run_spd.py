@@ -157,11 +157,7 @@ def optimize(
             # --- Logging --- #
             if step % config.print_freq == 0:
                 loss_msg: str = f"[Step {step}] " + " | ".join(
-                    [f"LR: {step_lr:.6f}"]
-                    + [
-                        f"{k.replace('stochastic_', '').replace('importance_', 'imp_')}: {v:.7f}"
-                        for k, v in loss_terms.items()
-                    ]
+                    [f"LR: {step_lr:.6f}"] + [f"{k}: {v:.7f}" for k, v in loss_terms.items()]
                 )
                 tqdm.write(loss_msg)
 
