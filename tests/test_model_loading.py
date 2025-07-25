@@ -31,7 +31,3 @@ def test_load_canonical_runs(run_id: str, wandb_url: str) -> None:
     assert path.exists()
     assert path.is_dir()
     assert run_id
-    print(f"{list(path.iterdir()) = }")
-    print(component_model)
-    print(cfg)
-    print(path)
