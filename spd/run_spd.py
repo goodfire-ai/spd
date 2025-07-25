@@ -5,7 +5,6 @@ from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -33,13 +32,16 @@ from spd.utils.run_utils import save_file
 
 def local_log(data: Mapping[str, EvalMetricValue], step: int, out_dir: Path) -> None:
     metrics_file = out_dir / "metrics.jsonl"
+    metrics_file.touch(exist_ok=True)
+
     fig_dir = out_dir / "figures"
+    fig_dir.mkdir(exist_ok=True)
 
     for k, v in data.items():
         metrics_dict = {}
 
         if isinstance(v, Image.Image):
-            v.save(fig_dir / f"{k}_{step}.png")
+            v.save(fig_dir / f"{k.replace('/', '_')}_{step}.png")
         else:
             metrics_dict[k] = v
 
@@ -218,8 +220,8 @@ def optimize(
                 if out_dir is not None:
                     local_log(metrics, step, out_dir)
                 if config.wandb_project:
-                    wandb_logs = {
-                        f"eval/{k}": wandb.Image(v) if isinstance(v, plt.Figure) else v
+                    wandb_logs: dict[str, int | float | str | wandb.Image] = {
+                        f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
                         for k, v in metrics.items()
                     }
                     wandb.log(wandb_logs, step=step)

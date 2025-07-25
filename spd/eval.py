@@ -12,7 +12,6 @@ from typing import Any, ClassVar, override
 import einops
 import torch
 import torch.nn.functional as F
-import wandb
 from einops import reduce
 from jaxtyping import Float, Int
 from PIL import Image
@@ -29,7 +28,7 @@ from spd.plotting import (
 from spd.utils.component_utils import calc_stochastic_masks, ci_l_zero
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 
-EvalMetricValue = float | int | wandb.Table | Image.Image
+EvalMetricValue = float | int | Image.Image
 
 
 class StreamingEval(ABC):
@@ -217,7 +216,7 @@ class CIHistograms(StreamingEval):
     def compute(self) -> Mapping[str, Image.Image]:
         combined_causal_importances = {k: torch.cat(v) for k, v in self.causal_importances.items()}
         fig = plot_ci_histograms(causal_importances=combined_causal_importances)
-        return {"causal_importances_hist": fig}
+        return {"figures/causal_importances_hist": fig}
 
 
 class ComponentActivationDensity(StreamingEval):
@@ -256,7 +255,7 @@ class ComponentActivationDensity(StreamingEval):
             for module_name in self.model.components
         }
         fig = plot_component_activation_density(activation_densities)
-        return {"component_activation_density": fig}
+        return {"figures/component_activation_density": fig}
 
 
 class UVandIdentityCI(StreamingEval):
@@ -300,8 +299,8 @@ class UVandIdentityCI(StreamingEval):
         )
 
         return {
-            **figures,
-            "uv_matrices": uv_matrices_fig,
+            **{f"figures/{k}": v for k, v in figures.items()},
+            "figures/uv_matrices": uv_matrices_fig,
         }
 
 
