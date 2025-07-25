@@ -59,7 +59,7 @@ def get_target_module_mean_input_norms(
     n_batches: int,
 ) -> dict[str, float]:
     input_norms = defaultdict[str, list[float]](list)
-    for _ in tqdm(total=n_batches, desc="Computing target module mean input norms"):
+    for _ in tqdm(range(n_batches), desc="Computing target module mean input norms"):
         batch = extract_batch_data(next(train_iterator)).to(device)
         _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
             batch, module_names=target_module_patterns
