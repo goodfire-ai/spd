@@ -7,8 +7,8 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import Config
-from spd.models.component_model import ComponentModel
-from spd.models.components import Components, EmbeddingComponents, calc_stochastic_masks
+from spd.models.component_model import ComponentModel, calc_stochastic_masks
+from spd.models.components import Components, EmbeddingComponents
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 

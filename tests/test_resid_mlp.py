@@ -69,7 +69,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
         eval_metrics=[
             EvalMetricConfig(classname="CIHistograms"),
-            EvalMetricConfig(classname="MeanComponentActivationCounts"),
+            EvalMetricConfig(classname="ComponentActivationDensity"),
             EvalMetricConfig(classname="UVandIdentityCI"),
             EvalMetricConfig(classname="CI_L0"),
         ],

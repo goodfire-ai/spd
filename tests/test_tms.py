@@ -69,7 +69,7 @@ def test_tms_decomposition_happy_path() -> None:
         slow_eval_freq=10,
         eval_metrics=[
             EvalMetricConfig(classname="CIHistograms"),
-            EvalMetricConfig(classname="MeanComponentActivationCounts"),
+            EvalMetricConfig(classname="ComponentActivationDensity"),
             EvalMetricConfig(classname="UVandIdentityCI"),
             EvalMetricConfig(classname="CI_L0"),
         ],
