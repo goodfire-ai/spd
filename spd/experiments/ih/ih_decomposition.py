@@ -15,24 +15,6 @@ from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
 
 
-def get_run_name(config: Config, ih_model_cfg: InductionModelConfig) -> str:
-    suffix = get_common_run_name_suffix(config)
-    suffix += f"_vocab{ih_model_cfg.vocab_size}"
-    suffix += f"_seq{ih_model_cfg.seq_len}"
-    suffix += f"_hid{ih_model_cfg.d_model}"
-    suffix += f"_layers{ih_model_cfg.n_layers}"
-    suffix += f"_heads{ih_model_cfg.n_heads}"
-    suffix += f"use_ff{ih_model_cfg.use_ff}"
-    suffix += f"_use_pos{ih_model_cfg.use_pos_encoding}"
-    suffix += f"_use_ln{ih_model_cfg.use_layer_norm}"
-    if ih_model_cfg.use_ff:
-        suffix += f"_ff{ih_model_cfg.ff_fanout}"
-
-    exp_name = f"ih{ih_model_cfg.vocab_size}-{ih_model_cfg.d_model}_"
-
-    return config.wandb_run_name_prefix + exp_name + suffix
-
-
 def save_target_model_info(
     save_to_wandb: bool,
     out_dir: Path,
