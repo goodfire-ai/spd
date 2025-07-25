@@ -71,7 +71,7 @@ class CI_L0(StreamingEval):
     def compute(self) -> Mapping[str, float]:
         out = {}
         for layer_name, l0s in self.l0s.items():
-            out[f"l0/{layer_name}"] = sum(l0s) / len(l0s)
+            out[f"l0_{self.l0_threshold}/{layer_name}"] = sum(l0s) / len(l0s)
         return out
 
 
