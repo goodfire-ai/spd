@@ -16,6 +16,7 @@ from spd.registry import CANONICAL_RUNS
 CANONICAL_RUNS_TUPLES: list[tuple[str, str]] = list(CANONICAL_RUNS.items())
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "run_id, wandb_url",
     CANONICAL_RUNS_TUPLES,
