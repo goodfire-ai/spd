@@ -188,7 +188,7 @@ class TestTargetCISolution:
         )
 
         module_names = ["layers.0.mlp_in", "layers.1.mlp_out", "other.module"]
-        expanded = solution.expand_module_targets(module_names, validate=False)
+        expanded = solution.expand_module_targets(module_names)
 
         assert len(expanded) == 2
         assert isinstance(expanded["layers.0.mlp_in"], IdentityCIPattern)

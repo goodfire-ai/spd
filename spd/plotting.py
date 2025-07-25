@@ -18,8 +18,6 @@ from spd.models.components import (
 )
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.target_ci_solutions import (
-    TARGET_CI_SOLUTIONS,
-    has_ci_solution,
     permute_to_identity_greedy,
 )
 
@@ -182,7 +180,6 @@ def plot_causal_importance_vals(
     orientation: Literal["vertical", "horizontal"] = "vertical",
     title_formatter: Callable[[str], str] | None = None,
     sigmoid_type: SigmoidTypes = "leaky_hard",
-    experiment_id: str | None = None,
 ) -> tuple[dict[str, plt.Figure], dict[str, Float[Tensor, " C"]]]:
     """Plot the values of the causal importances for a batch of inputs with single active features.
 
@@ -195,7 +192,6 @@ def plot_causal_importance_vals(
         orientation: The orientation of the subplots
         title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
         sigmoid_type: Type of sigmoid to use for causal importance calculation.
-        experiment_id: Optional experiment ID to look up target solution for intelligent permutation
 
     Returns:
         Tuple of:
@@ -213,17 +209,12 @@ def plot_causal_importance_vals(
 
     has_pos_dim = len(batch_shape) == 3
 
-    # Apply permutations based on target solution if available
-    if experiment_id and has_ci_solution(experiment_id):
-        target_solution = TARGET_CI_SOLUTIONS[experiment_id]
-        ci, _ = target_solution.permute_to_target(ci_raw)
-        ci_upper_leaky, all_perm_indices = target_solution.permute_to_target(ci_upper_leaky_raw)
-    else:
-        # Fallback to identity permutation for all
-        ci = {}
-        ci_upper_leaky = {}
-        all_perm_indices = {}
-        for k in ci_raw:
+    # Apply permutations (fallback to identity permutation for all)
+    # TODO: Re-enable target solution permutation after config-based refactor
+    ci = {}
+    ci_upper_leaky = {}
+    all_perm_indices = {}
+    for k in ci_raw:
             ci[k], _ = permute_to_identity_greedy(ci_vals=ci_raw[k])
             ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity_greedy(
                 ci_vals=ci_upper_leaky_raw[k]

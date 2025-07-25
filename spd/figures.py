@@ -39,7 +39,6 @@ class CreateFiguresInputs:
         | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
     )
     n_eval_steps: int
-    evals_id: str | None = None
 
 
 class CreateFiguresFn(Protocol):
@@ -78,7 +77,6 @@ def uv_and_identity_ci(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
         device=inputs.device,
         input_magnitude=0.75,
         sigmoid_type=inputs.config.sigmoid_type,
-        experiment_id=inputs.evals_id,
     )
 
     uv_matrices = plot_UV_matrices(
@@ -102,7 +100,6 @@ def create_figures(
     eval_loader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     n_eval_steps: int,
-    evals_id: str | None = None,
 ) -> Mapping[str, plt.Figure]:
     """Create figures for logging.
 
@@ -132,7 +129,6 @@ def create_figures(
         step=step,
         eval_loader=eval_loader,
         n_eval_steps=n_eval_steps,
-        evals_id=evals_id,
     )
     for fn_cfg in config.figures_fns:
         if (fn := FIGURES_FNS.get(fn_cfg.name)) is None:

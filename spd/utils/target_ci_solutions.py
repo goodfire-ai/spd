@@ -11,7 +11,7 @@ match expected target solutions in toy models:
 
 import fnmatch
 from abc import ABC, abstractmethod
-from typing import Literal, override
+from typing import Any, Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -259,24 +259,16 @@ class TargetCISolution:
     First matching pattern wins for each module name.
     """
 
-    def __init__(
-        self, module_targets: dict[str, TargetCIPattern], expected_matches: int | None = None
-    ):
+    def __init__(self, module_targets: dict[str, TargetCIPattern]):
         """Initialize target solution with pattern mappings.
 
         Args:
             module_targets: Dictionary mapping module name patterns to target patterns.
                 Keys can be exact module names or fnmatch-style patterns (e.g., "layers.*.mlp_in").
-            expected_matches: Optional validation - expected total number of modules that
-                should match the patterns. If provided, expand_module_targets will validate
-                that exactly this many modules match.
         """
         self.module_targets = module_targets
-        self.expected_matches = expected_matches
 
-    def expand_module_targets(
-        self, module_names: list[str], validate: bool = True
-    ) -> dict[str, TargetCIPattern]:
+    def expand_module_targets(self, module_names: list[str]) -> dict[str, TargetCIPattern]:
         """Expand patterns to concrete module name -> TargetCIPattern mappings."""
         result = {}
         for name in module_names:
@@ -284,11 +276,6 @@ class TargetCISolution:
                 if fnmatch.fnmatch(name, pattern):
                     result[name] = target
                     break
-
-        if validate and self.expected_matches and len(result) != self.expected_matches:
-            raise ValueError(
-                f"Expected {self.expected_matches} matches, got {len(result)}: {sorted(result.keys())}"
-            )
 
         return result
 
@@ -368,54 +355,36 @@ def compute_target_metrics(
     return metrics
 
 
-# Registry of target solutions for toy model experiments
-TARGET_CI_SOLUTIONS: dict[str, TargetCISolution] = {
-    "tms_5-2": TargetCISolution(
-        {"linear1": IdentityCIPattern(n_features=5), "linear2": IdentityCIPattern(n_features=5)}
-    ),
-    "tms_5-2-id": TargetCISolution(
-        {
-            "linear1": IdentityCIPattern(n_features=5),
-            "linear2": IdentityCIPattern(n_features=5),
-            "hidden_layers.0": DenseCIPattern(k=2),
-        }
-    ),
-    "tms_40-10": TargetCISolution(
-        {
-            "linear1": IdentityCIPattern(n_features=40),
-            "linear2": IdentityCIPattern(n_features=40),
-        }
-    ),
-    "tms_40-10-id": TargetCISolution(
-        {
-            "linear1": IdentityCIPattern(n_features=40),
-            "linear2": IdentityCIPattern(n_features=40),
-            "hidden_layers.0": DenseCIPattern(k=10),
-        }
-    ),
-    "resid_mlp1": TargetCISolution(
-        {
-            "layers.0.mlp_in": IdentityCIPattern(n_features=100),
-            "layers.0.mlp_out": DenseCIPattern(k=50),
-        }
-    ),
-    "resid_mlp2": TargetCISolution(
-        {
-            "layers.*.mlp_in": IdentityCIPattern(n_features=100),
-            "layers.*.mlp_out": DenseCIPattern(k=25),
-        },
-        expected_matches=4,
-    ),
-    "resid_mlp3": TargetCISolution(
-        {
-            "layers.*.mlp_in": IdentityCIPattern(n_features=102),
-            "layers.*.mlp_out": DenseCIPattern(k=17),
-        },
-        expected_matches=6,
-    ),
-}
+def make_target_ci_solution(
+    identity_ci: list[dict[str, Any]] | None = None,
+    dense_ci: list[dict[str, Any]] | None = None,
+) -> TargetCISolution | None:
+    """Create a TargetCISolution from config specifications.
+    
+    Args:
+        identity_ci: List of identity CI pattern specifications with layer_pattern and n_features
+        dense_ci: List of dense CI pattern specifications with layer_pattern and k
+        
+    Returns:
+        TargetCISolution instance or None if no patterns provided
+    """
+    if not identity_ci and not dense_ci:
+        return None
+        
+    module_targets = {}
+    
+    if identity_ci:
+        for spec in identity_ci:
+            module_targets[spec["layer_pattern"]] = IdentityCIPattern(
+                n_features=int(spec["n_features"])
+            )
+    
+    if dense_ci:
+        for spec in dense_ci:
+            module_targets[spec["layer_pattern"]] = DenseCIPattern(
+                k=int(spec["k"])
+            )
+    
+    return TargetCISolution(module_targets)
 
 
-def has_ci_solution(evals_id: str) -> bool:
-    """Check if an experiment has a target CI solution defined."""
-    return evals_id in TARGET_CI_SOLUTIONS
