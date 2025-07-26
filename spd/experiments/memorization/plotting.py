@@ -7,7 +7,7 @@ import torch
 from matplotlib import pyplot as plt
 
 from spd.models.component_model import ComponentModel
-from spd.plotting import _plot_causal_importances_figure
+from spd.plotting import _plot_causal_importances_figure, permute_to_identity
 
 
 def create_memorization_plot_results(
@@ -31,9 +31,14 @@ def create_memorization_plot_results(
         detach_inputs=False,
     )
 
+    # Permute to identity for better visualization
+    ci_permuted = {}
+    for k in ci_raw:
+        ci_permuted[k], _ = permute_to_identity(ci_vals=ci_raw[k])
+
     # Step 3: Make the heatmap using _plot_causal_importances_figure
     fig = _plot_causal_importances_figure(
-        ci_vals=ci_raw,
+        ci_vals=ci_permuted,
         title_prefix="memorization causal importances",
         colormap="Blues",
         input_magnitude=1.0,
