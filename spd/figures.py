@@ -89,6 +89,30 @@ def uv_and_identity_ci(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
     }
 
 
+def memorization_ci_plots(inputs: CreateFiguresInputs) -> Mapping[str, plt.Figure]:
+    """Create memorization-specific CI plots using actual keys from the dataset."""
+    # Import here to avoid circular imports
+    from spd.experiments.memorization.memorization_dataset import KeyValueMemorizationDataset
+    from spd.experiments.memorization.plotting import create_memorization_plot_results
+    from spd.utils.data_utils import DatasetGeneratedDataLoader
+
+    # Try to get the dataset from the eval_loader
+    if isinstance(inputs.eval_loader, DatasetGeneratedDataLoader):
+        dataset = inputs.eval_loader.dataset
+        if isinstance(dataset, KeyValueMemorizationDataset):
+            return create_memorization_plot_results(
+                model=inputs.model,
+                device=inputs.device,
+                dataset=dataset,
+            )
+
+    # If we can't get the memorization dataset, raise an error
+    raise ValueError(
+        f"memorization_ci_plots requires a KeyValueMemorizationDataset, "
+        f"but got eval_loader of type {type(inputs.eval_loader)} with dataset {type(getattr(inputs.eval_loader, 'dataset', None))}"
+    )
+
+
 def create_figures(
     model: ComponentModel,
     causal_importances: dict[str, Float[Tensor, "... C"]],
@@ -150,5 +174,6 @@ FIGURES_FNS: dict[str, CreateFiguresFn] = {
         ci_histograms,
         mean_component_activation_counts,
         uv_and_identity_ci,
+        memorization_ci_plots,
     ]
 }

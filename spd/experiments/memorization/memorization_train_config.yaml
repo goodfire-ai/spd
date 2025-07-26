@@ -1,0 +1,16 @@
+wandb_project: "nathu-memorization"
+seed: 0
+# Memorization model parameters
+n_pairs_multiplier: 2
+d_model: 512
+d_hidden: 1024
+act_fn_name: "relu"
+use_bias: true
+# Training parameters
+dataset_seed: 0
+batch_size: 1024
+steps: 1000000
+print_freq: 1000
+lr: 3.0e-4
+lr_schedule: "cosine"
+lr_warmup_steps: 50000
