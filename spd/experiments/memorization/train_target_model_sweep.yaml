@@ -1,0 +1,17 @@
+program: spd/experiments/memorization/train_memorization.py
+method: grid
+metric:
+  name: final_avg_mse
+  goal: minimize
+parameters:
+  d_model:
+    values: [16, 32, 64]
+  d_hidden:
+    values: [64, 128, 256]
+  n_pairs_multiplier:
+    values: [1, 1.414, 2, 2.828, 4]
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - spd/experiments/memorization/memorization_train_config.yaml
