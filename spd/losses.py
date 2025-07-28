@@ -226,7 +226,7 @@ def calc_ce_losses(
     masked_component_logits: Float[Tensor, "..."],
     target_logits: Float[Tensor, "..."],
 ) -> dict[str, float]:
-    """Calculate cross-entropy  for various masking scenarios.
+    """Calculate cross-entropy losses for various masking scenarios.
 
     Args:
         model: The component model

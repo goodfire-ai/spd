@@ -192,7 +192,7 @@ class ComponentModel(nn.Module):
             else:
                 raise ValueError(
                     f"Module '{module_path}' matched pattern is not nn.Linear, nn.Embedding,"
-                    f"or nn.Conv1d with kernel_size == 1. Found type: {type(module)}"
+                    f"or Huggingface Conv1D. Found type: {type(module)}"
                 )
 
             replacement = ComponentsOrModule(original=module, components=component)

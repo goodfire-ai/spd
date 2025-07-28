@@ -278,7 +278,3 @@ def test_from_pretrained_model_works():
         assert config == config_loaded
         for k, v in cm_loaded.state_dict().items():
             torch.testing.assert_close(v, cm.state_dict()[k])
-
-if __name__ == "__main__":
-    for _ in range(10000):
-        test_replaced_component_forward_conv1d_matches_modes()
