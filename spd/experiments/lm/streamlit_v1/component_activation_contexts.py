@@ -214,6 +214,11 @@ def find_component_activation_contexts(
 
                         offset_mapping = context_tokenized["offset_mapping"][0].tolist()
 
+                        # Remove the final offset mapping if it is [0,0], which happens for some
+                        # unknown reason
+                        if offset_mapping[-1] == [0, 0]:
+                            offset_mapping = offset_mapping[:-1]
+
                         # Calculate CI values for each token in context
                         token_ci_values = []
                         for i in range(len(offset_mapping)):
