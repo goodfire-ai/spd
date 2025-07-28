@@ -255,7 +255,7 @@ class ComponentsOrModule(nn.Module):
     def components_weight(self) -> Float[Tensor, "rows cols"]:
         """Get the component weight matrix."""
         return self.components.weight
-    
+
     @property
     def original_weight(self) -> Float[Tensor, "rows cols"]:
         if isinstance(self.original, Conv1D):

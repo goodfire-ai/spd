@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
-from transformers.modeling_utils import Conv1D
 
 from spd.configs import Config
 from spd.models.component_model import ComponentModel

@@ -8,7 +8,6 @@ from jaxtyping import Float
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D
 
-
 from spd.configs import Config, TMSTaskConfig
 from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsOrModule, EmbeddingComponents, LinearComponents
@@ -21,7 +20,7 @@ class SimpleTestModel(nn.Module):
     LINEAR_1_SHAPE = (10, 5)
     LINEAR_2_SHAPE = (5, 3)
     CONV1D_1_SHAPE = (3, 5)
-    CONV1D_2_SHAPE = (1,3)
+    CONV1D_2_SHAPE = (1, 3)
     EMBEDDING_SHAPE = (100, 8)
 
     def __init__(self):
@@ -141,6 +140,7 @@ def test_replaced_component_forward_linear_matches_modes():
     expected_rep = components(x, mask)
     torch.testing.assert_close(out_rep, expected_rep, rtol=1e-4, atol=1e-5)
 
+
 def test_replaced_component_forward_conv1d_matches_modes():
     B = 5
     S = 10
@@ -204,7 +204,7 @@ def test_replaced_component_forward_embedding_matches_modes():
 
 def test_correct_parameters_require_grad(component_model: ComponentModel):
     for cm in component_model.components_or_modules.values():
-        if isinstance(cm.original, nn.Linear) or isinstance(cm.original, Conv1D):
+        if isinstance(cm.original, nn.Linear | Conv1D):
             assert not cm.original.weight.requires_grad
             if cm.original.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
                 assert not cm.original.bias.requires_grad
