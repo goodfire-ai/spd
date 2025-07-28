@@ -10,6 +10,7 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
+from transformers.modeling_utils import Conv1D
 from wandb.apis.public import Run
 
 from spd.configs import Config
@@ -179,10 +180,19 @@ class ComponentModel(nn.Module):
                     embedding_dim=module.embedding_dim,
                 )
                 component.init_from_target_weight(module.weight)
+            elif isinstance(module, Conv1D):
+                d_in, d_out = module.weight.shape
+                component = LinearComponents(
+                    C=C,
+                    d_in=d_in,
+                    d_out=d_out,
+                    bias=None,
+                )
+                component.init_from_target_weight(module.weight)
             else:
                 raise ValueError(
-                    f"Module '{module_path}' matched pattern is not nn.Linear or "
-                    f"nn.Embedding. Found type: {type(module)}"
+                    f"Module '{module_path}' matched pattern is not nn.Linear, nn.Embedding,"
+                    f"or nn.Conv1d with kernel_size == 1. Found type: {type(module)}"
                 )
 
             replacement = ComponentsOrModule(original=module, components=component)
@@ -207,6 +217,8 @@ class ComponentModel(nn.Module):
             else:
                 if isinstance(component.original, nn.Linear):
                     input_dim = component.original.weight.shape[1]
+                elif isinstance(component.original, Conv1D):
+                    input_dim = component.original.weight.shape[0]
                 else:
                     assert isinstance(component.original, nn.Embedding)
                     input_dim = component.original.num_embeddings
