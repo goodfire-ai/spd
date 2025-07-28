@@ -438,8 +438,6 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                     # Format examples
                     examples_html = []
                     for i, example in enumerate(component_examples):
-                        ci_value = example["ci_value"]
-
                         # Build HTML using offset mappings for proper spacing
                         html_example = _render_text_with_token_highlights(
                             raw_text=example["raw_text"],
@@ -471,65 +469,18 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                 if table_data:
                     # Download options at the top
                     st.subheader("Export Options")
-                    col1, col2 = st.columns(2)
 
-                    with col1:
-                        # Original markdown format
-                        markdown_lines = []
-                        markdown_lines.append("# Component Activation Contexts")
-                        markdown_lines.append(f"\n## Module: {selected_module}\n")
-
-                        for row in table_data:
-                            markdown_lines.append(f"### Component {row['Component']}")
-
-                            # Convert HTML back to markdown for download
-                            component_examples = module_contexts[row["Component"]]
-                            for i, example in enumerate(component_examples):
-                                ci_value = example["ci_value"]
-                                raw_text = example["raw_text"]
-                                active_position = example["active_position"]
-                                offset_mapping = example["offset_mapping"]
-
-                                # Use offset mapping to correctly identify the active token
-                                if 0 <= active_position < len(offset_mapping):
-                                    start, end = offset_mapping[active_position]
-                                    # Insert ** markers around the active token
-                                    marked_text = (
-                                        raw_text[:start]
-                                        + "**"
-                                        + raw_text[start:end]
-                                        + "**"
-                                        + raw_text[end:]
-                                    )
-                                else:
-                                    marked_text = raw_text
-
-                                markdown_lines.append(
-                                    f"{i + 1}. CI val {ci_value:.3f}: {marked_text}"
-                                )
-                            markdown_lines.append("")
-
-                        markdown_content = "\n".join(markdown_lines)
-
-                        st.download_button(
-                            label="Download as Markdown",
-                            data=markdown_content,
-                            file_name=f"component_contexts_{selected_module}.md",
-                            mime="text/markdown",
-                        )
-
-                    with col2:
-                        # HTML download button for single layer
-                        html_content = []
-                        html_content.append("<!DOCTYPE html>")
-                        html_content.append("<html>")
-                        html_content.append("<head>")
-                        html_content.append('<meta charset="utf-8">')
-                        html_content.append(
-                            f"<title>Component Activation Contexts - {selected_module}</title>"
-                        )
-                        html_content.append("<style>")
-                        html_content.append("""
+                    # HTML download button for single layer
+                    html_content = []
+                    html_content.append("<!DOCTYPE html>")
+                    html_content.append("<html>")
+                    html_content.append("<head>")
+                    html_content.append('<meta charset="utf-8">')
+                    html_content.append(
+                        f"<title>Component Activation Contexts - {selected_module}</title>"
+                    )
+                    html_content.append("<style>")
+                    html_content.append("""
                         body {
                             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
                             line-height: 1.6;
@@ -653,37 +604,37 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                             }
                         }
                     """)
-                        html_content.append("</style>")
-                        html_content.append("</head>")
-                        html_content.append("<body>")
-                        html_content.append("<h1>Component Activation Contexts</h1>")
-                        html_content.append(f"<h2>Module: {selected_module}</h2>")
+                    html_content.append("</style>")
+                    html_content.append("</head>")
+                    html_content.append("<body>")
+                    html_content.append("<h1>Component Activation Contexts</h1>")
+                    html_content.append(f"<h2>Module: {selected_module}</h2>")
 
-                        # Add all component sections
-                        for row in table_data:
-                            html_content.append('<div class="component-section">')
-                            html_content.append(
-                                f'<div class="component-header">Component {row["Component"]} '
-                            )
-                            html_content.append(
-                                '<span style="font-weight: normal; opacity: 0.7; font-size: 14px;">'
-                            )
-                            html_content.append(f"({row['Total Examples']} examples)</span></div>")
-                            html_content.append('<div class="examples-container">')
-                            html_content.append(row["Example Activation Contexts"])
-                            html_content.append("</div></div>")
-
-                        html_content.append("</body>")
-                        html_content.append("</html>")
-
-                        html_str = "\n".join(html_content)
-
-                        st.download_button(
-                            label=f"Download HTML ({selected_module})",
-                            data=html_str,
-                            file_name=f"component_contexts_{selected_module}.html",
-                            mime="text/html",
+                    # Add all component sections
+                    for row in table_data:
+                        html_content.append('<div class="component-section">')
+                        html_content.append(
+                            f'<div class="component-header">Component {row["Component"]} '
                         )
+                        html_content.append(
+                            '<span style="font-weight: normal; opacity: 0.7; font-size: 14px;">'
+                        )
+                        html_content.append(f"({row['Total Examples']} examples)</span></div>")
+                        html_content.append('<div class="examples-container">')
+                        html_content.append(row["Example Activation Contexts"])
+                        html_content.append("</div></div>")
+
+                    html_content.append("</body>")
+                    html_content.append("</html>")
+
+                    html_str = "\n".join(html_content)
+
+                    st.download_button(
+                        label=f"Download HTML ({selected_module})",
+                        data=html_str,
+                        file_name=f"component_contexts_{selected_module}.html",
+                        mime="text/html",
+                    )
 
                     # Function to generate HTML for a single module
                     def generate_module_html(
