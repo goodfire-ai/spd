@@ -268,6 +268,28 @@ def create_wandb_report(
             )
         y += loss_plots_height
 
+        if EXPERIMENT_REGISTRY[experiment].experiment_type in ["tms", "resid_mlp"]:
+            # Add target CI error plots
+            target_ci_weight = 6
+            target_ci_width = REPORT_TOTAL_WIDTH // 2
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["target_solution_error/total"],
+                    title="Target CI Error (Tolerance=0.1)",
+                    layout=wr.Layout(x=0, y=y, w=target_ci_width, h=target_ci_weight),
+                )
+            )
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["target_solution_error/total_0p2"],
+                    title="Target CI Error (Tolerance=0.2)",
+                    layout=wr.Layout(x=target_ci_width, y=y, w=target_ci_width, h=target_ci_weight),
+                )
+            )
+            y += target_ci_weight
+
         # Only add KL loss plots for language model experiments
         if EXPERIMENT_REGISTRY[experiment].experiment_type == "lm":
             kl_height = 6
