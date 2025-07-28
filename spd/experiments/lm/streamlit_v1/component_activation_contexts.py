@@ -16,22 +16,18 @@ from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import extract_batch_data
 
 
-def _interpolate(bottom: float, top: float, x: float) -> float:
-    """Interpolate between a and b using x, which is in [0, 1]."""
-    return bottom + (top - bottom) * x
-
-
 def _get_highlight_color(
     importance: float,
-    color_upper: tuple[int, int, int] = (160, 210, 160),  # Light green
-    color_lower: tuple[int, int, int] = (255, 255, 255),  # White
 ) -> str:
-    """Get highlight color based on importance value."""
+    """Get highlight color based on importance value.
+
+    Uses semi-transparent green that works in both light and dark themes.
+    """
     importance_norm = min(max(importance, 0), 1)  # Clamp to [0, 1]
-    r = int(_interpolate(color_lower[0], color_upper[0], importance_norm))
-    g = int(_interpolate(color_lower[1], color_upper[1], importance_norm))
-    b = int(_interpolate(color_lower[2], color_upper[2], importance_norm))
-    return f"rgba({r}, {g}, {b}, 0.7)"
+    # Use green with varying opacity based on importance
+    # This works well in both light and dark modes
+    opacity = 0.15 + (importance_norm * 0.35)  # Range from 0.15 to 0.5
+    return f"rgba(0, 200, 0, {opacity})"
 
 
 def _render_text_with_token_highlights(
@@ -64,7 +60,7 @@ def _render_text_with_token_highlights(
                 bg_color = _get_highlight_color(ci_value)
                 # Add thicker border for the main active token
                 border_style = (
-                    "border: 2px solid rgba(200,0,0,0.5);" if idx == active_position else ""
+                    "border: 2px solid rgba(255,100,0,0.6);" if idx == active_position else ""
                 )
                 html_chunks.append(
                     f'<span style="background-color:{bg_color}; padding: 2px 4px; '
@@ -348,7 +344,7 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                     "Max Batches to Process",
                     min_value=1,
                     max_value=10000,
-                    value=50,
+                    value=10,
                     help="Maximum number of batches to process (stops early if enough examples found)",
                 )
                 batch_size = st.number_input(
@@ -444,9 +440,8 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                         # Wrap in example container
                         example_html = (
                             f'<div style="margin: 8px 0; font-family: monospace; font-size: 14px; '
-                            f'line-height: 1.8;">'
+                            f'line-height: 1.8; color: var(--text-color);">'
                             f"<strong>{i + 1}.</strong> "
-                            # f'<span style="color: #666;">CI: {ci_value:.3f}</span> '
                             f"{html_example}</div>"
                         )
                         examples_html.append(example_html)
@@ -560,15 +555,27 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                         bottom: 100%;
                         left: 50%;
                         transform: translateX(-50%);
-                        background-color: #333;
-                        color: white;
-                        padding: 4px 8px;
-                        border-radius: 4px;
-                        font-size: 0.85em;
+                        background-color: rgba(40, 40, 40, 1);
+                        color: rgba(255, 255, 255, 1);
+                        padding: 2px 6px;
+                        border-radius: 3px;
+                        font-size: 0.75em;
                         white-space: nowrap;
-                        z-index: 1000;
+                        z-index: 10000;
                         pointer-events: none;
-                        margin-bottom: 4px;
+                        margin-bottom: 5px;
+                        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+                        font-weight: 500;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+                    
+                    /* Dark mode tooltip */
+                    @media (prefers-color-scheme: dark) {
+                        span[title]:hover::after {
+                            background-color: rgba(240, 240, 240, 1);
+                            color: rgba(20, 20, 20, 1);
+                            border: 1px solid rgba(0, 0, 0, 0.1);
+                        }
                     }
                     
                     span[title]:hover::before {
@@ -577,33 +584,41 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                         bottom: 100%;
                         left: 50%;
                         transform: translateX(-50%);
-                        border: 5px solid transparent;
-                        border-top-color: #333;
-                        z-index: 1000;
+                        border: 4px solid transparent;
+                        border-top-color: rgba(40, 40, 40, 1);
+                        z-index: 10000;
                         pointer-events: none;
-                        margin-bottom: -1px;
+                        margin-bottom: 1px;
+                    }
+                    
+                    /* Dark mode tooltip arrow */
+                    @media (prefers-color-scheme: dark) {
+                        span[title]:hover::before {
+                            border-top-color: rgba(240, 240, 240, 1);
+                        }
                     }
                     
                     /* Component section styling */
                     .component-section {
-                        background-color: #f8f9fa;
+                        background-color: var(--secondary-background-color);
                         border-radius: 8px;
                         padding: 16px;
                         margin-bottom: 16px;
-                        border: 1px solid #e0e0e0;
+                        border: 1px solid rgba(128, 128, 128, 0.2);
                     }
                     
                     .component-header {
                         font-weight: 600;
-                        color: #333;
+                        color: var(--text-color);
                         margin-bottom: 12px;
                         font-size: 16px;
                     }
                     
                     .examples-container {
-                        background-color: white;
+                        background-color: var(--background-color);
                         border-radius: 4px;
                         padding: 12px;
+                        border: 1px solid rgba(128, 128, 128, 0.1);
                     }
                     </style>
                     """,
@@ -616,7 +631,7 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                             st.markdown(
                                 f'<div class="component-section">'
                                 f'<div class="component-header">Component {row["Component"]} '
-                                f'<span style="font-weight: normal; color: #666; font-size: 14px;">'
+                                f'<span style="font-weight: normal; opacity: 0.7; font-size: 14px;">'
                                 f"({row['Total Examples']} examples)</span></div>"
                                 f'<div class="examples-container">'
                                 f"{row['Example Activation Contexts']}"
