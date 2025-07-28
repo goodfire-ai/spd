@@ -26,6 +26,7 @@ def analyze_component_token_table(
     n_steps: int,
     batch_size: int,
     max_seq_len: int,
+    seed: int,
 ) -> tuple[
     dict[str, dict[int, dict[int, int]]],
     dict[str, dict[int, dict[int, list[float]]]],
@@ -52,7 +53,7 @@ def analyze_component_token_table(
         dataset_config=data_config,
         batch_size=batch_size,
         buffer_size=_model_data.config.task_config.buffer_size,
-        global_seed=_model_data.config.seed,
+        global_seed=seed,
         ddp_rank=0,
         ddp_world_size=1,
     )
@@ -239,6 +240,13 @@ def render_component_token_table_tab(model_data: ModelData):
                     value=512,
                     help="Maximum sequence length for tokenization",
                 )
+                seed = st.number_input(
+                    "Seed",
+                    min_value=0,
+                    max_value=2147483647,
+                    value=0,
+                    help="Random seed for reproducible data sampling",
+                )
                 min_act_frequency = st.slider(
                     "Minimum Token Activation Frequency",
                     min_value=0.0,
@@ -264,6 +272,7 @@ def render_component_token_table_tab(model_data: ModelData):
                 n_steps=n_steps,
                 batch_size=batch_size,
                 max_seq_len=max_seq_len,
+                seed=seed,
             )
         )
 
@@ -384,7 +393,6 @@ def render_component_token_table_tab(model_data: ModelData):
                 if table_data:
                     # Display as a dataframe
                     df = pd.DataFrame(table_data)
-                    st.dataframe(df, use_container_width=True, height=600)
 
                     # Download option
                     # Create markdown table manually
@@ -415,5 +423,7 @@ def render_component_token_table_tab(model_data: ModelData):
                         file_name=f"component_tokens_{selected_module}.md",
                         mime="text/markdown",
                     )
+
+                    st.dataframe(df, use_container_width=True, height=600)
                 else:
                     st.info("No components found with activations above the threshold.")

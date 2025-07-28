@@ -95,6 +95,7 @@ def find_component_activation_contexts(
     max_seq_len: int,
     n_prompts: int,
     n_tokens_either_side: int,
+    seed: int,
 ) -> tuple[
     dict[str, dict[int, list[dict[str, Any]]]],
     dict[str, float],
@@ -117,7 +118,7 @@ def find_component_activation_contexts(
         dataset_config=data_config,
         batch_size=batch_size,
         buffer_size=1000,
-        global_seed=42,
+        global_seed=seed,
         ddp_rank=0,
         ddp_world_size=1,
     )
@@ -363,6 +364,13 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                     value=512,
                     help="Maximum sequence length for tokenization",
                 )
+                seed = st.number_input(
+                    "Seed",
+                    min_value=0,
+                    max_value=2147483647,
+                    value=0,
+                    help="Random seed for reproducible data sampling",
+                )
 
         run_analysis = st.form_submit_button("Run Analysis", type="primary")
 
@@ -380,6 +388,7 @@ def render_component_activation_contexts_tab(model_data: ModelData):
             max_seq_len=max_seq_len,
             n_prompts=n_prompts,
             n_tokens_either_side=n_tokens_either_side,
+            seed=seed,
         )
 
         # Store results in session state
