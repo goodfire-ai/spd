@@ -146,6 +146,14 @@ class LMTaskConfig(BaseModel):
     )
 
 
+class MemorizationTaskConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+    task_name: Literal["memorization"] = Field(
+        default="memorization",
+        description="Identifier for the memorization decomposition task",
+    )
+
+
 class Config(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     # --- WandB
@@ -338,10 +346,12 @@ class Config(BaseModel):
     )
 
     # --- Task Specific ---
-    task_config: TMSTaskConfig | ResidualMLPTaskConfig | LMTaskConfig = Field(
-        ...,
-        discriminator="task_name",
-        description="Nested task-specific configuration selected by the `task_name` discriminator",
+    task_config: TMSTaskConfig | ResidualMLPTaskConfig | LMTaskConfig | MemorizationTaskConfig = (
+        Field(
+            ...,
+            discriminator="task_name",
+            description="Nested task-specific configuration selected by the `task_name` discriminator",
+        )
     )
 
     DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = []
