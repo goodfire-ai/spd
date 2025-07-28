@@ -52,7 +52,3 @@ coverage:
 	uv run python -m coverage report -m > $(COVERAGE_DIR)/coverage.txt
 	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/
 
-
-.PHONY: train-canonical-models
-train-canonical-models:
-	spd-run --local --create_snapshot False --create_report False --log-format terse

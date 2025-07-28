@@ -114,8 +114,8 @@ def optimize(
                 batch_item = next(train_data_iter)
             except StopIteration:
                 logger.warning("Dataloader exhausted, resetting iterator.")
-                data_iter = iter(train_loader)
-                batch_item = next(data_iter)
+                train_data_iter = iter(train_loader)
+                batch_item = next(train_data_iter)
 
             batch = extract_batch_data(batch_item).to(device)
 
@@ -157,11 +157,7 @@ def optimize(
             # --- Logging --- #
             if step % config.print_freq == 0:
                 loss_msg: str = f"[Step {step}] " + " | ".join(
-                    [f"LR: {step_lr:.6f}"]
-                    + [
-                        f"{k.replace('stochastic_', '').replace('importance_', 'imp_')}: {v:.7f}"
-                        for k, v in loss_terms.items()
-                    ]
+                    [f"LR: {step_lr:.6f}"] + [f"{k}: {v:.7f}" for k, v in loss_terms.items()]
                 )
                 tqdm.write(loss_msg)
 

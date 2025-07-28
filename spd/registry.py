@@ -77,6 +77,21 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
 }
 
 
+def get_max_expected_runtime(experiments_list: list[str]) -> str:
+    """Get the max expected runtime of a list of experiments in XhYm format.
+
+    Args:
+        experiments_list: List of experiment names
+
+    Returns:
+        Max expected runtime in XhYm format
+    """
+    max_expected_runtime = max(
+        EXPERIMENT_REGISTRY[experiment].expected_runtime for experiment in experiments_list
+    )
+    return f"{max_expected_runtime // 60}h{max_expected_runtime % 60}m"
+
+
 def get_experiment_config_file_contents(key: str) -> dict[str, Any]:
     """given a key in the `EXPERIMENT_REGISTRY`, return contents of the config file as a dict.
 
@@ -102,6 +117,6 @@ if your PR creates a breaking change, then you should update this dictionary to 
 
 You can generate these runs for each experiment by running:
 ```
-spd-run --local --create_snapshot False --create_report False --log-format terse
+spd-run --local --log-format terse
 ```
 """
