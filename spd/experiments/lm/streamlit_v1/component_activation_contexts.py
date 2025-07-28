@@ -452,7 +452,7 @@ def _process_batch_for_contexts(
             # Find activations in this batch
             batch_idxs, seq_idxs = torch.where(component_active)
 
-            for batch_idx, seq_idx in zip(batch_idxs.tolist(), seq_idxs.tolist(), strict=False):
+            for batch_idx, seq_idx in zip(batch_idxs.tolist(), seq_idxs.tolist(), strict=True):
                 # Skip if we have enough examples
                 if len(component_contexts[module_name][component_idx]) >= config.n_prompts:
                     break
