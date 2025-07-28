@@ -5,6 +5,8 @@ Shows example prompts where components activate, with surrounding context tokens
 """
 
 import html
+import io
+import zipfile
 from typing import Any
 
 import streamlit as st
@@ -508,49 +510,384 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                         )
 
                     with col2:
-                        # Markdown table format
-                        table_lines = []
-                        table_lines.append("# Component Activation Contexts")
-                        table_lines.append(f"\n## Module: {selected_module}\n")
-                        table_lines.append("| Component | Example # | CI Value | Context |")
-                        table_lines.append("|-----------|-----------|----------|---------|")
+                        # HTML download button for single layer
+                        html_content = []
+                        html_content.append("<!DOCTYPE html>")
+                        html_content.append("<html>")
+                        html_content.append("<head>")
+                        html_content.append('<meta charset="utf-8">')
+                        html_content.append(
+                            f"<title>Component Activation Contexts - {selected_module}</title>"
+                        )
+                        html_content.append("<style>")
+                        html_content.append("""
+                        body {
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                            line-height: 1.6;
+                            max-width: 1200px;
+                            margin: 0 auto;
+                            padding: 20px;
+                            background-color: #ffffff;
+                            color: #333333;
+                        }
+                        
+                        h1, h2 {
+                            color: #1a1a1a;
+                        }
+                        
+                        .component-section {
+                            background-color: #f8f9fa;
+                            border-radius: 8px;
+                            padding: 16px;
+                            margin-bottom: 16px;
+                            border: 1px solid rgba(128, 128, 128, 0.2);
+                        }
+                        
+                        .component-header {
+                            font-weight: 600;
+                            color: #1a1a1a;
+                            margin-bottom: 12px;
+                            font-size: 16px;
+                        }
+                        
+                        .examples-container {
+                            background-color: #ffffff;
+                            border-radius: 4px;
+                            padding: 12px;
+                            border: 1px solid rgba(128, 128, 128, 0.1);
+                        }
+                        
+                        .example-item {
+                            margin: 8px 0;
+                            font-family: monospace;
+                            font-size: 14px;
+                            line-height: 1.8;
+                            color: #333333;
+                        }
+                        
+                        /* Highlighted spans */
+                        span[title] {
+                            position: relative;
+                            cursor: help;
+                        }
+                        
+                        span[title]:hover::after {
+                            content: attr(title);
+                            position: absolute;
+                            bottom: 100%;
+                            left: 50%;
+                            transform: translateX(-50%);
+                            background-color: rgba(40, 40, 40, 0.95);
+                            color: rgba(255, 255, 255, 1);
+                            padding: 2px 6px;
+                            border-radius: 3px;
+                            font-size: 0.75em;
+                            white-space: nowrap;
+                            z-index: 10000;
+                            pointer-events: none;
+                            margin-bottom: 5px;
+                            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+                            font-weight: 500;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                        }
+                        
+                        span[title]:hover::before {
+                            content: "";
+                            position: absolute;
+                            bottom: 100%;
+                            left: 50%;
+                            transform: translateX(-50%);
+                            border: 4px solid transparent;
+                            border-top-color: rgba(40, 40, 40, 0.95);
+                            z-index: 10000;
+                            pointer-events: none;
+                            margin-bottom: 1px;
+                        }
+                        
+                        /* Dark mode support */
+                        @media (prefers-color-scheme: dark) {
+                            body {
+                                background-color: #1a1a1a;
+                                color: #e0e0e0;
+                            }
+                            
+                            h1, h2 {
+                                color: #f0f0f0;
+                            }
+                            
+                            .component-section {
+                                background-color: #2a2a2a;
+                                border-color: rgba(200, 200, 200, 0.2);
+                            }
+                            
+                            .component-header {
+                                color: #f0f0f0;
+                            }
+                            
+                            .examples-container {
+                                background-color: #1a1a1a;
+                                border-color: rgba(200, 200, 200, 0.1);
+                            }
+                            
+                            .example-item {
+                                color: #e0e0e0;
+                            }
+                            
+                            span[title]:hover::after {
+                                background-color: rgba(240, 240, 240, 0.95);
+                                color: rgba(20, 20, 20, 1);
+                                border-color: rgba(0, 0, 0, 0.1);
+                            }
+                            
+                            span[title]:hover::before {
+                                border-top-color: rgba(240, 240, 240, 0.95);
+                            }
+                        }
+                    """)
+                        html_content.append("</style>")
+                        html_content.append("</head>")
+                        html_content.append("<body>")
+                        html_content.append("<h1>Component Activation Contexts</h1>")
+                        html_content.append(f"<h2>Module: {selected_module}</h2>")
 
+                        # Add all component sections
                         for row in table_data:
-                            component_examples = module_contexts[row["Component"]]
-                            for i, example in enumerate(component_examples):
-                                ci_value = example["ci_value"]
-                                raw_text = example["raw_text"]
-                                active_position = example["active_position"]
-                                offset_mapping = example["offset_mapping"]
+                            html_content.append('<div class="component-section">')
+                            html_content.append(
+                                f'<div class="component-header">Component {row["Component"]} '
+                            )
+                            html_content.append(
+                                '<span style="font-weight: normal; opacity: 0.7; font-size: 14px;">'
+                            )
+                            html_content.append(f"({row['Total Examples']} examples)</span></div>")
+                            html_content.append('<div class="examples-container">')
+                            html_content.append(row["Example Activation Contexts"])
+                            html_content.append("</div></div>")
 
-                                # Use offset mapping to correctly identify the active token
-                                if 0 <= active_position < len(offset_mapping):
-                                    start, end = offset_mapping[active_position]
-                                    # Insert ** markers around the active token
-                                    marked_text = (
-                                        raw_text[:start]
-                                        + "**"
-                                        + raw_text[start:end]
-                                        + "**"
-                                        + raw_text[end:]
-                                    )
-                                else:
-                                    marked_text = raw_text
+                        html_content.append("</body>")
+                        html_content.append("</html>")
 
-                                # Escape pipes in table
-                                context = marked_text.replace("|", "\\|")
-
-                                table_lines.append(
-                                    f"| {row['Component']} | {i + 1} | {ci_value:.3f} | {context} |"
-                                )
-
-                        table_content = "\n".join(table_lines)
+                        html_str = "\n".join(html_content)
 
                         st.download_button(
-                            label="Download as Markdown Table",
-                            data=table_content,
-                            file_name=f"component_contexts_{selected_module}_table.md",
-                            mime="text/markdown",
+                            label=f"Download HTML ({selected_module})",
+                            data=html_str,
+                            file_name=f"component_contexts_{selected_module}.html",
+                            mime="text/html",
+                        )
+
+                    # Function to generate HTML for a single module
+                    def generate_module_html(
+                        module_name: str, module_contexts_data: dict[int, list[dict[str, Any]]]
+                    ) -> str:
+                        html_content = []
+                        html_content.append("<!DOCTYPE html>")
+                        html_content.append("<html>")
+                        html_content.append("<head>")
+                        html_content.append('<meta charset="utf-8">')
+                        html_content.append(
+                            f"<title>Component Activation Contexts - {module_name}</title>"
+                        )
+                        html_content.append("<style>")
+                        html_content.append("""
+                            body {
+                                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                                line-height: 1.6;
+                                max-width: 1200px;
+                                margin: 0 auto;
+                                padding: 20px;
+                                background-color: #ffffff;
+                                color: #333333;
+                            }
+                            
+                            h1, h2 {
+                                color: #1a1a1a;
+                            }
+                            
+                            .component-section {
+                                background-color: #f8f9fa;
+                                border-radius: 8px;
+                                padding: 16px;
+                                margin-bottom: 16px;
+                                border: 1px solid rgba(128, 128, 128, 0.2);
+                            }
+                            
+                            .component-header {
+                                font-weight: 600;
+                                color: #1a1a1a;
+                                margin-bottom: 12px;
+                                font-size: 16px;
+                            }
+                            
+                            .examples-container {
+                                background-color: #ffffff;
+                                border-radius: 4px;
+                                padding: 12px;
+                                border: 1px solid rgba(128, 128, 128, 0.1);
+                            }
+                            
+                            .example-item {
+                                margin: 8px 0;
+                                font-family: monospace;
+                                font-size: 14px;
+                                line-height: 1.8;
+                                color: #333333;
+                            }
+                            
+                            /* Highlighted spans */
+                            span[title] {
+                                position: relative;
+                                cursor: help;
+                            }
+                            
+                            span[title]:hover::after {
+                                content: attr(title);
+                                position: absolute;
+                                bottom: 100%;
+                                left: 50%;
+                                transform: translateX(-50%);
+                                background-color: rgba(40, 40, 40, 0.95);
+                                color: rgba(255, 255, 255, 1);
+                                padding: 2px 6px;
+                                border-radius: 3px;
+                                font-size: 0.75em;
+                                white-space: nowrap;
+                                z-index: 10000;
+                                pointer-events: none;
+                                margin-bottom: 5px;
+                                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+                                font-weight: 500;
+                                border: 1px solid rgba(255, 255, 255, 0.1);
+                            }
+                            
+                            span[title]:hover::before {
+                                content: "";
+                                position: absolute;
+                                bottom: 100%;
+                                left: 50%;
+                                transform: translateX(-50%);
+                                border: 4px solid transparent;
+                                border-top-color: rgba(40, 40, 40, 0.95);
+                                z-index: 10000;
+                                pointer-events: none;
+                                margin-bottom: 1px;
+                            }
+                            
+                            /* Dark mode support */
+                            @media (prefers-color-scheme: dark) {
+                                body {
+                                    background-color: #1a1a1a;
+                                    color: #e0e0e0;
+                                }
+                                
+                                h1, h2 {
+                                    color: #f0f0f0;
+                                }
+                                
+                                .component-section {
+                                    background-color: #2a2a2a;
+                                    border-color: rgba(200, 200, 200, 0.2);
+                                }
+                                
+                                .component-header {
+                                    color: #f0f0f0;
+                                }
+                                
+                                .examples-container {
+                                    background-color: #1a1a1a;
+                                    border-color: rgba(200, 200, 200, 0.1);
+                                }
+                                
+                                .example-item {
+                                    color: #e0e0e0;
+                                }
+                                
+                                span[title]:hover::after {
+                                    background-color: rgba(240, 240, 240, 0.95);
+                                    color: rgba(20, 20, 20, 1);
+                                    border-color: rgba(0, 0, 0, 0.1);
+                                }
+                                
+                                span[title]:hover::before {
+                                    border-top-color: rgba(240, 240, 240, 0.95);
+                                }
+                            }
+                        """)
+                        html_content.append("</style>")
+                        html_content.append("</head>")
+                        html_content.append("<body>")
+                        html_content.append("<h1>Component Activation Contexts</h1>")
+                        html_content.append(f"<h2>Module: {module_name}</h2>")
+
+                        # Add all component sections for this module
+                        for component_id in sorted(module_contexts_data.keys()):
+                            component_examples = module_contexts_data[component_id]
+                            if not component_examples:
+                                continue
+
+                            # Format examples
+                            examples_html = []
+                            for i, example in enumerate(component_examples):
+                                # Build HTML using offset mappings for proper spacing
+                                html_example = _render_text_with_token_highlights(
+                                    raw_text=example["raw_text"],
+                                    offset_mapping=example["offset_mapping"],
+                                    token_ci_values=example["token_ci_values"],
+                                    active_position=example["active_position"],
+                                )
+
+                                # Wrap in example container
+                                example_html = (
+                                    f'<div style="margin: 8px 0; font-family: monospace; font-size: 14px; '
+                                    f'line-height: 1.8; color: var(--text-color);">'
+                                    f"<strong>{i + 1}.</strong> "
+                                    f"{html_example}</div>"
+                                )
+                                examples_html.append(example_html)
+
+                            # Join all examples
+                            examples_str = "".join(examples_html)
+
+                            html_content.append('<div class="component-section">')
+                            html_content.append(
+                                f'<div class="component-header">Component {component_id} '
+                            )
+                            html_content.append(
+                                '<span style="font-weight: normal; opacity: 0.7; font-size: 14px;">'
+                            )
+                            html_content.append(
+                                f"({len(component_examples)} examples)</span></div>"
+                            )
+                            html_content.append('<div class="examples-container">')
+                            html_content.append(examples_str)
+                            html_content.append("</div></div>")
+
+                        html_content.append("</body>")
+                        html_content.append("</html>")
+
+                        return "\n".join(html_content)
+
+                    # Download all layers as ZIP
+                    if len(contexts) > 1:  # Only show if there are multiple modules
+                        # Create a ZIP file in memory
+                        zip_buffer = io.BytesIO()
+                        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                            for module_name in sorted(contexts.keys()):
+                                module_html = generate_module_html(
+                                    module_name, contexts[module_name]
+                                )
+                                zip_file.writestr(
+                                    f"component_contexts_{module_name}.html", module_html
+                                )
+
+                        zip_buffer.seek(0)
+
+                        st.download_button(
+                            label="Download HTML (all layers)",
+                            data=zip_buffer.getvalue(),
+                            file_name="component_contexts_all_layers.zip",
+                            mime="application/zip",
+                            key="download_all_layers_zip",
                         )
 
                     st.divider()
