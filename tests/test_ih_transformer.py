@@ -2,7 +2,6 @@ from spd.configs import Config, FiguresFnConfig, MetricsFnConfig, IHTaskConfig
 from spd.experiments.ih.model import InductionTransformer, InductionModelConfig
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.run_spd import optimize
-from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.general_utils import set_seed
 
 
