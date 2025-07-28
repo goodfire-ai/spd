@@ -2,6 +2,7 @@
 Component Token Table tab for the Streamlit app.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -175,10 +176,7 @@ def _process_component_tokens(
         if activation_fraction < min_act_frequency:
             continue
 
-        try:
-            token_text = tokenizer.decode([token_id])
-        except Exception:
-            token_text = f"<token_{token_id}>"
+        token_text = tokenizer.decode([token_id])
 
         # Clean up the token text
         token_text = token_text.strip()
@@ -319,8 +317,6 @@ def _process_batch_for_tokens(
 
     # Count all tokens in this batch
     for token_id in batch.flatten().tolist():
-        if token_id not in total_token_counts:
-            total_token_counts[token_id] = 0
         total_token_counts[token_id] += 1
 
     # Get activations before each component
@@ -360,23 +356,9 @@ def _process_batch_for_tokens(
 
             # Count occurrences and store CI values
             for token_id, ci_val in zip(
-                active_tokens.tolist(), active_ci_values.tolist(), strict=False
+                active_tokens.tolist(), active_ci_values.tolist(), strict=True
             ):
-                # Initialize nested dicts if they don't exist
-                if module_name not in component_token_activations:
-                    component_token_activations[module_name] = {}
-                if component_idx not in component_token_activations[module_name]:
-                    component_token_activations[module_name][component_idx] = {}
-                if token_id not in component_token_activations[module_name][component_idx]:
-                    component_token_activations[module_name][component_idx][token_id] = 0
-
-                if module_name not in component_token_ci_values:
-                    component_token_ci_values[module_name] = {}
-                if component_idx not in component_token_ci_values[module_name]:
-                    component_token_ci_values[module_name][component_idx] = {}
-                if token_id not in component_token_ci_values[module_name][component_idx]:
-                    component_token_ci_values[module_name][component_idx][token_id] = []
-
+                # Defaultdicts automatically handle nested initialization
                 component_token_activations[module_name][component_idx][token_id] += 1
                 component_token_ci_values[module_name][component_idx][token_id].append(ci_val)
 
@@ -429,21 +411,47 @@ def _prepare_component_table_data(
 
 
 # ============================================================================
+# Utility Functions
+# ============================================================================
+
+
+def _defaultdict_to_dict(obj: Any) -> Any:
+    """Recursively convert `defaultdict` instances to regular `dict`s.
+
+    Streamlit's caching relies on pickle, which cannot serialize lambdas used
+    as ``default_factory`` inside ``defaultdict``. To ensure the analysis
+    results are picklable we convert any (nested) ``defaultdict`` structures
+    to plain ``dict`` objects before returning them.
+    """
+    if isinstance(obj, defaultdict):
+        # Convert defaultdict to dict but recurse into its values
+        return {k: _defaultdict_to_dict(v) for k, v in obj.items()}
+    if isinstance(obj, dict):
+        return {k: _defaultdict_to_dict(v) for k, v in obj.items()}
+    return obj
+
+
+# ============================================================================
 # Main Analysis Function
 # ============================================================================
 
 
-def _run_token_analysis_without_ui(
-    model_data: ModelData,
+@st.cache_data(show_spinner="Analyzing component token activations across dataset...")
+def analyze_component_token_table(
+    _model_data: ModelData,
     config: AnalysisConfig,
 ) -> AnalysisResults:
-    """Run token activation analysis without any UI elements."""
+    """Analyze which tokens activate each component across the dataset (with progress UI).
+
+    Note: Parameters prefixed with _ are Streamlit conventions indicating the parameter
+    should not trigger cache invalidation when it changes.
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Create dataloader
     data_config = DatasetConfig(
         name=config.dataset_name,
-        hf_tokenizer_path=model_data.config.pretrained_model_name_hf,
+        hf_tokenizer_path=_model_data.config.pretrained_model_name_hf,
         split=config.dataset_split,
         n_ctx=config.max_seq_len,
         is_tokenized=False,
@@ -451,20 +459,24 @@ def _run_token_analysis_without_ui(
         column_name=config.column_name,
     )
 
-    assert isinstance(model_data.config.task_config, LMTaskConfig)
+    assert isinstance(_model_data.config.task_config, LMTaskConfig)
     dataloader, _ = create_data_loader(
         dataset_config=data_config,
         batch_size=config.batch_size,
-        buffer_size=model_data.config.task_config.buffer_size,
+        buffer_size=_model_data.config.task_config.buffer_size,
         global_seed=config.seed,
         ddp_rank=0,
         ddp_world_size=1,
     )
 
     # Initialize token activation tracking
-    component_token_activations: dict[str, dict[int, dict[int, int]]] = {}
-    component_token_ci_values: dict[str, dict[int, dict[int, list[float]]]] = {}
-    total_token_counts: dict[int, int] = {}
+    component_token_activations: dict[str, dict[int, dict[int, int]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(int))
+    )
+    component_token_ci_values: dict[str, dict[int, dict[int, list[float]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
+    )
+    total_token_counts: dict[int, int] = defaultdict(int)
     l0_scores_sum: dict[str, float] = {}
     l0_scores_count = 0
 
@@ -472,35 +484,41 @@ def _run_token_analysis_without_ui(
     data_iter = iter(dataloader)
 
     for _ in range(config.n_steps):
+        # Get next batch, break if dataset is exhausted
         try:
-            batch = extract_batch_data(next(data_iter))
-            batch = batch.to(device)
-
-            # Process batch
-            tokens_in_batch, ci_l_zero = _process_batch_for_tokens(
-                batch=batch,
-                model_data=model_data,
-                component_token_activations=component_token_activations,
-                component_token_ci_values=component_token_ci_values,
-                total_token_counts=total_token_counts,
-                config=config,
-            )
-
-            total_tokens_processed += tokens_in_batch
-
-            # Update L0 scores
-            for layer_name, layer_ci_l_zero in ci_l_zero.items():
-                if layer_name not in l0_scores_sum:
-                    l0_scores_sum[layer_name] = 0.0
-                l0_scores_sum[layer_name] += layer_ci_l_zero
-            l0_scores_count += 1
-
+            batch_data = next(data_iter)
         except StopIteration:
             # Dataset exhausted - this is expected
             break
 
+        batch = extract_batch_data(batch_data).to(device)
+
+        # Process batch
+        tokens_in_batch, ci_l_zero = _process_batch_for_tokens(
+            batch=batch,
+            model_data=_model_data,
+            component_token_activations=component_token_activations,
+            component_token_ci_values=component_token_ci_values,
+            total_token_counts=total_token_counts,
+            config=config,
+        )
+
+        total_tokens_processed += tokens_in_batch
+
+        # Update L0 scores
+        for layer_name, layer_ci_l_zero in ci_l_zero.items():
+            if layer_name not in l0_scores_sum:
+                l0_scores_sum[layer_name] = 0.0
+            l0_scores_sum[layer_name] += layer_ci_l_zero
+        l0_scores_count += 1
+
     # Calculate average L0 scores
     avg_l0_scores = _calculate_average_l0_scores(l0_scores_sum, l0_scores_count)
+
+    # Convert defaultdicts (with lambda default factories) to dicts for pickling
+    component_token_activations = _defaultdict_to_dict(component_token_activations)
+    component_token_ci_values = _defaultdict_to_dict(component_token_ci_values)
+    total_token_counts = _defaultdict_to_dict(total_token_counts)
 
     return AnalysisResults(
         component_token_activations=component_token_activations,
@@ -509,17 +527,6 @@ def _run_token_analysis_without_ui(
         total_token_counts=total_token_counts,
         avg_l0_scores=avg_l0_scores,
     )
-
-
-@st.cache_data(show_spinner="Analyzing component token activations across dataset...")
-def analyze_component_token_table(
-    _model_path: str,
-    _model_data: ModelData,
-    config: AnalysisConfig,
-) -> AnalysisResults:
-    """Analyze which tokens activate each component across the dataset (with progress UI)."""
-    # Run the core analysis
-    return _run_token_analysis_without_ui(_model_data, config)
 
 
 @st.fragment
@@ -537,7 +544,6 @@ def render_component_token_table_tab(model_data: ModelData):
     if config:
         # Run the analysis
         analysis_results = analyze_component_token_table(
-            _model_path=st.session_state.model_path,
             _model_data=model_data,
             config=config,
         )
@@ -555,14 +561,13 @@ def render_component_token_table_tab(model_data: ModelData):
     # Display results if available
     if "token_activation_results" in st.session_state:
         results: dict[str, Any] = st.session_state.token_activation_results
-        activations: dict[str, dict[int, dict[int, int]]] = results.get("activations", {})
-        ci_values: dict[str, dict[int, dict[int, list[float]]]] = results.get("ci_values", {})
-        total_tokens: int = results.get("total_tokens", 0)
-        total_token_counts: dict[int, int] = results.get(
-            "token_counts", {}
-        )  # Rename to avoid shadowing
-        l0_scores: dict[str, float] = results.get("l0_scores", {})
-        min_act_frequency: float = results.get("min_act_frequency", 0.01)
+        # Since results come from AnalysisResults, all keys are guaranteed to exist
+        activations: dict[str, dict[int, dict[int, int]]] = results["activations"]
+        ci_values: dict[str, dict[int, dict[int, list[float]]]] = results["ci_values"]
+        total_tokens: int = results["total_tokens"]
+        total_token_counts: dict[int, int] = results["token_counts"]  # Rename to avoid shadowing
+        l0_scores: dict[str, float] = results["l0_scores"]
+        min_act_frequency: float = results["min_act_frequency"]
 
         st.success(f"Analysis complete! Processed {total_tokens:,} tokens.")
 

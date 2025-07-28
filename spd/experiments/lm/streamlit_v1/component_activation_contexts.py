@@ -258,19 +258,33 @@ def _render_text_with_token_highlights(
     Render raw text with token highlights based on offset mappings.
     Preserves original spacing and applies gradient coloring based on CI values.
     """
+    # Assert that offset_mapping and token_ci_values have the same length
+    assert len(offset_mapping) == len(token_ci_values), (
+        f"offset_mapping length ({len(offset_mapping)}) must equal "
+        f"token_ci_values length ({len(token_ci_values)})"
+    )
+
     html_chunks: list[str] = []
     cursor = 0
 
+    assert len(offset_mapping) > 0, "offset_mapping must have at least one element"
+    assert offset_mapping[0][0] == 0, "first token should start at position 0"
+
     for idx, (start, end) in enumerate(offset_mapping):
         # Add any text between tokens
+        # Cursor should always be <= start (equal when tokens are adjacent)
+        assert cursor <= start, f"cursor ({cursor}) should be <= start ({start})"
         if cursor < start:
             html_chunks.append(html.escape(raw_text[cursor:start]))
 
         # Get token text
         token_text = raw_text[start:end]
+        # Check for empty tokens (can occur when tokenizer produces empty spans)
         if token_text:
             escaped_text = html.escape(token_text)
-            ci_value = token_ci_values[idx] if idx < len(token_ci_values) else 0.0
+            # We already asserted that len(offset_mapping) == len(token_ci_values)
+            assert idx < len(token_ci_values), f"idx ({idx}) out of bounds for token_ci_values"
+            ci_value = token_ci_values[idx]
 
             if ci_value > 0:
                 # Apply gradient background based on CI value
@@ -286,7 +300,7 @@ def _render_text_with_token_highlights(
                 )
             else:
                 # Regular token without highlighting
-                html_chunks.append(f"<span>{escaped_text}</span>")
+                html_chunks.append(escaped_text)
 
         cursor = end
 
@@ -546,14 +560,17 @@ def _create_all_layers_zip(contexts: dict[str, dict[int, list[ActivationContext]
 
 @st.cache_data(show_spinner="Finding component activation contexts...")
 def find_component_activation_contexts(
-    _model_path: str,
     _model_data: ModelData,
     config: AnalysisConfig,
 ) -> tuple[
     dict[str, dict[int, list[ActivationContext]]],
     dict[str, float],
 ]:
-    """Find example prompts where each component activates with surrounding context."""
+    """Find example prompts where each component activates with surrounding context.
+
+    Note: Parameters prefixed with _ are Streamlit conventions indicating the parameter
+    should not trigger cache invalidation when it changes.
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Create dataloader
@@ -824,7 +841,6 @@ def render_component_activation_contexts_tab(model_data: ModelData):
     if config:
         # Run the analysis
         contexts, l0_scores = find_component_activation_contexts(
-            _model_path=st.session_state.model_path,
             _model_data=model_data,
             config=config,
         )

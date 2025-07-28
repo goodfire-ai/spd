@@ -3,6 +3,7 @@ Shared utilities for the Streamlit app.
 """
 
 import html
+import os
 import re
 from dataclasses import dataclass
 from typing import cast
@@ -18,6 +19,8 @@ from spd.configs import Config, LMTaskConfig
 from spd.data import DatasetConfig
 from spd.models.component_model import ComponentModel
 from spd.models.components import EmbeddingComponents, GateMLPs, LinearComponents, VectorGateMLPs
+
+DEFAULT_WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "spd")
 
 # ============================================================================
 # Data Classes
@@ -72,7 +75,7 @@ def parse_wandb_url(url_or_path: str) -> str:
 
     # Just a run ID
     if re.match(r"^[a-z0-9]+$", url_or_path):
-        return f"wandb:spd/runs/{url_or_path}"
+        return f"wandb:{DEFAULT_WANDB_PROJECT}/runs/{url_or_path}"
 
     return url_or_path
 
