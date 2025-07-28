@@ -247,7 +247,7 @@ def recompute_coacts_pop_group(
 
 
 class MergeConfig(BaseModel):
-    activation_theshold: Probability | None = Field(
+    activation_threshold: Probability | None = Field(
         default=0.01,
         description="Threshold for considering a component active in a group. If None, use raw scalar causal importances",
     )
@@ -270,6 +270,11 @@ class MergeConfig(BaseModel):
 
     rank_cost_fn: Callable[[float], float] = lambda _: 1.0
     stopping_condition: Callable[[MergeHistory], bool] | None = None
+
+    @property
+    def rank_cost_name(self) -> str:
+        """Get the name of the rank cost function."""
+        return getattr(self.rank_cost_fn, "__name__", str(self.rank_cost_fn))
 
 
 class MergePlotConfig(BaseModel):
@@ -483,8 +488,8 @@ def merge_iteration(
 
     # compute coactivations
     activation_mask: Float[Tensor, "samples c_components"] = (
-        activations > merge_config.activation_theshold
-        if merge_config.activation_theshold is not None
+        activations > merge_config.activation_threshold
+        if merge_config.activation_threshold is not None
         else activations
     )
     coact: Float[Tensor, "c_components c_components"] = (

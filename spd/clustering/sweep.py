@@ -31,7 +31,7 @@ class SweepConfig:
             self.activation_thresholds, self.check_thresholds, self.alphas, self.rank_cost_funcs
         ):
             merge_config = MergeConfig(
-                activation_theshold=act_thresh,
+                activation_threshold=act_thresh,
                 alpha=alpha,
                 check_threshold=check_thresh,
                 rank_cost_fn=rank_func,
@@ -219,7 +219,6 @@ def run_hyperparameter_sweep(
     results: list[MergeHistory] = []
 
     for i, merge_config in tqdm(enumerate(configs), total=len(configs)):
-        assert i
         try:
             plot_config = MergePlotConfig(
                 plot_every=0,  # No plotting during sweep
@@ -235,7 +234,7 @@ def run_hyperparameter_sweep(
 
             # Store sweep parameters in the merge history for later use
             merge_history.sweep_params = {
-                "activation_threshold": merge_config.activation_theshold,
+                "activation_threshold": merge_config.activation_threshold,
                 "check_threshold": merge_config.check_threshold,
                 "alpha": merge_config.alpha,
                 "rank_cost_name": merge_config.rank_cost_fn.__name__,
