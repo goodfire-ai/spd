@@ -277,30 +277,26 @@ def _render_text_with_token_highlights(
         if cursor < start:
             html_chunks.append(html.escape(raw_text[cursor:start]))
 
-        # Get token text
-        token_text = raw_text[start:end]
-        # Check for empty tokens (can occur when tokenizer produces empty spans)
-        if token_text:
-            escaped_text = html.escape(token_text)
-            # We already asserted that len(offset_mapping) == len(token_ci_values)
-            assert idx < len(token_ci_values), f"idx ({idx}) out of bounds for token_ci_values"
-            ci_value = token_ci_values[idx]
+        escaped_text = html.escape(raw_text[start:end])
+        # We already asserted that len(offset_mapping) == len(token_ci_values)
+        assert idx < len(token_ci_values), f"idx ({idx}) out of bounds for token_ci_values"
+        ci_value = token_ci_values[idx]
 
-            if ci_value > 0:
-                # Apply gradient background based on CI value
-                bg_color = _get_highlight_color(ci_value)
-                # Add thicker border for the main active token
-                border_style = (
-                    "border: 2px solid rgba(255,100,0,0.6);" if idx == active_position else ""
-                )
-                html_chunks.append(
-                    f'<span style="background-color:{bg_color}; padding: 2px 4px; '
-                    f'border-radius: 3px; {border_style}" '
-                    f'title="Importance: {ci_value:.3f}">{escaped_text}</span>'
-                )
-            else:
-                # Regular token without highlighting
-                html_chunks.append(escaped_text)
+        if ci_value > 0:
+            # Apply gradient background based on CI value
+            bg_color = _get_highlight_color(ci_value)
+            # Add thicker border for the main active token
+            border_style = (
+                "border: 2px solid rgba(255,100,0,0.6);" if idx == active_position else ""
+            )
+            html_chunks.append(
+                f'<span style="background-color:{bg_color}; padding: 2px 4px; '
+                f'border-radius: 3px; {border_style}" '
+                f'title="Importance: {ci_value:.3f}">{escaped_text}</span>'
+            )
+        else:
+            # Regular token without highlighting
+            html_chunks.append(escaped_text)
 
         cursor = end
 
