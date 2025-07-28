@@ -5,6 +5,8 @@ import torch
 from jaxtyping import Bool, Int
 from torch import Tensor
 
+from spd.clustering.perm_invariant_hamming import perm_invariant_hamming
+
 
 @dataclass(kw_only=True, slots=True)
 class GroupMerge:
@@ -207,6 +209,14 @@ class GroupMerge:
         if show:
             plt.show()
 
+
+    def dist(self, other: "GroupMerge") -> float:
+        """Calculates the distance between two GroupMerge instances."""
+        return perm_invariant_hamming(
+            self.group_idxs.cpu().numpy(),
+            other.group_idxs.cpu().numpy(),
+            return_mapping=False,
+        )[0]
 
 @dataclass(slots=True)
 class BatchedGroupMerge:

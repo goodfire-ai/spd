@@ -298,7 +298,7 @@ class MergeHistory:
     selected_pair_cost: list[float]
     costs_range: list[float]
     k_groups: list[int]
-    merge_configs: list[GroupMerge]  # State of groups at each iteration
+    merges: list[GroupMerge]  # State of groups at each iteration
     config: MergeConfig | None = None  # Configuration used for this merge
     sweep_params: dict[str, Any] | None = None  # Sweep parameters if used in sweep
 
@@ -309,7 +309,7 @@ class MergeHistory:
         self.selected_pair_cost = []
         self.costs_range = []
         self.k_groups = []
-        self.merge_configs = []
+        self.merges = []
         self.config = config
         self.sweep_params = None
 
@@ -325,7 +325,7 @@ class MergeHistory:
             len(self.selected_pair_cost),
             len(self.costs_range),
             len(self.k_groups),
-            len(self.merge_configs),
+            len(self.merges),
         ]
         if lengths and not all(length == lengths[0] for length in lengths):
             raise ValueError("All history lists must have the same length")
@@ -345,7 +345,7 @@ class MergeHistory:
         self.costs_range.append(non_diag_costs_range[1] - non_diag_costs_range[0])
         self.selected_pair_cost.append(pair_cost)
         self.k_groups.append(k_groups)
-        self.merge_configs.append(current_merge)
+        self.merges.append(current_merge)
         self._validate_lengths()
 
     def latest(self) -> dict[str, float | int]:
@@ -669,3 +669,30 @@ def merge_iteration(
         merge_history.plot(plot_config_)
 
     return merge_history, current_merge
+
+
+def merge_iteration_ensemble(
+    activations: Float[Tensor, "samples c_components"],
+    merge_config: MergeConfig,
+    ensemble_size: int,
+    component_labels: list[str] | None = None,
+    initial_merge: GroupMerge | None = None,
+    plot_config: MergePlotConfig | None = None,
+) -> list[MergeHistory]:
+    """Run many merge iterations"""
+
+    output: list[MergeHistory] = []
+    for _ in range(ensemble_size):
+        # run the merge iteration
+        merge_history, _ = merge_iteration(
+            activations=activations,
+            merge_config=merge_config,
+            component_labels=component_labels,
+            initial_merge=initial_merge,
+            plot_config=plot_config,
+        )
+
+        # store the history
+        output.append(merge_history)
+
+    return output
