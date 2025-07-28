@@ -477,15 +477,24 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                                 ci_value = example["ci_value"]
                                 raw_text = example["raw_text"]
                                 active_position = example["active_position"]
+                                offset_mapping = example["offset_mapping"]
 
-                                # Simple markdown representation - mark the active token with **
-                                # This is a simplified version since markdown doesn't support the gradient coloring
-                                words = raw_text.split()
-                                if 0 <= active_position < len(words):
-                                    words[active_position] = f"**{words[active_position]}**"
+                                # Use offset mapping to correctly identify the active token
+                                if 0 <= active_position < len(offset_mapping):
+                                    start, end = offset_mapping[active_position]
+                                    # Insert ** markers around the active token
+                                    marked_text = (
+                                        raw_text[:start]
+                                        + "**"
+                                        + raw_text[start:end]
+                                        + "**"
+                                        + raw_text[end:]
+                                    )
+                                else:
+                                    marked_text = raw_text
 
                                 markdown_lines.append(
-                                    f"{i + 1}. CI val {ci_value:.3f}: {' '.join(words)}"
+                                    f"{i + 1}. CI val {ci_value:.3f}: {marked_text}"
                                 )
                             markdown_lines.append("")
 
@@ -512,14 +521,24 @@ def render_component_activation_contexts_tab(model_data: ModelData):
                                 ci_value = example["ci_value"]
                                 raw_text = example["raw_text"]
                                 active_position = example["active_position"]
+                                offset_mapping = example["offset_mapping"]
 
-                                # Create a simple representation for the table
-                                words = raw_text.split()
-                                if 0 <= active_position < len(words):
-                                    words[active_position] = f"**{words[active_position]}**"
-                                context = " ".join(words).replace(
-                                    "|", "\\|"
-                                )  # Escape pipes in table
+                                # Use offset mapping to correctly identify the active token
+                                if 0 <= active_position < len(offset_mapping):
+                                    start, end = offset_mapping[active_position]
+                                    # Insert ** markers around the active token
+                                    marked_text = (
+                                        raw_text[:start]
+                                        + "**"
+                                        + raw_text[start:end]
+                                        + "**"
+                                        + raw_text[end:]
+                                    )
+                                else:
+                                    marked_text = raw_text
+
+                                # Escape pipes in table
+                                context = marked_text.replace("|", "\\|")
 
                                 table_lines.append(
                                     f"| {row['Component']} | {i + 1} | {ci_value:.3f} | {context} |"
