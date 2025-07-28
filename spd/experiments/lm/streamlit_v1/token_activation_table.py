@@ -382,14 +382,14 @@ def _prepare_component_table_data(
     table_data: list[dict[str, Any]] = []
 
     for component_id in sorted(module_activations.keys()):
-        token_counts = module_activations[component_id]
-        if not token_counts:
+        component_token_counts = module_activations[component_id]
+        if not component_token_counts:
             continue
 
         # Process tokens for this component
         component_ci_values = module_ci_values.get(component_id, {})
         token_data = _process_component_tokens(
-            token_counts=token_counts,
+            token_counts=component_token_counts,
             module_ci_values=component_ci_values,
             total_token_counts=total_token_counts,
             min_act_frequency=min_act_frequency,
@@ -558,7 +558,7 @@ def render_component_token_table_tab(model_data: ModelData):
         activations: dict[str, dict[int, dict[int, int]]] = results["activations"]
         ci_values: dict[str, dict[int, dict[int, list[float]]]] = results["ci_values"]
         total_tokens: int = results["total_tokens"]
-        total_token_counts: dict[int, int] = results["token_counts"]  # Rename to avoid shadowing
+        total_token_counts: dict[int, int] = results["token_counts"]
         l0_scores: dict[str, float] = results["l0_scores"]
         min_act_frequency: float = results["min_act_frequency"]
 
