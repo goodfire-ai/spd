@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
+from transformers.modeling_utils import Conv1D
 
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
@@ -204,8 +205,8 @@ def calc_faithfulness_loss(
     component_params: dict[str, Float[Tensor, "d_in d_out"]] = {}
 
     for comp_name, components_or_module in model.components_or_modules.items():
-        component_params[comp_name] = components_or_module.components.weight
-        target_params[comp_name] = components_or_module.original.weight
+        component_params[comp_name] = components_or_module.components_weight
+        target_params[comp_name] = components_or_module.original_weight
         assert component_params[comp_name].shape == target_params[comp_name].shape
 
     faithfulness_loss = _calc_tensors_mse(
@@ -225,7 +226,7 @@ def calc_ce_losses(
     masked_component_logits: Float[Tensor, "..."],
     target_logits: Float[Tensor, "..."],
 ) -> dict[str, float]:
-    """Calculate cross-entropy losses for various masking scenarios.
+    """Calculate cross-entropy  for various masking scenarios.
 
     Args:
         model: The component model
