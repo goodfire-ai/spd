@@ -154,7 +154,7 @@ def _render_configuration_form() -> AnalysisConfig | None:
 
 def _process_component_tokens(
     *,
-    token_counts: dict[int, int],
+    component_token_counts: dict[int, int],
     module_ci_values: dict[int, list[float]],
     total_token_counts: dict[int, int],
     min_act_frequency: float,
@@ -163,7 +163,7 @@ def _process_component_tokens(
     """Process tokens for a single component and return activation data."""
     token_data_list: list[TokenActivationData] = []
 
-    for token_id, count in token_counts.items():
+    for token_id, count in component_token_counts.items():
         # Get total count for this token
         total_count = total_token_counts.get(token_id, 0)
         if total_count == 0:
@@ -389,7 +389,7 @@ def _prepare_component_table_data(
         # Process tokens for this component
         component_ci_values = module_ci_values.get(component_id, {})
         token_data = _process_component_tokens(
-            token_counts=component_token_counts,
+            component_token_counts=component_token_counts,
             module_ci_values=component_ci_values,
             total_token_counts=total_token_counts,
             min_act_frequency=min_act_frequency,
