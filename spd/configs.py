@@ -149,13 +149,13 @@ class LMTaskConfig(BaseModel):
 class IHTaskConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     task_name: Literal["induction_head"]
-    prefix_window: PositiveInt = Field(
-        default=10,
-        description="Number of tokens to use as a prefix window for the induction head",
+    prefix_window: PositiveInt | None = Field(
+        default=None,
+        description="Number of tokens to use as a prefix window for the induction head. If none, uses the full sequence length.",
     )
 
 
-type TaskConfig = TMSTaskConfig | ResidualMLPTaskConfig | LMTaskConfig | IHTaskConfig
+TaskConfig = TMSTaskConfig | ResidualMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
 class Config(BaseModel):

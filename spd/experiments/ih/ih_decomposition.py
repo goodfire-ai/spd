@@ -87,10 +87,12 @@ def main(
         induction_model_train_config_dict=target_model_train_config_dict,
     )
 
+    prefix_window = task_config.prefix_window or target_model.config.seq_len - 3
+
     dataset = InductionDataset(
         vocab_size=target_model.config.vocab_size,
         seq_len=target_model.config.seq_len,
-        prefix_window=task_config.prefix_window,
+        prefix_window=prefix_window,
         device=device,
     )
     train_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
