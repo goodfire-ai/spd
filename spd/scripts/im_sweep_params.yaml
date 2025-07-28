@@ -1,0 +1,4 @@
+# Params used for all experiments
+global:
+  importance_minimality_coeff:
+    values: [1, 0.1, 0.01, 0.001, 0.0001]
