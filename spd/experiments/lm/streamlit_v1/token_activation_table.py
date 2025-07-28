@@ -164,21 +164,15 @@ def _process_component_tokens(
     token_data_list: list[TokenActivationData] = []
 
     for token_id, count in component_token_counts.items():
-        # Get total count for this token
-        total_count = total_token_counts.get(token_id, 0)
-        if total_count == 0:
-            continue
+        total_count = total_token_counts[token_id]
 
-        # Calculate activation fraction
         activation_fraction = count / total_count
 
-        # Filter by minimum token activation fraction
         if activation_fraction < min_act_frequency:
             continue
 
         token_text = tokenizer.decode([token_id])
 
-        # Clean up the token text
         token_text = token_text.strip()
         if token_text:  # Only add non-empty tokens
             # Calculate mean CI value for this token
