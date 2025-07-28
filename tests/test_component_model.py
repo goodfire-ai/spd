@@ -121,6 +121,7 @@ def test_replaced_component_forward_linear_matches_modes():
 
     original = nn.Linear(input_dim, output_dim, bias=True)
     components = LinearComponents(d_in=input_dim, d_out=output_dim, C=3, bias=original.bias)
+    components.init_from_target_weight(original.weight.T)
     components_or_module = ComponentsOrModule(original=original, components=components)
 
     x = torch.randn(B, input_dim)
@@ -151,6 +152,7 @@ def test_replaced_component_forward_conv1d_matches_modes():
     original = Conv1D(nf=output_dim, nx=input_dim)
 
     components = LinearComponents(d_in=input_dim, d_out=output_dim, C=C, bias=original.bias)
+    components.init_from_target_weight(original.weight)
     components_or_module = ComponentsOrModule(original=original, components=components)
 
     x = torch.randn(B, S, input_dim)
@@ -180,6 +182,7 @@ def test_replaced_component_forward_embedding_matches_modes():
 
     emb = nn.Embedding(vocab_size, embedding_dim)
     comp = EmbeddingComponents(vocab_size=vocab_size, embedding_dim=embedding_dim, C=C)
+    comp.init_from_target_weight(emb.weight)
     rep = ComponentsOrModule(original=emb, components=comp)
 
     batch_size = 4
