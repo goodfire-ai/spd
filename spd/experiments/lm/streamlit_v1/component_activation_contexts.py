@@ -7,6 +7,7 @@ Shows example prompts where components activate, with surrounding context tokens
 import html
 import io
 import zipfile
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -473,6 +474,17 @@ def _process_batch_for_contexts(
     return ci_l_zero
 
 
+def _calculate_average_l0_scores(
+    l0_scores_sum: defaultdict[str, float], l0_scores_count: int
+) -> dict[str, float]:
+    """Calculate average L0 scores from accumulated sums."""
+    avg_l0_scores: dict[str, float] = {}
+    if l0_scores_count > 0:
+        for layer_name, score_sum in l0_scores_sum.items():
+            avg_l0_scores[layer_name] = score_sum / l0_scores_count
+    return avg_l0_scores
+
+
 def _check_all_components_have_enough_examples(
     component_contexts: dict[str, dict[int, list[ActivationContext]]],
     n_prompts: int,
@@ -591,7 +603,7 @@ def find_component_activation_contexts(
 
     # Initialize tracking
     component_contexts: dict[str, dict[int, list[ActivationContext]]] = {}
-    l0_scores_sum: dict[str, float] = {}
+    l0_scores_sum: defaultdict[str, float] = defaultdict(float)
     l0_scores_count = 0
 
     data_iter = iter(dataloader)
@@ -603,7 +615,6 @@ def find_component_activation_contexts(
             batch = extract_batch_data(next(data_iter))
             batch = batch.to(device)
 
-            # Process batch
             ci_l_zero = _process_batch_for_contexts(
                 batch=batch,
                 model_data=_model_data,
@@ -612,19 +623,14 @@ def find_component_activation_contexts(
                 device=device,
             )
 
-            # Update L0 scores
             for layer_name, layer_ci_l_zero in ci_l_zero.items():
-                if layer_name not in l0_scores_sum:
-                    l0_scores_sum[layer_name] = 0.0
                 l0_scores_sum[layer_name] += layer_ci_l_zero
             l0_scores_count += 1
 
-            # Update progress
             progress = (step + 1) / config.n_steps
             progress_bar.progress(progress)
             progress_text.text(f"Processed {step + 1}/{config.n_steps} batches")
 
-            # Check if we have enough examples for all components
             if _check_all_components_have_enough_examples(
                 component_contexts, config.n_prompts, _model_data.model.C
             ):
@@ -638,11 +644,7 @@ def find_component_activation_contexts(
     progress_bar.empty()
     progress_text.empty()
 
-    # Calculate average L0 scores
-    avg_l0_scores: dict[str, float] = {}
-    if l0_scores_count > 0:
-        for layer_name, score_sum in l0_scores_sum.items():
-            avg_l0_scores[layer_name] = score_sum / l0_scores_count
+    avg_l0_scores = _calculate_average_l0_scores(l0_scores_sum, l0_scores_count)
 
     return component_contexts, avg_l0_scores
 

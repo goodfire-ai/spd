@@ -288,7 +288,7 @@ def _render_token_table(
 
 
 def _calculate_average_l0_scores(
-    l0_scores_sum: dict[str, float], l0_scores_count: int
+    l0_scores_sum: defaultdict[str, float], l0_scores_count: int
 ) -> dict[str, float]:
     """Calculate average L0 scores from accumulated sums."""
     avg_l0_scores: dict[str, float] = {}
@@ -477,23 +477,20 @@ def analyze_component_token_table(
         lambda: defaultdict(lambda: defaultdict(list))
     )
     total_token_counts: dict[int, int] = defaultdict(int)
-    l0_scores_sum: dict[str, float] = {}
+    l0_scores_sum: defaultdict[str, float] = defaultdict(float)
     l0_scores_count = 0
 
     total_tokens_processed = 0
     data_iter = iter(dataloader)
 
     for _ in range(config.n_steps):
-        # Get next batch, break if dataset is exhausted
         try:
             batch_data = next(data_iter)
         except StopIteration:
-            # Dataset exhausted - this is expected
             break
 
         batch = extract_batch_data(batch_data).to(device)
 
-        # Process batch
         tokens_in_batch, ci_l_zero = _process_batch_for_tokens(
             batch=batch,
             model_data=_model_data,
@@ -505,14 +502,10 @@ def analyze_component_token_table(
 
         total_tokens_processed += tokens_in_batch
 
-        # Update L0 scores
         for layer_name, layer_ci_l_zero in ci_l_zero.items():
-            if layer_name not in l0_scores_sum:
-                l0_scores_sum[layer_name] = 0.0
             l0_scores_sum[layer_name] += layer_ci_l_zero
         l0_scores_count += 1
 
-    # Calculate average L0 scores
     avg_l0_scores = _calculate_average_l0_scores(l0_scores_sum, l0_scores_count)
 
     # Convert defaultdicts (with lambda default factories) to dicts for pickling
