@@ -2,6 +2,7 @@
 Component Token Table tab for the Streamlit app.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
@@ -14,180 +15,56 @@ from spd.experiments.lm.streamlit_v1.utils import ModelData
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import extract_batch_data
 
-
-@st.cache_data(show_spinner="Analyzing component token activations across dataset...")
-def analyze_component_token_table(
-    _model_path: str,
-    _model_data: ModelData,
-    dataset_name: str,
-    dataset_split: str,
-    column_name: str,
-    causal_importance_threshold: float,
-    n_steps: int,
-    batch_size: int,
-    max_seq_len: int,
-    seed: int,
-) -> tuple[
-    dict[str, dict[int, dict[int, int]]],
-    dict[str, dict[int, dict[int, list[float]]]],
-    int,
-    dict[int, int],
-    dict[str, float],
-]:
-    """Analyze which tokens activate each component across the dataset."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    # Create dataloader
-    data_config = DatasetConfig(
-        name=dataset_name,
-        hf_tokenizer_path=_model_data.config.pretrained_model_name_hf,
-        split=dataset_split,
-        n_ctx=max_seq_len,
-        is_tokenized=False,
-        streaming=False,
-        column_name=column_name,
-    )
-
-    assert isinstance(_model_data.config.task_config, LMTaskConfig)
-    dataloader, _ = create_data_loader(
-        dataset_config=data_config,
-        batch_size=batch_size,
-        buffer_size=_model_data.config.task_config.buffer_size,
-        global_seed=seed,
-        ddp_rank=0,
-        ddp_world_size=1,
-    )
-
-    # Initialize token activation tracking
-    component_token_activations: dict[str, dict[int, dict[int, int]]] = {}
-    component_token_ci_values: dict[str, dict[int, dict[int, list[float]]]] = {}
-    total_token_counts: dict[int, int] = {}  # Track total appearances of each token
-    l0_scores_sum: dict[str, float] = {}  # Track sum of L0 scores for averaging
-    l0_scores_count = 0  # Track number of batches for averaging
-
-    total_tokens_processed = 0
-    data_iter = iter(dataloader)
-
-    progress_bar = st.progress(0)
-    progress_text = st.empty()
-
-    for step in range(n_steps):
-        try:
-            batch = extract_batch_data(next(data_iter))
-            batch = batch.to(device)
-
-            # Count tokens in this batch
-            total_tokens_processed += batch.numel()
-
-            # Count all tokens in this batch
-            for token_id in batch.flatten().tolist():
-                if token_id not in total_token_counts:
-                    total_token_counts[token_id] = 0
-                total_token_counts[token_id] += 1
-
-            # Get activations before each component
-            with torch.no_grad():
-                _, pre_weight_acts = _model_data.model.forward_with_pre_forward_cache_hooks(
-                    batch, module_names=_model_data.model.target_module_paths
-                )
-
-                causal_importances, _ = _model_data.model.calc_causal_importances(
-                    pre_weight_acts=pre_weight_acts,
-                    sigmoid_type=_model_data.config.sigmoid_type,
-                    detach_inputs=True,
-                )
-
-            # Calculate L0 scores for this batch
-            ci_l_zero = calc_ci_l_zero(causal_importances=causal_importances)
-            for layer_name, layer_ci_l_zero in ci_l_zero.items():
-                if layer_name not in l0_scores_sum:
-                    l0_scores_sum[layer_name] = 0.0
-                l0_scores_sum[layer_name] += layer_ci_l_zero
-            l0_scores_count += 1
-
-            for module_name, ci in causal_importances.items():
-                assert ci.ndim == 3, "CI must be 3D (batch, seq_len, C)"
-
-                # Find active components
-                active_mask = ci > causal_importance_threshold
-
-                # Get token IDs for this batch
-                token_ids = batch
-
-                # For each component, track which tokens it activates on
-                for component_idx in range(_model_data.model.C):
-                    # Get positions where this component is active
-                    component_active = active_mask[:, :, component_idx]
-
-                    # Get the tokens at those positions
-                    active_tokens = token_ids[component_active]
-
-                    # Get the CI values at those positions
-                    active_ci_values = ci[:, :, component_idx][component_active]
-
-                    # Count occurrences and store CI values
-                    for token_id, ci_val in zip(
-                        active_tokens.tolist(), active_ci_values.tolist(), strict=False
-                    ):
-                        # Initialize nested dicts if they don't exist
-                        if module_name not in component_token_activations:
-                            component_token_activations[module_name] = {}
-                        if component_idx not in component_token_activations[module_name]:
-                            component_token_activations[module_name][component_idx] = {}
-                        if token_id not in component_token_activations[module_name][component_idx]:
-                            component_token_activations[module_name][component_idx][token_id] = 0
-
-                        if module_name not in component_token_ci_values:
-                            component_token_ci_values[module_name] = {}
-                        if component_idx not in component_token_ci_values[module_name]:
-                            component_token_ci_values[module_name][component_idx] = {}
-                        if token_id not in component_token_ci_values[module_name][component_idx]:
-                            component_token_ci_values[module_name][component_idx][token_id] = []
-
-                        component_token_activations[module_name][component_idx][token_id] += 1
-                        component_token_ci_values[module_name][component_idx][token_id].append(
-                            ci_val
-                        )
-
-            # Update progress
-            progress = (step + 1) / n_steps
-            progress_bar.progress(progress)
-            progress_text.text(
-                f"Processed {step + 1}/{n_steps} batches ({total_tokens_processed:,} tokens)"
-            )
-
-        except StopIteration:
-            st.warning(f"Dataset exhausted after {step} batches. Returning results.")
-            break
-
-    progress_bar.empty()
-    progress_text.empty()
-
-    # Calculate average L0 scores
-    avg_l0_scores: dict[str, float] = {}
-    if l0_scores_count > 0:
-        for layer_name, score_sum in l0_scores_sum.items():
-            avg_l0_scores[layer_name] = score_sum / l0_scores_count
-
-    return (
-        component_token_activations,
-        component_token_ci_values,
-        total_tokens_processed,
-        total_token_counts,
-        avg_l0_scores,
-    )
+# ============================================================================
+# Data Classes
+# ============================================================================
 
 
-@st.fragment
-def render_component_token_table_tab(model_data: ModelData):
-    """Render the component token table analysis."""
-    st.subheader("Component Token Activation Analysis")
-    st.markdown(
-        "This analysis shows which tokens most frequently activate each component across a dataset. "
-        "Higher causal importance values indicate stronger component activation."
-    )
+@dataclass
+class AnalysisConfig:
+    """Configuration for token activation analysis."""
 
-    # Configuration options - wrap in a form to prevent reruns on every change
+    dataset_name: str
+    dataset_split: str
+    column_name: str
+    causal_importance_threshold: float
+    n_steps: int
+    batch_size: int
+    max_seq_len: int
+    seed: int
+    min_act_frequency: float
+
+
+@dataclass
+class TokenActivationData:
+    """Data for a single token's activation statistics."""
+
+    token_text: str
+    token_id: int
+    activation_count: int
+    total_count: int
+    mean_ci: float
+    activation_fraction: float
+
+
+@dataclass
+class AnalysisResults:
+    """Results from token activation analysis."""
+
+    component_token_activations: dict[str, dict[int, dict[int, int]]]
+    component_token_ci_values: dict[str, dict[int, dict[int, list[float]]]]
+    total_tokens_processed: int
+    total_token_counts: dict[int, int]
+    avg_l0_scores: dict[str, float]
+
+
+# ============================================================================
+# UI Helper Functions
+# ============================================================================
+
+
+def _render_configuration_form() -> AnalysisConfig | None:
+    """Render the configuration form and return config if submitted."""
     with st.form("component_token_config"):
         with st.expander("Analysis Configuration", expanded=True):
             col1, col2 = st.columns(2)
@@ -259,12 +136,8 @@ def render_component_token_table_tab(model_data: ModelData):
 
         run_analysis = st.form_submit_button("Run Analysis", type="primary")
 
-    if run_analysis:
-        # Run the analysis
-        activations, ci_values, total_tokens, token_counts, l0_scores = (
-            analyze_component_token_table(
-                _model_path=st.session_state.model_path,
-                _model_data=model_data,
+        if run_analysis:
+            return AnalysisConfig(
                 dataset_name=dataset_name,
                 dataset_split=dataset_split,
                 column_name=column_name,
@@ -273,17 +146,410 @@ def render_component_token_table_tab(model_data: ModelData):
                 batch_size=batch_size,
                 max_seq_len=max_seq_len,
                 seed=seed,
+                min_act_frequency=min_act_frequency,
             )
+    return None
+
+
+def _process_component_tokens(
+    *,
+    token_counts: dict[int, int],
+    module_ci_values: dict[int, list[float]],
+    total_token_counts: dict[int, int],
+    min_act_frequency: float,
+    tokenizer: Any,
+) -> list[TokenActivationData]:
+    """Process tokens for a single component and return activation data."""
+    token_data_list: list[TokenActivationData] = []
+
+    for token_id, count in token_counts.items():
+        # Get total count for this token
+        total_count = total_token_counts.get(token_id, 0)
+        if total_count == 0:
+            continue
+
+        # Calculate activation fraction
+        activation_fraction = count / total_count
+
+        # Filter by minimum token activation fraction
+        if activation_fraction < min_act_frequency:
+            continue
+
+        try:
+            token_text = tokenizer.decode([token_id])
+        except Exception:
+            token_text = f"<token_{token_id}>"
+
+        # Clean up the token text
+        token_text = token_text.strip()
+        if token_text:  # Only add non-empty tokens
+            # Calculate mean CI value for this token
+            ci_vals: list[float] = module_ci_values.get(token_id, [])
+            mean_ci = sum(ci_vals) / len(ci_vals) if ci_vals else 0.0
+
+            assert total_count >= count, (
+                f"Token {token_id} has more activations ({count}) than total appearances ({total_count})"
+            )
+
+            token_data_list.append(
+                TokenActivationData(
+                    token_text=token_text,
+                    token_id=token_id,
+                    activation_count=count,
+                    total_count=total_count,
+                    mean_ci=mean_ci,
+                    activation_fraction=activation_fraction,
+                )
+            )
+
+    return token_data_list
+
+
+def _format_token_display(tokens: list[TokenActivationData]) -> str:
+    """Format token activation data for display."""
+    # Sort by count first (descending), then by mean CI value (descending)
+    sorted_tokens = sorted(tokens, key=lambda x: (x.activation_count, x.mean_ci), reverse=True)
+
+    formatted_tokens: list[str] = []
+    for token in sorted_tokens:
+        formatted_tokens.append(
+            f"{token.token_text} ({token.mean_ci:.2f}, {token.activation_count}/{token.total_count})"
+        )
+
+    return " • ".join(formatted_tokens)
+
+
+# ============================================================================
+# Display Helper Functions
+# ============================================================================
+
+
+def _render_l0_scores(l0_scores: dict[str, float]) -> None:
+    """Render L0 scores as metrics."""
+    st.subheader("L0 over dataset")
+    l0_cols = st.columns(min(len(l0_scores), 4))
+    for idx, (module_name, score) in enumerate(l0_scores.items()):
+        with l0_cols[idx % len(l0_cols)]:
+            st.metric(
+                label=module_name,
+                value=f"{score:.2f}",
+                help=f"Average number of active components in {module_name}",
+            )
+
+
+def _create_markdown_export(df: pd.DataFrame, selected_module: str) -> str:
+    """Create markdown table content for export."""
+    markdown_lines = []
+    markdown_lines.append("# Component Token Activations")
+    markdown_lines.append(f"\n## Module: {selected_module}\n")
+
+    # Table header
+    markdown_lines.append(
+        "| Component | Activating Tokens (mean_ci, count/total) | Total Unique Tokens |"
+    )
+    markdown_lines.append("|-----------|-----------------------------------|---------------------|")
+
+    # Table rows
+    for _, row in df.iterrows():
+        component = row["Component"]
+        tokens = row["Activating Tokens (mean_ci, count/total)"]
+        total = row["Total Unique Tokens"]
+        markdown_lines.append(f"| {component} | {tokens} | {total} |")
+
+    return "\n".join(markdown_lines)
+
+
+def _render_token_table(
+    *,
+    table_data: list[dict[str, Any]],
+    selected_module: str,
+) -> None:
+    """Render the token activation table with export options."""
+    if table_data:
+        # Display as a dataframe
+        df = pd.DataFrame(table_data)
+
+        # Download option
+        markdown_content = _create_markdown_export(df, selected_module)
+
+        st.download_button(
+            label="Download as Markdown",
+            data=markdown_content,
+            file_name=f"component_tokens_{selected_module}.md",
+            mime="text/markdown",
+        )
+
+        st.dataframe(df, use_container_width=True, height=600)
+    else:
+        st.info("No components found with activations above the threshold.")
+
+
+# ============================================================================
+# Analysis Helper Functions
+# ============================================================================
+
+
+def _calculate_average_l0_scores(
+    l0_scores_sum: dict[str, float], l0_scores_count: int
+) -> dict[str, float]:
+    """Calculate average L0 scores from accumulated sums."""
+    avg_l0_scores: dict[str, float] = {}
+    if l0_scores_count > 0:
+        for layer_name, score_sum in l0_scores_sum.items():
+            avg_l0_scores[layer_name] = score_sum / l0_scores_count
+    return avg_l0_scores
+
+
+def _process_batch_for_tokens(
+    *,
+    batch: torch.Tensor,
+    model_data: ModelData,
+    component_token_activations: dict[str, dict[int, dict[int, int]]],
+    component_token_ci_values: dict[str, dict[int, dict[int, list[float]]]],
+    total_token_counts: dict[int, int],
+    config: AnalysisConfig,
+) -> tuple[int, dict[str, float]]:
+    """Process a single batch for token activations.
+
+    Returns:
+        Tuple of (tokens_processed, ci_l_zero_scores)
+    """
+    # Count tokens in this batch
+    tokens_processed = batch.numel()
+
+    # Count all tokens in this batch
+    for token_id in batch.flatten().tolist():
+        if token_id not in total_token_counts:
+            total_token_counts[token_id] = 0
+        total_token_counts[token_id] += 1
+
+    # Get activations before each component
+    with torch.no_grad():
+        _, pre_weight_acts = model_data.model.forward_with_pre_forward_cache_hooks(
+            batch, module_names=model_data.model.target_module_paths
+        )
+
+        causal_importances, _ = model_data.model.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts,
+            sigmoid_type=model_data.config.sigmoid_type,
+            detach_inputs=True,
+        )
+
+    # Calculate L0 scores for this batch
+    ci_l_zero = calc_ci_l_zero(causal_importances=causal_importances)
+
+    for module_name, ci in causal_importances.items():
+        assert ci.ndim == 3, "CI must be 3D (batch, seq_len, C)"
+
+        # Find active components
+        active_mask = ci > config.causal_importance_threshold
+
+        # Get token IDs for this batch
+        token_ids = batch
+
+        # For each component, track which tokens it activates on
+        for component_idx in range(model_data.model.C):
+            # Get positions where this component is active
+            component_active = active_mask[:, :, component_idx]
+
+            # Get the tokens at those positions
+            active_tokens = token_ids[component_active]
+
+            # Get the CI values at those positions
+            active_ci_values = ci[:, :, component_idx][component_active]
+
+            # Count occurrences and store CI values
+            for token_id, ci_val in zip(
+                active_tokens.tolist(), active_ci_values.tolist(), strict=False
+            ):
+                # Initialize nested dicts if they don't exist
+                if module_name not in component_token_activations:
+                    component_token_activations[module_name] = {}
+                if component_idx not in component_token_activations[module_name]:
+                    component_token_activations[module_name][component_idx] = {}
+                if token_id not in component_token_activations[module_name][component_idx]:
+                    component_token_activations[module_name][component_idx][token_id] = 0
+
+                if module_name not in component_token_ci_values:
+                    component_token_ci_values[module_name] = {}
+                if component_idx not in component_token_ci_values[module_name]:
+                    component_token_ci_values[module_name][component_idx] = {}
+                if token_id not in component_token_ci_values[module_name][component_idx]:
+                    component_token_ci_values[module_name][component_idx][token_id] = []
+
+                component_token_activations[module_name][component_idx][token_id] += 1
+                component_token_ci_values[module_name][component_idx][token_id].append(ci_val)
+
+    return tokens_processed, ci_l_zero
+
+
+# ============================================================================
+# Data Processing Functions (Pure computation, no UI)
+# ============================================================================
+
+
+def _prepare_component_table_data(
+    *,
+    module_activations: dict[int, dict[int, int]],
+    module_ci_values: dict[int, dict[int, list[float]]],
+    total_token_counts: dict[int, int],
+    min_act_frequency: float,
+    tokenizer: Any,
+) -> list[dict[str, Any]]:
+    """Prepare table data for a module's components."""
+    table_data: list[dict[str, Any]] = []
+
+    for component_id in sorted(module_activations.keys()):
+        token_counts = module_activations[component_id]
+        if not token_counts:
+            continue
+
+        # Process tokens for this component
+        component_ci_values = module_ci_values.get(component_id, {})
+        token_data = _process_component_tokens(
+            token_counts=token_counts,
+            module_ci_values=component_ci_values,
+            total_token_counts=total_token_counts,
+            min_act_frequency=min_act_frequency,
+            tokenizer=tokenizer,
+        )
+
+        if token_data:
+            # Format tokens for display
+            tokens_str = _format_token_display(token_data)
+            table_data.append(
+                {
+                    "Component": component_id,
+                    "Activating Tokens (mean_ci, count/total)": tokens_str,
+                    "Total Unique Tokens": len(token_data),
+                }
+            )
+
+    return table_data
+
+
+# ============================================================================
+# Main Analysis Function
+# ============================================================================
+
+
+def _run_token_analysis_without_ui(
+    model_data: ModelData,
+    config: AnalysisConfig,
+) -> AnalysisResults:
+    """Run token activation analysis without any UI elements."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Create dataloader
+    data_config = DatasetConfig(
+        name=config.dataset_name,
+        hf_tokenizer_path=model_data.config.pretrained_model_name_hf,
+        split=config.dataset_split,
+        n_ctx=config.max_seq_len,
+        is_tokenized=False,
+        streaming=False,
+        column_name=config.column_name,
+    )
+
+    assert isinstance(model_data.config.task_config, LMTaskConfig)
+    dataloader, _ = create_data_loader(
+        dataset_config=data_config,
+        batch_size=config.batch_size,
+        buffer_size=model_data.config.task_config.buffer_size,
+        global_seed=config.seed,
+        ddp_rank=0,
+        ddp_world_size=1,
+    )
+
+    # Initialize token activation tracking
+    component_token_activations: dict[str, dict[int, dict[int, int]]] = {}
+    component_token_ci_values: dict[str, dict[int, dict[int, list[float]]]] = {}
+    total_token_counts: dict[int, int] = {}
+    l0_scores_sum: dict[str, float] = {}
+    l0_scores_count = 0
+
+    total_tokens_processed = 0
+    data_iter = iter(dataloader)
+
+    for _ in range(config.n_steps):
+        try:
+            batch = extract_batch_data(next(data_iter))
+            batch = batch.to(device)
+
+            # Process batch
+            tokens_in_batch, ci_l_zero = _process_batch_for_tokens(
+                batch=batch,
+                model_data=model_data,
+                component_token_activations=component_token_activations,
+                component_token_ci_values=component_token_ci_values,
+                total_token_counts=total_token_counts,
+                config=config,
+            )
+
+            total_tokens_processed += tokens_in_batch
+
+            # Update L0 scores
+            for layer_name, layer_ci_l_zero in ci_l_zero.items():
+                if layer_name not in l0_scores_sum:
+                    l0_scores_sum[layer_name] = 0.0
+                l0_scores_sum[layer_name] += layer_ci_l_zero
+            l0_scores_count += 1
+
+        except StopIteration:
+            # Dataset exhausted - this is expected
+            break
+
+    # Calculate average L0 scores
+    avg_l0_scores = _calculate_average_l0_scores(l0_scores_sum, l0_scores_count)
+
+    return AnalysisResults(
+        component_token_activations=component_token_activations,
+        component_token_ci_values=component_token_ci_values,
+        total_tokens_processed=total_tokens_processed,
+        total_token_counts=total_token_counts,
+        avg_l0_scores=avg_l0_scores,
+    )
+
+
+@st.cache_data(show_spinner="Analyzing component token activations across dataset...")
+def analyze_component_token_table(
+    _model_path: str,
+    _model_data: ModelData,
+    config: AnalysisConfig,
+) -> AnalysisResults:
+    """Analyze which tokens activate each component across the dataset (with progress UI)."""
+    # Run the core analysis
+    return _run_token_analysis_without_ui(_model_data, config)
+
+
+@st.fragment
+def render_component_token_table_tab(model_data: ModelData):
+    """Render the component token table analysis."""
+    st.subheader("Component Token Activation Analysis")
+    st.markdown(
+        "This analysis shows which tokens most frequently activate each component across a dataset. "
+        "Higher causal importance values indicate stronger component activation."
+    )
+
+    # Configuration and run analysis
+    config = _render_configuration_form()
+
+    if config:
+        # Run the analysis
+        analysis_results = analyze_component_token_table(
+            _model_path=st.session_state.model_path,
+            _model_data=model_data,
+            config=config,
         )
 
         # Store results in session state
         st.session_state.token_activation_results = {
-            "activations": activations,
-            "ci_values": ci_values,
-            "total_tokens": total_tokens,
-            "token_counts": token_counts,
-            "l0_scores": l0_scores,
-            "min_act_frequency": min_act_frequency,
+            "activations": analysis_results.component_token_activations,
+            "ci_values": analysis_results.component_token_ci_values,
+            "total_tokens": analysis_results.total_tokens_processed,
+            "token_counts": analysis_results.total_token_counts,
+            "l0_scores": analysis_results.avg_l0_scores,
+            "min_act_frequency": config.min_act_frequency,
         }
 
     # Display results if available
@@ -302,15 +568,7 @@ def render_component_token_table_tab(model_data: ModelData):
 
         # Display L0 scores as summary metrics
         if l0_scores:
-            st.subheader("L0 over dataset")
-            l0_cols = st.columns(min(len(l0_scores), 4))
-            for idx, (module_name, score) in enumerate(l0_scores.items()):
-                with l0_cols[idx % len(l0_cols)]:
-                    st.metric(
-                        label=module_name,
-                        value=f"{score:.2f}",
-                        help=f"Average number of active components in {module_name}",
-                    )
+            _render_l0_scores(l0_scores)
 
         # Module selection
         if activations:
@@ -326,104 +584,16 @@ def render_component_token_table_tab(model_data: ModelData):
                 )
 
                 # Prepare data for display
-                table_data: list[dict[str, Any]] = []
+                table_data = _prepare_component_table_data(
+                    module_activations=module_activations,
+                    module_ci_values=module_ci_values,
+                    total_token_counts=total_token_counts,
+                    min_act_frequency=min_act_frequency,
+                    tokenizer=model_data.tokenizer,
+                )
 
-                for component_id in sorted(module_activations.keys()):
-                    token_counts: dict[int, int] = module_activations[component_id]
-                    if not token_counts:
-                        continue
-
-                    # Create list of tokens with their mean CI values and counts
-                    token_ci_count_tuples: list[tuple[str, float, int, int]] = []
-                    for token_id, count in token_counts.items():
-                        # Get total count for this token
-                        total_count = total_token_counts.get(token_id, 0)
-                        if total_count == 0:
-                            continue
-
-                        # Calculate activation fraction
-                        activation_fraction = count / total_count
-
-                        # Filter by minimum token activation fraction
-                        if activation_fraction < min_act_frequency:
-                            continue
-
-                        try:
-                            token_text = model_data.tokenizer.decode([token_id])  # pyright: ignore[reportAttributeAccessIssue]
-                        except Exception:
-                            token_text = f"<token_{token_id}>"
-
-                        # Clean up the token text
-                        token_text = token_text.strip()
-                        if token_text:  # Only add non-empty tokens
-                            # Calculate mean CI value for this token
-                            ci_vals: list[float] = module_ci_values.get(component_id, {}).get(
-                                token_id, []
-                            )
-                            mean_ci = sum(ci_vals) / len(ci_vals) if ci_vals else 0.0
-                            assert total_count >= count, (
-                                f"Token {token_id} has more activations ({count}) than total appearances ({total_count})"
-                            )
-                            token_ci_count_tuples.append((token_text, mean_ci, count, total_count))
-
-                    # Sort by count first (descending), then by mean CI value (descending)
-                    sorted_tokens: list[tuple[str, float, int, int]] = sorted(
-                        token_ci_count_tuples, key=lambda x: (x[2], x[1]), reverse=True
-                    )
-
-                    if sorted_tokens:
-                        # Format tokens for display
-                        formatted_tokens: list[str] = []
-                        for token_text, mean_ci, count, total_count in sorted_tokens:
-                            formatted_tokens.append(
-                                f"{token_text} ({mean_ci:.2f}, {count}/{total_count})"
-                            )
-
-                        tokens_str = " • ".join(formatted_tokens)
-                        table_data.append(
-                            {
-                                "Component": component_id,
-                                "Activating Tokens (mean_ci, count/total)": tokens_str,
-                                "Total Unique Tokens": len(
-                                    sorted_tokens
-                                ),  # Count only tokens that meet the minimum frequency
-                            }
-                        )
-
-                if table_data:
-                    # Display as a dataframe
-                    df = pd.DataFrame(table_data)
-
-                    # Download option
-                    # Create markdown table manually
-                    markdown_lines = []
-                    markdown_lines.append("# Component Token Activations")
-                    markdown_lines.append(f"\n## Module: {selected_module}\n")
-
-                    # Table header
-                    markdown_lines.append(
-                        "| Component | Activating Tokens (mean_ci, count/total) | Total Unique Tokens |"
-                    )
-                    markdown_lines.append(
-                        "|-----------|-----------------------------------|---------------------|"
-                    )
-
-                    # Table rows
-                    for _, row in df.iterrows():
-                        component = row["Component"]
-                        tokens = row["Activating Tokens (mean_ci, count/total)"]
-                        total = row["Total Unique Tokens"]
-                        markdown_lines.append(f"| {component} | {tokens} | {total} |")
-
-                    markdown_content = "\n".join(markdown_lines)
-
-                    st.download_button(
-                        label="Download as Markdown",
-                        data=markdown_content,
-                        file_name=f"component_tokens_{selected_module}.md",
-                        mime="text/markdown",
-                    )
-
-                    st.dataframe(df, use_container_width=True, height=600)
-                else:
-                    st.info("No components found with activations above the threshold.")
+                # Render the table
+                _render_token_table(
+                    table_data=table_data,
+                    selected_module=selected_module,
+                )
