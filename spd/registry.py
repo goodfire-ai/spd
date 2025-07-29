@@ -92,6 +92,12 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/memorization/decomp_config_32-128-2x.yaml"),
         expected_runtime=60,
     ),
+    "mem_32_1p4x_cheat": ExperimentConfig(
+        experiment_type="memorization",
+        decomp_script=Path("spd/experiments/memorization/memorization_decomposition.py"),
+        config_path=Path("spd/experiments/memorization/decomp_config_32-128-1p4x-cheat.yaml"),
+        expected_runtime=45,
+    ),
 }
 
 
