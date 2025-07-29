@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from jaxtyping import Bool, Float, Int
 from pydantic import (
@@ -671,6 +672,87 @@ def merge_iteration(
     return merge_history, current_merge
 
 
+
+
+@dataclass
+class MergeEnsemble:
+    data: list[MergeHistory]
+
+    def __iter__(self):
+        return iter(self.data)
+    
+    def __getitem__(self, idx: int) -> MergeHistory:
+        return self.data[idx]
+    
+    @property
+    def n_iters(self) -> int:
+        """Number of iterations in the ensemble."""
+        n_iterations: int = len(self.data[0].k_groups)
+        assert all(
+            len(history.k_groups) == n_iterations for history in self.data
+        ), "All histories must have the same number of iterations"
+        return n_iterations
+    
+    @property
+    def n_ensemble(self) -> int:
+        """Number of ensemble members."""
+        return len(self.data)
+
+
+    def get_distances(self) -> Float[np.ndarray, "n_iters n_ens n_ens"]:
+        n_iters: int = self.n_iters
+        n_ens: int = self.n_ensemble
+        distances: Float[np.ndarray, "n_iters n_ens n_ens"] = np.full(
+            (n_iters, n_ens, n_ens),
+            float("nan"),
+        )
+
+        for i in range(n_iters):
+            for j in range(len(self.data)):
+                for k in range(j):
+                    d = self.data[j].merges[i].dist(self.data[k].merges[i])
+                    distances[i, j, k] = d
+                    # diag and upper triangle stay nan
+
+        return distances
+    
+def plot_dists_distribution(
+        distances: Float[np.ndarray, "n_iters n_ens n_ens"],
+        kwargs_fig: dict[str, Any] | None = None,
+        kwargs_plot: dict[str, Any] | None = None,
+    ) -> plt.Axes:
+    n_iters: int = distances.shape[0]
+    dists_flat: Float[np.ndarray, "n_iters n_ens*n_ens"] = distances.reshape(distances.shape[0], -1)
+
+    # plot the distribution of distances at each iteration
+    n_samples: int = dists_flat.shape[1]
+    fig, ax = plt.subplots( # pyright: ignore[reportCallIssue]
+        1, 1,
+        **dict(
+            figsize=(16, 3), # pyright: ignore[reportArgumentType]
+            **(kwargs_fig or {}),
+        )
+    )
+    for i in range(n_iters):
+        ax.plot(
+            np.full((n_samples), i),
+            dists_flat[i],
+            **dict(
+                color="blue",
+                alpha=0.005,
+                markersize=5,
+                markeredgewidth=0,
+                **(kwargs_plot or {}),
+            )
+        )
+    ax.set_xlabel("Iteration #")
+    ax.set_ylabel("permutation invariant hamming distance")
+    ax.set_title("Distribution of pairwise distances between group merges in an ensemble")
+
+    return ax
+
+
+
 def merge_iteration_ensemble(
     activations: Float[Tensor, "samples c_components"],
     merge_config: MergeConfig,
@@ -678,7 +760,7 @@ def merge_iteration_ensemble(
     component_labels: list[str] | None = None,
     initial_merge: GroupMerge | None = None,
     plot_config: MergePlotConfig | None = None,
-) -> list[MergeHistory]:
+) -> MergeEnsemble:
     """Run many merge iterations"""
 
     output: list[MergeHistory] = []
@@ -695,4 +777,8 @@ def merge_iteration_ensemble(
         # store the history
         output.append(merge_history)
 
-    return output
+    return MergeEnsemble(data=output)
+
+
+
+
