@@ -15,7 +15,7 @@ from torch import Tensor, nn
 from wandb.apis.public import Run
 
 from spd.experiments.resid_mlp.configs import ResidMLPTrainConfig, ResidualMLPConfig
-from spd.interfaces import LoadableModel, RunInfo
+from spd.interfaces import LoadableModule, RunInfo
 from spd.log import logger
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.module_utils import init_param_
@@ -106,7 +106,7 @@ class MLP(nn.Module):
         return out
 
 
-class ResidualMLP(LoadableModel):
+class ResidualMLP(LoadableModule):
     def __init__(self, config: ResidualMLPConfig):
         super().__init__()
         self.config = config

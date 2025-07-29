@@ -9,14 +9,14 @@ from torch import Tensor, nn
 
 from spd.configs import Config
 from spd.experiments.tms.configs import TMSTaskConfig
-from spd.interfaces import LoadableModel, RunInfo
+from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import ComponentsOrModule, EmbeddingComponents, LinearComponents
 from spd.spd_types import ModelPath
 from spd.utils.run_utils import save_file
 
 
-class SimpleTestModel(LoadableModel):
+class SimpleTestModel(LoadableModule):
     """Simple test model with Linear and Embedding layers for unit‑testing."""
 
     LINEAR_1_SHAPE = (10, 5)

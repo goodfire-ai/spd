@@ -11,7 +11,7 @@ from torch.nn import functional as F
 from wandb.apis.public import Run
 
 from spd.experiments.tms.configs import TMSModelConfig, TMSTrainConfig
-from spd.interfaces import LoadableModel, RunInfo
+from spd.interfaces import LoadableModule, RunInfo
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import fetch_wandb_run_dir
@@ -52,7 +52,7 @@ class TMSTargetRunInfo(RunInfo[TMSTrainConfig]):
         return cls(checkpoint_path=checkpoint_path, config=train_config)
 
 
-class TMSModel(LoadableModel):
+class TMSModel(LoadableModule):
     def __init__(self, config: TMSModelConfig):
         super().__init__()
         self.config = config

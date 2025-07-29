@@ -30,17 +30,17 @@ class RunInfo[T]:
         raise NotImplementedError
 
 
-class LoadableModel(nn.Module, ABC):
+class LoadableModule(nn.Module, ABC):
     """Base class for nn.Modules that can be loaded from a local path or wandb run id."""
 
     @classmethod
     @abstractmethod
-    def from_pretrained(cls, _path: ModelPath) -> "LoadableModel":
+    def from_pretrained(cls, _path: ModelPath) -> "LoadableModule":
         """Load a pretrained model from a local path or wandb run id."""
         raise NotImplementedError("Subclasses must implement from_pretrained method.")
 
     @classmethod
     @abstractmethod
-    def from_run_info(cls, _run_info: RunInfo[Any]) -> "LoadableModel":
+    def from_run_info(cls, _run_info: RunInfo[Any]) -> "LoadableModule":
         """Load a pretrained model from a run info object."""
         raise NotImplementedError("Subclasses must implement from_run_info method.")

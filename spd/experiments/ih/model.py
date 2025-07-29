@@ -13,7 +13,7 @@ from torch.nn import functional as F
 from wandb.apis.public import Run
 
 from spd.experiments.ih.configs import InductionHeadsTrainConfig, InductionModelConfig
-from spd.interfaces import LoadableModel, RunInfo
+from spd.interfaces import LoadableModule, RunInfo
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
@@ -225,7 +225,7 @@ class TransformerBlock(nn.Module):
         return x
 
 
-class InductionTransformer(LoadableModel):
+class InductionTransformer(LoadableModule):
     def __init__(self, cfg: InductionModelConfig):
         super().__init__()
         self.config = cfg

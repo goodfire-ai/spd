@@ -15,7 +15,7 @@ from transformers.models.auto.auto_factory import _BaseAutoModelClass
 from wandb.apis.public import Run
 
 from spd.configs import Config
-from spd.interfaces import LoadableModel, RunInfo
+from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
     Components,
     ComponentsOrModule,
@@ -65,7 +65,7 @@ class SPDRunInfo(RunInfo[Config]):
         return cls(checkpoint_path=comp_model_path, config=config)
 
 
-class ComponentModel(LoadableModel):
+class ComponentModel(LoadableModule):
     """Wrapper around an arbitrary model for running SPD.
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
@@ -376,8 +376,8 @@ class ComponentModel(LoadableModel):
             )
             target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name_hf)
         else:
-            assert issubclass(model_class, LoadableModel), (
-                f"Model class {model_class} should be a subclass of LoadableModel which "
+            assert issubclass(model_class, LoadableModule), (
+                f"Model class {model_class} should be a subclass of LoadableModule which "
                 "defines a `from_pretrained` method"
             )
             assert run_info.config.pretrained_model_path is not None
