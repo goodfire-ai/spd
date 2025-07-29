@@ -24,7 +24,7 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 %autoreload 2
 
 # %%
-component_model, cfg, path = ComponentModel.from_pretrained(CANONICAL_RUNS["resid_mlp1"])
+component_model, cfg, path = ComponentModel.from_pretrained(CANONICAL_RUNS["tms_40-10-id"])
 component_model.to(DEVICE);
 
 # %%
