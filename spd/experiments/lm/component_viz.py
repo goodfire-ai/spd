@@ -9,6 +9,7 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.plotting import plot_mean_component_activation_counts
+from spd.settings import REPO_ROOT
 from spd.spd_types import ModelPath
 from spd.utils.component_utils import component_activation_statistics
 
@@ -20,7 +21,8 @@ def main(path: ModelPath) -> None:
     config = run_info.config
     ss_model.to(device)
 
-    out_dir = run_info.out_dir
+    # TODO: If continuing with this file, think about where we want the outputs
+    out_dir = REPO_ROOT
 
     assert isinstance(config.task_config, LMTaskConfig)
     dataset_config = DatasetConfig(

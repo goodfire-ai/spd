@@ -40,9 +40,6 @@ from spd.utils.wandb_utils import (
 class SPDRunInfo(RunInfo[Config]):
     """Run info from training a ComponentModel (i.e. from an SPD run)."""
 
-    # TODO: Can we remove this out_dir business?
-    out_dir: Path
-
     @override
     @classmethod
     def from_path(cls, path: ModelPath) -> "SPDRunInfo":
@@ -54,28 +51,18 @@ class SPDRunInfo(RunInfo[Config]):
                 # Use local files from shared filesystem
                 comp_model_path = run_dir / "model.pth"
                 config_path = run_dir / "final_config.yaml"
-                # TODO: Can we remove this out_dir business?
-                out_dir = run_dir
             else:
                 # Download from wandb
                 wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-                api = wandb.Api()
-                run: Run = api.run(wandb_path)
                 comp_model_path, config_path = ComponentModel._download_wandb_files(wandb_path)
-                out_dir = fetch_wandb_run_dir(run.id)
         else:
             comp_model_path = Path(path)
             config_path = Path(path).parent / "final_config.yaml"
-            out_dir = Path(path).parent
 
         with open(config_path) as f:
             config = Config(**yaml.safe_load(f))
 
-        return cls(
-            checkpoint_path=comp_model_path,
-            config=config,
-            out_dir=out_dir,
-        )
+        return cls(checkpoint_path=comp_model_path, config=config)
 
 
 class ComponentModel(LoadableModel):

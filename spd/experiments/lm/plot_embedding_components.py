@@ -12,6 +12,7 @@ from tqdm import tqdm
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.sigmoids import SigmoidTypes
+from spd.settings import REPO_ROOT
 
 
 def collect_embedding_masks(
@@ -151,6 +152,9 @@ def main(model_path: str | Path) -> None:
     """
     # Load model
     run_info = SPDRunInfo.from_path(model_path)
+    # TODO: If continuing with this file, think about where we want the outputs
+    out_dir = REPO_ROOT
+
     model = ComponentModel.from_run_info(run_info)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
@@ -158,9 +162,7 @@ def main(model_path: str | Path) -> None:
     # Collect masks
     masks = collect_embedding_masks(model, sigmoid_type=run_info.config.sigmoid_type, device=device)
     permuted_masks, _perm_indices = permute_to_identity(masks)
-    plot_embedding_mask_heatmap(
-        permuted_masks, run_info.out_dir, run_info.config.ci_alive_threshold
-    )
+    plot_embedding_mask_heatmap(permuted_masks, out_dir, run_info.config.ci_alive_threshold)
 
 
 if __name__ == "__main__":
