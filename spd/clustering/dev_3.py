@@ -109,6 +109,8 @@ DISTANCES = ENSEMBLE.get_distances()
 plot_dists_distribution(
 	distances=DISTANCES,
 	mode="dist",
+	label="v1"
 )
+plt.legend()
 
 # %%

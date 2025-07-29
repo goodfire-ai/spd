@@ -719,6 +719,7 @@ class MergeEnsemble:
 def plot_dists_distribution(
         distances: Float[np.ndarray, "n_iters n_ens n_ens"],
         mode: Literal["points", "dist"] = "points",
+        label: str | None = None,
         ax: plt.Axes | None = None,
         kwargs_fig: dict[str, Any] | None = None,
         kwargs_plot: dict[str, Any] | None = None,
@@ -797,12 +798,12 @@ def plot_dists_distribution(
         iterations = np.arange(n_iters)
         
         # Plot statistics
-        ax_.plot(iterations, mins, '-', color=color, alpha=0.5, label='min', **kwargs_plot or {})
-        ax_.plot(iterations, maxs, '-', color=color, alpha=0.5, label='max', **kwargs_plot or {})
-        ax_.plot(iterations, means, '-', color=color, linewidth=2, label='mean', **kwargs_plot or {})
-        ax_.plot(iterations, medians, '--', color=color, linewidth=2, label='median', **kwargs_plot or {})
-        ax_.plot(iterations, q1s, ':', color=color, alpha=0.7, label='Q1', **kwargs_plot or {})
-        ax_.plot(iterations, q3s, ':', color=color, alpha=0.7, label='Q3', **kwargs_plot or {})
+        ax_.plot(iterations, mins, '-', color=color, alpha=0.5)
+        ax_.plot(iterations, maxs, '-', color=color, alpha=0.5)
+        ax_.plot(iterations, means, '-', color=color, linewidth=2, label=label)
+        ax_.plot(iterations, medians, '--', color=color, linewidth=2)
+        ax_.plot(iterations, q1s, ':', color=color, alpha=0.7)
+        ax_.plot(iterations, q3s, ':', color=color, alpha=0.7)
         
         # Shade between quartiles
         ax_.fill_between(iterations, q1s, q3s, color=color, alpha=0.2)
