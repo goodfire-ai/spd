@@ -202,7 +202,7 @@ def resolve_class(path: str) -> type[nn.Module]:
 
     Args:
         path: The path to the class, e.g. "transformers.LlamaForCausalLM" or
-            "spd.experiments.resid_mlp.models.ResidMLP"
+            "spd.experiments.resid_mlp.models.ResidualMLP"
     """
     module_path, _, class_name = path.rpartition(".")
     module = importlib.import_module(module_path)

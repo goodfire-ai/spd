@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from torch import Tensor, nn
 from wandb.apis.public import Run
 
-from spd.experiments.resid_mlp.configs import ResidMLPTrainConfig, ResidualMLPConfig
+from spd.experiments.resid_mlp.configs import ResidualMLPConfig, ResidualMLPTrainConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.log import logger
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
@@ -36,7 +36,7 @@ class ResidualMLPPaths(BaseModel):
 
 
 @dataclass
-class ResidualMLPTargetRunInfo(RunInfo[ResidMLPTrainConfig]):
+class ResidualMLPTargetRunInfo(RunInfo[ResidualMLPTrainConfig]):
     """Run info from training a ResidualMLPModel."""
 
     label_coeffs: Float[Tensor, " n_features"]
@@ -73,7 +73,7 @@ class ResidualMLPTargetRunInfo(RunInfo[ResidMLPTrainConfig]):
         with open(paths.label_coeffs) as f:
             label_coeffs = torch.tensor(json.load(f))
 
-        resid_mlp_train_config = ResidMLPTrainConfig(**resid_mlp_train_config_dict)
+        resid_mlp_train_config = ResidualMLPTrainConfig(**resid_mlp_train_config_dict)
         return cls(
             checkpoint_path=paths.checkpoint,
             config=resid_mlp_train_config,
@@ -173,7 +173,7 @@ class ResidualMLP(LoadableModule):
 
     @classmethod
     @override
-    def from_run_info(cls, run_info: RunInfo[ResidMLPTrainConfig]) -> "ResidualMLP":
+    def from_run_info(cls, run_info: RunInfo[ResidualMLPTrainConfig]) -> "ResidualMLP":
         """Load a pretrained model from a run info object."""
         resid_mlp_model = cls(config=run_info.config.resid_mlp_config)
         resid_mlp_model.load_state_dict(

@@ -9,7 +9,7 @@ from jaxtyping import Float
 from torch import Tensor, nn
 from tqdm import tqdm
 
-from spd.experiments.resid_mlp.configs import ResidMLPTrainConfig, ResidualMLPConfig
+from spd.experiments.resid_mlp.configs import ResidualMLPConfig, ResidualMLPTrainConfig
 from spd.experiments.resid_mlp.models import ResidualMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import (
     ResidualMLPDataset,
@@ -26,7 +26,7 @@ def loss_function(
     labels: Float[Tensor, "batch n_features"],
     feature_importances: Float[Tensor, "batch n_features"],
     model: ResidualMLP,
-    config: ResidMLPTrainConfig,
+    config: ResidualMLPTrainConfig,
 ) -> Float[Tensor, "batch n_features"] | Float[Tensor, "batch d_embed"]:
     if config.loss_type == "readoff":
         loss = ((out - labels) ** 2) * feature_importances
@@ -47,7 +47,7 @@ def loss_function(
 
 
 def train(
-    config: ResidMLPTrainConfig,
+    config: ResidualMLPTrainConfig,
     model: ResidualMLP,
     trainable_params: list[nn.Parameter],
     dataloader: DatasetGeneratedDataLoader[
@@ -135,7 +135,7 @@ def train(
     return final_losses
 
 
-def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
+def run_train(config: ResidualMLPTrainConfig, device: str) -> Float[Tensor, ""]:
     model_cfg = config.resid_mlp_config
     run_name = (
         f"resid_mlp_identity_{config.label_type}_"
@@ -210,7 +210,7 @@ def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # 1 layer
-    config = ResidMLPTrainConfig(
+    config = ResidualMLPTrainConfig(
         wandb_project="spd",
         seed=0,
         resid_mlp_config=ResidualMLPConfig(
@@ -240,7 +240,7 @@ if __name__ == "__main__":
         n_batches_final_losses=10,
     )
     # # 2 layers
-    # config = ResidMLPTrainConfig(
+    # config = ResidualMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
     #     resid_mlp_config=ResidualMLPConfig(
@@ -270,7 +270,7 @@ if __name__ == "__main__":
     #     n_batches_final_losses=10,
     # )
     # # 3 layers
-    # config = ResidMLPTrainConfig(
+    # config = ResidualMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
     #     resid_mlp_config=ResidualMLPConfig(

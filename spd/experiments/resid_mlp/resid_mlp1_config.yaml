@@ -1,4 +1,4 @@
-# ResidMLP 1 layer
+# ResidualMLP 1 layer
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null

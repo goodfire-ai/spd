@@ -19,7 +19,7 @@ class ResidualMLPConfig(BaseModel):
     out_bias: bool
 
 
-class ResidMLPTrainConfig(BaseModel):
+class ResidualMLPTrainConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     wandb_project: str | None = None  # The name of the wandb project (if None, don't log to wandb)
     seed: int = 0

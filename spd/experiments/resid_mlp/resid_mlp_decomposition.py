@@ -9,7 +9,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 from spd.configs import Config
-from spd.experiments.resid_mlp.configs import ResidMLPTrainConfig, ResidualMLPTaskConfig
+from spd.experiments.resid_mlp.configs import ResidualMLPTaskConfig, ResidualMLPTrainConfig
 from spd.experiments.resid_mlp.models import ResidualMLP, ResidualMLPTargetRunInfo
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
 from spd.log import logger
@@ -24,7 +24,7 @@ def save_target_model_info(
     save_to_wandb: bool,
     out_dir: Path,
     resid_mlp: ResidualMLP,
-    resid_mlp_train_config: ResidMLPTrainConfig,
+    resid_mlp_train_config: ResidualMLPTrainConfig,
     label_coeffs: Float[Tensor, " n_features"],
 ) -> None:
     save_file(resid_mlp.state_dict(), out_dir / "resid_mlp.pth")
