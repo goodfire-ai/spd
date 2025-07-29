@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from torch import Tensor, nn
 from wandb.apis.public import Run
 
-from spd.experiments.resid_mlp.configs import ResidualMLPConfig, ResidualMLPTrainConfig
+from spd.experiments.resid_mlp.configs import ResidualMLPModelConfig, ResidualMLPTrainConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.log import logger
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
@@ -107,7 +107,7 @@ class MLP(nn.Module):
 
 
 class ResidualMLP(LoadableModule):
-    def __init__(self, config: ResidualMLPConfig):
+    def __init__(self, config: ResidualMLPModelConfig):
         super().__init__()
         self.config = config
         self.W_E = nn.Parameter(torch.empty(config.n_features, config.d_embed))

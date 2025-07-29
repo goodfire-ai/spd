@@ -9,7 +9,7 @@ from jaxtyping import Float
 from torch import Tensor, nn
 from tqdm import tqdm
 
-from spd.experiments.resid_mlp.configs import ResidualMLPConfig, ResidualMLPTrainConfig
+from spd.experiments.resid_mlp.configs import ResidualMLPModelConfig, ResidualMLPTrainConfig
 from spd.experiments.resid_mlp.models import ResidualMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import (
     ResidualMLPDataset,
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     config = ResidualMLPTrainConfig(
         wandb_project="spd",
         seed=0,
-        resid_mlp_config=ResidualMLPConfig(
+        resid_mlp_config=ResidualMLPModelConfig(
             n_features=100,  # 1 layer
             d_embed=1000,
             d_mlp=50,  # 1 layer
@@ -243,7 +243,7 @@ if __name__ == "__main__":
     # config = ResidualMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
-    #     resid_mlp_config=ResidualMLPConfig(
+    #     resid_mlp_config=ResidualMLPModelConfig(
     #         n_features=100, # 2 layers
     #         d_embed=1000,
     #         d_mlp=25, # 2 layers
@@ -273,7 +273,7 @@ if __name__ == "__main__":
     # config = ResidualMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
-    #     resid_mlp_config=ResidualMLPConfig(
+    #     resid_mlp_config=ResidualMLPModelConfig(
     #         n_features=102,  # 3 layers
     #         d_embed=1000,
     #         d_mlp=17,  # 3 layers

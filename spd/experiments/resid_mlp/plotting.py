@@ -6,13 +6,13 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from spd.experiments.resid_mlp.configs import ResidualMLPConfig
+from spd.experiments.resid_mlp.configs import ResidualMLPModelConfig
 
 
 def plot_individual_feature_response(
     model_fn: Callable[[Tensor], Tensor],
     device: str,
-    model_config: ResidualMLPConfig,
+    model_config: ResidualMLPModelConfig,
     sweep: bool = False,
     subtract_inputs: bool = True,
     plot_type: Literal["line", "scatter"] = "scatter",
@@ -117,7 +117,7 @@ def plot_individual_feature_response(
 def plot_single_feature_response(
     model_fn: Callable[[Tensor], Tensor],
     device: str,
-    model_config: ResidualMLPConfig,
+    model_config: ResidualMLPModelConfig,
     subtract_inputs: bool = True,
     feature_idx: int = 15,
     plot_type: Literal["line", "scatter"] = "scatter",
@@ -194,7 +194,7 @@ def plot_single_feature_response(
 def plot_single_relu_curve(
     model_fn: Callable[[Tensor], Tensor],
     device: str,
-    model_config: ResidualMLPConfig,
+    model_config: ResidualMLPModelConfig,
     subtract_inputs: bool = True,
     feature_idx: int = 15,
     ax: plt.Axes | None = None,
@@ -241,7 +241,7 @@ def plot_single_relu_curve(
 def plot_all_relu_curves(
     model_fn: Callable[[Tensor], Tensor],
     device: str,
-    model_config: ResidualMLPConfig,
+    model_config: ResidualMLPModelConfig,
     ax: plt.Axes,
     subtract_inputs: bool = True,
 ):

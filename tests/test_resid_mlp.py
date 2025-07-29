@@ -1,5 +1,5 @@
 from spd.configs import Config, FiguresFnConfig, MetricsFnConfig
-from spd.experiments.resid_mlp.configs import ResidualMLPConfig, ResidualMLPTaskConfig
+from spd.experiments.resid_mlp.configs import ResidualMLPModelConfig, ResidualMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidualMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
 from spd.run_spd import optimize
@@ -13,7 +13,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
     device = "cpu"
 
     # Create a 2-layer ResidualMLP config
-    resid_mlp_config = ResidualMLPConfig(
+    resid_mlp_config = ResidualMLPModelConfig(
         n_features=5,
         d_embed=4,
         d_mlp=6,

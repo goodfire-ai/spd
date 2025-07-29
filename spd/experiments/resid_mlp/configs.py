@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt, m
 from spd.spd_types import Probability
 
 
-class ResidualMLPConfig(BaseModel):
+class ResidualMLPModelConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     n_features: PositiveInt
     d_embed: PositiveInt
@@ -23,7 +23,7 @@ class ResidualMLPTrainConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     wandb_project: str | None = None  # The name of the wandb project (if None, don't log to wandb)
     seed: int = 0
-    resid_mlp_config: ResidualMLPConfig
+    resid_mlp_config: ResidualMLPModelConfig
     label_fn_seed: int = 0
     label_type: Literal["act_plus_resid", "abs"] = "act_plus_resid"
     loss_type: Literal["readoff", "resid"] = "readoff"
