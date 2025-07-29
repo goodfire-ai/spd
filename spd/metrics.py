@@ -16,9 +16,13 @@ from torch import Tensor
 from spd.configs import Config
 from spd.losses import calc_ce_losses
 from spd.models.component_model import ComponentModel
-from spd.plotting import create_embed_ci_sample_table
+from spd.plotting import create_embed_ci_sample_table, get_single_feature_causal_importances
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import calc_kl_divergence_lm
+from spd.utils.target_ci_solutions import (
+    compute_target_metrics,
+    make_target_ci_solution,
+)
 
 
 @dataclass
@@ -87,6 +91,46 @@ def ci_l0(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table
     return l0_metrics
 
 
+def target_ci_error(
+    inputs: CreateMetricsInputs,
+    identity_ci: list[dict[str, Any]] | None = None,
+    dense_ci: list[dict[str, Any]] | None = None,
+) -> Mapping[str, float | int | wandb.Table]:
+    """Compute target solution metrics for toy models with canonical solutions.
+
+    Args:
+        inputs: Standard metrics inputs
+        identity_ci: List of identity CI pattern specifications with layer_pattern and n_features
+        dense_ci: List of dense CI pattern specifications with layer_pattern and k
+
+    Returns:
+        Dictionary of target solution metrics
+    """
+    if inputs.config.task_config.task_name not in ["tms", "residual_mlp"]:
+        return {}
+
+    # Create target solution from config parameters
+    target_solution = make_target_ci_solution(identity_ci, dense_ci)
+
+    if target_solution is None:
+        return {}
+
+    # Get causal importance arrays using single active features
+    ci_arrays, _ = get_single_feature_causal_importances(
+        model=inputs.model,
+        batch_shape=inputs.batch.shape,
+        device=inputs.device,
+        input_magnitude=0.75,
+        sigmoid_type=inputs.config.sigmoid_type,
+    )
+
+    target_metrics = compute_target_metrics(
+        causal_importances=ci_arrays,
+        target_solution=target_solution,
+    )
+    return target_metrics
+
+
 def create_metrics(
     model: ComponentModel,
     causal_importances: dict[str, Float[Tensor, "... C"]],
@@ -137,5 +181,6 @@ METRICS_FNS: dict[str, CreateMetricsFn] = {
         lm_kl,
         lm_embed,
         lm_ce_losses,
+        target_ci_error,
     ]
 }

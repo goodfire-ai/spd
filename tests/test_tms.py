@@ -69,7 +69,8 @@ def test_tms_decomposition_happy_path() -> None:
         figures_fns=[
             FiguresFnConfig(name="ci_histograms"),
             FiguresFnConfig(name="mean_component_activation_counts"),
-            FiguresFnConfig(name="uv_and_identity_ci"),
+            FiguresFnConfig(name="permuted_ci_plots"),
+            FiguresFnConfig(name="uv_plots"),
         ],
         metrics_fns=[
             MetricsFnConfig(name="ci_l0"),
