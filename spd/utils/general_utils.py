@@ -290,3 +290,29 @@ def runtime_cast[T](type_: type[T], obj: Any) -> T:
     if not isinstance(obj, type_):
         raise TypeError(f"Expected {type_}, got {type(obj)}")
     return obj
+
+
+def _fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None = None) -> str:
+    """Fetch the latest checkpoint name from a list of .pth files.
+
+    Assumes format is <name>_<step>.pth or <name>.pth.
+    """
+    if prefix:
+        filenames = [filename for filename in filenames if filename.startswith(prefix)]
+    if not filenames:
+        raise ValueError(f"No files found with prefix {prefix}")
+    if len(filenames) == 1:
+        latest_checkpoint_name = filenames[0]
+    else:
+        latest_checkpoint_name = sorted(
+            filenames, key=lambda x: int(x.split(".pth")[0].split("_")[-1])
+        )[-1]
+    return latest_checkpoint_name
+
+
+def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None = None) -> Path:
+    """Fetch the latest checkpoint from a local run directory."""
+    filenames = [file.name for file in run_dir.iterdir() if file.name.endswith(".pth")]
+    latest_checkpoint_name = _fetch_latest_checkpoint_name(filenames, prefix)
+    latest_checkpoint_local = run_dir / latest_checkpoint_name
+    return latest_checkpoint_local

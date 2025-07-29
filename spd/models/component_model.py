@@ -11,7 +11,7 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
-from transformers.models.auto.auto_factory import _BaseAutoModelClass
+from transformers import PreTrainedModel
 from wandb.apis.public import Run
 
 from spd.configs import Config
@@ -27,7 +27,7 @@ from spd.models.components import (
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.general_utils import resolve_class
+from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class
 from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
     download_wandb_file,
@@ -49,7 +49,7 @@ class SPDRunInfo(RunInfo[Config]):
             run_dir = check_run_exists(path)
             if run_dir:
                 # Use local files from shared filesystem
-                comp_model_path = run_dir / "model.pth"
+                comp_model_path = fetch_latest_local_checkpoint(run_dir, prefix="model")
                 config_path = run_dir / "final_config.yaml"
             else:
                 # Download from wandb
@@ -370,8 +370,8 @@ class ComponentModel(LoadableModule):
         # Load the target model
         model_class = resolve_class(config.pretrained_model_class)
         if config.pretrained_model_name_hf is not None:
-            assert issubclass(model_class, _BaseAutoModelClass), (
-                f"Model class {model_class} should be a subclass of _BaseAutoModelClass which "
+            assert issubclass(model_class, PreTrainedModel), (
+                f"Model class {model_class} should be a subclass of PreTrainedModel which "
                 "defines a `from_pretrained` method"
             )
             target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name_hf)
