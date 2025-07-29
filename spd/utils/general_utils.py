@@ -320,18 +320,33 @@ def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None = None) -> P
     return latest_checkpoint_local
 
 
-def save_target_model_and_train_config(
+def save_run_info(
     save_to_wandb: bool,
     out_dir: Path,
-    model: nn.Module,
-    train_config: BaseModel,
-    model_name: str,
+    spd_config: BaseModel,
+    sweep_params: dict[str, Any] | None,
+    target_model: nn.Module | None,
+    train_config: BaseModel | None,
+    model_name: str | None,
 ) -> None:
-    save_file(model.state_dict(), out_dir / f"{model_name}.pth")
-    save_file(train_config.model_dump(mode="json"), out_dir / f"{model_name}_train_config.yaml")
+    """Save run information locally and optionally to wandb."""
 
-    if save_to_wandb:
-        wandb.save(str(out_dir / f"{model_name}.pth"), base_path=out_dir, policy="now")
-        wandb.save(
-            str(out_dir / f"{model_name}_train_config.yaml"), base_path=out_dir, policy="now"
-        )
+    files_to_save = {
+        "final_config.yaml": spd_config.model_dump(mode="json"),
+    }
+
+    if target_model is not None:
+        files_to_save[f"{model_name}.pth"] = target_model.state_dict()
+
+    if train_config is not None:
+        files_to_save[f"{model_name}_train_config.yaml"] = train_config.model_dump(mode="json")
+
+    if sweep_params is not None:
+        files_to_save["sweep_params.yaml"] = sweep_params
+
+    for filename, data in files_to_save.items():
+        filepath = out_dir / filename
+        save_file(data, filepath)
+
+        if save_to_wandb:
+            wandb.save(str(filepath), base_path=out_dir, policy="now")
