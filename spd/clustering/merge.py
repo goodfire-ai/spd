@@ -4,7 +4,7 @@ import random
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -718,42 +718,100 @@ class MergeEnsemble:
     
 def plot_dists_distribution(
         distances: Float[np.ndarray, "n_iters n_ens n_ens"],
+        mode: Literal["points", "dist"] = "points",
+        ax: plt.Axes | None = None,
         kwargs_fig: dict[str, Any] | None = None,
         kwargs_plot: dict[str, Any] | None = None,
     ) -> plt.Axes:
     n_iters: int = distances.shape[0]
     n_ens: int = distances.shape[1]
     assert distances.shape[2] == n_ens, "Distances must be square"
+    
+    # Ensure ax and kwargs_fig are not both provided
+    if ax is not None and kwargs_fig is not None:
+        raise ValueError("Cannot provide both ax and kwargs_fig")
+    
     dists_flat: Float[np.ndarray, "n_iters n_ens*n_ens"] = distances.reshape(distances.shape[0], -1)
 
-    # plot the distribution of distances at each iteration
-    n_samples: int = dists_flat.shape[1]
-    fig, ax = plt.subplots( # pyright: ignore[reportCallIssue]
-        1, 1,
-        **dict(
-            figsize=(8, 5), # pyright: ignore[reportArgumentType]
-            **(kwargs_fig or {}),
-        )
-    )
-    for i in range(n_iters):
-        ax.plot(
-            np.full((n_samples), i),
-            dists_flat[i],
+    # Create figure if ax not provided
+    if ax is None:
+        fig, ax_ = plt.subplots( # pyright: ignore[reportCallIssue]
+            1, 1,
             **dict(
-                marker="o",
-                linestyle="",
-                color="blue",
-                alpha=min(1, 10 / (n_ens * n_ens)),
-                markersize=5,
-                markeredgewidth=0,
-                **(kwargs_plot or {}),
+                figsize=(8, 5), # pyright: ignore[reportArgumentType]
+                **(kwargs_fig or {}),
             )
         )
-    ax.set_xlabel("Iteration #")
-    ax.set_ylabel("permutation invariant hamming distance")
-    ax.set_title("Distribution of pairwise distances between group merges in an ensemble")
+    else:
+        ax_ = ax
+    
+    if mode == "points":
+        # Original points mode
+        n_samples: int = dists_flat.shape[1]
+        for i in range(n_iters):
+            ax_.plot(
+                np.full((n_samples), i),
+                dists_flat[i],
+                **dict( # pyright: ignore[reportArgumentType]
+                    marker="o",
+                    linestyle="",
+                    color="blue",
+                    alpha=min(1, 10 / (n_ens * n_ens)),
+                    markersize=5,
+                    markeredgewidth=0,
+                    **(kwargs_plot or {}),
+                )
+            )
+    elif mode == "dist":
+        # Distribution statistics mode
+        # Generate a random color for this plot
+        color = np.random.rand(3,)
+        
+        # Calculate statistics for each iteration
+        mins = []
+        maxs = []
+        means = []
+        medians = []
+        q1s = []
+        q3s = []
+        
+        for i in range(n_iters):
+            # Filter out NaN values (diagonal and upper triangle)
+            valid_dists = dists_flat[i][~np.isnan(dists_flat[i])]
+            if len(valid_dists) > 0:
+                mins.append(np.min(valid_dists))
+                maxs.append(np.max(valid_dists))
+                means.append(np.mean(valid_dists))
+                medians.append(np.median(valid_dists))
+                q1s.append(np.percentile(valid_dists, 25))
+                q3s.append(np.percentile(valid_dists, 75))
+            else:
+                # Handle case with no valid distances
+                mins.append(np.nan)
+                maxs.append(np.nan)
+                means.append(np.nan)
+                medians.append(np.nan)
+                q1s.append(np.nan)
+                q3s.append(np.nan)
+        
+        iterations = np.arange(n_iters)
+        
+        # Plot statistics
+        ax_.plot(iterations, mins, '-', color=color, alpha=0.5, label='min', **kwargs_plot or {})
+        ax_.plot(iterations, maxs, '-', color=color, alpha=0.5, label='max', **kwargs_plot or {})
+        ax_.plot(iterations, means, '-', color=color, linewidth=2, label='mean', **kwargs_plot or {})
+        ax_.plot(iterations, medians, '--', color=color, linewidth=2, label='median', **kwargs_plot or {})
+        ax_.plot(iterations, q1s, ':', color=color, alpha=0.7, label='Q1', **kwargs_plot or {})
+        ax_.plot(iterations, q3s, ':', color=color, alpha=0.7, label='Q3', **kwargs_plot or {})
+        
+        # Shade between quartiles
+        ax_.fill_between(iterations, q1s, q3s, color=color, alpha=0.2)
+    
+    ax_.set_xlabel("Iteration #")
+    ax_.set_ylabel("permutation invariant hamming distance")
+    ax_.set_title("Distribution of pairwise distances between group merges in an ensemble")
 
-    return ax
+    return ax_
 
 
 
