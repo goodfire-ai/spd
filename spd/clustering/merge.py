@@ -722,6 +722,8 @@ def plot_dists_distribution(
         kwargs_plot: dict[str, Any] | None = None,
     ) -> plt.Axes:
     n_iters: int = distances.shape[0]
+    n_ens: int = distances.shape[1]
+    assert distances.shape[2] == n_ens, "Distances must be square"
     dists_flat: Float[np.ndarray, "n_iters n_ens*n_ens"] = distances.reshape(distances.shape[0], -1)
 
     # plot the distribution of distances at each iteration
@@ -729,7 +731,7 @@ def plot_dists_distribution(
     fig, ax = plt.subplots( # pyright: ignore[reportCallIssue]
         1, 1,
         **dict(
-            figsize=(16, 3), # pyright: ignore[reportArgumentType]
+            figsize=(8, 5), # pyright: ignore[reportArgumentType]
             **(kwargs_fig or {}),
         )
     )
@@ -738,8 +740,10 @@ def plot_dists_distribution(
             np.full((n_samples), i),
             dists_flat[i],
             **dict(
+                marker="o",
+                linestyle="",
                 color="blue",
-                alpha=0.005,
+                alpha=min(1, 10 / (n_ens * n_ens)),
                 markersize=5,
                 markeredgewidth=0,
                 **(kwargs_plot or {}),
