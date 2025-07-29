@@ -1,3 +1,4 @@
+import fnmatch
 import math
 from collections.abc import Callable
 from typing import Literal
@@ -13,41 +14,14 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from torch import Tensor
 
 from spd.models.component_model import ComponentModel
-from spd.models.components import Components
+from spd.models.components import (
+    Components,
+)
 from spd.models.sigmoids import SigmoidTypes
-
-
-def permute_to_identity(
-    ci_vals: Float[Tensor, "batch C"],
-) -> tuple[Float[Tensor, "batch C"], Float[Tensor, " C"]]:
-    """Permute matrix to make it as close to identity as possible.
-
-    Returns:
-        - Permuted mask
-        - Permutation indices
-    """
-
-    if ci_vals.ndim != 2:
-        raise ValueError(f"Mask must have 2 dimensions, got {ci_vals.ndim}")
-
-    batch, C = ci_vals.shape
-    effective_rows = min(batch, C)
-    perm_indices = torch.zeros(C, dtype=torch.long, device=ci_vals.device)
-
-    perm: list[int] = [0] * C
-    used: set[int] = set()
-    for i in range(effective_rows):
-        sorted_indices: list[int] = torch.argsort(ci_vals[i, :], descending=True).tolist()
-        chosen: int = next((col for col in sorted_indices if col not in used), sorted_indices[0])
-        perm[i] = chosen
-        used.add(chosen)
-    remaining: list[int] = sorted(list(set(range(C)) - used))
-    for idx, col in enumerate(remaining):
-        perm[effective_rows + idx] = col
-    new_ci_vals = ci_vals[:, perm]
-    perm_indices = torch.tensor(perm, device=ci_vals.device)
-
-    return new_ci_vals, perm_indices
+from spd.utils.target_ci_solutions import (
+    permute_to_dense,
+    permute_to_identity,
+)
 
 
 def _plot_causal_importances_figure(
@@ -126,6 +100,46 @@ def _plot_causal_importances_figure(
     return fig
 
 
+def get_single_feature_causal_importances(
+    model: ComponentModel,
+    batch_shape: tuple[int, ...],
+    device: str | torch.device,
+    input_magnitude: float,
+    sigmoid_type: SigmoidTypes = "leaky_hard",
+) -> tuple[dict[str, Float[Tensor, "batch C"]], dict[str, Float[Tensor, "batch C"]]]:
+    """Compute causal importance arrays for single active features.
+
+    Args:
+        model: The ComponentModel
+        batch_shape: Shape of the batch
+        device: Device to use
+        input_magnitude: Magnitude of input features
+        sigmoid_type: Type of sigmoid to use for causal importance calculation
+
+    Returns:
+        Tuple of (ci_raw, ci_upper_leaky_raw) dictionaries of causal importance arrays (2D tensors)
+    """
+    # Create a batch of inputs with single active features
+    has_pos_dim = len(batch_shape) == 3
+    n_features = batch_shape[-1]
+    batch = torch.eye(n_features, device=device) * input_magnitude
+    if has_pos_dim:
+        # NOTE: For now, we only use the first pos dim
+        batch = batch.unsqueeze(1)
+
+    pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
+        batch, module_names=model.target_module_paths
+    )[1]
+
+    ci_raw, ci_upper_leaky_raw = model.calc_causal_importances(
+        pre_weight_acts=pre_weight_acts,
+        sigmoid_type=sigmoid_type,
+        detach_inputs=False,
+    )
+
+    return ci_raw, ci_upper_leaky_raw
+
+
 def plot_causal_importance_vals(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
@@ -135,6 +149,8 @@ def plot_causal_importance_vals(
     orientation: Literal["vertical", "horizontal"] = "vertical",
     title_formatter: Callable[[str], str] | None = None,
     sigmoid_type: SigmoidTypes = "leaky_hard",
+    identity_patterns: list[str] | None = None,
+    dense_patterns: list[str] | None = None,
 ) -> tuple[dict[str, plt.Figure], dict[str, Float[Tensor, " C"]]]:
     """Plot the values of the causal importances for a batch of inputs with single active features.
 
@@ -153,31 +169,37 @@ def plot_causal_importance_vals(
             - Dictionary of figures with keys 'causal_importances' (if plot_raw_cis=True) and 'causal_importances_upper_leaky'
             - Dictionary of permutation indices for causal importances
     """
-    # First, create a batch of inputs with single active features
-    has_pos_dim = len(batch_shape) == 3
-    n_features = batch_shape[-1]
-    batch = torch.eye(n_features, device=device) * input_magnitude
-    if has_pos_dim:
-        # NOTE: For now, we only plot the mask of the first pos dim
-        batch = batch.unsqueeze(1)
-
-    pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-        batch, module_names=model.target_module_paths
-    )[1]
-
-    ci_raw, ci_upper_leaky_raw = model.calc_causal_importances(
-        pre_weight_acts=pre_weight_acts,
+    # Get the causal importance arrays
+    ci_raw, ci_upper_leaky_raw = get_single_feature_causal_importances(
+        model=model,
+        batch_shape=batch_shape,
+        device=device,
+        input_magnitude=input_magnitude,
         sigmoid_type=sigmoid_type,
-        detach_inputs=False,
     )
 
+    has_pos_dim = len(batch_shape) == 3
+
+    # Apply permutations based on patterns
     ci = {}
     ci_upper_leaky = {}
     all_perm_indices = {}
-
     for k in ci_raw:
-        ci[k], _ = permute_to_identity(ci_vals=ci_raw[k])
-        ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(ci_vals=ci_upper_leaky_raw[k])
+        # Determine permutation strategy based on patterns
+        if identity_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in identity_patterns):
+            ci[k], _ = permute_to_identity(ci_vals=ci_raw[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(
+                ci_vals=ci_upper_leaky_raw[k]
+            )
+        elif dense_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in dense_patterns):
+            ci[k], _ = permute_to_dense(ci_vals=ci_raw[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_dense(ci_vals=ci_upper_leaky_raw[k])
+        else:
+            # Default: identity permutation
+            ci[k], _ = permute_to_identity(ci_vals=ci_raw[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(
+                ci_vals=ci_upper_leaky_raw[k]
+            )
 
     # Create figures dictionary
     figures = {}
