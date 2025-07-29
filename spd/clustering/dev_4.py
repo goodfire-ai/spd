@@ -99,7 +99,7 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
         tick_spacing=10,
         plot_final=False,
     ),
-	ensemble_size=64,
+	ensemble_size=128,
 )
 # %%
 DISTANCES = ENSEMBLE.get_distances()
@@ -109,6 +109,6 @@ DISTANCES = ENSEMBLE.get_distances()
 plot_dists_distribution(
 	distances=DISTANCES,
 	mode="dist",
-	label="v1"
+	# label="v1"
 )
 plt.legend()
