@@ -1,5 +1,6 @@
 import fnmatch
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any, override
@@ -10,9 +11,11 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
+from transformers.models.auto.auto_factory import _BaseAutoModelClass
 from wandb.apis.public import Run
 
 from spd.configs import Config
+from spd.interfaces import LoadableModel, RunInfo
 from spd.models.components import (
     Components,
     ComponentsOrModule,
@@ -24,7 +27,8 @@ from spd.models.components import (
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.general_utils import load_pretrained
+from spd.utils.general_utils import resolve_class
+from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
     download_wandb_file,
     fetch_latest_wandb_checkpoint,
@@ -32,7 +36,49 @@ from spd.utils.wandb_utils import (
 )
 
 
-class ComponentModel(nn.Module):
+@dataclass
+class SPDRunInfo(RunInfo[Config]):
+    """Run info from training a ComponentModel (i.e. from an SPD run)."""
+
+    # TODO: Can we remove this out_dir business?
+    out_dir: Path
+
+    @override
+    @classmethod
+    def from_path(cls, path: ModelPath) -> "SPDRunInfo":
+        """Load the run info from a wandb run or a local path to a checkpoint."""
+        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
+            # Check if run exists in shared filesystem first
+            run_dir = check_run_exists(path)
+            if run_dir:
+                # Use local files from shared filesystem
+                comp_model_path = run_dir / "model.pth"
+                config_path = run_dir / "final_config.yaml"
+                # TODO: Can we remove this out_dir business?
+                out_dir = run_dir
+            else:
+                # Download from wandb
+                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
+                api = wandb.Api()
+                run: Run = api.run(wandb_path)
+                comp_model_path, config_path = ComponentModel._download_wandb_files(wandb_path)
+                out_dir = fetch_wandb_run_dir(run.id)
+        else:
+            comp_model_path = Path(path)
+            config_path = Path(path).parent / "final_config.yaml"
+            out_dir = Path(path).parent
+
+        with open(config_path) as f:
+            config = Config(**yaml.safe_load(f))
+
+        return cls(
+            checkpoint_path=comp_model_path,
+            config=config,
+            out_dir=out_dir,
+        )
+
+
+class ComponentModel(LoadableModel):
     """Wrapper around an arbitrary model for running SPD.
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
@@ -329,35 +375,29 @@ class ComponentModel(nn.Module):
         return checkpoint_path, final_config_path
 
     @classmethod
-    def from_pretrained(cls, path: ModelPath) -> tuple["ComponentModel", Config, Path]:
-        """Load a trained ComponentModel checkpoint along with its original config.
+    @override
+    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel":
+        """Load a trained ComponentModel checkpoint from a run info object."""
+        config = run_info.config
 
-        The method supports two storage schemes:
-        1.  A direct local path to the checkpoint file (plus `final_config.yaml` in
-            the same directory).
-        2.  A WandB reference of the form ``wandb:<entity>/<project>/runs/<run_id>``.
-        """
-
-        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-            api = wandb.Api()
-            run: Run = api.run(wandb_path)
-            comp_model_path, config_path = cls._download_wandb_files(wandb_path)
-            out_dir = fetch_wandb_run_dir(run.id)
+        # Load the target model
+        model_class = resolve_class(config.pretrained_model_class)
+        if config.pretrained_model_name_hf is not None:
+            assert issubclass(model_class, _BaseAutoModelClass), (
+                f"Model class {model_class} should be a subclass of _BaseAutoModelClass which "
+                "defines a `from_pretrained` method"
+            )
+            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name_hf)
         else:
-            comp_model_path = Path(path)
-            config_path = Path(path).parent / "final_config.yaml"
-            out_dir = Path(path).parent
+            assert issubclass(model_class, LoadableModel), (
+                f"Model class {model_class} should be a subclass of LoadableModel which "
+                "defines a `from_pretrained` method"
+            )
+            assert run_info.config.pretrained_model_path is not None
+            target_model_unpatched = model_class.from_pretrained(
+                run_info.config.pretrained_model_path
+            )
 
-        with open(config_path) as f:
-            config = Config(**yaml.safe_load(f))
-
-        assert config.pretrained_model_class is not None
-        target_model_unpatched = load_pretrained(
-            path_to_class=config.pretrained_model_class,
-            model_path=config.pretrained_model_path,
-            model_name_hf=config.pretrained_model_name_hf,
-        )
         target_model_unpatched.eval()
         target_model_unpatched.requires_grad_(False)
 
@@ -370,9 +410,19 @@ class ComponentModel(nn.Module):
             pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
 
-        comp_model_weights = torch.load(comp_model_path, map_location="cpu", weights_only=True)
+        comp_model_weights = torch.load(
+            run_info.checkpoint_path, map_location="cpu", weights_only=True
+        )
+
         comp_model.load_state_dict(comp_model_weights)
-        return comp_model, config, out_dir
+        return comp_model
+
+    @classmethod
+    @override
+    def from_pretrained(cls, path: ModelPath) -> "ComponentModel":
+        """Load a trained ComponentModel checkpoint from a local or wandb path."""
+        run_info = SPDRunInfo.from_path(path)
+        return cls.from_run_info(run_info)
 
     def calc_causal_importances(
         self,

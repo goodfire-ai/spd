@@ -10,7 +10,7 @@ from torch import Tensor
 from tqdm import tqdm
 
 from spd.log import logger
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.sigmoids import SigmoidTypes
 
 
@@ -150,14 +150,17 @@ def main(model_path: str | Path) -> None:
         model_path: Path to the model checkpoint
     """
     # Load model
-    model, config, out_dir = ComponentModel.from_pretrained(model_path)
+    run_info = SPDRunInfo.from_path(model_path)
+    model = ComponentModel.from_run_info(run_info)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
     # Collect masks
-    masks = collect_embedding_masks(model, sigmoid_type=config.sigmoid_type, device=device)
+    masks = collect_embedding_masks(model, sigmoid_type=run_info.config.sigmoid_type, device=device)
     permuted_masks, _perm_indices = permute_to_identity(masks)
-    plot_embedding_mask_heatmap(permuted_masks, out_dir, config.ci_alive_threshold)
+    plot_embedding_mask_heatmap(
+        permuted_masks, run_info.out_dir, run_info.config.ci_alive_threshold
+    )
 
 
 if __name__ == "__main__":

@@ -2,15 +2,15 @@
 
 import json
 from pathlib import Path
-from typing import Any
 
 import fire
 import wandb
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.configs import Config, ResidualMLPTaskConfig
-from spd.experiments.resid_mlp.models import ResidualMLP
+from spd.configs import Config
+from spd.experiments.resid_mlp.configs import ResidMLPTrainConfig, ResidualMLPTaskConfig
+from spd.experiments.resid_mlp.models import ResidualMLP, ResidualMLPTargetRunInfo
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
 from spd.log import logger
 from spd.run_spd import optimize
@@ -24,11 +24,13 @@ def save_target_model_info(
     save_to_wandb: bool,
     out_dir: Path,
     resid_mlp: ResidualMLP,
-    resid_mlp_train_config_dict: dict[str, Any],
+    resid_mlp_train_config: ResidMLPTrainConfig,
     label_coeffs: Float[Tensor, " n_features"],
 ) -> None:
     save_file(resid_mlp.state_dict(), out_dir / "resid_mlp.pth")
-    save_file(resid_mlp_train_config_dict, out_dir / "resid_mlp_train_config.yaml")
+    save_file(
+        resid_mlp_train_config.model_dump(mode="json"), out_dir / "resid_mlp_train_config.yaml"
+    )
     save_file(label_coeffs.detach().cpu().tolist(), out_dir / "label_coeffs.json")
 
     if save_to_wandb:
@@ -67,9 +69,8 @@ def main(
     assert isinstance(config.task_config, ResidualMLPTaskConfig)
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
-    target_model, target_model_train_config_dict, label_coeffs = ResidualMLP.from_pretrained(
-        config.pretrained_model_path
-    )
+    target_run_info = ResidualMLPTargetRunInfo.from_path(config.pretrained_model_path)
+    target_model = ResidualMLP.from_run_info(target_run_info)
     target_model = target_model.to(device)
     target_model.eval()
 
@@ -90,11 +91,11 @@ def main(
         save_to_wandb=config.wandb_project is not None,
         out_dir=out_dir,
         resid_mlp=target_model,
-        resid_mlp_train_config_dict=target_model_train_config_dict,
-        label_coeffs=label_coeffs,
+        resid_mlp_train_config=target_run_info.config,
+        label_coeffs=target_run_info.label_coeffs,
     )
 
-    synced_inputs = target_model_train_config_dict.get("synced_inputs", None)
+    synced_inputs = target_run_info.config.synced_inputs
     dataset = ResidualMLPDataset(
         n_features=target_model.config.n_features,
         feature_probability=config.task_config.feature_probability,

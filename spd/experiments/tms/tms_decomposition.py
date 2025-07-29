@@ -6,13 +6,13 @@ the losses of the "correct" solution during training.
 
 import json
 from pathlib import Path
-from typing import Any
 
 import fire
 import wandb
 
-from spd.configs import Config, TMSTaskConfig
-from spd.experiments.tms.models import TMSModel
+from spd.configs import Config
+from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig
+from spd.experiments.tms.models import TMSModel, TMSTargetRunInfo
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
@@ -25,10 +25,10 @@ def save_target_model_info(
     save_to_wandb: bool,
     out_dir: Path,
     tms_model: TMSModel,
-    tms_model_train_config_dict: dict[str, Any],
+    tms_model_config: TMSModelConfig,
 ) -> None:
     save_file(tms_model.state_dict(), out_dir / "tms.pth")
-    save_file(tms_model_train_config_dict, out_dir / "tms_train_config.yaml")
+    save_file(tms_model_config.model_dump(mode="json"), out_dir / "tms_train_config.yaml")
 
     if save_to_wandb:
         wandb.save(str(out_dir / "tms.pth"), base_path=out_dir, policy="now")
@@ -68,9 +68,8 @@ def main(
     logger.info(config)
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
-    target_model, target_model_train_config_dict = TMSModel.from_pretrained(
-        config.pretrained_model_path,
-    )
+    target_run_info = TMSTargetRunInfo.from_path(config.pretrained_model_path)
+    target_model = TMSModel.from_run_info(target_run_info)
     target_model = target_model.to(device)
     target_model.eval()
 
@@ -91,10 +90,10 @@ def main(
         save_to_wandb=config.wandb_project is not None,
         out_dir=out_dir,
         tms_model=target_model,
-        tms_model_train_config_dict=target_model_train_config_dict,
+        tms_model_config=target_model.config,
     )
 
-    synced_inputs = target_model_train_config_dict.get("synced_inputs", None)
+    synced_inputs = target_run_info.config.synced_inputs
     dataset = SparseFeatureDataset(
         n_features=target_model.config.n_features,
         feature_probability=task_config.feature_probability,

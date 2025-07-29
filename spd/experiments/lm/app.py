@@ -19,10 +19,11 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from transformers import AutoTokenizer
 
-from spd.configs import Config, LMTaskConfig
+from spd.configs import Config
 from spd.data import DatasetConfig
+from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import ModelPath
 
 DEFAULT_MODEL_PATH: ModelPath = "wandb:spd-gf-lm/runs/151bsctx"
@@ -50,7 +51,9 @@ def initialize(model_path: ModelPath) -> AppData:
     """
     device = "cpu"  # Use CPU for the Streamlit app
     logger.info(f"Initializing app with model: {model_path} on device: {device}")
-    ss_model, config, _ = ComponentModel.from_pretrained(model_path)
+    run_info = SPDRunInfo.from_path(model_path)
+    config = run_info.config
+    ss_model = ComponentModel.from_run_info(run_info)
     ss_model.to(device)
     ss_model.eval()
 

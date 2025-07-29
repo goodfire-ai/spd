@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from spd.experiments.resid_mlp.models import ResidualMLPConfig
+from spd.experiments.resid_mlp.configs import ResidualMLPConfig
 
 
 def plot_individual_feature_response(

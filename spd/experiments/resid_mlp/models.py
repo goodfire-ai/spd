@@ -1,7 +1,8 @@
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Literal, override
+from typing import override
 
 import einops
 import torch
@@ -9,10 +10,12 @@ import torch.nn.functional as F
 import wandb
 import yaml
 from jaxtyping import Float
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import BaseModel
 from torch import Tensor, nn
 from wandb.apis.public import Run
 
+from spd.experiments.resid_mlp.configs import ResidMLPTrainConfig, ResidualMLPConfig
+from spd.interfaces import LoadableModel, RunInfo
 from spd.log import logger
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.module_utils import init_param_
@@ -32,18 +35,50 @@ class ResidualMLPPaths(BaseModel):
     checkpoint: Path
 
 
-class ResidualMLPConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    n_features: PositiveInt
-    d_embed: PositiveInt
-    d_mlp: PositiveInt
-    n_layers: PositiveInt
-    act_fn_name: Literal["gelu", "relu"] = Field(
-        description="Defines the activation function in the model. Also used in the labeling "
-        "function if label_type is act_plus_resid."
-    )
-    in_bias: bool
-    out_bias: bool
+@dataclass
+class ResidualMLPTargetRunInfo(RunInfo[ResidMLPTrainConfig]):
+    """Run info from training a ResidualMLPModel."""
+
+    label_coeffs: Float[Tensor, " n_features"]
+
+    @override
+    @classmethod
+    def from_path(cls, path: ModelPath) -> "ResidualMLPTargetRunInfo":
+        """Load the run info from a wandb run or a local path to a checkpoint."""
+        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
+            # Check if run exists in shared filesystem first
+            run_dir = check_run_exists(path)
+            if run_dir:
+                # Use local files from shared filesystem
+                paths = ResidualMLPPaths(
+                    resid_mlp_train_config=run_dir / "resid_mlp_train_config.yaml",
+                    label_coeffs=run_dir / "label_coeffs.json",
+                    checkpoint=run_dir / "resid_mlp.pth",
+                )
+            else:
+                # Download from wandb
+                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
+                paths = ResidualMLP._download_wandb_files(wandb_path)
+        else:
+            # `path` should be a local path to a checkpoint
+            paths = ResidualMLPPaths(
+                resid_mlp_train_config=Path(path).parent / "resid_mlp_train_config.yaml",
+                label_coeffs=Path(path).parent / "label_coeffs.json",
+                checkpoint=Path(path),
+            )
+
+        with open(paths.resid_mlp_train_config) as f:
+            resid_mlp_train_config_dict = yaml.safe_load(f)
+
+        with open(paths.label_coeffs) as f:
+            label_coeffs = torch.tensor(json.load(f))
+
+        resid_mlp_train_config = ResidMLPTrainConfig(**resid_mlp_train_config_dict)
+        return cls(
+            checkpoint_path=paths.checkpoint,
+            config=resid_mlp_train_config,
+            label_coeffs=label_coeffs,
+        )
 
 
 class MLP(nn.Module):
@@ -71,7 +106,7 @@ class MLP(nn.Module):
         return out
 
 
-class ResidualMLP(nn.Module):
+class ResidualMLP(LoadableModel):
     def __init__(self, config: ResidualMLPConfig):
         super().__init__()
         self.config = config
@@ -137,56 +172,18 @@ class ResidualMLP(nn.Module):
         )
 
     @classmethod
-    def from_pretrained(
-        cls, path: ModelPath
-    ) -> tuple["ResidualMLP", dict[str, Any], Float[Tensor, " n_features"]]:
-        """Fetch a pretrained model from wandb or a local path to a checkpoint.
+    @override
+    def from_run_info(cls, run_info: RunInfo[ResidMLPTrainConfig]) -> "ResidualMLP":
+        """Load a pretrained model from a run info object."""
+        resid_mlp_model = cls(config=run_info.config.resid_mlp_config)
+        resid_mlp_model.load_state_dict(
+            torch.load(run_info.checkpoint_path, weights_only=True, map_location="cpu")
+        )
+        return resid_mlp_model
 
-        Args:
-            path: The path to local checkpoint or wandb project. If a wandb project, format must be
-                `wandb:<entity>/<project>/<run_id>` or `wandb:<entity>/<project>/runs/<run_id>`.
-                If `api.entity` is set (e.g. via setting WANDB_ENTITY in .env), <entity> can be
-                omitted, and if `api.project` is set, <project> can be omitted. If local path,
-                assumes that `resid_mlp_train_config.yaml` and `label_coeffs.json` are in the same
-                directory as the checkpoint.
-
-        Returns:
-            model: The pretrained ResidualMLPModel
-            resid_mlp_train_config_dict: The config dict used to train the model (we don't
-                instantiate a train config due to circular import issues)
-            label_coeffs: The label coefficients used to train the model
-        """
-        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            # Check if run exists in shared filesystem first
-            run_dir = check_run_exists(path)
-            if run_dir:
-                # Use local files from shared filesystem
-                paths = ResidualMLPPaths(
-                    resid_mlp_train_config=run_dir / "resid_mlp_train_config.yaml",
-                    label_coeffs=run_dir / "label_coeffs.json",
-                    checkpoint=run_dir / "resid_mlp.pth",
-                )
-            else:
-                # Download from wandb
-                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-                paths = cls._download_wandb_files(wandb_path)
-        else:
-            # `path` should be a local path to a checkpoint
-            paths = ResidualMLPPaths(
-                resid_mlp_train_config=Path(path).parent / "resid_mlp_train_config.yaml",
-                label_coeffs=Path(path).parent / "label_coeffs.json",
-                checkpoint=Path(path),
-            )
-
-        with open(paths.resid_mlp_train_config) as f:
-            resid_mlp_train_config_dict = yaml.safe_load(f)
-
-        with open(paths.label_coeffs) as f:
-            label_coeffs = torch.tensor(json.load(f))
-
-        resid_mlp_config = ResidualMLPConfig(**resid_mlp_train_config_dict["resid_mlp_config"])
-        resid_mlp = cls(resid_mlp_config)
-        params = torch.load(paths.checkpoint, weights_only=True, map_location="cpu")
-        resid_mlp.load_state_dict(params)
-
-        return resid_mlp, resid_mlp_train_config_dict, label_coeffs
+    @classmethod
+    @override
+    def from_pretrained(cls, path: ModelPath) -> "ResidualMLP":
+        """Fetch a pretrained model from wandb or a local path to a checkpoint."""
+        run_info = ResidualMLPTargetRunInfo.from_path(path)
+        return cls.from_run_info(run_info)

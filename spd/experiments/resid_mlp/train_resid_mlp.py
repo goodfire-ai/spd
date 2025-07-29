@@ -1,17 +1,16 @@
 """Trains a residual linear model on one-hot input vectors."""
 
 from pathlib import Path
-from typing import Literal, Self
 
 import einops
 import torch
 import wandb
 from jaxtyping import Float
-from pydantic import BaseModel, ConfigDict, PositiveFloat, PositiveInt, model_validator
 from torch import Tensor, nn
 from tqdm import tqdm
 
-from spd.experiments.resid_mlp.models import ResidualMLP, ResidualMLPConfig
+from spd.experiments.resid_mlp.configs import ResidMLPTrainConfig, ResidualMLPConfig
+from spd.experiments.resid_mlp.models import ResidualMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import (
     ResidualMLPDataset,
 )
@@ -20,47 +19,6 @@ from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.general_utils import compute_feature_importances, get_lr_schedule_fn, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
-
-
-class ResidMLPTrainConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    wandb_project: str | None = None  # The name of the wandb project (if None, don't log to wandb)
-    seed: int = 0
-    resid_mlp_config: ResidualMLPConfig
-    label_fn_seed: int = 0
-    label_type: Literal["act_plus_resid", "abs"] = "act_plus_resid"
-    loss_type: Literal["readoff", "resid"] = "readoff"
-    use_trivial_label_coeffs: bool = False
-    feature_probability: PositiveFloat
-    synced_inputs: list[list[int]] | None = None
-    importance_val: float | None = None
-    data_generation_type: Literal[
-        "exactly_one_active", "exactly_two_active", "at_least_zero_active"
-    ] = "at_least_zero_active"
-    batch_size: PositiveInt
-    steps: PositiveInt
-    print_freq: PositiveInt
-    lr: PositiveFloat
-    lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = "constant"
-    fixed_random_embedding: bool = False
-    fixed_identity_embedding: bool = False
-    n_batches_final_losses: PositiveInt = 1
-
-    @model_validator(mode="after")
-    def validate_model(self) -> Self:
-        assert not (self.fixed_random_embedding and self.fixed_identity_embedding), (
-            "Can't have both fixed_random_embedding and fixed_identity_embedding"
-        )
-        if self.fixed_identity_embedding:
-            assert self.resid_mlp_config.n_features == self.resid_mlp_config.d_embed, (
-                "n_features must equal d_embed if we are using an identity embedding matrix"
-            )
-        if self.synced_inputs is not None:
-            # Ensure that the synced_inputs are non-overlapping with eachother
-            all_indices = [item for sublist in self.synced_inputs for item in sublist]
-            if len(all_indices) != len(set(all_indices)):
-                raise ValueError("Synced inputs must be non-overlapping")
-        return self
 
 
 def loss_function(

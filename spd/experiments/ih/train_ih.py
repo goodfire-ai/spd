@@ -7,30 +7,15 @@ import numpy as np
 import torch
 import wandb
 from matplotlib import pyplot as plt
-from pydantic import BaseModel, ConfigDict, PositiveInt
 from torch.nn import functional as F
 from tqdm import tqdm, trange
 
-from spd.experiments.ih.model import InductionModelConfig, InductionTransformer
+from spd.experiments.ih.configs import InductionHeadsTrainConfig, InductionModelConfig
+from spd.experiments.ih.model import InductionTransformer
 from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import set_seed
 from spd.utils.run_utils import get_output_dir, save_file
-
-
-class InductionHeadsTrainConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    wandb_project: str | None = None
-    ih_model_config: InductionModelConfig
-    steps: PositiveInt
-    batch_size: PositiveInt
-    lr: float
-    lr_warmup: int | float
-    weight_decay: float
-    lr_schedule: Literal["cosine", "constant", "linear"] = "linear"
-    seed: int = 0
-    attention_maps_n_steps: PositiveInt
-    prefix_window: PositiveInt
 
 
 def linear_lr(step: int, steps: int) -> float:

@@ -3,7 +3,7 @@ https://colab.research.google.com/github/anthropics/toy-models-of-superposition/
 """
 
 from pathlib import Path
-from typing import Literal, Self
+from typing import Literal
 
 import einops
 import matplotlib.pyplot as plt
@@ -11,44 +11,15 @@ import numpy as np
 import torch
 import wandb
 from matplotlib import collections as mc
-from pydantic import BaseModel, ConfigDict, PositiveInt, model_validator
 from torch import Tensor, nn
 from tqdm import tqdm, trange
 
-from spd.experiments.tms.models import TMSModel, TMSModelConfig
+from spd.experiments.tms.configs import TMSModelConfig, TMSTrainConfig
+from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.general_utils import set_seed
 from spd.utils.run_utils import get_output_dir, save_file
-
-
-class TMSTrainConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    wandb_project: str | None = None  # The name of the wandb project (if None, don't log to wandb)
-    tms_model_config: TMSModelConfig
-    feature_probability: float
-    batch_size: PositiveInt
-    steps: PositiveInt
-    seed: int = 0
-    lr: float
-    lr_schedule: Literal["linear", "cosine", "constant"] = "linear"
-    data_generation_type: Literal["at_least_zero_active", "exactly_one_active"]
-    fixed_identity_hidden_layers: bool = False
-    fixed_random_hidden_layers: bool = False
-    synced_inputs: list[list[int]] | None = None
-
-    @model_validator(mode="after")
-    def validate_model(self) -> Self:
-        if self.fixed_identity_hidden_layers and self.fixed_random_hidden_layers:
-            raise ValueError(
-                "Cannot set both fixed_identity_hidden_layers and fixed_random_hidden_layers to True"
-            )
-        if self.synced_inputs is not None:
-            # Ensure that the synced_inputs are non-overlapping with eachother
-            all_indices = [item for sublist in self.synced_inputs for item in sublist]
-            if len(all_indices) != len(set(all_indices)):
-                raise ValueError("Synced inputs must be non-overlapping")
-        return self
 
 
 def linear_lr(step: int, steps: int) -> float:

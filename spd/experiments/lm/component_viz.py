@@ -4,10 +4,10 @@ Vizualises the components of the model.
 
 import torch
 
-from spd.configs import LMTaskConfig
 from spd.data import DatasetConfig, create_data_loader
+from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.plotting import plot_mean_component_activation_counts
 from spd.spd_types import ModelPath
 from spd.utils.component_utils import component_activation_statistics
@@ -15,10 +15,12 @@ from spd.utils.component_utils import component_activation_statistics
 
 def main(path: ModelPath) -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    ss_model, config, checkpoint_path = ComponentModel.from_pretrained(path)
+    run_info = SPDRunInfo.from_path(path)
+    ss_model = ComponentModel.from_run_info(run_info)
+    config = run_info.config
     ss_model.to(device)
 
-    out_dir = checkpoint_path
+    out_dir = run_info.out_dir
 
     assert isinstance(config.task_config, LMTaskConfig)
     dataset_config = DatasetConfig(

@@ -13,7 +13,7 @@ from spd.configs import Config
 from spd.experiments.resid_mlp.models import ResidualMLP
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import Components
 from spd.plotting import plot_causal_importance_vals
 from spd.utils.general_utils import get_device, runtime_cast, set_seed
@@ -30,7 +30,9 @@ def extract_ci_val_figures(run_id: str, input_magnitude: float = 0.75) -> dict[s
     Returns:
         Dictionary containing causal importances data and metadata
     """
-    model, config, _ = ComponentModel.from_pretrained(run_id)
+    run_info = SPDRunInfo.from_path(run_id)
+    model = ComponentModel.from_run_info(run_info)
+    config = run_info.config
     assert isinstance(model.patched_model, ResidualMLP | TMSModel), (
         "patched model must be a ResidualMLP or TMSModel"
     )
@@ -626,7 +628,9 @@ def main():
     for path in paths:
         wandb_id = path.split("/")[-1]
 
-        model, config, _ = ComponentModel.from_pretrained(path)
+        run_info = SPDRunInfo.from_path(path)
+        model = ComponentModel.from_run_info(run_info)
+        config = run_info.config
         patched_model = model.patched_model
         assert isinstance(patched_model, ResidualMLP)
         model.to(device)

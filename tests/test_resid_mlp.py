@@ -1,5 +1,6 @@
-from spd.configs import Config, FiguresFnConfig, MetricsFnConfig, ResidualMLPTaskConfig
-from spd.experiments.resid_mlp.models import ResidualMLP, ResidualMLPConfig
+from spd.configs import Config, FiguresFnConfig, MetricsFnConfig
+from spd.experiments.resid_mlp.configs import ResidualMLPConfig, ResidualMLPTaskConfig
+from spd.experiments.resid_mlp.models import ResidualMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader

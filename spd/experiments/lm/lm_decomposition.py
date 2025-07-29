@@ -5,12 +5,14 @@ from pathlib import Path
 
 import fire
 import wandb
+from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
-from spd.configs import Config, LMTaskConfig
+from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
+from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.run_spd import optimize
-from spd.utils.general_utils import get_device, load_config, load_pretrained, set_seed
+from spd.utils.general_utils import get_device, load_config, resolve_class, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
 
@@ -51,11 +53,13 @@ def main(
     # --- Load Model --- #
     logger.info("Loading base language model ...")
 
-    target_model = load_pretrained(
-        path_to_class=config.pretrained_model_class,
-        model_path=None,
-        model_name_hf=config.pretrained_model_name_hf,
+    hf_model_class = resolve_class(config.pretrained_model_class)
+    assert issubclass(hf_model_class, _BaseAutoModelClass), (
+        f"Model class {hf_model_class} should be a subclass of _BaseAutoModelClass which "
+        "defines a `from_pretrained` method"
     )
+    assert config.pretrained_model_name_hf is not None
+    target_model = hf_model_class.from_pretrained(config.pretrained_model_name_hf)
     target_model.eval()
 
     if config.wandb_project:
