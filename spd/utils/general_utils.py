@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import wandb
 import yaml
 from jaxtyping import Float
 from pydantic import BaseModel, PositiveFloat
@@ -19,6 +20,7 @@ from pydantic.v1.utils import deep_update
 from torch import Tensor
 
 from spd.log import logger
+from spd.utils.run_utils import save_file
 
 # Avoid seaborn package installation (sns.color_palette("colorblind").as_hex())
 COLOR_PALETTE = [
@@ -316,3 +318,20 @@ def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None = None) -> P
     latest_checkpoint_name = _fetch_latest_checkpoint_name(filenames, prefix)
     latest_checkpoint_local = run_dir / latest_checkpoint_name
     return latest_checkpoint_local
+
+
+def save_target_model_and_train_config(
+    save_to_wandb: bool,
+    out_dir: Path,
+    model: nn.Module,
+    train_config: BaseModel,
+    model_name: str,
+) -> None:
+    save_file(model.state_dict(), out_dir / f"{model_name}.pth")
+    save_file(train_config.model_dump(mode="json"), out_dir / f"{model_name}_train_config.yaml")
+
+    if save_to_wandb:
+        wandb.save(str(out_dir / f"{model_name}.pth"), base_path=out_dir, policy="now")
+        wandb.save(
+            str(out_dir / f"{model_name}_train_config.yaml"), base_path=out_dir, policy="now"
+        )
