@@ -114,3 +114,135 @@ plot_dists_distribution(
 plt.legend()
 
 # %%
+
+fig, ax = plt.subplots(1, 1, figsize=(16, 10))
+
+for alpha in [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0]:
+	print(f"Alpha: {alpha}")
+
+	ens: MergeEnsemble = merge_iteration_ensemble(
+		activations=coa["activations"],
+		component_labels=coa["labels"],
+		merge_config=MergeConfig(
+			activation_threshold=None,
+			alpha=alpha,
+			iters=140,
+			check_threshold=0.1,
+			pop_component_prob=0.1,
+			rank_cost_fn=lambda x: 1.0,
+			stopping_condition=None,
+		),
+		plot_config=MergePlotConfig(
+			plot_every=999,
+			plot_every_min=999,
+			# plot_every=5,
+			save_pdf=False,
+			# pdf_prefix="merge_iteration",
+			figsize=(16, 3),
+			figsize_final=(10, 6),
+			tick_spacing=10,
+			plot_final=False,
+		),
+		ensemble_size=16,
+	)
+	print(f"got ensemble with {ens.n_iters = }, {ens.n_ensemble = }")
+	dists = ens.get_distances()
+	print(f"Distances shape: {dists.shape}")
+
+	plot_dists_distribution(
+		distances=dists,
+		mode="dist",
+		label=f"$\\alpha={alpha:.4f}$",
+		ax=ax,
+	)
+
+plt.legend()
+plt.show()
+
+# %%
+
+
+fig, ax = plt.subplots(1, 1, figsize=(16, 10))
+
+for check_threshold in [0.0001, 0.5]:
+	print(f"{check_threshold = }")
+
+	ens: MergeEnsemble = merge_iteration_ensemble(
+		activations=coa["activations"],
+		component_labels=coa["labels"],
+		merge_config=MergeConfig(
+			activation_threshold=None,
+			alpha=1.0,
+			iters=140,
+			check_threshold=check_threshold,
+			pop_component_prob=0.1,
+			rank_cost_fn=lambda x: 1.0,
+			stopping_condition=None,
+		),
+		plot_config=MergePlotConfig(
+			plot_every=999,
+			plot_every_min=999,
+			# plot_every=5,
+			save_pdf=False,
+			# pdf_prefix="merge_iteration",
+			figsize=(16, 3),
+			figsize_final=(10, 6),
+			tick_spacing=10,
+			plot_final=False,
+		),
+		ensemble_size=16,
+	)
+	print(f"got ensemble with {ens.n_iters = }, {ens.n_ensemble = }")
+	dists = ens.get_distances()
+	print(f"Distances shape: {dists.shape}")
+
+	plot_dists_distribution(
+		distances=dists,
+		mode="dist",
+		label=f"$c={check_threshold:.4f}$",
+		ax=ax,
+	)
+
+plt.legend()
+plt.show()
+
+# %%
+
+
+fig, ax = plt.subplots(1, 1, figsize=(16, 10))
+
+for pop_component_prob in [0.0001, 0.001, 0.01, 0.1, 0.5]:
+	print(f"{pop_component_prob = }")
+
+	ens: MergeEnsemble = merge_iteration_ensemble(
+		activations=coa["activations"],
+		component_labels=coa["labels"],
+		merge_config=MergeConfig(
+			activation_threshold=None,
+			alpha=1.0,
+			iters=140,
+			check_threshold=0.1,
+			pop_component_prob=pop_component_prob,
+			rank_cost_fn=lambda x: 1.0,
+		),
+		plot_config=MergePlotConfig(
+			plot_every=999,
+			plot_every_min=999,
+			save_pdf=False,
+			plot_final=False,
+		),
+		ensemble_size=32,
+	)
+	print(f"got ensemble with {ens.n_iters = }, {ens.n_ensemble = }")
+	dists = ens.get_distances()
+	print(f"Distances shape: {dists.shape}")
+
+	plot_dists_distribution(
+		distances=dists,
+		mode="dist",
+		label=f"$p={pop_component_prob:.4f}$",
+		ax=ax,
+	)
+
+plt.legend()
+plt.show()
