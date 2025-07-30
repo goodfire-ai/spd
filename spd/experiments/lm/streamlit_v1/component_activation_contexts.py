@@ -633,10 +633,8 @@ def _process_batch_for_contexts(
     model_data: ModelData,
     component_contexts: dict[str, dict[int, list[ActivationContext]]],
     config: AnalysisConfig,
-    device: str,
 ) -> dict[str, float]:
     """Process a single batch to find activation contexts."""
-    _ = device  # Unused but kept for API consistency
     # Get activations before each component
     with torch.no_grad():
         _, pre_weight_acts = model_data.model.forward_with_pre_forward_cache_hooks(
@@ -783,7 +781,6 @@ def find_component_activation_contexts(
                 model_data=_model_data,
                 component_contexts=component_contexts,
                 config=config,
-                device=device,
             )
 
             for layer_name, layer_ci_l_zero in ci_l_zero.items():
