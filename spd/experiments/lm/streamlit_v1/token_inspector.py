@@ -3,42 +3,139 @@ Token Component Inspector tab for the Streamlit app.
 """
 
 import html
-from typing import Any
+from collections.abc import Iterator
+from dataclasses import dataclass
 
 import streamlit as st
 import torch
+from datasets import load_dataset
+from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import LMTaskConfig
-from spd.experiments.lm.streamlit_v1.component_activation_contexts import (
-    _get_streamlit_css,
-)
-from spd.experiments.lm.streamlit_v1.utils import (
-    ModelData,
-    compute_component_masks,
-    create_dataloader_iterator,
-)
+from spd.data import DatasetConfig
+from spd.experiments.lm.streamlit_v1.utils import ModelData
+
+
+@dataclass
+class TokenActivationAnalysis:
+    """Results from analyzing component activations for a specific token."""
+
+    n_active: int
+    active_indices: list[int]
+    active_values: list[float]
+    total_components: int
+
+
+@dataclass(frozen=True)
+class PromptData:
+    """Data for the current prompt."""
+
+    text: str
+    input_ids: Int[Tensor, "1 seq_len"]
+    offset_mapping: list[tuple[int, int]]
+    tokens: list[str]
+
+
+# ============================================================================
+# Core logic
+# ============================================================================
+
+
+def create_dataloader_iterator(model_data: ModelData) -> Iterator[PromptData]:
+    """Yield one PromptData per raw dataset example, limited to max_seq_len."""
+
+    task_cfg = model_data.config.task_config
+    assert isinstance(task_cfg, LMTaskConfig)
+
+    eval_cfg = DatasetConfig(
+        name=task_cfg.dataset_name,
+        hf_tokenizer_path=model_data.config.pretrained_model_name_hf,
+        split=task_cfg.eval_data_split,
+        n_ctx=task_cfg.max_seq_len,
+        is_tokenized=False,
+        streaming=False,
+        column_name=task_cfg.column_name,
+    )
+
+    dataset = load_dataset(
+        eval_cfg.name,
+        streaming=eval_cfg.streaming,
+        split=eval_cfg.split,
+        trust_remote_code=False,
+    )
+
+    for example in dataset:
+        text = str(example[eval_cfg.column_name]) if isinstance(example, dict) else str(example)
+
+        tokenised = model_data.tokenizer(  # pyright: ignore[reportCallIssue]
+            text,
+            return_tensors="pt",
+            return_offsets_mapping=True,
+            truncation=True,
+            max_length=task_cfg.max_seq_len,
+            padding=False,
+        )
+
+        input_ids: Int[Tensor, "1 seq_len"] = tokenised["input_ids"]
+        if input_ids.dim() == 1:
+            input_ids = input_ids.unsqueeze(0)
+
+        offset_mapping: list[tuple[int, int]] = tokenised["offset_mapping"][0].tolist()
+
+        # Remove the final offset mapping if it is [0,0], which happens for some unknown reason
+        if offset_mapping and offset_mapping[-1] == [0, 0]:
+            offset_mapping = offset_mapping[:-1]
+
+        tokens = [model_data.tokenizer.decode([int(tok)]) for tok in input_ids[0]]  # pyright: ignore[reportAttributeAccessIssue]
+
+        yield PromptData(
+            text=text,
+            input_ids=input_ids,
+            offset_mapping=offset_mapping,
+            tokens=tokens,
+        )
+
+
+@st.cache_data(show_spinner="Computing component masks...")
+def compute_component_masks(
+    _model_data: ModelData,
+    _input_ids: Tensor,
+) -> dict[str, Float[Tensor, "1 seq_len C"]]:
+    """Compute component activation masks for all layers."""
+    with torch.no_grad():
+        _, pre_weight_acts = _model_data.model.forward_with_pre_forward_cache_hooks(
+            _input_ids, module_names=list(_model_data.components.keys())
+        )
+        masks, _ = _model_data.model.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts,
+            detach_inputs=True,
+            sigmoid_type=_model_data.config.sigmoid_type,
+        )
+    return masks
 
 
 @st.cache_data(show_spinner="Analyzing token activations...")
 def analyze_token_activations(
-    _model_path: str,
-    _prompt_text: str,
     token_idx: int,
     layer_name: str,
     _masks: dict[str, Tensor],
-) -> dict[str, Any]:
-    """Analyze component activations for a specific token and layer."""
+) -> TokenActivationAnalysis:
+    """Analyze component activations for a specific token and layer.
+
+    Note: Parameters prefixed with _ are Streamlit conventions indicating the parameter
+    should not trigger cache invalidation when it changes.
+    """
     layer_mask = _masks[layer_name]
 
     # Ensure token_idx is within bounds of the mask tensor
     if token_idx >= layer_mask.shape[1]:
-        return {
-            "n_active": 0,
-            "active_indices": [],
-            "active_values": [],
-            "total_components": 0,
-        }
+        return TokenActivationAnalysis(
+            n_active=0,
+            active_indices=[],
+            active_values=[],
+            total_components=0,
+        )
 
     token_mask = layer_mask[0, token_idx, :]
 
@@ -51,15 +148,38 @@ def analyze_token_activations(
     active_indices = active_indices[sorted_indices]
     active_values = active_values[sorted_indices]
 
-    return {
-        "n_active": len(active_indices),
-        "active_indices": active_indices.cpu().numpy(),
-        "active_values": active_values.cpu().numpy(),
-        "total_components": token_mask.shape[0],
-    }
+    return TokenActivationAnalysis(
+        n_active=len(active_indices),
+        active_indices=active_indices.cpu().numpy().tolist(),
+        active_values=active_values.cpu().numpy().tolist(),
+        total_components=token_mask.shape[0],
+    )
 
 
-def render_prompt_with_tokens(
+def load_next_prompt(model_data: ModelData) -> None:
+    """Load the next prompt from the dataloader."""
+    if "dataloader_iter" not in st.session_state:
+        st.session_state.dataloader_iter = create_dataloader_iterator(model_data)
+
+    try:
+        prompt_data = next(st.session_state.dataloader_iter)
+        st.session_state.current_prompt_data = prompt_data
+        # Reset token selection
+        st.session_state.selected_token_idx = 0
+    except StopIteration:
+        # Reset iterator and try again
+        st.session_state.dataloader_iter = create_dataloader_iterator(model_data)
+        prompt_data = next(st.session_state.dataloader_iter)
+        st.session_state.current_prompt_data = prompt_data
+        st.session_state.selected_token_idx = 0
+
+
+# ============================================================================
+# UI Rendering Functions
+# ============================================================================
+
+
+def _render_prompt_with_tokens(
     *,
     raw_text: str,
     offset_mapping: list[tuple[int, int]],
@@ -111,33 +231,73 @@ def render_prompt_with_tokens(
 
     # Add CSS styles before rendering
     st.markdown(
-        f"<style>{_get_streamlit_css()}</style>",
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
         f'<div class="example-item" style="font-family: monospace; font-size: 14px; '
         f'line-height: 1.8; color: var(--text-color);">{"".join(html_chunks)}</div>',
         unsafe_allow_html=True,
     )
 
 
-def load_next_prompt(model_data: ModelData):
-    """Load the next prompt from the dataloader."""
-    if "dataloader_iter" not in st.session_state:
-        st.session_state.dataloader_iter = create_dataloader_iterator(model_data)
+def _render_token_selector(n_tokens: int, model_token_count: int) -> int:
+    """Render token selection controls and return selected token index."""
+    token_idx = st.session_state.get("selected_token_idx", 0)
 
-    try:
-        prompt_data = next(st.session_state.dataloader_iter)
-        st.session_state.current_prompt_data = prompt_data
-        # Reset token selection
-        st.session_state.selected_token_idx = 0
-    except StopIteration:
-        # Reset iterator and try again
-        st.session_state.dataloader_iter = create_dataloader_iterator(model_data)
-        prompt_data = next(st.session_state.dataloader_iter)
-        st.session_state.current_prompt_data = prompt_data
-        st.session_state.selected_token_idx = 0
+    with st.expander("Token selector", expanded=True):
+        if n_tokens > 0:
+            token_idx = st.slider(
+                "Token index",
+                min_value=0,
+                max_value=n_tokens - 1,
+                step=1,
+                key="selected_token_idx",
+            )
+
+            selected_token = st.session_state.current_prompt_data.tokens[token_idx]
+            st.write(f"Selected token: {selected_token} (Index: {token_idx})")
+
+            # Show if token is beyond model's processing range
+            if token_idx >= model_token_count:
+                st.warning("⚠️ This token is beyond the model's processing range")
+
+    return token_idx
+
+
+def _render_layer_selector(layer_names: list[str]) -> str | None:
+    """Render layer selection controls and return selected layer."""
+    with st.expander("Layer selector", expanded=True):
+        layer_name = st.selectbox(
+            "Select Layer to Inspect:",
+            options=layer_names,
+            key="selected_layer",
+        )
+    return layer_name
+
+
+def _render_activation_analysis(analysis: TokenActivationAnalysis, layer_name: str) -> None:
+    """Render the component activation analysis results."""
+    # Use component section styling from component_activation_contexts.py
+    st.markdown(
+        f'<div class="component-section">'
+        f'<div class="component-header">Active Components in {layer_name}</div>'
+        f'<div class="examples-container">'
+        f"Total active components: {analysis.n_active}"
+        f"</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    st.subheader("Active Component Indices")
+    if analysis.n_active > 0:
+        # Create DataFrame for better display
+        import numpy as np
+
+        active_indices_np = np.array(analysis.active_indices).reshape(-1, 1)
+        st.dataframe(active_indices_np, height=300, use_container_width=False)
+    else:
+        st.write("No active components for this token in this layer.")
+
+
+# ============================================================================
+# Main UI Function
+# ============================================================================
 
 
 @st.fragment
@@ -158,8 +318,6 @@ def render_token_activations_tab(model_data: ModelData):
 
     # Compute masks for current prompt
     masks = compute_component_masks(
-        st.session_state.model_path,
-        prompt_data.text,
         model_data,
         prompt_data.input_ids.to(next(model_data.model.parameters()).device),
     )
@@ -180,7 +338,7 @@ def render_token_activations_tab(model_data: ModelData):
         )
 
     # Render the prompt with token highlighting
-    render_prompt_with_tokens(
+    _render_prompt_with_tokens(
         raw_text=prompt_data.text,
         offset_mapping=prompt_data.offset_mapping,
         selected_idx=st.session_state.get("selected_token_idx", 0),
@@ -188,71 +346,20 @@ def render_token_activations_tab(model_data: ModelData):
 
     # Token selection controls
     n_tokens = len(prompt_data.tokens)
-    token_idx = st.session_state.get("selected_token_idx", 0)
-
-    with st.expander("Token selector", expanded=True):
-        if n_tokens > 0:
-            token_idx = st.slider(
-                "Token index",
-                min_value=0,
-                max_value=n_tokens - 1,
-                step=1,
-                key="selected_token_idx",
-            )
-
-            selected_token = prompt_data.tokens[token_idx]
-            st.write(f"Selected token: {selected_token} (Index: {token_idx})")
-
-            # Show if token is beyond model's processing range
-            if token_idx >= model_token_count:
-                st.warning("⚠️ This token is beyond the model's processing range")
+    token_idx = _render_token_selector(n_tokens, model_token_count)
 
     st.divider()
 
     # Only show analysis if token is within model's range and we have tokens
     if n_tokens > 0 and token_idx < model_token_count:
-        # Layer selection
-        with st.expander("Layer selector", expanded=True):
-            layer_name = st.selectbox(
-                "Select Layer to Inspect:",
-                options=model_data.layer_names,
-                key="selected_layer",
-            )
+        layer_name = _render_layer_selector(model_data.layer_names)
 
-        # Analyze activations
-        if layer_name and token_idx is not None:
+        if layer_name:
             analysis = analyze_token_activations(
-                st.session_state.model_path,
-                prompt_data.text,
-                token_idx,
-                layer_name,
-                masks,
+                token_idx=token_idx, layer_name=layer_name, _masks=masks
             )
 
-            # Use component section styling from component_activation_contexts.py
-            st.markdown(
-                f'<div class="component-section">'
-                f'<div class="component-header">Active Components in {layer_name}</div>'
-                f'<div class="examples-container">'
-                f"Total active components: {analysis['n_active']}"
-                f"</div></div>",
-                unsafe_allow_html=True,
-            )
-
-            st.subheader("Active Component Indices")
-            if analysis["n_active"] > 0:
-                # Convert to NumPy array and reshape to a column vector (N x 1)
-                active_indices_np = analysis["active_indices"].reshape(-1, 1)
-                # Pass the NumPy array directly and configure the column header
-                st.dataframe(active_indices_np, height=300, use_container_width=False)
-            else:
-                st.write("No active components for this token in this layer.")
-
-            # Extensibility Placeholder
-            st.subheader("Additional Layer/Token Analysis")
-            st.write(
-                "Future figures and analyses for this specific layer and token will appear here."
-            )
+            _render_activation_analysis(analysis, layer_name)
     else:
         st.info(
             "Component activation analysis is not available for tokens beyond the model's maximum sequence length. "
