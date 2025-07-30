@@ -158,9 +158,12 @@
             "module": "streamlit",
             "args": [
                 "run",
-                "${workspaceFolder}/spd/experiments/lm/app.py",
+                "${workspaceFolder}/spd/experiments/lm/streamlit_v1/app.py",
                 "--server.port",
-                "2000"
+                "2000",
+                "--",
+                "--model_path",
+                "wandb:spd/runs/ioprgffh"
             ]
         }
     ]
