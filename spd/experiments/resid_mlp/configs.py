@@ -62,8 +62,8 @@ class ResidualMLPTrainConfig(BaseModel):
 
 class ResidualMLPTaskConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    task_name: Literal["residual_mlp"] = Field(
-        default="residual_mlp",
+    task_name: Literal["resid_mlp"] = Field(
+        default="resid_mlp",
         description="Identifier for the residual-MLP decomposition task",
     )
     feature_probability: Probability = Field(

@@ -83,7 +83,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         tokenizer_name=None,
         # Task Specific
         task_config=ResidualMLPTaskConfig(
-            task_name="residual_mlp",
+            task_name="resid_mlp",
             feature_probability=0.01,
             data_generation_type="at_least_zero_active",
         ),

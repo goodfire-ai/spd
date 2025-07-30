@@ -65,6 +65,6 @@ pretrained_model_path: "wandb:spd/runs/jfrf36m2"
 
 # --- Task Specific ---
 task_config:
-  task_name: residual_mlp
+  task_name: resid_mlp
   feature_probability: 0.01
   data_generation_type: "at_least_zero_active"

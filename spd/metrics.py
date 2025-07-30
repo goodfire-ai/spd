@@ -106,7 +106,7 @@ def target_ci_error(
     Returns:
         Dictionary of target solution metrics
     """
-    if inputs.config.task_config.task_name not in ["tms", "residual_mlp"]:
+    if inputs.config.task_config.task_name not in ["tms", "resid_mlp"]:
         return {}
 
     # Create target solution from config parameters
