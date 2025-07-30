@@ -181,7 +181,7 @@ class ResidMLP(LoadableModule):
     @override
     def from_run_info(cls, run_info: RunInfo[ResidMLPTrainConfig]) -> "ResidMLP":
         """Load a pretrained model from a run info object."""
-        resid_mlp_model = cls(config=run_info.config.resid_mlp_config)
+        resid_mlp_model = cls(config=run_info.config.resid_mlp_model_config)
         resid_mlp_model.load_state_dict(
             torch.load(run_info.checkpoint_path, weights_only=True, map_location="cpu")
         )

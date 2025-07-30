@@ -62,7 +62,7 @@ def train(
     run_name: str,
 ) -> Float[Tensor, ""]:
     if config.wandb_project:
-        tags = [f"resid_mlp{config.resid_mlp_config.n_layers}-train"]
+        tags = [f"resid_mlp{config.resid_mlp_model_config.n_layers}-train"]
         config = init_wandb(config, config.wandb_project, name=run_name, tags=tags)
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -136,7 +136,7 @@ def train(
 
 
 def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
-    model_cfg = config.resid_mlp_config
+    model_cfg = config.resid_mlp_model_config
     run_name = (
         f"resid_mlp_identity_{config.label_type}_"
         f"n-features{model_cfg.n_features}_d-resid{model_cfg.d_embed}_"
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     config = ResidMLPTrainConfig(
         wandb_project="spd",
         seed=0,
-        resid_mlp_config=ResidMLPModelConfig(
+        resid_mlp_model_config=ResidMLPModelConfig(
             n_features=100,  # 1 layer
             d_embed=1000,
             d_mlp=50,  # 1 layer
@@ -243,7 +243,7 @@ if __name__ == "__main__":
     # config = ResidMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
-    #     resid_mlp_config=ResidMLPModelConfig(
+    #     resid_mlp_model_config=ResidMLPModelConfig(
     #         n_features=100, # 2 layers
     #         d_embed=1000,
     #         d_mlp=25, # 2 layers
@@ -273,7 +273,7 @@ if __name__ == "__main__":
     # config = ResidMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
-    #     resid_mlp_config=ResidMLPModelConfig(
+    #     resid_mlp_model_config=ResidMLPModelConfig(
     #         n_features=102,  # 3 layers
     #         d_embed=1000,
     #         d_mlp=17,  # 3 layers

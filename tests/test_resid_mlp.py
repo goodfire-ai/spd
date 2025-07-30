@@ -13,7 +13,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
     device = "cpu"
 
     # Create a 2-layer ResidMLP config
-    resid_mlp_config = ResidMLPModelConfig(
+    resid_mlp_model_config = ResidMLPModelConfig(
         n_features=5,
         d_embed=4,
         d_mlp=6,
@@ -23,7 +23,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         out_bias=True,
     )
 
-    # Create config similar to the 2-layer config in resid_mlp_config.yaml
+    # Create config similar to the 2-layer config in resid_mlp2_config.yaml
     config = Config(
         # WandB
         wandb_project=None,  # Disable wandb for testing
@@ -91,13 +91,13 @@ def test_resid_mlp_decomposition_happy_path() -> None:
 
     # Create a pretrained model
 
-    target_model = ResidMLP(config=resid_mlp_config).to(device)
+    target_model = ResidMLP(config=resid_mlp_model_config).to(device)
     target_model.requires_grad_(False)
 
     assert isinstance(config.task_config, ResidMLPTaskConfig)
     # Create dataset
     dataset = ResidMLPDataset(
-        n_features=resid_mlp_config.n_features,
+        n_features=resid_mlp_model_config.n_features,
         feature_probability=config.task_config.feature_probability,
         device=device,
         calc_labels=False,  # Our labels will be the output of the target model
