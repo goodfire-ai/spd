@@ -84,10 +84,10 @@ def _render_configuration_form() -> AnalysisConfig | None:
                 )
                 causal_importance_threshold = st.slider(
                     "Causal Importance Threshold",
-                    min_value=0.001,
+                    min_value=0.0,
                     max_value=0.5,
                     value=0.01,
-                    step=0.001,
+                    step=0.01,
                     format="%.3f",
                     help="Minimum CI value for a component to be considered active",
                 )

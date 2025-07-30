@@ -94,39 +94,40 @@ def create_dataloader_iterator(model_data: ModelData) -> Iterator[PromptData]:
         )
 
 
-@st.cache_data(show_spinner="Computing component masks...")
-def compute_component_masks(
+@st.cache_data(show_spinner="Computing causal importances...")
+def compute_causal_importances(
     _model_data: ModelData,
     _input_ids: Tensor,
 ) -> dict[str, Float[Tensor, "1 seq_len C"]]:
-    """Compute component activation masks for all layers."""
+    """Compute causal importances for all layers."""
     with torch.no_grad():
         _, pre_weight_acts = _model_data.model.forward_with_pre_forward_cache_hooks(
             _input_ids, module_names=list(_model_data.components.keys())
         )
-        masks, _ = _model_data.model.calc_causal_importances(
+        cis, _ = _model_data.model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
             detach_inputs=True,
             sigmoid_type=_model_data.config.sigmoid_type,
         )
-    return masks
+    return cis
 
 
 @st.cache_data(show_spinner="Analyzing token activations...")
 def analyze_token_activations(
     token_idx: int,
     layer_name: str,
-    _masks: dict[str, Tensor],
+    ci_threshold: float,
+    _cis: dict[str, Tensor],
 ) -> TokenActivationAnalysis:
     """Analyze component activations for a specific token and layer.
 
     Note: Parameters prefixed with _ are Streamlit conventions indicating the parameter
     should not trigger cache invalidation when it changes.
     """
-    layer_mask = _masks[layer_name]
+    layer_cis = _cis[layer_name]
 
     # Ensure token_idx is within bounds of the mask tensor
-    if token_idx >= layer_mask.shape[1]:
+    if token_idx >= layer_cis.shape[1]:
         return TokenActivationAnalysis(
             n_active=0,
             active_indices=[],
@@ -134,11 +135,11 @@ def analyze_token_activations(
             total_components=0,
         )
 
-    token_mask = layer_mask[0, token_idx, :]
+    token_ci = layer_cis[0, token_idx, :]
 
     # Find active components
-    active_indices = torch.where(token_mask > 0)[0]
-    active_values = token_mask[active_indices]
+    active_indices = torch.where(token_ci > ci_threshold)[0]
+    active_values = token_ci[active_indices]
 
     # Sort by activation strength
     sorted_indices = torch.argsort(active_values, descending=True)
@@ -149,7 +150,7 @@ def analyze_token_activations(
         n_active=len(active_indices),
         active_indices=active_indices.cpu().numpy().tolist(),
         active_values=active_values.cpu().numpy().tolist(),
-        total_components=token_mask.shape[0],
+        total_components=token_ci.shape[0],
     )
 
 
@@ -234,12 +235,16 @@ def _render_prompt_with_tokens(
     )
 
 
-def _render_token_selector(n_tokens: int, model_token_count: int) -> int:
-    """Render token selection controls and return selected token index."""
-    token_idx = st.session_state.get("selected_token_idx", 0)
+def _render_selector_controls(n_tokens: int, model_token_count: int) -> tuple[int, float]:
+    """Render token and CI-threshold selection controls."""
 
-    with st.expander("Token selector", expanded=True):
+    token_idx = st.session_state.get("selected_token_idx", 0)
+    ci_threshold = st.session_state.get("ci_threshold", 0.01)
+
+    # Group both sliders in a single expander so they share one section
+    with st.expander("Token & Analysis parameters", expanded=True):
         if n_tokens > 0:
+            # Token-index slider (top)
             token_idx = st.slider(
                 "Token index",
                 min_value=0,
@@ -251,11 +256,23 @@ def _render_token_selector(n_tokens: int, model_token_count: int) -> int:
             selected_token = st.session_state.current_prompt_data.tokens[token_idx]
             st.write(f"Selected token: {selected_token} (Index: {token_idx})")
 
-            # Show if token is beyond model's processing range
+            # Warn if token is beyond the model's processing range
             if token_idx >= model_token_count:
                 st.warning("⚠️ This token is beyond the model's processing range")
 
-    return token_idx
+        # CI-threshold slider (below token index)
+        ci_threshold = st.slider(
+            "Causal Importance Threshold",
+            min_value=0.0,
+            max_value=1.0,
+            value=ci_threshold,
+            step=0.01,
+            format="%.3f",
+            key="ci_threshold",
+            help="Minimum CI value for a component to be considered active",
+        )
+
+    return token_idx, ci_threshold
 
 
 def _render_layer_selector(layer_names: list[str]) -> str | None:
@@ -314,7 +331,7 @@ def render_token_activations_tab(model_data: ModelData):
     prompt_data = st.session_state.current_prompt_data
 
     # Compute masks for current prompt
-    masks = compute_component_masks(
+    cis = compute_causal_importances(
         model_data,
         prompt_data.input_ids.to(next(model_data.model.parameters()).device),
     )
@@ -341,9 +358,9 @@ def render_token_activations_tab(model_data: ModelData):
         selected_idx=st.session_state.get("selected_token_idx", 0),
     )
 
-    # Token selection controls
+    # Token and CI-threshold selection controls
     n_tokens = len(prompt_data.tokens)
-    token_idx = _render_token_selector(n_tokens, model_token_count)
+    token_idx, ci_threshold = _render_selector_controls(n_tokens, model_token_count)
 
     st.divider()
 
@@ -353,7 +370,10 @@ def render_token_activations_tab(model_data: ModelData):
 
         if layer_name:
             analysis = analyze_token_activations(
-                token_idx=token_idx, layer_name=layer_name, _masks=masks
+                token_idx=token_idx,
+                layer_name=layer_name,
+                ci_threshold=ci_threshold,
+                _cis=cis,
             )
 
             _render_activation_analysis(analysis, layer_name)
