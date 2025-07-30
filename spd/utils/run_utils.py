@@ -1,7 +1,7 @@
 """Utilities for managing experiment run directories and IDs."""
 
 import json
-import random
+import secrets
 import string
 from pathlib import Path
 from typing import Any
@@ -25,7 +25,7 @@ def get_local_run_id() -> str:
     """
     # Generate 8 random characters (lowercase letters and digits)
     chars = string.ascii_lowercase + string.digits
-    random_suffix = "".join(random.choices(chars, k=8))
+    random_suffix = "".join(secrets.choice(chars) for _ in range(8))
 
     return f"local-{random_suffix}"
 
