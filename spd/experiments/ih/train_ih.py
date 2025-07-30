@@ -160,11 +160,11 @@ def run_train(config: InductionHeadsTrainConfig, device: str) -> None:
     run_name += f"use_pos_encoding_{config.ih_model_config.use_pos_encoding}"
     run_name += f"use_layer_norm_{config.ih_model_config.use_layer_norm}"
 
-    out_dir = get_output_dir()
-
     if config.wandb_project:
         tags = [f"ih_{config.ih_model_config.vocab_size}vocab_{config.ih_model_config.seq_len}seq"]
         wandb.init(project=config.wandb_project, name=run_name, tags=tags)
+
+    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
 
     # Save config
     config_path = out_dir / "ih_train_config.yaml"

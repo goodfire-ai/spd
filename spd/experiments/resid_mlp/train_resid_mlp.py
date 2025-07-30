@@ -1,6 +1,5 @@
 """Trains a residual linear model on one-hot input vectors."""
 
-from pathlib import Path
 from typing import Literal, Self
 
 import einops
@@ -100,14 +99,13 @@ def train(
     ],
     feature_importances: Float[Tensor, "batch n_features"],
     device: str,
-    out_dir: Path,
     run_name: str,
 ) -> Float[Tensor, ""]:
     if config.wandb_project:
         tags = [f"resid_mlp{config.resid_mlp_config.n_layers}-train"]
         config = init_wandb(config, config.wandb_project, name=run_name, tags=tags)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
 
     # Save config
     config_path = out_dir / "resid_mlp_train_config.yaml"
@@ -187,7 +185,6 @@ def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
         f"identity_embedding_{config.fixed_identity_embedding}_bias_{model_cfg.in_bias}_"
         f"{model_cfg.out_bias}_loss{config.loss_type}"
     )
-    out_dir = get_output_dir()
 
     model = ResidualMLP(config=model_cfg).to(device)
 
@@ -243,7 +240,6 @@ def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
         dataloader=dataloader,
         feature_importances=feature_importances,
         device=device,
-        out_dir=out_dir,
         run_name=run_name,
     )
     return final_losses
