@@ -19,10 +19,6 @@ from spd.experiments.lm.streamlit_v1.utils import ModelData
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import extract_batch_data
 
-# ============================================================================
-# Data Classes
-# ============================================================================
-
 
 @dataclass
 class AnalysisConfig:
@@ -334,173 +330,6 @@ def _format_component_examples_html(component_id: int, contexts: list[Activation
 
 
 # ============================================================================
-# Analysis Helpers
-# ============================================================================
-
-
-def _extract_activation_context(
-    *,
-    batch: torch.Tensor,
-    batch_idx: int,
-    seq_idx: int,
-    ci: torch.Tensor,
-    component_idx: int,
-    component_active: torch.Tensor,
-    n_tokens_either_side: int,
-    tokenizer: Any,
-) -> ActivationContext:
-    """Extract activation context for a single position."""
-    # Get the CI value at this position
-    ci_value = ci[batch_idx, seq_idx, component_idx].item()
-
-    # Get context window
-    start_idx = max(0, seq_idx - n_tokens_either_side)
-    end_idx = min(batch.shape[1], seq_idx + n_tokens_either_side + 1)
-
-    # Get token IDs for the context window
-    context_token_ids = batch[batch_idx, start_idx:end_idx].tolist()
-
-    # Decode the entire context to get raw text and offset mappings
-    raw_text = tokenizer.decode(context_token_ids)
-
-    # Re-tokenize to get offset mappings
-    context_tokenized = tokenizer(
-        raw_text,
-        return_tensors="pt",
-        return_offsets_mapping=True,
-        truncation=False,
-        padding=False,
-    )
-
-    offset_mapping = context_tokenized["offset_mapping"][0].tolist()
-
-    # Remove the final offset mapping if it is [0,0], which happens for some
-    # unknown reason
-    if offset_mapping and offset_mapping[-1] == [0, 0]:
-        offset_mapping = offset_mapping[:-1]
-
-    # Calculate CI values for each token in context
-    token_ci_values = []
-    for i in range(len(offset_mapping)):
-        if i < len(context_token_ids):  # Ensure we're within bounds
-            if start_idx + i == seq_idx:
-                token_ci_values.append(ci_value)
-            else:
-                # Get CI value for other tokens too if they're active
-                if start_idx + i < ci.shape[1] and component_active[batch_idx, start_idx + i]:
-                    token_ci_values.append(ci[batch_idx, start_idx + i, component_idx].item())
-                else:
-                    token_ci_values.append(0.0)
-        else:
-            token_ci_values.append(0.0)
-
-    return ActivationContext(
-        raw_text=raw_text,
-        offset_mapping=offset_mapping,
-        token_ci_values=token_ci_values,
-        active_position=seq_idx - start_idx,  # Position of main active token in context
-        ci_value=ci_value,
-    )
-
-
-def _process_batch_for_contexts(
-    *,
-    batch: torch.Tensor,
-    model_data: ModelData,
-    component_contexts: dict[str, dict[int, list[ActivationContext]]],
-    config: AnalysisConfig,
-    device: str,
-) -> dict[str, float]:
-    """Process a single batch to find activation contexts."""
-    _ = device  # Unused but kept for API consistency
-    # Get activations before each component
-    with torch.no_grad():
-        _, pre_weight_acts = model_data.model.forward_with_pre_forward_cache_hooks(
-            batch, module_names=list(model_data.components.keys())
-        )
-
-        causal_importances, _ = model_data.model.calc_causal_importances(
-            pre_weight_acts=pre_weight_acts,
-            sigmoid_type=model_data.config.sigmoid_type,
-            detach_inputs=True,
-        )
-
-    # Calculate L0 scores
-    ci_l_zero = calc_ci_l_zero(causal_importances=causal_importances)
-
-    # Find activation contexts
-    for module_name, ci in causal_importances.items():
-        assert ci.ndim == 3, "CI must be 3D (batch, seq_len, C)"
-
-        if module_name not in component_contexts:
-            component_contexts[module_name] = {}
-
-        # Find active components
-        active_mask = ci > config.causal_importance_threshold
-
-        # For each component
-        for component_idx in range(model_data.model.C):
-            if component_idx not in component_contexts[module_name]:
-                component_contexts[module_name][component_idx] = []
-
-            # Skip if we already have enough examples
-            if len(component_contexts[module_name][component_idx]) >= config.n_prompts:
-                continue
-
-            # Get positions where this component is active
-            component_active = active_mask[:, :, component_idx]
-
-            # Find activations in this batch
-            batch_idxs, seq_idxs = torch.where(component_active)
-
-            for batch_idx, seq_idx in zip(batch_idxs.tolist(), seq_idxs.tolist(), strict=True):
-                # Skip if we have enough examples
-                if len(component_contexts[module_name][component_idx]) >= config.n_prompts:
-                    break
-
-                context = _extract_activation_context(
-                    batch=batch,
-                    batch_idx=batch_idx,
-                    seq_idx=seq_idx,
-                    ci=ci,
-                    component_idx=component_idx,
-                    component_active=component_active,
-                    n_tokens_either_side=config.n_tokens_either_side,
-                    tokenizer=model_data.tokenizer,
-                )
-
-                component_contexts[module_name][component_idx].append(context)
-
-    return ci_l_zero
-
-
-def _calculate_average_l0_scores(
-    l0_scores_sum: defaultdict[str, float], l0_scores_count: int
-) -> dict[str, float]:
-    """Calculate average L0 scores from accumulated sums."""
-    avg_l0_scores: dict[str, float] = {}
-    if l0_scores_count > 0:
-        for layer_name, score_sum in l0_scores_sum.items():
-            avg_l0_scores[layer_name] = score_sum / l0_scores_count
-    return avg_l0_scores
-
-
-def _check_all_components_have_enough_examples(
-    component_contexts: dict[str, dict[int, list[ActivationContext]]],
-    n_prompts: int,
-    n_components: int,
-) -> bool:
-    """Check if all components have enough examples."""
-    for module_name in component_contexts:
-        for component_idx in range(n_components):
-            if component_idx not in component_contexts[module_name]:
-                return False
-            if len(component_contexts[module_name][component_idx]) < n_prompts:
-                return False
-    return True
-
-
-# ============================================================================
 # HTML Export
 # ============================================================================
 
@@ -559,94 +388,6 @@ def _create_all_layers_zip(contexts: dict[str, dict[int, list[ActivationContext]
 
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
-
-
-# ============================================================================
-# Main Analysis Function
-# ============================================================================
-
-
-@st.cache_data(show_spinner="Finding component activation contexts...")
-def find_component_activation_contexts(
-    _model_data: ModelData,
-    config: AnalysisConfig,
-) -> tuple[
-    dict[str, dict[int, list[ActivationContext]]],
-    dict[str, float],
-]:
-    """Find example prompts where each component activates with surrounding context.
-
-    Note: Parameters prefixed with _ are Streamlit conventions indicating the parameter
-    should not trigger cache invalidation when it changes.
-    """
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    # Create dataloader
-    data_config = DatasetConfig(
-        name=config.dataset_name,
-        hf_tokenizer_path=_model_data.config.pretrained_model_name_hf,
-        split=config.dataset_split,
-        n_ctx=config.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
-        column_name=config.column_name,
-    )
-
-    dataloader, _ = create_data_loader(
-        dataset_config=data_config,
-        batch_size=config.batch_size,
-        buffer_size=1000,
-        global_seed=config.seed,
-        ddp_rank=0,
-        ddp_world_size=1,
-    )
-
-    # Initialize tracking
-    component_contexts: dict[str, dict[int, list[ActivationContext]]] = {}
-    l0_scores_sum: defaultdict[str, float] = defaultdict(float)
-    l0_scores_count = 0
-
-    data_iter = iter(dataloader)
-    progress_bar = st.progress(0)
-    progress_text = st.empty()
-
-    for step in range(config.n_steps):
-        try:
-            batch = extract_batch_data(next(data_iter))
-            batch = batch.to(device)
-
-            ci_l_zero = _process_batch_for_contexts(
-                batch=batch,
-                model_data=_model_data,
-                component_contexts=component_contexts,
-                config=config,
-                device=device,
-            )
-
-            for layer_name, layer_ci_l_zero in ci_l_zero.items():
-                l0_scores_sum[layer_name] += layer_ci_l_zero
-            l0_scores_count += 1
-
-            progress = (step + 1) / config.n_steps
-            progress_bar.progress(progress)
-            progress_text.text(f"Processed {step + 1}/{config.n_steps} batches")
-
-            if _check_all_components_have_enough_examples(
-                component_contexts, config.n_prompts, _model_data.model.C
-            ):
-                st.info(f"Found enough examples for all components after {step + 1} batches.")
-                break
-
-        except StopIteration:
-            st.warning(f"Dataset exhausted after {step} batches. Returning results.")
-            break
-
-    progress_bar.empty()
-    progress_text.empty()
-
-    avg_l0_scores = _calculate_average_l0_scores(l0_scores_sum, l0_scores_count)
-
-    return component_contexts, avg_l0_scores
 
 
 # ============================================================================
@@ -818,6 +559,261 @@ def _render_component_contexts(module_contexts: dict[int, list[ActivationContext
                 f"</div></div>",
                 unsafe_allow_html=True,
             )
+
+
+# ============================================================================
+# Analysis Helpers
+# ============================================================================
+
+
+def _extract_activation_context(
+    *,
+    batch: torch.Tensor,
+    batch_idx: int,
+    seq_idx: int,
+    ci: torch.Tensor,
+    component_idx: int,
+    component_active: torch.Tensor,
+    n_tokens_either_side: int,
+    tokenizer: Any,
+) -> ActivationContext:
+    """Extract activation context for a single position."""
+    # Get the CI value at this position
+    ci_value = ci[batch_idx, seq_idx, component_idx].item()
+
+    # Get context window
+    start_idx = max(0, seq_idx - n_tokens_either_side)
+    end_idx = min(batch.shape[1], seq_idx + n_tokens_either_side + 1)
+
+    # Get token IDs for the context window
+    context_token_ids = batch[batch_idx, start_idx:end_idx].tolist()
+
+    # Decode the entire context to get raw text and offset mappings
+    raw_text = tokenizer.decode(context_token_ids)
+
+    # Re-tokenize to get offset mappings
+    context_tokenized = tokenizer(
+        raw_text,
+        return_tensors="pt",
+        return_offsets_mapping=True,
+        truncation=False,
+        padding=False,
+    )
+
+    offset_mapping = context_tokenized["offset_mapping"][0].tolist()
+
+    # Remove the final offset mapping if it is [0,0], which happens for some
+    # unknown reason
+    if offset_mapping and offset_mapping[-1] == [0, 0]:
+        offset_mapping = offset_mapping[:-1]
+
+    # Calculate CI values for each token in context
+    token_ci_values = []
+    for i in range(len(offset_mapping)):
+        if i < len(context_token_ids):  # Ensure we're within bounds
+            if start_idx + i == seq_idx:
+                token_ci_values.append(ci_value)
+            else:
+                # Get CI value for other tokens too if they're active
+                if start_idx + i < ci.shape[1] and component_active[batch_idx, start_idx + i]:
+                    token_ci_values.append(ci[batch_idx, start_idx + i, component_idx].item())
+                else:
+                    token_ci_values.append(0.0)
+        else:
+            token_ci_values.append(0.0)
+
+    return ActivationContext(
+        raw_text=raw_text,
+        offset_mapping=offset_mapping,
+        token_ci_values=token_ci_values,
+        active_position=seq_idx - start_idx,  # Position of main active token in context
+        ci_value=ci_value,
+    )
+
+
+def _process_batch_for_contexts(
+    *,
+    batch: torch.Tensor,
+    model_data: ModelData,
+    component_contexts: dict[str, dict[int, list[ActivationContext]]],
+    config: AnalysisConfig,
+    device: str,
+) -> dict[str, float]:
+    """Process a single batch to find activation contexts."""
+    _ = device  # Unused but kept for API consistency
+    # Get activations before each component
+    with torch.no_grad():
+        _, pre_weight_acts = model_data.model.forward_with_pre_forward_cache_hooks(
+            batch, module_names=list(model_data.components.keys())
+        )
+
+        causal_importances, _ = model_data.model.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts,
+            sigmoid_type=model_data.config.sigmoid_type,
+            detach_inputs=True,
+        )
+
+    # Calculate L0 scores
+    ci_l_zero = calc_ci_l_zero(causal_importances=causal_importances)
+
+    # Find activation contexts
+    for module_name, ci in causal_importances.items():
+        assert ci.ndim == 3, "CI must be 3D (batch, seq_len, C)"
+
+        if module_name not in component_contexts:
+            component_contexts[module_name] = {}
+
+        # Find active components
+        active_mask = ci > config.causal_importance_threshold
+
+        # For each component
+        for component_idx in range(model_data.model.C):
+            if component_idx not in component_contexts[module_name]:
+                component_contexts[module_name][component_idx] = []
+
+            # Skip if we already have enough examples
+            if len(component_contexts[module_name][component_idx]) >= config.n_prompts:
+                continue
+
+            # Get positions where this component is active
+            component_active = active_mask[:, :, component_idx]
+
+            # Find activations in this batch
+            batch_idxs, seq_idxs = torch.where(component_active)
+
+            for batch_idx, seq_idx in zip(batch_idxs.tolist(), seq_idxs.tolist(), strict=True):
+                # Skip if we have enough examples
+                if len(component_contexts[module_name][component_idx]) >= config.n_prompts:
+                    break
+
+                context = _extract_activation_context(
+                    batch=batch,
+                    batch_idx=batch_idx,
+                    seq_idx=seq_idx,
+                    ci=ci,
+                    component_idx=component_idx,
+                    component_active=component_active,
+                    n_tokens_either_side=config.n_tokens_either_side,
+                    tokenizer=model_data.tokenizer,
+                )
+
+                component_contexts[module_name][component_idx].append(context)
+
+    return ci_l_zero
+
+
+def _calculate_average_l0_scores(
+    l0_scores_sum: defaultdict[str, float], l0_scores_count: int
+) -> dict[str, float]:
+    """Calculate average L0 scores from accumulated sums."""
+    avg_l0_scores: dict[str, float] = {}
+    if l0_scores_count > 0:
+        for layer_name, score_sum in l0_scores_sum.items():
+            avg_l0_scores[layer_name] = score_sum / l0_scores_count
+    return avg_l0_scores
+
+
+def _check_all_components_have_enough_examples(
+    component_contexts: dict[str, dict[int, list[ActivationContext]]],
+    n_prompts: int,
+    n_components: int,
+) -> bool:
+    """Check if all components have enough examples."""
+    for module_name in component_contexts:
+        for component_idx in range(n_components):
+            if component_idx not in component_contexts[module_name]:
+                return False
+            if len(component_contexts[module_name][component_idx]) < n_prompts:
+                return False
+    return True
+
+
+# ============================================================================
+# Main Analysis Function
+# ============================================================================
+
+
+@st.cache_data(show_spinner="Finding component activation contexts...")
+def find_component_activation_contexts(
+    _model_data: ModelData,
+    config: AnalysisConfig,
+) -> tuple[
+    dict[str, dict[int, list[ActivationContext]]],
+    dict[str, float],
+]:
+    """Find example prompts where each component activates with surrounding context.
+
+    Note: Parameters prefixed with _ are Streamlit conventions indicating the parameter
+    should not trigger cache invalidation when it changes.
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Create dataloader
+    data_config = DatasetConfig(
+        name=config.dataset_name,
+        hf_tokenizer_path=_model_data.config.pretrained_model_name_hf,
+        split=config.dataset_split,
+        n_ctx=config.max_seq_len,
+        is_tokenized=False,
+        streaming=False,
+        column_name=config.column_name,
+    )
+
+    dataloader, _ = create_data_loader(
+        dataset_config=data_config,
+        batch_size=config.batch_size,
+        buffer_size=1000,
+        global_seed=config.seed,
+        ddp_rank=0,
+        ddp_world_size=1,
+    )
+
+    # Initialize tracking
+    component_contexts: dict[str, dict[int, list[ActivationContext]]] = {}
+    l0_scores_sum: defaultdict[str, float] = defaultdict(float)
+    l0_scores_count = 0
+
+    data_iter = iter(dataloader)
+    progress_bar = st.progress(0)
+    progress_text = st.empty()
+
+    for step in range(config.n_steps):
+        try:
+            batch = extract_batch_data(next(data_iter))
+            batch = batch.to(device)
+
+            ci_l_zero = _process_batch_for_contexts(
+                batch=batch,
+                model_data=_model_data,
+                component_contexts=component_contexts,
+                config=config,
+                device=device,
+            )
+
+            for layer_name, layer_ci_l_zero in ci_l_zero.items():
+                l0_scores_sum[layer_name] += layer_ci_l_zero
+            l0_scores_count += 1
+
+            progress = (step + 1) / config.n_steps
+            progress_bar.progress(progress)
+            progress_text.text(f"Processed {step + 1}/{config.n_steps} batches")
+
+            if _check_all_components_have_enough_examples(
+                component_contexts, config.n_prompts, _model_data.model.C
+            ):
+                st.info(f"Found enough examples for all components after {step + 1} batches.")
+                break
+
+        except StopIteration:
+            st.warning(f"Dataset exhausted after {step} batches. Returning results.")
+            break
+
+    progress_bar.empty()
+    progress_text.empty()
+
+    avg_l0_scores = _calculate_average_l0_scores(l0_scores_sum, l0_scores_count)
+
+    return component_contexts, avg_l0_scores
 
 
 # ============================================================================

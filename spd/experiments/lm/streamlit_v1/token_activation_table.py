@@ -16,10 +16,6 @@ from spd.experiments.lm.streamlit_v1.utils import ModelData
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import extract_batch_data
 
-# ============================================================================
-# Data Classes
-# ============================================================================
-
 
 @dataclass
 class AnalysisConfig:
@@ -211,11 +207,6 @@ def _format_token_display(tokens: list[TokenActivationData]) -> str:
     return " • ".join(formatted_tokens)
 
 
-# ============================================================================
-# Display Helper Functions
-# ============================================================================
-
-
 def _render_l0_scores(l0_scores: dict[str, float]) -> None:
     """Render L0 scores as metrics."""
     st.subheader("L0 over dataset")
@@ -359,11 +350,6 @@ def _process_batch_for_tokens(
     return tokens_processed, ci_l_zero
 
 
-# ============================================================================
-# Data Processing Functions (Pure computation, no UI)
-# ============================================================================
-
-
 def _prepare_component_table_data(
     *,
     module_activations: dict[int, dict[int, int]],
@@ -402,11 +388,6 @@ def _prepare_component_table_data(
             )
 
     return table_data
-
-
-# ============================================================================
-# Utility Functions
-# ============================================================================
 
 
 def _defaultdict_to_dict(obj: Any) -> Any:
@@ -514,6 +495,11 @@ def analyze_component_token_table(
         total_token_counts=total_token_counts,
         avg_l0_scores=avg_l0_scores,
     )
+
+
+# ============================================================================
+# Main UI Function
+# ============================================================================
 
 
 @st.fragment
