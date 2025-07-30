@@ -10,6 +10,9 @@ import torch
 from torch import Tensor
 
 from spd.configs import LMTaskConfig
+from spd.experiments.lm.streamlit_v1.component_activation_contexts import (
+    _get_streamlit_css,
+)
 from spd.experiments.lm.streamlit_v1.utils import (
     ModelData,
     compute_component_masks,
@@ -63,9 +66,8 @@ def render_prompt_with_tokens(
     selected_idx: int | None,
 ) -> None:
     """
-    Renders `raw_text` inside Streamlit, wrapping each token span with a thin
-    border.  The currently‑selected token receives a thicker red border.
-    All other tokens get a thin mid‑grey border (no background fill).
+    Renders `raw_text` inside Streamlit with faint borders around each token.
+    The selected token gets a subtle highlight that works in both light and dark modes.
     """
     html_chunks: list[str] = []
     cursor = 0
@@ -80,22 +82,42 @@ def render_prompt_with_tokens(
         token_substr = esc(raw_text[start:end])
         if token_substr:
             is_selected = idx == selected_idx
-            border_style = (
-                "2px solid rgb(200,0,0)" if is_selected else "0.5px solid #aaa"  # all other tokens
-            )
+
+            # Faint border for all tokens, with subtle highlight for selected
+            if is_selected:
+                # Selected token: faint blue background and slightly darker border
+                style = (
+                    "background-color: rgba(100, 150, 255, 0.1); "
+                    "padding: 2px 4px; "
+                    "border-radius: 3px; "
+                    "border: 1px solid rgba(128, 128, 128, 0.4); "
+                    "box-shadow: 0 0 2px rgba(100, 150, 255, 0.3);"
+                )
+            else:
+                # Regular tokens: just faint border
+                style = (
+                    "padding: 2px 4px; "
+                    "border-radius: 3px; "
+                    "border: 1px solid rgba(128, 128, 128, 0.2);"
+                )
+
             html_chunks.append(
-                "<span "
-                f'style="border:{border_style};'
-                'border-radius:2px; padding:1px 2px; margin:0 1px;">'
-                f"{token_substr}</span>"
+                f'<span style="{style}" title="Token index: {idx}">{token_substr}</span>'
             )
         cursor = end
 
     if cursor < len(raw_text):
         html_chunks.append(esc(raw_text[cursor:]))
 
+    # Add CSS styles before rendering
     st.markdown(
-        f'<div style="line-height:1.7; font-family:monospace;">{"".join(html_chunks)}</div>',
+        f"<style>{_get_streamlit_css()}</style>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f'<div class="example-item" style="font-family: monospace; font-size: 14px; '
+        f'line-height: 1.8; color: var(--text-color);">{"".join(html_chunks)}</div>',
         unsafe_allow_html=True,
     )
 
@@ -157,7 +179,7 @@ def render_token_activations_tab(model_data: ModelData):
             f"You can inspect all {full_token_count} tokens, but component activations are only available for the first {model_token_count}."
         )
 
-    # Render the prompt with token borders (similar to app_old.py)
+    # Render the prompt with token highlighting
     render_prompt_with_tokens(
         raw_text=prompt_data.text,
         offset_mapping=prompt_data.offset_mapping,
@@ -207,7 +229,15 @@ def render_token_activations_tab(model_data: ModelData):
                 masks,
             )
 
-            st.metric(f"Active Components in {layer_name}", analysis["n_active"])
+            # Use component section styling from component_activation_contexts.py
+            st.markdown(
+                f'<div class="component-section">'
+                f'<div class="component-header">Active Components in {layer_name}</div>'
+                f'<div class="examples-container">'
+                f"Total active components: {analysis['n_active']}"
+                f"</div></div>",
+                unsafe_allow_html=True,
+            )
 
             st.subheader("Active Component Indices")
             if analysis["n_active"] > 0:
