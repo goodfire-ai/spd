@@ -14,7 +14,11 @@ from pydantic import BaseModel
 from torch import Tensor, nn
 from wandb.apis.public import Run
 
-from spd.experiments.resid_mlp.configs import ResidualMLPModelConfig, ResidualMLPTrainConfig
+from spd.experiments.resid_mlp.configs import (
+    ResidualMLPModelConfig,
+    ResidualMLPTaskConfig,
+    ResidualMLPTrainConfig,
+)
 from spd.interfaces import LoadableModule, RunInfo
 from spd.log import logger
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
@@ -45,15 +49,16 @@ class ResidualMLPTargetRunInfo(RunInfo[ResidualMLPTrainConfig]):
     @classmethod
     def from_path(cls, path: ModelPath) -> "ResidualMLPTargetRunInfo":
         """Load the run info from a wandb run or a local path to a checkpoint."""
+        task_name = ResidualMLPTaskConfig.model_fields["task_name"].default
         if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
             # Check if run exists in shared filesystem first
             run_dir = check_run_exists(path)
             if run_dir:
                 # Use local files from shared filesystem
                 paths = ResidualMLPPaths(
-                    resid_mlp_train_config=run_dir / "resid_mlp_train_config.yaml",
+                    resid_mlp_train_config=run_dir / f"{task_name}_train_config.yaml",
                     label_coeffs=run_dir / "label_coeffs.json",
-                    checkpoint=run_dir / "resid_mlp.pth",
+                    checkpoint=run_dir / f"{task_name}.pth",
                 )
             else:
                 # Download from wandb
@@ -62,7 +67,7 @@ class ResidualMLPTargetRunInfo(RunInfo[ResidualMLPTrainConfig]):
         else:
             # `path` should be a local path to a checkpoint
             paths = ResidualMLPPaths(
-                resid_mlp_train_config=Path(path).parent / "resid_mlp_train_config.yaml",
+                resid_mlp_train_config=Path(path).parent / f"{task_name}_train_config.yaml",
                 label_coeffs=Path(path).parent / "label_coeffs.json",
                 checkpoint=Path(path),
             )
@@ -159,8 +164,9 @@ class ResidualMLP(LoadableModule):
 
         run_dir = fetch_wandb_run_dir(run.id)
 
+        task_name = ResidualMLPTaskConfig.model_fields["task_name"].default
         resid_mlp_train_config_path = download_wandb_file(
-            run, run_dir, "resid_mlp_train_config.yaml"
+            run, run_dir, f"{task_name}_train_config.yaml"
         )
         label_coeffs_path = download_wandb_file(run, run_dir, "label_coeffs.json")
         checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)

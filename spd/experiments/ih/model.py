@@ -12,7 +12,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from wandb.apis.public import Run
 
-from spd.experiments.ih.configs import InductionHeadsTrainConfig, InductionModelConfig
+from spd.experiments.ih.configs import IHTaskConfig, InductionHeadsTrainConfig, InductionModelConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.run_utils import check_run_exists
@@ -38,14 +38,15 @@ class InductionModelTargetRunInfo(RunInfo[InductionHeadsTrainConfig]):
     @classmethod
     def from_path(cls, path: ModelPath) -> "InductionModelTargetRunInfo":
         """Load the run info from a wandb run or a local path to a checkpoint."""
+        task_name = IHTaskConfig.model_fields["task_name"].default
         if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
             # Check if run exists in shared filesystem first
             run_dir = check_run_exists(path)
             if run_dir:
                 # Use local files from shared filesystem
                 paths = InductionModelPaths(
-                    induction_train_config=run_dir / "ih_train_config.yaml",
-                    checkpoint=run_dir / "ih.pth",
+                    induction_train_config=run_dir / f"{task_name}_train_config.yaml",
+                    checkpoint=run_dir / f"{task_name}.pth",
                 )
             else:
                 # Download from wandb
@@ -54,7 +55,7 @@ class InductionModelTargetRunInfo(RunInfo[InductionHeadsTrainConfig]):
         else:
             # `path` should be a local path to a checkpoint
             paths = InductionModelPaths(
-                induction_train_config=Path(path).parent / "ih_train_config.yaml",
+                induction_train_config=Path(path).parent / f"{task_name}_train_config.yaml",
                 checkpoint=Path(path),
             )
 
@@ -284,7 +285,10 @@ class InductionTransformer(LoadableModule):
         run: Run = api.run(wandb_project_run_id)
         run_dir = fetch_wandb_run_dir(run.id)
 
-        induction_model_config_path = download_wandb_file(run, run_dir, "ih_train_config.yaml")
+        task_name = IHTaskConfig.model_fields["task_name"].default
+        induction_model_config_path = download_wandb_file(
+            run, run_dir, f"{task_name}_train_config.yaml"
+        )
 
         checkpoint = fetch_latest_wandb_checkpoint(run)
         checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)

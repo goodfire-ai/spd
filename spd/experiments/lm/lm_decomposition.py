@@ -74,7 +74,7 @@ def main(
         sweep_params=sweep_params,
         target_model=None,
         train_config=None,
-        model_name=None,
+        task_name=None,
     )
 
     # --- Load Data --- #

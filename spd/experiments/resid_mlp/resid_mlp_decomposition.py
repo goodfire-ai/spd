@@ -70,7 +70,7 @@ def main(
         sweep_params=sweep_params,
         target_model=target_model,
         train_config=target_run_info.config,
-        model_name="resid_mlp",
+        task_name=config.task_config.task_name,
     )
     save_file(target_run_info.label_coeffs.detach().cpu().tolist(), out_dir / "label_coeffs.json")
     if config.wandb_project:
