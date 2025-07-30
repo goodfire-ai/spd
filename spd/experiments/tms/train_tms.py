@@ -187,13 +187,14 @@ def run_train(config: TMSTrainConfig, device: str) -> None:
         run_name += "_fixed-identity"
     elif config.fixed_random_hidden_layers:
         run_name += "_fixed-random"
-    out_dir = get_output_dir()
 
     if config.wandb_project:
         tags = [f"tms_{model_cfg.n_features}-{model_cfg.n_hidden}"]
         if model_cfg.n_hidden_layers > 0:
             tags[0] += "-id"
         wandb.init(project=config.wandb_project, name=run_name, tags=tags)
+
+    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
 
     # Save config
     config_path = out_dir / "tms_train_config.yaml"
