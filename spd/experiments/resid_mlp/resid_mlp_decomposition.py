@@ -7,9 +7,9 @@ import fire
 import wandb
 
 from spd.configs import Config
-from spd.experiments.resid_mlp.configs import ResidualMLPTaskConfig
-from spd.experiments.resid_mlp.models import ResidualMLP, ResidualMLPTargetRunInfo
-from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
+from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
+from spd.experiments.resid_mlp.models import ResidMLP, ResidMLPTargetRunInfo
+from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
@@ -50,11 +50,11 @@ def main(
 
     device = get_device()
     logger.info(f"Using device: {device}")
-    assert isinstance(config.task_config, ResidualMLPTaskConfig)
+    assert isinstance(config.task_config, ResidMLPTaskConfig)
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
-    target_run_info = ResidualMLPTargetRunInfo.from_path(config.pretrained_model_path)
-    target_model = ResidualMLP.from_run_info(target_run_info)
+    target_run_info = ResidMLPTargetRunInfo.from_path(config.pretrained_model_path)
+    target_model = ResidMLP.from_run_info(target_run_info)
     target_model = target_model.to(device)
     target_model.eval()
 
@@ -77,7 +77,7 @@ def main(
         wandb.save(str(out_dir / "label_coeffs.json"), base_path=out_dir, policy="now")
 
     synced_inputs = target_run_info.config.synced_inputs
-    dataset = ResidualMLPDataset(
+    dataset = ResidMLPDataset(
         n_features=target_model.config.n_features,
         feature_probability=config.task_config.feature_probability,
         device=device,

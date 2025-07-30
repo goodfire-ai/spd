@@ -19,7 +19,7 @@ from pydantic import (
 
 from spd.experiments.ih.configs import IHTaskConfig
 from spd.experiments.lm.configs import LMTaskConfig
-from spd.experiments.resid_mlp.configs import ResidualMLPTaskConfig
+from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
 from spd.models.components import GateType
@@ -84,7 +84,7 @@ class MetricsFnConfig(_FnConfig):
         return real_fn
 
 
-TaskConfig = TMSTaskConfig | ResidualMLPTaskConfig | LMTaskConfig | IHTaskConfig
+TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
 class Config(BaseModel):
@@ -258,7 +258,7 @@ class Config(BaseModel):
         ...,
         description="Fully-qualified class name of the pretrained model to load. Can be defined "
         "locally or an in external package (e.g. 'transformers.LlamaForCausalLM' or "
-        "'spd.experiments.resid_mlp.models.ResidualMLP').",
+        "'spd.experiments.resid_mlp.models.ResidMLP').",
     )
     pretrained_model_path: ModelPath | None = Field(
         default=None,

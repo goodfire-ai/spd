@@ -1,4 +1,4 @@
-# ResidualMLP 1 layer
+# ResidMLP 1 layer
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null
@@ -60,7 +60,7 @@ metrics_fns:
           k: 50
 
 # --- Pretrained model info ---
-pretrained_model_class: "spd.experiments.resid_mlp.models.ResidualMLP"
+pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"
 pretrained_model_path: "wandb:spd/runs/5mk5h1lk"
 
 # --- Task Specific ---
