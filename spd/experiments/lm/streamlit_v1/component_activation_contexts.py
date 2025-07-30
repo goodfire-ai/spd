@@ -598,13 +598,10 @@ def _extract_activation_context(
         return_offsets_mapping=True,
         truncation=False,
         padding=False,
+        add_special_tokens=False,
     )
 
     offset_mapping = context_tokenized["offset_mapping"][0].tolist()
-
-    # Remove the final offset mapping if it is [0,0], which happens for some unknown reason
-    if offset_mapping and offset_mapping[-1] == [0, 0]:
-        offset_mapping = offset_mapping[:-1]
 
     # Calculate CI values for each token in context
     token_ci_values = []

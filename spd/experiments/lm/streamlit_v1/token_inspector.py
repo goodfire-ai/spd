@@ -75,6 +75,7 @@ def create_dataloader_iterator(model_data: ModelData) -> Iterator[PromptData]:
             truncation=True,
             max_length=task_cfg.max_seq_len,
             padding=False,
+            add_special_tokens=False,
         )
 
         input_ids: Int[Tensor, "1 seq_len"] = tokenised["input_ids"]
@@ -82,10 +83,6 @@ def create_dataloader_iterator(model_data: ModelData) -> Iterator[PromptData]:
             input_ids = input_ids.unsqueeze(0)
 
         offset_mapping: list[tuple[int, int]] = tokenised["offset_mapping"][0].tolist()
-
-        # Remove the final offset mapping if it is [0,0], which happens for some unknown reason
-        if offset_mapping and offset_mapping[-1] == [0, 0]:
-            offset_mapping = offset_mapping[:-1]
 
         tokens = [model_data.tokenizer.decode([int(tok)]) for tok in input_ids[0]]  # pyright: ignore[reportAttributeAccessIssue]
 
