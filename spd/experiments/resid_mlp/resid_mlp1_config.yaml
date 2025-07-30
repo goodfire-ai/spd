@@ -61,7 +61,7 @@ metrics_fns:
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"
-pretrained_model_path: "wandb:spd/runs/5mk5h1lk"
+pretrained_model_path: "wandb:spd/runs/pziyck78"
 
 # --- Task Specific ---
 task_config:
