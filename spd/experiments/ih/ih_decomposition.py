@@ -44,7 +44,7 @@ def main(
         config = init_wandb(config, config.wandb_project, tags=tags)
 
     # Get output directory (automatically uses wandb run ID if available)
-    out_dir = get_output_dir()
+    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
 
     task_config = config.task_config
     assert isinstance(task_config, IHTaskConfig)

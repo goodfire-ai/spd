@@ -37,8 +37,7 @@ def main(
             tags.append(sweep_id)
         config = init_wandb(config, config.wandb_project, tags=tags)
 
-    # Get output directory (automatically uses wandb run ID if available)
-    out_dir = get_output_dir()
+    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
     logger.info(f"Output directory: {out_dir}")
 
     set_seed(config.seed)
