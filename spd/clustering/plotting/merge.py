@@ -4,13 +4,11 @@ from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from jaxtyping import Float
 from torch import Tensor
 
 from spd.clustering.merge import MergeHistory, MergePlotConfig
 from spd.clustering.merge_matrix import GroupMerge
-from spd.clustering.plotting.activations import add_component_labeling
 from spd.clustering.util import format_scientific_latex
 
 

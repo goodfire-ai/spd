@@ -1,7 +1,7 @@
 from typing import Literal, overload
 
 import numpy as np
-from jaxtyping import Int, Float
+from jaxtyping import Float, Int
 from scipy.optimize import linear_sum_assignment
 
 

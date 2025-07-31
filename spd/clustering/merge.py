@@ -4,20 +4,19 @@ import random
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import torch
+import tqdm
 from jaxtyping import Bool, Float, Int
+from muutils.parallel import run_maybe_parallel
 from pydantic import (
     BaseModel,
     Field,
     PositiveInt,
 )
 from torch import Tensor
-import tqdm
-from muutils.dbg import dbg_auto
-from muutils.parallel import run_maybe_parallel
 
 from spd.clustering.merge_matrix import GroupMerge
 from spd.clustering.perm_invariant_hamming import perm_invariant_hamming_matrix

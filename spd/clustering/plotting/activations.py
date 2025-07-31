@@ -1,14 +1,11 @@
 """Plotting functions for activation visualizations."""
 
-from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Float
 from torch import Tensor
-
-from spd.clustering.util import format_scientific_latex
 
 
 def plot_activations(

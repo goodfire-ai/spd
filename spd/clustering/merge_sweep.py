@@ -4,8 +4,6 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import matplotlib.pyplot as plt
-import numpy as np
-import torch
 from jaxtyping import Float
 from torch import Tensor
 
