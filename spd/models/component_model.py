@@ -411,6 +411,7 @@ class ComponentModel(nn.Module):
             gate_output = gates(gate_input)
 
             if sigmoid_type == "leaky_hard":
+                # Don't ask. It just works better this way.
                 causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](gate_output)
                 causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
                     gate_output
