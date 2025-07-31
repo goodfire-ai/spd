@@ -1,4 +1,4 @@
-from spd.configs import Config, FiguresFnConfig, MetricsFnConfig
+from spd.configs import Config
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
@@ -59,22 +59,15 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
         n_eval_steps=1,
+        eval_freq=10,
+        eval_batch_size=4,
+        slow_eval_freq=10,
+        slow_eval_on_first_step=True,
         # Logging & Saving
-        image_freq=None,
-        image_on_first_step=True,
-        print_freq=50,  # Print at step 0, 50, and 100
+        train_log_freq=50,  # Print at step 0, 50, and 100
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        figures_fns=[
-            FiguresFnConfig(name="ci_histograms"),
-            FiguresFnConfig(name="mean_component_activation_counts"),
-            FiguresFnConfig(name="permuted_ci_plots"),
-            FiguresFnConfig(name="uv_plots"),
-        ],
-        metrics_fns=[
-            MetricsFnConfig(name="ci_l0"),
-        ],
         # Pretrained model info
         pretrained_model_class="spd.experiments.resid_mlp.models.ResidMLP",
         pretrained_model_path=None,
@@ -113,7 +106,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         dataset, batch_size=config.microbatch_size, shuffle=False
     )
     eval_loader = DatasetGeneratedDataLoader(
-        dataset, batch_size=config.microbatch_size, shuffle=False
+        dataset, batch_size=config.eval_batch_size, shuffle=False
     )
 
     # Run optimize function

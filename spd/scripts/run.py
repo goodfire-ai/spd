@@ -226,6 +226,8 @@ def create_wandb_report(
 
     # Create separate panel grids for each experiment
     for experiment in experiments_list:
+        experiment_type = EXPERIMENT_REGISTRY[experiment].experiment_type
+
         # Use run_id and experiment name tags for filtering
         combined_filter = f'(Tags("tags") in ["{run_id}"]) and (Tags("tags") in ["{experiment}"])'
 
@@ -239,21 +241,22 @@ def create_wandb_report(
         panels: list[wr.interface.PanelTypes] = []
         y = 0
 
-        ci_height = 12
-        panels.append(
-            wr.MediaBrowser(
-                media_keys=["causal_importances_upper_leaky"],
-                layout=wr.Layout(x=0, y=0, w=REPORT_TOTAL_WIDTH, h=ci_height),
-                num_columns=6,
+        if experiment_type in ["tms", "resid_mlp"]:
+            ci_height = 12
+            panels.append(
+                wr.MediaBrowser(
+                    media_keys=["eval/figures/causal_importances_upper_leaky"],
+                    layout=wr.Layout(x=0, y=0, w=REPORT_TOTAL_WIDTH, h=ci_height),
+                    num_columns=6,
+                )
             )
-        )
-        y += ci_height
+            y += ci_height
 
         loss_plots_height = 6
         loss_plots = [
-            ["loss/stochastic_recon_layerwise", "loss/stochastic_recon"],
-            ["loss/faithfulness"],
-            ["loss/importance_minimality"],
+            ["train/loss/stochastic_recon_layerwise", "train/loss/stochastic_recon"],
+            ["train/loss/faithfulness"],
+            ["train/loss/importance_minimality"],
         ]
         for i, y_keys in enumerate(loss_plots):
             loss_plots_width = REPORT_TOTAL_WIDTH // len(loss_plots)
@@ -291,14 +294,14 @@ def create_wandb_report(
             y += target_ci_weight
 
         # Only add KL loss plots for language model experiments
-        if EXPERIMENT_REGISTRY[experiment].experiment_type == "lm":
+        if experiment_type == "lm":
             kl_height = 6
-            kl_width = REPORT_TOTAL_WIDTH // 2
+            kl_width = REPORT_TOTAL_WIDTH // 3
             x_offset = 0
             panels.append(
                 wr.LinePlot(
                     x="Step",
-                    y=["misc/masked_kl_loss_vs_target"],
+                    y=["eval/kl/ci_masked"],
                     layout=wr.Layout(x=x_offset, y=y, w=kl_width, h=kl_height),
                 )
             )
@@ -306,11 +309,49 @@ def create_wandb_report(
             panels.append(
                 wr.LinePlot(
                     x="Step",
-                    y=["misc/unmasked_kl_loss_vs_target"],
+                    y=["eval/kl/unmasked"],
                     layout=wr.Layout(x=x_offset, y=y, w=kl_width, h=kl_height),
                 )
             )
+            x_offset += kl_width
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["eval/kl/stoch_masked"],
+                    layout=wr.Layout(x=x_offset, y=y, w=kl_width, h=kl_height),
+                )
+            )
+            x_offset += kl_width
             y += kl_height
+
+            ce_height = 6
+            ce_width = REPORT_TOTAL_WIDTH // 3
+            x_offset = 0
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["eval/ce_unrecovered/ci_masked"],
+                    layout=wr.Layout(x=x_offset, y=y, w=ce_width, h=ce_height),
+                )
+            )
+            x_offset += kl_width
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["eval/ce_unrecovered/unmasked"],
+                    layout=wr.Layout(x=x_offset, y=y, w=ce_width, h=ce_height),
+                )
+            )
+            x_offset += kl_width
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["eval/ce_unrecovered/stoch_masked"],
+                    layout=wr.Layout(x=x_offset, y=y, w=ce_width, h=ce_height),
+                )
+            )
+            x_offset += kl_width
+            y += ce_height
 
         if include_run_comparer:
             run_comparer_height = 10

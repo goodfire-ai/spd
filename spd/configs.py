@@ -2,9 +2,7 @@
 
 import importlib
 import inspect
-from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import Any, ClassVar, Literal, Self, override
+from typing import Any, ClassVar, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -26,62 +24,44 @@ from spd.models.components import GateType
 from spd.spd_types import ModelPath, Probability
 
 
-class _FnConfig(BaseModel, ABC):  # pyright: ignore[reportUnsafeMultipleInheritance]
+class EvalMetricConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    name: str = Field(
+    classname: str = Field(
         ...,
-        description="Name of the function to call",
+        description="Name of the class to instantiate",
     )
-    extra_kwargs: dict[str, Any] = Field(
+    extra_init_kwargs: dict[str, Any] = Field(
         default={},
-        description="Extra keyword arguments to pass to the function besides the default `inputs`",
+        description="Extra keyword arguments to pass to the class constructor besides `model: ComponentModel` and `config: Config`",
     )
 
-    @abstractmethod
-    def get_real_func(self) -> Callable[..., Any]: ...
+    def _get_metric_class(self) -> type:
+        available_classes = importlib.import_module("spd.eval").EVAL_CLASSES
+        cls = available_classes.get(self.classname)
+        if cls is None:
+            raise ValueError(
+                f"Metric class {self.classname!r} not found. Available classes: {available_classes.keys()}"
+            )
+        return cls
 
     @model_validator(mode="after")
-    def validate_fn_kwargs(self) -> Self:
-        real_fn = self.get_real_func()
+    def validate_class_kwargs(self) -> Self:
+        cls = self._get_metric_class()
 
-        # get its signature and drop the first 'inputs' parameter
-        sig = inspect.signature(real_fn)
-        params_after_inputs = list(sig.parameters.values())[1:]
-        sig_extra_only = inspect.Signature(params_after_inputs)
+        sig = inspect.signature(cls.__init__)
+        # Skip 'self' plus the first two actual parameters (model: ComponentModel, config: Config)
+        params_after_required = list(sig.parameters.values())[3:]
+        sig_extra_only = inspect.Signature(params_after_required)
 
         # see if our kwargs are valid
         try:
-            sig_extra_only.bind(**self.extra_kwargs)
+            sig_extra_only.bind(**self.extra_init_kwargs)
         except TypeError as e:
             # replace the error as e will include something like
             # "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
-            raise ValueError(f"Invalid kwargs for {self.name!r}: {e}") from None
+            raise ValueError(f"Invalid kwargs for {self.classname!r}: {e}") from None
 
         return self
-
-
-class FiguresFnConfig(_FnConfig):
-    @override
-    def get_real_func(self) -> Callable[..., Any]:
-        available_funcs = importlib.import_module("spd.figures").FIGURES_FNS
-        real_fn = available_funcs.get(self.name)
-        if real_fn is None:
-            raise ValueError(
-                f"Figure function {self.name!r} not found. Available functions: {available_funcs.keys()}"
-            )
-        return real_fn
-
-
-class MetricsFnConfig(_FnConfig):
-    @override
-    def get_real_func(self) -> Callable[..., Any]:
-        available_funcs = importlib.import_module("spd.metrics").METRICS_FNS
-        real_fn = available_funcs.get(self.name)
-        if real_fn is None:
-            raise ValueError(
-                f"Metric function {self.name!r} not found. Available functions: {available_funcs.keys()}"
-            )
-        return real_fn
 
 
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
@@ -186,8 +166,8 @@ class Config(BaseModel):
     batch_size: PositiveInt = Field(
         ...,
         description=(
-            "Mini-batch size used for optimisation. This is the EFFECTIVE batch size: Dependent "
-            "on gradient accumulation steps it may be processed as multiple micro-batches."
+            "The effective batch size used for optimisation. Depending on gradient accumulation "
+            "steps, it may be processed as multiple micro-batches."
         ),
     )
     gradient_accumulation_steps: PositiveInt = Field(
@@ -211,36 +191,40 @@ class Config(BaseModel):
         default=0.0,
         description="Fraction of total steps to linearly warm up the learning rate",
     )
-    n_eval_steps: PositiveInt = Field(
-        ...,
-        description="Frequency (in optimisation steps) at which to run evaluation",
-    )
 
     # --- Logging & Saving ---
-    image_freq: PositiveInt | None = Field(
-        default=None,
-        description="Interval (in steps) at which to log diagnostic images to WandB",
-    )
-    image_on_first_step: bool = Field(
-        default=True,
-        description="Whether to log images at optimisation step 0",
-    )
-    print_freq: PositiveInt = Field(
+    train_log_freq: PositiveInt = Field(
         ...,
-        description="Interval (in steps) at which to print training metrics to stdout",
+        description="Interval (in steps) at which to log training metrics",
+    )
+    eval_freq: PositiveInt = Field(
+        ...,
+        description="Interval (in steps) at which to log evaluation metrics",
+    )
+    eval_batch_size: PositiveInt = Field(
+        ...,
+        description="Batch size used for evaluation",
+    )
+    slow_eval_freq: PositiveInt = Field(
+        ...,
+        description="Interval (in steps) at which to run slow evaluation metrics. Must be a multiple of `eval_freq`.",
+    )
+    n_eval_steps: PositiveInt = Field(
+        ...,
+        description="Number of steps to run evaluation for",
+    )
+    slow_eval_on_first_step: bool = Field(
+        default=True,
+        description="Whether to run slow evaluation on the first step",
     )
     save_freq: PositiveInt | None = Field(
         default=None,
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    metrics_fns: list[MetricsFnConfig] = Field(
+    eval_metrics: list[EvalMetricConfig] = Field(
         default=[],
-        description="List of function configs to use for computing metrics. These configs refer to functions in the `spd.metrics` module.",
-    )
-    figures_fns: list[FiguresFnConfig] = Field(
-        default=[],
-        description="List of function configs to use for creating figures. These configs refer to functions in the `spd.figures` module.",
+        description="List of metrics to use for evaluation",
     )
 
     # --- Component Tracking ---
@@ -285,8 +269,13 @@ class Config(BaseModel):
         description="Nested task-specific configuration selected by the `task_name` discriminator",
     )
 
-    DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = []
-    RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {}
+    DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = [
+        "image_on_first_step",
+        "image_freq",
+        "metrics_fns",
+        "figures_fns",
+    ]
+    RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {"print_freq": "eval_freq"}
 
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
@@ -300,6 +289,13 @@ class Config(BaseModel):
                 logger.info(f"Renaming {key} to {cls.RENAMED_CONFIG_KEYS[key]}")
                 config_dict[cls.RENAMED_CONFIG_KEYS[key]] = val
                 del config_dict[key]
+
+        if "eval_batch_size" not in config_dict:
+            config_dict["eval_batch_size"] = config_dict["batch_size"]
+        if "train_log_freq" not in config_dict:
+            config_dict["train_log_freq"] = 50
+        if "slow_eval_freq" not in config_dict:
+            config_dict["slow_eval_freq"] = config_dict["eval_freq"]
         return config_dict
 
     @model_validator(mode="after")
@@ -321,6 +317,13 @@ class Config(BaseModel):
 
         assert self.batch_size % self.gradient_accumulation_steps == 0, (
             "batch_size must be divisible by gradient_accumulation_steps"
+        )
+
+        assert self.slow_eval_freq % self.eval_freq == 0, (
+            "slow_eval_freq must be a multiple of eval_freq"
+        )
+        assert self.slow_eval_freq // self.eval_freq >= 1, (
+            "slow_eval_freq must be at least eval_freq"
         )
 
         return self

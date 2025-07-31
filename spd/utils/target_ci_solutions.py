@@ -11,7 +11,7 @@ match expected target solutions in toy models:
 
 import fnmatch
 from abc import ABC, abstractmethod
-from typing import Any, Literal, override
+from typing import Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -317,8 +317,8 @@ def compute_target_metrics(
 
 
 def make_target_ci_solution(
-    identity_ci: list[dict[str, Any]] | None = None,
-    dense_ci: list[dict[str, Any]] | None = None,
+    identity_ci: list[dict[str, str | int]] | None = None,
+    dense_ci: list[dict[str, str | int]] | None = None,
 ) -> TargetCISolution | None:
     """Create a TargetCISolution from config specifications.
 

@@ -648,7 +648,9 @@ def _process_batch_for_contexts(
         )
 
     # Calculate L0 scores
-    ci_l_zero = calc_ci_l_zero(causal_importances=causal_importances)
+    ci_l_zero_vals: dict[str, float] = {}
+    for module_name, ci in causal_importances.items():
+        ci_l_zero_vals[module_name] = calc_ci_l_zero(ci, config.causal_importance_threshold)
 
     # Find activation contexts
     for module_name, ci in causal_importances.items():
@@ -693,7 +695,7 @@ def _process_batch_for_contexts(
 
                 component_contexts[module_name][component_idx].append(context)
 
-    return ci_l_zero
+    return ci_l_zero_vals
 
 
 def _calculate_average_l0_scores(
@@ -776,14 +778,14 @@ def find_component_activation_contexts(
             batch = extract_batch_data(next(data_iter))
             batch = batch.to(device)
 
-            ci_l_zero = _process_batch_for_contexts(
+            ci_l_zero_vals = _process_batch_for_contexts(
                 batch=batch,
                 model_data=_model_data,
                 component_contexts=component_contexts,
                 config=config,
             )
 
-            for layer_name, layer_ci_l_zero in ci_l_zero.items():
+            for layer_name, layer_ci_l_zero in ci_l_zero_vals.items():
                 l0_scores_sum[layer_name] += layer_ci_l_zero
             l0_scores_count += 1
 
