@@ -38,7 +38,7 @@ dbg_auto(cfg.task_config);
 
 # %%
 
-N_SAMPLES: int = 8
+N_SAMPLES: int = 4
 
 dataset_config = DatasetConfig(
     name=cfg.task_config.dataset_name,
@@ -85,7 +85,7 @@ dbg_auto(ci);
 coa = process_activations(
     ci,
     filter_dead_threshold=0.001,
-	seq_mode="seq_mean",
+	seq_mode="concat",
     plots=True,  # Plot the processed activations
     # plot_title="Processed Activations",
 );
@@ -99,7 +99,7 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
     merge_config=MergeConfig(
         activation_threshold=None,
         alpha=0.01,
-        iters=10,
+        iters=100,
         check_threshold=0.1,
         pop_component_prob=0.1,
         rank_cost_fn=lambda x: 1.0,
@@ -107,6 +107,8 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
     ),
 	ensemble_size=16,
 )
+
+
 # %%
 DISTANCES = ENSEMBLE.get_distances()
 

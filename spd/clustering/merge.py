@@ -16,9 +16,11 @@ from pydantic import (
 )
 from torch import Tensor
 import tqdm
+from muutils.dbg import dbg_auto
 from muutils.parallel import run_maybe_parallel
 
 from spd.clustering.merge_matrix import GroupMerge
+from spd.clustering.perm_invariant_hamming import perm_invariant_hamming_matrix
 from spd.spd_types import Probability
 
 
@@ -592,7 +594,7 @@ class MergeEnsemble:
         return len(self.data)
 
     @property
-    def merges_array(self) -> Float[np.ndarray, "n_ens n_iters c_components"]:
+    def merges_array(self) -> Int[np.ndarray, "n_ens n_iters c_components"]:
         n_ens: int = self.n_ensemble
         n_iters: int = self.n_iters
         c_components: int = self.data[0].c_components
@@ -600,9 +602,12 @@ class MergeEnsemble:
             h.c_components == c_components for h in self.data
         ), "All histories must have the same number of components"
 
-        output: Float[np.ndarray, "n_ens n_iters c_components"] = np.full(
+        output: Int[np.ndarray, "n_ens n_iters c_components"] = np.full(
             (n_ens, n_iters, c_components),
-            fill_value=float("nan"),
+            fill_value=-1,
+            dtype=np.int16,
+            # if you have more than 32k components, change this to np.int32
+            # if you have more than 2.1b components, rethink your life choices
         )
         for i_ens, history in enumerate(self.data):
             for i_iter, merge in enumerate(history.merges):
@@ -614,19 +619,23 @@ class MergeEnsemble:
     def get_distances(self) -> Float[np.ndarray, "n_iters n_ens n_ens"]:
         n_iters: int = self.n_iters
         n_ens: int = self.n_ensemble
-        distances: Float[np.ndarray, "n_iters n_ens n_ens"] = np.full(
-            (n_iters, n_ens, n_ens),
-            float("nan"),
+
+        merges_array: Int[np.ndarray, "n_ens n_iters c_components"] = self.merges_array
+        # for i in tqdm.tqdm(range(n_iters)):
+        #     distances[i] = perm_invariant_hamming_matrix(
+        #         merges_array[:, i, :]
+        #     )
+        merges_array_list: list[Int[np.ndarray, "n_ens c_components"]] = [
+            merges_array[:, i, :] for i in range(n_iters)
+        ]
+
+        distances_list: list[Float[np.ndarray, "n_ens n_ens"]] = run_maybe_parallel(
+            func=perm_invariant_hamming_matrix,
+            iterable=merges_array_list,
+            parallel=True,
         )
 
-        for i in tqdm.tqdm(range(n_iters)):
-            for j in range(len(self.data)):
-                for k in range(j):
-                    d = self.data[j].merges[i].dist(self.data[k].merges[i])
-                    distances[i, j, k] = d
-                    # diag and upper triangle stay nan
-
-        return distances
+        return np.stack(distances_list, axis=0)
     
 
 
