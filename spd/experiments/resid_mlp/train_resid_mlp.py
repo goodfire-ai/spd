@@ -1,4 +1,4 @@
-"""Trains a residual linear model on one-hot input vectors."""
+"""Trains a residual MLP model on one-hot input vectors."""
 
 import einops
 import torch
@@ -235,7 +235,7 @@ if __name__ == "__main__":
         n_batches_final_losses=10,
     )
     # # 2 layers
-    # config = ResidMLPTrainConfig(
+    # config = ResidualMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
     #     resid_mlp_model_config=ResidMLPModelConfig(
@@ -265,7 +265,7 @@ if __name__ == "__main__":
     #     n_batches_final_losses=10,
     # )
     # # 3 layers
-    # config = ResidMLPTrainConfig(
+    # config = ResidualMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
     #     resid_mlp_model_config=ResidMLPModelConfig(

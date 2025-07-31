@@ -204,7 +204,7 @@ def resolve_class(path: str) -> type[nn.Module]:
 
     Args:
         path: The path to the class, e.g. "transformers.LlamaForCausalLM" or
-            "spd.experiments.resid_mlp.models.ResidMLP"
+            "spd.experiments.resid_mlp.models.ResidualMLP"
     """
     module_path, _, class_name = path.rpartition(".")
     module = importlib.import_module(module_path)
@@ -320,7 +320,7 @@ def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None = None) -> P
     return latest_checkpoint_local
 
 
-def save_run_info(
+def save_pre_run_info(
     save_to_wandb: bool,
     out_dir: Path,
     spd_config: BaseModel,

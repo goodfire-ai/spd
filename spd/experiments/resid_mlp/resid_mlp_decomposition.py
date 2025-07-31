@@ -1,4 +1,4 @@
-"""Residual Linear decomposition script."""
+"""Residual MLP decomposition script."""
 
 import json
 from pathlib import Path
@@ -8,7 +8,10 @@ import wandb
 
 from spd.configs import Config
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
-from spd.experiments.resid_mlp.models import ResidMLP, ResidMLPTargetRunInfo
+from spd.experiments.resid_mlp.models import (
+    ResidMLP,
+    ResidMLPTargetRunInfo,
+)
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.log import logger
 from spd.run_spd import optimize
@@ -16,7 +19,7 @@ from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.general_utils import (
     get_device,
     load_config,
-    save_run_info,
+    save_pre_run_info,
     set_seed,
 )
 from spd.utils.run_utils import get_output_dir, save_file
@@ -62,7 +65,7 @@ def main(
         if config.wandb_run_name:
             wandb.run.name = config.wandb_run_name
 
-    save_run_info(
+    save_pre_run_info(
         save_to_wandb=config.wandb_project is not None,
         out_dir=out_dir,
         spd_config=config,
