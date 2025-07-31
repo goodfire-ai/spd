@@ -76,7 +76,7 @@ class TestSPDRun:
         assert "run_array_" in str(call_kwargs["script_path"])
 
         # Check job_name
-        assert call_kwargs["job_name"] == "spd"
+        assert call_kwargs["job_name"].startswith("spd")
 
         # Check commands list
         commands = call_kwargs["commands"]

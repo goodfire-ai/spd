@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import wandb
 import yaml
 from jaxtyping import Float
 from pydantic import BaseModel, PositiveFloat
@@ -19,7 +20,7 @@ from pydantic.v1.utils import deep_update
 from torch import Tensor
 
 from spd.log import logger
-from spd.spd_types import ModelPath
+from spd.utils.run_utils import save_file
 
 # Avoid seaborn package installation (sns.color_palette("colorblind").as_hex())
 COLOR_PALETTE = [
@@ -203,38 +204,11 @@ def resolve_class(path: str) -> type[nn.Module]:
 
     Args:
         path: The path to the class, e.g. "transformers.LlamaForCausalLM" or
-            "spd.experiments.resid_mlp.models.ResidMLP"
+            "spd.experiments.resid_mlp.models.ResidualMLP"
     """
     module_path, _, class_name = path.rpartition(".")
     module = importlib.import_module(module_path)
     return getattr(module, class_name)
-
-
-def load_pretrained(
-    path_to_class: str,
-    model_path: ModelPath | None = None,
-    model_name_hf: str | None = None,
-    **kwargs: Any,
-) -> nn.Module:
-    """Load a model from a path to the class and a model name or path.
-
-    Loads from either huggingface (if model_name_hf is provided) or from a wandb str or local path
-    (if model_path is provided).
-
-    Args:
-        path_to_class: The path to the class, e.g. "transformers.LlamaForCausalLM" or
-            "spd.experiments.resid_mlp.models.ResidMLP"
-        model_path: The path to the model, e.g. "wandb:spd/runs/zas5yjdl" or /path/to/checkpoint"
-        model_name_hf: The name of the model in the Hugging Face model hub,
-            e.g. "SimpleStories/SimpleStories-1.25M"
-    """
-    assert model_path is not None or model_name_hf is not None, (
-        "Either model_path or model_name_hf must be provided."
-    )
-    model_cls = resolve_class(path_to_class)
-    if not hasattr(model_cls, "from_pretrained"):
-        raise TypeError(f"{model_cls} lacks a `from_pretrained` method.")
-    return model_cls.from_pretrained(model_path or model_name_hf, **kwargs)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def extract_batch_data(
@@ -318,3 +292,61 @@ def runtime_cast[T](type_: type[T], obj: Any) -> T:
     if not isinstance(obj, type_):
         raise TypeError(f"Expected {type_}, got {type(obj)}")
     return obj
+
+
+def _fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None = None) -> str:
+    """Fetch the latest checkpoint name from a list of .pth files.
+
+    Assumes format is <name>_<step>.pth or <name>.pth.
+    """
+    if prefix:
+        filenames = [filename for filename in filenames if filename.startswith(prefix)]
+    if not filenames:
+        raise ValueError(f"No files found with prefix {prefix}")
+    if len(filenames) == 1:
+        latest_checkpoint_name = filenames[0]
+    else:
+        latest_checkpoint_name = sorted(
+            filenames, key=lambda x: int(x.split(".pth")[0].split("_")[-1])
+        )[-1]
+    return latest_checkpoint_name
+
+
+def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None = None) -> Path:
+    """Fetch the latest checkpoint from a local run directory."""
+    filenames = [file.name for file in run_dir.iterdir() if file.name.endswith(".pth")]
+    latest_checkpoint_name = _fetch_latest_checkpoint_name(filenames, prefix)
+    latest_checkpoint_local = run_dir / latest_checkpoint_name
+    return latest_checkpoint_local
+
+
+def save_pre_run_info(
+    save_to_wandb: bool,
+    out_dir: Path,
+    spd_config: BaseModel,
+    sweep_params: dict[str, Any] | None,
+    target_model: nn.Module | None,
+    train_config: BaseModel | None,
+    task_name: str | None,
+) -> None:
+    """Save run information locally and optionally to wandb."""
+
+    files_to_save = {
+        "final_config.yaml": spd_config.model_dump(mode="json"),
+    }
+
+    if target_model is not None:
+        files_to_save[f"{task_name}.pth"] = target_model.state_dict()
+
+    if train_config is not None:
+        files_to_save[f"{task_name}_train_config.yaml"] = train_config.model_dump(mode="json")
+
+    if sweep_params is not None:
+        files_to_save["sweep_params.yaml"] = sweep_params
+
+    for filename, data in files_to_save.items():
+        filepath = out_dir / filename
+        save_file(data, filepath)
+
+        if save_to_wandb:
+            wandb.save(str(filepath), base_path=out_dir, policy="now")

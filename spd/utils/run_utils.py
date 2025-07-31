@@ -1,7 +1,7 @@
 """Utilities for managing experiment run directories and IDs."""
 
 import json
-import random
+import secrets
 import string
 from pathlib import Path
 from typing import Any
@@ -24,12 +24,12 @@ def get_local_run_id() -> str:
     """
     # Generate 8 random characters (lowercase letters and digits)
     chars = string.ascii_lowercase + string.digits
-    random_suffix = "".join(random.choices(chars, k=8))
+    random_suffix = "".join(secrets.choice(chars) for _ in range(8))
 
     return f"local-{random_suffix}"
 
 
-def get_output_dir() -> Path:
+def get_output_dir(use_wandb_id: bool = True) -> Path:
     """Get the output directory for a run.
 
     If WandB is active, uses the WandB project and run ID. Otherwise, generates a local run ID.
@@ -38,7 +38,8 @@ def get_output_dir() -> Path:
         Path to the output directory
     """
     # Check if wandb is active and has a run
-    if wandb.run is not None:
+    if use_wandb_id:
+        assert wandb.run is not None, "WandB run is not active"
         # Get project name from wandb.run, fallback to "spd" if not available
         project = getattr(wandb.run, "project", "spd")
         run_id = f"{project}-{wandb.run.id}"

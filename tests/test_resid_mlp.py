@@ -1,18 +1,19 @@
-from spd.configs import Config, EvalMetricConfig, ResidualMLPTaskConfig
-from spd.experiments.resid_mlp.models import ResidualMLP, ResidualMLPConfig
-from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
+from spd.configs import Config
+from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
+from spd.experiments.resid_mlp.models import ResidMLP
+from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.general_utils import set_seed
 
 
 def test_resid_mlp_decomposition_happy_path() -> None:
-    """Test that SPD decomposition works on a 2-layer ResidualMLP model."""
+    """Test that SPD decomposition works on a 2-layer ResidMLP model."""
     set_seed(0)
     device = "cpu"
 
-    # Create a 2-layer ResidualMLP config
-    resid_mlp_config = ResidualMLPConfig(
+    # Create a 2-layer ResidMLP config
+    resid_mlp_model_config = ResidMLPModelConfig(
         n_features=5,
         d_embed=4,
         d_mlp=6,
@@ -22,7 +23,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         out_bias=True,
     )
 
-    # Create config similar to the 2-layer config in resid_mlp_config.yaml
+    # Create config similar to the 2-layer config in resid_mlp2_config.yaml
     config = Config(
         # WandB
         wandb_project=None,  # Disable wandb for testing
@@ -67,21 +68,15 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        eval_metrics=[
-            EvalMetricConfig(classname="CIHistograms"),
-            EvalMetricConfig(classname="ComponentActivationDensity"),
-            EvalMetricConfig(classname="UVandIdentityCI"),
-            EvalMetricConfig(classname="CI_L0"),
-        ],
         # Pretrained model info
-        pretrained_model_class="spd.experiments.resid_mlp.models.ResidualMLP",
+        pretrained_model_class="spd.experiments.resid_mlp.models.ResidMLP",
         pretrained_model_path=None,
         pretrained_model_name_hf=None,
         pretrained_model_output_attr=None,
         tokenizer_name=None,
         # Task Specific
-        task_config=ResidualMLPTaskConfig(
-            task_name="residual_mlp",
+        task_config=ResidMLPTaskConfig(
+            task_name="resid_mlp",
             feature_probability=0.01,
             data_generation_type="at_least_zero_active",
         ),
@@ -89,13 +84,13 @@ def test_resid_mlp_decomposition_happy_path() -> None:
 
     # Create a pretrained model
 
-    target_model = ResidualMLP(config=resid_mlp_config).to(device)
+    target_model = ResidMLP(config=resid_mlp_model_config).to(device)
     target_model.requires_grad_(False)
 
-    assert isinstance(config.task_config, ResidualMLPTaskConfig)
+    assert isinstance(config.task_config, ResidMLPTaskConfig)
     # Create dataset
-    dataset = ResidualMLPDataset(
-        n_features=resid_mlp_config.n_features,
+    dataset = ResidMLPDataset(
+        n_features=resid_mlp_model_config.n_features,
         feature_probability=config.task_config.feature_probability,
         device=device,
         calc_labels=False,  # Our labels will be the output of the target model

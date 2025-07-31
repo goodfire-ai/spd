@@ -1,4 +1,4 @@
-# ResidMLP 1 layer
+# ResidualMLP 1 layer
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null
@@ -45,15 +45,30 @@ n_examples_until_dead: 204_800
 eval_metrics:
   - classname: "CIHistograms"
   - classname: "ComponentActivationDensity"
-  - classname: "UVandIdentityCI"
+  - classname: "PermutedCIPlots"
+    extra_init_kwargs:
+      identity_patterns: ["layers.*.mlp_in"]
+      dense_patterns: ["layers.*.mlp_out"]
+  - classname: "UVPlots"
+    extra_init_kwargs:
+      identity_patterns: ["layers.*.mlp_in"]
+      dense_patterns: ["layers.*.mlp_out"]
+  - classname: "IdentityCIError"
+    extra_init_kwargs:
+      identity_ci:
+        - layer_pattern: "layers.0.mlp_in"
+          n_features: 100
+      dense_ci:
+        - layer_pattern: "layers.0.mlp_out"
+          k: 50
   - classname: "CI_L0"
 
 # --- Pretrained model info ---
-pretrained_model_class: "spd.experiments.resid_mlp.models.ResidualMLP"
-pretrained_model_path: "wandb:spd/runs/5mk5h1lk"
+pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"
+pretrained_model_path: "wandb:spd/runs/pziyck78"
 
 # --- Task Specific ---
 task_config:
-  task_name: residual_mlp
+  task_name: resid_mlp
   feature_probability: 0.01
   data_generation_type: "at_least_zero_active"

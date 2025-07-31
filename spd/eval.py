@@ -20,13 +20,18 @@ from torch import Tensor
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.plotting import (
+    get_single_feature_causal_importances,
     plot_causal_importance_vals,
     plot_ci_values_histograms,
     plot_component_activation_density,
     plot_UV_matrices,
 )
-from spd.utils.component_utils import calc_stochastic_masks, ci_l_zero
+from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
+from spd.utils.target_ci_solutions import (
+    compute_target_metrics,
+    make_target_ci_solution,
+)
 
 EvalMetricValue = float | int | Image.Image
 
@@ -64,7 +69,7 @@ class CI_L0(StreamingEval):
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         for layer_name, layer_ci in ci.items():
-            l0_val = ci_l_zero(layer_ci, self.l0_threshold)
+            l0_val = calc_ci_l_zero(layer_ci, self.l0_threshold)
             self.l0s[layer_name].append(l0_val)
 
     @override
@@ -256,17 +261,21 @@ class ComponentActivationDensity(StreamingEval):
         return {"figures/component_activation_density": fig}
 
 
-class UVandIdentityCI(StreamingEval):
+class PermutedCIPlots(StreamingEval):
     SLOW = True
 
     def __init__(
         self,
         model: ComponentModel,
         config: Config,
+        identity_patterns: list[str] | None = None,
+        dense_patterns: list[str] | None = None,
     ):
         self.model = model
         self.config = config
         self.device = next(iter(model.parameters())).device
+        self.identity_patterns = identity_patterns
+        self.dense_patterns = dense_patterns
 
         self.batch_shape = None
 
@@ -284,7 +293,111 @@ class UVandIdentityCI(StreamingEval):
     def compute(self) -> Mapping[str, Image.Image]:
         assert self.batch_shape is not None, "haven't seen any inputs yet"
 
-        figures, all_perm_indices = plot_causal_importance_vals(
+        figures = plot_causal_importance_vals(
+            model=self.model,
+            batch_shape=self.batch_shape,
+            device=self.device,
+            input_magnitude=0.75,
+            sigmoid_type=self.config.sigmoid_type,
+            identity_patterns=self.identity_patterns,
+            dense_patterns=self.dense_patterns,
+        )[0]
+
+        return {f"figures/{k}": v for k, v in figures.items()}
+
+
+class UVPlots(StreamingEval):
+    SLOW = True
+
+    def __init__(
+        self,
+        model: ComponentModel,
+        config: Config,
+        identity_patterns: list[str] | None = None,
+        dense_patterns: list[str] | None = None,
+    ):
+        self.model = model
+        self.config = config
+        self.device = next(iter(model.parameters())).device
+        self.identity_patterns = identity_patterns
+        self.dense_patterns = dense_patterns
+
+        self.batch_shape = None
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        if self.batch_shape is None:
+            self.batch_shape = batch.shape
+
+    @override
+    def compute(self) -> Mapping[str, Image.Image]:
+        assert self.batch_shape is not None, "haven't seen any inputs yet"
+
+        all_perm_indices = plot_causal_importance_vals(
+            model=self.model,
+            batch_shape=self.batch_shape,
+            device=self.device,
+            input_magnitude=0.75,
+            sigmoid_type=self.config.sigmoid_type,
+            identity_patterns=self.identity_patterns,
+            dense_patterns=self.dense_patterns,
+        )[1]
+
+        uv_matrices = plot_UV_matrices(
+            components=self.model.components, all_perm_indices=all_perm_indices
+        )
+
+        return {"figures/uv_matrices": uv_matrices}
+
+
+class IdentityCIError(StreamingEval):
+    SLOW = True
+
+    def __init__(
+        self,
+        model: ComponentModel,
+        config: Config,
+        identity_ci: list[dict[str, str | int]] | None = None,
+        dense_ci: list[dict[str, str | int]] | None = None,
+    ):
+        self.model = model
+        self.config = config
+        self.device = next(iter(model.parameters())).device
+        self.identity_ci = identity_ci
+        self.dense_ci = dense_ci
+
+        self.batch_shape = None
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        if self.batch_shape is None:
+            self.batch_shape = batch.shape
+
+    @override
+    def compute(self) -> Mapping[str, float]:
+        assert self.batch_shape is not None, "haven't seen any inputs yet"
+
+        # Create target solution from config parameters
+        target_solution = make_target_ci_solution(
+            identity_ci=self.identity_ci,
+            dense_ci=self.dense_ci,
+        )
+
+        if target_solution is None:
+            return {}
+
+        # Get causal importance arrays using single active features
+        ci_arrays, _ = get_single_feature_causal_importances(
             model=self.model,
             batch_shape=self.batch_shape,
             device=self.device,
@@ -292,14 +405,12 @@ class UVandIdentityCI(StreamingEval):
             sigmoid_type=self.config.sigmoid_type,
         )
 
-        uv_matrices_fig = plot_UV_matrices(
-            components=self.model.components, all_perm_indices=all_perm_indices
+        target_metrics = compute_target_metrics(
+            causal_importances=ci_arrays,
+            target_solution=target_solution,
         )
 
-        return {
-            **{f"figures/{k}": v for k, v in figures.items()},
-            "figures/uv_matrices": uv_matrices_fig,
-        }
+        return target_metrics
 
 
 EVAL_CLASSES = {
@@ -309,7 +420,9 @@ EVAL_CLASSES = {
         CEandKLLosses,
         CIHistograms,
         ComponentActivationDensity,
-        UVandIdentityCI,
+        PermutedCIPlots,
+        UVPlots,
+        IdentityCIError,
     ]
 }
 

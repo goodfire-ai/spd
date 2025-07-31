@@ -32,7 +32,7 @@ import yaml
 
 from spd.configs import Config
 from spd.log import LogFormat, logger
-from spd.registry import EXPERIMENT_REGISTRY
+from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
 from spd.utils.general_utils import apply_nested_updates, load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
@@ -270,6 +270,28 @@ def create_wandb_report(
                 )
             )
         y += loss_plots_height
+
+        if EXPERIMENT_REGISTRY[experiment].experiment_type in ["tms", "resid_mlp"]:
+            # Add target CI error plots
+            target_ci_weight = 6
+            target_ci_width = REPORT_TOTAL_WIDTH // 2
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["target_solution_error/total"],
+                    title="Target CI Error (Tolerance=0.1)",
+                    layout=wr.Layout(x=0, y=y, w=target_ci_width, h=target_ci_weight),
+                )
+            )
+            panels.append(
+                wr.LinePlot(
+                    x="Step",
+                    y=["target_solution_error/total_0p2"],
+                    title="Target CI Error (Tolerance=0.2)",
+                    layout=wr.Layout(x=target_ci_width, y=y, w=target_ci_width, h=target_ci_weight),
+                )
+            )
+            y += target_ci_weight
 
         # Only add KL loss plots for language model experiments
         if experiment_type == "lm":
@@ -702,7 +724,11 @@ def main(
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             array_script = temp_path / f"run_array_{run_id}.sh"
-            job_name = f"spd-{job_suffix}" if job_suffix else "spd"
+            if job_suffix is None:
+                expected_time_str = get_max_expected_runtime(experiments_list)
+                job_name = f"spd-{expected_time_str}"
+            else:
+                job_name = f"spd-{job_suffix}"
 
             create_slurm_array_script(
                 script_path=array_script,

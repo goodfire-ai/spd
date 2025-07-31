@@ -1,19 +1,22 @@
 import tempfile
 from pathlib import Path
-from typing import Self, override
+from typing import Any, override
 
 import pytest
 import torch
 from jaxtyping import Float
 from torch import Tensor, nn
 
-from spd.configs import Config, TMSTaskConfig
-from spd.models.component_model import ComponentModel
+from spd.configs import Config
+from spd.experiments.tms.configs import TMSTaskConfig
+from spd.interfaces import LoadableModule, RunInfo
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import ComponentsOrModule, EmbeddingComponents, LinearComponents
+from spd.spd_types import ModelPath
 from spd.utils.run_utils import save_file
 
 
-class SimpleTestModel(nn.Module):
+class SimpleTestModel(LoadableModule):
     """Simple test model with Linear and Embedding layers for unit‑testing."""
 
     LINEAR_1_SHAPE = (10, 5)
@@ -32,7 +35,15 @@ class SimpleTestModel(nn.Module):
         return self.linear2(self.linear1(x))
 
     @classmethod
-    def from_pretrained(cls, path: Path) -> Self:
+    @override
+    def from_run_info(cls, run_info: RunInfo[Any]) -> "SimpleTestModel":
+        model = cls()
+        model.load_state_dict(torch.load(run_info.checkpoint_path))
+        return model
+
+    @classmethod
+    @override
+    def from_pretrained(cls, path: ModelPath) -> "SimpleTestModel":
         model = cls()
         model.load_state_dict(torch.load(path))
         return model
@@ -181,7 +192,7 @@ def test_correct_parameters_require_grad(component_model: ComponentModel):
             assert cm.components.V.requires_grad
 
 
-def test_from_pretrained_model_works():
+def test_from_run_info_works():
     target_model = SimpleTestModel()
     target_model.eval()
     target_model.requires_grad_(False)
@@ -236,8 +247,9 @@ def test_from_pretrained_model_works():
         save_file(cm.state_dict(), comp_model_dir / "model.pth")
         save_file(config.model_dump(mode="json"), comp_model_dir / "final_config.yaml")
 
-        cm_loaded, config_loaded, _ = ComponentModel.from_pretrained(comp_model_dir / "model.pth")
+        cm_run_info = SPDRunInfo.from_path(comp_model_dir / "model.pth")
+        cm_loaded = ComponentModel.from_run_info(cm_run_info)
 
-        assert config == config_loaded
+        assert config == cm_run_info.config
         for k, v in cm_loaded.state_dict().items():
             torch.testing.assert_close(v, cm.state_dict()[k])

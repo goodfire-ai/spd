@@ -1003,7 +1003,7 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # Load models
-        model = ComponentModel.from_pretrained(run_id)[0]
+        model = ComponentModel.from_pretrained(run_id)
         patched_model = model.patched_model
         assert isinstance(patched_model, TMSModel)
 

@@ -21,7 +21,7 @@ from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
-from spd.utils.component_utils import ci_l_zero
+from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import (
     extract_batch_data,
     get_lr_schedule_fn,
@@ -174,7 +174,7 @@ def optimize(
                 )
 
             for layer_name, layer_ci in causal_importances.items():
-                l0_val = ci_l_zero(layer_ci, config.ci_alive_threshold)
+                l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
                 microbatch_log_data[f"train/{layer_name}/l0"] += (
                     l0_val / config.gradient_accumulation_steps
                 )

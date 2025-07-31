@@ -1,8 +1,7 @@
 # SPD - Stochastic Parameter Decomposition
 The main branch contains code used in the paper [Stochastic Parameter Decomposition](https://arxiv.org/abs/2506.20790)
 
-**Note: The [dev](https://github.com/goodfire-ai/spd/tree/dev) branch contains all of Goodfire's
-work on the paramter decomposition direction since this paper's release. This is now an open source
+**Note: The [dev](https://github.com/goodfire-ai/spd/tree/dev) branch contains active work from Goodfire and collaborators since this paper's release. This is now an open source
 research project. Please feel free to view the issues (or add to them) and make a PR to the dev branch!**
 
 Weights and Bias [report](https://wandb.ai/goodfire/spd-tms/reports/SPD-paper-report--VmlldzoxMzE3NzU0MQ) accompanying the paper.
@@ -54,9 +53,9 @@ spd-run                                          # Run all experiments
 - `tms_5-2-id` - TMS with 5 features, 2 hidden dimensions (fixed identity in-between)
 - `tms_40-10` - TMS with 40 features, 10 hidden dimensions  
 - `tms_40-10-id` - TMS with 40 features, 10 hidden dimensions (fixed identity in-between)
-- `resid_mlp1` - ResidMLP with 1 layer
-- `resid_mlp2` - ResidMLP with 2 layers
-- `resid_mlp3` - ResidMLP with 3 layers
+- `resid_mlp1` - ResidualMLP with 1 layer
+- `resid_mlp2` - ResidualMLP with 2 layers
+- `resid_mlp3` - ResidualMLP with 3 layers
 
 #### Sweeps
 For running parameter sweeps on a SLURM cluster:
@@ -68,7 +67,7 @@ spd-run --experiments <experiment_name> --sweep --n_agents <n_agents> [--cpu] [-
 **Examples:**
 ```bash
 spd-run --experiments tms_5-2 --sweep --n_agents 4            # Run TMS 5-2 sweep with 4 GPU agents
-spd-run --experiments resid_mlp2 --sweep --n_agents 3 --cpu   # Run ResidMLP2 sweep with 3 CPU agents
+spd-run --experiments resid_mlp2 --sweep --n_agents 3 --cpu   # Run ResidualMLP2 sweep with 3 CPU agents
 spd-run --sweep --n_agents 10                                 # Sweep all experiments with 10 agents
 spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom sweep params file
 ```

@@ -41,8 +41,24 @@ n_examples_until_dead: 4_096_000
 eval_metrics:
   - classname: "CIHistograms"
   - classname: "ComponentActivationDensity"
-  - classname: "UVandIdentityCI"
+  - classname: "PermutedCIPlots"
+    extra_init_kwargs:
+      identity_patterns: ["linear1", "linear2"]
+  - classname: "UVPlots"
+    extra_init_kwargs:
+      identity_patterns: ["linear1", "linear2"]
+  - classname: "IdentityCIError"
+    extra_init_kwargs:
+      identity_ci:
+        - layer_pattern: "linear1"
+          n_features: 40
+        - layer_pattern: "linear2"
+          n_features: 40
+      dense_ci:
+        - layer_pattern: "hidden_layers.0"
+          k: 10
   - classname: "CI_L0"
+
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"

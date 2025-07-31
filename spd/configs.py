@@ -15,6 +15,10 @@ from pydantic import (
     model_validator,
 )
 
+from spd.experiments.ih.configs import IHTaskConfig
+from spd.experiments.lm.configs import LMTaskConfig
+from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
+from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
 from spd.models.components import GateType
 from spd.spd_types import ModelPath, Probability
@@ -60,70 +64,7 @@ class EvalMetricConfig(BaseModel):
         return self
 
 
-class TMSTaskConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    task_name: Literal["tms"] = Field(
-        default="tms",
-        description="Task identifier for TMS",
-    )
-    feature_probability: Probability = Field(
-        ...,
-        description="Probability that a given feature is active in generated data",
-    )
-    data_generation_type: Literal["exactly_one_active", "at_least_zero_active"] = Field(
-        default="at_least_zero_active",
-        description="Strategy for generating synthetic data for TMS training",
-    )
-
-
-class ResidualMLPTaskConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    task_name: Literal["residual_mlp"] = Field(
-        default="residual_mlp",
-        description="Identifier for the residual-MLP decomposition task",
-    )
-    feature_probability: Probability = Field(
-        ...,
-        description="Probability that a given feature is active in generated data",
-    )
-    data_generation_type: Literal[
-        "exactly_one_active", "exactly_two_active", "at_least_zero_active"
-    ] = Field(
-        default="at_least_zero_active",
-        description="Strategy for generating synthetic data for residual-MLP training",
-    )
-
-
-class LMTaskConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    task_name: Literal["lm"] = Field(
-        default="lm",
-        description="Identifier for the language-model decomposition task",
-    )
-    max_seq_len: PositiveInt = Field(
-        default=512,
-        description="Maximum sequence length to truncate or pad inputs to",
-    )
-    buffer_size: PositiveInt = Field(
-        default=1000,
-        description="Buffered sample count for streaming dataset shuffling",
-    )
-    dataset_name: str = Field(
-        default="lennart-finke/SimpleStories",
-        description="HuggingFace dataset identifier to use for the LM task",
-    )
-    column_name: str = Field(
-        default="story",
-        description="Dataset column that contains the text to train on",
-    )
-    train_data_split: str = Field(
-        default="train",
-        description="Name of the dataset split used for training",
-    )
-    eval_data_split: str = Field(
-        default="test",
-        description="Name of the dataset split used for evaluation",
-    )
+TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
 class Config(BaseModel):
@@ -301,7 +242,7 @@ class Config(BaseModel):
         ...,
         description="Fully-qualified class name of the pretrained model to load. Can be defined "
         "locally or an in external package (e.g. 'transformers.LlamaForCausalLM' or "
-        "'spd.experiments.resid_mlp.models.ResidualMLP').",
+        "'spd.experiments.resid_mlp.models.ResidMLP').",
     )
     pretrained_model_path: ModelPath | None = Field(
         default=None,
@@ -322,7 +263,7 @@ class Config(BaseModel):
     )
 
     # --- Task Specific ---
-    task_config: TMSTaskConfig | ResidualMLPTaskConfig | LMTaskConfig = Field(
+    task_config: TaskConfig = Field(
         ...,
         discriminator="task_name",
         description="Nested task-specific configuration selected by the `task_name` discriminator",
