@@ -1,7 +1,8 @@
 """Test loading models from wandb runs.
 
-If these tests fail and some canonical runs need to be updated, see spd/scripts/run.py for running
-experiments with the canonical configs.
+If these tests fail, you should consider making your changes backwards compatible so these do run.
+If you're willing to make breaking changes, see spd/scripts/run.py for creating new runs with
+the canonical configs, and update the registry with your new run(s).
 """
 
 import pytest
