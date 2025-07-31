@@ -163,7 +163,7 @@
                 "2000",
                 "--",
                 "--model_path",
-                "wandb:spd/runs/ioprgffh"
+                "wandb:goodfire/spd/runs/ioprgffh"
             ]
         }
     ]
