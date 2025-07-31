@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Float
+from PIL import Image
 from torch import Tensor, nn
 
 from spd.configs import Config
@@ -676,13 +677,12 @@ def main():
             return mask_name  # Fallback to original if pattern doesn't match
 
         batch_shape = (1, patched_model.config.n_features)
-        figs_causal = plot_causal_importance_vals(
+        figs_causal: dict[str, Image.Image] = plot_causal_importance_vals(
             model=model,
             batch_shape=batch_shape,
             device=device,
             input_magnitude=0.75,
             plot_raw_cis=False,
-            orientation="vertical",
             title_formatter=format_resid_mlp_title,
             sigmoid_type=config.sigmoid_type,
         )[0]
@@ -690,11 +690,7 @@ def main():
         fname_importances = (
             out_dir / f"causal_importance_upper_leaky_{n_layers}layers_{wandb_id}.png"
         )
-        figs_causal["causal_importances_upper_leaky"].savefig(
-            fname_importances,
-            bbox_inches="tight",
-            dpi=500,
-        )
+        figs_causal["causal_importances_upper_leaky"].save(fname_importances)
         logger.info(f"Saved figure to {fname_importances}")
 
         ##### Resid_mlp 1-layer varying sparsity ####

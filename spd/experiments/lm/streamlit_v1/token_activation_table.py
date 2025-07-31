@@ -317,7 +317,9 @@ def _process_batch_for_tokens(
         )
 
     # Calculate L0 scores for this batch
-    ci_l_zero = calc_ci_l_zero(causal_importances=causal_importances)
+    ci_l_zero_vals: dict[str, float] = {}
+    for module_name, ci in causal_importances.items():
+        ci_l_zero_vals[module_name] = calc_ci_l_zero(ci, config.causal_importance_threshold)
 
     for module_name, ci in causal_importances.items():
         assert ci.ndim == 3, "CI must be 3D (batch, seq_len, C)"
@@ -347,7 +349,7 @@ def _process_batch_for_tokens(
                 component_token_activations[module_name][component_idx][token_id] += 1
                 component_token_ci_values[module_name][component_idx][token_id].append(ci_val)
 
-    return tokens_processed, ci_l_zero
+    return tokens_processed, ci_l_zero_vals
 
 
 def _prepare_component_table_data(
@@ -466,7 +468,7 @@ def analyze_component_token_table(
 
         batch = extract_batch_data(batch_data).to(device)
 
-        tokens_in_batch, ci_l_zero = _process_batch_for_tokens(
+        tokens_in_batch, ci_l_zero_vals = _process_batch_for_tokens(
             batch=batch,
             model_data=_model_data,
             component_token_activations=component_token_activations,
@@ -477,7 +479,7 @@ def analyze_component_token_table(
 
         total_tokens_processed += tokens_in_batch
 
-        for layer_name, layer_ci_l_zero in ci_l_zero.items():
+        for layer_name, layer_ci_l_zero in ci_l_zero_vals.items():
             l0_scores_sum[layer_name] += layer_ci_l_zero
         l0_scores_count += 1
 

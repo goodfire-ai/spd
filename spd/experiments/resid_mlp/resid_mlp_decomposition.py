@@ -96,7 +96,7 @@ def main(
         dataset, batch_size=config.microbatch_size, shuffle=False
     )
     eval_loader = DatasetGeneratedDataLoader(
-        dataset, batch_size=config.microbatch_size, shuffle=False
+        dataset, batch_size=config.eval_batch_size, shuffle=False
     )
 
     # TODO: Below not needed when TMS supports config.n_eval_steps

@@ -1,4 +1,4 @@
-from spd.configs import Config, FiguresFnConfig, MetricsFnConfig
+from spd.configs import Config, EvalMetricConfig
 from spd.experiments.ih.configs import IHTaskConfig, InductionModelConfig
 from spd.experiments.ih.model import InductionTransformer
 from spd.run_spd import optimize
@@ -60,18 +60,18 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         lr_warmup_pct=0.01,
         n_eval_steps=1,
         # Logging & Saving
-        image_freq=None,
-        image_on_first_step=True,
-        print_freq=50,  # Print at step 0, 50, and 100
+        train_log_freq=50,  # Print at step 0, 50, and 100
+        eval_freq=500,
+        eval_batch_size=1,
+        slow_eval_freq=500,
+        slow_eval_on_first_step=True,
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        figures_fns=[
-            FiguresFnConfig(name="ci_histograms"),
-            FiguresFnConfig(name="mean_component_activation_counts"),
-        ],
-        metrics_fns=[
-            MetricsFnConfig(name="ci_l0"),
+        eval_metrics=[
+            EvalMetricConfig(classname="CIHistograms"),
+            EvalMetricConfig(classname="ComponentActivationDensity"),
+            EvalMetricConfig(classname="CI_L0"),
         ],
         # Pretrained model info
         pretrained_model_class="spd.experiments.ih.model.InductionTransformer",
