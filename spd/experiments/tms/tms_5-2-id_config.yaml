@@ -44,9 +44,11 @@ eval_metrics:
   - classname: "PermutedCIPlots"
     extra_init_kwargs:
       identity_patterns: ["linear1", "linear2"]
+      dense_patterns: ["hidden_layers.0"]
   - classname: "UVPlots"
     extra_init_kwargs:
       identity_patterns: ["linear1", "linear2"]
+      dense_patterns: ["hidden_layers.0"]
   - classname: "IdentityCIError"
     extra_init_kwargs:
       identity_ci:

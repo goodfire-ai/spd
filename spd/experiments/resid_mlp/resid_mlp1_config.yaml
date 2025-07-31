@@ -56,10 +56,10 @@ eval_metrics:
   - classname: "IdentityCIError"
     extra_init_kwargs:
       identity_ci:
-        - layer_pattern: "layers.0.mlp_in"
+        - layer_pattern: "layers.*.mlp_in"
           n_features: 100
       dense_ci:
-        - layer_pattern: "layers.0.mlp_out"
+        - layer_pattern: "layers.*.mlp_out"
           k: 50
   - classname: "CI_L0"
 
