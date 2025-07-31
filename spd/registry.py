@@ -77,7 +77,6 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
 }
 
 
-resid_mlp1,resid_mlp2,resid_mlp3
 
 def get_max_expected_runtime(experiments_list: list[str]) -> str:
     """Get the max expected runtime of a list of experiments in XhYm format.
@@ -106,11 +105,12 @@ def get_experiment_config_file_contents(key: str) -> dict[str, Any]:
 
 
 CANONICAL_RUNS: dict[str, str] = {
-    "tms_5-2": "wandb:goodfire/spd/runs/u9lslp82",
-    "tms_5-2-id": "wandb:goodfire/spd/runs/hm77qg0d",
-    "tms_40-10": "wandb:goodfire/spd/runs/pwj1eaj2",
-    "tms_40-10-id": "wandb:goodfire/spd/s2yj41ak",
-    "resid_mlp1": "wandb:goodfire/spd/runs/pzauyxx8",
+    "tms_5-2": "wandb:goodfire/spd/runs/uq1mwr7k",
+    "tms_5-2-id": "wandb:goodfire/spd/runs/i6bptp4y",
+    "tms_40-10": "wandb:goodfire/spd/runs/wg3spxn9",
+    "tms_40-10-id": "wandb:goodfire/spd/2v0sl1ga",
+    "resid_mlp1": "wandb:goodfire/spd/runs/5knhdur4",
+    "resid_mlp2": "wandb:goodfire/spd/runs/kka9ocmy",
 }
 """this should be a dictionary mapping experiment registry keys to a canonical run for that experiment.
 The run doesn't have to be the absolute best decomposition, but should be a run that is guaranteed to load without errors -- `tests/test_model_loading.py` will test this.

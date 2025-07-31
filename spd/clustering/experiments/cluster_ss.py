@@ -9,9 +9,9 @@ from spd.clustering.merge import (
     MergeConfig,
     MergePlotConfig,
     merge_iteration_ensemble,
-    plot_dists_distribution,
 	MergeEnsemble,
 )
+from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.data import DatasetConfig, create_data_loader
 from datasets import load_dataset
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
@@ -104,17 +104,6 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
         pop_component_prob=0.1,
         rank_cost_fn=lambda x: 1.0,
         stopping_condition=None,
-    ),
-    plot_config=MergePlotConfig(
-        plot_every=999,
-        plot_every_min=999,
-		# plot_every=5,
-        save_pdf=False,
-        # pdf_prefix="merge_iteration",
-        figsize=(16, 3),
-        figsize_final=(10, 6),
-        tick_spacing=10,
-        plot_final=False,
     ),
 	ensemble_size=16,
 )

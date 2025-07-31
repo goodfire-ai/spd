@@ -4,7 +4,7 @@ import random
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import torch
@@ -289,10 +289,10 @@ class MergePlotConfig(BaseModel):
     plot_final: bool = True
 
 
-@dataclass
 class MergeHistory:
     """Track merge iteration history with validation."""
 
+    c_components: int
     non_diag_costs_min: list[float]
     non_diag_costs_max: list[float]
     max_considered_cost: list[float]
@@ -303,7 +303,8 @@ class MergeHistory:
     config: MergeConfig | None = None  # Configuration used for this merge
     sweep_params: dict[str, Any] | None = None  # Sweep parameters if used in sweep
 
-    def __init__(self, config: MergeConfig | None = None) -> None:
+    def __init__(self, config: MergeConfig, c_components: int) -> None:
+        self.c_components = c_components
         self.non_diag_costs_min = []
         self.non_diag_costs_max = []
         self.max_considered_cost = []
@@ -448,7 +449,7 @@ def merge_iteration(
     i: int = 0
 
     # variables we keep track of
-    merge_history = MergeHistory(config=merge_config)
+    merge_history = MergeHistory(config=merge_config, c_components=c_components)
 
     # merge iteration
     # ==================================================
@@ -589,6 +590,25 @@ class MergeEnsemble:
     def n_ensemble(self) -> int:
         """Number of ensemble members."""
         return len(self.data)
+
+    @property
+    def merges_array(self) -> Float[np.ndarray, "n_ens n_iters c_components"]:
+        n_ens: int = self.n_ensemble
+        n_iters: int = self.n_iters
+        c_components: int = self.data[0].c_components
+        assert all(
+            h.c_components == c_components for h in self.data
+        ), "All histories must have the same number of components"
+
+        output: Float[np.ndarray, "n_ens n_iters c_components"] = np.full(
+            (n_ens, n_iters, c_components),
+            fill_value=float("nan"),
+        )
+        for i_ens, history in enumerate(self.data):
+            for i_iter, merge in enumerate(history.merges):
+                output[i_ens, i_iter] = merge.group_idxs
+
+        return output
 
 
     def get_distances(self) -> Float[np.ndarray, "n_iters n_ens n_ens"]:
