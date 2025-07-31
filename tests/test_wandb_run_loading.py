@@ -1,39 +1,37 @@
 """Test loading models from wandb runs.
 
-If the CANONICAL_RUNS needs to be updated, you can do so with `spd-run`. See spd/scripts/run.py
-for more details.
+If these tests fail and some canonical runs need to be updated, see spd/scripts/run.py for running
+experiments with the canonical configs.
 """
 
 import pytest
 
 from spd.models.component_model import ComponentModel, SPDRunInfo
-
-CANONICAL_RUNS: dict[str, str] = {
-    "tms_5-2": "wandb:goodfire/spd/runs/u9lslp82",
-    "tms_5-2-id": "wandb:goodfire/spd/runs/hm77qg0d",
-    "tms_40-10": "wandb:goodfire/spd/runs/pwj1eaj2",
-    "tms_40-10-id": "wandb:goodfire/spd/s2yj41ak",
-    "resid_mlp1": "wandb:goodfire/spd/runs/pzauyxx8",
-    "ss_mlp": "wandb:spd/runs/ioprgffh",
-}
+from spd.registry import EXPERIMENT_REGISTRY
 
 
 @pytest.mark.slow
 def test_wandb_loading_run_info():
-    for exp_name, model_path in CANONICAL_RUNS.items():
+    for exp_name, exp_config in EXPERIMENT_REGISTRY.items():
+        if exp_config.canonical_run is None:
+            # No canonical run for this experiment
+            continue
         try:
-            run_info = SPDRunInfo.from_path(model_path)
+            run_info = SPDRunInfo.from_path(exp_config.canonical_run)
             ComponentModel.from_run_info(run_info)
         except Exception as e:
-            e.add_note(f"Error loading {exp_name} from {model_path}")
+            e.add_note(f"Error loading {exp_name} from {exp_config.canonical_run}")
             raise e
 
 
 @pytest.mark.slow
 def test_wandb_loading_pretrained_model():
-    for exp_name, model_path in CANONICAL_RUNS.items():
+    for exp_name, exp_config in EXPERIMENT_REGISTRY.items():
+        if exp_config.canonical_run is None:
+            # No canonical run for this experiment
+            continue
         try:
-            ComponentModel.from_pretrained(model_path)
+            ComponentModel.from_pretrained(exp_config.canonical_run)
         except Exception as e:
-            e.add_note(f"Error loading {exp_name} from {model_path}")
+            e.add_note(f"Error loading {exp_name} from {exp_config.canonical_run}")
             raise e

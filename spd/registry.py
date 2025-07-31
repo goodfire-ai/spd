@@ -23,6 +23,7 @@ class ExperimentConfig:
     decomp_script: Path
     config_path: Path
     expected_runtime: int
+    canonical_run: str | None = None
 
 
 EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
@@ -31,42 +32,49 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
         config_path=Path("spd/experiments/tms/tms_5-2_config.yaml"),
         expected_runtime=4,
+        canonical_run="wandb:goodfire/spd/runs/u9lslp82",
     ),
     "tms_5-2-id": ExperimentConfig(
         experiment_type="tms",
         decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
         config_path=Path("spd/experiments/tms/tms_5-2-id_config.yaml"),
         expected_runtime=4,
+        canonical_run="wandb:goodfire/spd/runs/hm77qg0d",
     ),
     "tms_40-10": ExperimentConfig(
         experiment_type="tms",
         decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
         config_path=Path("spd/experiments/tms/tms_40-10_config.yaml"),
         expected_runtime=5,
+        canonical_run="wandb:goodfire/spd/runs/pwj1eaj2",
     ),
     "tms_40-10-id": ExperimentConfig(
         experiment_type="tms",
         decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
         config_path=Path("spd/experiments/tms/tms_40-10-id_config.yaml"),
         expected_runtime=5,
+        canonical_run="wandb:goodfire/spd/s2yj41ak",
     ),
     "resid_mlp1": ExperimentConfig(
         experiment_type="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
         config_path=Path("spd/experiments/resid_mlp/resid_mlp1_config.yaml"),
         expected_runtime=3,
+        canonical_run="wandb:goodfire/spd/runs/pzauyxx8",
     ),
     "resid_mlp2": ExperimentConfig(
         experiment_type="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
         config_path=Path("spd/experiments/resid_mlp/resid_mlp2_config.yaml"),
         expected_runtime=11,
+        canonical_run=None,
     ),
     "resid_mlp3": ExperimentConfig(
         experiment_type="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
         config_path=Path("spd/experiments/resid_mlp/resid_mlp3_config.yaml"),
         expected_runtime=60,
+        canonical_run=None,
     ),
     # "ss_emb": ExperimentConfig(
     #     experiment_type="lm",
