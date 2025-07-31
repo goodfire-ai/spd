@@ -10,7 +10,6 @@ import torch.nn.functional as F
 import wandb
 import yaml
 from jaxtyping import Float
-from pydantic import BaseModel
 from torch import Tensor, nn
 from wandb.apis.public import Run
 
@@ -25,14 +24,6 @@ from spd.utils.wandb_utils import (
     fetch_latest_wandb_checkpoint,
     fetch_wandb_run_dir,
 )
-
-
-class ResidualMLPPaths(BaseModel):
-    """Paths to output files from a ResidualMLPModel training run."""
-
-    resid_mlp_train_config: Path
-    label_coeffs: Path
-    checkpoint: Path
 
 
 @dataclass
@@ -50,32 +41,30 @@ class ResidualMLPTargetRunInfo(RunInfo[ResidualMLPTrainConfig]):
             run_dir = check_run_exists(path)
             if run_dir:
                 # Use local files from shared filesystem
-                paths = ResidualMLPPaths(
-                    resid_mlp_train_config=run_dir / "resid_mlp_train_config.yaml",
-                    label_coeffs=run_dir / "label_coeffs.json",
-                    checkpoint=run_dir / "resid_mlp.pth",
-                )
+                resid_mlp_train_config_path = run_dir / "resid_mlp_train_config.yaml"
+                label_coeffs_path = run_dir / "label_coeffs.json"
+                checkpoint_path = run_dir / "resid_mlp.pth"
             else:
                 # Download from wandb
                 wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-                paths = ResidualMLP._download_wandb_files(wandb_path)
+                resid_mlp_train_config_path, label_coeffs_path, checkpoint_path = (
+                    ResidualMLP._download_wandb_files(wandb_path)
+                )
         else:
             # `path` should be a local path to a checkpoint
-            paths = ResidualMLPPaths(
-                resid_mlp_train_config=Path(path).parent / "resid_mlp_train_config.yaml",
-                label_coeffs=Path(path).parent / "label_coeffs.json",
-                checkpoint=Path(path),
-            )
+            resid_mlp_train_config_path = Path(path).parent / "resid_mlp_train_config.yaml"
+            label_coeffs_path = Path(path).parent / "label_coeffs.json"
+            checkpoint_path = Path(path)
 
-        with open(paths.resid_mlp_train_config) as f:
+        with open(resid_mlp_train_config_path) as f:
             resid_mlp_train_config_dict = yaml.safe_load(f)
 
-        with open(paths.label_coeffs) as f:
+        with open(label_coeffs_path) as f:
             label_coeffs = torch.tensor(json.load(f))
 
         resid_mlp_train_config = ResidualMLPTrainConfig(**resid_mlp_train_config_dict)
         return cls(
-            checkpoint_path=paths.checkpoint,
+            checkpoint_path=checkpoint_path,
             config=resid_mlp_train_config,
             label_coeffs=label_coeffs,
         )
@@ -150,8 +139,14 @@ class ResidualMLP(LoadableModule):
         return out
 
     @staticmethod
-    def _download_wandb_files(wandb_project_run_id: str) -> ResidualMLPPaths:
-        """Download the relevant files from a wandb run."""
+    def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path, Path]:
+        """Download the relevant files from a wandb run.
+
+        Returns:
+            - resid_mlp_train_config_path: Path to the resid_mlp_train_config.yaml file
+            - label_coeffs_path: Path to the label_coeffs.json file
+            - checkpoint_path: Path to the checkpoint file
+        """
         api = wandb.Api()
         run: Run = api.run(wandb_project_run_id)
 
@@ -165,11 +160,7 @@ class ResidualMLP(LoadableModule):
         label_coeffs_path = download_wandb_file(run, run_dir, "label_coeffs.json")
         checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)
         logger.info(f"Downloaded checkpoint from {checkpoint_path}")
-        return ResidualMLPPaths(
-            resid_mlp_train_config=resid_mlp_train_config_path,
-            label_coeffs=label_coeffs_path,
-            checkpoint=checkpoint_path,
-        )
+        return resid_mlp_train_config_path, label_coeffs_path, checkpoint_path
 
     @classmethod
     @override
