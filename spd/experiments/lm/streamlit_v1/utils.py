@@ -11,8 +11,9 @@ import streamlit as st
 import torch
 from transformers import AutoTokenizer
 
-from spd.configs import Config, LMTaskConfig
-from spd.models.component_model import ComponentModel
+from spd.configs import Config
+from spd.experiments.lm.configs import LMTaskConfig
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import EmbeddingComponents, GateMLPs, LinearComponents, VectorGateMLPs
 
 DEFAULT_WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "spd")
@@ -60,7 +61,9 @@ def parse_wandb_url(url_or_path: str) -> str:
 def load_model(model_path: str) -> ModelData:
     """Load model and prepare components."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model, config, _ = ComponentModel.from_pretrained(model_path)
+    run_info = SPDRunInfo.from_path(model_path)
+    model = ComponentModel.from_run_info(run_info)
+    config = run_info.config
     model.to(device)
     model.eval()
 
