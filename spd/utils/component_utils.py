@@ -31,7 +31,7 @@ def calc_stochastic_masks(
 
 def calc_ci_l_zero(
     causal_importances: dict[str, Float[Tensor, "... C"]],
-    cutoff: float = 1e-2,
+    cutoff: float = 0,
 ) -> dict[str, float]:
     """Calculate the L0 loss on the causal importances, summed over the C dimension."""
     ci_l_zero = {}
