@@ -12,8 +12,8 @@ from datasets import load_dataset
 from jaxtyping import Float, Int
 from torch import Tensor
 
-from spd.configs import LMTaskConfig
 from spd.data import DatasetConfig
+from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.lm.streamlit_v1.utils import ModelData
 
 

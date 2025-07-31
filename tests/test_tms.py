@@ -3,9 +3,10 @@ from typing import cast
 import torch
 from torch import nn
 
-from spd.configs import Config, FiguresFnConfig, MetricsFnConfig, TMSTaskConfig
-from spd.experiments.tms.models import TMSModel, TMSModelConfig
-from spd.experiments.tms.train_tms import TMSTrainConfig, get_model_and_dataloader, train
+from spd.configs import Config, FiguresFnConfig, MetricsFnConfig
+from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
+from spd.experiments.tms.models import TMSModel
+from spd.experiments.tms.train_tms import get_model_and_dataloader, train
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.general_utils import set_seed

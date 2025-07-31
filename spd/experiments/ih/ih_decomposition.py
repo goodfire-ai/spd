@@ -1,32 +1,23 @@
 import json
 from pathlib import Path
-from typing import Any
 
 import fire
 import wandb
 
-from spd.configs import Config, IHTaskConfig
-from spd.experiments.ih.model import InductionTransformer
+from spd.configs import Config
+from spd.experiments.ih.configs import IHTaskConfig
+from spd.experiments.ih.model import InductionModelTargetRunInfo, InductionTransformer
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
-from spd.utils.general_utils import get_device, load_config, set_seed
-from spd.utils.run_utils import get_output_dir, save_file
+from spd.utils.general_utils import (
+    get_device,
+    load_config,
+    save_pre_run_info,
+    set_seed,
+)
+from spd.utils.run_utils import get_output_dir
 from spd.utils.wandb_utils import init_wandb
-
-
-def save_target_model_info(
-    save_to_wandb: bool,
-    out_dir: Path,
-    induction_model: InductionTransformer,
-    induction_model_train_config_dict: dict[str, Any],
-) -> None:
-    save_file(induction_model.state_dict(), out_dir / "ih.pth")
-    save_file(induction_model_train_config_dict, out_dir / "ih_train_config.yaml")
-
-    if save_to_wandb:
-        wandb.save(str(out_dir / "ih.pth"), base_path=out_dir, policy="now")
-        wandb.save(str(out_dir / "ih_train_config.yaml"), base_path=out_dir, policy="now")
 
 
 def main(
@@ -62,9 +53,8 @@ def main(
     logger.info(config)
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
-    target_model, target_model_train_config_dict = InductionTransformer.from_pretrained(
-        config.pretrained_model_path,
-    )
+    target_run_info = InductionModelTargetRunInfo.from_path(config.pretrained_model_path)
+    target_model = InductionTransformer.from_run_info(target_run_info)
     target_model = target_model.to(device)
     target_model.eval()
 
@@ -72,19 +62,14 @@ def main(
         assert wandb.run, "wandb.run must be initialized before training"
         wandb.run.name = config.wandb_run_name
 
-    save_file(config.model_dump(mode="json"), out_dir / "final_config.yaml")
-    if sweep_params:
-        save_file(sweep_params, out_dir / "sweep_params.yaml")
-    if config.wandb_project:
-        wandb.save(str(out_dir / "final_config.yaml"), base_path=out_dir, policy="now")
-        if sweep_params:
-            wandb.save(str(out_dir / "sweep_params.yaml"), base_path=out_dir, policy="now")
-
-    save_target_model_info(
+    save_pre_run_info(
         save_to_wandb=config.wandb_project is not None,
         out_dir=out_dir,
-        induction_model=target_model,
-        induction_model_train_config_dict=target_model_train_config_dict,
+        spd_config=config,
+        sweep_params=sweep_params,
+        target_model=target_model,
+        train_config=target_run_info.config,
+        model_name="ih",
     )
 
     prefix_window = task_config.prefix_window or target_model.config.seq_len - 3

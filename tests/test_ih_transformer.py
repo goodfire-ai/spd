@@ -1,7 +1,8 @@
-from spd.configs import Config, FiguresFnConfig, MetricsFnConfig, IHTaskConfig
-from spd.experiments.ih.model import InductionTransformer, InductionModelConfig
-from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
+from spd.configs import Config, FiguresFnConfig, MetricsFnConfig
+from spd.experiments.ih.configs import IHTaskConfig, InductionModelConfig
+from spd.experiments.ih.model import InductionTransformer
 from spd.run_spd import optimize
+from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import set_seed
 
 
@@ -81,7 +82,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         # Task Specific
         task_config=IHTaskConfig(
             task_name="induction_head",
-        )
+        ),
     )
 
     # Create a pretrained model

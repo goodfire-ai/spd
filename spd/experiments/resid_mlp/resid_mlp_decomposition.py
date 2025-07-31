@@ -2,39 +2,25 @@
 
 import json
 from pathlib import Path
-from typing import Any
 
 import fire
 import wandb
-from jaxtyping import Float
-from torch import Tensor
 
-from spd.configs import Config, ResidualMLPTaskConfig
-from spd.experiments.resid_mlp.models import ResidualMLP
+from spd.configs import Config
+from spd.experiments.resid_mlp.configs import ResidualMLPTaskConfig
+from spd.experiments.resid_mlp.models import ResidualMLP, ResidualMLPTargetRunInfo
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
-from spd.utils.general_utils import get_device, load_config, set_seed
+from spd.utils.general_utils import (
+    get_device,
+    load_config,
+    save_pre_run_info,
+    set_seed,
+)
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
-
-
-def save_target_model_info(
-    save_to_wandb: bool,
-    out_dir: Path,
-    resid_mlp: ResidualMLP,
-    resid_mlp_train_config_dict: dict[str, Any],
-    label_coeffs: Float[Tensor, " n_features"],
-) -> None:
-    save_file(resid_mlp.state_dict(), out_dir / "resid_mlp.pth")
-    save_file(resid_mlp_train_config_dict, out_dir / "resid_mlp_train_config.yaml")
-    save_file(label_coeffs.detach().cpu().tolist(), out_dir / "label_coeffs.json")
-
-    if save_to_wandb:
-        wandb.save(str(out_dir / "resid_mlp.pth"), base_path=out_dir, policy="now")
-        wandb.save(str(out_dir / "resid_mlp_train_config.yaml"), base_path=out_dir, policy="now")
-        wandb.save(str(out_dir / "label_coeffs.json"), base_path=out_dir, policy="now")
 
 
 def main(
@@ -66,9 +52,8 @@ def main(
     assert isinstance(config.task_config, ResidualMLPTaskConfig)
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
-    target_model, target_model_train_config_dict, label_coeffs = ResidualMLP.from_pretrained(
-        config.pretrained_model_path
-    )
+    target_run_info = ResidualMLPTargetRunInfo.from_path(config.pretrained_model_path)
+    target_model = ResidualMLP.from_run_info(target_run_info)
     target_model = target_model.to(device)
     target_model.eval()
 
@@ -77,23 +62,20 @@ def main(
         if config.wandb_run_name:
             wandb.run.name = config.wandb_run_name
 
-    save_file(config.model_dump(mode="json"), out_dir / "final_config.yaml")
-    if sweep_params:
-        save_file(sweep_params, out_dir / "sweep_params.yaml")
-    if config.wandb_project:
-        wandb.save(str(out_dir / "final_config.yaml"), base_path=out_dir, policy="now")
-        if sweep_params:
-            wandb.save(str(out_dir / "sweep_params.yaml"), base_path=out_dir, policy="now")
-
-    save_target_model_info(
+    save_pre_run_info(
         save_to_wandb=config.wandb_project is not None,
         out_dir=out_dir,
-        resid_mlp=target_model,
-        resid_mlp_train_config_dict=target_model_train_config_dict,
-        label_coeffs=label_coeffs,
+        spd_config=config,
+        sweep_params=sweep_params,
+        target_model=target_model,
+        train_config=target_run_info.config,
+        model_name="resid_mlp",
     )
+    save_file(target_run_info.label_coeffs.detach().cpu().tolist(), out_dir / "label_coeffs.json")
+    if config.wandb_project:
+        wandb.save(str(out_dir / "label_coeffs.json"), base_path=out_dir, policy="now")
 
-    synced_inputs = target_model_train_config_dict.get("synced_inputs", None)
+    synced_inputs = target_run_info.config.synced_inputs
     dataset = ResidualMLPDataset(
         n_features=target_model.config.n_features,
         feature_probability=config.task_config.feature_probability,

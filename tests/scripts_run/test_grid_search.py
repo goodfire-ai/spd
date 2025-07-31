@@ -3,7 +3,9 @@
 import json
 from typing import Any
 
-from spd.configs import Config, LMTaskConfig, TMSTaskConfig
+from spd.configs import Config
+from spd.experiments.lm.configs import LMTaskConfig
+from spd.experiments.tms.configs import TMSTaskConfig
 from spd.scripts.run import generate_grid_combinations
 from spd.utils.general_utils import apply_nested_updates, load_config
 

@@ -10,8 +10,8 @@ import pandas as pd
 import streamlit as st
 import torch
 
-from spd.configs import LMTaskConfig
 from spd.data import DatasetConfig, create_data_loader
+from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.lm.streamlit_v1.utils import ModelData
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import extract_batch_data
