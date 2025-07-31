@@ -269,8 +269,13 @@ class Config(BaseModel):
         description="Nested task-specific configuration selected by the `task_name` discriminator",
     )
 
-    DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = []
-    RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {}
+    DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = [
+        "image_on_first_step",
+        "image_freq",
+        "metrics_fns",
+        "figures_fns",
+    ]
+    RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {"print_freq": "eval_freq"}
 
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
@@ -284,6 +289,13 @@ class Config(BaseModel):
                 logger.info(f"Renaming {key} to {cls.RENAMED_CONFIG_KEYS[key]}")
                 config_dict[cls.RENAMED_CONFIG_KEYS[key]] = val
                 del config_dict[key]
+
+        if "eval_batch_size" not in config_dict:
+            config_dict["eval_batch_size"] = config_dict["batch_size"]
+        if "train_log_freq" not in config_dict:
+            config_dict["train_log_freq"] = 50
+        if "slow_eval_freq" not in config_dict:
+            config_dict["slow_eval_freq"] = config_dict["eval_freq"]
         return config_dict
 
     @model_validator(mode="after")
