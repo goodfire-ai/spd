@@ -12,6 +12,8 @@ from spd.clustering.merge import (
     plot_dists_distribution,
 	MergeEnsemble,
 )
+from spd.data import DatasetConfig, create_data_loader
+from datasets import load_dataset
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
 from spd.models.component_model import ComponentModel
 from spd.registry import CANONICAL_RUNS
@@ -24,36 +26,49 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 %autoreload 2
 
 # %%
+component_model, cfg, path = ComponentModel.from_pretrained("wandb:goodfire/spd/runs/ioprgffh")
 # component_model, cfg, path = ComponentModel.from_pretrained(CANONICAL_RUNS["tms_40-10-id"])
-component_model, cfg, path = ComponentModel.from_pretrained("wandb:goodfire/induction_heads/runs/6tatsx86")
 component_model.to(DEVICE);
 
 # %%
+dbg_auto(component_model.state_dict()); 
 
-N_SAMPLES: int = 512
+dbg_auto(cfg);
+dbg_auto(cfg.task_config);
 
-dataset = ResidualMLPDataset(
-    n_features=component_model.patched_model.config.n_features,
-    feature_probability=cfg.task_config.feature_probability,
-    device=DEVICE,
-    calc_labels=False,  # Our labels will be the output of the target model
-    label_type=None,
-    act_fn_name=None,
-    label_fn_seed=None,
-    label_coeffs=None,
-    data_generation_type=cfg.task_config.data_generation_type,
-    # synced_inputs=synced_inputs,
+# %%
+
+N_SAMPLES: int = 8
+
+dataset_config = DatasetConfig(
+    name=cfg.task_config.dataset_name,
+    hf_tokenizer_path=cfg.pretrained_model_name_hf,
+    split=cfg.task_config.train_data_split,
+    n_ctx=cfg.task_config.max_seq_len,
+    is_tokenized=False,
+    streaming=False,
+    column_name=cfg.task_config.column_name,
 )
 
-dbg_auto(
-    dict(
-        n_features=dataset.n_features,
-        feature_probability=dataset.feature_probability,
-        data_generation_type=dataset.data_generation_type,
-    )
+dataset = load_dataset(
+    dataset_config.name,
+    streaming=dataset_config.streaming,
+    split=dataset_config.split,
+    trust_remote_code=False,
 )
 
-dataloader = DatasetGeneratedDataLoader(dataset, batch_size=N_SAMPLES, shuffle=False)
+dataloader, _tokenizer = create_data_loader(
+    dataset_config=dataset_config,
+    batch_size=N_SAMPLES,
+    buffer_size=cfg.task_config.buffer_size,
+    global_seed=cfg.seed,
+    ddp_rank=0,
+    ddp_world_size=1,
+)
+
+
+
+
 # %%
 
 ci = component_activations(
@@ -70,6 +85,7 @@ dbg_auto(ci);
 coa = process_activations(
     ci,
     filter_dead_threshold=0.001,
+	seq_mode="seq_mean",
     plots=True,  # Plot the processed activations
     # plot_title="Processed Activations",
 );
@@ -83,7 +99,7 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
     merge_config=MergeConfig(
         activation_threshold=None,
         alpha=0.01,
-        iters=140,
+        iters=10,
         check_threshold=0.1,
         pop_component_prob=0.1,
         rank_cost_fn=lambda x: 1.0,
@@ -100,7 +116,7 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
         tick_spacing=10,
         plot_final=False,
     ),
-	ensemble_size=128,
+	ensemble_size=16,
 )
 # %%
 DISTANCES = ENSEMBLE.get_distances()

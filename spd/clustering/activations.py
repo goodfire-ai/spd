@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -270,9 +270,12 @@ def component_activations(
 
 def process_activations(
     activations: dict[
-        str, Float[Tensor, " n_steps C"]
-    ],  # module name to sample x component gate activations
+        str, # module name to
+        Float[Tensor, " n_steps C"] # (sample x component gate activations)
+        | Float[Tensor, " n_sample n_ctx C"] # (sample x seq index x component gate activations)
+    ],
     filter_dead_threshold: float = 0.01,
+    seq_mode: Literal["concat", "seq_mean", None] = None,
     plots: bool = False,
     save_pdf: bool = False,
     pdf_prefix: str = "activations",
@@ -284,10 +287,29 @@ def process_activations(
 ) -> dict[str, Any]:
     """get back a dict of coactivations, slices, and concated activations"""
 
+    activations_: dict[str, Float[Tensor, " n_steps C"]]
+    if seq_mode == "concat":
+        # Concatenate the sequence dimension into the sample dimension
+        activations_ = {
+            key: act.reshape(act.shape[0] * act.shape[1], act.shape[2])
+            for key, act in activations.items()
+        }
+    elif seq_mode == "seq_mean":
+        # Take the mean over the sequence dimension
+        activations_ = {
+            key: act.mean(dim=1) if act.ndim == 3 else act for key, act in activations.items()
+        }
+    else:
+        # Use the activations as they are
+        activations_ = activations
+
+
+    dbg_auto(activations_)
+
     # compute the labels and total component count
     total_c: int = 0
     labels: list[str] = list()
-    for key, act in activations.items():
+    for key, act in activations_.items():
         c = act.shape[-1]
         labels.extend([f"{key}:{i}" for i in range(c)])
         total_c += c
@@ -296,7 +318,7 @@ def process_activations(
 
     # concat the activations
     act_concat: Float[Tensor, " n_steps c"] = torch.cat(
-        [activations[key] for key in activations], dim=-1
+        [activations_[key] for key in activations_], dim=-1
     )
 
     # filter dead components
@@ -308,7 +330,8 @@ def process_activations(
         if dead_components.any():
             act_concat = act_concat[:, ~dead_components]
             alive_labels: list[tuple[str, bool]] = [
-                (lbl, keep.item()) for lbl, keep in zip(labels, ~dead_components, strict=False)
+                (lbl, keep.item())
+                for lbl, keep in zip(labels, ~dead_components, strict=False)
             ]
             labels = [label for label, keep in alive_labels if keep]
             dead_components_lst = [label for label, keep in alive_labels if not keep]
@@ -333,7 +356,7 @@ def process_activations(
     if plots:
         # Use original activations for raw plots, but filtered data for concat/coact/histograms
         plot_activations(
-            activations=activations,  # Original unfiltered for raw activations
+            activations=activations_,  # Original unfiltered for raw activations
             act_concat=act_concat,  # Filtered concatenated activations
             coact=coact,  # Coactivations from filtered data
             labels=labels,  # Labels matching filtered data

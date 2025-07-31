@@ -16,6 +16,8 @@ from pydantic import (
     PositiveInt,
 )
 from torch import Tensor
+import tqdm
+from muutils.parallel import run_maybe_parallel
 
 from spd.clustering.merge_matrix import GroupMerge
 from spd.clustering.util import format_scientific_latex
@@ -707,7 +709,7 @@ class MergeEnsemble:
             float("nan"),
         )
 
-        for i in range(n_iters):
+        for i in tqdm.tqdm(range(n_iters)):
             for j in range(len(self.data)):
                 for k in range(j):
                     d = self.data[j].merges[i].dist(self.data[k].merges[i])
@@ -827,7 +829,7 @@ def merge_iteration_ensemble(
     """Run many merge iterations"""
 
     output: list[MergeHistory] = []
-    for _ in range(ensemble_size):
+    for _ in tqdm.tqdm(range(ensemble_size), unit="ensemble"):
         # run the merge iteration
         merge_history, _ = merge_iteration(
             activations=activations,
