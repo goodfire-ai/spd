@@ -12,7 +12,13 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.run_spd import optimize
-from spd.utils.general_utils import get_device, load_config, resolve_class, save_run_info, set_seed
+from spd.utils.general_utils import (
+    get_device,
+    load_config,
+    resolve_class,
+    save_pre_run_info,
+    set_seed,
+)
 from spd.utils.run_utils import get_output_dir
 from spd.utils.wandb_utils import init_wandb
 
@@ -66,7 +72,7 @@ def main(
         if config.wandb_run_name:
             wandb.run.name = config.wandb_run_name
 
-    save_run_info(
+    save_pre_run_info(
         save_to_wandb=config.wandb_project is not None,
         out_dir=out_dir,
         spd_config=config,

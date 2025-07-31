@@ -320,7 +320,7 @@ def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None = None) -> P
     return latest_checkpoint_local
 
 
-def save_run_info(
+def save_pre_run_info(
     save_to_wandb: bool,
     out_dir: Path,
     spd_config: BaseModel,
