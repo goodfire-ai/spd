@@ -106,7 +106,7 @@ def render_model_selector(current_model_path: str | None) -> str | None:
         value=current_model_path or "",
         help="Examples:\n"
         "- https://wandb.ai/goodfire/spd/runs/snq4ojcy\n"
-        "- wandb:spd/runs/snq4ojcy\n"
+        "- wandb:goodfire/spd/runs/snq4ojcy\n"
         "- 151bsctx (just the run ID)",
         placeholder="Paste WandB URL here...",
     )

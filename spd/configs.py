@@ -263,7 +263,7 @@ class Config(BaseModel):
     pretrained_model_path: ModelPath | None = Field(
         default=None,
         description="Model identifier. Local path or wandb reference "
-        "(e.g. 'wandb:spd/runs/otxwx80v' or 'mnt/my_model/checkpoint.pth')",
+        "(e.g. 'wandb:goodfire/spd/runs/otxwx80v' or 'mnt/my_model/checkpoint.pth')",
     )
     pretrained_model_name_hf: str | None = Field(
         default=None,
