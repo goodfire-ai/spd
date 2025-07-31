@@ -268,7 +268,7 @@ def create_wandb_report(
             )
         y += loss_plots_height
 
-        if EXPERIMENT_REGISTRY[experiment].experiment_type in ["tms", "resid_mlp"]:
+        if EXPERIMENT_REGISTRY[experiment].task_name in ["tms", "resid_mlp"]:
             # Add target CI error plots
             target_ci_weight = 6
             target_ci_width = REPORT_TOTAL_WIDTH // 2
@@ -291,7 +291,7 @@ def create_wandb_report(
             y += target_ci_weight
 
         # Only add KL loss plots for language model experiments
-        if EXPERIMENT_REGISTRY[experiment].experiment_type == "lm":
+        if EXPERIMENT_REGISTRY[experiment].task_name == "lm":
             kl_height = 6
             kl_width = REPORT_TOTAL_WIDTH // 2
             x_offset = 0

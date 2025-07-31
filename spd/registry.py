@@ -14,62 +14,74 @@ class ExperimentConfig:
     """Configuration for a single experiment.
 
     Attributes:
+        task_name: Name of the task the experiment is for.
         decomp_script: Path to the decomposition script
         config_path: Path to the configuration YAML file
         expected_runtime: Expected runtime of the experiment in minutes. Used for SLURM job names.
+        canonical_run: Wandb path (i.e. prefixed with "wandb:") to a canonical run of the experiment.
+            We test that these runs can be loaded to a ComponentModel in
+            `tests/test_wandb_run_loading.py`. If None, no canonical run is available.
     """
 
-    experiment_type: Literal["tms", "resid_mlp", "lm"]
+    task_name: Literal["tms", "resid_mlp", "lm", "ih"]
     decomp_script: Path
     config_path: Path
     expected_runtime: int
+    canonical_run: str | None = None
 
 
 EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
     "tms_5-2": ExperimentConfig(
-        experiment_type="tms",
+        task_name="tms",
         decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
         config_path=Path("spd/experiments/tms/tms_5-2_config.yaml"),
         expected_runtime=4,
+        canonical_run="wandb:goodfire/spd/runs/u9lslp82",
     ),
     "tms_5-2-id": ExperimentConfig(
-        experiment_type="tms",
+        task_name="tms",
         decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
         config_path=Path("spd/experiments/tms/tms_5-2-id_config.yaml"),
         expected_runtime=4,
+        canonical_run="wandb:goodfire/spd/runs/hm77qg0d",
     ),
     "tms_40-10": ExperimentConfig(
-        experiment_type="tms",
+        task_name="tms",
         decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
         config_path=Path("spd/experiments/tms/tms_40-10_config.yaml"),
         expected_runtime=5,
+        canonical_run="wandb:goodfire/spd/runs/pwj1eaj2",
     ),
     "tms_40-10-id": ExperimentConfig(
-        experiment_type="tms",
+        task_name="tms",
         decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
         config_path=Path("spd/experiments/tms/tms_40-10-id_config.yaml"),
         expected_runtime=5,
+        canonical_run="wandb:goodfire/spd/s2yj41ak",
     ),
     "resid_mlp1": ExperimentConfig(
-        experiment_type="resid_mlp",
+        task_name="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
         config_path=Path("spd/experiments/resid_mlp/resid_mlp1_config.yaml"),
         expected_runtime=3,
+        canonical_run="wandb:goodfire/spd/runs/pzauyxx8",
     ),
     "resid_mlp2": ExperimentConfig(
-        experiment_type="resid_mlp",
+        task_name="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
         config_path=Path("spd/experiments/resid_mlp/resid_mlp2_config.yaml"),
         expected_runtime=11,
+        canonical_run=None,
     ),
     "resid_mlp3": ExperimentConfig(
-        experiment_type="resid_mlp",
+        task_name="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
         config_path=Path("spd/experiments/resid_mlp/resid_mlp3_config.yaml"),
         expected_runtime=60,
+        canonical_run=None,
     ),
     # "ss_emb": ExperimentConfig(
-    #     experiment_type="lm",
+    #     task_name="lm",
     #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
     #     config_path=Path("spd/experiments/lm/ss_emb_config.yaml"),
     #     expected_runtime=60,
