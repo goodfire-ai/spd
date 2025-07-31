@@ -192,7 +192,7 @@ class GroupMerge:
         # Add component labeling if component labels are provided
         if component_labels is not None:
             # Import the function here to avoid circular imports
-            from spd.clustering.activations import add_component_labeling
+            from spd.clustering.plotting import add_component_labeling
 
             add_component_labeling(ax_mat, component_labels, axis="x")
 

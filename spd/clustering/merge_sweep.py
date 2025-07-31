@@ -14,8 +14,8 @@ from spd.clustering.merge import (
     MergeEnsemble,
     MergePlotConfig,
     merge_iteration_ensemble,
-    plot_dists_distribution,
 )
+from spd.clustering.plotting.merge import plot_dists_distribution
 
 
 def sweep_merge_parameter(

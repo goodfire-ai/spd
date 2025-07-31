@@ -77,6 +77,8 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
 }
 
 
+resid_mlp1,resid_mlp2,resid_mlp3
+
 def get_max_expected_runtime(experiments_list: list[str]) -> str:
     """Get the max expected runtime of a list of experiments in XhYm format.
 
