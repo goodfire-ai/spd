@@ -75,7 +75,7 @@ def main(
         sweep_params=sweep_params,
         target_model=target_model,
         train_config=target_model.config,
-        model_name="tms",
+        task_name=config.task_config.task_name,
     )
 
     synced_inputs = target_run_info.config.synced_inputs

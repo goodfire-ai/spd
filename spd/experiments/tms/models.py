@@ -10,7 +10,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from wandb.apis.public import Run
 
-from spd.experiments.tms.configs import TMSModelConfig, TMSTrainConfig
+from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.run_utils import check_run_exists
@@ -25,24 +25,25 @@ class TMSTargetRunInfo(RunInfo[TMSTrainConfig]):
     @classmethod
     def from_path(cls, path: ModelPath) -> "TMSTargetRunInfo":
         """Load the run info from a wandb run or a local path to a checkpoint."""
+        task_name = TMSTaskConfig.model_fields["task_name"].default
         if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
             # Check if run exists in shared filesystem first
             run_dir = check_run_exists(path)
             if run_dir:
                 # Use local files from shared filesystem
-                tms_train_config_path = run_dir / "tms_train_config.yaml"
-                checkpoint_path = run_dir / "tms.pth"
+                tms_train_config_path = run_dir / f"{task_name}_train_config.yaml"
+                checkpoint_path = run_dir / f"{task_name}.pth"
             else:
                 # Download from wandb
                 wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
                 api = wandb.Api()
                 run: Run = api.run(wandb_path)
                 run_dir = fetch_wandb_run_dir(run.id)
-                tms_train_config_path = run_dir / "tms_train_config.yaml"
-                checkpoint_path = run_dir / "tms.pth"
+                tms_train_config_path = run_dir / f"{task_name}_train_config.yaml"
+                checkpoint_path = run_dir / f"{task_name}.pth"
         else:
             # `path` should be a local path to a checkpoint
-            tms_train_config_path = Path(path).parent / "tms_train_config.yaml"
+            tms_train_config_path = Path(path).parent / f"{task_name}_train_config.yaml"
             checkpoint_path = Path(path)
 
         with open(tms_train_config_path) as f:

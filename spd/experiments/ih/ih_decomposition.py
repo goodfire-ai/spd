@@ -69,7 +69,7 @@ def main(
         sweep_params=sweep_params,
         target_model=target_model,
         train_config=target_run_info.config,
-        model_name="ih",
+        task_name=config.task_config.task_name,
     )
 
     prefix_window = task_config.prefix_window or target_model.config.seq_len - 3

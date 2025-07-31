@@ -10,7 +10,7 @@ from jaxtyping import Float
 from torch import Tensor, nn
 
 from spd.configs import Config
-from spd.experiments.resid_mlp.models import ResidualMLP
+from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -33,8 +33,8 @@ def extract_ci_val_figures(run_id: str, input_magnitude: float = 0.75) -> dict[s
     run_info = SPDRunInfo.from_path(run_id)
     model = ComponentModel.from_run_info(run_info)
     config = run_info.config
-    assert isinstance(model.patched_model, ResidualMLP | TMSModel), (
-        "patched model must be a ResidualMLP or TMSModel"
+    assert isinstance(model.patched_model, ResidMLP | TMSModel), (
+        "patched model must be a ResidMLP or TMSModel"
     )
     n_features = model.patched_model.config.n_features
 
@@ -308,9 +308,9 @@ def feature_contribution_plot(
 
 
 def compute_patched_weight_neuron_contributions(
-    patched_model: ResidualMLP, n_features: int | None = None
+    patched_model: ResidMLP, n_features: int | None = None
 ) -> Float[Tensor, "n_layers n_features d_mlp"]:
-    """Compute per-neuron contribution strengths for a *trained* ResidualMLP.
+    """Compute per-neuron contribution strengths for a *trained* ResidMLP.
 
     The returned tensor has shape ``(n_layers, n_features, d_mlp)`` recording – for
     every hidden layer and every input feature – the *virtual* weight connecting
@@ -354,7 +354,7 @@ def compute_patched_weight_neuron_contributions(
 
 
 def compute_spd_weight_neuron_contributions(
-    patched_model: ResidualMLP,
+    patched_model: ResidMLP,
     components: dict[str, Components],
     n_features: int | None = None,
 ) -> Float[Tensor, "n_layers n_features C d_mlp"]:
@@ -409,7 +409,7 @@ def compute_spd_weight_neuron_contributions(
 
 
 def plot_spd_feature_contributions_truncated(
-    patched_model: ResidualMLP,
+    patched_model: ResidMLP,
     components: dict[str, Components],
     n_features: int | None = 50,
 ):
@@ -495,7 +495,7 @@ def plot_spd_feature_contributions_truncated(
 
 
 def plot_neuron_contribution_pairs(
-    patched_model: ResidualMLP,
+    patched_model: ResidMLP,
     components: dict[str, Components],
     n_features: int | None = 50,
 ) -> plt.Figure:
@@ -632,7 +632,7 @@ def main():
         model = ComponentModel.from_run_info(run_info)
         config = run_info.config
         patched_model = model.patched_model
-        assert isinstance(patched_model, ResidualMLP)
+        assert isinstance(patched_model, ResidMLP)
         model.to(device)
 
         n_layers = patched_model.config.n_layers
@@ -662,7 +662,7 @@ def main():
         )
         logger.info(f"Saved figure to {fname_pairs}")
 
-        # Define a title formatter for ResidualMLP component names
+        # Define a title formatter for ResidMLP component names
         def format_resid_mlp_title(mask_name: str) -> str:
             """Convert 'layers.X.mlp_in/out' to 'Layer Y - $W_{in/out}$' with LaTeX formatting."""
             parts = mask_name.split(".")

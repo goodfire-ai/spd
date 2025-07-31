@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt, m
 from spd.spd_types import Probability
 
 
-class ResidualMLPModelConfig(BaseModel):
+class ResidMLPModelConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     n_features: PositiveInt
     d_embed: PositiveInt
@@ -19,11 +19,11 @@ class ResidualMLPModelConfig(BaseModel):
     out_bias: bool
 
 
-class ResidualMLPTrainConfig(BaseModel):
+class ResidMLPTrainConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     wandb_project: str | None = None  # The name of the wandb project (if None, don't log to wandb)
     seed: int = 0
-    resid_mlp_config: ResidualMLPModelConfig
+    resid_mlp_model_config: ResidMLPModelConfig
     label_fn_seed: int = 0
     label_type: Literal["act_plus_resid", "abs"] = "act_plus_resid"
     loss_type: Literal["readoff", "resid"] = "readoff"
@@ -49,7 +49,7 @@ class ResidualMLPTrainConfig(BaseModel):
             "Can't have both fixed_random_embedding and fixed_identity_embedding"
         )
         if self.fixed_identity_embedding:
-            assert self.resid_mlp_config.n_features == self.resid_mlp_config.d_embed, (
+            assert self.resid_mlp_model_config.n_features == self.resid_mlp_model_config.d_embed, (
                 "n_features must equal d_embed if we are using an identity embedding matrix"
             )
         if self.synced_inputs is not None:
@@ -60,10 +60,10 @@ class ResidualMLPTrainConfig(BaseModel):
         return self
 
 
-class ResidualMLPTaskConfig(BaseModel):
+class ResidMLPTaskConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    task_name: Literal["residual_mlp"] = Field(
-        default="residual_mlp",
+    task_name: Literal["resid_mlp"] = Field(
+        default="resid_mlp",
         description="Identifier for the residual-MLP decomposition task",
     )
     feature_probability: Probability = Field(

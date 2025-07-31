@@ -13,7 +13,11 @@ from jaxtyping import Float
 from torch import Tensor, nn
 from wandb.apis.public import Run
 
-from spd.experiments.resid_mlp.configs import ResidualMLPModelConfig, ResidualMLPTrainConfig
+from spd.experiments.resid_mlp.configs import (
+    ResidMLPModelConfig,
+    ResidMLPTaskConfig,
+    ResidMLPTrainConfig,
+)
 from spd.interfaces import LoadableModule, RunInfo
 from spd.log import logger
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
@@ -27,14 +31,14 @@ from spd.utils.wandb_utils import (
 
 
 @dataclass
-class ResidualMLPTargetRunInfo(RunInfo[ResidualMLPTrainConfig]):
+class ResidMLPTargetRunInfo(RunInfo[ResidMLPTrainConfig]):
     """Run info from training a ResidualMLPModel."""
 
     label_coeffs: Float[Tensor, " n_features"]
 
     @override
     @classmethod
-    def from_path(cls, path: ModelPath) -> "ResidualMLPTargetRunInfo":
+    def from_path(cls, path: ModelPath) -> "ResidMLPTargetRunInfo":
         """Load the run info from a wandb run or a local path to a checkpoint."""
         if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
             # Check if run exists in shared filesystem first
@@ -48,7 +52,7 @@ class ResidualMLPTargetRunInfo(RunInfo[ResidualMLPTrainConfig]):
                 # Download from wandb
                 wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
                 resid_mlp_train_config_path, label_coeffs_path, checkpoint_path = (
-                    ResidualMLP._download_wandb_files(wandb_path)
+                    ResidMLP._download_wandb_files(wandb_path)
                 )
         else:
             # `path` should be a local path to a checkpoint
@@ -62,7 +66,7 @@ class ResidualMLPTargetRunInfo(RunInfo[ResidualMLPTrainConfig]):
         with open(label_coeffs_path) as f:
             label_coeffs = torch.tensor(json.load(f))
 
-        resid_mlp_train_config = ResidualMLPTrainConfig(**resid_mlp_train_config_dict)
+        resid_mlp_train_config = ResidMLPTrainConfig(**resid_mlp_train_config_dict)
         return cls(
             checkpoint_path=checkpoint_path,
             config=resid_mlp_train_config,
@@ -95,8 +99,8 @@ class MLP(nn.Module):
         return out
 
 
-class ResidualMLP(LoadableModule):
-    def __init__(self, config: ResidualMLPModelConfig):
+class ResidMLP(LoadableModule):
+    def __init__(self, config: ResidMLPModelConfig):
         super().__init__()
         self.config = config
         self.W_E = nn.Parameter(torch.empty(config.n_features, config.d_embed))
@@ -154,8 +158,9 @@ class ResidualMLP(LoadableModule):
 
         run_dir = fetch_wandb_run_dir(run.id)
 
+        task_name = ResidMLPTaskConfig.model_fields["task_name"].default
         resid_mlp_train_config_path = download_wandb_file(
-            run, run_dir, "resid_mlp_train_config.yaml"
+            run, run_dir, f"{task_name}_train_config.yaml"
         )
         label_coeffs_path = download_wandb_file(run, run_dir, "label_coeffs.json")
         checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)
@@ -164,9 +169,9 @@ class ResidualMLP(LoadableModule):
 
     @classmethod
     @override
-    def from_run_info(cls, run_info: RunInfo[ResidualMLPTrainConfig]) -> "ResidualMLP":
+    def from_run_info(cls, run_info: RunInfo[ResidMLPTrainConfig]) -> "ResidMLP":
         """Load a pretrained model from a run info object."""
-        resid_mlp_model = cls(config=run_info.config.resid_mlp_config)
+        resid_mlp_model = cls(config=run_info.config.resid_mlp_model_config)
         resid_mlp_model.load_state_dict(
             torch.load(run_info.checkpoint_path, weights_only=True, map_location="cpu")
         )
@@ -174,7 +179,7 @@ class ResidualMLP(LoadableModule):
 
     @classmethod
     @override
-    def from_pretrained(cls, path: ModelPath) -> "ResidualMLP":
+    def from_pretrained(cls, path: ModelPath) -> "ResidMLP":
         """Fetch a pretrained model from wandb or a local path to a checkpoint."""
-        run_info = ResidualMLPTargetRunInfo.from_path(path)
+        run_info = ResidMLPTargetRunInfo.from_path(path)
         return cls.from_run_info(run_info)

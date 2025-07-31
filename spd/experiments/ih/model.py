@@ -11,7 +11,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from wandb.apis.public import Run
 
-from spd.experiments.ih.configs import InductionHeadsTrainConfig, InductionModelConfig
+from spd.experiments.ih.configs import IHTaskConfig, InductionHeadsTrainConfig, InductionModelConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.run_utils import check_run_exists
@@ -279,7 +279,10 @@ class InductionTransformer(LoadableModule):
         run: Run = api.run(wandb_project_run_id)
         run_dir = fetch_wandb_run_dir(run.id)
 
-        induction_model_config_path = download_wandb_file(run, run_dir, "ih_train_config.yaml")
+        task_name = IHTaskConfig.model_fields["task_name"].default
+        induction_model_config_path = download_wandb_file(
+            run, run_dir, f"{task_name}_train_config.yaml"
+        )
 
         checkpoint = fetch_latest_wandb_checkpoint(run)
         checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)

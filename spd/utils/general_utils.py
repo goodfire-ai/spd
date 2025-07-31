@@ -327,7 +327,7 @@ def save_pre_run_info(
     sweep_params: dict[str, Any] | None,
     target_model: nn.Module | None,
     train_config: BaseModel | None,
-    model_name: str | None,
+    task_name: str | None,
 ) -> None:
     """Save run information locally and optionally to wandb."""
 
@@ -336,10 +336,10 @@ def save_pre_run_info(
     }
 
     if target_model is not None:
-        files_to_save[f"{model_name}.pth"] = target_model.state_dict()
+        files_to_save[f"{task_name}.pth"] = target_model.state_dict()
 
     if train_config is not None:
-        files_to_save[f"{model_name}_train_config.yaml"] = train_config.model_dump(mode="json")
+        files_to_save[f"{task_name}_train_config.yaml"] = train_config.model_dump(mode="json")
 
     if sweep_params is not None:
         files_to_save["sweep_params.yaml"] = sweep_params
