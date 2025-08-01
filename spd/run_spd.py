@@ -225,6 +225,7 @@ def optimize(
                         for k, v in metrics.items()
                     }
                     wandb.log(wandb_logs, step=step)
+                torch.cuda.empty_cache()
 
         # --- Saving Checkpoint --- #
         if (

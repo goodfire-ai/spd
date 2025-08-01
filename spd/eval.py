@@ -202,8 +202,10 @@ class CEandKLLosses(StreamingEval):
 class CIHistograms(StreamingEval):
     SLOW = True
 
-    def __init__(self, model: ComponentModel, config: Config):
+    def __init__(self, model: ComponentModel, config: Config, n_batches: int | None):
         self.causal_importances = defaultdict[str, list[Float[Tensor, "... C"]]](list)
+        self.n_batches = n_batches
+        self.batches_seen = 0
 
     @override
     def watch_batch(
@@ -212,8 +214,11 @@ class CIHistograms(StreamingEval):
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None:
+        self.batches_seen += 1
+        if self.n_batches is not None and self.batches_seen > self.n_batches:
+            return
         for k, v in ci.items():
-            self.causal_importances[k].append(v)
+            self.causal_importances[k].append(v.detach().cpu())
 
     @override
     def compute(self) -> Mapping[str, Image.Image]:
