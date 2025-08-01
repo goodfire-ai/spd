@@ -213,7 +213,7 @@ class CIHistograms(StreamingEval):
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         for k, v in ci.items():
-            self.causal_importances[k].append(v)
+            self.causal_importances[k].append(v.detach().cpu())
 
     @override
     def compute(self) -> Mapping[str, Image.Image]:
