@@ -230,6 +230,9 @@ def optimize(
                     }
                     wandb.log(wandb_logs, step=step)
 
+                del metrics
+                torch.cuda.empty_cache()
+
         # --- Saving Checkpoint --- #
         if (
             (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
