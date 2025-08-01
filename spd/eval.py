@@ -10,6 +10,7 @@ from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar, override
 
 import einops
+import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 from einops import reduce
@@ -22,8 +23,6 @@ from spd.models.component_model import ComponentModel
 from spd.plotting import (
     get_single_feature_causal_importances,
     plot_causal_importance_vals,
-    plot_ci_values_histograms,
-    plot_component_activation_density,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_masks
@@ -223,8 +222,12 @@ class CIHistograms(StreamingEval):
     @override
     def compute(self) -> Mapping[str, Image.Image]:
         combined_causal_importances = {k: torch.cat(v) for k, v in self.causal_importances.items()}
-        fig = plot_ci_values_histograms(causal_importances=combined_causal_importances)
-        return {"figures/causal_importance_values": fig}
+        # Just make a very basic matplotlib figure with fake data
+        fig, axs = plt.subplots(1, 1)
+        axs.plot(torch.randn(100))
+        # fig = plot_ci_values_histograms(causal_importances=combined_causal_importances)
+        return {"test": 3}
+        # return {"figures/causal_importance_values": fig}
 
 
 class ComponentActivationDensity(StreamingEval):
@@ -262,8 +265,9 @@ class ComponentActivationDensity(StreamingEval):
             module_name: self.component_activation_counts[module_name] / self.n_tokens
             for module_name in self.model.components
         }
-        fig = plot_component_activation_density(activation_densities)
-        return {"figures/component_activation_density": fig}
+        return {"test": 3}
+        # fig = plot_component_activation_density(activation_densities)
+        # return {"figures/component_activation_density": fig}
 
 
 class PermutedCIPlots(StreamingEval):
