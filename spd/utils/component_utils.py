@@ -24,14 +24,17 @@ def calc_stochastic_masks(
     stochastic_masks = []
     for _ in range(n_mask_samples):
         stochastic_masks.append(
-            {layer: ci + (1 - ci) * torch.rand_like(ci) for layer, ci in causal_importances.items()}
+            {
+                layer: ci + (1 - ci) * torch.randint(0, 2, ci.shape, device=ci.device).float()
+                for layer, ci in causal_importances.items()
+            }
         )
     return stochastic_masks
 
 
 def calc_ci_l_zero(
     causal_importances: dict[str, Float[Tensor, "... C"]],
-    cutoff: float = 1e-2,
+    cutoff: float = 0,
 ) -> dict[str, float]:
     """Calculate the L0 loss on the causal importances, summed over the C dimension."""
     ci_l_zero = {}
