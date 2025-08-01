@@ -621,9 +621,9 @@ def main():
     device = get_device()
 
     paths: list[str] = [
-        "wandb:spd-resid-mlp/runs/ziro93xq",  # 1 layer
-        "wandb:spd-resid-mlp/runs/wau744ht",  # 2 layer
-        "wandb:spd-resid-mlp/runs/qqdugze1",  # 3 layer
+        "wandb:goodfire/spd-resid-mlp/runs/ziro93xq",  # 1 layer
+        "wandb:goodfire/spd-resid-mlp/runs/wau744ht",  # 2 layer
+        "wandb:goodfire/spd-resid-mlp/runs/qqdugze1",  # 3 layer
     ]
 
     for path in paths:
@@ -695,11 +695,11 @@ def main():
 
         ##### Resid_mlp 1-layer varying sparsity ####
         run_ids = [
-            "wandb:spd-resid-mlp/runs/xh0qlbkj",  # 1e-6
-            "wandb:spd-resid-mlp/runs/kkpzirac",  # 3e-6
-            "wandb:spd-resid-mlp/runs/ziro93xq",  # Best. 1e-5
-            "wandb:spd-resid-mlp/runs/pnxu3d22",  # 1e-4
-            "wandb:spd-resid-mlp/runs/aahzg3zu",  # 1e-3
+            "wandb:goodfire/spd-resid-mlp/runs/xh0qlbkj",  # 1e-6
+            "wandb:goodfire/spd-resid-mlp/runs/kkpzirac",  # 3e-6
+            "wandb:goodfire/spd-resid-mlp/runs/ziro93xq",  # Best. 1e-5
+            "wandb:goodfire/spd-resid-mlp/runs/pnxu3d22",  # 1e-4
+            "wandb:goodfire/spd-resid-mlp/runs/aahzg3zu",  # 1e-3
         ]
         best_idx = [2]
 

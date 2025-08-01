@@ -226,7 +226,7 @@ def create_wandb_report(
 
     # Create separate panel grids for each experiment
     for experiment in experiments_list:
-        experiment_type = EXPERIMENT_REGISTRY[experiment].experiment_type
+        task_name = EXPERIMENT_REGISTRY[experiment].task_name
 
         # Use run_id and experiment name tags for filtering
         combined_filter = f'(Tags("tags") in ["{run_id}"]) and (Tags("tags") in ["{experiment}"])'
@@ -241,7 +241,7 @@ def create_wandb_report(
         panels: list[wr.interface.PanelTypes] = []
         y = 0
 
-        if experiment_type in ["tms", "resid_mlp"]:
+        if task_name in ["tms", "resid_mlp"]:
             ci_height = 12
             panels.append(
                 wr.MediaBrowser(
@@ -271,7 +271,7 @@ def create_wandb_report(
             )
         y += loss_plots_height
 
-        if EXPERIMENT_REGISTRY[experiment].experiment_type in ["tms", "resid_mlp"]:
+        if task_name in ["tms", "resid_mlp"]:
             # Add target CI error plots
             target_ci_weight = 6
             target_ci_width = REPORT_TOTAL_WIDTH // 2
@@ -294,7 +294,7 @@ def create_wandb_report(
             y += target_ci_weight
 
         # Only add KL loss plots for language model experiments
-        if experiment_type == "lm":
+        if task_name == "lm":
             kl_height = 6
             kl_width = REPORT_TOTAL_WIDTH // 3
             x_offset = 0

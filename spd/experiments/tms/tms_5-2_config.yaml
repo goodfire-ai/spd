@@ -58,7 +58,7 @@ eval_metrics:
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"
-pretrained_model_path: "wandb:spd/runs/0hsp07o4"
+pretrained_model_path: "wandb:goodfire/spd/runs/0hsp07o4"
 
 # --- Task Specific ---
 task_config:
