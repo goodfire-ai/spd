@@ -347,7 +347,8 @@ def plot_ci_values_histograms(
 
     fig.tight_layout()
 
-    fig_img = _render_figure(fig)
+    # fig_img = _render_figure(fig)
     plt.close(fig)
+    return fig
 
-    return fig_img
+    # return fig_img
