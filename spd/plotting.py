@@ -17,6 +17,109 @@ from spd.models.sigmoids import SigmoidTypes
 from spd.utils.target_ci_solutions import permute_to_dense, permute_to_identity
 
 
+def _apply_custom_log_scale(
+    ax: plt.Axes,
+    data: np.ndarray,
+    bins: int,
+) -> None:
+    """Apply custom log scale to histogram by manually computing and plotting log-transformed data.
+
+    This implementation manually transforms the y-coordinates to achieve a log scale effect
+    without using matplotlib's set_yscale('log').
+
+    Args:
+        ax: The matplotlib axes object
+        data: The data to plot in histogram
+        bins: Number of bins for histogram
+    """
+    # Compute histogram data
+    counts, bin_edges = np.histogram(data, bins=bins)
+
+    # Find non-zero counts for log transformation
+    non_zero_mask = counts > 0
+
+    if not non_zero_mask.any():
+        # No data to plot
+        return
+
+    # Define log transformation functions
+    min_value = 0.1  # Minimum value to avoid log(0)
+
+    def to_log_scale(y):
+        """Transform y value to log scale coordinate."""
+        return np.log10(np.maximum(y, min_value))
+
+    # Get the range of actual count values
+    min_count = max(counts[non_zero_mask].min(), 1)
+    max_count = counts.max()
+
+    # Calculate the log-scale range
+    log_min = to_log_scale(min_count * 0.5)  # Add some bottom margin
+    log_max = to_log_scale(max_count * 2)  # Add some top margin
+
+    # Create bar plot with log-transformed heights
+    bin_width = bin_edges[1] - bin_edges[0]
+    bin_centers = bin_edges[:-1] + bin_width / 2
+
+    # Plot bars with transformed y-coordinates
+    for i, (count, center) in enumerate(zip(counts, bin_centers, strict=False)):
+        if count > 0:
+            # Transform the height to log scale
+            log_bottom = log_min
+            log_height = to_log_scale(count) - log_min
+            ax.bar(
+                center,
+                log_height,
+                width=bin_width,
+                bottom=log_bottom,
+                edgecolor="black",
+                linewidth=0.5,
+            )
+
+    # Set the transformed y-axis limits
+    ax.set_ylim(log_min, log_max)
+
+    # Generate tick positions in log space
+    log_range = int(np.floor(log_max)) - int(np.ceil(log_min)) + 1
+    major_log_ticks = []
+    major_labels = []
+
+    # Major ticks at powers of 10
+    for exp in range(int(np.floor(np.log10(min_count))), int(np.ceil(np.log10(max_count))) + 1):
+        log_tick = float(exp)
+        if log_min <= log_tick <= log_max:
+            major_log_ticks.append(log_tick)
+            if exp <= 2:
+                major_labels.append(str(int(10**exp)))
+            else:
+                major_labels.append(f"$10^{{{exp}}}$")
+
+    # Add intermediate ticks
+    minor_log_ticks = []
+    for exp in range(int(np.floor(np.log10(min_count))), int(np.ceil(np.log10(max_count))) + 1):
+        for mult in [2, 3, 4, 5, 6, 7, 8, 9]:
+            tick_val = 10**exp * mult
+            log_tick = to_log_scale(tick_val)
+            if log_min <= log_tick <= log_max:
+                minor_log_ticks.append(log_tick)
+
+    # Set custom tick positions and labels
+    ax.set_yticks(major_log_ticks)
+    ax.set_yticklabels(major_labels)
+
+    # Add minor ticks
+    ax.set_yticks(minor_log_ticks, minor=True)
+    ax.tick_params(axis="y", which="minor", length=4)
+    ax.tick_params(axis="y", which="major", length=6)
+
+    # Add grid
+    ax.grid(True, which="major", axis="y", alpha=0.5, linestyle="-")
+    ax.grid(True, which="minor", axis="y", alpha=0.2, linestyle="--")
+
+    # Keep the axis linear but with our custom log-based positions and labels
+    # This completes our custom log scale implementation without using set_yscale('log')
+
+
 def _render_figure(fig: plt.Figure) -> Image.Image:
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight")
@@ -297,8 +400,9 @@ def plot_component_activation_density(
     # Iterate through modules and plot each histogram on its corresponding axis
     for i, (module_name, density) in enumerate(component_activation_density.items()):
         ax = axs[i]
-        ax.hist(density.detach().cpu().numpy(), bins=100)
-        ax.set_yscale("log")
+        data = density.detach().cpu().numpy()
+        _apply_custom_log_scale(ax, data, bins=100)
+        # ax.set_yscale("log")
         ax.set_title(module_name)  # Add module name as title to each subplot
         ax.set_xlabel("Activation density")
         ax.set_ylabel("Frequency")
@@ -339,10 +443,12 @@ def plot_ci_values_histograms(
     for i, (layer_name_raw, layer_ci) in enumerate(causal_importances.items()):
         layer_name = layer_name_raw.replace(".", "_")
         ax = axs[i]
-        ax.hist(layer_ci.flatten().cpu().numpy(), bins=bins)
+
+        data = layer_ci.flatten().cpu().numpy()
+        _apply_custom_log_scale(ax, data, bins)
+
         ax.set_title(f"Causal importances for {layer_name}")
         ax.set_xlabel("Causal importance value")
-        ax.set_yscale("log")
         ax.set_ylabel("Frequency")
 
     fig.tight_layout()
