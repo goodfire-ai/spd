@@ -262,8 +262,9 @@ class ComponentActivationDensity(StreamingEval):
             module_name: self.component_activation_counts[module_name] / self.n_tokens
             for module_name in self.model.components
         }
-        fig = plot_component_activation_density(activation_densities)
-        return {"figures/component_activation_density": fig}
+        return {"test": 3}
+        # fig = plot_component_activation_density(activation_densities)
+        # return {"figures/component_activation_density": fig}
 
 
 class PermutedCIPlots(StreamingEval):
