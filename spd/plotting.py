@@ -339,7 +339,8 @@ def plot_ci_values_histograms(
     for i, (layer_name_raw, layer_ci) in enumerate(causal_importances.items()):
         layer_name = layer_name_raw.replace(".", "_")
         ax = axs[i]
-        ax.hist(layer_ci.flatten().cpu().numpy(), bins=bins)
+        # ax.hist(layer_ci.flatten().cpu().numpy(), bins=bins)
+        ax.hist(layer_ci, bins=bins)
         ax.set_title(f"Causal importances for {layer_name}")
         ax.set_xlabel("Causal importance value")
         ax.set_yscale("log")
@@ -348,6 +349,6 @@ def plot_ci_values_histograms(
     fig.tight_layout()
 
     fig_img = _render_figure(fig)
-    plt.close(fig)
+    # plt.close(fig)
 
     return fig_img
