@@ -22,7 +22,6 @@ from spd.models.component_model import ComponentModel
 from spd.plotting import (
     get_single_feature_causal_importances,
     plot_causal_importance_vals,
-    plot_ci_values_histograms,
     plot_component_activation_density,
     plot_UV_matrices,
 )
@@ -223,8 +222,9 @@ class CIHistograms(StreamingEval):
     @override
     def compute(self) -> Mapping[str, Image.Image]:
         combined_causal_importances = {k: torch.cat(v) for k, v in self.causal_importances.items()}
-        fig = plot_ci_values_histograms(causal_importances=combined_causal_importances)
-        return {"figures/causal_importance_values": fig}
+        return {"test": 3}
+        # fig = plot_ci_values_histograms(causal_importances=combined_causal_importances)
+        # return {"figures/causal_importance_values": fig}
 
 
 class ComponentActivationDensity(StreamingEval):
