@@ -44,6 +44,8 @@ save_freq: null
 n_examples_until_dead: 1_024_000
 eval_metrics:
   - classname: "CIHistograms"
+    extra_init_kwargs:
+      n_batches_accum: 5
   - classname: "ComponentActivationDensity"
   - classname: "PermutedCIPlots"
     extra_init_kwargs:
