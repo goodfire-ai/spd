@@ -348,6 +348,6 @@ def plot_ci_values_histograms(
     fig.tight_layout()
 
     fig_img = _render_figure(fig)
-    plt.close(fig)
+    # plt.close(fig)
 
     return fig_img
