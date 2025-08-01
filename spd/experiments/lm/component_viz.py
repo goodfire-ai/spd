@@ -42,7 +42,7 @@ def main(path: ModelPath) -> None:
     # logger.info(ss_model)
     logger.values(config.model_dump(), msg="Model config")
 
-    mean_n_active_components_per_token, mean_component_activation_counts = (
+    mean_n_active_components_per_token, mean_component_activation_counts, _ = (
         component_activation_statistics(
             model=ss_model,
             dataloader=dataloader,

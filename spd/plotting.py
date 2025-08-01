@@ -451,3 +451,44 @@ def plot_ci_histograms(
         fig_dict[f"mask_vals_{layer_name}"] = fig
 
     return fig_dict
+
+
+def plot_component_co_activation_fractions(
+    component_co_activation_fractions: dict[str, Float[Tensor, " C C"]],
+) -> dict[str, plt.Figure]:
+    """Plot the component co-activation fractions for each component module in a grid."""
+    n_modules = len(component_co_activation_fractions)
+
+    # Create figure with GridSpec for explicit layout control
+    fig = plt.figure(figsize=(8, 8 * n_modules))
+
+    # Create GridSpec: main plots take 85% width, colorbar takes 10%, 5% gap
+    gs = fig.add_gridspec(n_modules, 2, width_ratios=[17, 1], wspace=0.1)
+
+    # Create a unified normalization for all plots (0 to 1)
+    # norm = plt.Normalize(vmin=0, vmax=1)
+    norm = plt.Normalize(vmin=0)
+
+    # Store all image objects for colorbar
+    images = []
+
+    # Iterate through modules and plot each histogram on its corresponding axis
+    for i, (module_name, fractions) in enumerate(component_co_activation_fractions.items()):
+        # Create subplot for the main plot
+        ax = fig.add_subplot(gs[i, 0])
+        im = ax.matshow(fractions.detach().cpu().numpy(), aspect="auto", cmap="Purples", norm=norm)
+        images.append(im)
+        ax.set_title(module_name)
+        ax.set_xlabel("Denominator Component index")
+        ax.set_ylabel("Numerator Component index")
+
+    # Add a unified colorbar for all plots
+    if images:
+        # Create colorbar in the dedicated right column
+        cbar_ax = fig.add_subplot(gs[:, 1])
+        cbar = fig.colorbar(images[0], cax=cbar_ax)
+        cbar.set_label("Co-activation Fraction", fontsize=12)
+        cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+        cbar.set_ticklabels(["0.0", "0.25", "0.5", "0.75", "1.0"])
+
+    return {"component_co_activation_fractions": fig}

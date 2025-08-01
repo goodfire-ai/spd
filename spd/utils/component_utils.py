@@ -1,4 +1,5 @@
 import torch
+from einops import einsum
 from jaxtyping import Float, Int
 from torch import Tensor
 from torch.utils.data import DataLoader
@@ -49,12 +50,16 @@ def component_activation_statistics(
     sigmoid_type: SigmoidTypes,
     device: str,
     threshold: float,
-) -> tuple[dict[str, float], dict[str, Float[Tensor, " C"]]]:
+) -> tuple[dict[str, float], dict[str, Float[Tensor, " C"]], dict[str, Float[Tensor, " C C"]]]:
     """Get the number and strength of the masks over the full dataset."""
     n_tokens = {module_name: 0 for module_name in model.components}
     total_n_active_components = {module_name: 0 for module_name in model.components}
     component_activation_counts = {
         module_name: torch.zeros(model.C, device=device) for module_name in model.components
+    }
+    component_co_activation_counts = {
+        module_name: torch.zeros(model.C, model.C, device=device)
+        for module_name in model.components
     }
     data_iter = iter(dataloader)
     for _ in range(n_steps):
@@ -79,6 +84,9 @@ def component_activation_statistics(
 
             sum_dims = tuple(range(ci.ndim - 1))
             component_activation_counts[module_name] += active_components.sum(dim=sum_dims)
+            component_co_activation_counts[module_name] += einsum(
+                active_components, active_components, "b C, b C2 -> b C C2"
+            ).sum(dim=sum_dims)
 
     # Show the mean number of components
     mean_n_active_components_per_token: dict[str, float] = {
@@ -89,5 +97,44 @@ def component_activation_statistics(
         module_name: component_activation_counts[module_name] / n_tokens[module_name]
         for module_name in model.components
     }
+    sorted_activation_inds = {
+        module_name: torch.argsort(
+            mean_component_activation_counts[module_name], dim=-1, descending=True
+        )
+        for module_name in model.components
+    }
 
-    return mean_n_active_components_per_token, mean_component_activation_counts
+    # Calculate frac components co-activated with each other conditioned on the activation of the other
+    component_co_activation_counts_denom = {
+        module_name: torch.ones(model.C, model.C, device=device)
+        * component_activation_counts[module_name]
+        for module_name in model.components
+    }
+
+    component_co_activation_fractions = {
+        module_name: component_co_activation_counts[module_name]
+        / component_co_activation_counts_denom[module_name]
+        for module_name in model.components
+    }
+    # Convert nans to 0
+    component_co_activation_fractions = {
+        module_name: torch.where(
+            torch.isnan(component_co_activation_fractions[module_name]),
+            torch.zeros_like(component_co_activation_fractions[module_name]),
+            component_co_activation_fractions[module_name],
+        )
+        for module_name in model.components
+    }
+
+    sorted_co_activation_fractions = {
+        module_name: component_co_activation_fractions[module_name][
+            sorted_activation_inds[module_name], :
+        ][:, sorted_activation_inds[module_name]]
+        for module_name in model.components
+    }
+
+    return (
+        mean_n_active_components_per_token,
+        mean_component_activation_counts,
+        sorted_co_activation_fractions,
+    )
