@@ -8,15 +8,16 @@ import numpy as np
 import torch
 from jaxtyping import Float
 from PIL import Image
-from torch import Tensor, nn
+from torch import Tensor
 
 from spd.configs import Config
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.models.components import Components
+from spd.models.components import Components, ComponentsOrModule
 from spd.plotting import plot_causal_importance_vals
+from spd.registry import EXPERIMENT_REGISTRY
 from spd.utils.general_utils import get_device, runtime_cast, set_seed
 from spd.utils.run_utils import get_output_dir
 
@@ -316,8 +317,14 @@ def compute_patched_weight_neuron_contributions(
     The returned tensor has shape ``(n_layers, n_features, d_mlp)`` recording – for
     every hidden layer and every input feature – the *virtual* weight connecting
     that feature to each neuron after the ReLU (i.e. the product ``W_in * W_out``)
-    as described in the original script. Only the first ``n_features`` are kept
-    (or all features if ``n_features is None``).
+    as described in the original script.
+
+    Args:
+        patched_model: The patched model (i.e. with ComponentsOrModule layers)
+        n_features: The number of features to keep. If None, all features are kept.
+
+    Returns:
+        A tensor of shape ``(n_layers, n_features, d_mlp)`` recording the neuron contributions.
     """
 
     n_features = patched_model.config.n_features if n_features is None else n_features
@@ -327,10 +334,18 @@ def compute_patched_weight_neuron_contributions(
 
     # Stack mlp_in / mlp_out weights across layers so that einsums can broadcast
     W_in: Float[Tensor, "n_layers d_mlp d_embed"] = torch.stack(
-        [runtime_cast(nn.Linear, layer.mlp_in).weight for layer in patched_model.layers], dim=0
+        [
+            runtime_cast(ComponentsOrModule, layer.mlp_in).original.weight
+            for layer in patched_model.layers
+        ],
+        dim=0,
     )
     W_out: Float[Tensor, "n_layers d_embed d_mlp"] = torch.stack(
-        [runtime_cast(nn.Linear, layer.mlp_out).weight for layer in patched_model.layers], dim=0
+        [
+            runtime_cast(ComponentsOrModule, layer.mlp_out).original.weight
+            for layer in patched_model.layers
+        ],
+        dim=0,
     )
 
     # Compute connection strengths
@@ -615,18 +630,19 @@ def plot_neuron_contribution_pairs(
 
 
 def main():
-    out_dir = get_output_dir() / "figures"
+    out_dir = get_output_dir(use_wandb_id=False) / "figures"
     out_dir.mkdir(parents=True, exist_ok=True)
     set_seed(0)
     device = get_device()
 
-    paths: list[str] = [
-        "wandb:goodfire/spd-resid-mlp/runs/ziro93xq",  # 1 layer
-        "wandb:goodfire/spd-resid-mlp/runs/wau744ht",  # 2 layer
-        "wandb:goodfire/spd-resid-mlp/runs/qqdugze1",  # 3 layer
+    canonical_runs = [
+        EXPERIMENT_REGISTRY["resid_mlp1"].canonical_run,
+        EXPERIMENT_REGISTRY["resid_mlp2"].canonical_run,
+        EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run,
     ]
 
-    for path in paths:
+    for path in canonical_runs:
+        assert path is not None
         wandb_id = path.split("/")[-1]
 
         run_info = SPDRunInfo.from_path(path)
@@ -693,26 +709,26 @@ def main():
         figs_causal["causal_importances_upper_leaky"].save(fname_importances)
         logger.info(f"Saved figure to {fname_importances}")
 
-        ##### Resid_mlp 1-layer varying sparsity ####
-        run_ids = [
-            "wandb:goodfire/spd-resid-mlp/runs/xh0qlbkj",  # 1e-6
-            "wandb:goodfire/spd-resid-mlp/runs/kkpzirac",  # 3e-6
-            "wandb:goodfire/spd-resid-mlp/runs/ziro93xq",  # Best. 1e-5
-            "wandb:goodfire/spd-resid-mlp/runs/pnxu3d22",  # 1e-4
-            "wandb:goodfire/spd-resid-mlp/runs/aahzg3zu",  # 1e-3
-        ]
-        best_idx = [2]
+        # ##### Resid_mlp 1-layer varying sparsity ####
+        # run_ids = [
+        #     "wandb:goodfire/spd-resid-mlp/runs/xh0qlbkj",  # 1e-6
+        #     "wandb:goodfire/spd-resid-mlp/runs/kkpzirac",  # 3e-6
+        #     "wandb:goodfire/spd-resid-mlp/runs/ziro93xq",  # Best. 1e-5
+        #     "wandb:goodfire/spd-resid-mlp/runs/pnxu3d22",  # 1e-4
+        #     "wandb:goodfire/spd-resid-mlp/runs/aahzg3zu",  # 1e-3
+        # ]
+        # best_idx = [2]
 
-        # Create and save the combined figure
-        fig = plot_increasing_importance_minimality_coeff_ci_vals(run_ids, best_idx=best_idx)
-        out_dir = get_output_dir()
-        fname_coeff = out_dir / "resid_mlp_varying_importance_minimality_coeff_ci_vals.png"
-        fig.savefig(
-            fname_coeff,
-            bbox_inches="tight",
-            dpi=400,
-        )
-        logger.info(f"Saved figure to {fname_coeff}")
+        # # Create and save the combined figure
+        # fig = plot_increasing_importance_minimality_coeff_ci_vals(run_ids, best_idx=best_idx)
+        # out_dir = get_output_dir()
+        # fname_coeff = out_dir / "resid_mlp_varying_importance_minimality_coeff_ci_vals.png"
+        # fig.savefig(
+        #     fname_coeff,
+        #     bbox_inches="tight",
+        #     dpi=400,
+        # )
+        # logger.info(f"Saved figure to {fname_coeff}")
 
 
 if __name__ == "__main__":
