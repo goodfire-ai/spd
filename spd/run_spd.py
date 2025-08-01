@@ -206,7 +206,11 @@ def optimize(
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
             with torch.inference_mode():
-                run_slow = step % config.slow_eval_freq == 0
+                run_slow: bool = (
+                    config.slow_eval_on_first_step
+                    if step == 0
+                    else step % config.slow_eval_freq == 0
+                )
 
                 metrics = eval(
                     model=model,
