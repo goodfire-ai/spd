@@ -335,6 +335,25 @@ def plot_ci_values_histograms(
     )
 
     axs = axs.flatten()  # Flatten the axes array for easy iteration
+    # # axs[0].plot([1, 2, 2, 3, 3, 3, 4, 4, 5, 3, 3, 2, 3, 4, 5, 5, 5])
+    # axs[0].hist([1, 2, 2, 3, 3, 3, 4, 4, 5, 3, 3, 2, 3, 4, 5, 5, 5], bins=3)
+    # # axs[0].set_title("Causal importances")
+    # # axs[0].set_xlabel("Causal importance value")
+    # axs[0].set_yscale("log")
+    # # axs[0].set_ylabel("Frequency")
+    # # for i in range(n_layers):
+    # #     axs[i].hist([1, 2, 2, 3, 3, 3, 4, 4, 5, 3, 3, 2, 3, 4, 5, 5, 5], bins=3)
+
+    # for i, (layer_name_raw, layer_ci) in enumerate(causal_importances.items()):
+    #     layer_name = layer_name_raw.replace(".", "_")
+    #     ax = axs[i]
+    #     # ax.hist(layer_ci.flatten().cpu().numpy(), bins=bins)
+    #     # fake_layer = torch.randn_like(layer_ci, device="cpu").numpy()
+    #     ax.hist([1, 2, 2, 3, 3, 3, 4, 4, 5, 3, 3, 2, 3, 4, 5, 5, 5], bins=3)
+    #     ax.set_title(f"Causal importances for {layer_name}")
+    #     ax.set_xlabel("Causal importance value")
+    #     ax.set_yscale("log")
+    #     ax.set_ylabel("Frequency")
 
     for i, (layer_name_raw, layer_ci) in enumerate(causal_importances.items()):
         layer_name = layer_name_raw.replace(".", "_")
@@ -342,7 +361,7 @@ def plot_ci_values_histograms(
         ax.hist(layer_ci.flatten().cpu().numpy(), bins=bins)
         ax.set_title(f"Causal importances for {layer_name}")
         ax.set_xlabel("Causal importance value")
-        ax.set_yscale("log")
+        # ax.set_yscale("log")
         ax.set_ylabel("Frequency")
 
     fig.tight_layout()
