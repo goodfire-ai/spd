@@ -411,6 +411,7 @@ class ComponentModel(nn.Module):
             gate_output = gates(gate_input)
 
             if sigmoid_type == "leaky_hard":
+                # Don't ask. It just works better this way.
                 causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](gate_output)
                 causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
                     gate_output
@@ -418,7 +419,9 @@ class ComponentModel(nn.Module):
             else:
                 # For other sigmoid types, use the same function for both
                 sigmoid_fn = SIGMOID_TYPES[sigmoid_type]
-                causal_importances[param_name] = sigmoid_fn(gate_output)
+                causal_importances[param_name] = sigmoid_fn(
+                    1.05 * gate_output - 0.05 * torch.rand_like(gate_output)
+                )
                 # Use absolute value to ensure upper_leaky values are non-negative for importance minimality loss
                 causal_importances_upper_leaky[param_name] = sigmoid_fn(gate_output).abs()
 
