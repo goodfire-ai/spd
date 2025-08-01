@@ -2,9 +2,13 @@ import fnmatch
 import io
 from collections.abc import Callable
 
+import matplotlib
 import numpy as np
 import torch
 from jaxtyping import Float
+
+matplotlib.use("Agg")
+
 from matplotlib import pyplot as plt
 from PIL import Image
 from torch import Tensor
