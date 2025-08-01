@@ -1,38 +1,44 @@
+from pathlib import Path
 from typing import Any
 
 import einops
-import fire
 import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Float
 from PIL import Image
-from torch import Tensor, nn
+from torch import Tensor
 
 from spd.configs import Config
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.models.components import Components
+from spd.models.components import Components, ComponentsOrModule
 from spd.plotting import plot_causal_importance_vals
+from spd.registry import EXPERIMENT_REGISTRY
 from spd.utils.general_utils import get_device, runtime_cast, set_seed
 from spd.utils.run_utils import get_output_dir
 
 
-def extract_ci_val_figures(run_id: str, input_magnitude: float = 0.75) -> dict[str, Any]:
+def extract_ci_val_figures(
+    run_id: str, input_magnitude: float = 0.75, device: str = "cuda"
+) -> dict[str, Any]:
     """Extract causal importances from a single run.
 
     Args:
         run_id: Wandb run ID to load model from
         input_magnitude: Magnitude of input features for causal importances plotting
+        device: Device to use for model
 
     Returns:
         Dictionary containing causal importances data and metadata
     """
     run_info = SPDRunInfo.from_path(run_id)
     model = ComponentModel.from_run_info(run_info)
+    model.to(device)
+
     config = run_info.config
     assert isinstance(model.patched_model, ResidMLP | TMSModel), (
         "patched model must be a ResidMLP or TMSModel"
@@ -41,9 +47,6 @@ def extract_ci_val_figures(run_id: str, input_magnitude: float = 0.75) -> dict[s
 
     # Assume no position dimension
     batch_shape = (1, n_features)
-
-    # Get device from model
-    device = next(model.parameters()).device
 
     # Get mask values without plotting regular masks
     figures, all_perm_indices_ci_vals = plot_causal_importance_vals(
@@ -65,14 +68,17 @@ def extract_ci_val_figures(run_id: str, input_magnitude: float = 0.75) -> dict[s
 
 
 def plot_increasing_importance_minimality_coeff_ci_vals(
-    run_ids: list[str], input_magnitude: float = 0.75, best_idx: list[int] | None = None
+    run_ids: list[str],
+    input_magnitude: float = 0.75,
+    best_idxs: list[int] | None = None,
+    device: str = "cuda",
 ) -> plt.Figure:
     """Plot increasing importance minimality coeff for multiple runs in a combined figure.
 
     Args:
         run_ids: List of wandb run IDs to load models from
         input_magnitude: Magnitude of input features for causal importances plotting
-        best_idx: List of indices indicating which runs are the best (for highlighting)
+        best_idxs: List of indices indicating which runs are the best (for highlighting)
 
     Returns:
         Combined figure with causal importances from all runs
@@ -85,7 +91,7 @@ def plot_increasing_importance_minimality_coeff_ci_vals(
         logger.info(f"Loading model from {run_id}")
 
         # Extract causal importances using helper function
-        extraction_result = extract_ci_val_figures(run_id, input_magnitude)
+        extraction_result = extract_ci_val_figures(run_id, input_magnitude, device)
         figures = extraction_result["figures"]
         config = extraction_result["config"]
         assert isinstance(config, Config)
@@ -168,14 +174,14 @@ def plot_increasing_importance_minimality_coeff_ci_vals(
                 title_text = rf"$\beta_3$={imp_coeff:.0e}"
 
                 # Add "BEST" indicator if this is one of the best runs
-                if best_idx is not None and col_idx in best_idx:
+                if best_idxs is not None and col_idx in best_idxs:
                     title_text += " (BEST)"
 
                 ax.set_title(title_text, fontsize=12, pad=11)
 
     # Highlight best runs with visual distinctions
-    if best_idx is not None:
-        for best_col_idx in best_idx:
+    if best_idxs is not None:
+        for best_col_idx in best_idxs:
             if 0 <= best_col_idx < n_runs:
                 # Add colored borders and background to all subplots in the best column
                 for row_idx in range(n_components):
@@ -316,8 +322,14 @@ def compute_patched_weight_neuron_contributions(
     The returned tensor has shape ``(n_layers, n_features, d_mlp)`` recording – for
     every hidden layer and every input feature – the *virtual* weight connecting
     that feature to each neuron after the ReLU (i.e. the product ``W_in * W_out``)
-    as described in the original script. Only the first ``n_features`` are kept
-    (or all features if ``n_features is None``).
+    as described in the original script.
+
+    Args:
+        patched_model: The patched model (i.e. with ComponentsOrModule layers)
+        n_features: The number of features to keep. If None, all features are kept.
+
+    Returns:
+        A tensor of shape ``(n_layers, n_features, d_mlp)`` recording the neuron contributions.
     """
 
     n_features = patched_model.config.n_features if n_features is None else n_features
@@ -327,10 +339,18 @@ def compute_patched_weight_neuron_contributions(
 
     # Stack mlp_in / mlp_out weights across layers so that einsums can broadcast
     W_in: Float[Tensor, "n_layers d_mlp d_embed"] = torch.stack(
-        [runtime_cast(nn.Linear, layer.mlp_in).weight for layer in patched_model.layers], dim=0
+        [
+            runtime_cast(ComponentsOrModule, layer.mlp_in).original.weight
+            for layer in patched_model.layers
+        ],
+        dim=0,
     )
     W_out: Float[Tensor, "n_layers d_embed d_mlp"] = torch.stack(
-        [runtime_cast(nn.Linear, layer.mlp_out).weight for layer in patched_model.layers], dim=0
+        [
+            runtime_cast(ComponentsOrModule, layer.mlp_out).original.weight
+            for layer in patched_model.layers
+        ],
+        dim=0,
     )
 
     # Compute connection strengths
@@ -614,19 +634,15 @@ def plot_neuron_contribution_pairs(
     return fig
 
 
-def main():
-    out_dir = get_output_dir() / "figures"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    set_seed(0)
-    device = get_device()
-
-    paths: list[str] = [
-        "wandb:goodfire/spd-resid-mlp/runs/ziro93xq",  # 1 layer
-        "wandb:goodfire/spd-resid-mlp/runs/wau744ht",  # 2 layer
-        "wandb:goodfire/spd-resid-mlp/runs/qqdugze1",  # 3 layer
+def main(out_dir: Path, device: str):
+    canonical_runs = [
+        EXPERIMENT_REGISTRY["resid_mlp1"].canonical_run,
+        EXPERIMENT_REGISTRY["resid_mlp2"].canonical_run,
+        EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run,
     ]
 
-    for path in paths:
+    for path in canonical_runs:
+        assert path is not None
         wandb_id = path.split("/")[-1]
 
         run_info = SPDRunInfo.from_path(path)
@@ -693,27 +709,39 @@ def main():
         figs_causal["causal_importances_upper_leaky"].save(fname_importances)
         logger.info(f"Saved figure to {fname_importances}")
 
-        ##### Resid_mlp 1-layer varying sparsity ####
-        run_ids = [
-            "wandb:goodfire/spd-resid-mlp/runs/xh0qlbkj",  # 1e-6
-            "wandb:goodfire/spd-resid-mlp/runs/kkpzirac",  # 3e-6
-            "wandb:goodfire/spd-resid-mlp/runs/ziro93xq",  # Best. 1e-5
-            "wandb:goodfire/spd-resid-mlp/runs/pnxu3d22",  # 1e-4
-            "wandb:goodfire/spd-resid-mlp/runs/aahzg3zu",  # 1e-3
-        ]
-        best_idx = [2]
 
-        # Create and save the combined figure
-        fig = plot_increasing_importance_minimality_coeff_ci_vals(run_ids, best_idx=best_idx)
-        out_dir = get_output_dir()
-        fname_coeff = out_dir / "resid_mlp_varying_importance_minimality_coeff_ci_vals.png"
-        fig.savefig(
-            fname_coeff,
-            bbox_inches="tight",
-            dpi=400,
-        )
-        logger.info(f"Saved figure to {fname_coeff}")
+def plot_varying_importance_minimality_coeff_ci_vals(
+    out_dir: Path, device: str, run_ids: list[str], best_idxs: list[int]
+):
+    # Create and save the combined figure
+    fig = plot_increasing_importance_minimality_coeff_ci_vals(
+        run_ids=run_ids, best_idxs=best_idxs, device=device
+    )
+    fname_coeff = out_dir / "resid_mlp_varying_importance_minimality_coeff_ci_vals_1layer.png"
+    fig.savefig(
+        fname_coeff,
+        bbox_inches="tight",
+        dpi=400,
+    )
+    logger.info(f"Saved figure to {fname_coeff}")
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    out_dir = get_output_dir(use_wandb_id=False) / "figures"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    set_seed(0)
+    device = get_device()
+
+    main(out_dir, device)
+
+    run_ids = [
+        "wandb:goodfire/spd/runs/3vz44ch1",  # 1e-6
+        "wandb:goodfire/spd/runs/iko8ze6g",  # 3e-6
+        "wandb:goodfire/spd/runs/xgsmo859",  # Best. 1e-5
+        "wandb:goodfire/spd/runs/c66halpj",  # 1e-4
+        "wandb:goodfire/spd/runs/49f8lnxc",  # 1e-3
+    ]
+    best_idxs = [2]
+    plot_varying_importance_minimality_coeff_ci_vals(
+        out_dir=out_dir, device=device, run_ids=run_ids, best_idxs=best_idxs
+    )
