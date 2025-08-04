@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from spd.clustering.compute_rank import compute_rank_of_sum as rank_of_sum  # noqa: E402
+from spd.clustering.math.compute_rank import compute_rank_of_sum as rank_of_sum  # noqa: E402
 
 
 def random_orth(

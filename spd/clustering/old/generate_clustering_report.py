@@ -13,7 +13,7 @@ from muutils.dbg import dbg_auto
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import compute_merge_costs, merge_iteration
-from spd.clustering.merge_matrix import GroupMerge
+from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.sweep import (
     SweepConfig,
     cost_ratio_condition,

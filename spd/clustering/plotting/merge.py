@@ -8,7 +8,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 from spd.clustering.merge import MergeHistory, MergePlotConfig
-from spd.clustering.merge_matrix import GroupMerge
+from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.util import format_scientific_latex
 
 
