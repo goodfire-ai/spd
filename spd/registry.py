@@ -95,6 +95,16 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
 }
 
 
+def get_experiment_config_file_contents(key: str) -> dict[str, Any]:
+    """given a key in the `EXPERIMENT_REGISTRY`, return contents of the config file as a dict.
+
+    note that since paths are of the form `Path("spd/experiments/tms/tms_5-2_config.yaml")`,
+    we strip the "spd/" prefix to be able to read the file using `importlib`.
+    This makes our ability to find the file independent of the current working directory.
+    """
+
+    return yaml.safe_load((REPO_ROOT / EXPERIMENT_REGISTRY[key].config_path).read_text())
+
 
 def get_max_expected_runtime(experiments_list: list[str]) -> str:
     """Get the max expected runtime of a list of experiments in XhYm format.
@@ -109,34 +119,3 @@ def get_max_expected_runtime(experiments_list: list[str]) -> str:
         EXPERIMENT_REGISTRY[experiment].expected_runtime for experiment in experiments_list
     )
     return f"{max_expected_runtime // 60}h{max_expected_runtime % 60}m"
-
-
-def get_experiment_config_file_contents(key: str) -> dict[str, Any]:
-    """given a key in the `EXPERIMENT_REGISTRY`, return contents of the config file as a dict.
-
-    note that since paths are of the form `Path("spd/experiments/tms/tms_5-2_config.yaml")`,
-    we strip the "spd/" prefix to be able to read the file using `importlib`.
-    This makes our ability to find the file independent of the current working directory.
-    """
-
-    return yaml.safe_load((REPO_ROOT / EXPERIMENT_REGISTRY[key].config_path).read_text())
-
-
-CANONICAL_RUNS: dict[str, str] = {
-    "tms_5-2": "wandb:goodfire/spd/runs/uq1mwr7k",
-    "tms_5-2-id": "wandb:goodfire/spd/runs/i6bptp4y",
-    "tms_40-10": "wandb:goodfire/spd/runs/wg3spxn9",
-    "tms_40-10-id": "wandb:goodfire/spd/2v0sl1ga",
-    "resid_mlp1": "wandb:goodfire/spd/runs/5knhdur4",
-    "resid_mlp2": "wandb:goodfire/spd/runs/kka9ocmy",
-}
-"""this should be a dictionary mapping experiment registry keys to a canonical run for that experiment.
-The run doesn't have to be the absolute best decomposition, but should be a run that is guaranteed to load without errors -- `tests/test_model_loading.py` will test this.
-
-if your PR creates a breaking change, then you should update this dictionary to point to a new canonical run.
-
-You can generate these runs for each experiment by running:
-```
-spd-run --local --log-format terse
-```
-"""

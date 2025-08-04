@@ -1,5 +1,4 @@
 import fnmatch
-from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -389,8 +388,6 @@ class ComponentModel(LoadableModule):
         target_model_unpatched.eval()
         target_model_unpatched.requires_grad_(False)
 
-
-        # convert to ComponentModel
         comp_model = ComponentModel(
             target_model=target_model_unpatched,
             target_module_patterns=config.target_module_patterns,

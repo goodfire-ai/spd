@@ -21,7 +21,7 @@ from spd.clustering.sweep import (
     plot_evolution_histories,
     run_hyperparameter_sweep,
 )
-from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
+from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.models.component_model import ComponentModel
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 
@@ -41,7 +41,7 @@ component_model.to(DEVICE)
 # Create dataset and dataloader
 N_SAMPLES = 1024
 print(f"\n2. Creating dataset with {N_SAMPLES} samples...")
-dataset = ResidualMLPDataset(
+dataset = ResidMLPDataset(
     n_features=component_model.model.config.n_features,
     feature_probability=cfg.task_config.feature_probability,
     device=DEVICE,

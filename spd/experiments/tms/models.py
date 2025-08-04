@@ -57,7 +57,7 @@ class TMSTargetRunInfo(RunInfo[TMSTrainConfig]):
 class TMSModel(LoadableModule):
     def __init__(self, config: TMSModelConfig):
         super().__init__()
-        self.config: TMSModelConfig = config
+        self.config = config
 
         self.linear1 = nn.Linear(config.n_features, config.n_hidden, bias=False)
         self.linear2 = nn.Linear(config.n_hidden, config.n_features, bias=True)
@@ -73,9 +73,6 @@ class TMSModel(LoadableModule):
 
         if config.tied_weights:
             self.tie_weights_()
-
-        # we don't use this on direct init, but we write to it when we load a pretrained model
-        self.train_config: dict[str, Any] = {}
 
     def tie_weights_(self) -> None:
         self.linear2.weight.data = self.linear1.weight.data.T

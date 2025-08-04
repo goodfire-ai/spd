@@ -123,9 +123,6 @@ class ResidMLP(LoadableModule):
             ]
         )
 
-        # we don't use this on direct init, but we write to it when we load a pretrained model
-        self.train_config: dict[str, Any] = {}
-
     @override
     def forward(
         self,
@@ -170,7 +167,6 @@ class ResidMLP(LoadableModule):
         logger.info(f"Downloaded checkpoint from {checkpoint_path}")
         return resid_mlp_train_config_path, label_coeffs_path, checkpoint_path
 
-    @override
     @classmethod
     @override
     def from_run_info(cls, run_info: RunInfo[ResidMLPTrainConfig]) -> "ResidMLP":

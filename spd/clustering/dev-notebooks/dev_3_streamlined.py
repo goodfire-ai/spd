@@ -5,7 +5,7 @@ from muutils.dbg import dbg_auto
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge_sweep import sweep_merge_parameter, sweep_multiple_parameters
-from spd.experiments.resid_mlp.resid_mlp_dataset import ResidualMLPDataset
+from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.models.component_model import ComponentModel
 from spd.registry import CANONICAL_RUNS
 from spd.utils.data_utils import DatasetGeneratedDataLoader
@@ -25,7 +25,7 @@ component_model.to(DEVICE)
 # Setup dataset and dataloader
 N_SAMPLES: int = 512
 
-dataset = ResidualMLPDataset(
+dataset = ResidMLPDataset(
     n_features=component_model.patched_model.config.n_features,
     feature_probability=cfg.task_config.feature_probability,
     device=DEVICE,
