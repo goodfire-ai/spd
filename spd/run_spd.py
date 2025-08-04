@@ -64,6 +64,7 @@ def loop_dataloader[T](dl: DataLoader[T]):
         try:
             yield next(dl_iter)
         except StopIteration:
+            # TODO: Confirm that this works with DDP
             logger.warning("Dataloader exhausted, resetting iterator.")
             dl_iter = iter(dl)
             yield next(dl_iter)
