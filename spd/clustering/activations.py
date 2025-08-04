@@ -39,9 +39,9 @@ def component_activations(
 
 def process_activations(
     activations: dict[
-        str, # module name to
-        Float[Tensor, " n_steps C"] # (sample x component gate activations)
-        | Float[Tensor, " n_sample n_ctx C"] # (sample x seq index x component gate activations)
+        str,  # module name to
+        Float[Tensor, " n_steps C"]  # (sample x component gate activations)
+        | Float[Tensor, " n_sample n_ctx C"],  # (sample x seq index x component gate activations)
     ],
     filter_dead_threshold: float = 0.01,
     seq_mode: Literal["concat", "seq_mean", None] = None,
@@ -72,7 +72,6 @@ def process_activations(
         # Use the activations as they are
         activations_ = activations
 
-
     dbg_auto(activations_)
 
     # compute the labels and total component count
@@ -99,8 +98,7 @@ def process_activations(
         if dead_components.any():
             act_concat = act_concat[:, ~dead_components]
             alive_labels: list[tuple[str, bool]] = [
-                (lbl, keep.item())
-                for lbl, keep in zip(labels, ~dead_components, strict=False)
+                (lbl, keep.item()) for lbl, keep in zip(labels, ~dead_components, strict=False)
             ]
             labels = [label for label, keep in alive_labels if keep]
             dead_components_lst = [label for label, keep in alive_labels if not keep]
@@ -125,7 +123,7 @@ def process_activations(
     if plots:
         # Import plotting function only when needed
         from spd.clustering.plotting import plot_activations
-        
+
         # Use original activations for raw plots, but filtered data for concat/coact/histograms
         plot_activations(
             activations=activations_,  # Original unfiltered for raw activations

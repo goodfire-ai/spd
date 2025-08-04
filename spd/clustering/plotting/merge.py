@@ -7,8 +7,8 @@ import numpy as np
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.clustering.merge import MergeHistory, MergePlotConfig
 from spd.clustering.math.merge_matrix import GroupMerge
+from spd.clustering.merge import MergeHistory, MergePlotConfig
 from spd.clustering.util import format_scientific_latex
 
 
@@ -92,25 +92,26 @@ def plot_dists_distribution(
     n_iters: int = distances.shape[0]
     n_ens: int = distances.shape[1]
     assert distances.shape[2] == n_ens, "Distances must be square"
-    
+
     # Ensure ax and kwargs_fig are not both provided
     if ax is not None and kwargs_fig is not None:
         raise ValueError("Cannot provide both ax and kwargs_fig")
-    
+
     dists_flat: Float[np.ndarray, "n_iters n_ens*n_ens"] = distances.reshape(distances.shape[0], -1)
 
     # Create figure if ax not provided
     if ax is None:
-        fig, ax_ = plt.subplots( # pyright: ignore[reportCallIssue]
-            1, 1,
+        fig, ax_ = plt.subplots(  # pyright: ignore[reportCallIssue]
+            1,
+            1,
             **dict(
-                figsize=(8, 5), # pyright: ignore[reportArgumentType]
+                figsize=(8, 5),  # pyright: ignore[reportArgumentType]
                 **(kwargs_fig or {}),
-            )
+            ),
         )
     else:
         ax_ = ax
-    
+
     if mode == "points":
         # Original points mode
         n_samples: int = dists_flat.shape[1]
@@ -118,7 +119,7 @@ def plot_dists_distribution(
             ax_.plot(
                 np.full((n_samples), i),
                 dists_flat[i],
-                **dict( # pyright: ignore[reportArgumentType]
+                **dict(  # pyright: ignore[reportArgumentType]
                     marker="o",
                     linestyle="",
                     color="blue",
@@ -126,13 +127,15 @@ def plot_dists_distribution(
                     markersize=5,
                     markeredgewidth=0,
                     **(kwargs_plot or {}),
-                )
+                ),
             )
     elif mode == "dist":
         # Distribution statistics mode
         # Generate a random color for this plot
-        color = np.random.rand(3,)
-        
+        color = np.random.rand(
+            3,
+        )
+
         # Calculate statistics for each iteration
         mins = []
         maxs = []
@@ -140,7 +143,7 @@ def plot_dists_distribution(
         medians = []
         q1s = []
         q3s = []
-        
+
         for i in range(n_iters):
             # Filter out NaN values (diagonal and upper triangle)
             valid_dists = dists_flat[i][~np.isnan(dists_flat[i])]
@@ -159,20 +162,20 @@ def plot_dists_distribution(
                 medians.append(np.nan)
                 q1s.append(np.nan)
                 q3s.append(np.nan)
-        
+
         iterations = np.arange(n_iters)
-        
+
         # Plot statistics
-        ax_.plot(iterations, mins, '-', color=color, alpha=0.5)
-        ax_.plot(iterations, maxs, '-', color=color, alpha=0.5)
-        ax_.plot(iterations, means, '-', color=color, linewidth=2, label=label)
-        ax_.plot(iterations, medians, '--', color=color, linewidth=2)
-        ax_.plot(iterations, q1s, ':', color=color, alpha=0.7)
-        ax_.plot(iterations, q3s, ':', color=color, alpha=0.7)
-        
+        ax_.plot(iterations, mins, "-", color=color, alpha=0.5)
+        ax_.plot(iterations, maxs, "-", color=color, alpha=0.5)
+        ax_.plot(iterations, means, "-", color=color, linewidth=2, label=label)
+        ax_.plot(iterations, medians, "--", color=color, linewidth=2)
+        ax_.plot(iterations, q1s, ":", color=color, alpha=0.7)
+        ax_.plot(iterations, q3s, ":", color=color, alpha=0.7)
+
         # Shade between quartiles
         ax_.fill_between(iterations, q1s, q3s, color=color, alpha=0.2)
-    
+
     ax_.set_xlabel("Iteration #")
     ax_.set_ylabel("permutation invariant hamming distance")
     ax_.set_title("Distribution of pairwise distances between group merges in an ensemble")

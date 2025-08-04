@@ -4,8 +4,8 @@ import torch
 from muutils.dbg import dbg_auto
 
 from spd.clustering.activations import component_activations, process_activations
+from spd.clustering.math.merge_sweep import sweep_multiple_parameters
 from spd.clustering.merge import MergeConfig, MergeEnsemble, merge_iteration_ensemble
-from spd.clustering.math.merge_sweep import sweep_merge_parameter, sweep_multiple_parameters
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -15,8 +15,8 @@ from spd.utils.data_utils import DatasetGeneratedDataLoader
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # magic autoreload
-%load_ext autoreload
-%autoreload 2
+# %load_ext autoreload
+# %autoreload 2
 
 # %%
 # Load model
@@ -48,10 +48,8 @@ dbg_auto(
         feature_probability=dataset.feature_probability,
         data_generation_type=dataset.data_generation_type,
     )
-);
-
-dataloader = DatasetGeneratedDataLoader(dataset, batch_size=N_SAMPLES, shuffle=False);
-
+)
+dataloader = DatasetGeneratedDataLoader(dataset, batch_size=N_SAMPLES, shuffle=False)
 # %%
 # Get component activations
 ci = component_activations(
@@ -61,8 +59,7 @@ ci = component_activations(
     sigmoid_type="hard",
 )
 
-dbg_auto(ci);
-
+dbg_auto(ci)
 # %%
 # Process activations
 coa = process_activations(
@@ -85,7 +82,7 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
         rank_cost_fn=lambda x: 1.0,
         stopping_condition=None,
     ),
-	ensemble_size=16,
+    ensemble_size=16,
 )
 
 
@@ -95,9 +92,9 @@ DISTANCES = ENSEMBLE.get_distances()
 
 # %%
 plot_dists_distribution(
-	distances=DISTANCES,
-	mode="points",
-	# label="v1"
+    distances=DISTANCES,
+    mode="points",
+    # label="v1"
 )
 plt.legend()
 
@@ -116,5 +113,5 @@ all_results = sweep_multiple_parameters(
 )
 
 # Show all plots
-for param_name, (ensembles, fig, ax) in all_results.items():
+for param_name, (ensembles, fig, ax) in all_results.items():  # noqa: B007
     plt.show()

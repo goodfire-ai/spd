@@ -1,4 +1,5 @@
 """Utilities for parameter sweeps in merge ensemble analysis."""
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -28,7 +29,7 @@ def sweep_merge_parameter(
     plot_mode: Literal["points", "dist"] = "dist",
 ) -> tuple[dict[float, MergeEnsemble], plt.Figure, plt.Axes]:
     """Run ensemble merge iterations for different values of a single parameter.
-    
+
     Args:
         activations: Component activations tensor
         parameter_name: Name of the parameter to sweep over
@@ -39,7 +40,7 @@ def sweep_merge_parameter(
         plot_config: Optional plot configuration for merge iterations
         figsize: Figure size for the comparison plot
         plot_mode: Plot mode for distance distribution
-        
+
     Returns:
         Tuple of:
         - Dictionary mapping parameter values to MergeEnsemble objects
@@ -56,10 +57,10 @@ def sweep_merge_parameter(
         "rank_cost_fn": lambda x: 1.0,
         "stopping_condition": None,
     }
-    
+
     # Merge with user-provided base config
     config_dict = {**default_base, **(base_config or {})}
-    
+
     # Default plot config that skips intermediate plots
     if plot_config is None:
         plot_config = MergePlotConfig(
@@ -68,21 +69,21 @@ def sweep_merge_parameter(
             save_pdf=False,
             plot_final=False,
         )
-    
+
     # Create figure for comparison
     fig, ax = plt.subplots(1, 1, figsize=figsize)
-    
+
     # Store results
     ensembles: dict[float, MergeEnsemble] = {}
-    
+
     # Run sweep
     for value in parameter_values:
         print(f"{parameter_name}: {value}")
-        
+
         # Update the swept parameter
         config_dict[parameter_name] = value
         merge_config = MergeConfig(**config_dict)
-        
+
         # Run ensemble
         ensemble = merge_iteration_ensemble(
             activations=activations,
@@ -90,15 +91,15 @@ def sweep_merge_parameter(
             merge_config=merge_config,
             ensemble_size=ensemble_size,
         )
-        
+
         ensembles[value] = ensemble
-        
+
         print(f"  Got ensemble with {ensemble.n_iters} iterations, {ensemble.n_ensemble} members")
-        
+
         # Get distances and plot
         distances = ensemble.get_distances()
         print(f"  Distances shape: {distances.shape}")
-        
+
         # Format label based on parameter name
         if parameter_name == "alpha":
             label = f"$\\alpha={value:.4f}$"
@@ -108,19 +109,19 @@ def sweep_merge_parameter(
             label = f"$p={value:.4f}$"
         else:
             label = f"{parameter_name}={value}"
-        
+
         plot_dists_distribution(
             distances=distances,
             mode=plot_mode,
             label=label,
             ax=ax,
         )
-    
+
     # Finalize plot
     ax.legend()
     ax.set_title(f"Distance distribution vs {parameter_name}")
     plt.tight_layout()
-    
+
     return ensembles, fig, ax
 
 
@@ -135,7 +136,7 @@ def sweep_multiple_parameters(
     plot_mode: Literal["points", "dist"] = "dist",
 ) -> dict[str, tuple[dict[float, MergeEnsemble], plt.Figure, plt.Axes]]:
     """Run multiple parameter sweeps and create comparison plots.
-    
+
     Args:
         activations: Component activations tensor
         parameter_sweeps: Dictionary mapping parameter names to lists of values
@@ -145,12 +146,12 @@ def sweep_multiple_parameters(
         plot_config: Optional plot configuration for merge iterations
         figsize: Figure size for each comparison plot
         plot_mode: Plot mode for distance distribution
-        
+
     Returns:
         Dictionary mapping parameter names to (ensembles, figure, axes) tuples
     """
     results = {}
-    
+
     for param_name, param_values in parameter_sweeps.items():
         ensembles, fig, ax = sweep_merge_parameter(
             activations=activations,
@@ -164,5 +165,5 @@ def sweep_multiple_parameters(
             plot_mode=plot_mode,
         )
         results[param_name] = (ensembles, fig, ax)
-    
+
     return results

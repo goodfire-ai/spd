@@ -367,6 +367,7 @@ class MergeHistory:
     def plot(self, plot_config: MergePlotConfig | None = None) -> None:
         """Plot cost evolution."""
         from spd.clustering.plotting.merge import plot_merge_history
+
         plot_merge_history(self, plot_config)
 
     def to_dict(self) -> dict[str, list[float] | list[int]]:
@@ -397,8 +398,6 @@ class MergeHistory:
         return self.k_groups[0] if self.k_groups else 0
 
 
-
-
 def merge_iteration(
     activations: Float[Tensor, "samples c_components"],
     merge_config: MergeConfig,
@@ -410,7 +409,7 @@ def merge_iteration(
     # ==================================================
 
     # compute coactivations
-    activation_mask_orig: Float[Tensor, "samples c_components"]|None = (
+    activation_mask_orig: Float[Tensor, "samples c_components"] | None = (
         activations > merge_config.activation_threshold
         if merge_config.activation_threshold is not None
         else activations
@@ -482,7 +481,7 @@ def merge_iteration(
                     activation_mask=current_act_mask,
                     # this complains if `activation_mask_orig is None`, but this is only the case
                     # if `do_pop` is False, which it won't be here. we do this to save memory
-                    activation_mask_orig=activation_mask_orig, # pyright: ignore[reportArgumentType]
+                    activation_mask_orig=activation_mask_orig,  # pyright: ignore[reportArgumentType]
                 )
                 k_groups = current_coact.shape[0]
 
@@ -575,27 +574,25 @@ def merge_iteration(
     return merge_history, current_merge
 
 
-
-
 @dataclass
 class MergeEnsemble:
     data: list[MergeHistory]
 
     def __iter__(self):
         return iter(self.data)
-    
+
     def __getitem__(self, idx: int) -> MergeHistory:
         return self.data[idx]
-    
+
     @property
     def n_iters(self) -> int:
         """Number of iterations in the ensemble."""
         n_iterations: int = len(self.data[0].k_groups)
-        assert all(
-            len(history.k_groups) == n_iterations for history in self.data
-        ), "All histories must have the same number of iterations"
+        assert all(len(history.k_groups) == n_iterations for history in self.data), (
+            "All histories must have the same number of iterations"
+        )
         return n_iterations
-    
+
     @property
     def n_ensemble(self) -> int:
         """Number of ensemble members."""
@@ -606,9 +603,9 @@ class MergeEnsemble:
         n_ens: int = self.n_ensemble
         n_iters: int = self.n_iters
         c_components: int = self.data[0].c_components
-        assert all(
-            h.c_components == c_components for h in self.data
-        ), "All histories must have the same number of components"
+        assert all(h.c_components == c_components for h in self.data), (
+            "All histories must have the same number of components"
+        )
 
         output: Int[np.ndarray, "n_ens n_iters c_components"] = np.full(
             (n_ens, n_iters, c_components),
@@ -623,10 +620,9 @@ class MergeEnsemble:
 
         return output
 
-
     def get_distances(self) -> Float[np.ndarray, "n_iters n_ens n_ens"]:
         n_iters: int = self.n_iters
-        n_ens: int = self.n_ensemble
+        _n_ens: int = self.n_ensemble
 
         merges_array: Int[np.ndarray, "n_ens n_iters c_components"] = self.merges_array
         # for i in tqdm.tqdm(range(n_iters)):
@@ -644,8 +640,6 @@ class MergeEnsemble:
         )
 
         return np.stack(distances_list, axis=0)
-    
-
 
 
 def merge_iteration_ensemble(
@@ -671,7 +665,3 @@ def merge_iteration_ensemble(
         output.append(merge_history)
 
     return MergeEnsemble(data=output)
-
-
-
-

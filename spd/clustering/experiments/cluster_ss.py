@@ -2,27 +2,24 @@
 
 import matplotlib.pyplot as plt
 import torch
+from datasets import load_dataset
 from muutils.dbg import dbg_auto
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import (
     MergeConfig,
-    MergePlotConfig,
+    MergeEnsemble,
     merge_iteration_ensemble,
-	MergeEnsemble,
 )
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.data import DatasetConfig, create_data_loader
-from datasets import load_dataset
-from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.utils.data_utils import DatasetGeneratedDataLoader
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # magic autoreload
-%load_ext autoreload
-%autoreload 2
+# %load_ext autoreload
+# %autoreload 2
 
 # %%
 SPD_RUN = SPDRunInfo.from_path("wandb:goodfire/spd/runs/ioprgffh")
@@ -31,13 +28,10 @@ component_model.to(DEVICE)
 cfg = SPD_RUN.config
 
 
-
 # %%
-dbg_auto(component_model.state_dict()); 
-
-dbg_auto(cfg);
-dbg_auto(cfg.task_config);
-
+dbg_auto(component_model.state_dict())
+dbg_auto(cfg)
+dbg_auto(cfg.task_config)
 # %%
 
 N_SAMPLES: int = 4
@@ -69,8 +63,6 @@ dataloader, _tokenizer = create_data_loader(
 )
 
 
-
-
 # %%
 
 ci = component_activations(
@@ -82,16 +74,15 @@ ci = component_activations(
     sigmoid_type="hard",
 )
 
-dbg_auto(ci);
+dbg_auto(ci)
 # %%
 coa = process_activations(
     ci,
     filter_dead_threshold=0.001,
-	seq_mode="concat",
+    seq_mode="concat",
     plots=True,  # Plot the processed activations
     # plot_title="Processed Activations",
-);
-
+)
 # %%
 
 
@@ -106,7 +97,7 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
         pop_component_prob=0,
         rank_cost_fn=lambda x: 1.0,
     ),
-	ensemble_size=16,
+    ensemble_size=16,
 )
 
 
@@ -116,8 +107,8 @@ DISTANCES = ENSEMBLE.get_distances()
 
 # %%
 plot_dists_distribution(
-	distances=DISTANCES,
-	mode="points",
-	# label="v1"
+    distances=DISTANCES,
+    mode="points",
+    # label="v1"
 )
 plt.legend()

@@ -209,7 +209,6 @@ class GroupMerge:
         if show:
             plt.show()
 
-
     def dist(self, other: "GroupMerge") -> float:
         """Calculates the distance between two GroupMerge instances."""
         return perm_invariant_hamming(
@@ -217,6 +216,7 @@ class GroupMerge:
             other.group_idxs.cpu().numpy(),
             return_mapping=False,
         )[0]
+
 
 @dataclass(slots=True)
 class BatchedGroupMerge:

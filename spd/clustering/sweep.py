@@ -218,7 +218,7 @@ def run_hyperparameter_sweep(
 
     results: list[MergeHistory] = []
 
-    for i, merge_config in tqdm(enumerate(configs), total=len(configs)):
+    for _i, merge_config in tqdm(enumerate(configs), total=len(configs)):
         try:
             plot_config = MergePlotConfig(
                 plot_every=0,  # No plotting during sweep
