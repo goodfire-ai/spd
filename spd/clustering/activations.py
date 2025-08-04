@@ -72,8 +72,6 @@ def process_activations(
         # Use the activations as they are
         activations_ = activations
 
-    dbg_auto(activations_)
-
     # compute the labels and total component count
     total_c: int = 0
     labels: list[str] = list()
@@ -81,8 +79,6 @@ def process_activations(
         c = act.shape[-1]
         labels.extend([f"{key}:{i}" for i in range(c)])
         total_c += c
-
-    dbg(total_c)
 
     # concat the activations
     act_concat: Float[Tensor, " n_steps c"] = torch.cat(

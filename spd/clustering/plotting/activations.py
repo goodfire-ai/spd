@@ -104,6 +104,20 @@ def plot_activations(
     if save_pdf:
         fig4.savefig(f"{pdf_prefix}_coactivations.pdf", bbox_inches="tight", dpi=300)
 
+    # log coactivations
+    fig4_log, ax4_log = plt.subplots(figsize=figsize_coact)
+    coact_log_data: np.ndarray = np.log10(coact_data + 1e-10)
+    im4_log = ax4_log.matshow(
+        coact_log_data, aspect="auto", vmin=coact_log_data.min(), vmax=coact_log_data.max()
+    )
+    ax4_log.set_title("Coactivations $\\log_{10}$")
+    # Add component labeling on both axes
+    add_component_labeling(ax4_log, labels, axis="x")
+    add_component_labeling(ax4_log, labels, axis="y")
+    plt.colorbar(im4_log)
+    if save_pdf:
+        fig4_log.savefig(f"{pdf_prefix}_coactivations_log.pdf", bbox_inches="tight", dpi=300)
+
     # Activation histograms
     fig5, (ax5a, ax5b, ax5c) = plt.subplots(1, 3, figsize=(15, 4))
 

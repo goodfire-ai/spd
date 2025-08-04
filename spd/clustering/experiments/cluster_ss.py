@@ -34,7 +34,7 @@ dbg_auto(cfg)
 dbg_auto(cfg.task_config)
 # %%
 
-N_SAMPLES: int = 4
+N_SAMPLES: int = 1
 
 dataset_config = DatasetConfig(
     name=cfg.task_config.dataset_name,
@@ -90,14 +90,14 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
     activations=coa["activations"],
     component_labels=coa["labels"],
     merge_config=MergeConfig(
-        activation_threshold=None,
+        activation_threshold=0.01,
         alpha=0.01,
         iters=100,
         check_threshold=0.1,
         pop_component_prob=0,
         rank_cost_fn=lambda x: 1.0,
     ),
-    ensemble_size=16,
+    ensemble_size=8,
 )
 
 
