@@ -269,6 +269,16 @@ class Config(BaseModel):
         description="Nested task-specific configuration selected by the `task_name` discriminator",
     )
 
+    # --- Distributed Data Parallel (DDP) ---
+    ddp_enabled: bool = Field(
+        default=False,
+        description="Enable distributed data parallel training",
+    )
+    ddp_backend: Literal["nccl", "gloo"] = Field(
+        default="nccl",
+        description="Backend for distributed training (nccl for GPU, gloo for CPU)",
+    )
+
     DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = [
         "image_on_first_step",
         "image_freq",

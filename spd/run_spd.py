@@ -7,7 +7,9 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
+import torch.nn.parallel
 import torch.optim as optim
 import wandb
 from jaxtyping import Float, Int
@@ -23,6 +25,12 @@ from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
+from spd.utils.distributed_utils import (
+    all_reduce,
+    get_world_size,
+    is_main_process,
+    sync_across_processes,
+)
 from spd.utils.general_utils import (
     extract_batch_data,
     get_lr_schedule_fn,
@@ -78,7 +86,8 @@ def optimize(
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
 
-    logger.info(f"Output directory: {out_dir}")
+    if is_main_process():
+        logger.info(f"Output directory: {out_dir}")
 
     target_model.requires_grad_(False)
     model = ComponentModel(
@@ -91,20 +100,36 @@ def optimize(
     )
     model.to(device)
 
+    # Wrap model with DDP if distributed
+    world_size = get_world_size()
+    wrapped_model: nn.Module = model  # Type annotation to help type checker
+    if world_size > 1:
+        # Parse device string to get device id
+        device_id = int(device.split(":")[1]) if ":" in device else 0
+        wrapped_model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[device_id],
+            output_device=device_id,
+        )
+        # Access the underlying module for component operations
+        component_model = wrapped_model.module  # type: ignore[attr-defined]
+    else:
+        component_model = model
+
     if tied_weights is not None:
         # Tie component weights. Assume that the first element is a transpose of the second element
         # NOTE: Tying weights will make your training nondeterministic
         for src_name, tgt_name in tied_weights:
-            tgt = model.components_or_modules[tgt_name].components
-            src = model.components_or_modules[src_name].components
+            tgt = component_model.components_or_modules[tgt_name].components
+            src = component_model.components_or_modules[src_name].components
             tgt.U.data = src.V.data.T
             tgt.V.data = src.U.data.T
 
     component_params: list[torch.nn.Parameter] = []
     gate_params: list[torch.nn.Parameter] = []
-    for name, component in model.components.items():
+    for name, component in component_model.components.items():
         component_params.extend(list(component.parameters()))
-        gate_params.extend(list(model.gates[name].parameters()))
+        gate_params.extend(list(component_model.gates[name].parameters()))
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
@@ -114,17 +139,21 @@ def optimize(
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
     n_params = sum(
-        component.original.weight.numel() for component in model.components_or_modules.values()
+        component.original.weight.numel()
+        for component in component_model.components_or_modules.values()
     )
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
-        module_names=model.target_module_paths,
+        module_names=component_model.target_module_paths,
         C=config.C,
         n_examples_until_dead=config.n_examples_until_dead,
         device=torch.device(device),
         ci_alive_threshold=config.ci_alive_threshold,
     )
+
+    # Adjust gradient accumulation for global batch size
+    gradient_accumulation_steps = config.gradient_accumulation_steps
 
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
@@ -141,23 +170,26 @@ def optimize(
             group["lr"] = step_lr
 
         microbatch_log_data = defaultdict[str, float](float)
-        for _ in range(config.gradient_accumulation_steps):
+        for _ in range(gradient_accumulation_steps):
             batch = extract_batch_data(next(train_iterator)).to(device)
 
-            target_out, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-                batch, module_names=model.target_module_paths
+            # Use component_model for special forward pass (DDP wrapper doesn't have this method)
+            target_out, pre_weight_acts = component_model.forward_with_pre_forward_cache_hooks(
+                batch, module_names=component_model.target_module_paths
             )
 
-            causal_importances, causal_importances_upper_leaky = model.calc_causal_importances(
-                pre_weight_acts=pre_weight_acts,
-                sigmoid_type=config.sigmoid_type,
-                detach_inputs=False,
+            causal_importances, causal_importances_upper_leaky = (
+                component_model.calc_causal_importances(
+                    pre_weight_acts=pre_weight_acts,
+                    sigmoid_type=config.sigmoid_type,
+                    detach_inputs=False,
+                )
             )
 
             alive_tracker.watch_batch(causal_importances)
 
             microbatch_total_loss, microbatch_loss_terms = calculate_losses(
-                model=model,
+                model=component_model,
                 batch=batch,
                 config=config,
                 causal_importances=causal_importances,
@@ -167,21 +199,21 @@ def optimize(
                 n_params=n_params,
             )
 
-            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
+            microbatch_total_loss.div_(gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
                 microbatch_log_data[f"train/loss/{loss_name}"] += (
-                    loss_value / config.gradient_accumulation_steps
+                    loss_value / gradient_accumulation_steps
                 )
 
             for layer_name, layer_ci in causal_importances.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
                 microbatch_log_data[f"train/{layer_name}/l0"] += (
-                    l0_val / config.gradient_accumulation_steps
+                    l0_val / gradient_accumulation_steps
                 )
 
         # --- Train Logging --- #
-        if step % config.train_log_freq == 0:
+        if step % config.train_log_freq == 0 and is_main_process():
             tqdm.write(f"--- Step {step} ---")
             tqdm.write(f"LR: {step_lr:.6f}")
             for name, value in microbatch_log_data.items():
@@ -199,13 +231,27 @@ def optimize(
 
             microbatch_log_data["train/misc/lr"] = step_lr
 
+            # Collect metrics on all ranks
+            sync_across_processes()
+            assert microbatch_log_data is not None
+            # Gather metrics on all ranks
+            # all_rank_log_data = cast(list[dict[str, float]], gather_object(microbatch_log_data))
+            # Reduce metrics across all ranks
+            for k, v in microbatch_log_data.items():
+                microbatch_log_data[k] = all_reduce(
+                    torch.tensor(v, device=device), op=dist.ReduceOp.AVG
+                ).item()
+                # microbatch_log_data[k] = sum(d[k] for d in all_rank_log_data) / len(
+                #     all_rank_log_data
+                # )
+
             if out_dir is not None:
                 local_log(microbatch_log_data, step, out_dir)
             if config.wandb_project:
                 wandb.log(microbatch_log_data, step=step)
 
         # --- Evaluation --- #
-        if step % config.eval_freq == 0:
+        if step % config.eval_freq == 0 and is_main_process():
             with torch.inference_mode():
                 run_slow: bool = (
                     config.slow_eval_on_first_step
@@ -214,7 +260,7 @@ def optimize(
                 )
 
                 metrics = eval(
-                    model=model,
+                    model=component_model,
                     eval_iterator=eval_iterator,
                     device=device,
                     config=config,
@@ -237,16 +283,24 @@ def optimize(
 
         # --- Saving Checkpoint --- #
         if (
-            (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
-            or step == config.steps
-        ) and out_dir is not None:
-            save_file(model.state_dict(), out_dir / f"model_{step}.pth")
+            (
+                (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
+                or step == config.steps
+            )
+            and out_dir is not None
+            and is_main_process()
+        ):
+            # Save the state dict of the underlying module (not DDP wrapper)
+            save_file(component_model.state_dict(), out_dir / f"model_{step}.pth")
             logger.info(f"Saved model, optimizer, and out_dir to {out_dir}")
             if config.wandb_project:
                 wandb.save(str(out_dir / f"model_{step}.pth"), base_path=str(out_dir), policy="now")
 
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
+            # Synchronize before optimizer step in distributed setting
+            sync_across_processes()
             optimizer.step()
 
-    logger.info("Finished training loop.")
+    if is_main_process():
+        logger.info("Finished training loop.")
