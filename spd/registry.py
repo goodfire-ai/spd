@@ -27,7 +27,7 @@ class ExperimentConfig:
     decomp_script: Path
     config_path: Path
     expected_runtime: int
-    canonical_run: str | None = None
+    canonical_run: str
 
 
 EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {

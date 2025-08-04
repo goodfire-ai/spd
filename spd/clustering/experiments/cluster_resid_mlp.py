@@ -4,9 +4,12 @@ import torch
 from muutils.dbg import dbg_auto
 
 from spd.clustering.activations import component_activations, process_activations
+from spd.clustering.merge import MergeConfig, MergeEnsemble, merge_iteration_ensemble
 from spd.clustering.merge_sweep import sweep_merge_parameter, sweep_multiple_parameters
+from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.registry import EXPERIMENT_REGISTRY
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -17,8 +20,11 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # %%
 # Load model
-component_model, cfg, path = ComponentModel.from_pretrained(CANONICAL_RUNS["resid_mlp1"])
+# SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp1"].canonical_run)
+SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run)
+component_model: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 component_model.to(DEVICE)
+cfg = SPD_RUN.config
 
 # %%
 # Setup dataset and dataloader
@@ -66,46 +72,44 @@ coa = process_activations(
 )
 
 # %%
-# Sweep over alpha parameter
-alpha_ensembles, alpha_fig, alpha_ax = sweep_merge_parameter(
+
+ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
     activations=coa["activations"],
-    parameter_name="alpha",
-    parameter_values=[0.0001, 0.001, 0.01, 0.1, 1.0, 10.0],
     component_labels=coa["labels"],
-    ensemble_size=16,
+    merge_config=MergeConfig(
+        activation_threshold=None,
+        alpha=0.01,
+        iters=100,
+        check_threshold=0.1,
+        pop_component_prob=0.1,
+        rank_cost_fn=lambda x: 1.0,
+        stopping_condition=None,
+    ),
+	ensemble_size=16,
 )
-plt.show()
+
 
 # %%
-# Sweep over check_threshold parameter
-ct_ensembles, ct_fig, ct_ax = sweep_merge_parameter(
-    activations=coa["activations"],
-    parameter_name="check_threshold", 
-    parameter_values=[0.0001, 0.5],
-    component_labels=coa["labels"],
-    ensemble_size=16,
-)
-plt.show()
+DISTANCES = ENSEMBLE.get_distances()
+
 
 # %%
-# Sweep over pop_component_prob parameter
-pop_ensembles, pop_fig, pop_ax = sweep_merge_parameter(
-    activations=coa["activations"],
-    parameter_name="pop_component_prob",
-    parameter_values=[0.0001, 0.001, 0.01, 0.1, 0.5],
-    component_labels=coa["labels"],
-    ensemble_size=32,
+plot_dists_distribution(
+	distances=DISTANCES,
+	mode="points",
+	# label="v1"
 )
-plt.show()
+plt.legend()
+
 
 # %%
 # Or do all sweeps at once with a single function call
 all_results = sweep_multiple_parameters(
     activations=coa["activations"],
     parameter_sweeps={
-        "alpha": [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0],
-        "check_threshold": [0.0001, 0.5],
-        "pop_component_prob": [0.0001, 0.001, 0.01, 0.1, 0.5],
+        # "alpha": [0.0001, 1, 10000.0],
+        "check_threshold": [0.0001, 0.001, 0.01, 0.1, 0.5],
+        # "pop_component_prob": [0.0001, 0.01, 0.5],
     },
     component_labels=coa["labels"],
     ensemble_size=16,

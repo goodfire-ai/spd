@@ -15,8 +15,7 @@ from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.data import DatasetConfig, create_data_loader
 from datasets import load_dataset
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
-from spd.models.component_model import ComponentModel
-from spd.registry import CANONICAL_RUNS
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -26,9 +25,12 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 %autoreload 2
 
 # %%
-component_model, cfg, path = ComponentModel.from_pretrained("wandb:goodfire/spd/runs/ioprgffh")
-# component_model, cfg, path = ComponentModel.from_pretrained(CANONICAL_RUNS["tms_40-10-id"])
-component_model.to(DEVICE);
+SPD_RUN = SPDRunInfo.from_path("wandb:goodfire/spd/runs/ioprgffh")
+component_model: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
+component_model.to(DEVICE)
+cfg = SPD_RUN.config
+
+
 
 # %%
 dbg_auto(component_model.state_dict()); 

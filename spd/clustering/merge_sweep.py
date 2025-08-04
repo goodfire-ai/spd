@@ -88,7 +88,6 @@ def sweep_merge_parameter(
             activations=activations,
             component_labels=component_labels,
             merge_config=merge_config,
-            plot_config=plot_config,
             ensemble_size=ensemble_size,
         )
         
