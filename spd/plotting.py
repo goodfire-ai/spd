@@ -305,7 +305,6 @@ def plot_component_activation_density(
         ax.set_xlabel("Activation density")
         ax.set_ylabel("Frequency")
 
-    # Adjust layout to prevent overlapping titles/labels
     fig.tight_layout()
 
     fig_img = _render_figure(fig)
