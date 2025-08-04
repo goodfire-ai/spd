@@ -1,12 +1,11 @@
 """Utilities for managing experiment run directories and IDs."""
 
 import json
-import random
+import secrets
 import string
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
 import torch
 import wandb
 import yaml
@@ -25,12 +24,12 @@ def get_local_run_id() -> str:
     """
     # Generate 8 random characters (lowercase letters and digits)
     chars = string.ascii_lowercase + string.digits
-    random_suffix = "".join(random.choices(chars, k=8))
+    random_suffix = "".join(secrets.choice(chars) for _ in range(8))
 
     return f"local-{random_suffix}"
 
 
-def get_output_dir() -> Path:
+def get_output_dir(use_wandb_id: bool = True) -> Path:
     """Get the output directory for a run.
 
     If WandB is active, uses the WandB project and run ID. Otherwise, generates a local run ID.
@@ -39,7 +38,8 @@ def get_output_dir() -> Path:
         Path to the output directory
     """
     # Check if wandb is active and has a run
-    if wandb.run is not None:
+    if use_wandb_id:
+        assert wandb.run is not None, "WandB run is not active"
         # Get project name from wandb.run, fallback to "spd" if not available
         project = getattr(wandb.run, "project", "spd")
         run_id = f"{project}-{wandb.run.id}"
@@ -63,10 +63,6 @@ def _save_yaml(data: Any, path: Path | str, **kwargs: Any) -> None:
 
 def _save_torch(data: Any, path: Path | str, **kwargs: Any) -> None:
     torch.save(data, path, **kwargs)
-
-
-def _save_figure(fig: plt.Figure, path: Path | str, **kwargs: Any) -> None:
-    fig.savefig(path, **kwargs)
 
 
 def _save_text(data: str, path: Path | str, encoding: str = "utf-8") -> None:
@@ -99,7 +95,7 @@ def check_run_exists(wandb_string: str) -> Path | None:
     return run_dir if run_dir.exists() else None
 
 
-def save_file(data: Any, path: Path | str, **kwargs: Any) -> None:
+def save_file(data: dict[str, Any] | Any, path: Path | str, **kwargs: Any) -> None:
     """Save a file.
 
     NOTE: This function was originally designed to save files with specific permissions,
@@ -110,7 +106,6 @@ def save_file(data: Any, path: Path | str, **kwargs: Any) -> None:
     - .json: Save as JSON
     - .yaml/.yml: Save as YAML
     - .pth/.pt: Save as PyTorch model
-    - .png/.jpg/.jpeg/.pdf/.svg: Save as figure
     - .txt or other: Save as plain text (data must be string)
 
     Args:
@@ -129,9 +124,6 @@ def save_file(data: Any, path: Path | str, **kwargs: Any) -> None:
         _save_yaml(data, path, **kwargs)
     elif suffix in [".pth", ".pt"]:
         _save_torch(data, path, **kwargs)
-    elif suffix in [".png", ".jpg", ".jpeg", ".pdf", ".svg"]:
-        assert isinstance(data, plt.Figure), "data must be a matplotlib Figure"
-        _save_figure(data, path, **kwargs)
     else:
         # Default to text file
         assert isinstance(data, str), f"For {suffix} files, data must be a string, got {type(data)}"

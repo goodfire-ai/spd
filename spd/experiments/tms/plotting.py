@@ -986,13 +986,13 @@ def main():
 
     # Define run configurations with custom PlotConfig for each
     run_configs = {
-        # "wandb:spd-tms/runs/f63itpo1": {"config": PlotConfig(), "name": "5-2"},
-        "wandb:spd-tms/runs/8bxfjeu5": {
+        # "wandb:goodfire/spd-tms/runs/f63itpo1": {"config": PlotConfig(), "name": "5-2"},
+        "wandb:goodfire/spd-tms/runs/8bxfjeu5": {
             "config": PlotConfig(subnet_norm_threshold=0.03, hidden_layer_threshold=0.0115),
             "name": "5-2-identity",
         },
-        # "wandb:spd-tms/runs/xq1ivc6b": {"config": PlotConfig(), "name": "40-10"},
-        # "wandb:spd-tms/runs/xyq22lbc": {"config": PlotConfig(), "name": "40-10-identity"},
+        # "wandb:goodfire/spd-tms/runs/xq1ivc6b": {"config": PlotConfig(), "name": "40-10"},
+        # "wandb:goodfire/spd-tms/runs/xyq22lbc": {"config": PlotConfig(), "name": "40-10-identity"},
     }
 
     for run_id, run_info in run_configs.items():
@@ -1003,7 +1003,7 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # Load models
-        model = ComponentModel.from_pretrained(run_id)[0]
+        model = ComponentModel.from_pretrained(run_id)
         patched_model = model.patched_model
         assert isinstance(patched_model, TMSModel)
 

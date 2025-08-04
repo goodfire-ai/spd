@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Self, override
 
@@ -5,12 +6,13 @@ import torch
 import wandb
 import yaml
 from jaxtyping import Float
-from pydantic import BaseModel, ConfigDict, NonNegativeInt, PositiveInt
 from torch import Tensor, nn
 from torch.nn import functional as F
 from wandb.apis.public import Run
 
-from spd.experiments.spd_model import SpdModel
+from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
+from spd.interfaces import LoadableModule, RunInfo
+from spd.log import logger
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
@@ -20,24 +22,39 @@ from spd.utils.wandb_utils import (
 )
 
 
-class TMSModelPaths(BaseModel):
-    """Paths to output files from a TMSModel training run."""
+@dataclass
+class TMSTargetRunInfo(RunInfo[TMSTrainConfig]):
+    """Run info from training a TMSModel."""
 
-    tms_train_config: Path
-    checkpoint: Path
+    @override
+    @classmethod
+    def from_path(cls, path: ModelPath) -> "TMSTargetRunInfo":
+        """Load the run info from a wandb run or a local path to a checkpoint."""
+        task_name = TMSTaskConfig.model_fields["task_name"].default
+        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
+            # Check if run exists in shared filesystem first
+            run_dir = check_run_exists(path)
+            if run_dir:
+                # Use local files from shared filesystem
+                tms_train_config_path = run_dir / f"{task_name}_train_config.yaml"
+                checkpoint_path = run_dir / f"{task_name}.pth"
+            else:
+                # Download from wandb
+                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
+                tms_train_config_path, checkpoint_path = TMSModel._download_wandb_files(wandb_path)
+        else:
+            # `path` should be a local path to a checkpoint
+            tms_train_config_path = Path(path).parent / f"{task_name}_train_config.yaml"
+            checkpoint_path = Path(path)
+
+        with open(tms_train_config_path) as f:
+            tms_train_config_dict = yaml.safe_load(f)
+
+        train_config = TMSTrainConfig(**tms_train_config_dict)
+        return cls(checkpoint_path=checkpoint_path, config=train_config)
 
 
-class TMSModelConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    n_features: PositiveInt
-    n_hidden: PositiveInt
-    n_hidden_layers: NonNegativeInt
-    tied_weights: bool
-    init_bias_to_zero: bool
-    device: str
-
-
-class TMSModel(SpdModel, nn.Module):
+class TMSModel(LoadableModule):
     def __init__(self, config: TMSModelConfig):
         super().__init__()
         self.config: TMSModelConfig = config
@@ -84,68 +101,39 @@ class TMSModel(SpdModel, nn.Module):
         return out
 
     @staticmethod
-    def _download_wandb_files(wandb_project_run_id: str) -> TMSModelPaths:
-        """Download the relevant files from a wandb run."""
-        api = wandb.Api()
-        run: Run = api.run(wandb_project_run_id)
-        run_dir = fetch_wandb_run_dir(run.id)
-
-        tms_model_config_path = download_wandb_file(run, run_dir, "tms_train_config.yaml")
-
-        checkpoint = fetch_latest_wandb_checkpoint(run)
-        checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)
-        return TMSModelPaths(tms_train_config=tms_model_config_path, checkpoint=checkpoint_path)
-
-    @override
-    @classmethod
-    def from_pretrained(cls, path: ModelPath) -> "TMSModel":
-        """Fetch a pretrained model from wandb or a local path to a checkpoint.
-
-        Args:
-            path: The path to local checkpoint or wandb project. If a wandb project, format must be
-                `wandb:<entity>/<project>/<run_id>` or `wandb:<entity>/<project>/runs/<run_id>`.
-                If `api.entity` is set (e.g. via setting WANDB_ENTITY in .env), <entity> can be
-                omitted, and if `api.project` is set, <project> can be omitted. If local path,
-                assumes that `resid_mlp_train_config.yaml` and `label_coeffs.json` are in the same
-                directory as the checkpoint.
+    def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:
+        """Download the relevant files from a wandb run.
 
         Returns:
-            model: The pretrained TMSModel, which contains:
-            model.train_config: The config dict used to train the model (we don't
-                instantiate a train config due to circular import issues)
+            - tms_train_config_path: Path to the tms_train_config.yaml file
+            - checkpoint_path: Path to the checkpoint file
         """
-        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            # Check if run exists in shared filesystem first
-            run_dir = check_run_exists(path)
-            if run_dir:
-                # Use local files from shared filesystem
-                paths = TMSModelPaths(
-                    tms_train_config=run_dir / "tms_train_config.yaml",
-                    checkpoint=run_dir / "tms.pth",
-                )
-            else:
-                # Download from wandb
-                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-                paths = cls._download_wandb_files(wandb_path)
-        else:
-            # `path` should be a local path to a checkpoint
-            paths = TMSModelPaths(
-                tms_train_config=Path(path).parent / "tms_train_config.yaml",
-                checkpoint=Path(path),
-            )
+        api = wandb.Api()
+        run: Run = api.run(wandb_project_run_id)
 
-        with open(paths.tms_train_config) as f:
-            tms_train_config_dict = yaml.safe_load(f)
+        checkpoint = fetch_latest_wandb_checkpoint(run)
 
-        tms_config = TMSModelConfig(**tms_train_config_dict["tms_model_config"])
-        tms = cls(config=tms_config)
-        params = torch.load(paths.checkpoint, weights_only=True, map_location="cpu")
-        tms.load_state_dict(params)
+        run_dir = fetch_wandb_run_dir(run.id)
 
-        if tms_config.tied_weights:
-            tms.tie_weights_()
+        task_name = TMSTaskConfig.model_fields["task_name"].default
+        tms_train_config_path = download_wandb_file(run, run_dir, f"{task_name}_train_config.yaml")
+        checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)
+        logger.info(f"Downloaded checkpoint from {checkpoint_path}")
+        return tms_train_config_path, checkpoint_path
 
-        # store the train config dict in the model
-        tms.train_config = tms_train_config_dict
+    @classmethod
+    @override
+    def from_run_info(cls, run_info: RunInfo[TMSTrainConfig]) -> "TMSModel":
+        """Load a pretrained model from a run info object."""
+        tms_model = cls(config=run_info.config.tms_model_config)
+        tms_model.load_state_dict(
+            torch.load(run_info.checkpoint_path, weights_only=True, map_location="cpu")
+        )
+        return tms_model
 
-        return tms
+    @classmethod
+    @override
+    def from_pretrained(cls, path: ModelPath) -> "TMSModel":
+        """Fetch a pretrained model from wandb or a local path to a checkpoint."""
+        run_info = TMSTargetRunInfo.from_path(path)
+        return cls.from_run_info(run_info)
