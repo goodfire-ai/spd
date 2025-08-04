@@ -63,8 +63,8 @@ task_config:
   buffer_size: 1000
   dataset_name: "SimpleStories/SimpleStories"
   column_name: "story"
-  train_data_split: "train"
-  eval_data_split: "test"
+  train_data_split: "train[:5000]"
+  eval_data_split: "test[:100]"
 
 
 # Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54

@@ -60,8 +60,8 @@ def main(
     else:
         out_dir = None
 
-    # Adjust seed per rank to ensure different data sampling
-    set_seed(config.seed + rank)
+    # Use the same seed across all ranks for deterministic data loading
+    set_seed(config.seed)
     if is_main_process():
         logger.info(config)
         if world_size > 1:

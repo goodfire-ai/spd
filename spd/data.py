@@ -6,7 +6,7 @@ from datasets.distributed import split_dataset_by_node
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
 from torch import Tensor
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 """
@@ -153,6 +153,12 @@ def create_data_loader(
 ) -> tuple[DataLoader[Any], PreTrainedTokenizer]:
     """Create a DataLoader for the given dataset.
 
+    Uses PyTorch's DistributedSampler to ensure each rank gets the correct
+    subset of data in distributed mode. The sampler ensures that:
+    - Each rank gets a different subset of the data
+    - Data is distributed deterministically based on rank
+    - No data is duplicated across ranks
+
     Args:
         dataset_config: The configuration for the dataset.
         batch_size: The batch size.
@@ -164,50 +170,102 @@ def create_data_loader(
     Returns:
         A tuple of the DataLoader and the tokenizer.
     """
-    dataset = load_dataset(
-        dataset_config.name,
-        streaming=dataset_config.streaming,
-        split=dataset_config.split,
-        trust_remote_code=False,
-    )
-    seed = dataset_config.seed if dataset_config.seed is not None else global_seed
-    if dataset_config.streaming:
-        assert isinstance(dataset, IterableDataset)
-        dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
-    else:
-        assert isinstance(dataset, Dataset)
-        dataset = dataset.shuffle(seed=seed)
-    # TODO: do we need this?
-    dataset = split_dataset_by_node(dataset, ddp_rank, ddp_world_size)  # pyright: ignore[reportArgumentType]
-
+    # Always load tokenizer (lightweight operation)
     tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)
 
-    torch_dataset: Dataset | IterableDataset
-    if dataset_config.is_tokenized:
-        torch_dataset = dataset.with_format("torch")
-        # Get a sample from the dataset and check if it's tokenized and what the n_ctx is
-        # Note that the dataset may be streamed, so we can't just index into it
-        sample = next(iter(torch_dataset))[dataset_config.column_name]
-        assert isinstance(sample, Tensor) and sample.ndim == 1, (
-            "Expected the dataset to be tokenized."
+    # For streaming datasets, we can't use DistributedSampler, so keep existing approach
+    if dataset_config.streaming:
+        dataset = load_dataset(
+            dataset_config.name,
+            streaming=dataset_config.streaming,
+            split=dataset_config.split,
+            trust_remote_code=False,
         )
-        assert len(sample) == dataset_config.n_ctx, "n_ctx does not match the tokenized length."
+        assert isinstance(dataset, IterableDataset)
+        seed = dataset_config.seed if dataset_config.seed is not None else global_seed
+        dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
 
+        if dataset_config.is_tokenized:
+            dataset = split_dataset_by_node(dataset, ddp_rank, ddp_world_size)
+            torch_dataset = dataset.with_format("torch")
+        else:
+            to_lower = "SimpleStories" in dataset_config.name
+            torch_dataset = tokenize_and_concatenate(
+                dataset,  # pyright: ignore[reportArgumentType]
+                tokenizer,
+                max_length=dataset_config.n_ctx,
+                column_name=dataset_config.column_name,
+                add_bos_token=False,
+                to_lower=to_lower,
+            )
+            torch_dataset = split_dataset_by_node(torch_dataset, ddp_rank, ddp_world_size)
+
+        # Streaming datasets don't use samplers
+        loader = DataLoader(
+            torch_dataset,  # pyright: ignore[reportArgumentType]
+            batch_size=batch_size,
+            shuffle=False,
+            drop_last=True,
+        )
     else:
-        to_lower = "SimpleStories" in dataset_config.name
-        torch_dataset = tokenize_and_concatenate(
-            dataset,
-            tokenizer,
-            max_length=dataset_config.n_ctx,
-            column_name=dataset_config.column_name,
-            add_bos_token=False,
-            to_lower=to_lower,
+        # Non-streaming: Load and process entire dataset, then use DistributedSampler
+        dataset = load_dataset(
+            dataset_config.name,
+            streaming=dataset_config.streaming,
+            split=dataset_config.split,
+            trust_remote_code=False,
         )
+        assert isinstance(dataset, Dataset)
 
-    loader = DataLoader[Dataset | IterableDataset](
-        torch_dataset,  # pyright: ignore[reportArgumentType]
-        batch_size=batch_size,
-        shuffle=False,
-        drop_last=True,
-    )
+        # Use consistent seed across all ranks for shuffling
+        seed = dataset_config.seed if dataset_config.seed is not None else global_seed
+        dataset = dataset.shuffle(seed=seed)
+
+        if dataset_config.is_tokenized:
+            torch_dataset = dataset.with_format("torch")
+            # Verify tokenization
+            sample = torch_dataset[0]
+            # The tokenized dataset may have the data directly without a column name
+            if dataset_config.column_name in sample:
+                sample_data = sample[dataset_config.column_name]
+            else:
+                # If column doesn't exist, assume the data is the tensor itself
+                sample_data = sample
+            assert isinstance(sample_data, Tensor) and sample_data.ndim == 1, (
+                f"Expected the dataset to be tokenized. Got type {type(sample_data)}"
+            )
+            assert len(sample_data) == dataset_config.n_ctx, (
+                f"n_ctx ({dataset_config.n_ctx}) does not match the tokenized length ({len(sample_data)})."
+            )
+        else:
+            # Tokenize the entire dataset (same on all ranks due to same seed)
+            to_lower = "SimpleStories" in dataset_config.name
+            torch_dataset = tokenize_and_concatenate(
+                dataset,
+                tokenizer,
+                max_length=dataset_config.n_ctx,
+                column_name=dataset_config.column_name,
+                add_bos_token=False,
+                to_lower=to_lower,
+            )
+
+        # Create DistributedSampler to handle data distribution across ranks
+        sampler = None
+        if ddp_world_size > 1:
+            sampler = DistributedSampler(
+                torch_dataset,  # pyright: ignore[reportArgumentType]
+                num_replicas=ddp_world_size,
+                rank=ddp_rank,
+                shuffle=False,  # Already shuffled above
+                seed=seed,
+                drop_last=True,
+            )
+
+        loader = DataLoader(
+            torch_dataset,  # pyright: ignore[reportArgumentType]
+            batch_size=batch_size,
+            sampler=sampler,
+            shuffle=False,  # Don't shuffle when using sampler
+            drop_last=True,
+        )
     return loader, tokenizer
