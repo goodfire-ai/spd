@@ -174,9 +174,13 @@ def optimize(
         for _ in range(gradient_accumulation_steps):
             batch = extract_batch_data(next(train_iterator)).to(device)
 
+            # print(f"rank {get_rank()}: batch shape: {batch.shape}, batch", batch[:, :5])
+            # sync_across_processes()
+            # cleanup_distributed()
+            # exit(0)
             # Use component_model for special forward pass (DDP wrapper doesn't have this method)
-            target_out, pre_weight_acts = component_model.forward_with_pre_forward_cache_hooks(
-                batch, module_names=component_model.target_module_paths
+            target_out, pre_weight_acts = component_model(
+                batch, type="pre_forward_cache", module_names=component_model.target_module_paths
             )
 
             causal_importances, causal_importances_upper_leaky = (

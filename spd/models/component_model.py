@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, override
+from typing import Any, Literal, override
 
 import torch
 import wandb
@@ -248,17 +248,47 @@ class ComponentModel(LoadableModule):
         return gates
 
     @override
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def __call__(
+        self,
+        *args: Any,
+        type: Literal["default", "components", "pre_forward_cache"] | None = "default",
+        masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        module_names: list[str] | None = None,
+        **kwargs: Any,
+    ) -> Any:
         """Forward pass of the patched model.
+
+        NOTE: We need all the forward options in __call__ in order for DistributedDataParallel to
+        work (https://discuss.pytorch.org/t/is-it-ok-to-use-methods-other-than-forward-in-ddp/176509).
+
+        Args:
+            type: The type of forward pass to perform:
+                - 'default': Standard forward pass
+                - 'components': Forward with component replacements (requires masks)
+                - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
+            masks: Dictionary mapping component names to masks (required for type='components')
+            module_names: List of module names to cache inputs for (required for type='pre_forward_cache')
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
-        raw_out = self.patched_model(*args, **kwargs)
-        if self.pretrained_model_output_attr is None:
-            out = raw_out
+        if type == "components":
+            assert masks is not None, "masks parameter is required for type='components'"
+            return self._forward_with_components(*args, masks=masks, **kwargs)
+        elif type == "pre_forward_cache":
+            assert module_names is not None, (
+                "module_names parameter is required for type='pre_forward_cache'"
+            )
+            return self._forward_with_pre_forward_cache_hooks(
+                *args, module_names=module_names, **kwargs
+            )
         else:
-            out = getattr(raw_out, self.pretrained_model_output_attr)
-        return out
+            # Default forward pass
+            raw_out = self.patched_model(*args, **kwargs)
+            if self.pretrained_model_output_attr is None:
+                out = raw_out
+            else:
+                out = getattr(raw_out, self.pretrained_model_output_attr)
+            return out
 
     @contextmanager
     def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
@@ -288,7 +318,7 @@ class ComponentModel(LoadableModule):
                 component.forward_mode = None
                 component.mask = None
 
-    def forward_with_components(
+    def _forward_with_components(
         self,
         *args: Any,
         masks: dict[str, Float[Tensor, "... C"]],
@@ -302,9 +332,15 @@ class ComponentModel(LoadableModule):
             masks: Optional dictionary mapping component names to masks
         """
         with self._replaced_modules(masks):
-            return self(*args, **kwargs)
+            # Use the patched model directly to avoid recursion
+            raw_out = self.patched_model(*args, **kwargs)
+            if self.pretrained_model_output_attr is None:
+                out = raw_out
+            else:
+                out = getattr(raw_out, self.pretrained_model_output_attr)
+            return out
 
-    def forward_with_pre_forward_cache_hooks(
+    def _forward_with_pre_forward_cache_hooks(
         self, *args: Any, module_names: list[str], **kwargs: Any
     ) -> tuple[Any, dict[str, Tensor]]:
         """Forward pass with caching at the input to the modules given by `module_names`.
@@ -333,7 +369,12 @@ class ComponentModel(LoadableModule):
             module.forward_mode = "original"
 
         try:
-            out = self(*args, **kwargs)
+            # Use the patched model directly to avoid recursion
+            raw_out = self.patched_model(*args, **kwargs)
+            if self.pretrained_model_output_attr is None:
+                out = raw_out
+            else:
+                out = getattr(raw_out, self.pretrained_model_output_attr)
             return out, cache
         finally:
             for handle in handles:

@@ -101,8 +101,8 @@ def compute_causal_importances(
 ) -> dict[str, Float[Tensor, "1 seq_len C"]]:
     """Compute causal importances for all layers."""
     with torch.no_grad():
-        _, pre_weight_acts = _model_data.model.forward_with_pre_forward_cache_hooks(
-            _input_ids, module_names=list(_model_data.components.keys())
+        _, pre_weight_acts = _model_data.model(
+            _input_ids, type="pre_forward_cache", module_names=list(_model_data.components.keys())
         )
         cis, _ = _model_data.model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,

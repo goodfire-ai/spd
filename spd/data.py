@@ -177,6 +177,7 @@ def create_data_loader(
     else:
         assert isinstance(dataset, Dataset)
         dataset = dataset.shuffle(seed=seed)
+    # TODO: do we need this?
     dataset = split_dataset_by_node(dataset, ddp_rank, ddp_world_size)  # pyright: ignore[reportArgumentType]
 
     tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)

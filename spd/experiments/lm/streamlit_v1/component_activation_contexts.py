@@ -637,8 +637,8 @@ def _process_batch_for_contexts(
     """Process a single batch to find activation contexts."""
     # Get activations before each component
     with torch.no_grad():
-        _, pre_weight_acts = model_data.model.forward_with_pre_forward_cache_hooks(
-            batch, module_names=list(model_data.components.keys())
+        _, pre_weight_acts = model_data.model(
+            batch, type="pre_forward_cache", module_names=list(model_data.components.keys())
         )
 
         causal_importances, _ = model_data.model.calc_causal_importances(

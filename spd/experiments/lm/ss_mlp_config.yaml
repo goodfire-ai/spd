@@ -1,5 +1,5 @@
 # --- WandB ---Add a comment on line R1Add diff commentMarkdown input: edit mode selected.WritePreviewAdd a suggestionHeadingBoldItalicQuoteCodeLinkUnordered listNumbered listTask listMentionReferenceSaved repliesAdd FilesPaste, drop, or click to add filesCancelCommentStart a review
-wandb_project: spd
+# wandb_project: spd
 # wandb_project: null
 wandb_run_name: null
 wandb_run_name_prefix: ""
@@ -27,7 +27,7 @@ pnorm: 2.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 32
+batch_size: 2
 steps: 30_000
 lr: 3e-4
 lr_schedule: cosine

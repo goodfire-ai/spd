@@ -123,37 +123,37 @@ class CEandKLLosses(StreamingEval):
 
         # CE When...
         # we use the causal importances as a mask
-        ci_masked_logits = self.model.forward_with_components(batch, masks=ci)
+        ci_masked_logits = self.model(batch, type="components", masks=ci)
         ci_masked_ce_loss = ce_vs_labels(ci_masked_logits)
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
         # we use the regular stochastic masks
         stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1)[0]
-        stoch_masked_logits = self.model.forward_with_components(batch, masks=stoch_masks)
+        stoch_masked_logits = self.model(batch, type="components", masks=stoch_masks)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
 
         # we use all components
         nonmask = {k: torch.ones_like(v) for k, v in ci.items()}
-        unmasked_logits = self.model.forward_with_components(batch, masks=nonmask)
+        unmasked_logits = self.model(batch, type="components", masks=nonmask)
         unmasked_ce_loss = ce_vs_labels(unmasked_logits)
         unmasked_kl_loss = kl_vs_target(unmasked_logits)
 
         # we use completely random masks
         random_mask = {k: torch.rand_like(v) for k, v in ci.items()}
-        random_masked_logits = self.model.forward_with_components(batch, masks=random_mask)
+        random_masked_logits = self.model(batch, type="components", masks=random_mask)
         random_masked_ce_loss = ce_vs_labels(random_masked_logits)
         random_masked_kl_loss = kl_vs_target(random_masked_logits)
 
         # we use rounded causal importances as masks
         rounded_ci = {k: (v > self.rounding_threshold).float() for k, v in ci.items()}
-        rounded_masked_logits = self.model.forward_with_components(batch, masks=rounded_ci)
+        rounded_masked_logits = self.model(batch, type="components", masks=rounded_ci)
         rounded_masked_ce_loss = ce_vs_labels(rounded_masked_logits)
         rounded_masked_kl_loss = kl_vs_target(rounded_masked_logits)
 
         # we zero all the components
         zero_masks = {k: torch.zeros_like(v) for k, v in ci.items()}
-        zero_masked_logits = self.model.forward_with_components(batch, masks=zero_masks)
+        zero_masked_logits = self.model(batch, type="components", masks=zero_masks)
         zero_masked_ce_loss = ce_vs_labels(zero_masked_logits)
         zero_masked_kl_loss = kl_vs_target(zero_masked_logits)
 
@@ -452,8 +452,8 @@ def eval(
         # Do the common work:
         batch = extract_batch_data(next(eval_iterator))
         batch = batch.to(device)
-        target_out, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-            batch, module_names=model.target_module_paths
+        target_out, pre_weight_acts = model(
+            batch, type="pre_forward_cache", module_names=model.target_module_paths
         )
         ci, _ci_upper_leaky = model.calc_causal_importances(
             pre_weight_acts, sigmoid_type=config.sigmoid_type

@@ -44,7 +44,7 @@ def init_distributed(backend: str | None = None) -> tuple[int, int, int]:
         world_size = 1
         rank = 0
         local_rank = 0
-        return world_size, rank, local_rank
+        return rank, world_size, local_rank
 
     # Set environment variables that PyTorch expects
     os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", "127.0.0.1")

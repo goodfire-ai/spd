@@ -125,8 +125,8 @@ def get_single_feature_causal_importances(
         # NOTE: For now, we only use the first pos dim
         batch = batch.unsqueeze(1)
 
-    pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-        batch, module_names=model.target_module_paths
+    pre_weight_acts = model(
+        batch, type="pre_forward_cache", module_names=model.target_module_paths
     )[1]
 
     ci_raw, ci_upper_leaky_raw = model.calc_causal_importances(

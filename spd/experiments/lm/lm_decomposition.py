@@ -119,6 +119,7 @@ def main(
     )
 
     # Adjust batch size for distributed training
+    # Keep per-process batch size constant to maintain gradient scale
     train_batch_size = config.microbatch_size // world_size
     if train_batch_size == 0:
         raise ValueError(

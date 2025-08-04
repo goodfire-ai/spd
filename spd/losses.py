@@ -139,8 +139,9 @@ def calc_masked_recon_layerwise_loss(
     total_loss = torch.tensor(0.0, device=device)
     for mask_info in masks:
         for component_name in model.components:
-            modified_out = model.forward_with_components(
+            modified_out = model(
                 batch,
+                type="components",
                 masks={component_name: mask_info[component_name]},
             )
             if loss_type == "mse":
@@ -161,7 +162,7 @@ def calc_masked_recon_loss(
 ) -> Float[Tensor, ""]:
     """Calculate the MSE over all masks."""
     # Do a forward pass with all components
-    out = model.forward_with_components(batch, masks=masks)
+    out = model(batch, type="components", masks=masks)
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
     if loss_type == "mse":
         loss = ((out - target_out) ** 2).mean()
