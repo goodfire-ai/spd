@@ -1,5 +1,6 @@
 """Run SPD on a model."""
 
+import gc
 import json
 from collections import defaultdict
 from collections.abc import Mapping
@@ -229,6 +230,10 @@ def optimize(
                         for k, v in metrics.items()
                     }
                     wandb.log(wandb_logs, step=step)
+
+                del metrics
+                torch.cuda.empty_cache()
+                gc.collect()
 
         # --- Saving Checkpoint --- #
         if (
