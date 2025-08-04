@@ -41,7 +41,10 @@ def init_distributed(backend: str | None = None) -> tuple[int, int, int]:
         local_rank = int(os.environ["SLURM_LOCALID"])
     else:
         # Not distributed - return single process values
-        return 0, 1, 0
+        world_size = 1
+        rank = 0
+        local_rank = 0
+        return world_size, rank, local_rank
 
     # Set environment variables that PyTorch expects
     os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", "127.0.0.1")
@@ -55,8 +58,13 @@ def init_distributed(backend: str | None = None) -> tuple[int, int, int]:
         if backend is None:
             backend = "nccl" if torch.cuda.is_available() else "gloo"
 
+        local_device = torch.device(f"cuda:{local_rank}") if torch.cuda.is_available() else None
         dist.init_process_group(
-            backend=backend, init_method="env://", world_size=world_size, rank=rank
+            backend=backend,
+            init_method="env://",
+            world_size=world_size,
+            rank=rank,
+            device_id=local_device,
         )
 
     # Set CUDA device for this process
