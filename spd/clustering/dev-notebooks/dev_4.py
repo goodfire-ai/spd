@@ -16,7 +16,6 @@ from spd.data import DatasetConfig, create_data_loader
 from datasets import load_dataset
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.models.component_model import ComponentModel
-from spd.registry import CANONICAL_RUNS
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
