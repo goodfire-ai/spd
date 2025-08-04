@@ -4,7 +4,7 @@ import torch
 from muutils.dbg import dbg_auto
 
 from spd.clustering.activations import component_activations, process_activations
-from spd.clustering.math.merge_sweep import sweep_merge_parameter, sweep_multiple_parameters
+from spd.clustering.merge_sweep import sweep_merge_parameter, sweep_multiple_parameters
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.models.component_model import ComponentModel
 

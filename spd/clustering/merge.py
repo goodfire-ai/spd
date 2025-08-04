@@ -19,7 +19,7 @@ from pydantic import (
 from torch import Tensor
 
 from spd.clustering.math.merge_matrix import GroupMerge
-from spd.clustering.perm_invariant_hamming import perm_invariant_hamming_matrix
+from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming_matrix
 from spd.spd_types import Probability
 
 
@@ -636,7 +636,7 @@ class MergeEnsemble:
         distances_list: list[Float[np.ndarray, "n_ens n_ens"]] = run_maybe_parallel(
             func=perm_invariant_hamming_matrix,
             iterable=merges_array_list,
-            parallel=True,
+            parallel=8,
         )
 
         return np.stack(distances_list, axis=0)

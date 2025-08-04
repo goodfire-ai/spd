@@ -3,7 +3,7 @@ from itertools import permutations
 import numpy as np
 import pytest
 
-from spd.clustering.perm_invariant_hamming import perm_invariant_hamming
+from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming
 
 
 def brute_force_min_hamming(a: np.ndarray, b: np.ndarray) -> int:

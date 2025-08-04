@@ -5,7 +5,7 @@ import torch
 from jaxtyping import Bool, Int
 from torch import Tensor
 
-from spd.clustering.perm_invariant_hamming import perm_invariant_hamming
+from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming
 
 
 @dataclass(kw_only=True, slots=True)
