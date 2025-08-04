@@ -26,6 +26,66 @@ def _render_figure(fig: plt.Figure) -> Image.Image:
     return img
 
 
+def _apply_manual_log_scale(ax: plt.Axes, counts: np.ndarray, patches: list[plt.Rectangle]) -> None:
+    """Apply manual log scale to y-axis of a histogram.
+
+    Args:
+        ax: The matplotlib axis
+        counts: Array of histogram counts
+        patches: List of histogram bar patches
+    """
+    # Get the range of counts (excluding zeros)
+    non_zero_counts = counts[counts > 0]
+    if len(non_zero_counts) == 0:
+        return
+
+    min_count = non_zero_counts.min()
+    max_count = counts.max()
+
+    # Create log-spaced tick positions
+    # Start from the nearest power of 10 below min_count
+    log_min = np.floor(np.log10(max(min_count, 1)))
+    log_max = np.ceil(np.log10(max_count))
+
+    # Generate tick positions in log space
+    tick_positions = []
+    tick_labels = []
+
+    # Major ticks at powers of 10
+    for exp in range(int(log_min), int(log_max) + 1):
+        tick_positions.append(10**exp)
+        tick_labels.append(f"$10^{{{exp}}}$" if exp != 0 else "1")
+
+    # Optional: Add minor ticks at 2 and 5
+    for exp in range(int(log_min), int(log_max)):
+        for mult in [2, 5]:
+            val = mult * 10**exp
+            if val <= max_count:
+                tick_positions.append(val)
+                tick_labels.append(f"{val:.0f}")
+
+    # Sort ticks
+    sorted_indices = np.argsort(tick_positions)
+    tick_positions = [tick_positions[i] for i in sorted_indices]
+    tick_labels = [tick_labels[i] for i in sorted_indices]
+
+    # Apply manual log transform to bar heights
+    for patch, count in zip(patches, counts, strict=False):
+        if count > 0:
+            # Use log transform for display height
+            patch.set_height(np.log10(count))
+
+    # Transform tick positions to log scale
+    log_tick_positions = [np.log10(pos) for pos in tick_positions]
+
+    # Set the ticks and labels
+    ax.set_yticks(log_tick_positions)
+    ax.set_yticklabels(tick_labels)
+
+    # Set y-axis limits in log scale
+    ax.set_ylim(np.log10(max(min_count * 0.9, 0.1)), np.log10(max_count * 1.1))
+
+
 def _plot_causal_importances_figure(
     ci_vals: dict[str, Float[Tensor, "... C"]],
     title_prefix: str,
@@ -280,6 +340,7 @@ def plot_UV_matrices(
 
 def plot_component_activation_density(
     component_activation_density: dict[str, Float[Tensor, " C"]],
+    bins: int = 100,
 ) -> Image.Image:
     """Plot the activation density of each component as a histogram, stacked vertically."""
 
@@ -297,8 +358,15 @@ def plot_component_activation_density(
     # Iterate through modules and plot each histogram on its corresponding axis
     for i, (module_name, density) in enumerate(component_activation_density.items()):
         ax = axs[i]
-        ax.hist(density.detach().cpu().numpy(), bins=100)
-        ax.set_yscale("log")
+        data = density.detach().cpu().numpy()
+        # ax.hist(data, bins=bins)
+        counts, bin_edges, patches = ax.hist(data, bins=bins)
+        _apply_manual_log_scale(ax, counts, patches)
+        # Make the y-ticks log-scale without using set_yscale("log")
+        # ax.set_yticks(np.logspace(0, np.log10(data.max()), bins))
+        # ax.set_yticklabels([f"{10**y:.1f}" for y in ax.get_yticks()])
+        # _apply_custom_log_scale(ax, data, bins)
+        # ax.set_yscale("log")
         ax.set_title(module_name)  # Add module name as title to each subplot
         ax.set_xlabel("Activation density")
         ax.set_ylabel("Frequency")
@@ -339,10 +407,15 @@ def plot_ci_values_histograms(
     for i, (layer_name_raw, layer_ci) in enumerate(causal_importances.items()):
         layer_name = layer_name_raw.replace(".", "_")
         ax = axs[i]
-        ax.hist(layer_ci.flatten().cpu().numpy(), bins=bins)
+
+        data = layer_ci.flatten().cpu().numpy()
+        # Use custom log scale instead of ax.hist + ax.set_yscale
+        ax.hist(data, bins=bins)
+        # ax.set_yscale("log")
+        # _apply_custom_log_scale(ax, data, bins)
+
         ax.set_title(f"Causal importances for {layer_name}")
         ax.set_xlabel("Causal importance value")
-        ax.set_yscale("log")
         ax.set_ylabel("Frequency")
 
     fig.tight_layout()
