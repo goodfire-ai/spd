@@ -18,7 +18,7 @@ from pydantic import (
 )
 from torch import Tensor
 
-from spd.clustering.merge_matrix import GroupMerge
+from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.perm_invariant_hamming import perm_invariant_hamming_matrix
 from spd.spd_types import Probability
 
@@ -266,7 +266,7 @@ class MergeConfig(BaseModel):
         description="threshold for considering merge pairs, as a fraction of the range of non-diagonal costs. If 0, always select the pair with the lowest cost. if 1, choose randomly among all pairs.",
     )
     pop_component_prob: Probability = Field(
-        default=0.0,
+        default=0,
         description="Probability of popping a component in each iteration. If 0, no components are popped.",
     )
 
@@ -410,19 +410,19 @@ def merge_iteration(
     # ==================================================
 
     # compute coactivations
-    activation_mask: Float[Tensor, "samples c_components"] = (
+    activation_mask_orig: Float[Tensor, "samples c_components"]|None = (
         activations > merge_config.activation_threshold
         if merge_config.activation_threshold is not None
         else activations
     )
     coact: Float[Tensor, "c_components c_components"] = (
-        activation_mask.float().T @ activation_mask.float()
+        activation_mask_orig.float().T @ activation_mask_orig.float()
     )
 
     # check shapes
     c_components: int = coact.shape[0]
     assert coact.shape[1] == c_components, "Coactivation matrix must be square"
-    assert activation_mask.shape[1] == c_components, (
+    assert activation_mask_orig.shape[1] == c_components, (
         "Activation mask must match coactivation matrix shape"
     )
 
@@ -446,11 +446,18 @@ def merge_iteration(
     # initialize variables for the merge process
     k_groups: int = c_components
     current_coact: Float[Tensor, "k_groups k_groups"] = coact.clone()
-    current_act_mask: Bool[Tensor, "samples k_groups"] = activation_mask.clone()
+    current_act_mask: Bool[Tensor, "samples k_groups"] = activation_mask_orig.clone()
     i: int = 0
 
     # variables we keep track of
-    merge_history = MergeHistory(config=merge_config, c_components=c_components)
+    merge_history: MergeHistory = MergeHistory(config=merge_config, c_components=c_components)
+
+    # free up memory
+    if not do_pop:
+        del coact
+        del activation_mask_orig
+        del activations
+        activation_mask_orig = None
 
     # merge iteration
     # ==================================================
@@ -473,7 +480,9 @@ def merge_iteration(
                     merges=current_merge,
                     component_idx=pop_component_idx_i,
                     activation_mask=current_act_mask,
-                    activation_mask_orig=activation_mask,
+                    # this complains if `activation_mask_orig is None`, but this is only the case
+                    # if `do_pop` is False, which it won't be here. we do this to save memory
+                    activation_mask_orig=activation_mask_orig, # pyright: ignore[reportArgumentType]
                 )
                 k_groups = current_coact.shape[0]
 

@@ -103,9 +103,8 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
         alpha=0.01,
         iters=100,
         check_threshold=0.1,
-        pop_component_prob=0.1,
+        pop_component_prob=0,
         rank_cost_fn=lambda x: 1.0,
-        stopping_condition=None,
     ),
 	ensemble_size=16,
 )
@@ -118,7 +117,7 @@ DISTANCES = ENSEMBLE.get_distances()
 # %%
 plot_dists_distribution(
 	distances=DISTANCES,
-	mode="dist",
+	mode="points",
 	# label="v1"
 )
 plt.legend()

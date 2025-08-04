@@ -5,7 +5,7 @@ from muutils.dbg import dbg_auto
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import MergeConfig, MergeEnsemble, merge_iteration_ensemble
-from spd.clustering.merge_sweep import sweep_merge_parameter, sweep_multiple_parameters
+from spd.clustering.math.merge_sweep import sweep_merge_parameter, sweep_multiple_parameters
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -48,9 +48,9 @@ dbg_auto(
         feature_probability=dataset.feature_probability,
         data_generation_type=dataset.data_generation_type,
     )
-)
+);
 
-dataloader = DatasetGeneratedDataLoader(dataset, batch_size=N_SAMPLES, shuffle=False)
+dataloader = DatasetGeneratedDataLoader(dataset, batch_size=N_SAMPLES, shuffle=False);
 
 # %%
 # Get component activations
@@ -61,7 +61,7 @@ ci = component_activations(
     sigmoid_type="hard",
 )
 
-dbg_auto(ci)
+dbg_auto(ci);
 
 # %%
 # Process activations
@@ -81,7 +81,7 @@ ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
         alpha=0.01,
         iters=100,
         check_threshold=0.1,
-        pop_component_prob=0.1,
+        pop_component_prob=0,
         rank_cost_fn=lambda x: 1.0,
         stopping_condition=None,
     ),
