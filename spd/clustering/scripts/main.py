@@ -3,8 +3,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from matplotlib import pyplot as plt
 import numpy as np
+from matplotlib import pyplot as plt
 
 from spd.clustering.merge import MergeConfig
 from spd.clustering.plotting.merge import plot_dists_distribution
@@ -48,7 +48,9 @@ def distribute_clustering(
             device,
         ]
         active.append(subprocess.Popen(cmd))
-        print(f"Started clustering for {dataset} on {device} (pid={active[-1].pid}) ({idx + 1}/{n_files})")
+        print(
+            f"Started clustering for {dataset} on {device} (pid={active[-1].pid}) ({idx + 1}/{n_files})"
+        )
         if len(active) >= max_concurrency:
             active[0].wait()
             print(f"Process {active[0].pid} finished, removing from active list")
@@ -91,7 +93,7 @@ def main(
         merge_config_path.write_text(merge_config_.model_dump_json())
     else:
         raise TypeError("merge_config must be a MergeConfig or a Path to a JSON file")
-    
+
     merge_config_hash: str = merge_config_.stable_hash
     merge_run_id: str = f"n{n_batches}_b{batch_size}_{merge_config_hash}"
     run_path: Path = REPO_ROOT / f"data/clustering/{merge_run_id}"
@@ -136,7 +138,6 @@ def main(
         histories=histories_files,
         out_dir=run_path / "distances",
     )
-
 
     if plot:
         plot_dists_distribution(

@@ -75,7 +75,10 @@ def run_clustering(
     )
 
     # save the merge iteration
-    save_path: Path = save_dir / f"history_{merge_config_.stable_hash}_{data_batch.shape[0]}_{dataset_path.stem}.zanj"
+    save_path: Path = (
+        save_dir
+        / f"history_{merge_config_.stable_hash}_{data_batch.shape[0]}_{dataset_path.stem}.zanj"
+    )
     ZANJ().save(merge_history, save_path)
     print(f"Merge history saved to {save_path}")
     return save_path

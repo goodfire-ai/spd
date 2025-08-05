@@ -48,9 +48,7 @@ def compute_histories_distances(
         repo_root=str(REPO_ROOT),
         shape=ensemble.shape,
     )
-    config_path.write_text(
-        json.dumps(config_data, indent="\t")
-    )
+    config_path.write_text(json.dumps(config_data, indent="\t"))
     print(f"Config saved to {config_path}")
 
     # compute the distances
