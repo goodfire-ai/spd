@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from zanj import ZANJ
@@ -23,8 +24,9 @@ def load_merge_histories(
 
 
 def compute_histories_distances(
-    histories: list[Path] | str, out_dir: Path = REPO_ROOT / "data/clustering/merge_history/"
-) -> np.ndarray:
+    histories: list[Path] | str,
+    out_dir: Path = REPO_ROOT / "data/clustering/merge_history/",
+) -> tuple[Path, dict[str, Any], np.ndarray]:
     """Main function to load merge histories and compute distances"""
     # get the histories from paths
     ensemble: MergeHistoryEnsemble
@@ -37,19 +39,17 @@ def compute_histories_distances(
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config_path: Path = out_dir / f"config_{config_hash}.json"
+    config_data: dict[str, Any] = dict(
+        n_iters=ensemble.n_iters,
+        n_ensemble=ensemble.n_ensemble,
+        c_components=ensemble.c_components,
+        merge_config=config.model_dump(mode="json"),
+        paths=[str(p) for p in paths],
+        repo_root=str(REPO_ROOT),
+        shape=ensemble.shape,
+    )
     config_path.write_text(
-        json.dumps(
-            dict(
-                n_iters=ensemble.n_iters,
-                n_ensemble=ensemble.n_ensemble,
-                c_components=ensemble.c_components,
-                merge_config=config.model_dump(mode="json"),
-                paths=[str(p) for p in paths],
-                repo_root=str(REPO_ROOT),
-                shape=ensemble.shape,
-            ),
-            indent="\t",
-        )
+        json.dumps(config_data, indent="\t")
     )
     print(f"Config saved to {config_path}")
 
@@ -64,4 +64,4 @@ def compute_histories_distances(
     )
     print(f"Distances saved to {output_path}")
 
-    return distances
+    return config_path, config_data, distances

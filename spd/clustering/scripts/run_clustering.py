@@ -22,9 +22,9 @@ from spd.settings import REPO_ROOT
 
 def run_clustering(
     merge_config: MergeConfig | Path,
-    model_path: str = "wandb:goodfire/spd/runs/ioprgffh",
-    dataset_path: Path = REPO_ROOT / "data/clustering/split_datasets/batchsize_64/batch_00.npz",
-    save_path_fmt: str = "{repo_root}/data/clustering/merge_history/batchsize_{batch_size}/{batch_fname}.zanj",
+    dataset_path: Path,
+    model_path: str,
+    save_dir: Path = REPO_ROOT / "data/clustering/merge_history/wip/",
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> Path:
     # get the merge config
@@ -61,7 +61,7 @@ def run_clustering(
     # 3. computing coactivations
     processed_activations: dict[str, Any] = process_activations(
         component_acts,
-        filter_dead_threshold=0.001,
+        filter_dead_threshold=merge_config_.filter_dead_threshold,
         seq_mode="concat",
         plots=True,  # Plot the processed activations
         # plot_title="Processed Activations",
@@ -75,13 +75,7 @@ def run_clustering(
     )
 
     # save the merge iteration
-    save_path: Path = Path(
-        save_path_fmt.format(
-            repo_root=REPO_ROOT,
-            batch_size=data_batch.shape[0],
-            batch_fname=dataset_path.stem,
-        )
-    )
+    save_path: Path = save_dir / f"history_{merge_config_.stable_hash}_{data_batch.shape[0]}_{dataset_path.stem}.zanj"
     ZANJ().save(merge_history, save_path)
     print(f"Merge history saved to {save_path}")
     return save_path
@@ -121,6 +115,13 @@ if __name__ == "__main__":
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Device to run the model on (e.g., 'cuda' or 'cpu')",
     )
+    parser.add_argument(
+        "--save-dir",
+        "-s",
+        type=Path,
+        required=True,
+        help="Directory to save the merge history",
+    )
 
     args: argparse.Namespace = parser.parse_args()
 
@@ -129,4 +130,5 @@ if __name__ == "__main__":
         model_path=args.model_path,
         dataset_path=args.dataset_path,
         device=args.device,
+        save_dir=args.save_dir,
     )

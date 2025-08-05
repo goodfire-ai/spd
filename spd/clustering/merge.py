@@ -271,6 +271,10 @@ class MergeConfig(BaseModel):
         default=0,
         description="Probability of popping a component in each iteration. If 0, no components are popped.",
     )
+    filter_dead_threshold: float = Field(
+        default=0.001,
+        description="Threshold for filtering out dead components. If a component's activation is below this threshold, it is considered dead and not included in the merge.",
+    )
 
     rank_cost_fn: Callable[[float], float] = lambda _: 1.0
 
