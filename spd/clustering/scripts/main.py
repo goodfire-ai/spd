@@ -11,6 +11,7 @@ from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.clustering.scripts.compute_distances import compute_histories_distances
 from spd.clustering.scripts.split_dataset import split_dataset
 from spd.settings import REPO_ROOT
+from spd.log import logger
 
 
 # TODO: this is super messy
@@ -34,7 +35,7 @@ def distribute_clustering(
         device: str = devices[idx % n_devices]
 
         cmd: list[str] = [
-            "uv run python",
+            "uv", "run", "python",
             str(REPO_ROOT / "spd/clustering/scripts/run_clustering.py"),
             "--merge-config",
             str(merge_config_path),
@@ -71,7 +72,9 @@ def main(
     plot: bool = True,
 ):
     # 0. preprocessing
-    print("Preprocessing...")
+    logger.set_format("console", "terse")
+
+    logger.section("Preprocessing")
     devices_: list[str]
     if isinstance(devices, str):
         devices_ = [devices]
@@ -102,7 +105,7 @@ def main(
     histories_path: Path = run_path / "merge_history"
 
     # 1. tokenize and split the dataset into n_batches of batch_size
-    print("Splitting dataset...")
+    logger.section("Splitting dataset")
     split_dataset_info_path: Path
     split_dataset_info: dict[str, Any]
     split_dataset_info_path, split_dataset_info = split_dataset(
@@ -117,7 +120,7 @@ def main(
     data_files: list[Path] = list(map(Path, split_dataset_info["output_files"]))
 
     # 2. run the clustering on each batch individually
-    print("Running clustering...")
+    logger.section("Distributing clustering")
     distribute_clustering(
         merge_config_path=merge_config_path,
         model_path=model_path,
@@ -130,7 +133,7 @@ def main(
     histories_files: list[Path] = list(histories_path.glob("*.zanj"))
 
     # 3. compute the distances between the merge histories
-    print("Computing distances...")
+    logger.section("Computing distances")
     dists_cfg_path: Path
     dists_cfg: dict[str, Any]
     distances: np.ndarray
@@ -140,6 +143,7 @@ def main(
     )
 
     if plot:
+        logger.section("Plotting distances")
         plot_dists_distribution(
             distances=distances,
             mode="points",

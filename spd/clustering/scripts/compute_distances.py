@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 from zanj import ZANJ
 
-from spd.clustering.merge import MergeConfig, MergeHistoryEnsemble
+from spd.clustering.merge import MergeConfig, MergeHistory, MergeHistoryEnsemble
 from spd.settings import REPO_ROOT
 
 
@@ -19,7 +19,9 @@ def load_merge_histories(
     elif isinstance(path, list):
         paths_ = path
 
-    ensemble: MergeHistoryEnsemble = MergeHistoryEnsemble(data=[ZANJ().read(p) for p in paths_])
+    data: list[MergeHistory] = [ZANJ().read(p) for p in paths_]
+    print(data)
+    ensemble: MergeHistoryEnsemble = MergeHistoryEnsemble(data=data)
     return paths_, ensemble
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import random
 import warnings
 from collections.abc import Callable
@@ -276,7 +277,27 @@ class MergeConfig(BaseModel):
         description="Threshold for filtering out dead components. If a component's activation is below this threshold, it is considered dead and not included in the merge.",
     )
 
-    rank_cost_fn: Callable[[float], float] = lambda _: 1.0
+    # rank_cost_fn: Callable[[float], float] = lambda _: 1.0
+    rank_cost_fn_name: str = Field(
+        default="const_1",
+        description="Name of the rank cost function to use. Options: 'const_1', 'const_2', 'log', 'sqrt'.",
+    )
+
+    @property
+    def rank_cost_fn(self) -> Callable[[float], float]:
+        """Get the rank cost function based on the name."""
+        if self.rank_cost_fn_name.startswith("const_"):
+            const_value: float = float(self.rank_cost_fn_name.split("_")[1])
+            return lambda _: const_value
+        elif self.rank_cost_fn_name == "log":
+            return lambda x: math.log(x + 1e-8)
+        elif self.rank_cost_fn_name == "linear":
+            return lambda x: x
+        else:
+            raise ValueError(
+                f"Unknown rank cost function: {self.rank_cost_fn_name}. "
+                "Options: 'const_{{value}}' where {{value}} is a float, 'log', 'linear'."
+            )
 
     @property
     def rank_cost_name(self) -> str:
@@ -318,8 +339,8 @@ class MergeHistory(SerializableDataclass):
     "State of groups at each iteration"
 
     config: MergeConfig = serializable_field(
-        serialization_fn=lambda x: x.module_dump(mode="json"),
-        deserialize_fn=lambda x: MergeConfig.model_validate_json(x),
+        serialization_fn=lambda x: x.model_dump(mode="json"),
+        deserialize_fn=lambda x: MergeConfig.model_validate(x),
     )
     "Configuration used for this merge"
 

@@ -61,4 +61,4 @@ demo-clustering:
 	  --n-batches 2 \
 	  --batch-size 2 \
 	  --devices cuda:0 \
-	  --max-concurrency 1
+	  --max-concurrency 99
