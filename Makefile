@@ -51,3 +51,14 @@ coverage:
 	mkdir -p $(COVERAGE_DIR)
 	uv run python -m coverage report -m > $(COVERAGE_DIR)/coverage.txt
 	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/
+
+
+.PHONY: demo-clustering
+demo-clustering:
+	uv run python -m spd.clustering.scripts.main \
+	  --merge-config spd/clustering/default_merge_config.json \
+	  --model-path wandb:goodfire/spd/runs/ioprgffh \
+	  --n-batches 2 \
+	  --batch-size 2 \
+	  --devices cuda:0 \
+	  --max-concurrency 1

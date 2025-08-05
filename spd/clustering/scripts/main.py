@@ -146,3 +146,65 @@ def main(
             # label="v1"
         )
         plt.legend()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        description="Run clustering on a dataset using a merge config and a model"
+    )
+    parser.add_argument(
+        "--merge-config",
+        "-c",
+        type=Path,
+        required=True,
+        help="Path to the merge config JSON file or a MergeConfig object",
+    )
+    parser.add_argument(
+        "--model-path",
+        "-m",
+        type=str,
+        default="wandb:goodfire/spd/runs/ioprgffh",
+        help="Path to the model (e.g., wandb run ID)",
+    )
+    parser.add_argument(
+        "--n-batches",
+        "-n",
+        type=int,
+        default=10,
+        help="Number of batches to split the dataset into",
+    )
+    parser.add_argument(
+        "--batch-size",
+        "-b",
+        type=int,
+        default=64,
+        help="Size of each batch",
+    )
+    parser.add_argument(
+        "--devices",
+        "-d",
+        type=str,
+        default="cuda:0",
+        help="comma-separated list of devices to use for clustering (e.g., 'cuda:0,cuda:1')",
+    )
+    parser.add_argument(
+        "--max-concurrency",
+        "-x",
+        type=int,
+        default=None,
+        help="Maximum number of concurrent clustering processes (default: all devices)",
+    )
+    args: argparse.Namespace = parser.parse_args()
+
+    devices: list[str] = args.devices.split(",")
+
+    main(
+        merge_config=args.merge_config,
+        model_path=args.model_path,
+        n_batches=args.n_batches,
+        batch_size=args.batch_size,
+        devices=devices,
+        max_concurrency=args.max_concurrency,
+    )
