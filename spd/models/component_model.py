@@ -248,7 +248,7 @@ class ComponentModel(LoadableModule):
         return gates
 
     @override
-    def __call__(
+    def forward(
         self,
         *args: Any,
         type: Literal["default", "components", "pre_forward_cache"] | None = "default",
@@ -258,7 +258,7 @@ class ComponentModel(LoadableModule):
     ) -> Any:
         """Forward pass of the patched model.
 
-        NOTE: We need all the forward options in __call__ in order for DistributedDataParallel to
+        NOTE: We need all the forward options in forward in order for DistributedDataParallel to
         work (https://discuss.pytorch.org/t/is-it-ok-to-use-methods-other-than-forward-in-ddp/176509).
 
         Args:
