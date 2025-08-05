@@ -138,3 +138,54 @@ def component_activation_statistics(
         mean_component_activation_counts,
         sorted_co_activation_fractions,
     )
+
+
+def component_abs_left_singular_vectors_cosine_similarity(
+    model: ComponentModel,
+    sorted_activation_inds: dict[str, Float[Tensor, " C"]],
+) -> dict[str, Float[Tensor, " C"]]:
+    """Get the cosine similarity between the absolute left singular vectors of the components."""
+    eps = 1e-8
+    component_abs_left_singular_vectors = {
+        module_name: torch.abs(model.components[module_name].U.data)
+        for module_name in model.components
+    }
+    # First calculate the inner products
+    component_abs_left_singular_vectors_inner_products = {
+        module_name: einsum(
+            component_abs_left_singular_vectors[module_name],
+            component_abs_left_singular_vectors[module_name],
+            "C d, C2 d -> C C2",
+        )
+        for module_name in model.components
+    }
+    # Then calculate the norms
+    component_abs_left_singular_vectors_norms_vecs = {
+        module_name: torch.norm(component_abs_left_singular_vectors[module_name], dim=-1)
+        for module_name in model.components
+    }
+    component_abs_left_singular_vectors_norms_mats = {
+        module_name: einsum(
+            component_abs_left_singular_vectors_norms_vecs[module_name],
+            component_abs_left_singular_vectors_norms_vecs[module_name],
+            "C, C2 -> C C2",
+        )
+        for module_name in model.components
+    }
+
+    # Then calculate the cosine similarity
+    component_abs_left_singular_vectors_cosine_similarity_matrices = {
+        module_name: component_abs_left_singular_vectors_inner_products[module_name]
+        / (component_abs_left_singular_vectors_norms_mats[module_name] + eps)
+        for module_name in model.components
+    }
+
+    # Then sort the cosine similarity matrices by the component counts
+    component_abs_left_singular_vectors_cosine_similarity_matrices = {
+        module_name: component_abs_left_singular_vectors_cosine_similarity_matrices[module_name][
+            sorted_activation_inds[module_name], :
+        ][:, sorted_activation_inds[module_name]]
+        for module_name in model.components
+    }
+
+    return component_abs_left_singular_vectors_cosine_similarity_matrices

@@ -19,11 +19,15 @@ from spd.models.component_model import ComponentModel
 from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_histograms,
+    plot_component_abs_left_singular_vectors_cosine_similarity,
     plot_component_co_activation_fractions,
     plot_mean_component_activation_counts,
     plot_UV_matrices,
 )
-from spd.utils.component_utils import component_activation_statistics
+from spd.utils.component_utils import (
+    component_abs_left_singular_vectors_cosine_similarity,
+    component_activation_statistics,
+)
 
 
 @dataclass
@@ -118,6 +122,34 @@ def component_co_activation_plots(inputs: CreateFiguresInputs) -> Mapping[str, p
     return plot_component_co_activation_fractions(component_co_activation_fractions)
 
 
+def component_abs_left_singular_vectors_cosine_similarity_plots(
+    inputs: CreateFiguresInputs,
+) -> Mapping[str, plt.Figure]:
+    mean_component_activation_counts = component_activation_statistics(
+        model=inputs.model,
+        dataloader=inputs.eval_loader,
+        n_steps=inputs.n_eval_steps,
+        sigmoid_type=inputs.config.sigmoid_type,
+        device=str(inputs.device),
+        threshold=inputs.config.ci_alive_threshold,
+    )[1]
+    sorted_activation_inds = {
+        module_name: torch.argsort(
+            mean_component_activation_counts[module_name], dim=-1, descending=True
+        )
+        for module_name in inputs.model.components
+    }
+    component_abs_left_singular_vectors_cosine_similarities = (
+        component_abs_left_singular_vectors_cosine_similarity(
+            model=inputs.model,
+            sorted_activation_inds=sorted_activation_inds,
+        )
+    )
+    return plot_component_abs_left_singular_vectors_cosine_similarity(
+        component_abs_left_singular_vectors_cosine_similarities
+    )
+
+
 def create_figures(
     model: ComponentModel,
     causal_importances: dict[str, Float[Tensor, "... C"]],
@@ -181,5 +213,6 @@ FIGURES_FNS: dict[str, CreateFiguresFn] = {
         permuted_ci_plots,
         uv_plots,
         component_co_activation_plots,
+        component_abs_left_singular_vectors_cosine_similarity_plots,
     ]
 }
