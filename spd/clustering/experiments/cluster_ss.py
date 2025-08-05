@@ -1,9 +1,13 @@
 # %%
 
+from typing import Any
+import numpy as np
 import matplotlib.pyplot as plt
 import torch
+from torch import Tensor
 from datasets import load_dataset
 from muutils.dbg import dbg_auto
+from jaxtyping import Float, Int
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import (
@@ -22,62 +26,35 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 # %autoreload 2
 
 # %%
-SPD_RUN = SPDRunInfo.from_path("wandb:goodfire/spd/runs/ioprgffh")
+model_path: str = "wandb:goodfire/spd/runs/ioprgffh"
+dataset_path: str = "../data/split_datasets/batchsize_64/batch_00.npz"
+
+SPD_RUN = SPDRunInfo.from_path(model_path)
 component_model: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 component_model.to(DEVICE)
 cfg = SPD_RUN.config
 
 
 # %%
-dbg_auto(component_model.state_dict())
-dbg_auto(cfg)
-dbg_auto(cfg.task_config)
-# %%
 
-N_SAMPLES: int = 1
-
-dataset_config = DatasetConfig(
-    name=cfg.task_config.dataset_name,
-    hf_tokenizer_path=cfg.pretrained_model_name_hf,
-    split=cfg.task_config.train_data_split,
-    n_ctx=cfg.task_config.max_seq_len,
-    is_tokenized=False,
-    streaming=False,
-    column_name=cfg.task_config.column_name,
-)
-
-dataset = load_dataset(
-    dataset_config.name,
-    streaming=dataset_config.streaming,
-    split=dataset_config.split,
-    trust_remote_code=False,
-)
-
-dataloader, _tokenizer = create_data_loader(
-    dataset_config=dataset_config,
-    batch_size=N_SAMPLES,
-    buffer_size=cfg.task_config.buffer_size,
-    global_seed=cfg.seed,
-    ddp_rank=0,
-    ddp_world_size=1,
-)
-
+data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
 
 # %%
 
-ci = component_activations(
-    component_model,
-    dataloader,
+component_acts: dict[str, Tensor] = component_activations(
+    model=component_model,
+    batch=data_batch,
     device=DEVICE,
     # threshold=0.1,
     # TODO: where can we find this in the model itself???
     sigmoid_type="hard",
 )
 
-dbg_auto(ci)
+dbg_auto(component_acts);
+
 # %%
-coa = process_activations(
-    ci,
+component_coacts: dict[str, Any] = process_activations(
+    component_acts,
     filter_dead_threshold=0.001,
     seq_mode="concat",
     plots=True,  # Plot the processed activations
@@ -87,8 +64,8 @@ coa = process_activations(
 
 
 ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
-    activations=coa["activations"],
-    component_labels=coa["labels"],
+    activations=component_coacts["activations"],
+    component_labels=component_coacts["labels"],
     merge_config=MergeConfig(
         activation_threshold=0.01,
         alpha=0.01,

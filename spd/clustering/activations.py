@@ -14,18 +14,26 @@ from spd.utils.general_utils import extract_batch_data
 @torch.no_grad()
 def component_activations(
     model: ComponentModel,
+    device: torch.device|str,
     dataloader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-    device: torch.device,
+    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
+    | None = None,
+    batch: Int[Tensor, "batch_size n_ctx"] | None = None,
     sigmoid_type: SigmoidTypes = "normal",
 ) -> dict[str, Float[Tensor, " n_steps C"]]:
     """Get the component activations over a **single** batch."""
-    # --- Get Batch --- #
-    batch = extract_batch_data(next(iter(dataloader)))
-    batch = batch.to(device)
+    batch_: Tensor
+    if batch is None:
+        assert dataloader is not None, "provide either a batch or a dataloader, not both"
+        batch_ = extract_batch_data(next(iter(dataloader)))
+    else:
+        assert dataloader is None, "provide either a batch or a dataloader, not both"
+        batch_ = batch
+
+    batch_ = batch_.to(device)
 
     _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-        batch, module_names=model.target_module_paths
+        batch_, module_names=model.target_module_paths
     )
 
     causal_importances, _ = model.calc_causal_importances(
