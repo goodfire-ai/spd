@@ -10,8 +10,8 @@ from spd.clustering.merge import MergeConfig
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.clustering.scripts.compute_distances import compute_histories_distances
 from spd.clustering.scripts.split_dataset import split_dataset
-from spd.settings import REPO_ROOT
 from spd.log import logger
+from spd.settings import REPO_ROOT
 
 
 # TODO: this is super messy
@@ -35,7 +35,9 @@ def distribute_clustering(
         device: str = devices[idx % n_devices]
 
         cmd: list[str] = [
-            "uv", "run", "python",
+            "uv",
+            "run",
+            "python",
             str(REPO_ROOT / "spd/clustering/scripts/run_clustering.py"),
             "--merge-config",
             str(merge_config_path),
