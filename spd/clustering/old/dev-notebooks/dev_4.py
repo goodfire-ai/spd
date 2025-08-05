@@ -9,7 +9,7 @@ from spd.clustering.merge import (
     MergeConfig,
     MergePlotConfig,
     merge_iteration_ensemble,
-	MergeEnsemble,
+	MergeHistoryEnsemble,
 )
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.data import DatasetConfig, create_data_loader
@@ -92,7 +92,7 @@ coa = process_activations(
 # %%
 
 
-ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
+ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
     activations=coa["activations"],
     component_labels=coa["labels"],
     merge_config=MergeConfig(

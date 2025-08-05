@@ -4,7 +4,7 @@ import torch
 from muutils.dbg import dbg_auto
 
 from spd.clustering.activations import component_activations, process_activations
-from spd.clustering.merge import MergeConfig, MergeEnsemble, merge_iteration_ensemble
+from spd.clustering.merge import MergeConfig, MergeHistoryEnsemble, merge_iteration_ensemble
 from spd.clustering.merge_sweep import sweep_multiple_parameters
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
@@ -70,7 +70,7 @@ coa = process_activations(
 
 # %%
 
-ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
+ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
     activations=coa["activations"],
     component_labels=coa["labels"],
     merge_config=MergeConfig(

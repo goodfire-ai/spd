@@ -12,7 +12,7 @@ from torch import Tensor
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import (
     MergeConfig,
-    MergeEnsemble,
+    MergeHistoryEnsemble,
     merge_iteration_ensemble,
 )
 from spd.clustering.plotting.merge import plot_dists_distribution
@@ -61,7 +61,7 @@ component_coacts: dict[str, Any] = process_activations(
 # %%
 
 
-ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
+ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
     activations=component_coacts["activations"],
     component_labels=component_coacts["labels"],
     merge_config=MergeConfig(

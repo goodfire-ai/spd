@@ -9,7 +9,7 @@ from spd.clustering.merge import (
     MergeConfig,
     MergePlotConfig,
     merge_iteration_ensemble,
-	MergeEnsemble,
+	MergeHistoryEnsemble,
 )
 
 from spd.clustering.plotting.merge import plot_dists_distribution
@@ -77,7 +77,7 @@ coa = process_activations(
 # %%
 
 
-ENSEMBLE: MergeEnsemble = merge_iteration_ensemble(
+ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
     activations=coa["activations"],
     component_labels=coa["labels"],
     merge_config=MergeConfig(
@@ -121,7 +121,7 @@ fig, ax = plt.subplots(1, 1, figsize=(16, 10))
 for alpha in [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0]:
 	print(f"Alpha: {alpha}")
 
-	ens: MergeEnsemble = merge_iteration_ensemble(
+	ens: MergeHistoryEnsemble = merge_iteration_ensemble(
 		activations=coa["activations"],
 		component_labels=coa["labels"],
 		merge_config=MergeConfig(
@@ -168,7 +168,7 @@ fig, ax = plt.subplots(1, 1, figsize=(16, 10))
 for check_threshold in [0.0001, 0.5]:
 	print(f"{check_threshold = }")
 
-	ens: MergeEnsemble = merge_iteration_ensemble(
+	ens: MergeHistoryEnsemble = merge_iteration_ensemble(
 		activations=coa["activations"],
 		component_labels=coa["labels"],
 		merge_config=MergeConfig(
@@ -215,7 +215,7 @@ fig, ax = plt.subplots(1, 1, figsize=(16, 10))
 for pop_component_prob in [0.0001, 0.001, 0.01, 0.1, 0.5]:
 	print(f"{pop_component_prob = }")
 
-	ens: MergeEnsemble = merge_iteration_ensemble(
+	ens: MergeHistoryEnsemble = merge_iteration_ensemble(
 		activations=coa["activations"],
 		component_labels=coa["labels"],
 		merge_config=MergeConfig(

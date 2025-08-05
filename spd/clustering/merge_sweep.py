@@ -10,7 +10,7 @@ from torch import Tensor
 
 from spd.clustering.merge import (
     MergeConfig,
-    MergeEnsemble,
+    MergeHistoryEnsemble,
     MergePlotConfig,
     merge_iteration_ensemble,
 )
@@ -27,7 +27,7 @@ def sweep_merge_parameter(
     plot_config: MergePlotConfig | None = None,
     figsize: tuple[int, int] = (16, 10),
     plot_mode: Literal["points", "dist"] = "dist",
-) -> tuple[dict[float, MergeEnsemble], plt.Figure, plt.Axes]:
+) -> tuple[dict[float, MergeHistoryEnsemble], plt.Figure, plt.Axes]:
     """Run ensemble merge iterations for different values of a single parameter.
 
     Args:
@@ -74,7 +74,7 @@ def sweep_merge_parameter(
     fig, ax = plt.subplots(1, 1, figsize=figsize)
 
     # Store results
-    ensembles: dict[float, MergeEnsemble] = {}
+    ensembles: dict[float, MergeHistoryEnsemble] = {}
 
     # Run sweep
     for value in parameter_values:
@@ -134,7 +134,7 @@ def sweep_multiple_parameters(
     plot_config: MergePlotConfig | None = None,
     figsize: tuple[int, int] = (16, 10),
     plot_mode: Literal["points", "dist"] = "dist",
-) -> dict[str, tuple[dict[float, MergeEnsemble], plt.Figure, plt.Axes]]:
+) -> dict[str, tuple[dict[float, MergeHistoryEnsemble], plt.Figure, plt.Axes]]:
     """Run multiple parameter sweeps and create comparison plots.
 
     Args:

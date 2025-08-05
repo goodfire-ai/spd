@@ -595,7 +595,7 @@ def merge_iteration(
 
 
 @dataclass
-class MergeEnsemble:
+class MergeHistoryEnsemble:
     data: list[MergeHistory]
 
     def __iter__(self):
@@ -603,6 +603,21 @@ class MergeEnsemble:
 
     def __getitem__(self, idx: int) -> MergeHistory:
         return self.data[idx]
+
+    def _validate_configs_match(self) -> None:
+        """Ensure all histories have the same merge config."""
+        if not self.data:
+            return
+        first_config: MergeConfig = self.data[0].config
+        for history in self.data[1:]:
+            if history.config != first_config:
+                raise ValueError("All histories must have the same merge config")
+
+    @property
+    def config(self) -> MergeConfig:
+        """Get the merge config used in the ensemble."""
+        self._validate_configs_match()
+        return self.data[0].config
 
     @property
     def n_iters(self) -> int:
@@ -619,13 +634,24 @@ class MergeEnsemble:
         return len(self.data)
 
     @property
+    def c_components(self) -> int:
+        """Number of components in each history."""
+        c_components: int = self.data[0].c_components
+        assert all(history.c_components == c_components for history in self.data), (
+            "All histories must have the same number of components"
+        )
+        return c_components
+
+    @property
+    def shape(self) -> tuple[int, int, int]:
+        """Shape of the ensemble data."""
+        return (self.n_ensemble, self.n_iters, self.c_components)
+
+    @property
     def merges_array(self) -> Int[np.ndarray, "n_ens n_iters c_components"]:
         n_ens: int = self.n_ensemble
         n_iters: int = self.n_iters
-        c_components: int = self.data[0].c_components
-        assert all(h.c_components == c_components for h in self.data), (
-            "All histories must have the same number of components"
-        )
+        c_components: int = self.c_components
 
         output: Int[np.ndarray, "n_ens n_iters c_components"] = np.full(
             (n_ens, n_iters, c_components),
@@ -668,13 +694,13 @@ def merge_iteration_ensemble(
     ensemble_size: int,
     component_labels: list[str] | None = None,
     initial_merge: GroupMerge | None = None,
-) -> MergeEnsemble:
+) -> MergeHistoryEnsemble:
     """Run many merge iterations"""
 
     output: list[MergeHistory] = []
     for _ in tqdm.tqdm(range(ensemble_size), unit="ensemble"):
         # run the merge iteration
-        merge_history, _ = merge_iteration(
+        merge_history = merge_iteration(
             activations=activations,
             merge_config=merge_config,
             component_labels=component_labels,
@@ -684,4 +710,4 @@ def merge_iteration_ensemble(
         # store the history
         output.append(merge_history)
 
-    return MergeEnsemble(data=output)
+    return MergeHistoryEnsemble(data=output)
