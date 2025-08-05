@@ -18,8 +18,8 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # magic autoreload
-%load_ext autoreload
-%autoreload 2
+# %load_ext autoreload
+# %autoreload 2
 
 # %%
 SPD_RUN = SPDRunInfo.from_path("wandb:goodfire/spd/runs/ioprgffh")

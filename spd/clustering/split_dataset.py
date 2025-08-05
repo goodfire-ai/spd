@@ -1,30 +1,19 @@
-from pathlib import Path
-from typing import Any
-import matplotlib.pyplot as plt
-import torch
-from datasets import load_dataset
-from muutils.dbg import dbg_auto
-from tqdm import tqdm
-from muutils.spinner import SpinnerContext
-import numpy as np
-from torch.utils.data import DataLoader
 import json
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from pathlib import Path
 
+import numpy as np
+import torch
+from muutils.spinner import SpinnerContext
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-from spd.clustering.activations import component_activations, process_activations
-from spd.clustering.merge import (
-    MergeConfig,
-    MergeEnsemble,
-    merge_iteration_ensemble,
-)
-from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
-from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.models.component_model import SPDRunInfo
+
 
 def split_dataset(
-	model_path: str,
+    model_path: str,
     n_batches: int,
     batch_size: int,
     base_path: Path = Path("data/split_datasets"),
@@ -32,12 +21,12 @@ def split_dataset(
     cfg_file_fmt: str = "batchsize_{batch_size}/_config.json",
 ) -> Path:
     """split up a SS dataset into n_batches of batch_size, returned the saved paths
-    
+
     1. load the config for a SimpleStories SPD Run given by model_path
     2. create a DataLoader for the dataset
     3. iterate over the DataLoader and save each batch to a file
-    
-    
+
+
     """
     with SpinnerContext(message="Loading SPD Run Config..."):
         spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
@@ -68,15 +57,16 @@ def split_dataset(
     # make dirs
     base_path.mkdir(parents=True, exist_ok=True)
     (
-        base_path / save_file_fmt.format(batch_size=batch_size, batch_idx="XX", n_batches=f"{n_batches:02d}")
+        base_path
+        / save_file_fmt.format(batch_size=batch_size, batch_idx="XX", n_batches=f"{n_batches:02d}")
     ).parent.mkdir(parents=True, exist_ok=True)
     # iterate over the requested number of batches and save them
     output_paths: list[Path] = []
     for batch_idx, batch in tqdm(
-            enumerate(iter(dataloader)),
-            total=n_batches,
-            unit="batche",
-        ):
+        enumerate(iter(dataloader)),
+        total=n_batches,
+        unit="batche",
+    ):
         if batch_idx >= n_batches:
             break
         batch_path: Path = base_path / save_file_fmt.format(
@@ -93,30 +83,32 @@ def split_dataset(
     # save a config file
     cfg_path: Path = base_path / cfg_file_fmt.format(batch_size=batch_size)
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(json.dumps(
-        dict(
-            # args to this function
-            model_path=model_path,
-            batch_size=batch_size,
-            n_batches=n_batches,
-            # dataset and tokenizer config
-            dataset_config=dataset_config.model_dump(mode="json"),            
-            tokenizer_path=str(getattr(_tokenizer, "name_or_path", None)),
-            tokenizer_type=str(getattr(_tokenizer, "__class__", None)),
-            # files we saved
-            output_files=[str(p) for p in output_paths],
-            output_dir=str(base_path),
-            output_file_fmt=save_file_fmt,
-            cfg_file_fmt=cfg_file_fmt,
-            cfg_file=str(cfg_path),
-        ),
-        indent="\t",
-    ))
+    cfg_path.write_text(
+        json.dumps(
+            dict(
+                # args to this function
+                model_path=model_path,
+                batch_size=batch_size,
+                n_batches=n_batches,
+                # dataset and tokenizer config
+                dataset_config=dataset_config.model_dump(mode="json"),
+                tokenizer_path=str(getattr(_tokenizer, "name_or_path", None)),
+                tokenizer_type=str(getattr(_tokenizer, "__class__", None)),
+                # files we saved
+                output_files=[str(p) for p in output_paths],
+                output_dir=str(base_path),
+                output_file_fmt=save_file_fmt,
+                cfg_file_fmt=cfg_file_fmt,
+                cfg_file=str(cfg_path),
+            ),
+            indent="\t",
+        )
+    )
 
     print(f"Saved config to: {cfg_path}")
 
-
     return cfg_path
+
 
 if __name__ == "__main__":
     import argparse
@@ -162,5 +154,3 @@ if __name__ == "__main__":
         n_batches=args.n_batches,
         base_path=args.base_path,
     )
-
-

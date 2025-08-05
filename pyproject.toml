@@ -99,7 +99,7 @@ known-third-party = ["wandb"]
 
 
 # TODO: remove this when actually cleaned up
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "spd/clustering/*" = [
     "E703", # semicolons fine for notebooks
 ]
