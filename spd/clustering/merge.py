@@ -4,13 +4,14 @@ import random
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 import torch
 import tqdm
 from jaxtyping import Bool, Float, Int
 from muutils.parallel import run_maybe_parallel
+from muutils.json_serialize import serializable_dataclass, serializable_field, SerializableDataclass
 from pydantic import (
     BaseModel,
     Field,
@@ -18,7 +19,7 @@ from pydantic import (
 )
 from torch import Tensor
 
-from spd.clustering.math.merge_matrix import GroupMerge
+from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming_matrix
 from spd.spd_types import Probability
 
@@ -271,7 +272,6 @@ class MergeConfig(BaseModel):
     )
 
     rank_cost_fn: Callable[[float], float] = lambda _: 1.0
-    stopping_condition: Callable[[MergeHistory], bool] | None = None
 
     @property
     def rank_cost_name(self) -> str:
@@ -290,31 +290,56 @@ class MergePlotConfig(BaseModel):
     plot_final: bool = True
 
 
-class MergeHistory:
-    """Track merge iteration history with validation."""
+@serializable_dataclass(kw_only=True)
+class MergeHistory(SerializableDataclass):
+    """Track merge iteration history"""
 
     c_components: int
-    non_diag_costs_min: list[float]
-    non_diag_costs_max: list[float]
-    max_considered_cost: list[float]
-    selected_pair_cost: list[float]
-    costs_range: list[float]
-    k_groups: list[int]
-    merges: list[GroupMerge]  # State of groups at each iteration
-    config: MergeConfig | None = None  # Configuration used for this merge
-    sweep_params: dict[str, Any] | None = None  # Sweep parameters if used in sweep
+    n_iters_current: int
+    non_diag_costs_min: Float[Tensor, " n_iters"]
+    non_diag_costs_max: Float[Tensor, " n_iters"]
+    max_considered_cost: Float[Tensor, " n_iters"]
+    selected_pair_cost: Float[Tensor, " n_iters"]
+    costs_range: Float[Tensor, " n_iters"]
+    k_groups: Int[Tensor, " n_iters"]
+    merges: BatchedGroupMerge = serializable_field(
+        serialization_fn=lambda x: x.serialize(),
+        deserialize_fn=lambda x: BatchedGroupMerge.load(x),
+    )
+    "State of groups at each iteration"
+    
+    config: MergeConfig = serializable_field(
+        serialization_fn=lambda x: x.module_dump(mode="json"),
+        deserialize_fn=lambda x: MergeConfig.model_validate_json(x),
+    )
+    "Configuration used for this merge"
+    
+    sweep_params: dict[str, Any] | None = serializable_field(
+        default=None,
+    )
+    "Sweep parameters if used in sweep"
 
-    def __init__(self, config: MergeConfig, c_components: int) -> None:
-        self.c_components = c_components
-        self.non_diag_costs_min = []
-        self.non_diag_costs_max = []
-        self.max_considered_cost = []
-        self.selected_pair_cost = []
-        self.costs_range = []
-        self.k_groups = []
-        self.merges = []
-        self.config = config
-        self.sweep_params = None
+    @classmethod
+    def from_config(
+            cls,
+            config: MergeConfig,
+            c_components: int,
+            sweep_params: dict[str, Any] | None = None,
+        ) -> "MergeHistory":
+        n_iters_target: int = config.iters
+        return MergeHistory(
+            c_components=c_components,
+            n_iters_current=0,
+            non_diag_costs_min=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
+            non_diag_costs_max=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
+            max_considered_cost=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
+            selected_pair_cost=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
+            costs_range=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
+            k_groups=torch.full((n_iters_target,), -1, dtype=torch.int16),
+            merges=BatchedGroupMerge.init_empty(batch_size=n_iters_target, n_components=c_components),
+            config=config,
+            sweep_params=sweep_params,
+        )
 
     def __post_init__(self) -> None:
         self._validate_lengths()
@@ -335,6 +360,7 @@ class MergeHistory:
 
     def add_iteration(
         self,
+        idx: int,
         non_diag_costs_range: tuple[float, float],
         max_considered_cost: float,
         pair_cost: float,
@@ -342,44 +368,34 @@ class MergeHistory:
         current_merge: GroupMerge,
     ) -> None:
         """Add data for one iteration."""
-        self.non_diag_costs_min.append(non_diag_costs_range[0])
-        self.non_diag_costs_max.append(non_diag_costs_range[1])
-        self.max_considered_cost.append(max_considered_cost)
-        self.costs_range.append(non_diag_costs_range[1] - non_diag_costs_range[0])
-        self.selected_pair_cost.append(pair_cost)
-        self.k_groups.append(k_groups)
-        self.merges.append(current_merge)
-        self._validate_lengths()
+        self.non_diag_costs_min[idx] = non_diag_costs_range[0]
+        self.non_diag_costs_max[idx] = non_diag_costs_range[1]
+        self.max_considered_cost[idx] = max_considered_cost
+        self.costs_range[idx] = non_diag_costs_range[1] - non_diag_costs_range[0]
+        self.selected_pair_cost[idx] = pair_cost
+        self.k_groups[idx] = k_groups
+        self.merges[idx] = current_merge
 
-    def latest(self) -> dict[str, float | int]:
+    def latest(self) -> dict[str, float | int | GroupMerge]:
         """Get the latest values."""
         if not self.non_diag_costs_min:
             raise ValueError("No history available")
-        return {
-            "non_diag_costs_min": self.non_diag_costs_min[-1],
-            "non_diag_costs_max": self.non_diag_costs_max[-1],
-            "max_considered_cost": self.max_considered_cost[-1],
-            "selected_pair_cost": self.selected_pair_cost[-1],
-            "costs_range": self.costs_range[-1],
-            "k_groups": self.k_groups[-1],
-        }
+        latest_idx: int = self.n_iters_current - 1
+        return dict(
+            non_diag_costs_min=self.non_diag_costs_min[latest_idx].item(),
+            non_diag_costs_max=self.non_diag_costs_max[latest_idx].item(),
+            max_considered_cost=self.max_considered_cost[latest_idx].item(),
+            selected_pair_cost=self.selected_pair_cost[latest_idx].item(),
+            costs_range=self.costs_range[latest_idx].item(),
+            k_groups=self.k_groups[latest_idx].item(),
+            merges=self.merges[latest_idx],
+        )
 
     def plot(self, plot_config: MergePlotConfig | None = None) -> None:
         """Plot cost evolution."""
         from spd.clustering.plotting.merge import plot_merge_history
 
         plot_merge_history(self, plot_config)
-
-    def to_dict(self) -> dict[str, list[float] | list[int]]:
-        """Convert to dictionary for backward compatibility."""
-        return {
-            "non_diag_costs_min": self.non_diag_costs_min,
-            "non_diag_costs_max": self.non_diag_costs_max,
-            "max_considered_cost": self.max_considered_cost,
-            "selected_pair_cost": self.selected_pair_cost,
-            "costs_range": self.costs_range,
-            "k_groups": self.k_groups,
-        }
 
     # Convenience properties for sweep analysis
     @property
@@ -390,12 +406,13 @@ class MergeHistory:
     @property
     def final_k_groups(self) -> int:
         """Final number of groups after merging."""
-        return self.k_groups[-1] if self.k_groups else 0
+        # return self.k_groups[-1] if self.k_groups else 0
+        return self.k_groups[self.n_iters_current - 1].item()
 
     @property
     def initial_k_groups(self) -> int:
         """Initial number of groups before merging."""
-        return self.k_groups[0] if self.k_groups else 0
+        return self.k_groups[0].item()
 
 
 def merge_iteration(
@@ -404,7 +421,8 @@ def merge_iteration(
     component_labels: list[str] | None = None,
     initial_merge: GroupMerge | None = None,
     plot_config: MergePlotConfig | None = None,
-) -> tuple[MergeHistory, GroupMerge]:
+    sweep_params: dict[str, Any] | None = None,
+) -> MergeHistory:
     # setup
     # ==================================================
 
@@ -449,7 +467,11 @@ def merge_iteration(
     i: int = 0
 
     # variables we keep track of
-    merge_history: MergeHistory = MergeHistory(config=merge_config, c_components=c_components)
+    merge_history: MergeHistory = MergeHistory.from_config(
+        config=merge_config,
+        c_components=c_components,
+        sweep_params=sweep_params,
+    )
 
     # free up memory
     if not do_pop:
@@ -521,6 +543,7 @@ def merge_iteration(
 
         # store for plotting
         merge_history.add_iteration(
+            idx=i,
             non_diag_costs_range=non_diag_costs_range,
             max_considered_cost=max_considered_cost,
             pair_cost=pair_cost,
@@ -561,17 +584,12 @@ def merge_iteration(
             current_merge.plot(component_labels=component_labels)
             break
 
-        # Custom stopping condition
-        if merge_config.stopping_condition is not None:  # noqa: SIM102
-            if merge_config.stopping_condition(merge_history):
-                break
-
         i += 1
 
     # finish up
     # ==================================================
 
-    return merge_history, current_merge
+    return merge_history
 
 
 @dataclass

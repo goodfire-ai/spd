@@ -40,6 +40,7 @@ dev = [
     "nbconvert",
     "seaborn",
     "muutils", # custom (by mivanit) utils, using it for debugging
+    "zanj", # custom (by mivanit), with `muutils` it makes it easier to save/load merge histories
     "js-embedding-vis", # custom (by mivanit) embedding vis
     # broken for python >=3.10 ?
     # "umap-learn>=0.5.7",

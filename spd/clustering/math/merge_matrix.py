@@ -18,7 +18,6 @@ class GroupMerge:
 
     group_idxs: Int[Tensor, " n_components"]
     k_groups: int
-    _dtype: ClassVar[torch.dtype] = torch.bool
     old_to_new_idx: dict[int | None, int | None] | None = None
 
     @property
@@ -55,7 +54,7 @@ class GroupMerge:
     ) -> Bool[Tensor, "k_groups n_components"]:
         if device is None:
             device = self.group_idxs.device
-        mat = torch.zeros((self.k_groups, self.n_components), dtype=self._dtype, device=device)
+        mat = torch.zeros((self.k_groups, self.n_components), dtype=torch.bool, device=device)
         mat[self.group_idxs, torch.arange(self.n_components, device=device)] = True
         return mat
 
@@ -228,8 +227,33 @@ class BatchedGroupMerge:
 
     group_idxs: Int[Tensor, " batch n_components"]
     k_groups: Int[Tensor, " batch"]
-    meta: list[dict] | None = None
-    _dtype: ClassVar[torch.dtype] = torch.bool
+    meta: list[dict|None] | None = None
+
+    @classmethod
+    def init_empty(cls, batch_size: int, n_components: int) -> "BatchedGroupMerge":
+        """Initialize an empty BatchedGroupMerge with the given batch size and number of components."""
+        return cls(
+            group_idxs=torch.full((batch_size, n_components), -1, dtype=torch.int16),
+            k_groups=torch.zeros(batch_size, dtype=torch.int16),
+            meta=[None for _ in range(batch_size)],
+        )
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the BatchedGroupMerge to a dictionary."""
+        return dict(
+            group_idxs=self.group_idxs.cpu(),
+            k_groups=self.k_groups.cpu(),
+            meta=self.meta,
+        )
+    
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> "BatchedGroupMerge":
+        """Load a BatchedGroupMerge from a serialized dictionary."""
+        return cls(
+            group_idxs=torch.tensor(data["group_idxs"], dtype=torch.int64),
+            k_groups=torch.tensor(data["k_groups"], dtype=torch.int64),
+            meta=data.get("meta", None),
+        )
 
     @property
     def batch_size(self) -> int:
@@ -262,7 +286,7 @@ class BatchedGroupMerge:
             device = self.group_idxs.device
         k_groups_u: int = self.k_groups_unique
         mat = torch.nn.functional.one_hot(self.group_idxs, num_classes=k_groups_u)
-        return mat.permute(0, 2, 1).to(device=device, dtype=self._dtype)
+        return mat.permute(0, 2, 1).to(device=device, dtype=torch.bool)
 
     @classmethod
     def from_matrix(cls, mat: Bool[Tensor, "batch k_groups n_components"]) -> "BatchedGroupMerge":
@@ -297,6 +321,14 @@ class BatchedGroupMerge:
         group_idxs = self.group_idxs[idx]
         k_groups: int = int(self.k_groups[idx].item())
         return GroupMerge(group_idxs=group_idxs, k_groups=k_groups)
+    
+    def __setitem__(self, idx: int, value: GroupMerge) -> None:
+        if not (0 <= idx < self.batch_size):
+            raise IndexError("index out of range")
+        if value.n_components != self.n_components:
+            raise ValueError("value must have the same number of components as the batch")
+        self.group_idxs[idx] = value.group_idxs
+        self.k_groups[idx] = value.k_groups
 
     def __iter__(self):
         """Iterate over the GroupMerge instances in the batch."""
