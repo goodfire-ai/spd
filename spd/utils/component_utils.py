@@ -88,7 +88,7 @@ def component_activation_statistics(
                 active_components, active_components, "b C, b C2 -> b C C2"
             ).sum(dim=sum_dims)
 
-    # Show the mean number of components
+    # Show the mean number of component activations
     mean_n_active_components_per_token: dict[str, float] = {
         module_name: (total_n_active_components[module_name] / n_tokens[module_name])
         for module_name in model.components
@@ -189,3 +189,81 @@ def component_abs_left_singular_vectors_cosine_similarity(
     }
 
     return component_abs_left_singular_vectors_cosine_similarity_matrices
+
+
+def create_cosine_sim_coactivation_correlation_dataset(
+    model: ComponentModel,
+    dataloader: DataLoader[Int[Tensor, "..."]]
+    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    n_steps: int,
+    sigmoid_type: SigmoidTypes,
+    device: str,
+    threshold: float,
+) -> dict[str, tuple[Float[Tensor, " C C"], Float[Tensor, " C C"]]]:
+    (
+        _,
+        mean_component_activation_counts,
+        sorted_co_activation_fractions,
+    ) = component_activation_statistics(
+        model=model,
+        dataloader=dataloader,
+        n_steps=n_steps,
+        sigmoid_type=sigmoid_type,
+        device=device,
+        threshold=threshold,
+    )
+
+    sorted_activation_inds = {
+        module_name: torch.argsort(
+            mean_component_activation_counts[module_name], dim=-1, descending=True
+        )
+        for module_name in model.components
+    }
+
+    n_alive_components = {
+        module_name: torch.sum(mean_component_activation_counts[module_name] > 0.0001)
+        for module_name in model.components
+    }  # TODO unhardcode
+
+    component_abs_left_singular_vectors_cosine_similarity_matrices = (
+        component_abs_left_singular_vectors_cosine_similarity(
+            model=model,
+            sorted_activation_inds=sorted_activation_inds,
+        )
+    )
+
+    alive_co_activation_fractions = {
+        module_name: sorted_co_activation_fractions[module_name][
+            : n_alive_components[module_name], : n_alive_components[module_name]
+        ]
+        for module_name in model.components
+    }
+
+    alive_cosine_sim_matrices = {
+        module_name: component_abs_left_singular_vectors_cosine_similarity_matrices[module_name][
+            : n_alive_components[module_name], : n_alive_components[module_name]
+        ]
+        for module_name in model.components
+    }
+
+    # Flatten the matrices
+    alive_co_activation_fractions_flattened = {
+        module_name: alive_co_activation_fractions[module_name].flatten()
+        for module_name in model.components
+    }
+
+    alive_cosine_sim_matrices_flattened = {
+        module_name: alive_cosine_sim_matrices[module_name].flatten()
+        for module_name in model.components
+    }
+
+    # Concatenate the flattened matrices per module
+    alive_cosine_sim_and_coacts = {
+        module_name: (
+            alive_cosine_sim_matrices_flattened[module_name],
+            alive_co_activation_fractions_flattened[module_name],
+        )
+        for module_name in model.components
+    }
+
+    return alive_cosine_sim_and_coacts

@@ -21,12 +21,14 @@ from spd.plotting import (
     plot_ci_histograms,
     plot_component_abs_left_singular_vectors_cosine_similarity,
     plot_component_co_activation_fractions,
+    plot_cosine_sim_coactivation_correlation,
     plot_mean_component_activation_counts,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import (
     component_abs_left_singular_vectors_cosine_similarity,
     component_activation_statistics,
+    create_cosine_sim_coactivation_correlation_dataset,
 )
 
 
@@ -150,6 +152,20 @@ def component_abs_left_singular_vectors_cosine_similarity_plots(
     )
 
 
+def cosine_sim_coactivation_correlation_plots(
+    inputs: CreateFiguresInputs,
+) -> Mapping[str, plt.Figure]:
+    alive_cosine_sim_and_coacts = create_cosine_sim_coactivation_correlation_dataset(
+        model=inputs.model,
+        dataloader=inputs.eval_loader,
+        n_steps=inputs.n_eval_steps,
+        sigmoid_type=inputs.config.sigmoid_type,
+        device=str(inputs.device),
+        threshold=inputs.config.ci_alive_threshold,
+    )
+    return plot_cosine_sim_coactivation_correlation(alive_cosine_sim_and_coacts)
+
+
 def create_figures(
     model: ComponentModel,
     causal_importances: dict[str, Float[Tensor, "... C"]],
@@ -214,5 +230,6 @@ FIGURES_FNS: dict[str, CreateFiguresFn] = {
         uv_plots,
         component_co_activation_plots,
         component_abs_left_singular_vectors_cosine_similarity_plots,
+        cosine_sim_coactivation_correlation_plots,
     ]
 }

@@ -500,9 +500,6 @@ def plot_component_abs_left_singular_vectors_cosine_similarity(
     """Plot the cosine similarity between the absolute left singular vectors of the components. (Uses exactsame structure as plotting code for plot_component_co_activation_fractions)"""
     n_modules = len(component_abs_left_singular_vectors_cosine_similarity)
     fig = plt.figure(figsize=(8, 8 * n_modules))
-    # Create figure with GridSpec for explicit layout control
-    fig = plt.figure(figsize=(8, 8 * n_modules))
-
     images = []
 
     # Create GridSpec: main plots take 85% width, colorbar takes 10%, 5% gap
@@ -526,3 +523,33 @@ def plot_component_abs_left_singular_vectors_cosine_similarity(
         cbar.set_ticklabels(["0.0", "0.25", "0.5", "0.75", "1.0"])
 
     return {"component_abs_left_singular_vectors_cosine_similarity": fig}
+
+
+def plot_cosine_sim_coactivation_correlation(
+    cosine_sim_coactivation_correlation: dict[
+        str, tuple[Float[Tensor, " C C"], Float[Tensor, " C C"]]
+    ],
+) -> dict[str, plt.Figure]:
+    """Plot the cosine similarity between the absolute left singular vectors of the components. There should be a scatter plot for each module with a histogram along the axes for each variable"""
+    n_modules = len(cosine_sim_coactivation_correlation)
+    fig = plt.figure(figsize=(8, 8 * n_modules))
+    images = []
+    gs = fig.add_gridspec(n_modules, 2, width_ratios=[17, 1], wspace=0.1)
+    for i, (module_name, (cosine_similarity, coactivation_fraction)) in enumerate(
+        cosine_sim_coactivation_correlation.items()
+    ):
+        ax = fig.add_subplot(gs[i, 0])
+        im = ax.scatter(
+            cosine_similarity.detach().cpu().numpy(),
+            coactivation_fraction.detach().cpu().numpy(),
+            alpha=0.4,
+            s=1.2,
+        )
+        images.append(im)
+        ax.set_xlim(-1.05, 1.05)
+        ax.set_ylim(-0.0, 1.05)
+        ax.set_title(module_name)
+        ax.set_xlabel("Cosine Similarity")
+        ax.set_ylabel("Coactivation Fraction")
+
+    return {"cosine_sim_coactivation_correlation": fig}

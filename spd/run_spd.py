@@ -177,6 +177,7 @@ def optimize(
                     causal_importances=causal_importances,
                     target_out=target_out,
                     batch=batch,
+                    eval_loader=eval_loader,
                     device=device,
                     config=config,
                     step=step,

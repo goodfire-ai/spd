@@ -50,6 +50,7 @@ figures_fns:
   - name: "uv_plots"
   - name: "component_co_activation_plots"
   - name: "component_abs_left_singular_vectors_cosine_similarity_plots"
+  - name: "cosine_sim_coactivation_correlation_plots"
 metrics_fns:
   - name: "ci_l0"
   - name: "target_ci_error"

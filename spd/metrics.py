@@ -10,14 +10,17 @@ from typing import Any, Protocol
 
 import torch
 import wandb
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from torch import Tensor
+from torch.utils.data import DataLoader
 
 from spd.configs import Config
 from spd.losses import calc_ce_losses
 from spd.models.component_model import ComponentModel
 from spd.plotting import create_embed_ci_sample_table, get_single_feature_causal_importances
-from spd.utils.component_utils import calc_ci_l_zero
+from spd.utils.component_utils import (
+    calc_ci_l_zero,
+)
 from spd.utils.general_utils import calc_kl_divergence_lm
 from spd.utils.target_ci_solutions import (
     compute_target_metrics,
@@ -33,6 +36,10 @@ class CreateMetricsInputs:
     unmasked_component_out: Float[Tensor, "... d_model_out"]
     masked_component_out: Float[Tensor, "... d_model_out"]
     batch: Tensor
+    eval_loader: (
+        DataLoader[Int[Tensor, "..."]]
+        | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
+    )
     device: str
     config: Config
     step: int
@@ -91,6 +98,10 @@ def ci_l0(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table
     return l0_metrics
 
 
+# def cosine_sim_coactivation_correlation(inputs: CreateMetricsInputs) -> Mapping[str, float | int | wandb.Table]:
+#     return {}
+
+
 def target_ci_error(
     inputs: CreateMetricsInputs,
     identity_ci: list[dict[str, Any]] | None = None,
@@ -135,6 +146,8 @@ def create_metrics(
     model: ComponentModel,
     causal_importances: dict[str, Float[Tensor, "... C"]],
     target_out: Float[Tensor, "... d_model_out"],
+    eval_loader: DataLoader[Int[Tensor, "..."]]
+    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     batch: Tensor,
     device: str,
     config: Config,
@@ -155,6 +168,7 @@ def create_metrics(
         unmasked_component_out=unmasked_component_out,
         masked_component_out=masked_component_out,
         batch=batch,
+        eval_loader=eval_loader,
         device=device,
         config=config,
         step=step,
