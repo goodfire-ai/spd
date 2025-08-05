@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import random
 import warnings
 from collections.abc import Callable
@@ -277,6 +278,11 @@ class MergeConfig(BaseModel):
     def rank_cost_name(self) -> str:
         """Get the name of the rank cost function."""
         return getattr(self.rank_cost_fn, "__name__", str(self.rank_cost_fn))
+    
+
+    @property
+    def stable_hash(self) -> str:
+        return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
 
 
 class MergePlotConfig(BaseModel):

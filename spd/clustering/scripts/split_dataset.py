@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -10,16 +11,17 @@ from tqdm import tqdm
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import SPDRunInfo
+from spd.settings import REPO_ROOT
 
 
 def split_dataset(
     model_path: str,
     n_batches: int,
     batch_size: int,
-    base_path: Path = Path("data/split_datasets"),
+    base_path: Path = REPO_ROOT / "data/split_datasets",
     save_file_fmt: str = "batchsize_{batch_size}/batch_{batch_idx}.npz",
     cfg_file_fmt: str = "batchsize_{batch_size}/_config.json",
-) -> Path:
+) -> tuple[Path, dict[str, Any]]:
     """split up a SS dataset into n_batches of batch_size, returned the saved paths
 
     1. load the config for a SimpleStories SPD Run given by model_path
@@ -65,7 +67,7 @@ def split_dataset(
     for batch_idx, batch in tqdm(
         enumerate(iter(dataloader)),
         total=n_batches,
-        unit="batche",
+        unit="batch",
     ):
         if batch_idx >= n_batches:
             break
@@ -82,32 +84,30 @@ def split_dataset(
 
     # save a config file
     cfg_path: Path = base_path / cfg_file_fmt.format(batch_size=batch_size)
+    cfg_data: dict[str, Any] = dict(
+        # args to this function
+        model_path=model_path,
+        batch_size=batch_size,
+        n_batches=n_batches,
+        # dataset and tokenizer config
+        dataset_config=dataset_config.model_dump(mode="json"),
+        tokenizer_path=str(getattr(_tokenizer, "name_or_path", None)),
+        tokenizer_type=str(getattr(_tokenizer, "__class__", None)),
+        # files we saved
+        output_files=[str(p) for p in output_paths],
+        output_dir=str(base_path),
+        output_file_fmt=save_file_fmt,
+        cfg_file_fmt=cfg_file_fmt,
+        cfg_file=str(cfg_path),
+    )
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text(
-        json.dumps(
-            dict(
-                # args to this function
-                model_path=model_path,
-                batch_size=batch_size,
-                n_batches=n_batches,
-                # dataset and tokenizer config
-                dataset_config=dataset_config.model_dump(mode="json"),
-                tokenizer_path=str(getattr(_tokenizer, "name_or_path", None)),
-                tokenizer_type=str(getattr(_tokenizer, "__class__", None)),
-                # files we saved
-                output_files=[str(p) for p in output_paths],
-                output_dir=str(base_path),
-                output_file_fmt=save_file_fmt,
-                cfg_file_fmt=cfg_file_fmt,
-                cfg_file=str(cfg_path),
-            ),
-            indent="\t",
-        )
+        json.dumps(cfg_data, indent="\t")
     )
 
     print(f"Saved config to: {cfg_path}")
 
-    return cfg_path
+    return cfg_path, cfg_data
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ def compute_histories_distances(
 
     # save some config info
     config: MergeConfig = ensemble.config
-    config_hash: str = hashlib.md5(config.model_dump_json().encode()).hexdigest()[:6]
+    config_hash: str = config.stable_hash
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config_path: Path = out_dir / f"config_{config_hash}.json"
@@ -52,6 +52,7 @@ def compute_histories_distances(
             indent="\t",
         )
     )
+    print(f"Config saved to {config_path}")
 
     # compute the distances
     output_path: Path = out_dir / f"distances_{config_hash}.npz"
