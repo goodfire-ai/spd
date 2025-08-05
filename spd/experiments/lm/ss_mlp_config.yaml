@@ -6,28 +6,29 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 4000
+# C: 4000
+C: 100
 n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [10]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["model.layers.1.mlp.gate_proj"]
+target_module_patterns: ["model.layers.0.mlp.gate_proj"]
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 3000
-recon_coeff: null
-stochastic_recon_coeff: null
-recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 1
-importance_minimality_coeff: 0.005
-schatten_coeff: null
+faithfulness_coeff: 1
+recon_coeff: 1
+stochastic_recon_coeff: 1
+recon_layerwise_coeff: 1
+stochastic_recon_layerwise_coeff: 1000
+importance_minimality_coeff: 0.1
+schatten_coeff: 1
 embedding_recon_coeff: null
 is_embed_unembed_recon: false
 pnorm: 2.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 2
+batch_size: 32
 steps: 30_000
 lr: 3e-4
 lr_schedule: cosine
@@ -63,8 +64,8 @@ task_config:
   buffer_size: 1000
   dataset_name: "SimpleStories/SimpleStories"
   column_name: "story"
-  train_data_split: "train[:5000]"
-  eval_data_split: "test[:100]"
+  train_data_split: "train[:10000]"
+  eval_data_split: "test[:10000]"
 
 
 # Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54

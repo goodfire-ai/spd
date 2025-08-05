@@ -50,8 +50,8 @@ class TestCIHistograms:
         target_out = torch.randn(4, 8, 100)
 
         # Watch more batches than n_batches_accum
-        for _ in range(n_batches_accum + 2):
-            ci_hist.watch_batch(batch, target_out, sample_ci)
+        for step in range(n_batches_accum + 2):
+            ci_hist.watch_batch(batch, target_out, sample_ci, step=step)
 
         # Check that only n_batches_accum were accumulated
         assert ci_hist.batches_seen == n_batches_accum + 2  # Total batches seen
@@ -69,8 +69,8 @@ class TestCIHistograms:
 
         # Watch many batches
         num_batches = 10
-        for _ in range(num_batches):
-            ci_hist.watch_batch(batch, target_out, sample_ci)
+        for step in range(num_batches):
+            ci_hist.watch_batch(batch, target_out, sample_ci, step=step)
 
         # All batches should be accumulated
         assert ci_hist.batches_seen == num_batches

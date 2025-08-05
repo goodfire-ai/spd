@@ -48,6 +48,7 @@ class StreamingEval(ABC):
         batch: Tensor,
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        step: int,
     ) -> None: ...
 
     @abstractmethod
@@ -67,6 +68,7 @@ class CI_L0(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        step: int,
     ) -> None:
         for layer_name, layer_ci in ci.items():
             l0_val = calc_ci_l_zero(layer_ci, self.l0_threshold)
@@ -94,8 +96,9 @@ class CEandKLLosses(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        step: int,
     ) -> None:
-        ce_losses = self._calc_ce_and_kl_losses(batch, target_out, ci)
+        ce_losses = self._calc_ce_and_kl_losses(batch, target_out, ci, step)
         for key, value in ce_losses.items():
             self.ce_losses[key].append(value)
 
@@ -104,6 +107,7 @@ class CEandKLLosses(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        step: int,
     ) -> Mapping[str, float]:
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
 
@@ -128,7 +132,7 @@ class CEandKLLosses(StreamingEval):
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
         # we use the regular stochastic masks
-        stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1)[0]
+        stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1, step=step)[0]
         stoch_masked_logits = self.model(batch, type="components", masks=stoch_masks)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
@@ -213,6 +217,7 @@ class CIHistograms(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        step: int,
     ) -> None:
         self.batches_seen += 1
         if self.n_batches_accum is not None and self.batches_seen > self.n_batches_accum:
@@ -247,6 +252,7 @@ class ComponentActivationDensity(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        step: int,
     ) -> None:
         n_tokens = next(iter(ci.values())).shape[:-1].numel()
         self.n_tokens += n_tokens
@@ -290,6 +296,7 @@ class PermutedCIPlots(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        step: int,
     ) -> None:
         if self.batch_shape is None:
             self.batch_shape = batch.shape
@@ -335,6 +342,7 @@ class UVPlots(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        step: int,
     ) -> None:
         if self.batch_shape is None:
             self.batch_shape = batch.shape
@@ -384,6 +392,7 @@ class IdentityCIError(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        step: int,
     ) -> None:
         if self.batch_shape is None:
             self.batch_shape = batch.shape
@@ -432,7 +441,7 @@ EVAL_CLASSES = {
 }
 
 
-def eval(
+def evaluate(
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."]]
     | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
@@ -448,7 +457,7 @@ def eval(
             continue
         evals.append(eval_cls(model, config, **eval_config.extra_init_kwargs))
 
-    for _ in range(n_steps):
+    for step in range(n_steps):
         # Do the common work:
         batch = extract_batch_data(next(eval_iterator))
         batch = batch.to(device)
@@ -460,7 +469,8 @@ def eval(
         )
 
         for eval in evals:
-            eval.watch_batch(batch=batch, target_out=target_out, ci=ci)
+            # TODO: eval needs unique masks, and so "step" isn't a good
+            eval.watch_batch(batch=batch, target_out=target_out, ci=ci, step=step)
 
     out: dict[str, EvalMetricValue] = {}
     all_dicts = [eval.compute() for eval in evals]

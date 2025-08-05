@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import torch
-import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.parallel
 import torch.optim as optim
@@ -15,11 +14,12 @@ import wandb
 from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
+from torch.distributed import ReduceOp
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import Config
-from spd.eval import EvalMetricValue, eval
+from spd.eval import EvalMetricValue, evaluate
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
@@ -55,7 +55,7 @@ def local_log(data: Mapping[str, EvalMetricValue], step: int, out_dir: Path) -> 
             metrics_dict[k] = v
 
         with open(metrics_file, "a") as f:
-            f.write(json.dumps(metrics_dict) + "\n")
+            f.write(json.dumps({"step": step, **metrics_dict}) + "\n")
 
 
 def loop_dataloader[T](dl: DataLoader[T]):
@@ -174,15 +174,12 @@ def optimize(
         for _ in range(gradient_accumulation_steps):
             batch = extract_batch_data(next(train_iterator)).to(device)
 
-            # print(f"rank {get_rank()}: batch shape: {batch.shape}, batch", batch[:, :5])
-            # sync_across_processes()
-            # cleanup_distributed()
-            # exit(0)
-            # Use component_model for special forward pass (DDP wrapper doesn't have this method)
-            target_out, pre_weight_acts = component_model(
+            target_out, pre_weight_acts = wrapped_model(
                 batch, type="pre_forward_cache", module_names=component_model.target_module_paths
             )
-
+            # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
+            # through the parameters in calc_causal_importances below, they DDP hook will get called
+            # and gradients will be properly synced across ranks on the next backward pass.
             causal_importances, causal_importances_upper_leaky = (
                 component_model.calc_causal_importances(
                     pre_weight_acts=pre_weight_acts,
@@ -202,6 +199,7 @@ def optimize(
                 target_out=target_out,
                 device=device,
                 n_params=n_params,
+                step=step,
             )
 
             microbatch_total_loss.div_(gradient_accumulation_steps).backward()
@@ -218,41 +216,36 @@ def optimize(
                 )
 
         # --- Train Logging --- #
-        if step % config.train_log_freq == 0 and is_main_process():
-            tqdm.write(f"--- Step {step} ---")
-            tqdm.write(f"LR: {step_lr:.6f}")
-            for name, value in microbatch_log_data.items():
-                tqdm.write(f"{name}: {value:.7f}")
-
-            for layer_name, n_alive_count in alive_tracker.n_alive().items():
-                n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
-                microbatch_log_data[n_alive_key] = n_alive_count
-
-            grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
-            for param in component_params + gate_params:
-                if param.grad is not None:
-                    grad_norm += param.grad.data.flatten().pow(2).sum()
-            microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
-
-            microbatch_log_data["train/misc/lr"] = step_lr
-
-            # Collect metrics on all ranks
+        if step % config.train_log_freq == 0:
             sync_across_processes()
             assert microbatch_log_data is not None
-            # Gather metrics on all ranks
-            # all_rank_log_data = cast(list[dict[str, float]], gather_object(microbatch_log_data))
             # Reduce metrics across all ranks
+            # This doesn't work for all metrics which shouldn't be meaned. E.g. l0
             for k, v in microbatch_log_data.items():
                 microbatch_log_data[k] = all_reduce(
-                    torch.tensor(v, device=device), op=dist.ReduceOp.AVG
+                    torch.tensor(v, device=device), op=ReduceOp.AVG
                 ).item()
-                # microbatch_log_data[k] = sum(d[k] for d in all_rank_log_data) / len(
-                #     all_rank_log_data
-                # )
 
-            if out_dir is not None:
+            if is_main_process():
+                tqdm.write(f"--- Step {step} ---")
+                tqdm.write(f"LR: {step_lr:.6f}")
+                for name, value in microbatch_log_data.items():
+                    tqdm.write(f"{name}: {value:.15f}")
+
+                for layer_name, n_alive_count in alive_tracker.n_alive().items():
+                    n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
+                    microbatch_log_data[n_alive_key] = n_alive_count
+
+                grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
+                for param in component_params + gate_params:
+                    if param.grad is not None:
+                        grad_norm += param.grad.data.flatten().pow(2).sum()
+                microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
+                microbatch_log_data["train/misc/lr"] = step_lr
+
+            if out_dir is not None and is_main_process():
                 local_log(microbatch_log_data, step, out_dir)
-            if config.wandb_project:
+            if config.wandb_project and is_main_process():
                 wandb.log(microbatch_log_data, step=step)
 
         # --- Evaluation --- #
@@ -264,7 +257,7 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
-                metrics = eval(
+                metrics = evaluate(
                     model=component_model,
                     eval_iterator=eval_iterator,
                     device=device,
@@ -273,7 +266,7 @@ def optimize(
                     n_steps=n_eval_steps,
                 )
 
-                if out_dir is not None:
+                if out_dir is not None and is_main_process():
                     local_log(metrics, step, out_dir)
                 if config.wandb_project:
                     wandb_logs: dict[str, int | float | str | wandb.Image] = {
@@ -303,7 +296,6 @@ def optimize(
 
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
-            # Synchronize before optimizer step in distributed setting
             sync_across_processes()
             optimizer.step()
 

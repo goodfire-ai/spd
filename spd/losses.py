@@ -226,6 +226,7 @@ def calculate_losses(
     target_out: Tensor,
     device: str,
     n_params: int,
+    step: int,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Calculate all losses and return total loss and individual loss terms.
 
@@ -238,7 +239,7 @@ def calculate_losses(
         target_out: Target model output
         device: Device to run computations on
         n_params: Total number of parameters in the model
-
+        step: Current training step
     Returns:
         Tuple of (total_loss, loss_terms_dict)
     """
@@ -266,7 +267,9 @@ def calculate_losses(
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
         stochastic_masks = calc_stochastic_masks(
-            causal_importances=causal_importances, n_mask_samples=config.n_mask_samples
+            causal_importances=causal_importances,
+            n_mask_samples=config.n_mask_samples,
+            step=step,
         )
         stochastic_recon_loss = torch.tensor(0.0, device=target_out.device)
         for i in range(len(stochastic_masks)):
@@ -297,7 +300,9 @@ def calculate_losses(
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
         layerwise_stochastic_masks = calc_stochastic_masks(
-            causal_importances=causal_importances, n_mask_samples=config.n_mask_samples
+            causal_importances=causal_importances,
+            n_mask_samples=config.n_mask_samples,
+            step=step,
         )
         stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
@@ -344,7 +349,9 @@ def calculate_losses(
     # Embedding reconstruction loss
     if config.embedding_recon_coeff is not None:
         stochastic_masks = calc_stochastic_masks(
-            causal_importances=causal_importances, n_mask_samples=config.n_mask_samples
+            causal_importances=causal_importances,
+            n_mask_samples=config.n_mask_samples,
+            step=step,
         )
         embedding_recon_loss = calc_embedding_recon_loss(
             model=model,
