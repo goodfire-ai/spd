@@ -4,14 +4,14 @@ import random
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 import torch
 import tqdm
 from jaxtyping import Bool, Float, Int
+from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 from muutils.parallel import run_maybe_parallel
-from muutils.json_serialize import serializable_dataclass, serializable_field, SerializableDataclass
 from pydantic import (
     BaseModel,
     Field,
@@ -307,13 +307,13 @@ class MergeHistory(SerializableDataclass):
         deserialize_fn=lambda x: BatchedGroupMerge.load(x),
     )
     "State of groups at each iteration"
-    
+
     config: MergeConfig = serializable_field(
         serialization_fn=lambda x: x.module_dump(mode="json"),
         deserialize_fn=lambda x: MergeConfig.model_validate_json(x),
     )
     "Configuration used for this merge"
-    
+
     sweep_params: dict[str, Any] | None = serializable_field(
         default=None,
     )
@@ -321,11 +321,11 @@ class MergeHistory(SerializableDataclass):
 
     @classmethod
     def from_config(
-            cls,
-            config: MergeConfig,
-            c_components: int,
-            sweep_params: dict[str, Any] | None = None,
-        ) -> "MergeHistory":
+        cls,
+        config: MergeConfig,
+        c_components: int,
+        sweep_params: dict[str, Any] | None = None,
+    ) -> MergeHistory:
         n_iters_target: int = config.iters
         return MergeHistory(
             c_components=c_components,
@@ -336,7 +336,9 @@ class MergeHistory(SerializableDataclass):
             selected_pair_cost=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
             costs_range=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
             k_groups=torch.full((n_iters_target,), -1, dtype=torch.int16),
-            merges=BatchedGroupMerge.init_empty(batch_size=n_iters_target, n_components=c_components),
+            merges=BatchedGroupMerge.init_empty(
+                batch_size=n_iters_target, n_components=c_components
+            ),
             config=config,
             sweep_params=sweep_params,
         )

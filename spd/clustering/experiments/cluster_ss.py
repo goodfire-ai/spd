@@ -1,13 +1,13 @@
 # %%
 
 from typing import Any
-import numpy as np
+
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
-from torch import Tensor
-from datasets import load_dataset
+from jaxtyping import Int
 from muutils.dbg import dbg_auto
-from jaxtyping import Float, Int
+from torch import Tensor
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import (
@@ -16,7 +16,6 @@ from spd.clustering.merge import (
     merge_iteration_ensemble,
 )
 from spd.clustering.plotting.merge import plot_dists_distribution
-from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -50,8 +49,7 @@ component_acts: dict[str, Tensor] = component_activations(
     sigmoid_type="hard",
 )
 
-dbg_auto(component_acts);
-
+dbg_auto(component_acts)
 # %%
 component_coacts: dict[str, Any] = process_activations(
     component_acts,

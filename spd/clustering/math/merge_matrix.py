@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any
 
 import torch
 from jaxtyping import Bool, Int
@@ -227,7 +227,7 @@ class BatchedGroupMerge:
 
     group_idxs: Int[Tensor, " batch n_components"]
     k_groups: Int[Tensor, " batch"]
-    meta: list[dict|None] | None = None
+    meta: list[dict | None] | None = None
 
     @classmethod
     def init_empty(cls, batch_size: int, n_components: int) -> "BatchedGroupMerge":
@@ -245,14 +245,14 @@ class BatchedGroupMerge:
             k_groups=self.k_groups.cpu(),
             meta=self.meta,
         )
-    
+
     @classmethod
     def load(cls, data: dict[str, Any]) -> "BatchedGroupMerge":
         """Load a BatchedGroupMerge from a serialized dictionary."""
         return cls(
             group_idxs=torch.tensor(data["group_idxs"], dtype=torch.int64),
             k_groups=torch.tensor(data["k_groups"], dtype=torch.int64),
-            meta=data.get("meta", None),
+            meta=data.get("meta"),
         )
 
     @property
@@ -321,7 +321,7 @@ class BatchedGroupMerge:
         group_idxs = self.group_idxs[idx]
         k_groups: int = int(self.k_groups[idx].item())
         return GroupMerge(group_idxs=group_idxs, k_groups=k_groups)
-    
+
     def __setitem__(self, idx: int, value: GroupMerge) -> None:
         if not (0 <= idx < self.batch_size):
             raise IndexError("index out of range")

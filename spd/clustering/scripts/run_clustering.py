@@ -2,31 +2,26 @@
 
 from pathlib import Path
 from typing import Any
+
 import numpy as np
-import matplotlib.pyplot as plt
 import torch
-from zanj import ZANJ
-from torch import Tensor
-from datasets import load_dataset
+from jaxtyping import Int
 from muutils.dbg import dbg_auto
-from jaxtyping import Float, Int
+from torch import Tensor
+from zanj import ZANJ
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import (
     MergeConfig,
-    MergeEnsemble,
     MergeHistory,
     merge_iteration,
-    merge_iteration_ensemble,
 )
-from spd.clustering.plotting.merge import plot_dists_distribution
-from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
 
 
 def run_clustering(
-    merge_config: MergeConfig|Path,
+    merge_config: MergeConfig | Path,
     model_path: str = "wandb:goodfire/spd/runs/ioprgffh",
     dataset_path: Path = REPO_ROOT / "data/clustering/split_datasets/batchsize_64/batch_00.npz",
     save_path_fmt: str = "{repo_root}/data/clustering/merge_history/batchsize_{batch_size}/{batch_fname}.zanj",
@@ -43,7 +38,7 @@ def run_clustering(
 
     # get the dataset -- for ensembles, each instance of this script gets a different batch
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
-    
+
     # load the spd run
     spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
     component_model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
@@ -59,8 +54,7 @@ def run_clustering(
         sigmoid_type="hard",
     )
 
-    dbg_auto(component_acts);
-
+    dbg_auto(component_acts)
     # process the activations by:
     # 1. filtering out dead components
     # 2. concatenating the activations across the sequence
@@ -81,15 +75,16 @@ def run_clustering(
     )
 
     # save the merge iteration
-    save_path: Path = Path(save_path_fmt.format(
-        repo_root=REPO_ROOT,
-        batch_size=data_batch.shape[0],
-        batch_fname=dataset_path.stem,
-    ))
+    save_path: Path = Path(
+        save_path_fmt.format(
+            repo_root=REPO_ROOT,
+            batch_size=data_batch.shape[0],
+            batch_fname=dataset_path.stem,
+        )
+    )
     ZANJ().save(merge_history, save_path)
     print(f"Merge history saved to {save_path}")
     return save_path
-
 
 
 if __name__ == "__main__":
@@ -135,4 +130,3 @@ if __name__ == "__main__":
         dataset_path=args.dataset_path,
         device=args.device,
     )
-

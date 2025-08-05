@@ -14,7 +14,7 @@ from spd.utils.general_utils import extract_batch_data
 @torch.no_grad()
 def component_activations(
     model: ComponentModel,
-    device: torch.device|str,
+    device: torch.device | str,
     dataloader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
     | None = None,
