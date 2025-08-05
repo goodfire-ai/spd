@@ -278,7 +278,6 @@ class MergeConfig(BaseModel):
     def rank_cost_name(self) -> str:
         """Get the name of the rank cost function."""
         return getattr(self.rank_cost_fn, "__name__", str(self.rank_cost_fn))
-    
 
     @property
     def stable_hash(self) -> str:

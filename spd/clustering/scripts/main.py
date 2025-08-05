@@ -1,10 +1,11 @@
-from pathlib import Path
 import subprocess
-from typing import Any, Sequence
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
+
 from spd.clustering.merge import MergeConfig
 from spd.clustering.scripts.split_dataset import split_dataset
 from spd.settings import REPO_ROOT
-
 
 
 # TODO: this is super messy
@@ -21,10 +22,10 @@ def distribute_clustering(
     if max_concurrency is None:
         max_concurrency = len(data_files)
     active: list[subprocess.Popen[bytes]] = []
-    
+
     for idx, dataset in enumerate(data_files):
         device: str = devices[idx % n_devices]
-        
+
         cmd: list[str] = [
             "uv run python",
             str(REPO_ROOT / "spd/clustering/scripts/run_clustering.py"),
@@ -46,13 +47,13 @@ def distribute_clustering(
 
 
 def main(
-    merge_config: Path|MergeConfig,
+    merge_config: Path | MergeConfig,
     model_path: str = "wandb:goodfire/spd/runs/ioprgffh",
     base_path: Path = REPO_ROOT / "data/split_datasets",
     n_batches: int = 10,
-    batch_size: int = 64,   
-    devices: Sequence[str]|str = "cuda:0",
-    max_concurrency: int|None = None,
+    batch_size: int = 64,
+    devices: Sequence[str] | str = "cuda:0",
+    max_concurrency: int | None = None,
 ):
     # 0. preprocessing
     devices_: list[str]
@@ -62,7 +63,7 @@ def main(
         devices_ = devices
     else:
         raise TypeError("devices must be a string or a list of strings")
-    
+
     merge_config_: MergeConfig
     merge_config_path: Path
     if isinstance(merge_config, Path):
@@ -70,11 +71,12 @@ def main(
         merge_config_path = merge_config
     elif isinstance(merge_config, MergeConfig):
         merge_config_ = merge_config
-        merge_config_path = REPO_ROOT / f"data/clustering/merge_history/configs/{merge_config_.stable_hash}.json"
+        merge_config_path = (
+            REPO_ROOT / f"data/clustering/merge_history/configs/{merge_config_.stable_hash}.json"
+        )
         merge_config_path.write_text(merge_config_.model_dump_json())
     else:
         raise TypeError("merge_config must be a MergeConfig or a Path to a JSON file")
-
 
     # 1. tokenize and split the dataset into n_batches of batch_size
     split_dataset_info_path: Path
@@ -85,7 +87,7 @@ def main(
         batch_size=batch_size,
         base_path=base_path,
     )
-    
+
     data_files: list[Path] = list(map(Path, split_dataset_info["output_files"]))
 
     # 2. run the clustering on each batch individually
@@ -96,5 +98,3 @@ def main(
         devices=devices_,
         max_concurrency=max_concurrency,
     )
-    
-

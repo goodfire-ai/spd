@@ -101,9 +101,7 @@ def split_dataset(
         cfg_file=str(cfg_path),
     )
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(
-        json.dumps(cfg_data, indent="\t")
-    )
+    cfg_path.write_text(json.dumps(cfg_data, indent="\t"))
 
     print(f"Saved config to: {cfg_path}")
 
