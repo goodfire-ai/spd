@@ -1,11 +1,9 @@
 """Run SPD on a model."""
 
-import gc
 import json
 from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
 
 import torch
 import torch.nn as nn
@@ -19,19 +17,12 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import Config
-from spd.eval import evaluate
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
-from spd.utils.alive_components_tracker import AliveComponentsTracker
-from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
-    avg_eval_metrics_across_ranks,
-    avg_metrics_across_ranks,
     get_world_size,
-    is_distributed,
     is_main_process,
-    sync_across_processes,
 )
 from spd.utils.general_utils import (
     extract_batch_data,
@@ -146,14 +137,14 @@ def optimize(
         for component in component_model.components_or_modules.values()
     )
 
-    # Track which components are alive based on firing frequency
-    alive_tracker = AliveComponentsTracker(
-        module_names=component_model.target_module_paths,
-        C=config.C,
-        n_examples_until_dead=config.n_examples_until_dead,
-        device=device,
-        ci_alive_threshold=config.ci_alive_threshold,
-    )
+    # # Track which components are alive based on firing frequency
+    # alive_tracker = AliveComponentsTracker(
+    #     module_names=component_model.target_module_paths,
+    #     C=config.C,
+    #     n_examples_until_dead=config.n_examples_until_dead,
+    #     device=device,
+    #     ci_alive_threshold=config.ci_alive_threshold,
+    # )
 
     # Adjust gradient accumulation for global batch size
     gradient_accumulation_steps = config.gradient_accumulation_steps
@@ -180,7 +171,7 @@ def optimize(
                 batch, type="pre_forward_cache", module_names=component_model.target_module_paths
             )
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
-            # through the parameters in calc_causal_importances below, they DDP hook will get called
+            # through the parameters in calc_causal_importances below, the DDP hook will get called
             # and gradients will be properly synced across ranks on the next backward pass.
             causal_importances, causal_importances_upper_leaky = (
                 component_model.calc_causal_importances(
@@ -190,7 +181,7 @@ def optimize(
                 )
             )
 
-            alive_tracker.watch_batch(causal_importances)
+            # alive_tracker.watch_batch(causal_importances)
 
             microbatch_total_loss, microbatch_loss_terms = calculate_losses(
                 model=component_model,
@@ -204,83 +195,83 @@ def optimize(
                 step=step,
             )
 
-            microbatch_total_loss.div_(gradient_accumulation_steps).backward()
+            # microbatch_total_loss.div_(gradient_accumulation_steps).backward()
 
-            for loss_name, loss_value in microbatch_loss_terms.items():
-                microbatch_log_data[f"train/loss/{loss_name}"] += (
-                    loss_value / gradient_accumulation_steps
-                )
+        #     for loss_name, loss_value in microbatch_loss_terms.items():
+        #         microbatch_log_data[f"train/loss/{loss_name}"] += (
+        #             loss_value / gradient_accumulation_steps
+        #         )
 
-            for layer_name, layer_ci in causal_importances.items():
-                l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                microbatch_log_data[f"train/{layer_name}/l0"] += (
-                    l0_val / gradient_accumulation_steps
-                )
+        #     for layer_name, layer_ci in causal_importances.items():
+        #         l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
+        #         microbatch_log_data[f"train/{layer_name}/l0"] += (
+        #             l0_val / gradient_accumulation_steps
+        #         )
 
-        # --- Train Logging --- #
-        if step % config.train_log_freq == 0:
-            if is_distributed():
-                avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
-                microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
+        # # --- Train Logging --- #
+        # if step % config.train_log_freq == 0:
+        #     if is_distributed():
+        #         avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
+        #         microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
-            # Already reduced across ranks, so no need to reduce again
-            for layer_name, n_alive_count in alive_tracker.n_alive().items():
-                n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
-                microbatch_log_data[n_alive_key] = n_alive_count
+        #     # Already reduced across ranks, so no need to reduce again
+        #     for layer_name, n_alive_count in alive_tracker.n_alive().items():
+        #         n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
+        #         microbatch_log_data[n_alive_key] = n_alive_count
 
-            grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
-            for param in component_params + gate_params:
-                if param.grad is not None:
-                    grad_norm += param.grad.data.flatten().pow(2).sum()
-            microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
-            microbatch_log_data["train/misc/lr"] = step_lr
+        #     grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
+        #     for param in component_params + gate_params:
+        #         if param.grad is not None:
+        #             grad_norm += param.grad.data.flatten().pow(2).sum()
+        #     microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
+        #     microbatch_log_data["train/misc/lr"] = step_lr
 
-            if is_main_process():
-                tqdm.write(f"--- Step {step} ---")
-                tqdm.write(f"LR: {step_lr:.6f}")
-                for name, value in microbatch_log_data.items():
-                    tqdm.write(f"{name}: {value:.15f}")
-                if out_dir is not None:
-                    local_log(microbatch_log_data, step, out_dir)
-                if config.wandb_project:
-                    wandb.log(microbatch_log_data, step=step)
+        #     if is_main_process():
+        #         tqdm.write(f"--- Step {step} ---")
+        #         tqdm.write(f"LR: {step_lr:.6f}")
+        #         for name, value in microbatch_log_data.items():
+        #             tqdm.write(f"{name}: {value:.15f}")
+        #         if out_dir is not None:
+        #             local_log(microbatch_log_data, step, out_dir)
+        #         if config.wandb_project:
+        #             wandb.log(microbatch_log_data, step=step)
 
-        # --- Evaluation --- #
-        if step % config.eval_freq == 0:
-            with torch.inference_mode():
-                run_slow: bool = (
-                    config.slow_eval_on_first_step
-                    if step == 0
-                    else step % config.slow_eval_freq == 0
-                )
+        # # --- Evaluation --- #
+        # if step % config.eval_freq == 0:
+        #     with torch.inference_mode():
+        #         run_slow: bool = (
+        #             config.slow_eval_on_first_step
+        #             if step == 0
+        #             else step % config.slow_eval_freq == 0
+        #         )
 
-                metrics = evaluate(
-                    model=component_model,  # No backward passes so DDP wrapped_model not needed
-                    eval_iterator=eval_iterator,
-                    device=device,
-                    config=config,
-                    run_slow=run_slow,
-                    n_steps=n_eval_steps,
-                )
+        #         metrics = evaluate(
+        #             model=component_model,  # No backward passes so DDP wrapped_model not needed
+        #             eval_iterator=eval_iterator,
+        #             device=device,
+        #             config=config,
+        #             run_slow=run_slow,
+        #             n_steps=n_eval_steps,
+        #         )
 
-                if is_distributed():
-                    metrics = avg_eval_metrics_across_ranks(metrics, device=device)
+        #         if is_distributed():
+        #             metrics = avg_eval_metrics_across_ranks(metrics, device=device)
 
-                if is_main_process():
-                    for k, v in metrics.items():
-                        tqdm.write(f"eval/{k}: {v}")
-                    if out_dir is not None:
-                        local_log(metrics, step, out_dir)
-                    if config.wandb_project:
-                        wandb_logs: dict[str, int | float | str | wandb.Image] = {
-                            f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
-                            for k, v in metrics.items()
-                        }
-                        wandb.log(wandb_logs, step=step)
+        #         if is_main_process():
+        #             for k, v in metrics.items():
+        #                 tqdm.write(f"eval/{k}: {v}")
+        #             if out_dir is not None:
+        #                 local_log(metrics, step, out_dir)
+        #             if config.wandb_project:
+        #                 wandb_logs: dict[str, int | float | str | wandb.Image] = {
+        #                     f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
+        #                     for k, v in metrics.items()
+        #                 }
+        #                 wandb.log(wandb_logs, step=step)
 
-                del metrics
-                torch.cuda.empty_cache()
-                gc.collect()
+        #         del metrics
+        #         torch.cuda.empty_cache()
+        #         gc.collect()
 
         # --- Saving Checkpoint --- #
         if (
@@ -299,7 +290,6 @@ def optimize(
 
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
-            sync_across_processes()
             optimizer.step()
 
     if is_main_process():
