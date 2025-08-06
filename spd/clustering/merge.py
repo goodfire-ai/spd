@@ -325,6 +325,7 @@ class MergeHistory(SerializableDataclass):
     """Track merge iteration history"""
 
     c_components: int
+    component_labels: list[str]
     n_iters_current: int
     non_diag_costs_min: Float[Tensor, " n_iters"]
     non_diag_costs_max: Float[Tensor, " n_iters"]
@@ -354,11 +355,13 @@ class MergeHistory(SerializableDataclass):
         cls,
         config: MergeConfig,
         c_components: int,
+        component_labels: list[str],
         sweep_params: dict[str, Any] | None = None,
     ) -> MergeHistory:
         n_iters_target: int = config.iters
         return MergeHistory(
             c_components=c_components,
+            component_labels=component_labels,
             n_iters_current=0,
             non_diag_costs_min=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
             non_diag_costs_max=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
@@ -502,6 +505,7 @@ def merge_iteration(
     merge_history: MergeHistory = MergeHistory.from_config(
         config=merge_config,
         c_components=c_components,
+        component_labels=component_labels,
         sweep_params=sweep_params,
     )
 
@@ -627,6 +631,7 @@ def merge_iteration(
 @dataclass
 class MergeHistoryEnsemble:
     data: list[MergeHistory]
+    is_normalized: bool = False
 
     def __iter__(self):
         return iter(self.data)
@@ -694,7 +699,19 @@ class MergeHistoryEnsemble:
             for i_iter, merge in enumerate(history.merges):
                 output[i_ens, i_iter] = merge.group_idxs
 
-        return output
+        return output    
+    
+    def normalize_components(self) -> "MergeHistoryEnsemble":
+        """Normalize the component labels across all histories.
+        
+        if different histories see different batches, then they might have different dead
+        components, and are hence not directly comparable. So, we find the union of all
+        component labels across all histories, and then any component missing from a history
+        is put into it's own group in that history
+        """
+
+        # TODO
+
 
     def get_distances(self) -> Float[np.ndarray, "n_iters n_ens n_ens"]:
         n_iters: int = self.n_iters
