@@ -93,6 +93,8 @@ def create_slurm_array_script(
     """).strip()
 
     with open(script_path, "w") as f:
+        print("Slurm script content:")
+        print(script_content)
         f.write(script_content)
 
     # Make script executable
