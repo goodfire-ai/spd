@@ -48,7 +48,7 @@ dbg_auto(
         feature_probability=dataset.feature_probability,
         data_generation_type=dataset.data_generation_type,
     )
-);
+)
 dataloader = DatasetGeneratedDataLoader(dataset, batch_size=N_SAMPLES, shuffle=False)
 # %%
 # Get component activations
