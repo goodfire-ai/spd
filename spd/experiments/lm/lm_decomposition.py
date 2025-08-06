@@ -68,8 +68,6 @@ def main(
             logger.info(f"Running distributed training with {world_size} processes")
 
     device = get_device()
-    if is_main_process():
-        logger.info(f"Rank {rank} using device: {device}")
     assert isinstance(config.task_config, LMTaskConfig), (
         "Task config must be LMTaskConfig for LM decomposition."
     )

@@ -10,7 +10,7 @@ def test_watch_batch_single_example():
     module_names = ["layer1", "layer2"]
     C = 5
     n_examples_until_dead = 10
-    device = torch.device("cpu")
+    device = "cpu"
     ci_alive_threshold = 0.1
 
     tracker = AliveComponentsTracker(
@@ -51,7 +51,7 @@ def test_watch_batch_multiple_examples():
     module_names = ["layer1"]
     C = 3
     n_examples_until_dead = 10
-    device = torch.device("cpu")
+    device = "cpu"
     ci_alive_threshold = 0.1
 
     tracker = AliveComponentsTracker(
@@ -93,7 +93,7 @@ def test_n_alive():
     module_names = ["layer1", "layer2"]
     C = 4
     n_examples_until_dead = 5
-    device = torch.device("cpu")
+    device = "cpu"
     ci_alive_threshold = 0.1
 
     tracker = AliveComponentsTracker(
@@ -121,7 +121,7 @@ def test_sequence_dimensions():
     module_names = ["embedding"]
     C = 3
     n_examples_until_dead = 100
-    device = torch.device("cpu")
+    device = "cpu"
     ci_alive_threshold = 0.1
 
     tracker = AliveComponentsTracker(

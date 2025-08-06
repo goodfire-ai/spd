@@ -14,7 +14,6 @@ import wandb
 from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
-from torch.distributed import ReduceOp
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -26,8 +25,9 @@ from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
-    all_reduce,
+    avg_metrics_across_ranks,
     get_world_size,
+    is_distributed,
     is_main_process,
     sync_across_processes,
 )
@@ -149,7 +149,7 @@ def optimize(
         module_names=component_model.target_module_paths,
         C=config.C,
         n_examples_until_dead=config.n_examples_until_dead,
-        device=torch.device(device),
+        device=device,
         ci_alive_threshold=config.ci_alive_threshold,
     )
 
@@ -217,36 +217,29 @@ def optimize(
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
-            sync_across_processes()
-            assert microbatch_log_data is not None
-            # Reduce metrics across all ranks
-            # This doesn't work for all metrics which shouldn't be meaned. E.g. l0
-            for k, v in microbatch_log_data.items():
-                microbatch_log_data[k] = all_reduce(
-                    torch.tensor(v, device=device), op=ReduceOp.AVG
-                ).item()
+            if is_distributed():
+                microbatch_log_data = avg_metrics_across_ranks(microbatch_log_data, device=device)
+            # Already reduced across ranks, so no need to reduce again
+            for layer_name, n_alive_count in alive_tracker.n_alive().items():
+                n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
+                microbatch_log_data[n_alive_key] = n_alive_count
+
+            grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
+            for param in component_params + gate_params:
+                if param.grad is not None:
+                    grad_norm += param.grad.data.flatten().pow(2).sum()
+            microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
+            microbatch_log_data["train/misc/lr"] = step_lr
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")
                 tqdm.write(f"LR: {step_lr:.6f}")
                 for name, value in microbatch_log_data.items():
                     tqdm.write(f"{name}: {value:.15f}")
-
-                for layer_name, n_alive_count in alive_tracker.n_alive().items():
-                    n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
-                    microbatch_log_data[n_alive_key] = n_alive_count
-
-                grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
-                for param in component_params + gate_params:
-                    if param.grad is not None:
-                        grad_norm += param.grad.data.flatten().pow(2).sum()
-                microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
-                microbatch_log_data["train/misc/lr"] = step_lr
-
-            if out_dir is not None and is_main_process():
-                local_log(microbatch_log_data, step, out_dir)
-            if config.wandb_project and is_main_process():
-                wandb.log(microbatch_log_data, step=step)
+                if out_dir is not None:
+                    local_log(microbatch_log_data, step, out_dir)
+                if config.wandb_project:
+                    wandb.log(microbatch_log_data, step=step)
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0 and is_main_process():

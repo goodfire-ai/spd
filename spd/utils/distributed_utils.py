@@ -4,6 +4,7 @@ import os
 
 import torch
 import torch.distributed as dist
+from torch.distributed import ReduceOp
 
 
 def init_distributed(backend: str | None = None) -> tuple[int, int, int]:
@@ -193,3 +194,16 @@ def print_once(msg: str) -> None:
     """Print message only on rank 0."""
     if is_main_process():
         print(msg)
+
+
+def avg_metrics_across_ranks(metrics: dict[str, float], device: str) -> dict[str, float]:
+    """Get the average of metrics across ranks."""
+    assert is_distributed(), "Can only average metrics across ranks if running in distributed mode"
+    metric_keys = list(metrics.keys())
+    if metric_keys:
+        # Stack all metric values into a single tensor and reduce across ranks
+        metric_values = torch.tensor([metrics[k] for k in metric_keys], device=device)
+        metric_values = all_reduce(metric_values, op=ReduceOp.AVG)
+        # Unbatch the metrics
+        metrics = {k: metric_values[i].item() for i, k in enumerate(metric_keys)}
+    return metrics
