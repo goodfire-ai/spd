@@ -1,13 +1,9 @@
-import json
 from pathlib import Path
-from typing import Any
 
 import numpy as np
-from zanj import ZANJ
 
 from spd.clustering.math.merge_distances import compute_distances
-from spd.clustering.merge import DistancesArray, DistancesMethod, MergeConfig, MergeHistory, MergeHistoryEnsemble, MergesArray
-from spd.settings import REPO_ROOT
+from spd.clustering.merge import DistancesArray, DistancesMethod, MergesArray
 
 
 def compute_histories_distances(
@@ -33,13 +29,16 @@ def compute_histories_distances(
     return distances_path, distances
 
 
-
 if __name__ == "__main__":
     import argparse
 
-    parser: argparse.ArgumentParser = argparse.ArgumentParser(description="Compute distances between merge histories")
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        description="Compute distances between merge histories"
+    )
     parser.add_argument("merges-path", type=Path, help="Path to the merge histories file")
-    parser.add_argument("--method", type=str, default="perm_invariant_hamming", help="Distance method to use")
+    parser.add_argument(
+        "--method", type=str, default="perm_invariant_hamming", help="Distance method to use"
+    )
     args: argparse.Namespace = parser.parse_args()
 
     compute_histories_distances(

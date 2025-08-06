@@ -6,14 +6,13 @@ import random
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import torch
 import tqdm
 from jaxtyping import Bool, Float, Int
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
-from muutils.parallel import run_maybe_parallel
 from pydantic import (
     BaseModel,
     Field,
@@ -21,9 +20,13 @@ from pydantic import (
 )
 from torch import Tensor
 
-from spd.clustering.math.merge_distances import MergesArray, DistancesMethod, DistancesArray, compute_distances
+from spd.clustering.math.merge_distances import (
+    DistancesArray,
+    DistancesMethod,
+    MergesArray,
+    compute_distances,
+)
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
-from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming_matrix
 from spd.spd_types import Probability
 
 
@@ -699,11 +702,11 @@ class MergeHistoryEnsemble:
             for i_iter, merge in enumerate(history.merges):
                 output[i_ens, i_iter] = merge.group_idxs
 
-        return output    
-    
+        return output
+
     def normalized(self) -> tuple[MergesArray, dict[str, Any]]:
         """Normalize the component labels across all histories.
-        
+
         if different histories see different batches, then they might have different dead
         components, and are hence not directly comparable. So, we find the union of all
         component labels across all histories, and then any component missing from a history
@@ -763,9 +766,8 @@ class MergeHistoryEnsemble:
             ),
         )
 
-
     def get_distances(self, method: DistancesMethod = "perm_invariant_hamming") -> DistancesArray:
-        n_iters: int = self.n_iters
+        _n_iters: int = self.n_iters
         _n_ens: int = self.n_ensemble
 
         merges_array: MergesArray = self.merges_array

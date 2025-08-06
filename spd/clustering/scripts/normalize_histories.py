@@ -5,9 +5,10 @@ from typing import Any
 import numpy as np
 from zanj import ZANJ
 
-from spd.clustering.merge import MergeConfig, MergeHistory, MergeHistoryEnsemble, MergesArray
-from spd.settings import REPO_ROOT
+from spd.clustering.merge import MergeHistory, MergeHistoryEnsemble, MergesArray
 from spd.log import logger
+from spd.settings import REPO_ROOT
+
 
 def load_merge_histories(
     path: list[Path] | str,
@@ -71,14 +72,16 @@ def normalize_histories(
             metadata=path_metadata,
             merge_array=path_merge_arr,
             ensemble_raw=path_hist_ensemble,
-        )
+        ),
     )
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser: argparse.ArgumentParser = argparse.ArgumentParser(description="Normalize merge histories")
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        description="Normalize merge histories"
+    )
     parser.add_argument(
         "histories",
         type=str,
@@ -93,10 +96,3 @@ if __name__ == "__main__":
 
     args: argparse.Namespace = parser.parse_args()
     normalize_histories(args.histories, args.out_dir)
-
-
-
-
-
-
-
