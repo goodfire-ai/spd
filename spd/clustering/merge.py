@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import tqdm
 from jaxtyping import Bool, Float, Int
+from muutils.dbg import dbg_tensor
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 from pydantic import (
     BaseModel,
@@ -729,11 +730,17 @@ class MergeHistoryEnsemble:
             dtype=np.int16,
         )
 
+        overlap_stats: Float[np.ndarray, " n_ens"] = np.full(
+            self.n_ensemble,
+            fill_value=float("nan"),
+            dtype=np.float32,
+        )
         i_ens: int
         history: MergeHistory
         for i_ens, history in enumerate(self.data):
             hist_c_labels: list[str] = history.component_labels
             hist_n_components: int = len(hist_c_labels)
+            overlap_stats[i_ens] = hist_n_components / c_components
             # map from old component indices to new component indices
             for i_comp_old, comp_label in enumerate(hist_c_labels):
                 i_comp_new: int = component_label_idxs[comp_label]
@@ -755,6 +762,8 @@ class MergeHistoryEnsemble:
                     dtype=np.int16,
                 )
 
+        dbg_tensor(overlap_stats)
+
         return (
             merges_array,
             dict(
@@ -762,7 +771,7 @@ class MergeHistoryEnsemble:
                 n_ensemble=self.n_ensemble,
                 n_iters=self.n_iters,
                 c_components=c_components,
-                config=self.config,
+                config=self.config.model_dump(mode="json"),
             ),
         )
 

@@ -159,6 +159,10 @@ def main(
             # label="v1"
         )
         plt.legend()
+        fig_path: Path = run_path / "distances_distribution.png"
+        plt.savefig(fig_path)
+        logger.info(f"Saved distances distribution plot to {fig_path}")
+        plt.show()
 
 
 if __name__ == "__main__":
