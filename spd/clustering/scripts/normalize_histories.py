@@ -21,7 +21,6 @@ def load_merge_histories(
         paths_ = path
 
     data: list[MergeHistory] = [ZANJ().read(p) for p in paths_]
-    print(data)
     ensemble: MergeHistoryEnsemble = MergeHistoryEnsemble(data=data)
     return paths_, ensemble
 
