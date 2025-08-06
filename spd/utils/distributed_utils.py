@@ -15,7 +15,7 @@ from torch.distributed import ReduceOp
 def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> tuple[int, int, int]:
     """Initialize distributed process group using MPI.
 
-    Supports OpenMPI, MVAPICH2, and SLURM environments.
+    Supports OpenMPI only.
 
     Args:
         backend: Distributed backend to use ('nccl' or 'gloo').
@@ -23,29 +23,13 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> tuple[in
     Returns:
         Tuple of (rank, world_size, local_rank)
     """
-    backend = backend or ("nccl" if torch.cuda.is_available() else "gloo")
+    backend = backend if backend is not None else ("nccl" if torch.cuda.is_available() else "gloo")
     # Check if running under MPI
     if "OMPI_COMM_WORLD_SIZE" in os.environ:
         # OpenMPI
         world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
         rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
         local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
-    elif "MV2_COMM_WORLD_SIZE" in os.environ:
-        # MVAPICH2
-        world_size = int(os.environ["MV2_COMM_WORLD_SIZE"])
-        rank = int(os.environ["MV2_COMM_WORLD_RANK"])
-        local_rank = int(os.environ["MV2_COMM_WORLD_LOCAL_RANK"])
-    elif "PMI_SIZE" in os.environ:
-        # Intel MPI
-        world_size = int(os.environ["PMI_SIZE"])
-        rank = int(os.environ["PMI_RANK"])
-        # Intel MPI doesn't provide local rank directly, calculate it
-        local_rank = int(os.environ.get("MPI_LOCALRANKID", "0"))
-    elif "SLURM_NTASKS" in os.environ and "SLURM_PROCID" in os.environ:
-        # SLURM with srun (not using MPI launcher)
-        world_size = int(os.environ["SLURM_NTASKS"])
-        rank = int(os.environ["SLURM_PROCID"])
-        local_rank = int(os.environ["SLURM_LOCALID"])
     else:
         # Not distributed - return single process values
         world_size = 1
@@ -63,8 +47,10 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> tuple[in
     if not dist.is_initialized():
         if backend == "nccl":
             assert torch.cuda.is_available(), "CUDA is required for NCCL ddp backend"
+            local_device = torch.device(f"cuda:{local_rank}")
+        else:
+            local_device = None
 
-        local_device = torch.device(f"cuda:{local_rank}") if torch.cuda.is_available() else None
         dist.init_process_group(
             backend=backend,
             init_method="env://",
@@ -106,14 +92,6 @@ def get_local_rank() -> int:
     # Try to get from environment first
     if "OMPI_COMM_WORLD_LOCAL_RANK" in os.environ:
         return int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
-    elif "MV2_COMM_WORLD_LOCAL_RANK" in os.environ:
-        return int(os.environ["MV2_COMM_WORLD_LOCAL_RANK"])
-    elif "SLURM_LOCALID" in os.environ:
-        return int(os.environ["SLURM_LOCALID"])
-    elif "MPI_LOCALRANKID" in os.environ:
-        return int(os.environ["MPI_LOCALRANKID"])
-    elif "LOCAL_RANK" in os.environ:
-        return int(os.environ["LOCAL_RANK"])
     else:
         # If not set, assume single GPU per node or calculate from global rank
         return 0

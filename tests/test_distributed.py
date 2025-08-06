@@ -23,10 +23,8 @@ class TestDistributedUtilities:
     def test_non_distributed_initialization(self):
         """Test that init_distributed works correctly when not in distributed mode."""
         # Clean environment
-        env_vars = ["OMPI_COMM_WORLD_SIZE", "MV2_COMM_WORLD_SIZE", "PMI_SIZE", "SLURM_NTASKS"]
-        for var in env_vars:
-            if var in os.environ:
-                del os.environ[var]
+        if "OMPI_COMM_WORLD_SIZE" in os.environ:
+            del os.environ["OMPI_COMM_WORLD_SIZE"]
 
         rank, world_size, local_rank = init_distributed()
 
@@ -60,8 +58,8 @@ class TestDistributedUtilities:
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
     def test_device_with_local_rank(self):
         """Test device selection with local rank."""
-        # Temporarily set LOCAL_RANK
-        os.environ["LOCAL_RANK"] = "1"
+        # Temporarily set OMPI_COMM_WORLD_LOCAL_RANK
+        os.environ["OMPI_COMM_WORLD_LOCAL_RANK"] = "1"
 
         try:
             # In distributed mode, this would return cuda:1
@@ -69,7 +67,7 @@ class TestDistributedUtilities:
             # But since we're not actually distributed, it returns cuda
             assert device == "cuda"
         finally:
-            del os.environ["LOCAL_RANK"]
+            del os.environ["OMPI_COMM_WORLD_LOCAL_RANK"]
 
 
 @pytest.mark.skip(reason="Requires actual distributed launch with mpirun")
