@@ -364,21 +364,22 @@ class MergeHistory(SerializableDataclass):
         sweep_params: dict[str, Any] | None = None,
     ) -> MergeHistory:
         n_iters_target: int = config.iters
+        # TODO: pyright doesnt like muutils
         return MergeHistory(
-            c_components=c_components,
-            component_labels=component_labels,
-            n_iters_current=0,
-            non_diag_costs_min=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
-            non_diag_costs_max=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
-            max_considered_cost=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
-            selected_pair_cost=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
-            costs_range=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),
-            k_groups=torch.full((n_iters_target,), -1, dtype=torch.int16),
-            merges=BatchedGroupMerge.init_empty(
+            c_components=c_components,  # pyright: ignore[reportCallIssue]
+            component_labels=component_labels,  # pyright: ignore[reportCallIssue]
+            n_iters_current=0,  # pyright: ignore[reportCallIssue]
+            non_diag_costs_min=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),  # pyright: ignore[reportCallIssue]
+            non_diag_costs_max=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),  # pyright: ignore[reportCallIssue]
+            max_considered_cost=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),  # pyright: ignore[reportCallIssue]
+            selected_pair_cost=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),  # pyright: ignore[reportCallIssue]
+            costs_range=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),  # pyright: ignore[reportCallIssue]
+            k_groups=torch.full((n_iters_target,), -1, dtype=torch.int16),  # pyright: ignore[reportCallIssue]
+            merges=BatchedGroupMerge.init_empty(  # pyright: ignore[reportCallIssue]
                 batch_size=n_iters_target, n_components=c_components
             ),
-            config=config,
-            sweep_params=sweep_params,
+            config=config,  # pyright: ignore[reportCallIssue]
+            sweep_params=sweep_params,  # pyright: ignore[reportCallIssue]
         )
 
     def __post_init__(self) -> None:

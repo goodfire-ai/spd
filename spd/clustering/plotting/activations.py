@@ -1,5 +1,7 @@
 """Plotting functions for activation visualizations."""
 
+from collections.abc import Sequence
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -36,7 +38,8 @@ def plot_activations(
         hist_bins: Number of bins for histograms
     """
     # Raw activations
-    fig1, axs_act = plt.subplots(len(activations), 1, figsize=figsize_raw)
+    axs_act: Sequence[plt.Axes]
+    fig1, axs_act = plt.subplots(len(activations), 1, figsize=figsize_raw)  # pyright: ignore[reportAssignmentType]
     if len(activations) == 1:
         axs_act = [axs_act]
     for i, (key, act) in enumerate(activations.items()):
@@ -119,7 +122,7 @@ def plot_activations(
         fig4_log.savefig(f"{pdf_prefix}_coactivations_log.pdf", bbox_inches="tight", dpi=300)
 
     # Activation histograms
-    fig5, (ax5a, ax5b, ax5c) = plt.subplots(1, 3, figsize=(15, 4))
+    fig5, (ax5a, ax5b, ax5c) = plt.subplots(1, 3, figsize=(15, 4))  # pyright: ignore[reportGeneralTypeIssues]
 
     x_scale, y_scale = hist_scales
 

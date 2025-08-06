@@ -82,7 +82,7 @@ def sweep_merge_parameter(
 
         # Update the swept parameter
         config_dict[parameter_name] = value
-        merge_config = MergeConfig(**config_dict)
+        merge_config = MergeConfig(**config_dict)  # pyright: ignore[reportArgumentType]
 
         # Run ensemble
         ensemble = merge_iteration_ensemble(

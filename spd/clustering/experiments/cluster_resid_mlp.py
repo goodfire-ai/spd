@@ -31,15 +31,15 @@ cfg = SPD_RUN.config
 N_SAMPLES: int = 512
 
 dataset = ResidMLPDataset(
-    n_features=component_model.patched_model.config.n_features,
-    feature_probability=cfg.task_config.feature_probability,
+    n_features=component_model.patched_model.config.n_features,  # pyright: ignore[reportAttributeAccessIssue, reportArgumentType],
+    feature_probability=cfg.task_config.feature_probability,  # pyright: ignore[reportAttributeAccessIssue]
     device=DEVICE,
     calc_labels=False,
     label_type=None,
     act_fn_name=None,
     label_fn_seed=None,
     label_coeffs=None,
-    data_generation_type=cfg.task_config.data_generation_type,
+    data_generation_type=cfg.task_config.data_generation_type,  # pyright: ignore[reportAttributeAccessIssue]
 )
 
 dbg_auto(
@@ -79,8 +79,8 @@ ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
         iters=100,
         check_threshold=0.1,
         pop_component_prob=0,
-        rank_cost_fn=lambda x: 1.0,
-        stopping_condition=None,
+        # rank_cost_fn=lambda x: 1.0,
+        # stopping_condition=None,
     ),
     ensemble_size=16,
 )

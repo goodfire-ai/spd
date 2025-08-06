@@ -27,14 +27,14 @@ class SweepConfig:
     def generate_configs(self) -> list[MergeConfig]:
         """Generate all MergeConfig combinations."""
         configs = []
-        for act_thresh, check_thresh, alpha, rank_func in itertools.product(
+        # TODO: adapt to new rank cost func
+        for act_thresh, check_thresh, alpha, _rank_func in itertools.product(
             self.activation_thresholds, self.check_thresholds, self.alphas, self.rank_cost_funcs
         ):
             merge_config = MergeConfig(
                 activation_threshold=act_thresh,
                 alpha=alpha,
                 check_threshold=check_thresh,
-                rank_cost_fn=rank_func,
                 iters=self.iters,
             )
             configs.append(merge_config)
@@ -96,12 +96,12 @@ def create_colormap(line_values: list[Any]) -> tuple[Any, Any]:
     """Create colormap for line parameter."""
     if isinstance(line_values[0], int | float):
         norm = LogNorm(vmin=min(line_values), vmax=max(line_values))
-        cmap = cm.viridis
+        cmap = cm.viridis  # pyright: ignore[reportAttributeAccessIssue]
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         sm.set_array([])
         return norm, {"cmap": cmap, "sm": sm}
     else:
-        colors: np.ndarray = cm.viridis(np.linspace(0, 1, len(line_values)))
+        colors: np.ndarray = cm.viridis(np.linspace(0, 1, len(line_values)))  # pyright: ignore[reportAttributeAccessIssue]
         color_dict: dict[Any, Any] = {val: colors[i] for i, val in enumerate(line_values)}
         return None, {"color_dict": color_dict}
 
@@ -225,7 +225,7 @@ def run_hyperparameter_sweep(
                 plot_final=False,
             )
 
-            merge_history, final_merge = merge_iteration(
+            merge_history = merge_iteration(
                 activations=raw_activations,
                 merge_config=merge_config,
                 component_labels=None,
@@ -571,7 +571,7 @@ def create_heatmaps(
 # Example statistic functions for common analyses
 def get_convergence_rate(result: MergeHistory) -> float:
     """Calculate convergence rate as slope of cost evolution."""
-    costs: list[float] = result.non_diag_costs_min
+    costs: list[float] = result.non_diag_costs_min.cpu().numpy().tolist()
     if len(costs) < 2:
         return 0.0
 
@@ -588,7 +588,7 @@ def get_convergence_rate(result: MergeHistory) -> float:
 
 def get_cost_reduction_ratio(result: MergeHistory) -> float:
     """Calculate ratio of final cost to initial cost."""
-    costs: list[float] = result.non_diag_costs_min
+    costs: list[float] = result.non_diag_costs_min.cpu().numpy().tolist()
     if len(costs) < 2:
         return 1.0
 
@@ -615,7 +615,7 @@ def get_early_convergence(threshold_ratio: float = 0.1) -> Callable[[MergeHistor
     """Create function to detect early convergence iterations."""
 
     def _early_convergence(result: MergeHistory) -> float:
-        costs: list[float] = result.non_diag_costs_min
+        costs: list[float] = result.non_diag_costs_min.cpu().numpy().tolist()
         if len(costs) < 3:
             return len(costs)
 
@@ -632,7 +632,7 @@ def get_early_convergence(threshold_ratio: float = 0.1) -> Callable[[MergeHistor
 
 def get_cost_variance(result: MergeHistory) -> float:
     """Calculate variance in selected pair costs (measure of stability)."""
-    costs: list[float] = result.selected_pair_cost
+    costs: list[float] = result.selected_pair_cost.cpu().numpy().tolist()
     if len(costs) < 2:
         return 0.0
 

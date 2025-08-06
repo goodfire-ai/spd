@@ -35,14 +35,14 @@ def split_dataset(
         cfg: Config = spd_run.config
 
     dataset_config: DatasetConfig = DatasetConfig(
-        name=cfg.task_config.dataset_name,
+        name=cfg.task_config.dataset_name,  # pyright: ignore[reportAttributeAccessIssue]
         hf_tokenizer_path=cfg.pretrained_model_name_hf,
-        split=cfg.task_config.train_data_split,
-        n_ctx=cfg.task_config.max_seq_len,
+        split=cfg.task_config.train_data_split,  # pyright: ignore[reportAttributeAccessIssue]
+        n_ctx=cfg.task_config.max_seq_len,  # pyright: ignore[reportAttributeAccessIssue]
         is_tokenized=False,
         streaming=False,
         seed=0,
-        column_name=cfg.task_config.column_name,
+        column_name=cfg.task_config.column_name,  # pyright: ignore[reportAttributeAccessIssue]
     )
 
     with SpinnerContext(message="getting dataloader..."):
@@ -50,7 +50,7 @@ def split_dataset(
         dataloader, _tokenizer = create_data_loader(
             dataset_config=dataset_config,
             batch_size=batch_size,
-            buffer_size=cfg.task_config.buffer_size,
+            buffer_size=cfg.task_config.buffer_size,  # pyright: ignore[reportAttributeAccessIssue]
             global_seed=cfg.seed,
             ddp_rank=0,
             ddp_world_size=1,

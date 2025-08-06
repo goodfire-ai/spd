@@ -172,9 +172,11 @@ class GroupMerge:
         if show_row_sums is None:
             show_row_sums = k_groups <= 20
 
+        ax_lbl: plt.Axes | None = None
         if ax is not None:
             show_row_sums = False  # don't show row sums if we have an ax to plot on
             ax_mat = ax
+            assert not show_row_sums
         else:
             if show_row_sums:
                 fig, (ax_mat, ax_lbl) = plt.subplots(
@@ -196,6 +198,7 @@ class GroupMerge:
             add_component_labeling(ax_mat, component_labels, axis="x")
 
         if show_row_sums:
+            assert ax_lbl is not None
             ax_lbl.set_xlim(0, 1)
             ax_lbl.set_ylim(-0.5, k_groups - 0.5)
             ax_lbl.invert_yaxis()
