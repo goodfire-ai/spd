@@ -38,49 +38,55 @@ def distribute_clustering(
     active: list[subprocess.Popen[bytes]] = []
 
     n_files: int = len(data_files)
-    for idx, dataset in enumerate(data_files):
-        device: str = devices[idx % n_devices]
+    try:
+        for idx, dataset in enumerate(data_files):
+            device: str = devices[idx % n_devices]
 
-        cmd: list[str] = [
-            "uv",
-            "run",
-            "python",
-            str(REPO_ROOT / "spd/clustering/scripts/run_clustering.py"),
-            "--merge-config",
-            str(merge_config_path),
-            "--model-path",
-            model_path,
-            "--dataset-path",
-            str(dataset),
-            "--save-dir",
-            str(save_dir),
-            "--device",
-            device,
-        ]
+            cmd: list[str] = [
+                "uv",
+                "run",
+                "python",
+                str(REPO_ROOT / "spd/clustering/scripts/run_clustering.py"),
+                "--merge-config",
+                str(merge_config_path),
+                "--model-path",
+                model_path,
+                "--dataset-path",
+                str(dataset),
+                "--save-dir",
+                str(save_dir),
+                "--device",
+                device,
+            ]
 
-        # wait until at least 20% of GPU memory is free
-        print()
-        while (m := cuda_memory_fraction(device)) > cuda_mem_max:
-            time.sleep(5)
+            # wait until at least 20% of GPU memory is free
+            print()
+            while (m := cuda_memory_fraction(device)) > cuda_mem_max:
+                time.sleep(5)
+                print(
+                    f"GPU memory usage is too high ({m:.2%}), waiting for it to drop below {cuda_mem_max:.2%}...",
+                    end="\r",
+                    file=sys.stderr,
+                )
+            print()
+
+            active.append(subprocess.Popen(cmd))
             print(
-                f"GPU memory usage is too high ({m:.2%}), waiting for it to drop below {cuda_mem_max:.2%}...",
-                end="\r",
-                file=sys.stderr,
+                f"Started clustering for {dataset} on {device} (pid={active[-1].pid}) ({idx + 1}/{n_files})"
             )
-        print()
-
-        active.append(subprocess.Popen(cmd))
-        print(
-            f"Started clustering for {dataset} on {device} (pid={active[-1].pid}) ({idx + 1}/{n_files})"
-        )
-        if len(active) >= max_concurrency:
-            active[0].wait()
-            print(f"Process {active[0].pid} finished, removing from active list")
-            active.pop(0)
-    for proc in active:
-        proc.wait()
-        print(f"Process {proc.pid} finished, removing from active list")
-
+            if len(active) >= max_concurrency:
+                active[0].wait()
+                print(f"Process {active[0].pid} finished, removing from active list")
+                active.pop(0)
+        for proc in active:
+            proc.wait()
+            print(f"Process {proc.pid} finished, removing from active list")
+    except Exception as e:
+        print(f"An error occurred: {e}", file=sys.stderr)
+        for proc in active:
+            proc.kill()
+            print(f"Killed process {proc.pid} due to error", file=sys.stderr)
+        raise e
 
 def main(
     merge_config: Path | MergeConfig,
