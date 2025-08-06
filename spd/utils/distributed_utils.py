@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import time
 from collections.abc import Mapping
 from typing import Literal
 
@@ -225,12 +226,16 @@ def get_distributed_rand_like(
     """
     # Assert that shape has 3 dimensions (batch, seq_len, C). In future we'd want to support other
     # shapes
+
+    start_time = time.perf_counter()
     assert len(shape) == 3, "Shape must have 3 dimensions (batch, seq_len, C)"
     local_batch_size, seq_len, C = shape
 
     generator = torch.Generator(device="cpu")
     seed = int(hashlib.md5(hash_key.encode()).hexdigest(), 16) % (2**32)
     generator.manual_seed(seed)
+    end_time = time.perf_counter()
+    print(f"Time to seed generator: {end_time - start_time}")
 
     elements_per_sample = seq_len * C
     total_elements_to_skip = get_rank() * local_batch_size * elements_per_sample
@@ -241,6 +246,8 @@ def get_distributed_rand_like(
         chunk = min(remaining, skip_chunk_size)
         torch.rand(chunk, generator=generator, device="cpu")
         remaining -= chunk
+    end_time = time.perf_counter()
+    print(f"Time to finish skipping: {end_time - start_time}")
 
     # Generate this rank's data
     return torch.rand(*shape, generator=generator, device="cpu").to(device)
