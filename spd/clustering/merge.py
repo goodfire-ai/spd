@@ -6,7 +6,7 @@ import random
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import torch
@@ -21,6 +21,7 @@ from pydantic import (
 )
 from torch import Tensor
 
+from spd.clustering.math.merge_distances import MergesArray, DistancesMethod, DistancesArray, compute_distances
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming_matrix
 from spd.spd_types import Probability
@@ -682,12 +683,12 @@ class MergeHistoryEnsemble:
         return (self.n_ensemble, self.n_iters, self.c_components)
 
     @property
-    def merges_array(self) -> Int[np.ndarray, "n_ens n_iters c_components"]:
+    def merges_array(self) -> MergesArray:
         n_ens: int = self.n_ensemble
         n_iters: int = self.n_iters
         c_components: int = self.c_components
 
-        output: Int[np.ndarray, "n_ens n_iters c_components"] = np.full(
+        output: MergesArray = np.full(
             (n_ens, n_iters, c_components),
             fill_value=-1,
             dtype=np.int16,
@@ -700,7 +701,7 @@ class MergeHistoryEnsemble:
 
         return output    
     
-    def normalized(self) -> dict[str, Any]:
+    def normalized(self) -> tuple[MergesArray, dict[str, Any]]:
         """Normalize the component labels across all histories.
         
         if different histories see different batches, then they might have different dead
@@ -719,7 +720,7 @@ class MergeHistoryEnsemble:
             label: idx for idx, label in enumerate(unique_labels)
         }
 
-        merges_array: Int[np.ndarray, "n_ens n_iters c_components"] = np.full(
+        merges_array: MergesArray = np.full(
             (self.n_ensemble, self.n_iters, c_components),
             fill_value=-1,
             dtype=np.int16,
@@ -751,9 +752,9 @@ class MergeHistoryEnsemble:
                     dtype=np.int16,
                 )
 
-        return dict(
-            merges_array=merges_array,
-            meta=dict(
+        return (
+            merges_array,
+            dict(
                 component_labels=unique_labels,
                 n_ensemble=self.n_ensemble,
                 n_iters=self.n_iters,
@@ -763,26 +764,15 @@ class MergeHistoryEnsemble:
         )
 
 
-    def get_distances(self) -> Float[np.ndarray, "n_iters n_ens n_ens"]:
+    def get_distances(self, method: DistancesMethod = "perm_invariant_hamming") -> DistancesArray:
         n_iters: int = self.n_iters
         _n_ens: int = self.n_ensemble
 
-        merges_array: Int[np.ndarray, "n_ens n_iters c_components"] = self.merges_array
-        # for i in tqdm.tqdm(range(n_iters)):
-        #     distances[i] = perm_invariant_hamming_matrix(
-        #         merges_array[:, i, :]
-        #     )
-        merges_array_list: list[Int[np.ndarray, "n_ens c_components"]] = [
-            merges_array[:, i, :] for i in range(n_iters)
-        ]
-
-        distances_list: list[Float[np.ndarray, "n_ens n_ens"]] = run_maybe_parallel(
-            func=perm_invariant_hamming_matrix,
-            iterable=merges_array_list,
-            parallel=8,
+        merges_array: MergesArray = self.merges_array
+        return compute_distances(
+            normalized_merge_array=merges_array,
+            method=method,
         )
-
-        return np.stack(distances_list, axis=0)
 
 
 def merge_iteration_ensemble(

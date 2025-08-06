@@ -7,6 +7,7 @@ import numpy as np
 from jaxtyping import Float
 from torch import Tensor
 
+from spd.clustering.math.merge_distances import DistancesArray
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge import MergeHistory, MergePlotConfig
 from spd.clustering.util import format_scientific_latex
@@ -82,7 +83,7 @@ def plot_merge_iteration(
 
 
 def plot_dists_distribution(
-    distances: Float[np.ndarray, "n_iters n_ens n_ens"],
+    distances: DistancesArray,
     mode: Literal["points", "dist"] = "points",
     label: str | None = None,
     ax: plt.Axes | None = None,

@@ -6,8 +6,10 @@ from typing import Any
 import numpy as np
 from matplotlib import pyplot as plt
 
+from spd.clustering.math.merge_distances import DistancesArray
 from spd.clustering.merge import MergeConfig
 from spd.clustering.plotting.merge import plot_dists_distribution
+from spd.clustering.scripts.normalize_histories import normalize_histories
 from spd.clustering.scripts.compute_distances import compute_histories_distances
 from spd.clustering.scripts.split_dataset import split_dataset
 from spd.log import logger
@@ -134,15 +136,22 @@ def main(
 
     histories_files: list[Path] = list(histories_path.glob("*.zanj"))
 
-    # 3. compute the distances between the merge histories
+    # 3. normalize histories to account for different active components
     logger.section("Computing distances")
-    dists_cfg_path: Path
-    dists_cfg: dict[str, Any]
-    distances: np.ndarray
-    dists_cfg_path, dists_cfg, distances = compute_histories_distances(
+    merged_hists: dict[str, Any] = normalize_histories(
         histories=histories_files,
         out_dir=run_path / "distances",
     )
+
+    # 4. compute distances between merge histories
+    logger.section("Computing distances between merge histories")
+    dists_path: Path
+    distances: DistancesArray
+    dists_path, distances = compute_histories_distances(
+        merges_path=merged_hists["paths"]["merge_array"],
+        method="perm_invariant_hamming",
+    )
+
 
     if plot:
         logger.section("Plotting distances")
