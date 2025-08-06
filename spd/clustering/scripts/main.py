@@ -1,3 +1,4 @@
+import json
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -51,6 +52,10 @@ def distribute_clustering(
             "--device",
             device,
         ]
+
+        # wait until at least 20% of GPU memory is free
+        if max_concurrency > 1:
+
         active.append(subprocess.Popen(cmd))
         print(
             f"Started clustering for {dataset} on {device} (pid={active[-1].pid}) ({idx + 1}/{n_files})"
@@ -94,7 +99,7 @@ def main(
     elif isinstance(merge_config, MergeConfig):
         merge_config_ = merge_config
         merge_config_path = (
-            REPO_ROOT / f"data/clustering/merge_history/configs/{merge_config_.stable_hash}.json"
+            REPO_ROOT / f"data/clustering/configs/{merge_config_.stable_hash}.json"
         )
         merge_config_path.write_text(merge_config_.model_dump_json())
     else:
@@ -102,7 +107,26 @@ def main(
 
     merge_config_hash: str = merge_config_.stable_hash
     merge_run_id: str = f"n{n_batches}_b{batch_size}_{merge_config_hash}"
-    run_path: Path = REPO_ROOT / f"data/clustering/{merge_run_id}"
+    run_path: Path = base_path / f"{merge_run_id}"
+    run_path.mkdir(parents=True, exist_ok=True)
+    run_config_path: Path = run_path / "run_config.json"
+    run_config_path.write_text(json.dumps(
+        dict(
+            merge_config=merge_config_.model_dump(mode="json"),
+            model_path=model_path,
+            base_path=str(base_path),
+            n_batches=n_batches,
+            batch_size=batch_size,
+            devices=devices_,
+            max_concurrency=max_concurrency,
+            plot=plot,
+            repo_root=str(REPO_ROOT),
+            run_id=merge_run_id,
+            run_path=str(run_path),
+        ),
+        indent="\t",
+    ))
+    
     batches_path: Path = run_path / "batches"
     batches_config_path: Path = run_path / "batches_config.json"
     histories_path: Path = run_path / "merge_history"
@@ -117,7 +141,7 @@ def main(
         batch_size=batch_size,
         base_path=run_path,
         save_file_fmt=f"{batches_path}/batch_{{batch_idx}}.npz",
-        cfg_file_fmt=f"{batches_path}/{batches_config_path}",
+        cfg_file_fmt=batches_config_path.as_posix(),
     )
 
     data_files: list[Path] = list(map(Path, split_dataset_info["output_files"]))
