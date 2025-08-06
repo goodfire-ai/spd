@@ -27,7 +27,7 @@ from spd.plotting import (
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_masks
-from spd.utils.distributed_utils import get_distributed_rand_like
+from spd.utils.distributed_utils import get_distributed_rand_like, is_distributed
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
@@ -144,8 +144,11 @@ class CEandKLLosses(StreamingEval):
         # we use completely random masks
         rand_masks = {}
         for layer, v in ci.items():
-            hash_key = f"randommask-{step}-0-{layer}"
-            rand_masks[layer] = get_distributed_rand_like(v.shape, hash_key, device=v.device)
+            if is_distributed():
+                hash_key = f"randommask-{step}-0-{layer}"
+                rand_masks[layer] = get_distributed_rand_like(v.shape, hash_key, device=v.device)
+            else:
+                rand_masks[layer] = torch.rand_like(v)
         random_masked_logits = self.model(batch, type="components", masks=rand_masks)
         random_masked_ce_loss = ce_vs_labels(random_masked_logits)
         random_masked_kl_loss = kl_vs_target(random_masked_logits)

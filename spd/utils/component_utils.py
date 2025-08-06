@@ -1,7 +1,8 @@
+import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.utils.distributed_utils import get_distributed_rand_like
+from spd.utils.distributed_utils import get_distributed_rand_like, is_distributed
 
 
 def calc_stochastic_masks(
@@ -28,8 +29,11 @@ def calc_stochastic_masks(
     for sample_idx in range(n_mask_samples):
         mask_dict = {}
         for layer, ci in causal_importances.items():
-            hash_key = f"{hash_prefix}-{step}-{sample_idx}-{layer}"
-            rand_vals = get_distributed_rand_like(ci.shape, hash_key, device=ci.device)
+            if is_distributed():
+                hash_key = f"{hash_prefix}-{step}-{sample_idx}-{layer}"
+                rand_vals = get_distributed_rand_like(ci.shape, hash_key, device=ci.device)
+            else:
+                rand_vals = torch.rand_like(ci)
             mask_dict[layer] = ci + (1 - ci) * rand_vals
 
         stochastic_masks.append(mask_dict)

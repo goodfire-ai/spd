@@ -90,7 +90,7 @@ def optimize(
     eval_iterator = loop_dataloader(eval_loader)
 
     if is_main_process():
-        logger.info(f"Output directory: {out_dir}")
+        logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
     target_model.requires_grad_(False)
     model = ComponentModel(
