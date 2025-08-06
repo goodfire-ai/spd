@@ -20,8 +20,8 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # %%
 # Load model
-# SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp1"].canonical_run)
-SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run)
+SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp1"].canonical_run)
+# SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run)
 component_model: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 component_model.to(DEVICE)
 cfg = SPD_RUN.config
@@ -48,14 +48,14 @@ dbg_auto(
         feature_probability=dataset.feature_probability,
         data_generation_type=dataset.data_generation_type,
     )
-)
+);
 dataloader = DatasetGeneratedDataLoader(dataset, batch_size=N_SAMPLES, shuffle=False)
 # %%
 # Get component activations
 ci = component_activations(
-    component_model,
-    dataloader,
+    model=component_model,
     device=DEVICE,
+    dataloader=dataloader,
     sigmoid_type="hard",
 )
 
@@ -76,7 +76,7 @@ ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
     merge_config=MergeConfig(
         activation_threshold=None,
         alpha=0.01,
-        iters=100,
+        iters=140,
         check_threshold=0.1,
         pop_component_prob=0,
         # rank_cost_fn=lambda x: 1.0,

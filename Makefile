@@ -56,9 +56,20 @@ coverage:
 .PHONY: demo-clustering
 demo-clustering:
 	uv run python -m spd.clustering.scripts.main \
-	  --merge-config spd/clustering/default_merge_config.json \
+	  --merge-config spd/clustering/configs/demo_i2.json \
 	  --model-path wandb:goodfire/spd/runs/ioprgffh \
 	  --n-batches 2 \
 	  --batch-size 2 \
 	  --devices cuda:0 \
 	  --max-concurrency 99
+
+
+.PHONY: clustering-small
+clustering-small:
+	uv run python -m spd.clustering.scripts.main \
+	  --merge-config spd/clustering/configs/demo_i100.json \
+	  --model-path wandb:goodfire/spd/runs/ioprgffh \
+	  --n-batches 4 \
+	  --batch-size 4 \
+	  --devices cuda:0 \
+	  --max-concurrency 2

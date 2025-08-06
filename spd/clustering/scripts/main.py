@@ -145,6 +145,7 @@ def main(
             indent="\t",
         )
     )
+    logger.info(f"Run config saved to {run_config_path}")
 
     batches_path: Path = run_path / "batches"
     batches_config_path: Path = run_path / "batches_config.json"
