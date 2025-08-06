@@ -2,7 +2,10 @@ import json
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+import sys
+import time
 from typing import Any
+import warnings
 
 from matplotlib import pyplot as plt
 
@@ -14,6 +17,7 @@ from spd.clustering.scripts.normalize_histories import normalize_histories
 from spd.clustering.scripts.split_dataset import split_dataset
 from spd.log import logger
 from spd.settings import REPO_ROOT
+from spd.utils.cuda_memory_used import cuda_memory_fraction
 
 
 # TODO: this is super messy
@@ -23,6 +27,7 @@ def distribute_clustering(
     data_files: list[Path],
     devices: list[str],
     save_dir: Path,
+    cuda_mem_max: float = 0.8,
     max_concurrency: int | None = None,
 ) -> None:
     n_devices: int = len(devices)
@@ -54,7 +59,15 @@ def distribute_clustering(
         ]
 
         # wait until at least 20% of GPU memory is free
-        if max_concurrency > 1:
+        print()
+        while (m := cuda_memory_fraction(device)) > cuda_mem_max:
+            time.sleep(5)
+            print(
+                f"GPU memory usage is too high ({m:.2%}), waiting for it to drop below {cuda_mem_max:.2%}...",
+                end="\r",
+                file=sys.stderr,
+            )
+        print()
 
         active.append(subprocess.Popen(cmd))
         print(
