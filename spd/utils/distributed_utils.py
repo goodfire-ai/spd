@@ -1,23 +1,29 @@
 """Utilities for distributed data parallel training with MPI support."""
 
+import hashlib
 import os
+from collections.abc import Mapping
+from typing import Literal
 
 import torch
 import torch.distributed as dist
+from PIL import Image
+from torch import Tensor
 from torch.distributed import ReduceOp
 
 
-def init_distributed(backend: str | None = None) -> tuple[int, int, int]:
+def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> tuple[int, int, int]:
     """Initialize distributed process group using MPI.
 
     Supports OpenMPI, MVAPICH2, and SLURM environments.
 
     Args:
-        backend: Distributed backend to use ('nccl' or 'gloo'). If None, auto-selects based on CUDA availability.
+        backend: Distributed backend to use ('nccl' or 'gloo').
 
     Returns:
         Tuple of (rank, world_size, local_rank)
     """
+    backend = backend or ("nccl" if torch.cuda.is_available() else "gloo")
     # Check if running under MPI
     if "OMPI_COMM_WORLD_SIZE" in os.environ:
         # OpenMPI
@@ -55,9 +61,8 @@ def init_distributed(backend: str | None = None) -> tuple[int, int, int]:
 
     # Initialize PyTorch distributed
     if not dist.is_initialized():
-        # Use provided backend or auto-select based on CUDA availability
-        if backend is None:
-            backend = "nccl" if torch.cuda.is_available() else "gloo"
+        if backend == "nccl":
+            assert torch.cuda.is_available(), "CUDA is required for NCCL ddp backend"
 
         local_device = torch.device(f"cuda:{local_rank}") if torch.cuda.is_available() else None
         dist.init_process_group(
@@ -196,14 +201,68 @@ def print_once(msg: str) -> None:
         print(msg)
 
 
-def avg_metrics_across_ranks(metrics: dict[str, float], device: str) -> dict[str, float]:
+def avg_metrics_across_ranks(metrics: Mapping[str, float], device: str) -> Mapping[str, float]:
     """Get the average of metrics across ranks."""
     assert is_distributed(), "Can only average metrics across ranks if running in distributed mode"
-    metric_keys = list(metrics.keys())
-    if metric_keys:
-        # Stack all metric values into a single tensor and reduce across ranks
-        metric_values = torch.tensor([metrics[k] for k in metric_keys], device=device)
-        metric_values = all_reduce(metric_values, op=ReduceOp.AVG)
-        # Unbatch the metrics
-        metrics = {k: metric_values[i].item() for i, k in enumerate(metric_keys)}
-    return metrics
+    metric_values = torch.tensor([metrics[k] for k in metrics], device=device)
+    metric_values = all_reduce(metric_values, op=ReduceOp.AVG)
+    return {k: metric_values[i].item() for i, k in enumerate(metrics)}
+
+
+def avg_eval_metrics_across_ranks(
+    metrics: Mapping[str, float | Image.Image], device: str
+) -> Mapping[str, float | Image.Image]:
+    """Get the average of eval metrics across ranks.
+
+    Ignores any metrics that are not floats or ints. Currently, the image metrics do not need to be
+    averaged. If this changes for future metrics, we will need to do a reduce during calculcation
+    of the metric.
+    """
+    assert is_distributed(), "Can only average metrics across ranks if running in distributed mode"
+    metrics_keys_to_avg = {k: v for k, v in metrics.items() if isinstance(v, float | int)}
+    if metrics_keys_to_avg:
+        avg_metrics = avg_metrics_across_ranks(metrics_keys_to_avg, device)
+    else:
+        avg_metrics = {}
+    return {**metrics, **avg_metrics}
+
+
+def get_distributed_rand_like(
+    shape: tuple[int, ...], hash_key: str, device: str | torch.device
+) -> Tensor:
+    """Get a random tensor of shape `shape` which matches what would be produced by indexing a
+    random tensor of shape `shape * world_size` with the current rank.
+
+    This function simulates the following process:
+    1. Generate a full random tensor of shape `shape * world_size` with a custom generator
+    2. Index the tensor to get the portion of the tensor on the current rank
+
+    It does this by iterating through random values until the rng counter matches what is needed
+    for the current rank.
+
+    Args:
+        shape: The shape of the tensor to get.
+        hash_key: A string used to seed the random number generator.
+        device: The device to convert the final tensor to (we generate all tensors on CPU)
+    """
+    # Assert that shape has 3 dimensions (batch, seq_len, C). In future we'd want to support other
+    # shapes
+    assert len(shape) == 3, "Shape must have 3 dimensions (batch, seq_len, C)"
+    local_batch_size, seq_len, C = shape
+
+    generator = torch.Generator(device="cpu")
+    seed = int(hashlib.md5(hash_key.encode()).hexdigest(), 16) % (2**32)
+    generator.manual_seed(seed)
+
+    elements_per_sample = seq_len * C
+    total_elements_to_skip = get_rank() * local_batch_size * elements_per_sample
+
+    skip_chunk_size = 100_000
+    remaining = total_elements_to_skip
+    while remaining > 0:
+        chunk = min(remaining, skip_chunk_size)
+        torch.rand(chunk, generator=generator, device="cpu")
+        remaining -= chunk
+
+    # Generate this rank's data
+    return torch.rand(*shape, generator=generator, device="cpu").to(device)

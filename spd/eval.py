@@ -27,13 +27,9 @@ from spd.plotting import (
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_masks
+from spd.utils.distributed_utils import get_distributed_rand_like
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
-from spd.utils.target_ci_solutions import (
-    compute_target_metrics,
-    make_target_ci_solution,
-)
-
-EvalMetricValue = float | int | Image.Image
+from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
 
 class StreamingEval(ABC):
@@ -52,7 +48,7 @@ class StreamingEval(ABC):
     ) -> None: ...
 
     @abstractmethod
-    def compute(self) -> Mapping[str, EvalMetricValue]: ...
+    def compute(self) -> Mapping[str, float | Image.Image]: ...
 
 
 class CI_L0(StreamingEval):
@@ -132,7 +128,9 @@ class CEandKLLosses(StreamingEval):
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
         # we use the regular stochastic masks
-        stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1, step=step)[0]
+        stoch_masks = calc_stochastic_masks(
+            ci, n_mask_samples=1, step=step, hash_prefix="stochastic_recon_eval"
+        )[0]
         stoch_masked_logits = self.model(batch, type="components", masks=stoch_masks)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
@@ -144,8 +142,11 @@ class CEandKLLosses(StreamingEval):
         unmasked_kl_loss = kl_vs_target(unmasked_logits)
 
         # we use completely random masks
-        random_mask = {k: torch.rand_like(v) for k, v in ci.items()}
-        random_masked_logits = self.model(batch, type="components", masks=random_mask)
+        rand_masks = {}
+        for layer, v in ci.items():
+            hash_key = f"randommask-{step}-0-{layer}"
+            rand_masks[layer] = get_distributed_rand_like(v.shape, hash_key, device=v.device)
+        random_masked_logits = self.model(batch, type="components", masks=rand_masks)
         random_masked_ce_loss = ce_vs_labels(random_masked_logits)
         random_masked_kl_loss = kl_vs_target(random_masked_logits)
 
@@ -449,7 +450,7 @@ def evaluate(
     config: Config,
     run_slow: bool,
     n_steps: int,
-) -> dict[str, EvalMetricValue]:
+) -> dict[str, float | Image.Image]:
     evals: list[StreamingEval] = []
     for eval_config in config.eval_metrics:
         eval_cls = EVAL_CLASSES[eval_config.classname]
@@ -472,7 +473,7 @@ def evaluate(
             # TODO: eval needs unique masks, and so "step" isn't a good
             eval.watch_batch(batch=batch, target_out=target_out, ci=ci, step=step)
 
-    out: dict[str, EvalMetricValue] = {}
+    out: dict[str, float | Image.Image] = {}
     all_dicts = [eval.compute() for eval in evals]
     for d in all_dicts:
         if set(d.keys()).intersection(out.keys()):

@@ -38,8 +38,7 @@ def main(
     config = load_config(config_path_or_obj, config_model=Config)
 
     # Initialize distributed training with backend from config if specified
-    backend = config.ddp_backend if config.ddp_enabled else None
-    rank, world_size, _local_rank = init_distributed(backend=backend)
+    rank, world_size, _local_rank = init_distributed(backend=config.ddp_backend)
 
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
@@ -118,20 +117,18 @@ def main(
 
     # Adjust batch size for distributed training
     # Keep per-process batch size constant to maintain gradient scale
+    assert config.microbatch_size % world_size == 0 and config.microbatch_size > 0, (
+        f"Microbatch size {config.microbatch_size} is not divisible by world size {world_size}. "
+    )
     train_batch_size = config.microbatch_size // world_size
-    if train_batch_size == 0:
-        raise ValueError(
-            f"Microbatch size {config.microbatch_size} is smaller than world size {world_size}. "
-            "Please increase the microbatch size or decrease the world size."
-        )
 
     train_loader, _tokenizer = create_data_loader(
         dataset_config=train_data_config,
         batch_size=train_batch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
-        ddp_rank=rank,  # Use actual rank
-        ddp_world_size=world_size,  # Use actual world_size
+        ddp_rank=rank,
+        ddp_world_size=world_size,
     )
 
     eval_data_config = DatasetConfig(
@@ -144,17 +141,18 @@ def main(
         column_name=config.task_config.column_name,
     )
 
-    # For evaluation, we can use full batch size on rank 0 only
-    # TODO: Update to split eval across all ranks
-    eval_batch_size = config.eval_batch_size if is_main_process() else 1
+    assert config.eval_batch_size % world_size == 0 and config.eval_batch_size > 0, (
+        f"Eval batch size {config.eval_batch_size} is not divisible by world size {world_size}. "
+    )
+    eval_batch_size = config.eval_batch_size // world_size
 
     eval_loader, _ = create_data_loader(
         dataset_config=eval_data_config,
         batch_size=eval_batch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
-        ddp_rank=rank,  # Use actual rank
-        ddp_world_size=world_size,  # Use actual world_size
+        ddp_rank=rank,
+        ddp_world_size=world_size,
     )
 
     if is_main_process():

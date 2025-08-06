@@ -5,6 +5,7 @@ import json
 from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 
 import torch
 import torch.nn as nn
@@ -18,13 +19,14 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import Config
-from spd.eval import EvalMetricValue, evaluate
+from spd.eval import evaluate
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
+    avg_eval_metrics_across_ranks,
     avg_metrics_across_ranks,
     get_world_size,
     is_distributed,
@@ -39,7 +41,7 @@ from spd.utils.general_utils import (
 from spd.utils.run_utils import save_file
 
 
-def local_log(data: Mapping[str, EvalMetricValue], step: int, out_dir: Path) -> None:
+def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path) -> None:
     metrics_file = out_dir / "metrics.jsonl"
     metrics_file.touch(exist_ok=True)
 
@@ -103,7 +105,7 @@ def optimize(
 
     # Wrap model with DDP if distributed
     world_size = get_world_size()
-    wrapped_model: nn.Module = model  # Type annotation to help type checker
+    wrapped_model: nn.Module = model
     if world_size > 1:
         # Parse device string to get device id
         device_id = int(device.split(":")[1]) if ":" in device else 0
@@ -170,7 +172,7 @@ def optimize(
         for group in optimizer.param_groups:
             group["lr"] = step_lr
 
-        microbatch_log_data = defaultdict[str, float](float)
+        microbatch_log_data: defaultdict[str, float] = defaultdict(float)
         for _ in range(gradient_accumulation_steps):
             batch = extract_batch_data(next(train_iterator)).to(device)
 
@@ -218,7 +220,9 @@ def optimize(
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
             if is_distributed():
-                microbatch_log_data = avg_metrics_across_ranks(microbatch_log_data, device=device)
+                avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
+                microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
+
             # Already reduced across ranks, so no need to reduce again
             for layer_name, n_alive_count in alive_tracker.n_alive().items():
                 n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
@@ -242,7 +246,7 @@ def optimize(
                     wandb.log(microbatch_log_data, step=step)
 
         # --- Evaluation --- #
-        if step % config.eval_freq == 0 and is_main_process():
+        if step % config.eval_freq == 0:
             with torch.inference_mode():
                 run_slow: bool = (
                     config.slow_eval_on_first_step
@@ -251,7 +255,7 @@ def optimize(
                 )
 
                 metrics = evaluate(
-                    model=component_model,
+                    model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
                     device=device,
                     config=config,
@@ -259,14 +263,20 @@ def optimize(
                     n_steps=n_eval_steps,
                 )
 
-                if out_dir is not None and is_main_process():
-                    local_log(metrics, step, out_dir)
-                if config.wandb_project:
-                    wandb_logs: dict[str, int | float | str | wandb.Image] = {
-                        f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
-                        for k, v in metrics.items()
-                    }
-                    wandb.log(wandb_logs, step=step)
+                if is_distributed():
+                    metrics = avg_eval_metrics_across_ranks(metrics, device=device)
+
+                if is_main_process():
+                    for k, v in metrics.items():
+                        tqdm.write(f"eval/{k}: {v}")
+                    if out_dir is not None:
+                        local_log(metrics, step, out_dir)
+                    if config.wandb_project:
+                        wandb_logs: dict[str, int | float | str | wandb.Image] = {
+                            f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
+                            for k, v in metrics.items()
+                        }
+                        wandb.log(wandb_logs, step=step)
 
                 del metrics
                 torch.cuda.empty_cache()
