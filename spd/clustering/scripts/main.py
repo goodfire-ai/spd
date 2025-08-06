@@ -1,11 +1,10 @@
 import json
 import subprocess
-from collections.abc import Sequence
-from pathlib import Path
 import sys
 import time
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
-import warnings
 
 from matplotlib import pyplot as plt
 
@@ -88,6 +87,7 @@ def distribute_clustering(
             print(f"Killed process {proc.pid} due to error", file=sys.stderr)
         raise e
 
+
 def main(
     merge_config: Path | MergeConfig,
     model_path: str = "wandb:goodfire/spd/runs/ioprgffh",
@@ -117,9 +117,7 @@ def main(
         merge_config_path = merge_config
     elif isinstance(merge_config, MergeConfig):
         merge_config_ = merge_config
-        merge_config_path = (
-            REPO_ROOT / f"data/clustering/configs/{merge_config_.stable_hash}.json"
-        )
+        merge_config_path = REPO_ROOT / f"data/clustering/configs/{merge_config_.stable_hash}.json"
         merge_config_path.write_text(merge_config_.model_dump_json())
     else:
         raise TypeError("merge_config must be a MergeConfig or a Path to a JSON file")
@@ -129,23 +127,25 @@ def main(
     run_path: Path = base_path / f"{merge_run_id}"
     run_path.mkdir(parents=True, exist_ok=True)
     run_config_path: Path = run_path / "run_config.json"
-    run_config_path.write_text(json.dumps(
-        dict(
-            merge_config=merge_config_.model_dump(mode="json"),
-            model_path=model_path,
-            base_path=str(base_path),
-            n_batches=n_batches,
-            batch_size=batch_size,
-            devices=devices_,
-            max_concurrency=max_concurrency,
-            plot=plot,
-            repo_root=str(REPO_ROOT),
-            run_id=merge_run_id,
-            run_path=str(run_path),
-        ),
-        indent="\t",
-    ))
-    
+    run_config_path.write_text(
+        json.dumps(
+            dict(
+                merge_config=merge_config_.model_dump(mode="json"),
+                model_path=model_path,
+                base_path=str(base_path),
+                n_batches=n_batches,
+                batch_size=batch_size,
+                devices=devices_,
+                max_concurrency=max_concurrency,
+                plot=plot,
+                repo_root=str(REPO_ROOT),
+                run_id=merge_run_id,
+                run_path=str(run_path),
+            ),
+            indent="\t",
+        )
+    )
+
     batches_path: Path = run_path / "batches"
     batches_config_path: Path = run_path / "batches_config.json"
     histories_path: Path = run_path / "merge_history"

@@ -1,5 +1,6 @@
 import torch
 
+
 def _to_cuda_device(device: int | str | torch.device) -> torch.device:
     """Return a normalized CUDA device object."""
     dev: torch.device
