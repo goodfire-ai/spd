@@ -4,7 +4,6 @@ import importlib
 import inspect
 from typing import Any, ClassVar, Literal, Self
 
-import torch
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -271,8 +270,8 @@ class Config(BaseModel):
     )
 
     # --- Distributed Data Parallel (DDP) ---
-    ddp_backend: Literal["nccl", "gloo"] = Field(
-        default="nccl" if torch.cuda.is_available() else "gloo",
+    ddp_backend: Literal["nccl", "gloo"] | None = Field(
+        default=None,
         description="Backend for distributed training (nccl for GPU, gloo for CPU)",
     )
 
