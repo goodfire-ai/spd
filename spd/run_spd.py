@@ -31,7 +31,6 @@ from spd.utils.distributed_utils import (
     get_world_size,
     is_distributed,
     is_main_process,
-    sync_across_processes,
 )
 from spd.utils.general_utils import (
     extract_batch_data,
@@ -180,7 +179,7 @@ def optimize(
                 batch, type="pre_forward_cache", module_names=component_model.target_module_paths
             )
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
-            # through the parameters in calc_causal_importances below, they DDP hook will get called
+            # through the parameters in calc_causal_importances below, the DDP hook will get called
             # and gradients will be properly synced across ranks on the next backward pass.
             causal_importances, causal_importances_upper_leaky = (
                 component_model.calc_causal_importances(
@@ -299,7 +298,6 @@ def optimize(
 
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
-            sync_across_processes()
             optimizer.step()
 
     if is_main_process():
