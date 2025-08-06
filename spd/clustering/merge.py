@@ -631,7 +631,6 @@ def merge_iteration(
 @dataclass
 class MergeHistoryEnsemble:
     data: list[MergeHistory]
-    is_normalized: bool = False
 
     def __iter__(self):
         return iter(self.data)
@@ -701,7 +700,7 @@ class MergeHistoryEnsemble:
 
         return output    
     
-    def normalize_components(self) -> "MergeHistoryEnsemble":
+    def normalized(self) -> dict[str, Any]:
         """Normalize the component labels across all histories.
         
         if different histories see different batches, then they might have different dead
@@ -710,7 +709,58 @@ class MergeHistoryEnsemble:
         is put into it's own group in that history
         """
 
-        # TODO
+        unique_labels_set: set[str] = set()
+        for history in self.data:
+            unique_labels_set.update(history.component_labels)
+
+        unique_labels: list[str] = sorted(unique_labels_set)
+        c_components: int = len(unique_labels)
+        component_label_idxs: dict[str, int] = {
+            label: idx for idx, label in enumerate(unique_labels)
+        }
+
+        merges_array: Int[np.ndarray, "n_ens n_iters c_components"] = np.full(
+            (self.n_ensemble, self.n_iters, c_components),
+            fill_value=-1,
+            dtype=np.int16,
+        )
+
+        i_ens: int
+        history: MergeHistory
+        for i_ens, history in enumerate(self.data):
+            hist_c_labels: list[str] = history.component_labels
+            hist_n_components: int = len(hist_c_labels)
+            # map from old component indices to new component indices
+            for i_comp_old, comp_label in enumerate(hist_c_labels):
+                i_comp_new: int = component_label_idxs[comp_label]
+                merges_array[i_ens, :, i_comp_new] = history.merges.group_idxs[:, i_comp_old]
+
+            assert np.max(merges_array[i_ens]) == hist_n_components - 1, (
+                f"Max component index in history {i_ens} should be {hist_n_components - 1}, "
+                f"but got {np.max(merges_array[i_ens])}"
+            )
+
+            # put each missing label into its own group
+            hist_missing_labels: set[str] = unique_labels_set - set(hist_c_labels)
+            assert len(hist_missing_labels) == c_components - hist_n_components
+            for idx_missing, missing_label in enumerate(hist_missing_labels):
+                i_comp_new: int = component_label_idxs[missing_label]
+                merges_array[i_ens, :, i_comp_new] = np.full(
+                    self.n_iters,
+                    fill_value=idx_missing + hist_n_components,
+                    dtype=np.int16,
+                )
+
+        return dict(
+            merges_array=merges_array,
+            meta=dict(
+                component_labels=unique_labels,
+                n_ensemble=self.n_ensemble,
+                n_iters=self.n_iters,
+                c_components=c_components,
+                config=self.config,
+            ),
+        )
 
 
     def get_distances(self) -> Float[np.ndarray, "n_iters n_ens n_ens"]:
