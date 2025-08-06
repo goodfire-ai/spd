@@ -9,10 +9,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
-"""
-The bulk of this file is copied from https://github.com/ApolloResearch/e2e_sae
-licensed under MIT, (c) 2024 ApolloResearch.
-"""
+from spd.log import logger
 
 
 class DatasetConfig(BaseModel):
@@ -175,6 +172,8 @@ def create_data_loader(
 
     # For streaming datasets, we can't use DistributedSampler, so keep existing approach
     if dataset_config.streaming:
+        if ddp_world_size > 1:
+            logger.warning("DDP with streaming datasets has not been tested. ")
         dataset = load_dataset(
             dataset_config.name,
             streaming=dataset_config.streaming,
