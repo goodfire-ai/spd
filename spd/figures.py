@@ -19,16 +19,18 @@ from spd.models.component_model import ComponentModel
 from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_histograms,
-    plot_component_abs_left_singular_vectors_cosine_similarity,
+    plot_component_abs_left_singular_vectors_geometric_interaction_strengths,
     plot_component_co_activation_fractions,
-    plot_cosine_sim_coactivation_correlation,
+    plot_geometric_interaction_strength_product_with_coactivation_fraction,
+    plot_geometric_interaction_strength_vs_coactivation,
     plot_mean_component_activation_counts,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import (
-    component_abs_left_singular_vectors_cosine_similarity,
+    component_abs_left_sing_vec_geometric_interaction_strengths,
     component_activation_statistics,
-    create_cosine_sim_coactivation_correlation_dataset,
+    create_geometric_interaction_strength_product_coactivation_matrix,
+    create_geometric_interaction_strength_vs_coactivation_dataset,
 )
 
 
@@ -124,7 +126,7 @@ def component_co_activation_plots(inputs: CreateFiguresInputs) -> Mapping[str, p
     return plot_component_co_activation_fractions(component_co_activation_fractions)
 
 
-def component_abs_left_singular_vectors_cosine_similarity_plots(
+def component_abs_left_sing_vec_geometric_interaction_strengths_plots(
     inputs: CreateFiguresInputs,
 ) -> Mapping[str, plt.Figure]:
     mean_component_activation_counts = component_activation_statistics(
@@ -141,21 +143,40 @@ def component_abs_left_singular_vectors_cosine_similarity_plots(
         )
         for module_name in inputs.model.components
     }
-    component_abs_left_singular_vectors_cosine_similarities = (
-        component_abs_left_singular_vectors_cosine_similarity(
+    component_abs_left_sing_vecs_geometric_interaction_strengths = (
+        component_abs_left_sing_vec_geometric_interaction_strengths(
             model=inputs.model,
             sorted_activation_inds=sorted_activation_inds,
         )
     )
-    return plot_component_abs_left_singular_vectors_cosine_similarity(
-        component_abs_left_singular_vectors_cosine_similarities
+    return plot_component_abs_left_singular_vectors_geometric_interaction_strengths(
+        component_abs_left_sing_vecs_geometric_interaction_strengths
     )
 
 
-def cosine_sim_coactivation_correlation_plots(
+def geometric_interaction_strength_vs_coactivation_plots(
     inputs: CreateFiguresInputs,
 ) -> Mapping[str, plt.Figure]:
-    alive_cosine_sim_and_coacts = create_cosine_sim_coactivation_correlation_dataset(
+    alive_geometric_interaction_strength_and_coacts_data = (
+        create_geometric_interaction_strength_vs_coactivation_dataset(
+            model=inputs.model,
+            dataloader=inputs.eval_loader,
+            n_steps=inputs.n_eval_steps,
+            sigmoid_type=inputs.config.sigmoid_type,
+            device=str(inputs.device),
+            threshold=inputs.config.ci_alive_threshold,
+        )
+    )
+    return plot_geometric_interaction_strength_vs_coactivation(
+        alive_geometric_interaction_strength_and_coacts_data
+    )
+
+
+def geometric_interaction_strength_product_with_coactivation_fraction_plots(
+    inputs: CreateFiguresInputs,
+) -> Mapping[str, plt.Figure]:
+    """Create plots showing elementwise products of geometric interaction strength matrices with coactivation matrices."""
+    elementwise_products = create_geometric_interaction_strength_product_coactivation_matrix(
         model=inputs.model,
         dataloader=inputs.eval_loader,
         n_steps=inputs.n_eval_steps,
@@ -163,7 +184,9 @@ def cosine_sim_coactivation_correlation_plots(
         device=str(inputs.device),
         threshold=inputs.config.ci_alive_threshold,
     )
-    return plot_cosine_sim_coactivation_correlation(alive_cosine_sim_and_coacts)
+    return plot_geometric_interaction_strength_product_with_coactivation_fraction(
+        elementwise_products
+    )
 
 
 def create_figures(
@@ -229,7 +252,8 @@ FIGURES_FNS: dict[str, CreateFiguresFn] = {
         permuted_ci_plots,
         uv_plots,
         component_co_activation_plots,
-        component_abs_left_singular_vectors_cosine_similarity_plots,
-        cosine_sim_coactivation_correlation_plots,
+        component_abs_left_sing_vec_geometric_interaction_strengths_plots,
+        geometric_interaction_strength_vs_coactivation_plots,
+        geometric_interaction_strength_product_with_coactivation_fraction_plots,
     ]
 }

@@ -464,10 +464,7 @@ def plot_component_co_activation_fractions(
 
     # Create GridSpec: main plots take 85% width, colorbar takes 10%, 5% gap
     gs = fig.add_gridspec(n_modules, 2, width_ratios=[17, 1], wspace=0.1)
-
-    # Create a unified normalization for all plots (0 to 1)
-    # norm = plt.Normalize(vmin=0, vmax=1)
-    norm = plt.Normalize(vmin=0)
+    norm = plt.Normalize(vmin=0, vmax=1)
 
     # Store all image objects for colorbar
     images = []
@@ -476,7 +473,7 @@ def plot_component_co_activation_fractions(
     for i, (module_name, fractions) in enumerate(component_co_activation_fractions.items()):
         # Create subplot for the main plot
         ax = fig.add_subplot(gs[i, 0])
-        im = ax.matshow(fractions.detach().cpu().numpy(), aspect="auto", cmap="Purples", norm=norm)
+        im = ax.matshow(fractions.detach().cpu().numpy(), aspect="auto", cmap="Blues", norm=norm)
         images.append(im)
         ax.set_title(module_name)
         ax.set_xlabel("Denominator Component index")
@@ -494,62 +491,125 @@ def plot_component_co_activation_fractions(
     return {"component_co_activation_fractions": fig}
 
 
-def plot_component_abs_left_singular_vectors_cosine_similarity(
-    component_abs_left_singular_vectors_cosine_similarity: dict[str, Float[Tensor, " C C"]],
+def plot_component_abs_left_singular_vectors_geometric_interaction_strengths(
+    component_abs_left_singular_vectors_geometric_interaction_strengths: dict[
+        str, Float[Tensor, " C C"]
+    ],
 ) -> dict[str, plt.Figure]:
     """Plot the cosine similarity between the absolute left singular vectors of the components. (Uses exactsame structure as plotting code for plot_component_co_activation_fractions)"""
-    n_modules = len(component_abs_left_singular_vectors_cosine_similarity)
+    n_modules = len(component_abs_left_singular_vectors_geometric_interaction_strengths)
     fig = plt.figure(figsize=(8, 8 * n_modules))
     images = []
 
     # Create GridSpec: main plots take 85% width, colorbar takes 10%, 5% gap
     gs = fig.add_gridspec(n_modules, 2, width_ratios=[17, 1], wspace=0.1)
-    for i, (module_name, cosine_similarity) in enumerate(
-        component_abs_left_singular_vectors_cosine_similarity.items()
+
+    norm = plt.Normalize(vmin=0, vmax=1)
+
+    for i, (module_name, geometric_interaction_strength) in enumerate(
+        component_abs_left_singular_vectors_geometric_interaction_strengths.items()
     ):
         ax = fig.add_subplot(gs[i, 0])
-        im = ax.matshow(cosine_similarity.detach().cpu().numpy(), aspect="auto", cmap="Oranges")
+        im = ax.matshow(
+            geometric_interaction_strength.detach().cpu().numpy(),
+            aspect="auto",
+            cmap="Reds",
+            norm=norm,
+        )
         images.append(im)
         ax.set_title(module_name)
         ax.set_xlabel("Component index")
         ax.set_ylabel("Component index")
 
     if images:
-        # Create colorbar in the dedicated right column
+        # Create colorbar in the dedicated right column, ensuring the min colour and max colour are -1 and 1
         cbar_ax = fig.add_subplot(gs[:, 1])
         cbar = fig.colorbar(images[0], cax=cbar_ax)
-        cbar.set_label("Cosine Similarity", fontsize=12)
+        cbar.set_label("Geometric Interaction Strength", fontsize=12)
         cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
         cbar.set_ticklabels(["0.0", "0.25", "0.5", "0.75", "1.0"])
 
-    return {"component_abs_left_singular_vectors_cosine_similarity": fig}
+    return {"component_abs_left_singular_vectors_geometric_interaction_strengths": fig}
 
 
-def plot_cosine_sim_coactivation_correlation(
-    cosine_sim_coactivation_correlation: dict[
+def plot_geometric_interaction_strength_vs_coactivation(
+    geometric_interaction_strength_vs_coactivation_data: dict[
         str, tuple[Float[Tensor, " C C"], Float[Tensor, " C C"]]
     ],
 ) -> dict[str, plt.Figure]:
     """Plot the cosine similarity between the absolute left singular vectors of the components. There should be a scatter plot for each module with a histogram along the axes for each variable"""
-    n_modules = len(cosine_sim_coactivation_correlation)
+    n_modules = len(geometric_interaction_strength_vs_coactivation_data)
     fig = plt.figure(figsize=(8, 8 * n_modules))
     images = []
     gs = fig.add_gridspec(n_modules, 2, width_ratios=[17, 1], wspace=0.1)
-    for i, (module_name, (cosine_similarity, coactivation_fraction)) in enumerate(
-        cosine_sim_coactivation_correlation.items()
+    for i, (module_name, (geometric_interaction_strength, coactivation_fraction)) in enumerate(
+        geometric_interaction_strength_vs_coactivation_data.items()
     ):
         ax = fig.add_subplot(gs[i, 0])
         im = ax.scatter(
-            cosine_similarity.detach().cpu().numpy(),
+            geometric_interaction_strength.detach().cpu().numpy(),
             coactivation_fraction.detach().cpu().numpy(),
             alpha=0.4,
             s=1.2,
         )
         images.append(im)
-        ax.set_xlim(-1.05, 1.05)
-        ax.set_ylim(-0.0, 1.05)
+        ax.set_xlim(-0.01, 1.01)
+        ax.set_ylim(-0.01, 1.01)
         ax.set_title(module_name)
-        ax.set_xlabel("Cosine Similarity")
+        ax.set_xlabel("Geometric Interaction Strength")
         ax.set_ylabel("Coactivation Fraction")
 
-    return {"cosine_sim_coactivation_correlation": fig}
+    return {"geometric_interaction_strength_vs_coactivation": fig}
+
+
+def plot_geometric_interaction_strength_product_with_coactivation_fraction(
+    elementwise_products: dict[str, Float[Tensor, " C C"]],
+) -> dict[str, plt.Figure]:
+    """Plot elementwise products of geometric interaction strength matrices with coactivation matrices.
+
+    This visualization shows how geometric relationships between components interact with
+    their actual coactivation patterns. High values indicate strong geometric relationships
+    that are also frequently coactivated.
+
+    Args:
+        elementwise_products: Dictionary mapping module names to elementwise product matrices
+
+    Returns:
+        Dictionary containing the matplotlib figure
+    """
+    n_modules = len(elementwise_products)
+    fig = plt.figure(figsize=(8, 8 * n_modules))
+
+    # Create GridSpec: main plots take 85% width, colorbar takes 10%, 5% gap
+    gs = fig.add_gridspec(n_modules, 2, width_ratios=[17, 1], wspace=0.1)
+
+    # Create a unified normalization for all plots
+    # The range will be from -1 to 1 since geometric interaction strengths are in [-1, 1]
+    # and coactivation fractions are in [0, 1], so products are in [-1, 1]
+    norm = plt.Normalize(vmin=0, vmax=1)
+
+    # Store all image objects for colorbar
+    images = []
+
+    # Iterate through modules and plot each matrix on its corresponding axis
+    for i, (module_name, elementwise_product) in enumerate(elementwise_products.items()):
+        # Create subplot for the main plot
+        ax = fig.add_subplot(gs[i, 0])
+        im = ax.matshow(
+            elementwise_product.detach().cpu().numpy(), aspect="auto", cmap="Purples", norm=norm
+        )
+        images.append(im)
+        ax.set_title(f"{module_name} - Geometric Interaction Strength × Coactivation Fraction")
+        ax.set_xlabel("Component index")
+        ax.set_ylabel("Component index")
+
+    # Add a unified colorbar for all plots
+    if images:
+        # Create colorbar in the dedicated right column
+        cbar_ax = fig.add_subplot(gs[:, 1])
+        cbar = fig.colorbar(images[0], cax=cbar_ax)
+        cbar.set_label("GIS × Coact Fraction", fontsize=12)
+        cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+        cbar.set_ticklabels(["0.0", "0.25", "0.5", "0.75", "1.0"])
+
+    return {"geometric_interaction_strength_elementwise_products": fig}

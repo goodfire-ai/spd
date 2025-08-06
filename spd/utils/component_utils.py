@@ -140,58 +140,83 @@ def component_activation_statistics(
     )
 
 
-def component_abs_left_singular_vectors_cosine_similarity(
+def component_abs_left_sing_vec_geometric_interaction_strengths(
     model: ComponentModel,
     sorted_activation_inds: dict[str, Float[Tensor, " C"]],
 ) -> dict[str, Float[Tensor, " C"]]:
-    """Get the cosine similarity between the absolute left singular vectors of the components."""
-    eps = 1e-8
-    component_abs_left_singular_vectors = {
+    """Get the geometric interaction strengths between the absolute left singular vectors of the components.
+    The geometric interaction strength gives us a measure of how much component A affects component B if component A is active.
+    Assume A and B both have nonzero cosine similarity and sometimes coactivate. If A is large (norm), then its activation
+    will affect B more than if it were small. If B is small, then it affect A less.
+    """
+
+    # First get the norms of the V matrices in order to scale the U matrices
+    component_right_sing_vecs_norms_vecs = {
+        module_name: torch.norm(model.components[module_name].V.data, dim=0)
+        for module_name in model.components
+    }
+
+    # Scale the U matrices by the norms of the V matrices
+    component_abs_left_sing_vecs = {
+        module_name: model.components[module_name].U.data
+        / component_right_sing_vecs_norms_vecs[module_name].unsqueeze(1)
+        for module_name in model.components
+    }
+
+    # Get norms of U matrices
+    component_abs_left_sing_vecs_norms = {
+        module_name: torch.norm(model.components[module_name].U.data, dim=1)
+        for module_name in model.components
+    }
+
+    # Get absolute values of the U vectors
+    component_abs_left_sing_vecs = {
         module_name: torch.abs(model.components[module_name].U.data)
         for module_name in model.components
     }
-    # First calculate the inner products
-    component_abs_left_singular_vectors_inner_products = {
+
+    # Get inner products of the U vectors with themselves
+    component_abs_left_sing_vecs_inner_products = {
         module_name: einsum(
-            component_abs_left_singular_vectors[module_name],
-            component_abs_left_singular_vectors[module_name],
+            component_abs_left_sing_vecs[module_name],
+            component_abs_left_sing_vecs[module_name],
             "C d, C2 d -> C C2",
         )
         for module_name in model.components
     }
-    # Then calculate the norms
-    component_abs_left_singular_vectors_norms_vecs = {
-        module_name: torch.norm(component_abs_left_singular_vectors[module_name], dim=-1)
+
+    # Make the geometric interaction strength matrices
+    component_abs_left_sing_vecs_geometric_interaction_strengths_matrices = {
+        module_name: component_abs_left_sing_vecs_inner_products[module_name]
+        / (component_abs_left_sing_vecs_norms[module_name] ** 2)
         for module_name in model.components
     }
-    component_abs_left_singular_vectors_norms_mats = {
-        module_name: einsum(
-            component_abs_left_singular_vectors_norms_vecs[module_name],
-            component_abs_left_singular_vectors_norms_vecs[module_name],
-            "C, C2 -> C C2",
+    # Convert nans to 0
+    component_abs_left_sing_vecs_geometric_interaction_strengths_matrices = {
+        module_name: torch.where(
+            torch.isnan(
+                component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[module_name]
+            ),
+            torch.zeros_like(
+                component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[module_name]
+            ),
+            component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[module_name],
         )
         for module_name in model.components
     }
 
-    # Then calculate the cosine similarity
-    component_abs_left_singular_vectors_cosine_similarity_matrices = {
-        module_name: component_abs_left_singular_vectors_inner_products[module_name]
-        / (component_abs_left_singular_vectors_norms_mats[module_name] + eps)
+    # Then sort the geometric interaction strength matrices by the component counts
+    component_abs_left_sing_vecs_geometric_interaction_strengths_matrices = {
+        module_name: component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[
+            module_name
+        ][sorted_activation_inds[module_name], :][:, sorted_activation_inds[module_name]]
         for module_name in model.components
     }
 
-    # Then sort the cosine similarity matrices by the component counts
-    component_abs_left_singular_vectors_cosine_similarity_matrices = {
-        module_name: component_abs_left_singular_vectors_cosine_similarity_matrices[module_name][
-            sorted_activation_inds[module_name], :
-        ][:, sorted_activation_inds[module_name]]
-        for module_name in model.components
-    }
-
-    return component_abs_left_singular_vectors_cosine_similarity_matrices
+    return component_abs_left_sing_vecs_geometric_interaction_strengths_matrices
 
 
-def create_cosine_sim_coactivation_correlation_dataset(
+def create_geometric_interaction_strength_vs_coactivation_dataset(
     model: ComponentModel,
     dataloader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
@@ -225,8 +250,8 @@ def create_cosine_sim_coactivation_correlation_dataset(
         for module_name in model.components
     }  # TODO unhardcode
 
-    component_abs_left_singular_vectors_cosine_similarity_matrices = (
-        component_abs_left_singular_vectors_cosine_similarity(
+    component_abs_left_sing_vecs_geometric_interaction_strengths_matrices = (
+        component_abs_left_sing_vec_geometric_interaction_strengths(
             model=model,
             sorted_activation_inds=sorted_activation_inds,
         )
@@ -239,10 +264,10 @@ def create_cosine_sim_coactivation_correlation_dataset(
         for module_name in model.components
     }
 
-    alive_cosine_sim_matrices = {
-        module_name: component_abs_left_singular_vectors_cosine_similarity_matrices[module_name][
-            : n_alive_components[module_name], : n_alive_components[module_name]
-        ]
+    alive_geometric_interaction_strength_matrices = {
+        module_name: component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[
+            module_name
+        ][: n_alive_components[module_name], : n_alive_components[module_name]]
         for module_name in model.components
     }
 
@@ -252,18 +277,86 @@ def create_cosine_sim_coactivation_correlation_dataset(
         for module_name in model.components
     }
 
-    alive_cosine_sim_matrices_flattened = {
-        module_name: alive_cosine_sim_matrices[module_name].flatten()
+    alive_geometric_interaction_strength_matrices_flattened = {
+        module_name: alive_geometric_interaction_strength_matrices[module_name].flatten()
         for module_name in model.components
     }
 
     # Concatenate the flattened matrices per module
-    alive_cosine_sim_and_coacts = {
+    alive_geometric_interaction_strength_and_coacts_data = {
         module_name: (
-            alive_cosine_sim_matrices_flattened[module_name],
+            alive_geometric_interaction_strength_matrices_flattened[module_name],
             alive_co_activation_fractions_flattened[module_name],
         )
         for module_name in model.components
     }
 
-    return alive_cosine_sim_and_coacts
+    return alive_geometric_interaction_strength_and_coacts_data
+
+
+def create_geometric_interaction_strength_product_coactivation_matrix(
+    model: ComponentModel,
+    dataloader: DataLoader[Int[Tensor, "..."]]
+    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    n_steps: int,
+    sigmoid_type: SigmoidTypes,
+    device: str,
+    threshold: float,
+) -> dict[str, Float[Tensor, " C C"]]:
+    """Create elementwise products of geometric interaction strength matrices with coactivation matrices.
+
+    This function computes the elementwise multiplication of:
+    1. Geometric interaction strength matrices (from component_abs_left_sing_vec_geometric_interaction_strengths)
+    2. Coactivation matrices (from component_activation_statistics)
+
+    For each module, this gives insight into how geometric relationships between components
+    interact with their actual coactivation patterns.
+
+    Args:
+        model: The ComponentModel
+        dataloader: DataLoader for evaluation
+        n_steps: Number of evaluation steps
+        sigmoid_type: Type of sigmoid function
+        device: Device to use
+        threshold: Threshold for component activation
+
+    Returns:
+        Dictionary mapping module names to elementwise product matrices
+    """
+    (
+        _,
+        mean_component_activation_counts,
+        sorted_co_activation_fractions,
+    ) = component_activation_statistics(
+        model=model,
+        dataloader=dataloader,
+        n_steps=n_steps,
+        sigmoid_type=sigmoid_type,
+        device=device,
+        threshold=threshold,
+    )
+
+    sorted_activation_inds = {
+        module_name: torch.argsort(
+            mean_component_activation_counts[module_name], dim=-1, descending=True
+        )
+        for module_name in model.components
+    }
+
+    component_abs_left_sing_vecs_geometric_interaction_strengths_matrices = (
+        component_abs_left_sing_vec_geometric_interaction_strengths(
+            model=model,
+            sorted_activation_inds=sorted_activation_inds,
+        )
+    )
+
+    # Elementwise multiply the matrices
+    elementwise_products = {
+        module_name: component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[
+            module_name
+        ]
+        * sorted_co_activation_fractions[module_name]
+        for module_name in model.components
+    }
+
+    return elementwise_products
