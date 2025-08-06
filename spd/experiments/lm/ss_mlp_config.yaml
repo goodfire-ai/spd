@@ -6,8 +6,7 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-# C: 4000
-C: 100
+C: 4000
 n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [10]
@@ -15,20 +14,20 @@ sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.layers.0.mlp.gate_proj"]
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1
-recon_coeff: 1
-stochastic_recon_coeff: 1
-recon_layerwise_coeff: 1
-stochastic_recon_layerwise_coeff: 1000
-importance_minimality_coeff: 0.1
-schatten_coeff: 1
+faithfulness_coeff: 3000
+recon_coeff: null
+stochastic_recon_coeff: null
+recon_layerwise_coeff: null
+stochastic_recon_layerwise_coeff: 1
+importance_minimality_coeff: 0.005
+schatten_coeff: null
 embedding_recon_coeff: null
 is_embed_unembed_recon: false
 pnorm: 2.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 32
+batch_size: 64
 steps: 30_000
 lr: 3e-4
 lr_schedule: cosine
@@ -42,7 +41,7 @@ slow_eval_freq: 5000
 slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
-n_examples_until_dead: 2_048_000  # print_freq * batch_size * max_seq_len = 1000 * 4 * 512
+n_examples_until_dead: 1_638_400  # train_log_freq * batch_size * max_seq_len = 100 * 32 * 512
 eval_metrics:
   - classname: "CIHistograms"
   - classname: "ComponentActivationDensity"
