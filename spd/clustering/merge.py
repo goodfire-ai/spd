@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from muutils.dbg import dbg, dbg_auto
 import tqdm
 from jaxtyping import Bool, Float, Int
 from muutils.dbg import dbg_tensor
@@ -44,8 +45,8 @@ def compute_merge_costs(
 
     # TODO: use dynamic rank computation
     return alpha * (
-        diag @ ranks.T
-        + ranks @ diag.T
+        diag @ ranks.unsqueeze(1)
+        + ranks @ diag.unsqueeze(1)
         - (ranks.unsqueeze(0) + ranks.unsqueeze(1) + (rank_cost(merges.k_groups) / alpha)) * coact
     )
 
