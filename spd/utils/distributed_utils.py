@@ -225,22 +225,68 @@ def get_distributed_rand_like(
     """
     # Assert that shape has 3 dimensions (batch, seq_len, C). In future we'd want to support other
     # shapes
+
     assert len(shape) == 3, "Shape must have 3 dimensions (batch, seq_len, C)"
     local_batch_size, seq_len, C = shape
 
-    generator = torch.Generator(device="cpu")
+    generator = torch.Generator(device=device)
     seed = int(hashlib.md5(hash_key.encode()).hexdigest(), 16) % (2**32)
     generator.manual_seed(seed)
 
     elements_per_sample = seq_len * C
     total_elements_to_skip = get_rank() * local_batch_size * elements_per_sample
 
-    skip_chunk_size = 100_000
+    skip_chunk_size = 100_000_000
     remaining = total_elements_to_skip
     while remaining > 0:
         chunk = min(remaining, skip_chunk_size)
-        torch.rand(chunk, generator=generator, device="cpu")
+        torch.rand(chunk, generator=generator, device=device)
         remaining -= chunk
 
     # Generate this rank's data
-    return torch.rand(*shape, generator=generator, device="cpu").to(device)
+    return torch.rand(*shape, generator=generator, device=device)
+
+
+# def get_distributed_rand_like(
+#     shape: tuple[int, int, int],  # batch, seq_len, C
+#     hash_key: str,
+#     device: str | torch.device,
+# ) -> Float[Tensor, "batch seq n_dim"]:
+#     """Return a rank-specific random tensor.
+
+#     We seed a CPU RNG with ``hash_key``, generate the *full* tensor of size
+#     ``(batch * world_size, seq_len, C)`` on the CPU, slice out the sub-tensor
+#     belonging to this rank, and finally move it to *device*.
+
+#     Args:
+#         shape: Local (per-rank) tensor shape ``(batch, seq_len, C)``.
+#         hash_key: String used to seed the RNG (rank-agnostic).
+#         device: Target device for the returned tensor.
+#     """
+#     start_time = time.perf_counter()
+
+#     # Validate shape
+#     assert len(shape) == 3, "Shape must be (batch, seq_len, C)"
+#     local_batch, seq_len, channels = shape
+
+#     # Compute global shape
+#     rank = get_rank()
+#     world_size = get_world_size()
+#     full_shape = (local_batch * world_size, seq_len, channels)
+
+#     # Generate global tensor and slice this rank's chunk
+#     full_tensor = torch.rand(*full_shape, device=device)
+#     start = rank * local_batch
+#     end = start + local_batch
+#     local_tensor = full_tensor[start:end]
+
+#     torch.cuda.synchronize()
+#     print(f"get_distributed_rand_like: moved to CPU in {time.perf_counter() - start_time:.3f}s")
+#     # Make a copy so it's not a view
+#     local_tensor = local_tensor.clone()
+#     torch.cuda.synchronize()
+#     print(f"get_distributed_rand_like: made a copy in {time.perf_counter() - start_time:.3f}s")
+#     # local_tensor_gpu = local_tensor.to(device)
+#     # print(f"get_distributed_rand_like: moved to GPU in {time.perf_counter() - start_time:.3f}s")
+
+#     return local_tensor
