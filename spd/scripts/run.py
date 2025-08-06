@@ -13,6 +13,7 @@ Usage:
     spd-run --experiments tms_5-2 --sweep custom.yaml          # Run with custom sweep params
     spd-run --sweep --n_agents 10                              # Sweep with 10 concurrent agents
     spd-run --project my-project                               # Use custom W&B project
+    spd-run --experiments ss_mlp --dp 4                        # Run with 4 data parallelism over 4 GPUs
 """
 
 import copy
@@ -201,10 +202,6 @@ def create_workspace_view(run_id: str, experiment_name: str, project: str = "spd
     return workspace.url
 
 
-REPORT_TOTAL_WIDTH = 24
-
-
-# report generation still pretty basic, needs more work
 def create_wandb_report(
     report_title: str,
     run_id: str,
@@ -213,6 +210,7 @@ def create_wandb_report(
     experiments_list: list[str],
     include_run_comparer: bool,
     project: str = "spd",
+    report_total_width: int = 24,
 ) -> str:
     """Create a W&B report for the run."""
     report = wr.Report(
@@ -246,7 +244,7 @@ def create_wandb_report(
             panels.append(
                 wr.MediaBrowser(
                     media_keys=["eval/figures/causal_importances_upper_leaky"],
-                    layout=wr.Layout(x=0, y=0, w=REPORT_TOTAL_WIDTH, h=ci_height),
+                    layout=wr.Layout(x=0, y=0, w=report_total_width, h=ci_height),
                     num_columns=6,
                 )
             )
@@ -259,7 +257,7 @@ def create_wandb_report(
             ["train/loss/importance_minimality"],
         ]
         for i, y_keys in enumerate(loss_plots):
-            loss_plots_width = REPORT_TOTAL_WIDTH // len(loss_plots)
+            loss_plots_width = report_total_width // len(loss_plots)
             x_offset = i * loss_plots_width
             panels.append(
                 wr.LinePlot(
@@ -274,7 +272,7 @@ def create_wandb_report(
         if task_name in ["tms", "resid_mlp"]:
             # Add target CI error plots
             target_ci_weight = 6
-            target_ci_width = REPORT_TOTAL_WIDTH // 2
+            target_ci_width = report_total_width // 2
             panels.append(
                 wr.LinePlot(
                     x="Step",
@@ -296,7 +294,7 @@ def create_wandb_report(
         # Only add KL loss plots for language model experiments
         if task_name == "lm":
             kl_height = 6
-            kl_width = REPORT_TOTAL_WIDTH // 3
+            kl_width = report_total_width // 3
             x_offset = 0
             panels.append(
                 wr.LinePlot(
@@ -325,7 +323,7 @@ def create_wandb_report(
             y += kl_height
 
             ce_height = 6
-            ce_width = REPORT_TOTAL_WIDTH // 3
+            ce_width = report_total_width // 3
             x_offset = 0
             panels.append(
                 wr.LinePlot(
@@ -358,7 +356,7 @@ def create_wandb_report(
             panels.append(
                 wr.RunComparer(
                     diff_only=True,
-                    layout=wr.Layout(x=0, y=y, w=REPORT_TOTAL_WIDTH, h=run_comparer_height),
+                    layout=wr.Layout(x=0, y=y, w=report_total_width, h=run_comparer_height),
                 )
             )
             y += run_comparer_height
@@ -382,6 +380,7 @@ def generate_commands(
     run_id: str,
     sweep_params_file: str | None = None,
     project: str = "spd",
+    dp: int = 1,
 ) -> list[str]:
     """Generate commands for all experiment runs and print task counts.
 
@@ -409,18 +408,18 @@ def generate_commands(
         if sweep_params_path is None:
             # Fixed configuration run - still use JSON to ensure project override works
             base_config_dict = base_config.model_dump(mode="json")
-            # Override the wandb project
             base_config_dict["wandb_project"] = project
             config_with_overrides = Config(**base_config_dict)
 
-            # Convert to JSON string
             config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
 
-            # Use run_id for sweep_id and experiment name for evals_id
             command = (
                 f"python {decomp_script} '{config_json}' "
                 f"--sweep_id {run_id} --evals_id {experiment}"
             )
+            if dp > 1:
+                command = f"mpirun -np {dp} {command}"
+
             commands.append(command)
             task_breakdown[experiment] = "1 task"
 
@@ -433,25 +432,23 @@ def generate_commands(
                 # Apply parameter overrides
                 base_config_dict = base_config.model_dump(mode="json")
                 config_dict_with_overrides = apply_nested_updates(base_config_dict, param_combo)
-                # Also override the wandb project and run name
                 config_dict_with_overrides["wandb_project"] = project
                 wandb_run_name = f"{experiment}-{generate_run_name(param_combo)}"
                 config_dict_with_overrides["wandb_run_name"] = wandb_run_name
                 config_with_overrides = Config(**config_dict_with_overrides)
 
-                # Convert to JSON string
                 config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
-
-                # Create sweep params JSON
                 sweep_params_json = f"json:{json.dumps(sweep_params)}"
 
-                # Build command
                 command = (
                     f"python {decomp_script} '{config_json}' "
                     f"--sweep_id {run_id} "
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
                 )
+                if dp > 1:
+                    command = f"mpirun -np {dp} {command}"
+
                 commands.append(command)
 
                 # Print first combination as example
@@ -584,6 +581,24 @@ def _wandb_setup(
     )
 
 
+def _validate_dp(dp: int, experiments_list: list[str], local: bool) -> None:
+    if dp < 1 or dp > 8:
+        raise ValueError(f"dp must be between 1 and 8, got {dp}")
+
+    if dp > 1 and local:
+        raise ValueError("DDP (dp > 1) is not supported in local mode")
+
+    if dp > 1:
+        non_lm_experiments = [
+            exp for exp in experiments_list if EXPERIMENT_REGISTRY[exp].task_name != "lm"
+        ]
+        if non_lm_experiments:
+            raise ValueError(
+                f"DDP (dp > 1) is only supported for lm experiments. "
+                f"Non-lm experiments found: {non_lm_experiments}"
+            )
+
+
 def main(
     experiments: str | None = None,
     sweep: str | bool = False,
@@ -591,6 +606,7 @@ def main(
     create_report: bool = True,
     job_suffix: str | None = None,
     cpu: bool = False,
+    dp: int = 1,
     project: str = "spd",
     local: bool = False,
     log_format: LogFormat = "default",
@@ -610,6 +626,8 @@ def main(
         create_report: Create W&B report for aggregated view (default: True)
         job_suffix: Optional suffix for SLURM job names
         cpu: Use CPU instead of GPU (default: False)
+        dp: Number of GPUs for data parallelism (1-8). Only supported for lm experiments.
+            Cannot be used with local mode (default: 1)
         project: W&B project name (default: "spd"). Will be created if it doesn't exist.
         local: Run locally instead of submitting to SLURM (default: False)
         log_format: Logging format for the script output.
@@ -660,6 +678,8 @@ def main(
     # get the experiments to run -- run all of them if not specified
     experiments_list: list[str] = get_experiments(experiments)
     logger.info(f"Experiments: {', '.join(experiments_list)}")
+
+    _validate_dp(dp, experiments_list, local)
 
     # Agent count
     if n_agents is None:
@@ -715,6 +735,7 @@ def main(
         run_id=run_id,
         sweep_params_file=sweep_params_file,
         project=project,
+        dp=dp,
     )
 
     if local:
@@ -738,6 +759,7 @@ def main(
                 # again -- local is false, so snapshot_branch will exist
                 snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
                 max_concurrent_tasks=n_agents,
+                n_gpus_per_job=dp,
             )
 
             array_job_id = submit_slurm_array(array_script)
