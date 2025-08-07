@@ -276,7 +276,7 @@ class Config(BaseModel):
     )
 
     # --- Distributed ---
-    ddp_backend: Literal["nccl", "gloo"] | None = Field(
+    dist_backend: Literal["nccl", "gloo"] | None = Field(
         default=None,
         description="Backend for distributed training (nccl for GPU, gloo for CPU). If None, "
         "uses the default backend for the current device.",

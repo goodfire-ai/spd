@@ -68,7 +68,7 @@ TEST_CONFIG = {
         "eval_data_split": "test[:100]",
     },
     # --- Distributed ---
-    "ddp_backend": "gloo",  # Want to run this test on CPU
+    "dist_backend": "gloo",  # Want to run this test on CPU
 }
 
 

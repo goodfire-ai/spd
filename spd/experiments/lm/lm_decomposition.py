@@ -38,7 +38,7 @@ def main(
     config = load_config(config_path_or_obj, config_model=Config)
 
     # Initialize distributed training with backend from config if specified
-    rank, world_size, _local_rank = init_distributed(backend=config.ddp_backend)
+    rank, world_size, _local_rank = init_distributed(backend=config.dist_backend)
 
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
