@@ -2,7 +2,6 @@ from typing import Any, ClassVar
 
 import numpy as np
 from datasets import Dataset, IterableDataset, load_dataset
-from datasets.distributed import split_dataset_by_node
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
 from torch import Tensor
@@ -185,7 +184,6 @@ def create_data_loader(
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
 
         if dataset_config.is_tokenized:
-            dataset = split_dataset_by_node(dataset, ddp_rank, ddp_world_size)
             torch_dataset = dataset.with_format("torch")
         else:
             to_lower = "SimpleStories" in dataset_config.name
@@ -197,7 +195,6 @@ def create_data_loader(
                 add_bos_token=False,
                 to_lower=to_lower,
             )
-            torch_dataset = split_dataset_by_node(torch_dataset, ddp_rank, ddp_world_size)
 
         # Streaming datasets don't use samplers
         loader = DataLoader(
