@@ -162,7 +162,7 @@ class Config(BaseModel):
 
     # --- Training ---
     lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
-    steps: PositiveInt = Field(..., description="Total number of optimisation steps")
+    steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
     batch_size: PositiveInt = Field(
         ...,
         description=(

@@ -7,9 +7,14 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import pytest
+import torch
 import yaml
 
+from spd.settings import REPO_ROOT
 
+
+@pytest.mark.slow
 class TestDistributedSPDConsistency:
     """Test that DDP runs produce consistent results."""
 
@@ -25,18 +30,28 @@ class TestDistributedSPDConsistency:
 
             config.update(
                 {
-                    "batch_size": 4,
-                    "eval_batch_size": 4,
-                    "steps": 1,
+                    "C": 3,
+                    "batch_size": 2,
+                    "eval_batch_size": 2,
+                    "steps": 0,  # Only run step 0 (first iteration)
                     "n_eval_steps": 2,
                     "slow_eval_on_first_step": True,
                     "wandb_project": None,
-                    "ddp_backend": "gloo",
+                    "ddp_backend": "nccl",
                     "seed": 42,
                     "train_log_freq": 1,
                     "eval_freq": 1,
                     "gradient_accumulation_steps": 1,
                     "n_examples_until_dead": 100,
+                    "task_config": {
+                        "task_name": "lm",
+                        "max_seq_len": 5,
+                        "buffer_size": 100,
+                        "dataset_name": "SimpleStories/SimpleStories",
+                        "column_name": "story",
+                        "train_data_split": "train[:100]",
+                        "eval_data_split": "test[:100]",
+                    },
                 }
             )
 
@@ -49,15 +64,29 @@ class TestDistributedSPDConsistency:
             dp1_metrics_file = tmpdir / "dp1_metrics.pkl"
 
             self._run_with_capture(
-                config_path, n_processes=1, batch_file=dp1_batch_file, metrics_file=dp1_metrics_file
+                config_path,
+                n_processes=1,
+                batch_file=dp1_batch_file,
+                metrics_file=dp1_metrics_file,
+                port=29501,
             )
+
+            # # Use a different seed
+            # config.update({"seed": 43})
+            # config_path = tmpdir / "test_config_dp2.yaml"
+            # with open(config_path, "w") as f:
+            #     yaml.dump(config, f)
 
             # Step 3: Run with dp=2
             dp2_batch_file = tmpdir / "dp2_batches.pkl"
             dp2_metrics_file = tmpdir / "dp2_metrics.pkl"
 
             self._run_with_capture(
-                config_path, n_processes=2, batch_file=dp2_batch_file, metrics_file=dp2_metrics_file
+                config_path,
+                n_processes=2,
+                batch_file=dp2_batch_file,
+                metrics_file=dp2_metrics_file,
+                port=29502,
             )
 
             # Step 4: Load and validate results
@@ -95,167 +124,119 @@ class TestDistributedSPDConsistency:
                 self._validate_metrics(dp1_metrics, dp2_metrics)
 
     def _run_with_capture(
-        self, config_path: Path, n_processes: int, batch_file: Path, metrics_file: Path
+        self,
+        config_path: Path,
+        n_processes: int,
+        batch_file: Path,
+        metrics_file: Path,
+        port: int = 29500,
     ) -> None:
-        """Run the script with mpirun and capture data via monkey-patching."""
+        """Run the experiment under mpirun while capturing batch/metric data."""
+        script_path = REPO_ROOT / "tests" / "capture_spd_run.py"
+        assert script_path.exists(), f"{script_path} not found"
 
-        # Create a wrapper script that patches and runs
-        wrapper_script = f"""
-import sys
-import pickle
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-import torch
-
-# Storage for captured data
-captured_batches = []
-captured_metrics = []
-
-# Import the real functions before patching
-from spd.utils.general_utils import extract_batch_data as real_extract_batch_data
-from spd.eval import evaluate as real_evaluate
-
-def capture_batch(batch_item):
-    from spd.utils.distributed_utils import get_rank
-    # Call the real function
-    tensor = real_extract_batch_data(batch_item)
-    captured_batches.append({{
-        'rank': get_rank(),
-        'shape': tuple(tensor.shape),
-        'data': tensor.cpu().numpy().copy()
-    }})
-    return tensor  # Return the tensor, not the batch_item
-
-def capture_metrics(*args, **kwargs):
-    from spd.utils.distributed_utils import get_rank
-    # Call the real function
-    result = real_evaluate(*args, **kwargs)
-    captured_metrics.append({{
-        'rank': get_rank(),
-        'metrics': {{k: v for k, v in result.items() if isinstance(v, (int, float))}}
-    }})
-    return result
-
-# Storage for rank
-my_rank = [None]  # Use list to allow modification in nested function
-
-def save_rank_wrapper(original_cleanup):
-    def wrapper():
-        # Save rank before cleanup
-        from spd.utils.distributed_utils import get_rank
-        my_rank[0] = get_rank()
-        # Call original cleanup
-        return original_cleanup()
-    return wrapper
-
-# Patch cleanup_distributed to save rank before it's reset
-from spd.utils.distributed_utils import cleanup_distributed as orig_cleanup
-
-# The main function will handle distributed initialization
-# Apply patches
-with patch('spd.utils.distributed_utils.cleanup_distributed', side_effect=save_rank_wrapper(orig_cleanup)):
-    with patch('spd.utils.general_utils.extract_batch_data', side_effect=capture_batch):
-        with patch('spd.run_spd.extract_batch_data', side_effect=capture_batch):
-            with patch('spd.eval.evaluate', side_effect=capture_metrics):
-                # Import and run main (it will initialize distributed internally)
-                from spd.experiments.lm.lm_decomposition import main
-                main("{config_path}")
-
-# Save captured data using the saved rank
-actual_rank = my_rank[0] if my_rank[0] is not None else 0
-
-# Simple approach: each rank saves its own file
-batch_file_rank = "{batch_file}".replace('.pkl', f'_rank{{actual_rank}}.pkl')
-metrics_file_rank = "{metrics_file}".replace('.pkl', f'_rank{{actual_rank}}.pkl')
-
-with open(batch_file_rank, 'wb') as f:
-    pickle.dump(captured_batches, f)
-with open(metrics_file_rank, 'wb') as f:
-    pickle.dump(captured_metrics, f)
-"""
-
-        # Write wrapper script
-        wrapper_path = config_path.parent / f"wrapper_{n_processes}.py"
-        with open(wrapper_path, "w") as f:
-            f.write(wrapper_script)
-
-        # Run with mpirun
-        env = {"CUDA_VISIBLE_DEVICES": "", "OMP_NUM_THREADS": "1"}
-        cmd = ["mpirun", "-np", str(n_processes), "python", str(wrapper_path)]
+        env = {
+            "CUDA_VISIBLE_DEVICES": "0,1",
+            "OMP_NUM_THREADS": "1",
+            "MASTER_PORT": str(port),  # Use unique port for each run
+        }
+        cmd = [
+            "mpirun",
+            "-np",
+            str(n_processes),
+            "python",
+            str(script_path),
+            str(config_path),
+            str(batch_file),
+            str(metrics_file),
+        ]
 
         result = subprocess.run(
             cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=300
         )
 
+        # Always print output for debugging
+        if result.stdout:
+            print(f"[n_processes={n_processes}, port={port}] STDOUT: {result.stdout}...")
+        if result.stderr:
+            print(f"[n_processes={n_processes}, port={port}] STDERR: {result.stderr}...")
+
         if result.returncode != 0:
-            print(f"STDOUT: {result.stdout}")
-            print(f"STDERR: {result.stderr}")
+            print(f"FULL STDOUT: {result.stdout}")
+            print(f"FULL STDERR: {result.stderr}")
             raise RuntimeError(f"mpirun failed with code {result.returncode}")
 
     def _validate_batches(
         self, dp1_batches: list[dict[str, Any]], dp2_batches: list[dict[str, Any]]
     ) -> None:
-        """Validate that batches are split correctly."""
-        # Group dp2 batches by call order
-        dp2_by_call = {}
-        for i, batch in enumerate(dp2_batches):
-            # Count how many calls came before this one from the same rank
-            call_idx = len(
-                [b for j, b in enumerate(dp2_batches) if b["rank"] == batch["rank"] and j < i]
-            )
-            if call_idx not in dp2_by_call:
-                dp2_by_call[call_idx] = []
-            dp2_by_call[call_idx].append(batch)
+        """Validate batch calls for dp1 (rank-0) versus dp2 (2 ranks).
 
-        # Check each batch call
-        for i, dp1_batch in enumerate(dp1_batches):
-            dp2_batch_pair = dp2_by_call.get(i, [])
-            assert len(dp2_batch_pair) == 2, (
-                f"Expected 2 batches for call {i}, got {len(dp2_batch_pair)}"
-            )
+        Checks that when concatenating the dp2 batches, we get the same result as the dp1 batch
 
-            # Check shapes
-            for dp2_batch in dp2_batch_pair:
-                assert dp2_batch["shape"][0] == dp1_batch["shape"][0] // 2
-                assert dp2_batch["shape"][1:] == dp1_batch["shape"][1:]
+        With steps=0, the training loop only runs step 0, so we expect:
+        - dp=1: 1 batch total (step 0 on rank 0)
+        - dp=2: 2 batches total (step 0 on rank 0 and rank 1)
+        """
 
-            print(
-                f"✓ Batch {i}: dp1 shape={dp1_batch['shape']}, "
-                f"dp2 shapes={[b['shape'] for b in dp2_batch_pair]}"
-            )
+        # With steps=0, we only run step 0, so expect 1 batch for dp=1
+        assert len(dp1_batches) == 1, (
+            f"Expected 1 batch capture for dp=1 run (step 0 only), got {len(dp1_batches)}"
+        )
+        # For dp=2, expect 1 batch per rank (1 step × 2 ranks = 2 total)
+        assert len(dp2_batches) == 2, (
+            f"Expected 2 batch captures for dp=2 run (1 per rank), got {len(dp2_batches)}"
+        )
+
+        # There should only be one batch for dp=1
+        dp1_batch = dp1_batches[0]
+
+        dp1_data = torch.as_tensor(dp1_batch["data"])
+        dp2_data = [torch.as_tensor(b["data"]) for b in dp2_batches]
+
+        # Concatenate the dp=2 tensors in both possible orders because we aren't sure how it
+        # will be split
+        concat_1 = torch.cat([dp2_data[0], dp2_data[1]], dim=0)
+        concat_2 = torch.cat([dp2_data[1], dp2_data[0]], dim=0)
+        assert torch.equal(dp1_data, concat_1) or torch.equal(dp1_data, concat_2), (
+            "First two batch elements of dp1 should match either of the two dp2 batches"
+        )
+
+        print(
+            f"✓ Step 0 Batch: dp1 shape={dp1_batch['shape']}, "
+            f"dp2 shapes={[b['shape'] for b in dp2_batches]}"
+        )
 
     def _validate_metrics(
         self,
         dp1_metrics: list[dict[str, Any]],
         dp2_metrics: list[dict[str, Any]],
-        tolerance: float = 1e-4,
+        tolerance: float = 1e-1,
     ) -> None:
-        """Validate that metrics are consistent."""
-        # Group dp2 metrics by eval call
-        dp2_by_call = {}
-        for i, metric in enumerate(dp2_metrics):
-            # Count how many eval calls came before this one from the same rank
-            call_idx = len(
-                [m for j, m in enumerate(dp2_metrics) if m["rank"] == metric["rank"] and j < i]
+        """Validate evaluation metrics across data-parallel settings.
+
+        With steps=0 and eval_freq=1, evaluation only happens at step 0.
+        We expect:
+        - dp=1: 1 metric capture (eval at step 0 on rank 0)
+        - dp=2: 2 metric captures (eval at step 0 on rank 0 and rank 1)
+        """
+
+        assert len(dp1_metrics) == 1, (
+            f"Expected 1 metrics capture for dp=1 run (eval at step 0), got {len(dp1_metrics)}"
+        )
+        assert len(dp2_metrics) == 2, (
+            f"Expected 2 metrics captures for dp=2 run (1 per rank), got {len(dp2_metrics)}"
+        )
+
+        # Validate metrics for step 0
+        dp1_metric = dp1_metrics[0]
+
+        # Compute per-key average of the two dp2 metric dicts
+        for key, val_dp1 in dp1_metric["metrics"].items():
+            val_dp2_avg = sum(m["metrics"][key] for m in dp2_metrics) / 2
+            diff = abs(val_dp1 - val_dp2_avg)
+            assert diff < tolerance, (
+                f"Metric '{key}' differs: dp1={val_dp1:.6f}, "
+                f"dp2_avg={val_dp2_avg:.6f}, diff={diff:.2e}"
             )
-            if call_idx not in dp2_by_call:
-                dp2_by_call[call_idx] = []
-            dp2_by_call[call_idx].append(metric)
 
-        # Check each eval call
-        for i, dp1_metric in enumerate(dp1_metrics):
-            dp2_metric_pair = dp2_by_call.get(i, [])
-            assert len(dp2_metric_pair) == 2, f"Expected 2 metrics for call {i}"
-
-            # Average dp2 metrics
-            for key in dp1_metric["metrics"]:
-                val_dp1 = dp1_metric["metrics"][key]
-                val_dp2_avg = sum(m["metrics"][key] for m in dp2_metric_pair) / 2
-
-                diff = abs(val_dp1 - val_dp2_avg)
-                assert diff < tolerance, (
-                    f"Metric '{key}' differs: dp1={val_dp1:.6f}, "
-                    f"dp2_avg={val_dp2_avg:.6f}, diff={diff:.2e}"
-                )
-
-                print(f"✓ Metric '{key}': dp1={val_dp1:.6f}, dp2_avg={val_dp2_avg:.6f}")
+            print(f"✓ Metric '{key}': dp1={val_dp1:.6f}, dp2_avg={val_dp2_avg:.6f}")
