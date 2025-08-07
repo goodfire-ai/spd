@@ -45,3 +45,5 @@ jobs:
 
       - name: Run tests
         run: uv run python -m pytest tests/ --runslow --durations=10
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}

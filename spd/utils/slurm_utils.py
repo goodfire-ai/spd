@@ -28,7 +28,7 @@ def create_slurm_array_script(
     commands: list[str],
     snapshot_branch: str,
     cpu: bool = False,
-    time_limit: str = "24:00:00",
+    time_limit: str = "72:00:00",
     max_concurrent_tasks: int | None = None,
 ) -> None:
     """Create a SLURM job array script with git snapshot for consistent code.
@@ -38,7 +38,7 @@ def create_slurm_array_script(
         job_name: Name for the SLURM job array
         commands: List of commands to execute in each array job
         cpu: If True, use CPU only, otherwise use GPU
-        time_limit: Time limit for each job (default: 24:00:00)
+        time_limit: Time limit for each job (default: 72:00:00)
         snapshot_branch: Git branch to checkout. If None, creates a new snapshot.
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """

@@ -152,15 +152,31 @@
             }
         },
         {
+            "name": "ss_mlp",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_mlp_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
             "name": "lm streamlit",
             "type": "debugpy",
             "request": "launch",
             "module": "streamlit",
             "args": [
                 "run",
-                "${workspaceFolder}/spd/experiments/lm/app.py",
+                "${workspaceFolder}/spd/experiments/lm/streamlit_v1/app.py",
                 "--server.port",
-                "2000"
+                "2000",
+                "--",
+                "--model_path",
+                "wandb:goodfire/spd/runs/ioprgffh"
             ]
         }
     ]
