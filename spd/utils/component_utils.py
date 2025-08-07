@@ -1,12 +1,6 @@
 import torch
-from einops import einsum
-from jaxtyping import Float, Int
+from jaxtyping import Float
 from torch import Tensor
-from torch.utils.data import DataLoader
-
-from spd.models.component_model import ComponentModel
-from spd.models.sigmoids import SigmoidTypes
-from spd.utils.general_utils import extract_batch_data
 
 
 def calc_stochastic_masks(

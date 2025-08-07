@@ -307,9 +307,9 @@ class InductionTransformer(LoadableModule):
             run_dir = check_run_exists(path)
             if run_dir:
                 # Use local files from shared filesystem
-                paths = InductionModelPaths(
-                    induction_train_config=run_dir / "ih_train_config.yaml",
-                    checkpoint=run_dir / "ih.pth",
+                paths = (
+                    run_dir / "ih_train_config.yaml",
+                    run_dir / "ih.pth",
                 )
             else:
                 # Download from wandb
@@ -317,19 +317,22 @@ class InductionTransformer(LoadableModule):
                 paths = cls._download_wandb_files(wandb_path)
         else:
             # `path` should be a local path to a checkpoint
-            paths = InductionModelPaths(
-                induction_train_config=Path(path).parent / "ih_train_config.yaml",
-                checkpoint=Path(path),
+            paths = (
+                Path(path).parent / "ih_train_config.yaml",
+                Path(path),
             )
 
-        with open(paths.induction_train_config) as f:
+        induction_train_config_path, checkpoint_path = paths
+        with open(induction_train_config_path) as f:
             induction_train_config_dict = yaml.safe_load(f)
 
         induction_config = InductionModelConfig(**induction_train_config_dict["ih_model_config"])
         induction_model = cls(cfg=induction_config)
-        params = torch.load(paths.checkpoint, weights_only=True, map_location="cpu")
+        params = torch.load(checkpoint_path, weights_only=True, map_location="cpu")
         induction_model.load_state_dict(params)
 
-        return induction_model, induction_train_config_dict
+        return induction_model
+
+
 # run_info = InductionModelTargetRunInfo.from_path(path)
 # return cls.from_run_info(run_info)
