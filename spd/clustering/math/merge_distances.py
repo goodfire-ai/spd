@@ -39,5 +39,5 @@ def compute_distances(
             )
 
             return np.stack(distances_list, axis=0)
-        case _:
+        case _:  # pyright: ignore[reportUnnecessaryComparison]
             raise ValueError(f"Unknown distance method: {method}")

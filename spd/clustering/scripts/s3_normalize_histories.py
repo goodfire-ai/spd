@@ -5,7 +5,8 @@ from typing import Any
 import numpy as np
 from zanj import ZANJ
 
-from spd.clustering.merge import MergeHistory, MergeHistoryEnsemble, MergesArray
+from spd.clustering.math.merge_distances import MergesArray
+from spd.clustering.merge import MergeHistory, MergeHistoryEnsemble
 from spd.log import logger
 from spd.settings import REPO_ROOT
 

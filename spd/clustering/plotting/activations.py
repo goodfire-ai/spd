@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -41,6 +42,7 @@ def plot_activations(
     axs_act: Sequence[plt.Axes]
     fig1, axs_act = plt.subplots(len(activations), 1, figsize=figsize_raw)  # pyright: ignore[reportAssignmentType]
     if len(activations) == 1:
+        assert isinstance(axs_act, plt.Axes)
         axs_act = [axs_act]
     for i, (key, act) in enumerate(activations.items()):
         act_raw_data: np.ndarray = act.T.cpu().numpy()
@@ -122,6 +124,10 @@ def plot_activations(
         fig4_log.savefig(f"{pdf_prefix}_coactivations_log.pdf", bbox_inches="tight", dpi=300)
 
     # Activation histograms
+    fig5: plt.Figure
+    ax5a: plt.Axes
+    ax5b: plt.Axes
+    ax5c: plt.Axes
     fig5, (ax5a, ax5b, ax5c) = plt.subplots(1, 3, figsize=(15, 4))  # pyright: ignore[reportGeneralTypeIssues]
 
     x_scale, y_scale = hist_scales
@@ -152,12 +158,12 @@ def plot_activations(
     common_centers: np.ndarray = (common_bins[:-1] + common_bins[1:]) / 2
 
     # Get unique label prefixes and assign colors
-    import matplotlib.cm as cm
-
     label_prefixes: list[str] = [label.split(":")[0] for label in labels]
     unique_prefixes: list[str] = list(dict.fromkeys(label_prefixes))  # Preserve order
-    colors = cm.tab10(np.linspace(0, 1, len(unique_prefixes)))
-    prefix_colors: dict[str, tuple] = {
+    colors: Sequence[tuple[int, int, int]] = mpl.colormaps["tab10"](
+        np.linspace(0, 1, len(unique_prefixes))
+    )  # pyright: ignore[reportAssignmentType]
+    prefix_colors: dict[str, tuple[int, int, int]] = {
         prefix: colors[i] for i, prefix in enumerate(unique_prefixes)
     }
 
@@ -168,7 +174,7 @@ def plot_activations(
 
         # Get color based on label prefix
         prefix: str = label_prefixes[comp_idx]
-        color: tuple = prefix_colors[prefix]
+        color: tuple[int, int, int] = prefix_colors[prefix]
 
         ax5b.plot(common_centers, hist_counts, color=color, alpha=0.1, linewidth=1)
 

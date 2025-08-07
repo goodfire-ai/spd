@@ -102,7 +102,8 @@ def process_activations(
         if dead_components.any():
             act_concat = act_concat[:, ~dead_components]
             alive_labels: list[tuple[str, bool]] = [
-                (lbl, keep.item()) for lbl, keep in zip(labels, ~dead_components, strict=False)
+                (lbl, bool(keep.item()))
+                for lbl, keep in zip(labels, ~dead_components, strict=False)
             ]
             labels = [label for label, keep in alive_labels if keep]
             dead_components_lst = [label for label, keep in alive_labels if not keep]

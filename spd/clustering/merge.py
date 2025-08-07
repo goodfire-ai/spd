@@ -6,7 +6,7 @@ import random
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import torch
@@ -85,7 +85,8 @@ def recompute_coacts_merge_pair(
         merge_pair[0],
         merge_pair[1],
     )
-    old_to_new_idx: dict[int | None, int | None] = merge_new.old_to_new_idx  # type: ignore
+    # `merge_groups` will set `old_to_new_idx` to be an actual dict for `merge_new`
+    old_to_new_idx: dict[int | None, int | None] = merge_new.old_to_new_idx  # pyright: ignore[reportAssignmentType]
     assert old_to_new_idx[None] == new_group_idx, (
         "New group index should be the minimum of the merge pair"
     )
@@ -156,8 +157,8 @@ def recompute_coacts_pop_group(
     # get the activations we need
     # ==================================================
     # which group does the component belong to?
-    group_idx: int = merges.group_idxs[component_idx].item()
-    group_size_old: int = merges.components_per_group[group_idx].item()
+    group_idx: int = int(merges.group_idxs[component_idx].item())
+    group_size_old: int = int(merges.components_per_group[group_idx].item())
     group_size_new: int = group_size_old - 1
 
     # activations of component we are popping out
@@ -254,6 +255,17 @@ def recompute_coacts_pop_group(
         coact_new,
         activation_mask_new,
     )
+
+
+MergeConfigKey = Literal[
+    "activation_threshold",
+    "alpha",
+    "iters",
+    "check_threshold",
+    "pop_component_prob",
+    "filter_dead_threshold",
+    "rank_cost_fn_name",
+]
 
 
 class MergeConfig(BaseModel):
@@ -432,12 +444,6 @@ class MergeHistory(SerializableDataclass):
             merges=self.merges[latest_idx],
         )
 
-    def plot(self, plot_config: MergePlotConfig | None = None) -> None:
-        """Plot cost evolution."""
-        from spd.clustering.plotting.merge import plot_merge_history
-
-        plot_merge_history(self, plot_config)
-
     # Convenience properties for sweep analysis
     @property
     def total_iterations(self) -> int:
@@ -448,18 +454,18 @@ class MergeHistory(SerializableDataclass):
     def final_k_groups(self) -> int:
         """Final number of groups after merging."""
         # return self.k_groups[-1] if self.k_groups else 0
-        return self.k_groups[self.n_iters_current - 1].item()
+        return int(self.k_groups[self.n_iters_current - 1].item())
 
     @property
     def initial_k_groups(self) -> int:
         """Initial number of groups before merging."""
-        return self.k_groups[0].item()
+        return int(self.k_groups[0].item())
 
 
 def merge_iteration(
     activations: Float[Tensor, "samples c_components"],
     merge_config: MergeConfig,
-    component_labels: list[str] | None = None,
+    component_labels: list[str],
     initial_merge: GroupMerge | None = None,
     plot_config: MergePlotConfig | None = None,
     sweep_params: dict[str, Any] | None = None,
@@ -791,7 +797,7 @@ def merge_iteration_ensemble(
     activations: Float[Tensor, "samples c_components"],
     merge_config: MergeConfig,
     ensemble_size: int,
-    component_labels: list[str] | None = None,
+    component_labels: list[str],
     initial_merge: GroupMerge | None = None,
 ) -> MergeHistoryEnsemble:
     """Run many merge iterations"""

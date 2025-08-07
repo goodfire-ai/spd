@@ -39,8 +39,8 @@ class GroupMerge:
         return (self.group_idxs == group_idx).nonzero(as_tuple=False).squeeze().tolist()
 
     def validate(self, *, require_nonempty: bool = True) -> None:
-        v_min: int = self.group_idxs.min().item()
-        v_max: int = self.group_idxs.max().item()
+        v_min: int = int(self.group_idxs.min().item())
+        v_max: int = int(self.group_idxs.max().item())
         if v_min < 0 or v_max >= self.k_groups:
             raise ValueError("group indices out of range")
 
@@ -160,7 +160,7 @@ class GroupMerge:
         show: bool = True,
         figsize: tuple[int, int] = (10, 3),
         show_row_sums: bool | None = None,
-        ax: "plt.Axes | None" = None,  # noqa: F821
+        ax: "plt.Axes | None" = None,  # noqa: F821 # pyright: ignore[reportUndefinedVariable, reportUnknownParameterType]
         component_labels: list[str] | None = None,
     ) -> None:
         import matplotlib.pyplot as plt
@@ -179,7 +179,7 @@ class GroupMerge:
             assert not show_row_sums
         else:
             if show_row_sums:
-                fig, (ax_mat, ax_lbl) = plt.subplots(
+                fig, (ax_mat, ax_lbl) = plt.subplots(  # pyright: ignore[reportGeneralTypeIssues]
                     1, 2, figsize=figsize, gridspec_kw={"width_ratios": [10, 1]}
                 )
             else:
@@ -230,7 +230,7 @@ class BatchedGroupMerge:
 
     group_idxs: Int[Tensor, " batch n_components"]
     k_groups: Int[Tensor, " batch"]
-    meta: list[dict | None] | None = None
+    meta: list[dict[str, Any] | None] | None = None
 
     @classmethod
     def init_empty(cls, batch_size: int, n_components: int) -> "BatchedGroupMerge":

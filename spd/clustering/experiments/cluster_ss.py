@@ -70,7 +70,7 @@ ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
         iters=100,
         check_threshold=0.1,
         pop_component_prob=0,
-        rank_cost_fn=lambda x: 1.0,
+        rank_cost_fn_name="const_1",
     ),
     ensemble_size=8,
 )

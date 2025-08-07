@@ -128,7 +128,7 @@ sweep_config = SweepConfig(
     iters=50,
 )
 
-sweep_results = run_hyperparameter_sweep(coa["coactivations"], sweep_config)
+sweep_results = run_hyperparameter_sweep(coa["coactivations"], sweep_config, component_labels=coa["labels"])
 print(f"\nCompleted sweep with {len(sweep_results)} configurations")
 
 # Evolution histories for different rank cost functions

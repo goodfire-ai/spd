@@ -10,6 +10,7 @@ from torch import Tensor
 
 from spd.clustering.merge import (
     MergeConfig,
+    MergeConfigKey,
     MergeHistoryEnsemble,
     MergePlotConfig,
     merge_iteration_ensemble,
@@ -19,11 +20,11 @@ from spd.clustering.plotting.merge import plot_dists_distribution
 
 def sweep_merge_parameter(
     activations: Float[Tensor, "samples c_components"],
-    parameter_name: Literal["alpha", "check_threshold", "pop_component_prob"],
+    parameter_name: MergeConfigKey,
     parameter_values: list[float],
-    base_config: dict[str, Any] | None = None,
+    component_labels: list[str],
+    base_config: dict[MergeConfigKey, Any] | None = None,
     ensemble_size: int = 16,
-    component_labels: list[str] | None = None,
     plot_config: MergePlotConfig | None = None,
     figsize: tuple[int, int] = (16, 10),
     plot_mode: Literal["points", "dist"] = "dist",
@@ -34,9 +35,9 @@ def sweep_merge_parameter(
         activations: Component activations tensor
         parameter_name: Name of the parameter to sweep over
         parameter_values: List of values to test for the parameter
+        component_labels: labels for components
         base_config: Base configuration for MergeConfig (parameter_name will be overridden)
         ensemble_size: Number of ensemble members to generate for each parameter value
-        component_labels: Optional labels for components
         plot_config: Optional plot configuration for merge iterations
         figsize: Figure size for the comparison plot
         plot_mode: Plot mode for distance distribution
@@ -127,10 +128,10 @@ def sweep_merge_parameter(
 
 def sweep_multiple_parameters(
     activations: Float[Tensor, "samples c_components"],
-    parameter_sweeps: dict[str, list[float]],
-    base_config: dict[str, Any] | None = None,
+    parameter_sweeps: dict[MergeConfigKey, list[float]],
+    component_labels: list[str],
+    base_config: dict[MergeConfigKey, Any] | None = None,
     ensemble_size: int = 16,
-    component_labels: list[str] | None = None,
     plot_config: MergePlotConfig | None = None,
     figsize: tuple[int, int] = (16, 10),
     plot_mode: Literal["points", "dist"] = "dist",

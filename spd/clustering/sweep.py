@@ -210,7 +210,9 @@ def add_colorbar_or_legend(
 
 
 def run_hyperparameter_sweep(
-    raw_activations: torch.Tensor, sweep_config: SweepConfig
+    raw_activations: torch.Tensor,
+    sweep_config: SweepConfig,
+    component_labels: list[str],
 ) -> list[MergeHistory]:
     """Run hyperparameter sweep across all parameter combinations."""
     configs = sweep_config.generate_configs()
@@ -228,7 +230,7 @@ def run_hyperparameter_sweep(
             merge_history = merge_iteration(
                 activations=raw_activations,
                 merge_config=merge_config,
-                component_labels=None,
+                component_labels=component_labels,
                 plot_config=plot_config,
             )
 
@@ -497,9 +499,9 @@ def create_heatmaps(
             plot_data = (plot_data - min_val) / (max_val - min_val)
 
     # Create plot
-    fig: plt.Figure
+    _fig: plt.Figure
     ax: plt.Axes
-    fig, ax = plt.subplots(figsize=figsize)
+    _fig, ax = plt.subplots(figsize=figsize)
 
     im = ax.imshow(plot_data, aspect="auto", cmap=cmap, origin="lower")
 
