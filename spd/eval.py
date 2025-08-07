@@ -27,7 +27,6 @@ from spd.plotting import (
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_masks
-from spd.utils.distributed_utils import get_distributed_rand_like, is_distributed
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
@@ -44,7 +43,6 @@ class StreamingEval(ABC):
         batch: Tensor,
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        step: int,
     ) -> None: ...
 
     @abstractmethod
@@ -64,7 +62,6 @@ class CI_L0(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        step: int,
     ) -> None:
         for layer_name, layer_ci in ci.items():
             l0_val = calc_ci_l_zero(layer_ci, self.l0_threshold)
@@ -92,9 +89,8 @@ class CEandKLLosses(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        step: int,
     ) -> None:
-        ce_losses = self._calc_ce_and_kl_losses(batch, target_out, ci, step)
+        ce_losses = self._calc_ce_and_kl_losses(batch, target_out, ci)
         for key, value in ce_losses.items():
             self.ce_losses[key].append(value)
 
@@ -103,7 +99,6 @@ class CEandKLLosses(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        step: int,
     ) -> Mapping[str, float]:
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
 
@@ -128,9 +123,7 @@ class CEandKLLosses(StreamingEval):
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
         # we use the regular stochastic masks
-        stoch_masks = calc_stochastic_masks(
-            ci, n_mask_samples=1, step=step, hash_prefix="stochastic_recon_eval"
-        )[0]
+        stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1)[0]
         stoch_masked_logits = self.model(batch, type="components", masks=stoch_masks)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
@@ -142,13 +135,7 @@ class CEandKLLosses(StreamingEval):
         unmasked_kl_loss = kl_vs_target(unmasked_logits)
 
         # we use completely random masks
-        rand_masks = {}
-        for layer, v in ci.items():
-            if is_distributed():
-                hash_key = f"randommask-{step}-0-{layer}"
-                rand_masks[layer] = get_distributed_rand_like(v.shape, hash_key, device=v.device)
-            else:
-                rand_masks[layer] = torch.rand_like(v)
+        rand_masks = {layer: torch.rand_like(v) for layer, v in ci.items()}
         random_masked_logits = self.model(batch, type="components", masks=rand_masks)
         random_masked_ce_loss = ce_vs_labels(random_masked_logits)
         random_masked_kl_loss = kl_vs_target(random_masked_logits)
@@ -221,7 +208,6 @@ class CIHistograms(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        step: int,
     ) -> None:
         self.batches_seen += 1
         if self.n_batches_accum is not None and self.batches_seen > self.n_batches_accum:
@@ -256,7 +242,6 @@ class ComponentActivationDensity(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        step: int,
     ) -> None:
         n_tokens = next(iter(ci.values())).shape[:-1].numel()
         self.n_tokens += n_tokens
@@ -300,7 +285,6 @@ class PermutedCIPlots(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        step: int,
     ) -> None:
         if self.batch_shape is None:
             self.batch_shape = batch.shape
@@ -346,7 +330,6 @@ class UVPlots(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        step: int,
     ) -> None:
         if self.batch_shape is None:
             self.batch_shape = batch.shape
@@ -396,7 +379,6 @@ class IdentityCIError(StreamingEval):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        step: int,
     ) -> None:
         if self.batch_shape is None:
             self.batch_shape = batch.shape
@@ -461,7 +443,7 @@ def evaluate(
             continue
         evals.append(eval_cls(model, config, **eval_config.extra_init_kwargs))
 
-    for step in range(n_steps):
+    for _ in range(n_steps):
         # Do the common work:
         batch = extract_batch_data(next(eval_iterator))
         batch = batch.to(device)
@@ -473,8 +455,7 @@ def evaluate(
         )
 
         for eval in evals:
-            # TODO: eval needs unique masks, and so "step" isn't a good
-            eval.watch_batch(batch=batch, target_out=target_out, ci=ci, step=step)
+            eval.watch_batch(batch=batch, target_out=target_out, ci=ci)
 
     out: dict[str, float | Image.Image] = {}
     all_dicts = [eval.compute() for eval in evals]

@@ -1,6 +1,5 @@
 """Utilities for distributed data parallel training with MPI support."""
 
-import hashlib
 import os
 from collections.abc import Mapping
 from typing import Literal
@@ -8,7 +7,6 @@ from typing import Literal
 import torch
 import torch.distributed as dist
 from PIL import Image
-from torch import Tensor
 from torch.distributed import ReduceOp
 
 
@@ -203,46 +201,3 @@ def avg_eval_metrics_across_ranks(
     else:
         avg_metrics = {}
     return {**metrics, **avg_metrics}
-
-
-def get_distributed_rand_like(
-    shape: tuple[int, ...], hash_key: str, device: str | torch.device
-) -> Tensor:
-    """Get a random tensor of shape `shape` which matches what would be produced by indexing a
-    random tensor of shape `shape * world_size` with the current rank.
-
-    This function simulates the following process:
-    1. Generate a full random tensor of shape `shape * world_size` with a custom generator
-    2. Index the tensor to get the portion of the tensor on the current rank
-
-    It does this by iterating through random values until the rng counter matches what is needed
-    for the current rank.
-
-    Args:
-        shape: The shape of the tensor to get.
-        hash_key: A string used to seed the random number generator.
-        device: The device to convert the final tensor to (we generate all tensors on CPU)
-    """
-    # Assert that shape has 3 dimensions (batch, seq_len, C). In future we'd support other shapes
-
-    assert len(shape) == 3, "Shape must have 3 dimensions (batch, seq_len, C)"
-    local_batch_size, seq_len, C = shape
-
-    generator = torch.Generator(device=device)
-    seed = int(hashlib.md5(hash_key.encode()).hexdigest(), 16) % (2**32)
-    generator.manual_seed(seed)
-
-    elements_per_sample = seq_len * C
-    total_elements_to_skip = get_rank() * local_batch_size * elements_per_sample
-
-    # Get the rng in the right place for this rank
-    # torch.rand(100_000_000, device="cuda") takes about 0.2ms on an H100
-    skip_chunk_size = 100_000_000
-    remaining = total_elements_to_skip
-    while remaining > 0:
-        chunk = min(remaining, skip_chunk_size)
-        torch.rand(chunk, generator=generator, device=device)
-        remaining -= chunk
-
-    # Now the rng is in the right place, generate this rank's data
-    return torch.rand(*shape, generator=generator, device=device)

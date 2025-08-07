@@ -205,9 +205,7 @@ def optimize(
                 target_out=target_out,
                 device=device,
                 n_params=n_params,
-                step=step,
             )
-
             microbatch_total_loss.div_(gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():

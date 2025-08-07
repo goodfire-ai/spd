@@ -33,11 +33,15 @@ class TestDistributedSPDConsistency:
                     "C": 3,
                     "batch_size": 2,
                     "eval_batch_size": 2,
+                    "lr": 1e-2,
+                    "lr_warmup_pct": 0.0,
                     "steps": 0,  # Only run step 0 (first iteration)
                     "n_eval_steps": 2,
                     "slow_eval_on_first_step": True,
+                    "stochastic_recon_coeff": None,  # Otherwise we're non-deterministic with dp>1
+                    "stochastic_recon_layerwise_coeff": None,  # Otherwise we're non-deterministic with dp>1
                     "wandb_project": None,
-                    "ddp_backend": "nccl",
+                    "ddp_backend": "gloo",
                     "seed": 42,
                     "train_log_freq": 1,
                     "eval_freq": 1,
@@ -70,12 +74,6 @@ class TestDistributedSPDConsistency:
                 metrics_file=dp1_metrics_file,
                 port=29501,
             )
-
-            # # Use a different seed
-            # config.update({"seed": 43})
-            # config_path = tmpdir / "test_config_dp2.yaml"
-            # with open(config_path, "w") as f:
-            #     yaml.dump(config, f)
 
             # Step 3: Run with dp=2
             dp2_batch_file = tmpdir / "dp2_batches.pkl"
@@ -136,7 +134,7 @@ class TestDistributedSPDConsistency:
         assert script_path.exists(), f"{script_path} not found"
 
         env = {
-            "CUDA_VISIBLE_DEVICES": "0,1",
+            "CUDA_VISIBLE_DEVICES": "",
             "OMP_NUM_THREADS": "1",
             "MASTER_PORT": str(port),  # Use unique port for each run
         }
@@ -154,12 +152,6 @@ class TestDistributedSPDConsistency:
         result = subprocess.run(
             cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=300
         )
-
-        # Always print output for debugging
-        if result.stdout:
-            print(f"[n_processes={n_processes}, port={port}] STDOUT: {result.stdout}...")
-        if result.stderr:
-            print(f"[n_processes={n_processes}, port={port}] STDERR: {result.stderr}...")
 
         if result.returncode != 0:
             print(f"FULL STDOUT: {result.stdout}")

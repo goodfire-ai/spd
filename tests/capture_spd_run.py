@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import torch
 from jaxtyping import Float
 from torch import Tensor
 
@@ -27,9 +26,6 @@ from spd.eval import evaluate as real_evaluate
 from spd.utils.distributed_utils import cleanup_distributed as orig_cleanup
 from spd.utils.distributed_utils import get_rank
 from spd.utils.general_utils import extract_batch_data as real_extract_batch_data
-
-# use torch float64 everywhere
-torch.set_default_dtype(torch.float64)
 
 captured_batches: list[dict[str, Any]] = []
 captured_metrics: list[dict[str, Any]] = []
