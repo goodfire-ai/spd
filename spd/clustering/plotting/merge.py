@@ -9,8 +9,15 @@ from torch import Tensor
 
 from spd.clustering.math.merge_distances import DistancesArray
 from spd.clustering.math.merge_matrix import GroupMerge
-from spd.clustering.merge import MergeHistory, MergePlotConfig
+from spd.clustering.merge_history import MergeHistory
 from spd.clustering.util import format_scientific_latex
+
+DEFAULT_PLOT_CONFIG: dict[str, Any] = dict(
+    figsize=(16, 10),
+    tick_spacing=5,
+    save_pdf=False,
+    pdf_prefix="merge_iteration",
+)
 
 
 def plot_merge_iteration(
@@ -20,7 +27,7 @@ def plot_merge_iteration(
     pair_cost: float,
     iteration: int,
     component_labels: list[str] | None = None,
-    plot_config: MergePlotConfig | None = None,
+    plot_config: dict[str, Any] | None = None,
 ) -> None:
     """Plot merge iteration results with merge tree, coactivations, and costs.
 
@@ -33,10 +40,13 @@ def plot_merge_iteration(
             component_labels: Component labels for axis labeling
             plot_config: Plot configuration settings
     """
-    plot_config_ = plot_config or MergePlotConfig()
+    plot_config_: dict[str, Any] = {
+        **DEFAULT_PLOT_CONFIG,
+        **(plot_config or {}),
+    }
     axs: list[plt.Axes]
     fig, axs = plt.subplots(  # pyright: ignore[reportAssignmentType]
-        1, 3, figsize=plot_config_.figsize, sharey=True, gridspec_kw={"width_ratios": [2, 1, 1]}
+        1, 3, figsize=plot_config_["figsize"], sharey=True, gridspec_kw={"width_ratios": [2, 1, 1]}
     )
 
     # Merge plot
@@ -53,7 +63,7 @@ def plot_merge_iteration(
 
     # Setup ticks for coactivations
     k_groups: int = current_coact.shape[0]
-    minor_ticks: list[int] = list(range(0, k_groups, plot_config_.tick_spacing))
+    minor_ticks: list[int] = list(range(0, k_groups, plot_config_["tick_spacing"]))
     axs[1].set_yticks(minor_ticks)
     axs[1].set_xticks(minor_ticks)
     axs[1].set_xticklabels([])  # Remove x-axis tick labels but keep ticks
@@ -74,9 +84,9 @@ def plot_merge_iteration(
     fig.suptitle(f"Iteration {iteration} with cost {pair_cost:.4f}")
     plt.tight_layout()
 
-    if plot_config_.save_pdf:
+    if plot_config_["save_pdf"]:
         fig.savefig(
-            f"{plot_config_.pdf_prefix}_iter_{iteration:03d}.pdf", bbox_inches="tight", dpi=300
+            f"{plot_config_['pdf_prefix']}_iter_{iteration:03d}.pdf", bbox_inches="tight", dpi=300
         )
 
     plt.show()
@@ -184,11 +194,11 @@ def plot_dists_distribution(
     return ax_
 
 
-def plot_merge_history(history: MergeHistory, plot_config: MergePlotConfig | None = None) -> None:
+def plot_merge_history(history: MergeHistory, plot_config: dict[str, Any] | None = None) -> None:
     """Plot cost evolution from merge history."""
-    config = plot_config or MergePlotConfig()
+    config = plot_config or DEFAULT_PLOT_CONFIG
 
-    fig, ax = plt.subplots(figsize=config.figsize_final)
+    fig, ax = plt.subplots(figsize=config["figsize_final"])
     ax.plot(history.max_considered_cost, label="max considered cost")
     ax.plot(history.non_diag_costs_min, label="non-diag costs min")
     ax.plot(history.non_diag_costs_max, label="non-diag costs max")
@@ -197,7 +207,7 @@ def plot_merge_history(history: MergeHistory, plot_config: MergePlotConfig | Non
     ax.set_ylabel("Cost")
     ax.legend()
 
-    if config.save_pdf:
-        fig.savefig(f"{config.pdf_prefix}_cost_evolution.pdf", bbox_inches="tight", dpi=300)
+    if config["save_pdf"]:
+        fig.savefig(f"{config['pdf_prefix']}_cost_evolution.pdf", bbox_inches="tight", dpi=300)
 
     plt.show()

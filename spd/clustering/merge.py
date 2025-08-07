@@ -1,37 +1,22 @@
 from __future__ import annotations
 
-import hashlib
-import math
 import random
 import warnings
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
-import numpy as np
 import torch
 import tqdm
 from jaxtyping import Bool, Float, Int
-from muutils.dbg import dbg_tensor
-from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
-from pydantic import (
-    BaseModel,
-    Field,
-    PositiveInt,
-)
 from torch import Tensor
 
-from spd.clustering.compute_costs import compute_merge_costs, recompute_coacts_merge_pair, recompute_coacts_pop_group
-from spd.clustering.math.merge_distances import (
-    DistancesArray,
-    DistancesMethod,
-    MergesArray,
-    compute_distances,
+from spd.clustering.compute_costs import (
+    compute_merge_costs,
+    recompute_coacts_merge_pair,
+    recompute_coacts_pop_group,
 )
-from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
+from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
-from spd.spd_types import Probability
 
 
 def merge_iteration(

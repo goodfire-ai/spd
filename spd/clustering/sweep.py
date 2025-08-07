@@ -11,7 +11,9 @@ from matplotlib.colors import LogNorm
 from matplotlib.lines import Line2D
 from tqdm import tqdm
 
-from spd.clustering.merge import MergeConfig, MergeHistory, merge_iteration
+from spd.clustering.merge import merge_iteration
+from spd.clustering.merge_config import MergeConfig
+from spd.clustering.merge_history import MergeHistory
 
 
 @dataclass

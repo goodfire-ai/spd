@@ -9,7 +9,7 @@ from typing import Any
 from matplotlib import pyplot as plt
 
 from spd.clustering.math.merge_distances import DistancesArray, DistancesMethod
-from spd.clustering.merge import MergeConfig
+from spd.clustering.merge_config import MergeConfig
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.clustering.scripts.s1_split_dataset import split_dataset
 from spd.clustering.scripts.s3_normalize_histories import normalize_histories

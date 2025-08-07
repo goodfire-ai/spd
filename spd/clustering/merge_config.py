@@ -2,34 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import math
-import random
-import warnings
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
-import numpy as np
-import torch
-import tqdm
-from jaxtyping import Bool, Float, Int
-from muutils.dbg import dbg_tensor
-from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 from pydantic import (
     BaseModel,
     Field,
     PositiveInt,
 )
-from torch import Tensor
 
-from spd.clustering.math.merge_distances import (
-    DistancesArray,
-    DistancesMethod,
-    MergesArray,
-    compute_distances,
-)
-from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
 from spd.spd_types import Probability
-
 
 MergeConfigKey = Literal[
     "activation_threshold",
@@ -98,4 +80,3 @@ class MergeConfig(BaseModel):
     @property
     def stable_hash(self) -> str:
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
-

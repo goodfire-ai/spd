@@ -1,24 +1,13 @@
 from __future__ import annotations
 
-import hashlib
-import math
-import random
-import warnings
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import torch
-import tqdm
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Float, Int
 from muutils.dbg import dbg_tensor
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
-from pydantic import (
-    BaseModel,
-    Field,
-    PositiveInt,
-)
 from torch import Tensor
 
 from spd.clustering.math.merge_distances import (
@@ -29,7 +18,6 @@ from spd.clustering.math.merge_distances import (
 )
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
 from spd.clustering.merge_config import MergeConfig
-from spd.spd_types import Probability
 
 
 # pyright hates muutils :(
@@ -156,7 +144,6 @@ class MergeHistory(SerializableDataclass):
     def initial_k_groups(self) -> int:
         """Initial number of groups before merging."""
         return int(self.k_groups[0].item())
-
 
 
 @dataclass

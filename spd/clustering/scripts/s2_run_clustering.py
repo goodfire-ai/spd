@@ -11,11 +11,9 @@ from torch import Tensor
 from zanj import ZANJ
 
 from spd.clustering.activations import component_activations, process_activations
-from spd.clustering.merge import (
-    MergeConfig,
-    MergeHistory,
-    merge_iteration,
-)
+from spd.clustering.merge import merge_iteration
+from spd.clustering.merge_config import MergeConfig
+from spd.clustering.merge_history import MergeHistory
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
 

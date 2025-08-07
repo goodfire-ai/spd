@@ -8,13 +8,9 @@ import matplotlib.pyplot as plt
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.clustering.merge import (
-    MergeConfig,
-    MergeConfigKey,
-    MergeHistoryEnsemble,
-    MergePlotConfig,
-    merge_iteration_ensemble,
-)
+from spd.clustering.merge import merge_iteration_ensemble
+from spd.clustering.merge_config import MergeConfig, MergeConfigKey
+from spd.clustering.merge_history import MergeHistoryEnsemble
 from spd.clustering.plotting.merge import plot_dists_distribution
 
 
@@ -25,7 +21,7 @@ def sweep_merge_parameter(
     component_labels: list[str],
     base_config: dict[MergeConfigKey, Any] | None = None,
     ensemble_size: int = 16,
-    plot_config: MergePlotConfig | None = None,
+    plot_config: dict[str, Any] | None = None,
     figsize: tuple[int, int] = (16, 10),
     plot_mode: Literal["points", "dist"] = "dist",
 ) -> tuple[dict[float, MergeHistoryEnsemble], plt.Figure, plt.Axes]:
@@ -64,7 +60,7 @@ def sweep_merge_parameter(
 
     # Default plot config that skips intermediate plots
     if plot_config is None:
-        plot_config = MergePlotConfig(
+        plot_config = dict(
             plot_every=999,
             plot_every_min=999,
             save_pdf=False,
@@ -132,7 +128,7 @@ def sweep_multiple_parameters(
     component_labels: list[str],
     base_config: dict[MergeConfigKey, Any] | None = None,
     ensemble_size: int = 16,
-    plot_config: MergePlotConfig | None = None,
+    plot_config: dict[str, Any] | None = None,
     figsize: tuple[int, int] = (16, 10),
     plot_mode: Literal["points", "dist"] = "dist",
 ) -> dict[str, tuple[dict[float, MergeHistoryEnsemble], plt.Figure, plt.Axes]]:

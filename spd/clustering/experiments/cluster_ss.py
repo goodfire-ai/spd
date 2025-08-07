@@ -10,11 +10,9 @@ from muutils.dbg import dbg_auto
 from torch import Tensor
 
 from spd.clustering.activations import component_activations, process_activations
-from spd.clustering.merge import (
-    MergeConfig,
-    MergeHistoryEnsemble,
-    merge_iteration_ensemble,
-)
+from spd.clustering.merge import merge_iteration_ensemble
+from spd.clustering.merge_config import MergeConfig
+from spd.clustering.merge_history import MergeHistoryEnsemble
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
