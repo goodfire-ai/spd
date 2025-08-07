@@ -107,13 +107,17 @@ def optimize(
     world_size = get_world_size()
     wrapped_model: nn.Module = model
     if world_size > 1:
-        # Parse device string to get device id
-        device_id = int(device.split(":")[1]) if ":" in device else 0
-        wrapped_model = torch.nn.parallel.DistributedDataParallel(
-            model,
-            device_ids=[device_id],
-            output_device=device_id,
-        )
+        if device.startswith("cuda"):
+            # Parse device string to get device id for GPU
+            device_id = int(device.split(":")[1]) if ":" in device else 0
+            wrapped_model = torch.nn.parallel.DistributedDataParallel(
+                model,
+                device_ids=[device_id],
+                output_device=device_id,
+            )
+        else:
+            # For CPU, don't pass device_ids or output_device
+            wrapped_model = torch.nn.parallel.DistributedDataParallel(model)
         # Access the underlying module for component operations
         component_model = wrapped_model.module  # type: ignore[attr-defined]
     else:
