@@ -183,7 +183,7 @@ def avg_metrics_across_ranks(metrics: Mapping[str, float], device: str) -> Mappi
     """Get the average of metrics across ranks."""
     assert is_distributed(), "Can only average metrics across ranks if running in distributed mode"
     metric_values = torch.tensor([metrics[k] for k in metrics], device=device)
-    metric_values = all_reduce(metric_values, op=ReduceOp.AVG)
+    metric_values = all_reduce(metric_values, op=ReduceOp.SUM) / get_world_size()
     return {k: metric_values[i].item() for i, k in enumerate(metrics)}
 
 
