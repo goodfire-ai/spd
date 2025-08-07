@@ -52,6 +52,12 @@ coverage:
 	uv run python -m coverage report -m > $(COVERAGE_DIR)/coverage.txt
 	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/
 
+DEP_GRAPH_DIR=docs/dep_graph
+
+.PHONY: dep-graph
+dep-graph:
+	ruff analyze graph > $(DEP_GRAPH_DIR)/import_graph.json
+
 
 .PHONY: demo-clustering
 demo-clustering:
