@@ -43,6 +43,11 @@ jobs:
       - name: Run ruff format
         run: uv run ruff format .
 
+      - name: Install MPI for tests
+        uses: mpi4py/setup-mpi@v1
+        with:
+          mpi: openmpi
+
       - name: Run tests
         run: uv run python -m pytest tests/ --runslow --durations=10
         env:
