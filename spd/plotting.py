@@ -457,7 +457,7 @@ def plot_geometric_interaction_strength_vs_coactivation(
         im = ax.scatter(
             geometric_interaction_strength.detach().cpu().numpy(),
             coactivation_fraction.detach().cpu().numpy(),
-            alpha=0.4,
+            alpha=0.2,
             s=1.2,
         )
         images.append(im)
