@@ -174,11 +174,11 @@ def optimize(
                     loss_value / config.gradient_accumulation_steps
                 )
 
-            for layer_name, layer_ci in causal_importances.items():
-                l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                microbatch_log_data[f"train/{layer_name}/l0"] += (
-                    l0_val / config.gradient_accumulation_steps
-                )
+            # for layer_name, layer_ci in causal_importances.items():
+            #     l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
+            #     microbatch_log_data[f"train/{layer_name}/l0"] += (
+            #         l0_val / config.gradient_accumulation_steps
+            #     )
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
@@ -215,10 +215,6 @@ def optimize(
 
                 metrics = eval(
                     model=model,
-                    causal_importances=causal_importances,
-                    target_out=target_out,
-                    batch=batch,
-                    eval_loader=eval_loader,
                     eval_iterator=eval_iterator,
                     device=device,
                     config=config,

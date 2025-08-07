@@ -12,7 +12,7 @@ from typing import Any, ClassVar, override
 import einops
 import torch
 import torch.nn.functional as F
-from einops import reduce
+from einops import einsum, reduce
 from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
@@ -23,7 +23,11 @@ from spd.plotting import (
     get_single_feature_causal_importances,
     plot_causal_importance_vals,
     plot_ci_values_histograms,
+    plot_component_abs_left_singular_vectors_geometric_interaction_strengths,
     plot_component_activation_density,
+    plot_component_co_activation_fractions,
+    plot_geometric_interaction_strength_product_with_coactivation_fraction,
+    plot_geometric_interaction_strength_vs_coactivation,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_masks
@@ -417,6 +421,230 @@ class IdentityCIError(StreamingEval):
 
         return target_metrics
 
+class ActivationsAndInteractions(StreamingEval): # TODO factorize compute function
+    SLOW = True
+
+    def __init__(self, model: ComponentModel, config: Config):
+        self.model = model
+        self.config = config
+        self.device = next(iter(model.parameters())).device
+
+        self.n_tokens = 0
+        self.component_activation_counts: dict[str, Float[Tensor, " C"]] = {
+            module_name: torch.zeros(model.C, device=self.device)
+            for module_name in model.components
+        }
+        self.component_co_activation_counts: dict[str, Float[Tensor, " C C"]] = {
+            module_name: torch.zeros(model.C, model.C, device=self.device)
+            for module_name in model.components
+        }
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        n_tokens = next(iter(ci.values())).shape[:-1].numel()
+        self.n_tokens += n_tokens
+
+        for module_name, ci_vals in ci.items():
+            active_components = ci_vals > self.config.ci_alive_threshold
+            n_activations_per_component = reduce(active_components, "... C -> C", "sum")
+            self.component_activation_counts[module_name] += n_activations_per_component
+            self.component_co_activation_counts[module_name] += einsum(
+                active_components, active_components, "b C, b C2 -> b C C2"
+            ).sum(dim=0)
+
+    @override
+    def compute(self) -> Mapping[str, Image.Image]:
+
+        ## Activation Density
+        activation_densities = {
+            module_name: self.component_activation_counts[module_name] / self.n_tokens
+            for module_name in self.model.components
+        } # Formerly mean_component_activation_counts
+        
+        ## Component Co-Activation Fractions
+        sorted_activation_inds = {
+            module_name: torch.argsort(
+                activation_densities[module_name], dim=-1, descending=True
+            )
+            for module_name in self.model.components
+        }  
+        # Calculate frac components co-activated with each other conditioned on the activation of the other
+        component_co_activation_counts_denom = {
+            module_name: torch.ones(self.model.C, self.model.C, device=self.device)
+            * self.component_activation_counts[module_name]
+            for module_name in self.model.components
+        }
+
+        component_co_activation_fractions = {
+            module_name: self.component_co_activation_counts[module_name]
+            / component_co_activation_counts_denom[module_name]
+            for module_name in self.model.components
+        }
+        # Convert nans to 0
+        component_co_activation_fractions = {
+            module_name: torch.where(
+                torch.isnan(component_co_activation_fractions[module_name]),
+                torch.zeros_like(component_co_activation_fractions[module_name]),
+                component_co_activation_fractions[module_name],
+            )
+            for module_name in self.model.components
+        }
+
+        sorted_co_activation_fractions = {
+            module_name: component_co_activation_fractions[module_name][
+                sorted_activation_inds[module_name], :
+            ][:, sorted_activation_inds[module_name]]
+            for module_name in self.model.components
+        }
+
+        component_co_activation_fractions_fig = plot_component_co_activation_fractions(sorted_co_activation_fractions)
+        
+        
+        ## Geometric Interaction Strength
+        # Get the geometric interaction strengths between the absolute left singular vectors of the components.
+        # The geometric interaction strength gives us a measure of how much component A affects component B if component A is active.
+        # Assume A and B both have nonzero cosine similarity and sometimes coactivate. If A is large (norm), then its activation
+        # will affect B more than if it were small. If B is small, then it affect A less.
+        
+        # First get the norms of the V matrices in order to scale the U matrices
+        component_right_sing_vecs_norms_vecs = {
+            module_name: torch.norm(self.model.components[module_name].V.data, dim=0)
+            for module_name in self.model.components
+        }
+
+        # Scale the U matrices by the norms of the V matrices
+        component_abs_left_sing_vecs = {
+            module_name: self.model.components[module_name].U.data
+            / component_right_sing_vecs_norms_vecs[module_name].unsqueeze(1)
+            for module_name in self.model.components
+        }
+
+        # Get norms of U matrices
+        component_abs_left_sing_vecs_norms = {
+            module_name: torch.norm(self.model.components[module_name].U.data, dim=1)
+            for module_name in self.model.components
+        }
+
+        # Get absolute values of the U vectors
+        component_abs_left_sing_vecs = {
+            module_name: torch.abs(self.model.components[module_name].U.data)
+            for module_name in self.model.components
+        }
+
+        # Get inner products of the U vectors with themselves
+        component_abs_left_sing_vecs_inner_products = {
+            module_name: einsum(
+                component_abs_left_sing_vecs[module_name],
+                component_abs_left_sing_vecs[module_name],
+                "C d, C2 d -> C C2",
+            )
+            for module_name in self.model.components
+        }
+
+        # Make the geometric interaction strength matrices
+        component_abs_left_sing_vecs_geometric_interaction_strengths_matrices = {
+            module_name: component_abs_left_sing_vecs_inner_products[module_name]
+            / (component_abs_left_sing_vecs_norms[module_name] ** 2)
+            for module_name in self.model.components
+        }
+        # Convert nans to 0
+        component_abs_left_sing_vecs_geometric_interaction_strengths_matrices = {
+            module_name: torch.where(
+                torch.isnan(
+                    component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[module_name]
+                ),
+                torch.zeros_like(
+                    component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[module_name]
+                ),
+                component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[module_name],
+            )
+            for module_name in self.model.components
+        }
+
+        # Then sort the geometric interaction strength matrices by the component counts
+        component_abs_left_sing_vecs_geometric_interaction_strengths_matrices = {
+            module_name: component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[
+                module_name
+            ][sorted_activation_inds[module_name], :][:, sorted_activation_inds[module_name]]
+            for module_name in self.model.components
+        }
+
+        geometric_interaction_strengths_fig = plot_component_abs_left_singular_vectors_geometric_interaction_strengths(
+            component_abs_left_sing_vecs_geometric_interaction_strengths_matrices
+        )
+
+        
+        ## Geometric Interaction Strength vs Coactivation scatter plot
+
+        n_alive_components = {
+            module_name: torch.sum(activation_densities[module_name] > 0.0001)
+            for module_name in self.model.components
+        }  # TODO unhardcode
+        
+        alive_co_activation_fractions = {
+            module_name: sorted_co_activation_fractions[module_name][
+                : n_alive_components[module_name], : n_alive_components[module_name]
+            ]
+            for module_name in self.model.components
+        }
+
+        alive_geometric_interaction_strength_matrices = {
+            module_name: component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[
+                module_name
+            ][: n_alive_components[module_name], : n_alive_components[module_name]]
+            for module_name in self.model.components
+        }
+
+        # Flatten the matrices
+        alive_co_activation_fractions_flattened = {
+            module_name: alive_co_activation_fractions[module_name].flatten()
+            for module_name in self.model.components
+        }
+
+        alive_geometric_interaction_strength_matrices_flattened = {
+            module_name: alive_geometric_interaction_strength_matrices[module_name].flatten()
+            for module_name in self.model.components
+        }
+
+        # Concatenate the flattened matrices per module
+        alive_geometric_interaction_strength_and_coacts_data = {
+            module_name: (
+                alive_geometric_interaction_strength_matrices_flattened[module_name],
+                alive_co_activation_fractions_flattened[module_name],
+            )
+            for module_name in self.model.components
+        }
+
+        geom_int_strength_vs_coact_fig = plot_geometric_interaction_strength_vs_coactivation(
+            alive_geometric_interaction_strength_and_coacts_data
+        )
+
+        ## Geometric Interaction Strength Product with Coactivation Fraction heatmap
+        # Elementwise multiply the matrices
+        elementwise_products = {
+            module_name: component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[
+                module_name
+            ]
+            * sorted_co_activation_fractions[module_name]
+            for module_name in self.model.components
+        }
+
+        geom_int_strength_product_with_coact_fig = plot_geometric_interaction_strength_product_with_coactivation_fraction(
+            elementwise_products
+        )
+        
+        return {
+            "figures/component_co_activation_fractions": component_co_activation_fractions_fig, 
+            "figures/component_abs_left_singular_vectors_geometric_interaction_strengths": geometric_interaction_strengths_fig,
+            "figures/geometric_interaction_strength_vs_coactivation": geom_int_strength_vs_coact_fig,
+            "figures/geometric_interaction_strength_product_with_coactivation_fraction": geom_int_strength_product_with_coact_fig
+            }
+
 
 EVAL_CLASSES = {
     cls.__name__: cls
@@ -428,6 +656,7 @@ EVAL_CLASSES = {
         PermutedCIPlots,
         UVPlots,
         IdentityCIError,
+        ActivationsAndInteractions,
     ]
 }
 

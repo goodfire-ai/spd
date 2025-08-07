@@ -357,7 +357,7 @@ def plot_ci_values_histograms(
 
 def plot_component_co_activation_fractions(
     component_co_activation_fractions: dict[str, Float[Tensor, " C C"]],
-) -> dict[str, plt.Figure]:
+) -> Image.Image:
     """Plot the component co-activation fractions for each component module in a grid."""
     n_modules = len(component_co_activation_fractions)
 
@@ -390,14 +390,17 @@ def plot_component_co_activation_fractions(
         cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
         cbar.set_ticklabels(["0.0", "0.25", "0.5", "0.75", "1.0"])
 
-    return {"component_co_activation_fractions": fig}
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+
+    return fig_img
 
 
 def plot_component_abs_left_singular_vectors_geometric_interaction_strengths(
     component_abs_left_singular_vectors_geometric_interaction_strengths: dict[
         str, Float[Tensor, " C C"]
     ],
-) -> dict[str, plt.Figure]:
+) -> Image.Image:
     """Plot the cosine similarity between the absolute left singular vectors of the components. (Uses exactsame structure as plotting code for plot_component_co_activation_fractions)"""
     n_modules = len(component_abs_left_singular_vectors_geometric_interaction_strengths)
     fig = plt.figure(figsize=(8, 8 * n_modules))
@@ -431,14 +434,17 @@ def plot_component_abs_left_singular_vectors_geometric_interaction_strengths(
         cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
         cbar.set_ticklabels(["0.0", "0.25", "0.5", "0.75", "1.0"])
 
-    return {"component_abs_left_singular_vectors_geometric_interaction_strengths": fig}
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+
+    return fig_img
 
 
 def plot_geometric_interaction_strength_vs_coactivation(
     geometric_interaction_strength_vs_coactivation_data: dict[
         str, tuple[Float[Tensor, " C C"], Float[Tensor, " C C"]]
     ],
-) -> dict[str, plt.Figure]:
+) -> Image.Image:
     """Plot the cosine similarity between the absolute left singular vectors of the components. There should be a scatter plot for each module with a histogram along the axes for each variable"""
     n_modules = len(geometric_interaction_strength_vs_coactivation_data)
     fig = plt.figure(figsize=(8, 8 * n_modules))
@@ -461,12 +467,15 @@ def plot_geometric_interaction_strength_vs_coactivation(
         ax.set_xlabel("Geometric Interaction Strength")
         ax.set_ylabel("Coactivation Fraction")
 
-    return {"geometric_interaction_strength_vs_coactivation": fig}
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+
+    return fig_img
 
 
 def plot_geometric_interaction_strength_product_with_coactivation_fraction(
     elementwise_products: dict[str, Float[Tensor, " C C"]],
-) -> dict[str, plt.Figure]:
+) -> Image.Image:
     """Plot elementwise products of geometric interaction strength matrices with coactivation matrices.
 
     This visualization shows how geometric relationships between components interact with
@@ -514,5 +523,7 @@ def plot_geometric_interaction_strength_product_with_coactivation_fraction(
         cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
         cbar.set_ticklabels(["0.0", "0.25", "0.5", "0.75", "1.0"])
 
-    return {"geometric_interaction_strength_elementwise_products": fig}
+    fig_img = _render_figure(fig)
+    plt.close(fig)
 
+    return fig_img
