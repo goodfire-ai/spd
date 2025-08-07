@@ -116,6 +116,9 @@ class TestDistributedSPDConsistency:
             # Compare final eval metrics
             self._validate_metrics(dp1_metrics, dp2_metrics)
 
+            # Load and compare saved models
+            self._compare_saved_models(dp1_out_dir, dp2_out_dir)
+
     def _run_experiment(
         self,
         config_path: Path,
@@ -201,3 +204,58 @@ class TestDistributedSPDConsistency:
                     raise e
 
                 print(f"✓ Metric '{key}': dp1={dp1_step[key]:.6f}, dp2={dp2_step[key]:.6f}")
+
+    def _compare_saved_models(
+        self,
+        dp1_out_dir: Path,
+        dp2_out_dir: Path,
+        atol: float = 1e-6,
+        rtol: float = 1e-5,
+    ) -> None:
+        """Compare saved model parameters between dp=1 and dp=2 runs.
+
+        Args:
+            dp1_out_dir: Output directory for dp=1 run
+            dp2_out_dir: Output directory for dp=2 run
+            atol: Absolute tolerance for parameter comparison
+            rtol: Relative tolerance for parameter comparison
+        """
+        # Find all saved model files in both directories and keep only the final checkpoint
+        dp1_model_files = sorted(
+            dp1_out_dir.glob("model_*.pth"), key=lambda p: int(p.stem.split("_")[1])
+        )
+        dp2_model_files = sorted(
+            dp2_out_dir.glob("model_*.pth"), key=lambda p: int(p.stem.split("_")[1])
+        )
+
+        # Retain only the final checkpoint from each run
+        dp1_file = dp1_model_files[-1]
+        dp2_file = dp2_model_files[-1]
+
+        print("\nComparing saved model checkpoint(s)...")
+
+        # Load model state dicts
+        dp1_state = torch.load(dp1_file, map_location="cpu")
+        dp2_state = torch.load(dp2_file, map_location="cpu")
+
+        # Compare each parameter
+        for param_name in sorted(dp1_state.keys()):
+            # We know that the target model is not trained, so we only care about params with
+            # "components" or "gates" in the name.
+            if "components" not in param_name and "gates" not in param_name:
+                continue
+
+            dp1_param = dp1_state[param_name]
+            dp2_param = dp2_state[param_name]
+
+            try:
+                torch.testing.assert_close(dp1_param, dp2_param, atol=atol, rtol=rtol)
+                print(
+                    f"  ✓ {param_name}: shape={list(dp1_param.shape)}, max_diff={torch.max(torch.abs(dp1_param - dp2_param)).item():.2e}"
+                )
+            except AssertionError as e:
+                e.add_note(f"Parameter '{param_name}'")
+                e.add_note(
+                    f"Max difference: {torch.max(torch.abs(dp1_param - dp2_param)).item():.2e}"
+                )
+                raise e
