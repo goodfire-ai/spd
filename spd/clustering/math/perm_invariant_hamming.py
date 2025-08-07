@@ -64,7 +64,6 @@ def perm_invariant_hamming(
 
 def perm_invariant_hamming_matrix(
     X: Int[np.ndarray, " k n"],
-    dtype=np.int16,
 ) -> Float[np.ndarray, " k k"]:
     """Compute all pairwise permutation-invariant Hamming distances.
 

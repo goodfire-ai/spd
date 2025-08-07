@@ -1,11 +1,14 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from jaxtyping import Bool, Int
 from torch import Tensor
 
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming
+
+if TYPE_CHECKING:
+    import matplotlib.pyplot as plt
 
 
 @dataclass(kw_only=True, slots=True)
@@ -160,7 +163,7 @@ class GroupMerge:
         show: bool = True,
         figsize: tuple[int, int] = (10, 3),
         show_row_sums: bool | None = None,
-        ax: "plt.Axes | None" = None,  # noqa: F821 # pyright: ignore[reportUndefinedVariable, reportUnknownParameterType]
+        ax: "plt.Axes | None" = None,
         component_labels: list[str] | None = None,
     ) -> None:
         import matplotlib.pyplot as plt
@@ -179,11 +182,11 @@ class GroupMerge:
             assert not show_row_sums
         else:
             if show_row_sums:
-                fig, (ax_mat, ax_lbl) = plt.subplots(  # pyright: ignore[reportGeneralTypeIssues]
+                _fig, (ax_mat, ax_lbl) = plt.subplots(  # pyright: ignore[reportGeneralTypeIssues]
                     1, 2, figsize=figsize, gridspec_kw={"width_ratios": [10, 1]}
                 )
             else:
-                fig, ax_mat = plt.subplots(figsize=figsize)
+                _fig, ax_mat = plt.subplots(figsize=figsize)
 
         ax_mat.matshow(merge_matrix.cpu(), aspect="auto", cmap="Blues", interpolation="nearest")
         ax_mat.set_xlabel("Components")
@@ -193,7 +196,7 @@ class GroupMerge:
         # Add component labeling if component labels are provided
         if component_labels is not None:
             # Import the function here to avoid circular imports
-            from spd.clustering.plotting import add_component_labeling
+            from spd.clustering.plotting.activations import add_component_labeling
 
             add_component_labeling(ax_mat, component_labels, axis="x")
 
@@ -310,7 +313,7 @@ class BatchedGroupMerge:
     def from_list(
         cls,
         merge_matrices: list[GroupMerge],
-        meta: list[dict[str, Any]] | None = None,
+        meta: list[dict[str, Any] | None] | None = None,
     ) -> "BatchedGroupMerge":
         group_idxs = torch.stack([mm.group_idxs for mm in merge_matrices], dim=0)
         k_groups = torch.tensor([mm.k_groups for mm in merge_matrices], dtype=torch.int64)

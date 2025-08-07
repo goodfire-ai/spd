@@ -102,7 +102,7 @@ def plot_dists_distribution(
 
     # Create figure if ax not provided
     if ax is None:
-        fig, ax_ = plt.subplots(  # pyright: ignore[reportCallIssue]
+        _fig, ax_ = plt.subplots(  # pyright: ignore[reportCallIssue]
             1,
             1,
             **dict(

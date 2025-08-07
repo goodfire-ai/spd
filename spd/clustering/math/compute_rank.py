@@ -72,7 +72,7 @@ def compute_rank_of_sum(  # noqa: D401 - imperative summary is intentional
         raise ValueError("Inconsistent SVD factor shapes")
 
     # ---- concatenate factors ------------------------------------------------
-    U: Float[np.ndarray, "d r"] = np.concatenate((U1, U2), axis=1)  # noqa: F841
+    _U: Float[np.ndarray, "d r"] = np.concatenate((U1, U2), axis=1)  # noqa: F841
     V: Float[np.ndarray, "d r"] = np.concatenate((V1, V2), axis=1)
     Sigma: Float[np.ndarray, "r r"] = np.diag(np.concatenate((S1, S2)))
 

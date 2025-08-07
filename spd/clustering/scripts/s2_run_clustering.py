@@ -19,13 +19,15 @@ from spd.clustering.merge import (
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
 
+# pyright: reportUnnecessaryIsInstance=false, reportUnreachable=false
+
 
 def run_clustering(
     merge_config: MergeConfig | Path,
     dataset_path: Path,
     model_path: str,
     save_dir: Path = REPO_ROOT / "data/clustering/merge_history/wip/",
-    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    device: str = "cuda",
 ) -> Path:
     # get the merge config
     merge_config_: MergeConfig

@@ -2,8 +2,12 @@ from pathlib import Path
 
 import numpy as np
 
-from spd.clustering.math.merge_distances import compute_distances
-from spd.clustering.merge import DistancesArray, DistancesMethod, MergesArray
+from spd.clustering.math.merge_distances import (
+    DistancesArray,
+    DistancesMethod,
+    MergesArray,
+    compute_distances,
+)
 
 
 def compute_histories_distances(

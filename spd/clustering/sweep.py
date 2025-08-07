@@ -11,7 +11,7 @@ from matplotlib.colors import LogNorm
 from matplotlib.lines import Line2D
 from tqdm import tqdm
 
-from spd.clustering.merge import MergeConfig, MergeHistory, MergePlotConfig, merge_iteration
+from spd.clustering.merge import MergeConfig, MergeHistory, merge_iteration
 
 
 @dataclass
@@ -222,16 +222,10 @@ def run_hyperparameter_sweep(
 
     for _i, merge_config in tqdm(enumerate(configs), total=len(configs)):
         try:
-            plot_config = MergePlotConfig(
-                plot_every=0,  # No plotting during sweep
-                plot_final=False,
-            )
-
             merge_history = merge_iteration(
                 activations=raw_activations,
                 merge_config=merge_config,
                 component_labels=component_labels,
-                plot_config=plot_config,
             )
 
             # Store sweep parameters in the merge history for later use

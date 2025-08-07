@@ -40,7 +40,7 @@ def plot_activations(
     """
     # Raw activations
     axs_act: Sequence[plt.Axes]
-    fig1, axs_act = plt.subplots(len(activations), 1, figsize=figsize_raw)  # pyright: ignore[reportAssignmentType]
+    _fig1, axs_act = plt.subplots(len(activations), 1, figsize=figsize_raw)  # pyright: ignore[reportAssignmentType]
     if len(activations) == 1:
         assert isinstance(axs_act, plt.Axes)
         axs_act = [axs_act]

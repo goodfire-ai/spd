@@ -10,6 +10,8 @@ from spd.clustering.merge import MergeHistory, MergeHistoryEnsemble
 from spd.log import logger
 from spd.settings import REPO_ROOT
 
+# pyright: reportUnnecessaryIsInstance=false
+
 
 def load_merge_histories(
     path: list[Path] | str,

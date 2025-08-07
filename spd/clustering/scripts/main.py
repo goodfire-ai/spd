@@ -18,6 +18,8 @@ from spd.log import logger
 from spd.settings import REPO_ROOT
 from spd.utils.cuda_memory_used import cuda_memory_fraction
 
+# pyright: reportUnreachable=false, reportUnnecessaryIsInstance=false
+
 
 # TODO: this is super messy
 def distribute_clustering(
@@ -156,9 +158,9 @@ def main(
 
     # 1. tokenize and split the dataset into n_batches of batch_size
     logger.section("Splitting dataset")
-    split_dataset_info_path: Path
+    _split_dataset_info_path: Path
     split_dataset_info: dict[str, Any]
-    split_dataset_info_path, split_dataset_info = split_dataset(
+    _split_dataset_info_path, split_dataset_info = split_dataset(
         model_path=model_path,
         n_batches=n_batches,
         batch_size=batch_size,
@@ -191,9 +193,9 @@ def main(
 
     # 4. compute distances between merge histories
     logger.section("Computing distances between merge histories")
-    dists_path: Path
+    _dists_path: Path
     distances: DistancesArray
-    dists_path, distances = compute_histories_distances(
+    _dists_path, distances = compute_histories_distances(
         merges_path=merged_hists["paths"]["merge_array"],
         method=distances_method,
     )

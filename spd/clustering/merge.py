@@ -337,7 +337,8 @@ class MergePlotConfig(BaseModel):
     plot_final: bool = True
 
 
-@serializable_dataclass(kw_only=True)
+# pyright hates muutils :(
+@serializable_dataclass(kw_only=True)  # pyright: ignore[reportUntypedClassDecorator]
 class MergeHistory(SerializableDataclass):
     """Track merge iteration history"""
 
@@ -467,7 +468,6 @@ def merge_iteration(
     merge_config: MergeConfig,
     component_labels: list[str],
     initial_merge: GroupMerge | None = None,
-    plot_config: MergePlotConfig | None = None,
     sweep_params: dict[str, Any] | None = None,
 ) -> MergeHistory:
     # setup
@@ -762,8 +762,8 @@ class MergeHistoryEnsemble:
             hist_missing_labels: set[str] = unique_labels_set - set(hist_c_labels)
             assert len(hist_missing_labels) == c_components - hist_n_components
             for idx_missing, missing_label in enumerate(hist_missing_labels):
-                i_comp_new: int = component_label_idxs[missing_label]
-                merges_array[i_ens, :, i_comp_new] = np.full(
+                i_comp_new_relabel: int = component_label_idxs[missing_label]
+                merges_array[i_ens, :, i_comp_new_relabel] = np.full(
                     self.n_iters,
                     fill_value=idx_missing + hist_n_components,
                     dtype=np.int16,

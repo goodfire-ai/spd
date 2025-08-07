@@ -11,7 +11,6 @@ from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
 
 
-@torch.no_grad()
 def component_activations(
     model: ComponentModel,
     device: torch.device | str,
@@ -22,27 +21,28 @@ def component_activations(
     sigmoid_type: SigmoidTypes = "normal",
 ) -> dict[str, Float[Tensor, " n_steps C"]]:
     """Get the component activations over a **single** batch."""
-    batch_: Tensor
-    if batch is None:
-        assert dataloader is not None, "provide either a batch or a dataloader, not both"
-        batch_ = extract_batch_data(next(iter(dataloader)))
-    else:
-        assert dataloader is None, "provide either a batch or a dataloader, not both"
-        batch_ = batch
+    with torch.no_grad():
+        batch_: Tensor
+        if batch is None:
+            assert dataloader is not None, "provide either a batch or a dataloader, not both"
+            batch_ = extract_batch_data(next(iter(dataloader)))
+        else:
+            assert dataloader is None, "provide either a batch or a dataloader, not both"
+            batch_ = batch
 
-    batch_ = batch_.to(device)
+        batch_ = batch_.to(device)
 
-    _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-        batch_, module_names=model.target_module_paths
-    )
+        _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
+            batch_, module_names=model.target_module_paths
+        )
 
-    causal_importances, _ = model.calc_causal_importances(
-        pre_weight_acts=pre_weight_acts,
-        sigmoid_type=sigmoid_type,
-        detach_inputs=False,
-    )
+        causal_importances, _ = model.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts,
+            sigmoid_type=sigmoid_type,
+            detach_inputs=False,
+        )
 
-    return causal_importances
+        return causal_importances
 
 
 def process_activations(
@@ -127,7 +127,7 @@ def process_activations(
 
     if plots:
         # Import plotting function only when needed
-        from spd.clustering.plotting import plot_activations
+        from spd.clustering.plotting.activations import plot_activations
 
         # Use original activations for raw plots, but filtered data for concat/coact/histograms
         plot_activations(

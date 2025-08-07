@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import partial
 from typing import Literal
 
 import numpy as np
@@ -17,8 +16,10 @@ DistancesArray = Float[np.ndarray, "n_iters n_ens n_ens"]
 
 
 DISTANCES_METHODS: dict[DistancesMethod, Callable[[MergesAtIterArray], DistancesArray]] = {
-    "perm_invariant_hamming": partial(perm_invariant_hamming_matrix, dtype=np.int16),
+    "perm_invariant_hamming": perm_invariant_hamming_matrix,
 }
+
+# pyright: reportUnnecessaryComparison=false, reportUnreachable=false
 
 
 def compute_distances(
@@ -39,5 +40,5 @@ def compute_distances(
             )
 
             return np.stack(distances_list, axis=0)
-        case _:  # pyright: ignore[reportUnnecessaryComparison]
+        case _:
             raise ValueError(f"Unknown distance method: {method}")
