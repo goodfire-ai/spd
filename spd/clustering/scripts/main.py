@@ -11,9 +11,9 @@ from matplotlib import pyplot as plt
 from spd.clustering.math.merge_distances import DistancesArray, DistancesMethod
 from spd.clustering.merge import MergeConfig
 from spd.clustering.plotting.merge import plot_dists_distribution
-from spd.clustering.scripts.s4_compute_distances import compute_histories_distances
-from spd.clustering.scripts.s3_normalize_histories import normalize_histories
 from spd.clustering.scripts.s1_split_dataset import split_dataset
+from spd.clustering.scripts.s3_normalize_histories import normalize_histories
+from spd.clustering.scripts.s4_compute_distances import compute_histories_distances
 from spd.log import logger
 from spd.settings import REPO_ROOT
 from spd.utils.cuda_memory_used import cuda_memory_fraction
