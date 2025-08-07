@@ -454,8 +454,12 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             active_components = ci_vals > self.config.ci_alive_threshold
             n_activations_per_component = reduce(active_components, "... C -> C", "sum")
             self.component_activation_counts[module_name] += n_activations_per_component
+            
+            # Flatten batch and sequence dimensions for einsum
+            # active_components has shape (batch, seq_len, C), we need (batch*seq_len, C)
+            active_components_flat = active_components.reshape(-1, active_components.shape[-1])
             self.component_co_activation_counts[module_name] += einsum(
-                active_components, active_components, "b C, b C2 -> b C C2"
+                active_components_flat, active_components_flat, "b C, b C2 -> b C C2"
             ).sum(dim=0)
 
     @override
