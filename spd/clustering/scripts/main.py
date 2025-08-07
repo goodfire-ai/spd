@@ -8,7 +8,7 @@ from typing import Any
 
 from matplotlib import pyplot as plt
 
-from spd.clustering.math.merge_distances import DistancesArray
+from spd.clustering.math.merge_distances import DistancesArray, DistancesMethod
 from spd.clustering.merge import MergeConfig
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.clustering.scripts.compute_distances import compute_histories_distances
@@ -94,6 +94,7 @@ def main(
     base_path: Path = REPO_ROOT / "data/clustering/",
     n_batches: int = 10,
     batch_size: int = 64,
+    distances_method: DistancesMethod = "perm_invariant_hamming",
     devices: Sequence[str] | str = "cuda:0",
     max_concurrency: int | None = None,
     plot: bool = True,
@@ -126,6 +127,8 @@ def main(
     merge_run_id: str = f"n{n_batches}_b{batch_size}_{merge_config_hash}"
     run_path: Path = base_path / f"{merge_run_id}"
     run_path.mkdir(parents=True, exist_ok=True)
+    figures_path: Path = run_path / "figures"
+    figures_path.mkdir(parents=True, exist_ok=True)
     run_config_path: Path = run_path / "run_config.json"
     run_config_path.write_text(
         json.dumps(
@@ -192,7 +195,7 @@ def main(
     distances: DistancesArray
     dists_path, distances = compute_histories_distances(
         merges_path=merged_hists["paths"]["merge_array"],
-        method="perm_invariant_hamming",
+        method=distances_method,
     )
 
     if plot:
@@ -203,7 +206,7 @@ def main(
             # label="v1"
         )
         plt.legend()
-        fig_path: Path = run_path / "distances_distribution.png"
+        fig_path: Path = figures_path / f"distances_distribution.{distances_method}.png"
         plt.savefig(fig_path)
         logger.info(f"Saved distances distribution plot to {fig_path}")
         plt.show()
