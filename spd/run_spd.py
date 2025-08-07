@@ -49,15 +49,11 @@ def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path)
     fig_dir.mkdir(exist_ok=True)
 
     for k, v in data.items():
-        metrics_dict = {}
-
         if isinstance(v, Image.Image):
             v.save(fig_dir / f"{k.replace('/', '_')}_{step}.png")
-        else:
-            metrics_dict[k] = v
 
-        with open(metrics_file, "a") as f:
-            f.write(json.dumps({"step": step, **metrics_dict}) + "\n")
+    with open(metrics_file, "a") as f:
+        f.write(json.dumps({"step": step, **data}) + "\n")
 
 
 def loop_dataloader[T](dl: DataLoader[T]):

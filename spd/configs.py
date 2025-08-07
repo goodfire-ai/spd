@@ -2,6 +2,7 @@
 
 import importlib
 import inspect
+from pathlib import Path
 from typing import Any, ClassVar, Literal, Self
 
 from pydantic import (
@@ -193,6 +194,11 @@ class Config(BaseModel):
     )
 
     # --- Logging & Saving ---
+    out_dir: Path | None = Field(
+        default=None,
+        description="Directory to save output to. If None, creates a dir using the wandb project "
+        "or randomly generates one",
+    )
     train_log_freq: PositiveInt = Field(
         ...,
         description="Interval (in steps) at which to log training metrics",
@@ -269,10 +275,11 @@ class Config(BaseModel):
         description="Nested task-specific configuration selected by the `task_name` discriminator",
     )
 
-    # --- Distributed Data Parallel (DDP) ---
+    # --- Distributed ---
     ddp_backend: Literal["nccl", "gloo"] | None = Field(
         default=None,
-        description="Backend for distributed training (nccl for GPU, gloo for CPU)",
+        description="Backend for distributed training (nccl for GPU, gloo for CPU). If None, "
+        "uses the default backend for the current device.",
     )
 
     DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = [

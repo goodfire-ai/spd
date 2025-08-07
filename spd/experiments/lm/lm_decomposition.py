@@ -54,8 +54,13 @@ def main(
         config = init_wandb(config, config.wandb_project, tags=tags)
 
     if is_main_process():
-        out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
-        logger.info(f"Output directory: {out_dir}")
+        if config.out_dir is not None:
+            out_dir = Path(config.out_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Output directory: {out_dir}")
+        else:
+            out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+            logger.info(f"Output directory: {out_dir}")
     else:
         out_dir = None
 
