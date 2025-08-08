@@ -27,7 +27,7 @@ pnorm: 0.9
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 64
+batch_size: 128
 steps: 30_000
 lr: 0.001
 lr_schedule: cosine
