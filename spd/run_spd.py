@@ -174,7 +174,7 @@ def optimize(
 
             target_out, pre_weight_acts = wrapped_model(
                 batch,
-                forward_type="pre_forward_cache",
+                mode="pre_forward_cache",
                 module_names=component_model.target_module_paths,
             )
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass

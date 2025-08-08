@@ -308,7 +308,7 @@ def _process_batch_for_tokens(
     with torch.no_grad():
         _, pre_weight_acts = model_data.model(
             batch,
-            forward_type="pre_forward_cache",
+            mode="pre_forward_cache",
             module_names=model_data.model.target_module_paths,
         )
 

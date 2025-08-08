@@ -268,7 +268,7 @@ class ComponentModel(LoadableModule):
     def forward(
         self,
         *args: Any,
-        forward_type: Literal["target", "components", "pre_forward_cache"] | None = "target",
+        mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
         masks: dict[str, Float[Tensor, "... C"]] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
@@ -279,21 +279,21 @@ class ComponentModel(LoadableModule):
         work (https://discuss.pytorch.org/t/is-it-ok-to-use-methods-other-than-forward-in-ddp/176509).
 
         Args:
-            forward_type: The type of forward pass to perform:
+            mode: The type of forward pass to perform:
                 - 'target': Standard forward pass of the target model
                 - 'components': Forward with component replacements (requires masks)
                 - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
-            masks: Dictionary mapping component names to masks (required for forward_type='components')
-            module_names: List of module names to cache inputs for (required for forward_type='pre_forward_cache')
+            masks: Dictionary mapping component names to masks (required for mode='components')
+            module_names: List of module names to cache inputs for (required for mode='pre_forward_cache')
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
-        if forward_type == "components":
-            assert masks is not None, "masks parameter is required for forward_type='components'"
+        if mode == "components":
+            assert masks is not None, "masks parameter is required for mode='components'"
             return self._forward_with_components(*args, masks=masks, **kwargs)
-        elif forward_type == "pre_forward_cache":
+        elif mode == "pre_forward_cache":
             assert module_names is not None, (
-                "module_names parameter is required for forward_type='pre_forward_cache'"
+                "module_names parameter is required for mode='pre_forward_cache'"
             )
             return self._forward_with_pre_forward_cache_hooks(
                 *args, module_names=module_names, **kwargs
