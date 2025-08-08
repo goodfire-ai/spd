@@ -19,11 +19,9 @@ def calc_stochastic_masks(
     stochastic_masks: list[dict[str, Float[Tensor, "... C"]]] = []
 
     for _ in range(n_mask_samples):
-        mask_dict = {}
-        for layer, ci in causal_importances.items():
-            mask_dict[layer] = ci + (1 - ci) * torch.rand_like(ci)
-
-        stochastic_masks.append(mask_dict)
+        stochastic_masks.append(
+            {layer: ci + (1 - ci) * torch.rand_like(ci) for layer, ci in causal_importances.items()}
+        )
 
     return stochastic_masks
 

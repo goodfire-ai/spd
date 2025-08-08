@@ -34,51 +34,43 @@ def main(
     sweep_id: str | None = None,
     sweep_params_json: str | None = None,
 ) -> None:
-    # Load config first to get DDP settings
     config = load_config(config_path_or_obj, config_model=Config)
 
-    # Initialize distributed training with backend from config if specified
     rank, world_size, _local_rank = init_distributed(backend=config.dist_backend)
 
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
     )
 
-    # Only initialize wandb on main process
-    if config.wandb_project and is_main_process():
-        tags = ["lm"]
-        if evals_id:
-            tags.append(evals_id)
-        if sweep_id:
-            tags.append(sweep_id)
-        config = init_wandb(config, config.wandb_project, tags=tags)
-
-    if is_main_process():
-        if config.out_dir is not None:
-            out_dir = Path(config.out_dir)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Output directory: {out_dir}")
-        else:
-            out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
-            logger.info(f"Output directory: {out_dir}")
-    else:
-        out_dir = None
-
     # Use the same seed across all ranks for deterministic data loading
     set_seed(config.seed)
+
     if is_main_process():
+        if config.wandb_project:
+            tags = ["lm"]
+            if evals_id:
+                tags.append(evals_id)
+            if sweep_id:
+                tags.append(sweep_id)
+            config = init_wandb(config, config.wandb_project, tags=tags)
+            assert wandb.run
+            if config.wandb_run_name:
+                wandb.run.name = config.wandb_run_name
+
+        if config.out_dir is not None:
+            out_dir = config.out_dir
+            out_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+        logger.info(f"Output directory: {out_dir}")
         logger.info(config)
         if world_size > 1:
             logger.info(f"Running distributed training with {world_size} processes")
+    else:
+        out_dir = None
 
     device = get_device()
-    assert isinstance(config.task_config, LMTaskConfig), (
-        "Task config must be LMTaskConfig for LM decomposition."
-    )
-
-    # --- Load Model --- #
-    if is_main_process():
-        logger.info("Loading base language model ...")
+    assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
 
     hf_model_class = resolve_class(config.pretrained_model_class)
     assert issubclass(hf_model_class, PreTrainedModel), (
@@ -89,12 +81,6 @@ def main(
     target_model = hf_model_class.from_pretrained(config.pretrained_model_name_hf)
     target_model.eval()
 
-    if config.wandb_project and is_main_process():
-        assert wandb.run, "wandb.run must be initialized before training"
-        if config.wandb_run_name:
-            wandb.run.name = config.wandb_run_name
-
-    # Only save pre-run info on main process
     if is_main_process():
         assert out_dir is not None
         save_pre_run_info(
@@ -121,15 +107,15 @@ def main(
     )
 
     # Adjust batch size for distributed training
-    # Keep per-process batch size constant to maintain gradient scale
+    # Keep per-process batch size constant to maintain scale of all metrics
     assert config.microbatch_size % world_size == 0 and config.microbatch_size > 0, (
         f"Microbatch size {config.microbatch_size} is not divisible by world size {world_size}. "
     )
-    train_batch_size = config.microbatch_size // world_size
+    train_rank_microbatch_size = config.microbatch_size // world_size
 
     train_loader, _tokenizer = create_data_loader(
         dataset_config=train_data_config,
-        batch_size=train_batch_size,
+        batch_size=train_rank_microbatch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
         ddp_rank=rank,
@@ -149,22 +135,17 @@ def main(
     assert config.eval_batch_size % world_size == 0 and config.eval_batch_size > 0, (
         f"Eval batch size {config.eval_batch_size} is not divisible by world size {world_size}. "
     )
-    eval_batch_size = config.eval_batch_size // world_size
+    eval_rank_batch_size = config.eval_batch_size // world_size
 
     eval_loader, _ = create_data_loader(
         dataset_config=eval_data_config,
-        batch_size=eval_batch_size,
+        batch_size=eval_rank_batch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
         ddp_rank=rank,
         ddp_world_size=world_size,
     )
 
-    if is_main_process():
-        logger.info("Dataset and tokenizer loaded.")
-
-    # TODO: Below not needed when TMS supports config.n_eval_steps
-    assert config.n_eval_steps is not None, "n_eval_steps must be set"
     if is_main_process():
         logger.info("Starting optimization...")
     optimize(
@@ -179,11 +160,9 @@ def main(
 
     if is_main_process():
         logger.info("Optimization finished.")
+        if config.wandb_project:
+            wandb.finish()
 
-    if config.wandb_project and is_main_process():
-        wandb.finish()
-
-    # Clean up distributed process group
     cleanup_distributed()
 
 

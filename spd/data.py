@@ -8,8 +8,6 @@ from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
-from spd.log import logger
-
 
 class DatasetConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
@@ -166,13 +164,11 @@ def create_data_loader(
     Returns:
         A tuple of the DataLoader and the tokenizer.
     """
-    # Always load tokenizer (lightweight operation)
     tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)
 
     # For streaming datasets, we can't use DistributedSampler, so keep existing approach
     if dataset_config.streaming:
-        if ddp_world_size > 1:
-            logger.warning("DDP with streaming datasets has not been tested. ")
+        assert ddp_world_size == 1, "DDP with streaming datasets is not yet supported."
         dataset = load_dataset(
             dataset_config.name,
             streaming=dataset_config.streaming,
@@ -196,7 +192,6 @@ def create_data_loader(
                 to_lower=to_lower,
             )
 
-        # Streaming datasets don't use samplers
         loader = DataLoader(
             torch_dataset,  # pyright: ignore[reportArgumentType]
             batch_size=batch_size,
@@ -204,7 +199,6 @@ def create_data_loader(
             drop_last=True,
         )
     else:
-        # Non-streaming: Load and process entire dataset, then use DistributedSampler
         dataset = load_dataset(
             dataset_config.name,
             streaming=dataset_config.streaming,
@@ -213,7 +207,6 @@ def create_data_loader(
         )
         assert isinstance(dataset, Dataset)
 
-        # Use consistent seed across all ranks for shuffling
         seed = dataset_config.seed if dataset_config.seed is not None else global_seed
         dataset = dataset.shuffle(seed=seed)
 
@@ -234,7 +227,6 @@ def create_data_loader(
                 f"n_ctx ({dataset_config.n_ctx}) does not match the tokenized length ({len(sample_data)})."
             )
         else:
-            # Tokenize the entire dataset (same on all ranks due to same seed)
             to_lower = "SimpleStories" in dataset_config.name
             torch_dataset = tokenize_and_concatenate(
                 dataset,

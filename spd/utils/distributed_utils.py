@@ -16,7 +16,8 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> tuple[in
     Supports OpenMPI only.
 
     Args:
-        backend: Distributed backend to use ('nccl' or 'gloo').
+        backend: Distributed backend to use ('nccl' or 'gloo'). If None, uses 'nccl' if CUDA is
+            available, otherwise 'gloo'.
 
     Returns:
         Tuple of (rank, world_size, local_rank)
@@ -148,39 +149,11 @@ def broadcast(tensor: torch.Tensor, src: int = 0) -> torch.Tensor:
     return tensor
 
 
-def gather_object(obj: object, dst: int = 0) -> list[object] | None:
-    """Gather objects from all ranks to destination rank.
-
-    Args:
-        obj: Object to gather
-        dst: Destination rank (default: 0)
-
-    Returns:
-        List of objects from all ranks if on destination rank, None otherwise
-    """
-    if not dist.is_initialized() or dist.get_world_size() == 1:
-        return [obj]
-
-    if get_rank() == dst:
-        output: list[object | None] = [None] * dist.get_world_size()
-        dist.gather_object(obj, output, dst=dst)
-        # Type assertion is safe here as gather_object fills all slots
-        return output  # type: ignore[return-value]
-    else:
-        dist.gather_object(obj, None, dst=dst)
-        return None
-
-
-def print_once(msg: str) -> None:
-    """Print message only on rank 0."""
-    if is_main_process():
-        print(msg)
-
-
 def avg_metrics_across_ranks(metrics: Mapping[str, float], device: str) -> Mapping[str, float]:
     """Get the average of metrics across ranks."""
     assert is_distributed(), "Can only average metrics across ranks if running in distributed mode"
     metric_values = torch.tensor([metrics[k] for k in metrics], device=device)
+    # Use ReduceOp.SUM and then divide since ReduceOp.AVG isn't supported for gloo backend (cpu)
     metric_values = all_reduce(metric_values, op=ReduceOp.SUM) / get_world_size()
     return {k: metric_values[i].item() for i, k in enumerate(metrics)}
 

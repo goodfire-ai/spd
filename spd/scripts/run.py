@@ -581,7 +581,7 @@ def _wandb_setup(
     )
 
 
-def _validate_dp(dp: int, experiments_list: list[str], local: bool) -> None:
+def _validate_dp(dp: int, experiments_list: list[str], local: bool, cpu: bool) -> None:
     if dp < 1 or dp > 8:
         raise ValueError(f"dp must be between 1 and 8, got {dp}")
 
@@ -597,6 +597,9 @@ def _validate_dp(dp: int, experiments_list: list[str], local: bool) -> None:
                 f"DDP (dp > 1) is only supported for lm experiments. "
                 f"Non-lm experiments found: {non_lm_experiments}"
             )
+
+    if dp > 1 and cpu:
+        raise ValueError("Can't have both dp > 1 and cpu")
 
 
 def main(
@@ -660,6 +663,12 @@ def main(
 
         # Use custom W&B project
         spd-run --experiments tms_5-2 --project my-spd-project
+
+        # Run all experiments on CPU
+        spd-run --experiments tms_5-2 --cpu
+
+        # Run with data parallelism over 4 GPUs (only supported for lm experiments)
+        spd-run --experiments ss_mlp --dp 4
     """
     # setup
     # ==========================================================================================
@@ -679,7 +688,7 @@ def main(
     experiments_list: list[str] = get_experiments(experiments)
     logger.info(f"Experiments: {', '.join(experiments_list)}")
 
-    _validate_dp(dp, experiments_list, local)
+    _validate_dp(dp, experiments_list=experiments_list, local=local, cpu=cpu)
 
     # Agent count
     if n_agents is None:
@@ -751,15 +760,15 @@ def main(
             else:
                 job_name = f"spd-{job_suffix}"
 
+            n_gpus_per_job = dp if not cpu else 0
             create_slurm_array_script(
                 script_path=array_script,
                 job_name=job_name,
                 commands=commands,
-                cpu=cpu,
                 # again -- local is false, so snapshot_branch will exist
                 snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
                 max_concurrent_tasks=n_agents,
-                n_gpus_per_job=dp,
+                n_gpus_per_job=n_gpus_per_job,
             )
 
             array_job_id = submit_slurm_array(array_script)

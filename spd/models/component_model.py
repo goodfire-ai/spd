@@ -121,6 +121,23 @@ class ComponentModel(LoadableModule):
     def components(self) -> dict[str, Components]:
         return {name: cm.components for name, cm in self.components_or_modules.items()}
 
+    def _extract_output(self, raw_output: Any) -> Any:
+        """Extract the desired output from the model's raw output.
+
+        If pretrained_model_output_attr is None, returns the raw output directly.
+        Otherwise, returns the specified attribute from the raw output.
+
+        Args:
+            raw_output: The raw output from the model.
+
+        Returns:
+            The extracted output.
+        """
+        if self.pretrained_model_output_attr is None:
+            return raw_output
+        else:
+            return getattr(raw_output, self.pretrained_model_output_attr)
+
     @staticmethod
     def _get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
         """Find the target_module_patterns that match real modules in the target model.
@@ -284,10 +301,7 @@ class ComponentModel(LoadableModule):
         else:
             # target forward pass of the patched model
             raw_out = self.patched_model(*args, **kwargs)
-            if self.pretrained_model_output_attr is None:
-                out = raw_out
-            else:
-                out = getattr(raw_out, self.pretrained_model_output_attr)
+            out = self._extract_output(raw_out)
             return out
 
     @contextmanager
@@ -332,12 +346,8 @@ class ComponentModel(LoadableModule):
             masks: Optional dictionary mapping component names to masks
         """
         with self._replaced_modules(masks):
-            # Use the patched model directly to avoid recursion
             raw_out = self.patched_model(*args, **kwargs)
-            if self.pretrained_model_output_attr is None:
-                out = raw_out
-            else:
-                out = getattr(raw_out, self.pretrained_model_output_attr)
+            out = self._extract_output(raw_out)
             return out
 
     def _forward_with_pre_forward_cache_hooks(
@@ -369,12 +379,8 @@ class ComponentModel(LoadableModule):
             module.forward_mode = "original"
 
         try:
-            # Use the patched model directly to avoid recursion
             raw_out = self.patched_model(*args, **kwargs)
-            if self.pretrained_model_output_attr is None:
-                out = raw_out
-            else:
-                out = getattr(raw_out, self.pretrained_model_output_attr)
+            out = self._extract_output(raw_out)
             return out, cache
         finally:
             for handle in handles:
