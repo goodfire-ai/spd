@@ -4,8 +4,9 @@ from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-from jaxtyping import Float
+from jaxtyping import Float, Int, Bool
 from torch import Tensor
+import torch
 
 from spd.clustering.math.merge_distances import DistancesArray
 from spd.clustering.math.merge_matrix import GroupMerge
@@ -194,11 +195,14 @@ def plot_dists_distribution(
     return ax_
 
 
-def plot_merge_history(history: MergeHistory, plot_config: dict[str, Any] | None = None) -> None:
-    """Plot cost evolution from merge history."""
-    config = plot_config or DEFAULT_PLOT_CONFIG
-
-    fig, ax = plt.subplots(figsize=config["figsize_final"])
+def plot_merge_history_costs(
+        history: MergeHistory,
+        figsize: tuple[int, int] = (10,5),
+        fmt: str = "pdf",
+        file_prefix: str|None = None,
+    ) -> None:
+    """Plot cost evolution from merge history"""
+    fig, ax = plt.subplots(figsize=figsize)
     ax.plot(history.max_considered_cost, label="max considered cost")
     ax.plot(history.non_diag_costs_min, label="non-diag costs min")
     ax.plot(history.non_diag_costs_max, label="non-diag costs max")
@@ -207,7 +211,43 @@ def plot_merge_history(history: MergeHistory, plot_config: dict[str, Any] | None
     ax.set_ylabel("Cost")
     ax.legend()
 
-    if config["save_pdf"]:
-        fig.savefig(f"{config['pdf_prefix']}_cost_evolution.pdf", bbox_inches="tight", dpi=300)
+    if file_prefix:
+        fig.savefig(f"{file_prefix}_cost_evolution.{fmt}", bbox_inches="tight", dpi=300)
 
-    plt.show()
+
+def plot_merge_history_cluster_sizes(
+    history: MergeHistory,
+    figsize: tuple[int, int] = (10, 5),
+    fmt: str = "pdf",
+    file_prefix: str | None = None,
+) -> None:
+    k_groups_t: Int[Tensor, " n_iters"] = history.k_groups
+    valid_mask: Bool[Tensor, " n_iters"] = k_groups_t.ne(-1)
+    has_data: bool = bool(valid_mask.any().item())
+    if not has_data:
+        raise ValueError("No populated iterations in history.k_groups")
+
+    group_idxs_all: Int[Tensor, " n_iters n_components"] = history.merges.group_idxs[valid_mask]
+    k_groups_all: Int[Tensor, " n_iters"] = k_groups_t[valid_mask]
+    max_k: int = int(k_groups_all.max().item())
+
+    counts_list: list[Int[Tensor, " max_k"]] = [
+        torch.bincount(row[row.ge(0)], minlength=max_k)  # per-iteration cluster sizes
+        for row in group_idxs_all
+    ]
+    counts: Int[Tensor, " n_iters max_k"] = torch.stack(counts_list, dim=0)
+
+    mask_pos: Bool[Tensor, " n_iters max_k"] = counts.gt(0)
+    it_idx_t, grp_idx_t = torch.nonzero(mask_pos, as_tuple=True)
+    xs_t: Float[Tensor, " n_points"] = it_idx_t.to(torch.float32)
+    sizes_t: Float[Tensor, " n_points"] = counts[it_idx_t, grp_idx_t].to(torch.float32)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.plot(xs_t.cpu().numpy(), sizes_t.cpu().numpy(), "", marker="o", markersize=3, alpha=0.15)
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Cluster size")
+    ax.set_yscale("log")
+    ax.set_title("Distribution of cluster sizes over time")
+
+    if file_prefix is not None:
+        fig.savefig(f"{file_prefix}_cluster_sizes.{fmt}", bbox_inches="tight", dpi=300)

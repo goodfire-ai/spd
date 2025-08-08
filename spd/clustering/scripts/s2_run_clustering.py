@@ -14,6 +14,7 @@ from spd.clustering.activations import component_activations, process_activation
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
+from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_history_costs
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
 
@@ -26,6 +27,7 @@ def run_clustering(
     model_path: str,
     save_dir: Path = REPO_ROOT / "data/clustering/merge_history/wip/",
     device: str = "cuda",
+    plot: bool = True,
 ) -> Path:
     # get the merge config
     merge_config_: MergeConfig
@@ -38,6 +40,14 @@ def run_clustering(
 
     # get the dataset -- for ensembles, each instance of this script gets a different batch
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
+
+    this_merge_path: Path = (
+        save_dir 
+        / f"history-{merge_config_.stable_hash}-b_{data_batch.shape[0]}-{dataset_path.stem}"
+    )
+    this_merge_figs: Path = Path(this_merge_path.as_posix() + "_plots/")
+    if plot:
+        this_merge_figs.mkdir(parents=True, exist_ok=True)
 
     # load the spd run
     spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
@@ -64,9 +74,26 @@ def run_clustering(
         filter_dead_threshold=merge_config_.filter_dead_threshold,
         seq_mode="concat",
         filter_modules=merge_config_.filter_modules,
-        plots=True,  # Plot the processed activations
-        # plot_title="Processed Activations",
     )
+
+    if plot:
+        # Import plotting function only when needed
+        from spd.clustering.plotting.activations import plot_activations
+
+        # Use original activations for raw plots, but filtered data for concat/coact/histograms
+        plot_activations(
+            activations=processed_activations["activations_raw"],
+            act_concat= processed_activations["activations"],
+            coact=processed_activations["coactivations"],
+            labels=processed_activations["labels"],
+            save_pdf=True,
+            pdf_prefix=(this_merge_figs / "activations").as_posix(),
+            # figsize_raw=figsize_raw,
+            # figsize_concat=figsize_concat,
+            # figsize_coact=figsize_coact,
+            # hist_scales=hist_scales,
+            # hist_bins=hist_bins,
+        )
 
     # run the merge iteration
     merge_history: MergeHistory = merge_iteration(
@@ -76,13 +103,23 @@ def run_clustering(
     )
 
     # save the merge iteration
-    save_path: Path = (
-        save_dir
-        / f"history_{merge_config_.stable_hash}_{data_batch.shape[0]}_{dataset_path.stem}.zanj"
-    )
-    ZANJ().save(merge_history.serialize(), save_path)
-    print(f"Merge history saved to {save_path}")
-    return save_path
+    hist_save_path: Path = Path(this_merge_path.as_posix() + ".zanj")
+    ZANJ().save(merge_history.serialize(), hist_save_path)
+    print(f"Merge history saved to {hist_save_path}")
+
+
+    if plot:
+        plot_merge_history_cluster_sizes(
+            history=merge_history,
+            file_prefix=(this_merge_figs / "merge").as_posix(),
+        )
+        plot_merge_history_costs(
+            history=merge_history,
+            file_prefix=(this_merge_figs / "merge").as_posix(),
+        )
+
+
+    return hist_save_path
 
 
 if __name__ == "__main__":

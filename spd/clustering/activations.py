@@ -55,14 +55,6 @@ def process_activations(
     filter_dead_threshold: float = 0.01,
     seq_mode: Literal["concat", "seq_mean", None] = None,
     filter_modules: ModuleFilterFunc|None = None,
-    plots: bool = False,
-    save_pdf: bool = False,
-    pdf_prefix: str = "activations",
-    figsize_raw: tuple[int, int] = (12, 4),
-    figsize_concat: tuple[int, int] = (12, 2),
-    figsize_coact: tuple[int, int] = (8, 6),
-    hist_scales: tuple[str, str] = ("lin", "log"),
-    hist_bins: int = 100,
 ) -> dict[str, Any]:
     """get back a dict of coactivations, slices, and concated activations"""
 
@@ -124,6 +116,7 @@ def process_activations(
 
     # return the output
     output: dict[str, Any] = dict(
+        activations_raw=activations_,
         activations=act_concat,
         labels=labels,
         coactivations=coact,
@@ -134,24 +127,5 @@ def process_activations(
     )
 
     dbg_auto(output)
-
-    if plots:
-        # Import plotting function only when needed
-        from spd.clustering.plotting.activations import plot_activations
-
-        # Use original activations for raw plots, but filtered data for concat/coact/histograms
-        plot_activations(
-            activations=activations_,  # Original unfiltered for raw activations
-            act_concat=act_concat,  # Filtered concatenated activations
-            coact=coact,  # Coactivations from filtered data
-            labels=labels,  # Labels matching filtered data
-            save_pdf=save_pdf,
-            pdf_prefix=pdf_prefix,
-            figsize_raw=figsize_raw,
-            figsize_concat=figsize_concat,
-            figsize_coact=figsize_coact,
-            hist_scales=hist_scales,
-            hist_bins=hist_bins,
-        )
 
     return output
