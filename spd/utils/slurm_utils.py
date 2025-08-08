@@ -27,7 +27,7 @@ def create_slurm_array_script(
     job_name: str,
     commands: list[str],
     snapshot_branch: str,
-    cpu: bool = False,
+    n_gpus_per_job: int,
     time_limit: str = "72:00:00",
     max_concurrent_tasks: int | None = None,
 ) -> None:
@@ -37,13 +37,12 @@ def create_slurm_array_script(
         script_path: Path where the script should be written
         job_name: Name for the SLURM job array
         commands: List of commands to execute in each array job
-        cpu: If True, use CPU only, otherwise use GPU
+        snapshot_branch: Git branch to checkout.
+        n_gpus_per_job: Number of GPUs per job. If 0, use CPU jobs.
         time_limit: Time limit for each job (default: 72:00:00)
-        snapshot_branch: Git branch to checkout. If None, creates a new snapshot.
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
 
-    gpu_config = "#SBATCH --gres=gpu:0" if cpu else "#SBATCH --gres=gpu:1"
     slurm_logs_dir = Path.home() / "slurm_logs"
     slurm_logs_dir.mkdir(exist_ok=True)
 
@@ -63,7 +62,7 @@ def create_slurm_array_script(
     script_content = textwrap.dedent(f"""
         #!/bin/bash
         #SBATCH --nodes=1
-        {gpu_config}
+        #SBATCH --gres=gpu:{n_gpus_per_job}
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}

@@ -4,6 +4,9 @@ import torch
 from einops import reduce
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+from torch.distributed import ReduceOp
+
+from spd.utils.distributed_utils import all_reduce, is_distributed
 
 
 class AliveComponentsTracker:
@@ -18,7 +21,7 @@ class AliveComponentsTracker:
         module_names: list[str],
         C: int,
         n_examples_until_dead: int,
-        device: torch.device,
+        device: str,
         ci_alive_threshold: float,
     ):
         """Initialize the tracker.
@@ -41,6 +44,7 @@ class AliveComponentsTracker:
     def watch_batch(self, importance_vals_dict: dict[str, Float[Tensor, "... C"]]) -> None:
         """Update tracking based on importance values from a batch.
 
+
         Args:
             importance_vals_dict: Dict mapping module names to importance tensors
                                   with shape (..., C) where ... represents batch dimensions
@@ -52,6 +56,9 @@ class AliveComponentsTracker:
             firing: Bool[Tensor, " C"] = reduce(
                 importance_vals > self.ci_alive_threshold, "... C -> C", torch.any
             )
+            if is_distributed():
+                # Check if any ci value is > threshold on any rank.
+                firing = all_reduce(firing, op=ReduceOp.MAX)
 
             n_examples = importance_vals.shape[:-1].numel()
 

@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, override
+from typing import Any, Literal, override
 
 import torch
 import wandb
@@ -120,6 +120,23 @@ class ComponentModel(LoadableModule):
     @property
     def components(self) -> dict[str, Components]:
         return {name: cm.components for name, cm in self.components_or_modules.items()}
+
+    def _extract_output(self, raw_output: Any) -> Any:
+        """Extract the desired output from the model's raw output.
+
+        If pretrained_model_output_attr is None, returns the raw output directly.
+        Otherwise, returns the specified attribute from the raw output.
+
+        Args:
+            raw_output: The raw output from the model.
+
+        Returns:
+            The extracted output.
+        """
+        if self.pretrained_model_output_attr is None:
+            return raw_output
+        else:
+            return getattr(raw_output, self.pretrained_model_output_attr)
 
     @staticmethod
     def _get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
@@ -248,17 +265,44 @@ class ComponentModel(LoadableModule):
         return gates
 
     @override
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def forward(
+        self,
+        *args: Any,
+        mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
+        masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        module_names: list[str] | None = None,
+        **kwargs: Any,
+    ) -> Any:
         """Forward pass of the patched model.
+
+        NOTE: We need all the forward options in forward in order for DistributedDataParallel to
+        work (https://discuss.pytorch.org/t/is-it-ok-to-use-methods-other-than-forward-in-ddp/176509).
+
+        Args:
+            mode: The type of forward pass to perform:
+                - 'target': Standard forward pass of the target model
+                - 'components': Forward with component replacements (requires masks)
+                - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
+            masks: Dictionary mapping component names to masks (required for mode='components')
+            module_names: List of module names to cache inputs for (required for mode='pre_forward_cache')
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
-        raw_out = self.patched_model(*args, **kwargs)
-        if self.pretrained_model_output_attr is None:
-            out = raw_out
+        if mode == "components":
+            assert masks is not None, "masks parameter is required for mode='components'"
+            return self._forward_with_components(*args, masks=masks, **kwargs)
+        elif mode == "pre_forward_cache":
+            assert module_names is not None, (
+                "module_names parameter is required for mode='pre_forward_cache'"
+            )
+            return self._forward_with_pre_forward_cache_hooks(
+                *args, module_names=module_names, **kwargs
+            )
         else:
-            out = getattr(raw_out, self.pretrained_model_output_attr)
-        return out
+            # target forward pass of the patched model
+            raw_out = self.patched_model(*args, **kwargs)
+            out = self._extract_output(raw_out)
+            return out
 
     @contextmanager
     def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
@@ -288,7 +332,7 @@ class ComponentModel(LoadableModule):
                 component.forward_mode = None
                 component.mask = None
 
-    def forward_with_components(
+    def _forward_with_components(
         self,
         *args: Any,
         masks: dict[str, Float[Tensor, "... C"]],
@@ -302,9 +346,11 @@ class ComponentModel(LoadableModule):
             masks: Optional dictionary mapping component names to masks
         """
         with self._replaced_modules(masks):
-            return self(*args, **kwargs)
+            raw_out = self.patched_model(*args, **kwargs)
+            out = self._extract_output(raw_out)
+            return out
 
-    def forward_with_pre_forward_cache_hooks(
+    def _forward_with_pre_forward_cache_hooks(
         self, *args: Any, module_names: list[str], **kwargs: Any
     ) -> tuple[Any, dict[str, Tensor]]:
         """Forward pass with caching at the input to the modules given by `module_names`.
@@ -333,7 +379,8 @@ class ComponentModel(LoadableModule):
             module.forward_mode = "original"
 
         try:
-            out = self(*args, **kwargs)
+            raw_out = self.patched_model(*args, **kwargs)
+            out = self._extract_output(raw_out)
             return out, cache
         finally:
             for handle in handles:

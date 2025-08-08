@@ -16,8 +16,8 @@ from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
+from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import (
-    get_device,
     load_config,
     save_pre_run_info,
     set_seed,
