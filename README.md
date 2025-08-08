@@ -1,6 +1,5 @@
 # SPD - Stochastic Parameter Decomposition
-**Note: The [dev](https://github.com/goodfire-ai/spd/tree/dev) branch contains all of Goodfire's
-work on the paramter decomposition direction since this paper's release. This is now an open source
+**Note: The [dev](https://github.com/goodfire-ai/spd/tree/dev) branch contains active work from Goodfire and collaborators since this paper's release. This is now an open source
 research project. Please feel free to view the issues (or add to them) and make a PR to the dev branch!**
 
 The main branch contains code used in the paper [Stochastic Parameter Decomposition](https://arxiv.org/abs/2506.20790)
