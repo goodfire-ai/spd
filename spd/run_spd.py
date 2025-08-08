@@ -173,7 +173,9 @@ def optimize(
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(
-                batch, type="pre_forward_cache", module_names=component_model.target_module_paths
+                batch,
+                forward_type="pre_forward_cache",
+                module_names=component_model.target_module_paths,
             )
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
             # through the parameters in calc_causal_importances below, the DDP hook will get called

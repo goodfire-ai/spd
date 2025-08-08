@@ -102,7 +102,9 @@ def compute_causal_importances(
     """Compute causal importances for all layers."""
     with torch.no_grad():
         _, pre_weight_acts = _model_data.model(
-            _input_ids, type="pre_forward_cache", module_names=list(_model_data.components.keys())
+            _input_ids,
+            forward_type="pre_forward_cache",
+            module_names=list(_model_data.components.keys()),
         )
         cis, _ = _model_data.model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
