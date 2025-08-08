@@ -56,8 +56,8 @@ class AliveComponentsTracker:
             firing: Bool[Tensor, " C"] = reduce(
                 importance_vals > self.ci_alive_threshold, "... C -> C", torch.any
             )
-            # If running in DDP, this method checks if any ci value is > threshold on any rank.
             if is_distributed():
+                # Check if any ci value is > threshold on any rank.
                 firing = all_reduce(firing, op=ReduceOp.MAX)
 
             n_examples = importance_vals.shape[:-1].numel()

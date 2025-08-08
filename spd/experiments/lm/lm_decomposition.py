@@ -106,8 +106,8 @@ def main(
         column_name=config.task_config.column_name,
     )
 
-    # Adjust batch size for distributed training
-    # Keep per-process batch size constant to maintain scale of all metrics
+    # Keep per-process batch size constant to maintain scale of all metrics so we can simply average
+    # them across processes.
     assert config.microbatch_size % dist_state.world_size == 0 and config.microbatch_size > 0, (
         f"Microbatch size {config.microbatch_size} is not divisible by world size {dist_state.world_size}. "
     )

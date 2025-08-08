@@ -62,7 +62,6 @@ def loop_dataloader[T](dl: DataLoader[T]):
         try:
             yield next(dl_iter)
         except StopIteration:
-            # TODO: Confirm that this works with DDP
             logger.warning("Dataloader exhausted, resetting iterator.")
             dl_iter = iter(dl)
             yield next(dl_iter)
@@ -155,9 +154,6 @@ def optimize(
         ci_alive_threshold=config.ci_alive_threshold,
     )
 
-    # Adjust gradient accumulation for global batch size
-    gradient_accumulation_steps = config.gradient_accumulation_steps
-
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
 
@@ -173,14 +169,14 @@ def optimize(
             group["lr"] = step_lr
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
-        for _ in range(gradient_accumulation_steps):
+        for _ in range(config.gradient_accumulation_steps):
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(
                 batch, type="pre_forward_cache", module_names=component_model.target_module_paths
             )
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
-            # through the parameters in calc_causal_importances below, they DDP hook will get called
+            # through the parameters in calc_causal_importances below, the DDP hook will get called
             # and gradients will be properly synced across ranks on the next backward pass.
             causal_importances, causal_importances_upper_leaky = (
                 component_model.calc_causal_importances(
@@ -202,17 +198,17 @@ def optimize(
                 device=device,
                 n_params=n_params,
             )
-            microbatch_total_loss.div_(gradient_accumulation_steps).backward()
+            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
                 microbatch_log_data[f"train/loss/{loss_name}"] += (
-                    loss_value / gradient_accumulation_steps
+                    loss_value / config.gradient_accumulation_steps
                 )
 
             for layer_name, layer_ci in causal_importances.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
                 microbatch_log_data[f"train/{layer_name}/l0"] += (
-                    l0_val / gradient_accumulation_steps
+                    l0_val / config.gradient_accumulation_steps
                 )
 
         # --- Train Logging --- #
@@ -221,7 +217,7 @@ def optimize(
                 avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
                 microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
-            # Already reduced across ranks, so no need to reduce again
+            # Already reduced alive counts across ranks, so no need to reduce again
             for layer_name, n_alive_count in alive_tracker.n_alive().items():
                 n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
                 microbatch_log_data[n_alive_key] = n_alive_count

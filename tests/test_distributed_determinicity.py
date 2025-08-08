@@ -1,4 +1,10 @@
-"""Test DDP consistency for SPD runs."""
+"""Test DDP determinicity for SPD runs which don't use stochastic masks.
+
+Note that if stochastic masks are used, the results will be non-deterministic due to the difficulty
+in effeciently generating masks on each rank while maintaining pytorch random state.
+
+This is a useful end-to-end test for DDP in general.
+"""
 
 import json
 import os
