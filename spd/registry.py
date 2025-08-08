@@ -8,6 +8,7 @@ import yaml
 
 from spd.settings import REPO_ROOT
 
+TaskName = Literal["tms", "resid_mlp", "lm", "ih"]
 
 @dataclass
 class ExperimentConfig:
@@ -23,7 +24,7 @@ class ExperimentConfig:
             `tests/test_wandb_run_loading.py`. If None, no canonical run is available.
     """
 
-    task_name: Literal["tms", "resid_mlp", "lm", "ih"]
+    task_name: TaskName
     decomp_script: Path
     config_path: Path
     expected_runtime: int
