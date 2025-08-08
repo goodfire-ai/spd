@@ -80,6 +80,17 @@ clustering-small:
 	  --devices cuda:0 \
 	  --max-concurrency 2
 
+.PHONY: clustering-dev
+clustering-dev:
+	uv run python -m spd.clustering.scripts.main \
+	  --merge-config spd/clustering/configs/demo_dev_1.json \
+	  --model-path wandb:goodfire/spd/runs/ioprgffh \
+	  --n-batches 8 \
+	  --batch-size 4 \
+	  --devices cuda:0 \
+	  --max-concurrency 2
+
+
 
 .PHONY: clustering-medium
 clustering-medium:
