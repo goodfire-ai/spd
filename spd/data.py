@@ -8,6 +8,8 @@ from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
+from spd.utils.distributed_utils import is_distributed
+
 
 class DatasetConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
@@ -164,96 +166,63 @@ def create_data_loader(
     Returns:
         A tuple of the DataLoader and the tokenizer.
     """
-    tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)
 
-    # For streaming datasets, we can't use DistributedSampler, so keep existing approach
+    dataset = load_dataset(
+        dataset_config.name,
+        streaming=dataset_config.streaming,
+        split=dataset_config.split,
+        trust_remote_code=False,
+    )
+    seed = dataset_config.seed if dataset_config.seed is not None else global_seed
+
     if dataset_config.streaming:
         assert ddp_world_size == 1, "DDP with streaming datasets is not yet supported."
-        dataset = load_dataset(
-            dataset_config.name,
-            streaming=dataset_config.streaming,
-            split=dataset_config.split,
-            trust_remote_code=False,
-        )
         assert isinstance(dataset, IterableDataset)
-        seed = dataset_config.seed if dataset_config.seed is not None else global_seed
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
-
-        if dataset_config.is_tokenized:
-            torch_dataset = dataset.with_format("torch")
-        else:
-            to_lower = "SimpleStories" in dataset_config.name
-            torch_dataset = tokenize_and_concatenate(
-                dataset,  # pyright: ignore[reportArgumentType]
-                tokenizer,
-                max_length=dataset_config.n_ctx,
-                column_name=dataset_config.column_name,
-                add_bos_token=False,
-                to_lower=to_lower,
-            )
-
-        loader = DataLoader(
-            torch_dataset,  # pyright: ignore[reportArgumentType]
-            batch_size=batch_size,
-            shuffle=False,
-            drop_last=True,
-        )
     else:
-        dataset = load_dataset(
-            dataset_config.name,
-            streaming=dataset_config.streaming,
-            split=dataset_config.split,
-            trust_remote_code=False,
-        )
         assert isinstance(dataset, Dataset)
-
-        seed = dataset_config.seed if dataset_config.seed is not None else global_seed
         dataset = dataset.shuffle(seed=seed)
 
-        if dataset_config.is_tokenized:
-            torch_dataset = dataset.with_format("torch")
-            # Verify tokenization
-            sample = torch_dataset[0]
-            # The tokenized dataset may have the data directly without a column name
-            if dataset_config.column_name in sample:
-                sample_data = sample[dataset_config.column_name]
-            else:
-                # If column doesn't exist, assume the data is the tensor itself
-                sample_data = sample
-            assert isinstance(sample_data, Tensor) and sample_data.ndim == 1, (
-                f"Expected the dataset to be tokenized. Got type {type(sample_data)}"
-            )
-            assert len(sample_data) == dataset_config.n_ctx, (
-                f"n_ctx ({dataset_config.n_ctx}) does not match the tokenized length ({len(sample_data)})."
-            )
-        else:
-            to_lower = "SimpleStories" in dataset_config.name
-            torch_dataset = tokenize_and_concatenate(
-                dataset,
-                tokenizer,
-                max_length=dataset_config.n_ctx,
-                column_name=dataset_config.column_name,
-                add_bos_token=False,
-                to_lower=to_lower,
-            )
+    tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)
 
-        # Create DistributedSampler to handle data distribution across ranks
-        sampler = None
-        if ddp_world_size > 1:
-            sampler = DistributedSampler(
-                torch_dataset,  # pyright: ignore[reportArgumentType]
-                num_replicas=ddp_world_size,
-                rank=ddp_rank,
-                shuffle=False,  # Already shuffled above
-                seed=seed,
-                drop_last=True,
-            )
+    torch_dataset: Dataset | IterableDataset
+    if dataset_config.is_tokenized:
+        torch_dataset = dataset.with_format("torch")
+        # Verify tokenization
+        sample = next(iter(torch_dataset))[dataset_config.column_name]
+        assert isinstance(sample, Tensor) and sample.ndim == 1, (
+            f"Expected the dataset to be tokenized. Got type {type(sample)}"
+        )
+        assert len(sample) == dataset_config.n_ctx, (
+            f"n_ctx ({dataset_config.n_ctx}) does not match the tokenized length ({len(sample)})."
+        )
+    else:
+        to_lower = "SimpleStories" in dataset_config.name
+        torch_dataset = tokenize_and_concatenate(
+            dataset,  # pyright: ignore[reportArgumentType]
+            tokenizer,
+            max_length=dataset_config.n_ctx,
+            column_name=dataset_config.column_name,
+            add_bos_token=False,
+            to_lower=to_lower,
+        )
 
-        loader = DataLoader(
+    sampler = None
+    if not dataset_config.streaming and is_distributed():
+        sampler = DistributedSampler(
             torch_dataset,  # pyright: ignore[reportArgumentType]
-            batch_size=batch_size,
-            sampler=sampler,
-            shuffle=False,  # Don't shuffle when using sampler
+            num_replicas=ddp_world_size,
+            rank=ddp_rank,
+            shuffle=False,  # Already shuffled above
+            seed=seed,
             drop_last=True,
         )
+
+    loader = DataLoader[Dataset | IterableDataset](
+        torch_dataset,  # pyright: ignore[reportArgumentType]
+        batch_size=batch_size,
+        sampler=sampler,
+        shuffle=False,
+        drop_last=True,
+    )
     return loader, tokenizer
