@@ -16,7 +16,8 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import Components, ComponentsOrModule
 from spd.plotting import plot_causal_importance_vals
 from spd.registry import EXPERIMENT_REGISTRY
-from spd.utils.general_utils import get_device, runtime_cast, set_seed
+from spd.utils.distributed_utils import get_device
+from spd.utils.general_utils import runtime_cast, set_seed
 from spd.utils.run_utils import get_output_dir
 
 

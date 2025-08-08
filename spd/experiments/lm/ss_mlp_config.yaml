@@ -11,7 +11,7 @@ n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [10]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["model.layers.1.mlp.gate_proj"]
+target_module_patterns: ["model.layers.0.mlp.gate_proj"]
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 3000
@@ -27,12 +27,13 @@ pnorm: 2.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 32
+batch_size: 64
 steps: 30_000
 lr: 3e-4
 lr_schedule: cosine
 lr_warmup_pct: 0.01
 lr_exponential_halflife: null
+gradient_accumulation_steps: 1
 
 # --- Logging & Saving ---
 train_log_freq: 100
@@ -41,7 +42,7 @@ slow_eval_freq: 5000
 slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
-n_examples_until_dead: 2_048_000  # print_freq * batch_size * max_seq_len = 1000 * 4 * 512
+n_examples_until_dead: 3_276_800  # train_log_freq * batch_size * max_seq_len = 100 * 64 * 512
 eval_metrics:
   - classname: "CIHistograms"
   - classname: "ComponentActivationDensity"

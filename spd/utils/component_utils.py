@@ -12,15 +12,17 @@ def calc_stochastic_masks(
     Args:
         causal_importances: The causal importances to use for the stochastic masks.
         n_mask_samples: The number of stochastic masks to calculate.
-
     Return:
         A list of n_mask_samples dictionaries, each containing the stochastic masks for each layer.
     """
-    stochastic_masks = []
+
+    stochastic_masks: list[dict[str, Float[Tensor, "... C"]]] = []
+
     for _ in range(n_mask_samples):
         stochastic_masks.append(
             {layer: ci + (1 - ci) * torch.rand_like(ci) for layer, ci in causal_importances.items()}
         )
+
     return stochastic_masks
 
 

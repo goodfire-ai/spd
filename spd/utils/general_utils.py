@@ -37,11 +37,6 @@ COLOR_PALETTE = [
 ]
 
 
-def get_device() -> str:
-    # NOTE: MPS returns NaNs on TMS when run. Avoiding for now.
-    return "cuda" if torch.cuda.is_available() else "cpu"
-
-
 def set_seed(seed: int | None) -> None:
     """Set the random seed for random, PyTorch and NumPy"""
     if seed is not None:

@@ -10,8 +10,8 @@ from spd.experiments.ih.model import InductionModelTargetRunInfo, InductionTrans
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
+from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import (
-    get_device,
     load_config,
     save_pre_run_info,
     set_seed,
