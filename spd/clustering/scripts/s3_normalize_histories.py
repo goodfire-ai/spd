@@ -30,7 +30,7 @@ def load_merge_histories(
 
 def normalize_histories(
     histories: list[Path] | str,
-    out_dir: Path = REPO_ROOT / "data/clustering/merge_history/",
+    run_dir: Path,
 ) -> dict[str, Any]:
     """Main function to load merge histories and compute distances"""
     # get the histories from paths
@@ -44,7 +44,6 @@ def normalize_histories(
     normalized_merge_array, normalized_merge_meta = ensemble.normalized()
 
     # save things
-    run_dir: Path = out_dir / f"run_{ensemble.config.stable_hash}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
     normalized_merge_meta["paths"] = [str(p) for p in paths]

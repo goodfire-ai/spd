@@ -188,7 +188,7 @@ def main(
     logger.section("Computing distances")
     merged_hists: dict[str, Any] = normalize_histories(
         histories=histories_files,
-        out_dir=run_path / "distances",
+        run_dir=run_path / "distances",
     )
 
     # 4. compute distances between merge histories

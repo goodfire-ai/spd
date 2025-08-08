@@ -11,6 +11,7 @@ from pydantic import (
     PositiveInt,
 )
 
+from spd.clustering.util import ModuleFilterFunc, ModuleFilterSource
 from spd.spd_types import Probability
 
 MergeConfigKey = Literal[
@@ -23,6 +24,20 @@ MergeConfigKey = Literal[
     "rank_cost_fn_name",
 ]
 
+def _to_module_filter(
+    filter_modules: ModuleFilterSource,
+) -> ModuleFilterFunc:
+    """Convert the filter_modules argument to a callable."""
+    if filter_modules is None:
+        return lambda _: True
+    elif isinstance(filter_modules, str):
+        return lambda module_name: module_name.startswith(filter_modules)
+    elif isinstance(filter_modules, set):
+        return lambda module_name: module_name in filter_modules
+    elif callable(filter_modules):
+        return filter_modules
+    else:
+        raise TypeError(f"filter_modules must be str, set, or callable, got {type(filter_modules)}")
 
 class MergeConfig(BaseModel):
     activation_threshold: Probability | None = Field(
@@ -49,6 +64,10 @@ class MergeConfig(BaseModel):
         default=0.001,
         description="Threshold for filtering out dead components. If a component's activation is below this threshold, it is considered dead and not included in the merge.",
     )
+    module_name_filter: ModuleFilterSource = Field(
+        default=None,
+        description="Filter for module names. Can be a string prefix, a set of names, or a callable that returns True for modules to include.",
+    )
 
     # rank_cost_fn: Callable[[float], float] = lambda _: 1.0
     rank_cost_fn_name: str = Field(
@@ -73,9 +92,9 @@ class MergeConfig(BaseModel):
             )
 
     @property
-    def rank_cost_name(self) -> str:
-        """Get the name of the rank cost function."""
-        return getattr(self.rank_cost_fn, "__name__", str(self.rank_cost_fn))
+    def filter_modules(self) -> ModuleFilterFunc:
+        """Get the module filter function based on the provided source."""
+        return _to_module_filter(self.module_name_filter)
 
     @property
     def stable_hash(self) -> str:

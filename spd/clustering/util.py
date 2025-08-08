@@ -19,3 +19,7 @@ def format_scientific_latex(value: float) -> str:
     mantissa: float = value / (10**exponent)
 
     return f"${mantissa:.2f} \\times 10^{{{exponent}}}$"
+
+
+ModuleFilterSource = str | Callable[[str], bool] | set[str] | None
+ModuleFilterFunc = Callable[[str], bool]

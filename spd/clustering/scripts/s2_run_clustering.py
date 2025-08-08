@@ -63,6 +63,7 @@ def run_clustering(
         component_acts,
         filter_dead_threshold=merge_config_.filter_dead_threshold,
         seq_mode="concat",
+        filter_modules=merge_config_.filter_modules,
         plots=True,  # Plot the processed activations
         # plot_title="Processed Activations",
     )

@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import torch
 from jaxtyping import Float, Int
@@ -6,6 +6,7 @@ from muutils.dbg import dbg, dbg_auto
 from torch import Tensor
 from torch.utils.data import DataLoader
 
+from spd.clustering.util import ModuleFilterFunc
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
@@ -53,6 +54,7 @@ def process_activations(
     ],
     filter_dead_threshold: float = 0.01,
     seq_mode: Literal["concat", "seq_mean", None] = None,
+    filter_modules: ModuleFilterFunc|None = None,
     plots: bool = False,
     save_pdf: bool = False,
     pdf_prefix: str = "activations",
@@ -79,6 +81,14 @@ def process_activations(
     else:
         # Use the activations as they are
         activations_ = activations
+
+    # filter activations for only the modules we want
+    if filter_modules is not None:
+        activations_ = {
+            key: act 
+            for key, act in activations_.items()
+            if filter_modules(key)
+        }
 
     # compute the labels and total component count
     total_c: int = 0

@@ -4,5 +4,6 @@
 	"iters": 100,
 	"check_threshold": 0.05,
 	"pop_component_prob": 0,
-	"filter_dead_threshold": 0.01
+	"filter_dead_threshold": 0.1,
+	"module_name_filter": "model.layers.0."
 }
