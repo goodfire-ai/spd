@@ -24,6 +24,7 @@ MergeConfigKey = Literal[
     "rank_cost_fn_name",
 ]
 
+
 def _to_module_filter(
     filter_modules: ModuleFilterSource,
 ) -> ModuleFilterFunc:
@@ -38,6 +39,7 @@ def _to_module_filter(
         return filter_modules
     else:
         raise TypeError(f"filter_modules must be str, set, or callable, got {type(filter_modules)}")
+
 
 class MergeConfig(BaseModel):
     activation_threshold: Probability | None = Field(

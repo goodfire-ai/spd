@@ -54,7 +54,7 @@ def process_activations(
     ],
     filter_dead_threshold: float = 0.01,
     seq_mode: Literal["concat", "seq_mean", None] = None,
-    filter_modules: ModuleFilterFunc|None = None,
+    filter_modules: ModuleFilterFunc | None = None,
 ) -> dict[str, Any]:
     """get back a dict of coactivations, slices, and concated activations"""
 
@@ -76,11 +76,7 @@ def process_activations(
 
     # filter activations for only the modules we want
     if filter_modules is not None:
-        activations_ = {
-            key: act 
-            for key, act in activations_.items()
-            if filter_modules(key)
-        }
+        activations_ = {key: act for key, act in activations_.items() if filter_modules(key)}
 
     # compute the labels and total component count
     total_c: int = 0

@@ -1,4 +1,5 @@
 # %%
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Bool, Float, Int, UInt8
@@ -12,9 +13,12 @@ def to_onehot(
     k_groups: int = int(x.max().item() + 1)
     n_components: int = x.shape[0]
     device: torch.device = x.device
-    mat: Bool[Tensor, "k_groups n_components"] = torch.zeros((k_groups, n_components), dtype=torch.bool, device=device)
+    mat: Bool[Tensor, "k_groups n_components"] = torch.zeros(
+        (k_groups, n_components), dtype=torch.bool, device=device
+    )
     mat[x, torch.arange(n_components, device=device)] = True
     return mat
+
 
 def to_onehot_pad(
     x: Int[Tensor, " n_components"],
@@ -22,9 +26,12 @@ def to_onehot_pad(
 ) -> Bool[Tensor, "K n_components"]:
     n_components: int = int(x.shape[0])
     device: torch.device = x.device
-    mat: Bool[Tensor, "K n_components"] = torch.zeros((K, n_components), dtype=torch.bool, device=device)
+    mat: Bool[Tensor, "K n_components"] = torch.zeros(
+        (K, n_components), dtype=torch.bool, device=device
+    )
     mat[x, torch.arange(n_components, device=device)] = True
     return mat
+
 
 def pih_dev(
     X: Int[Tensor, " n_ensemble n_components"],
@@ -38,29 +45,34 @@ def pih_dev(
 
     # for each row, compute the counts of each label
     counts: Int[Tensor, "n_ensemble max_label+1"] = torch.stack(
-        [torch.bincount(row, minlength=max_label + 1) for row in X],
-        dim=0
+        [torch.bincount(row, minlength=max_label + 1) for row in X], dim=0
     )
     dbg_auto(counts)
     # create a mask for each row, true where the label has a count of 1 (is unique)
     # each pos says if its label is unique in that row
-    unique_label_mask_bool: Bool[Tensor, "n_ensemble n_components"] = counts.gather(1, X.to(torch.int64)) == 1
-    unique_label_mask_int: UInt8[Tensor, "n_ensemble n_components"] = unique_label_mask_bool.to(torch.uint8)
+    unique_label_mask_bool: Bool[Tensor, "n_ensemble n_components"] = (
+        counts.gather(1, X.to(torch.int64)) == 1
+    )
+    unique_label_mask_int: UInt8[Tensor, "n_ensemble n_components"] = unique_label_mask_bool.to(
+        torch.uint8
+    )
     dbg_auto(unique_label_mask_int)
 
     # compute (for all pairs of rows) the number of times both rows identify elements as being having a unique label
-    both_unique: Bool[Tensor, "n_ensemble n_ensemble"] = unique_label_mask_int @ unique_label_mask_int.T
+    both_unique: Bool[Tensor, "n_ensemble n_ensemble"] = (
+        unique_label_mask_int @ unique_label_mask_int.T
+    )
     dbg_auto(both_unique)
 
     # initialize the output matrix with NaNs
     distances: Float[Tensor, "n_ensemble n_ensemble"] = torch.full(
         (n_ensemble, n_ensemble),
-        float('nan'),
+        float("nan"),
         dtype=torch.float32,
     )
     # set lower triangular entries to 0 to start
     distances.tril_()
-    
+
     distances = both_unique
 
     # filter those out
@@ -71,10 +83,6 @@ def pih_dev(
 
     return distances
 
-
-
-
-import matplotlib.pyplot as plt
 
 data_path = "../../../data/clustering/n8_b4_e04ad4/distances/ensemble_merge_array.npz"
 x = torch.tensor(np.load(data_path)["merges"], dtype=torch.int32)

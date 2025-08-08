@@ -42,7 +42,7 @@ def run_clustering(
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
 
     this_merge_path: Path = (
-        save_dir 
+        save_dir
         / f"history-{merge_config_.stable_hash}-b_{data_batch.shape[0]}-{dataset_path.stem}"
     )
     this_merge_figs: Path = Path(this_merge_path.as_posix() + "_plots/")
@@ -83,7 +83,7 @@ def run_clustering(
         # Use original activations for raw plots, but filtered data for concat/coact/histograms
         plot_activations(
             activations=processed_activations["activations_raw"],
-            act_concat= processed_activations["activations"],
+            act_concat=processed_activations["activations"],
             coact=processed_activations["coactivations"],
             labels=processed_activations["labels"],
             save_pdf=True,
@@ -107,7 +107,6 @@ def run_clustering(
     ZANJ().save(merge_history.serialize(), hist_save_path)
     print(f"Merge history saved to {hist_save_path}")
 
-
     if plot:
         plot_merge_history_cluster_sizes(
             history=merge_history,
@@ -117,7 +116,6 @@ def run_clustering(
             history=merge_history,
             file_prefix=(this_merge_figs / "merge").as_posix(),
         )
-
 
     return hist_save_path
 

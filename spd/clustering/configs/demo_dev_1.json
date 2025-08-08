@@ -1,7 +1,7 @@
 {
 	"activation_threshold": 0.1,
-	"alpha": 100.0,
-	"iters": 30,
+	"alpha": 10000.0,
+	"iters": 3000,
 	"check_threshold": 0.05,
 	"pop_component_prob": 0,
 	"filter_dead_threshold": 0.1,

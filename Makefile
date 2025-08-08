@@ -97,7 +97,7 @@ clustering-dev:
 	uv run python -m spd.clustering.scripts.main \
 	  --merge-config spd/clustering/configs/demo_dev_1.json \
 	  --model-path wandb:goodfire/spd/runs/ioprgffh \
-	  --n-batches 3 \
-	  --batch-size 1 \
+	  --n-batches 8 \
+	  --batch-size 4 \
 	  --devices cuda:0 \
-	  --max-concurrency 3
+	  --max-concurrency 2

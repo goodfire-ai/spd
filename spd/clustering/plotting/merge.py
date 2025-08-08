@@ -196,11 +196,11 @@ def plot_dists_distribution(
 
 
 def plot_merge_history_costs(
-        history: MergeHistory,
-        figsize: tuple[int, int] = (10,5),
-        fmt: str = "pdf",
-        file_prefix: str|None = None,
-    ) -> None:
+    history: MergeHistory,
+    figsize: tuple[int, int] = (10, 5),
+    fmt: str = "pdf",
+    file_prefix: str | None = None,
+) -> None:
     """Plot cost evolution from merge history"""
     fig, ax = plt.subplots(figsize=figsize)
     ax.plot(history.max_considered_cost, label="max considered cost")
@@ -243,7 +243,9 @@ def plot_merge_history_cluster_sizes(
     sizes_t: Float[Tensor, " n_points"] = counts[it_idx_t, grp_idx_t].to(torch.float32)
 
     fig, ax = plt.subplots(figsize=figsize)
-    ax.plot(xs_t.cpu().numpy(), sizes_t.cpu().numpy(), "", marker="o", markersize=3, alpha=0.15)
+    ax.plot(
+        xs_t.cpu().numpy(), sizes_t.cpu().numpy(), "bo", markersize=3, alpha=0.15, markeredgewidth=0
+    )
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Cluster size")
     ax.set_yscale("log")
