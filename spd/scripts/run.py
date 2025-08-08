@@ -397,6 +397,8 @@ def generate_commands(
         resolve_sweep_params_path(sweep_params_file) if sweep_params_file else None
     )
 
+    dp_prefix = f"mpirun -np {dp} " if dp > 1 else ""
+
     for experiment in experiments_list:
         config_entry = EXPERIMENT_REGISTRY[experiment]
         decomp_script = REPO_ROOT / config_entry.decomp_script
@@ -414,11 +416,9 @@ def generate_commands(
             config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
 
             command = (
-                f"python {decomp_script} '{config_json}' "
+                f"{dp_prefix}python {decomp_script} '{config_json}' "
                 f"--sweep_id {run_id} --evals_id {experiment}"
             )
-            if dp > 1:
-                command = f"mpirun -np {dp} {command}"
 
             commands.append(command)
             task_breakdown[experiment] = "1 task"
@@ -441,13 +441,11 @@ def generate_commands(
                 sweep_params_json = f"json:{json.dumps(sweep_params)}"
 
                 command = (
-                    f"python {decomp_script} '{config_json}' "
+                    f"{dp_prefix}python {decomp_script} '{config_json}' "
                     f"--sweep_id {run_id} "
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
                 )
-                if dp > 1:
-                    command = f"mpirun -np {dp} {command}"
 
                 commands.append(command)
 
