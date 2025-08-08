@@ -251,7 +251,7 @@ class ComponentModel(LoadableModule):
     def forward(
         self,
         *args: Any,
-        type: Literal["default", "components", "pre_forward_cache"] | None = "default",
+        type: Literal["target", "components", "pre_forward_cache"] | None = "target",
         masks: dict[str, Float[Tensor, "... C"]] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
@@ -263,7 +263,7 @@ class ComponentModel(LoadableModule):
 
         Args:
             type: The type of forward pass to perform:
-                - 'default': Standard forward pass
+                - 'target': Standard forward pass of the target model
                 - 'components': Forward with component replacements (requires masks)
                 - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
             masks: Dictionary mapping component names to masks (required for type='components')
@@ -282,7 +282,7 @@ class ComponentModel(LoadableModule):
                 *args, module_names=module_names, **kwargs
             )
         else:
-            # Default forward pass
+            # target forward pass of the patched model
             raw_out = self.patched_model(*args, **kwargs)
             if self.pretrained_model_output_attr is None:
                 out = raw_out
