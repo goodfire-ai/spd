@@ -2,9 +2,9 @@
 import numpy as np
 import torch
 from jaxtyping import Bool, Float, Int, UInt8
+from muutils.dbg import dbg_auto
 from torch import Tensor
 
-from muutils.dbg import dbg_auto
 
 def to_onehot(
     x: Int[Tensor, " n_components"],
@@ -75,7 +75,6 @@ def pih_dev(
 
 
 import matplotlib.pyplot as plt
-from muutils.dbg import dbg_auto
 
 data_path = "../../../data/clustering/n8_b4_e04ad4/distances/ensemble_merge_array.npz"
 x = torch.tensor(np.load(data_path)["merges"], dtype=torch.int32)
@@ -100,7 +99,6 @@ plt.colorbar()
 
 # %%
 
-from collections import Counter
 
 # find the distribution of cluster sizes over time for a single trace
 for i in range(x.shape[1]):

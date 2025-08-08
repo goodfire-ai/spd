@@ -4,9 +4,9 @@ from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-from jaxtyping import Float, Int, Bool
-from torch import Tensor
 import torch
+from jaxtyping import Bool, Float, Int
+from torch import Tensor
 
 from spd.clustering.math.merge_distances import DistancesArray
 from spd.clustering.math.merge_matrix import GroupMerge
