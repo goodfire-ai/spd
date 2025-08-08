@@ -13,7 +13,6 @@ import yaml
 from spd.settings import REPO_ROOT
 from spd.utils import distributed_utils
 from spd.utils.distributed_utils import (
-    cleanup_distributed,
     get_local_rank,
     get_rank,
     get_world_size,
@@ -280,8 +279,7 @@ class TestDistributedUtilities:
 
     def test_non_distributed_getters(self):
         """Test getter functions in non-distributed mode."""
-        # Ensure we're not in distributed mode
-        cleanup_distributed()
+        assert not is_distributed()
 
         assert get_rank() == 0
         assert get_world_size() == 1

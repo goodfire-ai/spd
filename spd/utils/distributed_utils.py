@@ -1,18 +1,15 @@
 """Utilities for distributed data parallel training with MPI support."""
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import wraps
 from typing import Literal
 
 import torch
 import torch.distributed as dist
 from PIL import Image
 from torch.distributed import ReduceOp
-
-
-def _infer_default_backend() -> Literal["nccl", "gloo"]:
-    return "nccl" if torch.cuda.is_available() else "gloo"
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,10 +22,17 @@ class DistributedState:
     backend: Literal["nccl", "gloo"]
 
 
+def _infer_default_backend() -> Literal["nccl", "gloo"]:
+    return "nccl" if torch.cuda.is_available() else "gloo"
+
+
+def _init_default_state() -> DistributedState:
+    backend = _infer_default_backend()
+    return DistributedState(rank=0, world_size=1, local_rank=0, backend=backend)
+
+
 # Module-level cached state used as a single source of truth
-_state: DistributedState = DistributedState(
-    rank=0, world_size=1, local_rank=0, backend=_infer_default_backend()
-)
+_state: DistributedState = _init_default_state()
 
 
 def get_distributed_state() -> DistributedState:
@@ -53,6 +57,7 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
     Returns:
         DistributedState
     """
+    assert not is_distributed(), "Already in a distributed process group"
     backend = backend if backend is not None else _infer_default_backend()
     # Check if running under MPI (OpenMPI)
     if "OMPI_COMM_WORLD_SIZE" in os.environ:
@@ -103,9 +108,24 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
 
 
 def cleanup_distributed() -> None:
-    """Clean up distributed process group."""
+    """Clean up distributed process group and reset cached state."""
+    global _state
     if dist.is_initialized():
         dist.destroy_process_group()
+    _state = _init_default_state()
+
+
+def with_distributed_cleanup[**P, T](fn: Callable[P, T]) -> Callable[P, T]:
+    """Decorator to clean up distributed state after function execution."""
+
+    @wraps(fn)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            cleanup_distributed()
+
+    return wrapper
 
 
 def is_distributed() -> bool:

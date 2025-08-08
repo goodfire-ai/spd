@@ -13,10 +13,10 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
-    cleanup_distributed,
     get_device,
     init_distributed,
     is_main_process,
+    with_distributed_cleanup,
 )
 from spd.utils.general_utils import (
     load_config,
@@ -28,6 +28,7 @@ from spd.utils.run_utils import get_output_dir
 from spd.utils.wandb_utils import init_wandb
 
 
+@with_distributed_cleanup
 def main(
     config_path_or_obj: Path | str | Config,
     evals_id: str | None = None,
@@ -162,8 +163,6 @@ def main(
         logger.info("Optimization finished.")
         if config.wandb_project:
             wandb.finish()
-
-    cleanup_distributed()
 
 
 if __name__ == "__main__":
