@@ -22,7 +22,7 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # %%
 # Load model
-SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp1"].canonical_run)
+SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp2"].canonical_run)
 # SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run)
 component_model: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 component_model.to(DEVICE)
@@ -53,6 +53,21 @@ dbg_auto(
 )
 dataloader = DatasetGeneratedDataLoader(dataset, batch_size=N_SAMPLES, shuffle=False)
 # %%
+
+dl_iter = iter(dataloader)
+
+for x in dl_iter:
+    dbg_auto(x[0])
+    dbg_auto(x[1])  # labels, but we don't need them for clustering
+    dbg_auto(x[0] - x[1])
+    plt.matshow(x[0].cpu().numpy(), cmap="viridis")
+    plt.colorbar()
+    plt.matshow((x[0] - x[1]).cpu().numpy(), cmap="viridis")
+    plt.colorbar()
+    plt.show()
+    break
+
+# %%
 # Get component activations
 ci = component_activations(
     model=component_model,
@@ -67,7 +82,6 @@ dbg_auto(ci)
 coa = process_activations(
     ci,
     filter_dead_threshold=0.001,
-    plots=True,
 )
 
 # %%
@@ -106,8 +120,8 @@ plt.legend()
 all_results = sweep_multiple_parameters(
     activations=coa["activations"],
     parameter_sweeps={
-        # "alpha": [0.0001, 1, 10000.0],
-        "check_threshold": [0.0001, 0.001, 0.01, 0.1, 0.5],
+        "alpha": [0.0001, 1, 10000.0],
+        # "check_threshold": [0.0001, 0.001, 0.01, 0.1, 0.5],
         # "pop_component_prob": [0.0001, 0.01, 0.5],
     },
     component_labels=coa["labels"],

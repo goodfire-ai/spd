@@ -218,7 +218,7 @@ def plot_merge_history_costs(
 def plot_merge_history_cluster_sizes(
     history: MergeHistory,
     figsize: tuple[int, int] = (10, 5),
-    fmt: str = "pdf",
+    fmt: str = "png",
     file_prefix: str | None = None,
 ) -> None:
     k_groups_t: Int[Tensor, " n_iters"] = history.k_groups

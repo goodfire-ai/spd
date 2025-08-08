@@ -101,3 +101,15 @@ clustering-dev:
 	  --batch-size 4 \
 	  --devices cuda:0 \
 	  --max-concurrency 2
+
+
+
+.PHONY: clustering-resid_mlp1
+clustering-resid_mlp1:
+	uv run python -m spd.clustering.scripts.main \
+	  --merge-config spd/clustering/configs/resid_mlp1.json \
+	  --model-path spd_exp:resid_mlp1 \
+	  --n-batches 16 \
+	  --batch-size 1024 \
+	  --devices cuda:0 \
+	  --max-concurrency 8

@@ -10,11 +10,11 @@ from tqdm import tqdm
 
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
-from spd.models.component_model import SPDRunInfo
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
 
 
-def split_dataset(
+def split_dataset_lm(
     model_path: str,
     n_batches: int,
     batch_size: int,
@@ -30,20 +30,20 @@ def split_dataset(
 
 
     """
-    with SpinnerContext(message="Loading SPD Run Config..."):
+    with SpinnerContext(message=f"Loading SPD Run Config for '{model_path}'"):
         spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
         cfg: Config = spd_run.config
 
-    dataset_config: DatasetConfig = DatasetConfig(
-        name=cfg.task_config.dataset_name,  # pyright: ignore[reportAttributeAccessIssue]
-        hf_tokenizer_path=cfg.pretrained_model_name_hf,
-        split=cfg.task_config.train_data_split,  # pyright: ignore[reportAttributeAccessIssue]
-        n_ctx=cfg.task_config.max_seq_len,  # pyright: ignore[reportAttributeAccessIssue]
-        is_tokenized=False,
-        streaming=False,
-        seed=0,
-        column_name=cfg.task_config.column_name,  # pyright: ignore[reportAttributeAccessIssue]
-    )
+        dataset_config: DatasetConfig = DatasetConfig(
+            name=cfg.task_config.dataset_name,  # pyright: ignore[reportAttributeAccessIssue]
+            hf_tokenizer_path=cfg.pretrained_model_name_hf,
+            split=cfg.task_config.train_data_split,  # pyright: ignore[reportAttributeAccessIssue]
+            n_ctx=cfg.task_config.max_seq_len,  # pyright: ignore[reportAttributeAccessIssue]
+            is_tokenized=False,
+            streaming=False,
+            seed=0,
+            column_name=cfg.task_config.column_name,  # pyright: ignore[reportAttributeAccessIssue]
+        )
 
     with SpinnerContext(message="getting dataloader..."):
         dataloader: DataLoader[dict[str, torch.Tensor]]
@@ -107,6 +107,139 @@ def split_dataset(
 
     return cfg_path, cfg_data
 
+
+
+def split_dataset_resid_mlp(
+    model_path: str,
+    n_batches: int,
+    batch_size: int,
+    base_path: Path = REPO_ROOT / "data/split_datasets",
+    save_file_fmt: str = "batchsize_{batch_size}/batch_{batch_idx}.npz",
+    cfg_file_fmt: str = "batchsize_{batch_size}/_config.json",
+) -> tuple[Path, dict[str, Any]]:
+    """Split a ResidMLP dataset into n_batches of batch_size and save the batches."""
+    from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
+    from spd.utils.data_utils import DatasetGeneratedDataLoader
+
+    with SpinnerContext(message=f"Loading SPD Run Config for '{model_path}'"):
+        spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
+        # SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run)
+        component_model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
+        cfg: Config = spd_run.config
+
+        n_samples_total: int = 512
+
+    with SpinnerContext(message="Creating ResidMLPDataset..."):
+        resid_mlp_dataset_kwargs: dict[str, Any] = dict(
+            n_features=component_model.patched_model.config.n_features,  # pyright: ignore[reportAttributeAccessIssue, reportArgumentType],
+            feature_probability=cfg.task_config.feature_probability,  # pyright: ignore[reportAttributeAccessIssue]
+            device="cpu",
+            calc_labels=False,
+            label_type=None,
+            act_fn_name=None,
+            label_fn_seed=None,
+            label_coeffs=None,
+            data_generation_type=cfg.task_config.data_generation_type,  # pyright: ignore[reportAttributeAccessIssue]
+        )
+        dataset: ResidMLPDataset = ResidMLPDataset(**resid_mlp_dataset_kwargs)
+
+        dataloader = DatasetGeneratedDataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+
+    # make dirs
+    base_path.mkdir(parents=True, exist_ok=True)
+    (
+        base_path
+        / save_file_fmt.format(batch_size=batch_size, batch_idx="XX", n_batches=f"{n_batches:02d}")
+    ).parent.mkdir(parents=True, exist_ok=True)
+
+    # iterate over the requested number of batches and save them
+    output_paths: list[Path] = []
+    batch: torch.Tensor
+    # second term in the tuple is same as the first
+    for batch_idx, (batch, _) in tqdm(
+        enumerate(iter(dataloader)),
+        total=n_batches,
+        unit="batch",
+    ):
+        if batch_idx >= n_batches:
+            break
+
+        batch_path: Path = base_path / save_file_fmt.format(
+            batch_size=batch_size,
+            batch_idx=f"{batch_idx:02d}",
+            n_batches=f"{n_batches:02d}",
+        )
+        np.savez_compressed(
+            batch_path,
+            input_ids=batch.cpu().numpy(),
+        )
+        output_paths.append(batch_path)
+
+        # save the config file
+    cfg_path: Path = base_path / cfg_file_fmt.format(batch_size=batch_size)
+    cfg_data: dict[str, Any] = dict(
+        # args to this function
+        model_path=model_path,
+        batch_size=batch_size,
+        n_batches=n_batches,
+        # dataset and tokenizer config
+        resid_mlp_dataset_kwargs=resid_mlp_dataset_kwargs,
+        # files we saved
+        output_files=[str(p) for p in output_paths],
+        output_dir=str(base_path),
+        output_file_fmt=save_file_fmt,
+        cfg_file_fmt=cfg_file_fmt,
+        cfg_file=str(cfg_path),
+    )
+
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(json.dumps(cfg_data, indent="\t"))
+    print(f"Saved config to: {cfg_path}")
+
+    return cfg_path, cfg_data
+
+
+def split_dataset(
+    model_path: str,
+    n_batches: int,
+    batch_size: int,
+    base_path: Path = REPO_ROOT / "data/split_datasets",
+    save_file_fmt: str = "batchsize_{batch_size}/batch_{batch_idx}.npz",
+    cfg_file_fmt: str = "batchsize_{batch_size}/_config.json",
+) -> tuple[Path, dict[str, Any]]:
+    """Split a dataset into n_batches of batch_size and save the batches.
+    
+    - if a wandb path is given directly, assume its a language model decomposition
+    - if a `model_path` starting with `spd_exp:` is given, look in the `EXPERIMENT_REGISTRY`
+    """
+    if model_path.startswith("wandb:"):
+        return split_dataset_lm(
+            model_path=model_path,
+            n_batches=n_batches,
+            batch_size=batch_size,
+            base_path=base_path,
+            save_file_fmt=save_file_fmt,
+            cfg_file_fmt=cfg_file_fmt,
+        )
+    elif model_path.startswith("spd_exp:"):
+        from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
+        key: str = model_path.split("spd_exp:")[1]
+        if key not in EXPERIMENT_REGISTRY:
+            raise ValueError(f"Experiment '{key}' not found in EXPERIMENT_REGISTRY")
+        exp_config: ExperimentConfig = EXPERIMENT_REGISTRY[key]
+        if exp_config.task_name != "resid_mlp":
+            raise ValueError(f"Experiment '{key}' is not a ResidMLP experiment")
+        return split_dataset_resid_mlp(
+            model_path=exp_config.canonical_run,
+            n_batches=n_batches,
+            batch_size=batch_size,
+            base_path=base_path,
+            save_file_fmt=save_file_fmt,
+            cfg_file_fmt=cfg_file_fmt,
+        )
+    else:
+        raise ValueError(f"model_path must start with 'wandb:' or 'spd_exp:', got '{model_path}'")
 
 if __name__ == "__main__":
     import argparse
