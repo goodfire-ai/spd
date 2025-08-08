@@ -454,9 +454,21 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             active_components = ci_vals > self.config.ci_alive_threshold
             n_activations_per_component = reduce(active_components, "... C -> C", "sum")
             self.component_activation_counts[module_name] += n_activations_per_component
-            self.component_co_activation_counts[module_name] += einsum(
-                active_components, active_components, "b C, b C2 -> b C C2"
-            ).sum(dim=0)
+
+            # Compute co-activation counts more efficiently to avoid memory issues
+            # active_components has shape (batch, seq_len, C)
+            # We want to count how many times each pair of components co-activate
+            active_components_flat = active_components.reshape(
+                -1, active_components.shape[-1]
+            )  # (batch*seq_len, C)
+
+            # Convert boolean to float for matrix multiplication
+            active_components_flat = active_components_flat.float()
+
+            # Use matrix multiplication to compute co-activations efficiently
+            # (batch*seq_len, C) @ (C, batch*seq_len) -> (C, C)
+            co_activations = active_components_flat.T @ active_components_flat
+            self.component_co_activation_counts[module_name] += co_activations
 
     @override
     def compute(self) -> Mapping[str, Image.Image]:
