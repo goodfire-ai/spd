@@ -473,11 +473,18 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             for module_name in self.model.components
         }  # Formerly mean_component_activation_counts
 
-        ## Component Co-Activation Fractions
         sorted_activation_inds = {
             module_name: torch.argsort(activation_densities[module_name], dim=-1, descending=True)
             for module_name in self.model.components
         }
+
+        n_alive_components = {
+            module_name: torch.sum(activation_densities[module_name] > 0.0001)
+            for module_name in self.model.components
+        }  # TODO unhardcode
+
+        ## Component Co-Activation Fractions
+
         # Calculate frac components co-activated with each other conditioned on the activation of the other
         component_co_activation_counts_denom = {
             module_name: torch.ones(self.model.C, self.model.C, device=self.device)
@@ -507,8 +514,15 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             for module_name in self.model.components
         }
 
+        alive_co_activation_fractions = {
+            module_name: sorted_co_activation_fractions[module_name][
+                : n_alive_components[module_name], : n_alive_components[module_name]
+            ]
+            for module_name in self.model.components
+        }
+
         component_co_activation_fractions_fig = plot_component_co_activation_fractions(
-            sorted_co_activation_fractions
+            alive_co_activation_fractions
         )
 
         ## Geometric Interaction Strength
@@ -584,32 +598,21 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             for module_name in self.model.components
         }
 
-        geometric_interaction_strengths_fig = (
-            plot_component_abs_left_singular_vectors_geometric_interaction_strengths(
-                component_abs_left_sing_vecs_geometric_interaction_strengths_matrices
-            )
-        )
-
-        ## Geometric Interaction Strength vs Coactivation scatter plot
-
-        n_alive_components = {
-            module_name: torch.sum(activation_densities[module_name] > 0.0001)
-            for module_name in self.model.components
-        }  # TODO unhardcode
-
-        alive_co_activation_fractions = {
-            module_name: sorted_co_activation_fractions[module_name][
-                : n_alive_components[module_name], : n_alive_components[module_name]
-            ]
-            for module_name in self.model.components
-        }
-
         alive_geometric_interaction_strength_matrices = {
             module_name: component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[
                 module_name
             ][: n_alive_components[module_name], : n_alive_components[module_name]]
             for module_name in self.model.components
         }
+
+        geometric_interaction_strengths_fig = (
+            plot_component_abs_left_singular_vectors_geometric_interaction_strengths(
+                alive_geometric_interaction_strength_matrices
+            )
+        )
+
+        ## Geometric Interaction Strength vs Coactivation scatter plot
+
 
         # Flatten the matrices
         alive_co_activation_fractions_flattened = {
@@ -638,10 +641,10 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
         ## Geometric Interaction Strength Product with Coactivation Fraction heatmap
         # Elementwise multiply the matrices
         elementwise_products = {
-            module_name: component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[
+            module_name: alive_geometric_interaction_strength_matrices[
                 module_name
             ]
-            * sorted_co_activation_fractions[module_name]
+            * alive_co_activation_fractions[module_name]
             for module_name in self.model.components
         }
 

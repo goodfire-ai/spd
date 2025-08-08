@@ -11,7 +11,7 @@ n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj"]
+target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj", ]
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 100000
@@ -27,7 +27,7 @@ pnorm: 0.9
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 64
+batch_size: 16
 steps: 30_000
 lr: 0.001
 lr_schedule: cosine
