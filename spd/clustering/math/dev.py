@@ -1,8 +1,8 @@
 # %%
 import numpy as np
 import torch
+from jaxtyping import Bool, Float, Int
 from torch import Tensor
-from jaxtyping import Float, Int, Bool
 
 
 def to_onehot(
@@ -47,8 +47,8 @@ def pih_dev(
 	return distances
 
 
-from muutils.dbg import dbg_auto
 import matplotlib.pyplot as plt
+from muutils.dbg import dbg_auto
 
 data_path = "../../../data/clustering/n4_b4_c3a6aa/distances/run_c3a6aa/ensemble_merge_array.npz"
 x = torch.tensor(np.load(data_path)["merges"], dtype=torch.int32)

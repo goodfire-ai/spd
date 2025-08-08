@@ -1,4 +1,4 @@
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import torch
 from jaxtyping import Float, Int
