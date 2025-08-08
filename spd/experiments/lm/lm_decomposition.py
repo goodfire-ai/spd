@@ -36,7 +36,7 @@ def main(
 ) -> None:
     config = load_config(config_path_or_obj, config_model=Config)
 
-    rank, world_size, _local_rank = init_distributed(backend=config.dist_backend)
+    dist_state = init_distributed(backend=config.dist_backend)
 
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
@@ -64,8 +64,8 @@ def main(
             out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
         logger.info(f"Output directory: {out_dir}")
         logger.info(config)
-        if world_size > 1:
-            logger.info(f"Running distributed training with {world_size} processes")
+        if dist_state.world_size > 1:
+            logger.info(f"Running distributed training with {dist_state.world_size} processes")
     else:
         out_dir = None
 
@@ -108,18 +108,18 @@ def main(
 
     # Adjust batch size for distributed training
     # Keep per-process batch size constant to maintain scale of all metrics
-    assert config.microbatch_size % world_size == 0 and config.microbatch_size > 0, (
-        f"Microbatch size {config.microbatch_size} is not divisible by world size {world_size}. "
+    assert config.microbatch_size % dist_state.world_size == 0 and config.microbatch_size > 0, (
+        f"Microbatch size {config.microbatch_size} is not divisible by world size {dist_state.world_size}. "
     )
-    train_rank_microbatch_size = config.microbatch_size // world_size
+    train_rank_microbatch_size = config.microbatch_size // dist_state.world_size
 
     train_loader, _tokenizer = create_data_loader(
         dataset_config=train_data_config,
         batch_size=train_rank_microbatch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
-        ddp_rank=rank,
-        ddp_world_size=world_size,
+        ddp_rank=dist_state.rank,
+        ddp_world_size=dist_state.world_size,
     )
 
     eval_data_config = DatasetConfig(
@@ -132,18 +132,18 @@ def main(
         column_name=config.task_config.column_name,
     )
 
-    assert config.eval_batch_size % world_size == 0 and config.eval_batch_size > 0, (
-        f"Eval batch size {config.eval_batch_size} is not divisible by world size {world_size}. "
+    assert config.eval_batch_size % dist_state.world_size == 0 and config.eval_batch_size > 0, (
+        f"Eval batch size {config.eval_batch_size} is not divisible by world size {dist_state.world_size}. "
     )
-    eval_rank_batch_size = config.eval_batch_size // world_size
+    eval_rank_batch_size = config.eval_batch_size // dist_state.world_size
 
     eval_loader, _ = create_data_loader(
         dataset_config=eval_data_config,
         batch_size=eval_rank_batch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
-        ddp_rank=rank,
-        ddp_world_size=world_size,
+        ddp_rank=dist_state.rank,
+        ddp_world_size=dist_state.world_size,
     )
 
     if is_main_process():

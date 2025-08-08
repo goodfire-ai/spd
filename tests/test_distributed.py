@@ -1,13 +1,11 @@
 """Tests for distributed utilities."""
 
-import os
-
 import pytest
 import torch
 
+from spd.utils import distributed_utils
 from spd.utils.distributed_utils import (
     cleanup_distributed,
-    get_device,
     get_local_rank,
     get_rank,
     get_world_size,
@@ -20,21 +18,6 @@ from spd.utils.distributed_utils import (
 class TestDistributedUtilities:
     """Test distributed utilities in non-distributed mode."""
 
-    def test_non_distributed_initialization(self):
-        """Test that init_distributed works correctly when not in distributed mode."""
-        # Clean environment
-        if "OMPI_COMM_WORLD_SIZE" in os.environ:
-            del os.environ["OMPI_COMM_WORLD_SIZE"]
-
-        rank, world_size, local_rank = init_distributed()
-
-        assert rank == 0
-        assert world_size == 1
-        assert local_rank == 0
-
-        # Cleanup shouldn't fail
-        cleanup_distributed()
-
     def test_non_distributed_getters(self):
         """Test getter functions in non-distributed mode."""
         # Ensure we're not in distributed mode
@@ -46,28 +29,28 @@ class TestDistributedUtilities:
         assert is_main_process()
         assert not is_distributed()
 
-    def test_device_selection(self):
-        """Test device selection in non-distributed mode."""
-        device = get_device()
-
-        if torch.cuda.is_available():
-            assert device == "cuda"
-        else:
-            assert device == "cpu"
-
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
-    def test_device_with_local_rank(self):
-        """Test device selection with local rank."""
-        # Temporarily set OMPI_COMM_WORLD_LOCAL_RANK
-        os.environ["OMPI_COMM_WORLD_LOCAL_RANK"] = "1"
-
-        try:
-            # In distributed mode, this would return cuda:1
-            device = get_device()
-            # But since we're not actually distributed, it returns cuda
-            assert device == "cuda"
-        finally:
-            del os.environ["OMPI_COMM_WORLD_LOCAL_RANK"]
+    @pytest.mark.parametrize(
+        "cuda_available, distributed, local_rank, expected",
+        [
+            (False, False, 0, "cpu"),
+            (False, True, 1, "cpu"),
+            (True, False, 0, "cuda"),
+            (True, True, 0, "cuda:0"),
+            (True, True, 2, "cuda:2"),
+        ],
+    )
+    def test_get_device_matrix(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        cuda_available: bool,
+        distributed: bool,
+        local_rank: int,
+        expected: str,
+    ) -> None:
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available, raising=False)
+        monkeypatch.setattr(distributed_utils, "is_distributed", lambda: distributed)
+        monkeypatch.setattr(distributed_utils, "get_local_rank", lambda: local_rank)
+        assert distributed_utils.get_device() == expected
 
 
 @pytest.mark.skip(reason="Requires actual distributed launch with mpirun")
@@ -80,14 +63,14 @@ class TestDistributedMode:
 
     def test_distributed_initialization(self):
         """Test distributed initialization with MPI."""
-        rank, world_size, local_rank = init_distributed()
+        dist_state = init_distributed()
 
-        assert world_size == 2
-        assert rank in [0, 1]
-        assert local_rank in [0, 1]
+        assert dist_state.world_size == 2
+        assert dist_state.rank in [0, 1]
+        assert dist_state.local_rank in [0, 1]
 
         # Only rank 0 is main process
-        assert is_main_process() == (rank == 0)
+        assert is_main_process() == (dist_state.rank == 0)
         assert is_distributed()
 
         cleanup_distributed()
@@ -96,7 +79,7 @@ class TestDistributedMode:
         """Test that each rank gets different data."""
         from spd.data import DatasetConfig, create_data_loader
 
-        rank, world_size, _ = init_distributed()
+        dist_state = init_distributed()
 
         config = DatasetConfig(
             name="lennart-finke/SimpleStories",
@@ -110,8 +93,8 @@ class TestDistributedMode:
             batch_size=4,
             buffer_size=100,
             global_seed=42,
-            ddp_rank=rank,
-            ddp_world_size=world_size,
+            ddp_rank=dist_state.rank,
+            ddp_world_size=dist_state.world_size,
         )
 
         # Get first batch from each rank

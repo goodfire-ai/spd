@@ -2,6 +2,7 @@
 
 import os
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Literal
 
 import torch
@@ -10,7 +11,37 @@ from PIL import Image
 from torch.distributed import ReduceOp
 
 
-def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> tuple[int, int, int]:
+def _infer_default_backend() -> Literal["nccl", "gloo"]:
+    return "nccl" if torch.cuda.is_available() else "gloo"
+
+
+@dataclass(frozen=True, slots=True)
+class DistributedState:
+    """Immutable snapshot of the distributed runtime state for this process."""
+
+    rank: int
+    world_size: int
+    local_rank: int
+    backend: Literal["nccl", "gloo"]
+
+
+# Module-level cached state used as a single source of truth
+_state: DistributedState = DistributedState(
+    rank=0, world_size=1, local_rank=0, backend=_infer_default_backend()
+)
+
+
+def get_distributed_state() -> DistributedState:
+    """Return the cached distributed state.
+
+    Returns:
+        DistributedState: The current process's distributed state snapshot.
+    """
+    return _state
+
+
+def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> DistributedState:
+    global _state
     """Initialize distributed process group using MPI.
 
     Supports OpenMPI only.
@@ -20,12 +51,11 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> tuple[in
             available, otherwise 'gloo'.
 
     Returns:
-        Tuple of (rank, world_size, local_rank)
+        DistributedState
     """
-    backend = backend if backend is not None else ("nccl" if torch.cuda.is_available() else "gloo")
-    # Check if running under MPI
+    backend = backend if backend is not None else _infer_default_backend()
+    # Check if running under MPI (OpenMPI)
     if "OMPI_COMM_WORLD_SIZE" in os.environ:
-        # OpenMPI
         world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
         rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
         local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
@@ -34,7 +64,11 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> tuple[in
         world_size = 1
         rank = 0
         local_rank = 0
-        return rank, world_size, local_rank
+        # Update cached state and return
+        _state = DistributedState(
+            rank=rank, world_size=world_size, local_rank=local_rank, backend=backend
+        )
+        return _state
 
     # Set environment variables that PyTorch expects
     os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", "127.0.0.1")
@@ -58,11 +92,14 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> tuple[in
             device_id=local_device,
         )
 
-    # Set CUDA device for this process
+    # Set the default cuda device for this process
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
 
-    return rank, world_size, local_rank
+    _state = DistributedState(
+        rank=rank, world_size=world_size, local_rank=local_rank, backend=backend
+    )
+    return _state
 
 
 def cleanup_distributed() -> None:
@@ -72,28 +109,24 @@ def cleanup_distributed() -> None:
 
 
 def is_distributed() -> bool:
-    """Check if running in distributed mode."""
-    return dist.is_initialized() and dist.get_world_size() > 1
+    """Check if running in distributed mode using cached state."""
+    state = get_distributed_state()
+    return state.world_size > 1
 
 
 def get_rank() -> int:
-    """Get current process rank."""
-    return dist.get_rank() if dist.is_initialized() else 0
+    """Get current process rank from cached state."""
+    return get_distributed_state().rank
 
 
 def get_world_size() -> int:
-    """Get total number of processes."""
-    return dist.get_world_size() if dist.is_initialized() else 1
+    """Get total number of processes from cached state."""
+    return get_distributed_state().world_size
 
 
 def get_local_rank() -> int:
-    """Get local GPU index."""
-    # Try to get from environment first
-    if "OMPI_COMM_WORLD_LOCAL_RANK" in os.environ:
-        return int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
-    else:
-        # If not set, assume single GPU per node or calculate from global rank
-        return 0
+    """Get local GPU index from cached state."""
+    return get_distributed_state().local_rank
 
 
 def is_main_process() -> bool:
@@ -131,21 +164,6 @@ def all_reduce(
     """
     if dist.is_initialized() and dist.get_world_size() > 1:
         dist.all_reduce(tensor, op=op)
-    return tensor
-
-
-def broadcast(tensor: torch.Tensor, src: int = 0) -> torch.Tensor:
-    """Broadcast a tensor from source rank to all other processes.
-
-    Args:
-        tensor: Tensor to broadcast
-        src: Source rank (default: 0)
-
-    Returns:
-        Broadcasted tensor
-    """
-    if dist.is_initialized() and dist.get_world_size() > 1:
-        dist.broadcast(tensor, src=src)
     return tensor
 
 
