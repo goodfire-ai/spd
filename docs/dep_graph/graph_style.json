@@ -1,0 +1,129 @@
+{
+	"nodeColors": [
+	  {
+		"pattern": ".*/__init__\\.py$",
+		"color": "#4a4a4a",
+		"description": "Init files - dark gray"
+	  },
+	  {
+		"pattern": "^conftest\\.py$",
+		"color": "#e91e63",
+		"description": "Pytest configuration - pink"
+	  },
+	  {
+		"pattern": "^tests/",
+		"color": "#ff6b6b",
+		"description": "Test files - red"
+	  },
+	  {
+		"pattern": "/test_",
+		"color": "#ff8787",
+		"description": "Any test file anywhere - light red"
+	  },
+	  {
+		"pattern": "^spd/experiments/",
+		"color": "#4ecdc4",
+		"description": "Experiments - teal"
+	  },
+	  {
+		"pattern": "^spd/clustering/",
+		"color": "#a78bfa",
+		"description": "Clustering module - purple"
+	  },
+	  {
+		"pattern": "^spd/models/",
+		"color": "#60a5fa",
+		"description": "Models - blue"
+	  },
+	  {
+		"pattern": "^spd/utils/",
+		"color": "#34d399",
+		"description": "Utilities - green"
+	  },
+	  {
+		"pattern": "^spd/scripts/",
+		"color": "#fbbf24",
+		"description": "Scripts - yellow"
+	  },
+	  {
+		"pattern": "\\.config(s)?\\.py$",
+		"color": "#f97316",
+		"description": "Configuration files - orange"
+	  },
+	  {
+		"pattern": "settings\\.py$",
+		"color": "#f59e0b",
+		"description": "Settings files - amber"
+	  },
+	  {
+		"pattern": "interfaces?\\.py$",
+		"color": "#8b5cf6",
+		"description": "Interface definitions - violet"
+	  },
+	  {
+		"pattern": "(^|/)plotting",
+		"color": "#ec4899",
+		"description": "Plotting/visualization - pink"
+	  },
+	  {
+		"pattern": "(^|/)data",
+		"color": "#14b8a6",
+		"description": "Data handling - teal"
+	  },
+	  {
+		"pattern": "train_",
+		"color": "#ef4444",
+		"description": "Training scripts - bright red"
+	  },
+	  {
+		"pattern": "_decomposition\\.py$",
+		"color": "#6366f1",
+		"description": "Decomposition modules - indigo"
+	  },
+	  {
+		"pattern": "(log|logging)\\.py$",
+		"color": "#6b7280",
+		"description": "Logging - gray"
+	  },
+	  {
+		"pattern": "streamlit",
+		"color": "#dc2626",
+		"description": "Streamlit apps - red"
+	  },
+	  {
+		"pattern": "wandb",
+		"color": "#facc15",
+		"description": "Weights & Biases integration - yellow"
+	  },
+	  {
+		"pattern": "^spd/eval\\.py$",
+		"color": "#10b981",
+		"description": "Evaluation - emerald"
+	  },
+	  {
+		"pattern": "^spd/losses\\.py$",
+		"color": "#f43f5e",
+		"description": "Loss functions - rose"
+	  },
+	  {
+		"pattern": "^spd/registry\\.py$",
+		"color": "#7c3aed",
+		"description": "Registry - purple"
+	  },
+	  {
+		"pattern": "main\\.py$",
+		"color": "#0ea5e9",
+		"description": "Main entry points - sky blue"
+	  },
+	  {
+		"pattern": "run\\.py$",
+		"color": "#0284c7",
+		"description": "Run scripts - blue"
+	  },
+	  {
+		"pattern": ".*",
+		"color": "#64748b",
+		"description": "Default - slate gray"
+	  }
+	]
+  }
