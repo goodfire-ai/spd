@@ -11,6 +11,7 @@ from tqdm import tqdm
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.clustering.merge_run_config import MergeRunConfig
 from spd.registry import TaskName
 from spd.settings import REPO_ROOT
 
@@ -198,15 +199,20 @@ def split_dataset_resid_mlp(
 
 
 def split_dataset(
-    model_path: str,
-    n_batches: int,
-    batch_size: int,
-    task_name: TaskName,
+    config: MergeRunConfig | Path,
     base_path: Path = REPO_ROOT / "data/split_datasets",
     save_file_fmt: str = "batchsize_{batch_size}/batch_{batch_idx}.npz",
     cfg_file_fmt: str = "batchsize_{batch_size}/_config.json",
 ) -> tuple[Path, dict[str, Any]]:
     """Split a dataset into n_batches of batch_size and save the batches"""
+    if isinstance(config, Path):
+        config = MergeRunConfig.from_file(config)
+    
+    model_path: str = config.model_path
+    task_name: TaskName = config.task_name
+    n_batches: int = config.n_batches
+    batch_size: int = config.batch_size
+    
     if task_name == "lm":
         return split_dataset_lm(
             model_path=model_path,
@@ -239,33 +245,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--model-path",
-        "-m",
-        type=str,
-        default="wandb:goodfire/spd/runs/ioprgffh",
-        help="Path to the SPD Run, usually a wandb run",
-    )
-    parser.add_argument(
-        "--task-name",
-        "-t",
-        type=str,
-        choices=TaskName.__args__,
-        default=None,
-        help="Task name for the model, if not provided, it will be inferred from the model path",
-    )
-    parser.add_argument(
-        "--batch-size",
-        "-b",
-        type=int,
+        "--config",
+        "-c",
+        type=Path,
         required=True,
-        help="Batch size for the DataLoader, each batch will be saved to a separate file",
-    )
-    parser.add_argument(
-        "--n-batches",
-        "-n",
-        type=int,
-        required=True,
-        help="Number of batches to split the dataset into",
+        help="Path to merge run config JSON/YAML file",
     )
     parser.add_argument(
         "--base-path",
@@ -278,8 +262,6 @@ if __name__ == "__main__":
     args: argparse.Namespace = parser.parse_args()
 
     split_dataset(
-        model_path=args.model_path,
-        batch_size=args.batch_size,
-        n_batches=args.n_batches,
+        config=args.config,
         base_path=args.base_path,
     )

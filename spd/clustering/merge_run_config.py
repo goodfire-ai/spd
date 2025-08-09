@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Self
 
 import yaml
+from muutils.misc.numerical import shorten_numerical_to_str
 from pydantic import Field, PositiveInt, model_validator
 
 from spd.clustering.merge_config import MergeConfig
@@ -52,6 +53,15 @@ class MergeRunConfig(MergeConfig):
     def stable_hash(self) -> str:
         """Generate a stable hash including all config parameters."""
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:8]
+    
+    @property
+    def run_id(self) -> str:
+        """Generate a consistent run ID for this configuration"""
+        iters_str: str = shorten_numerical_to_str(self.iters)
+        batch_str: str = shorten_numerical_to_str(self.batch_size)
+        n_str: str = shorten_numerical_to_str(self.n_batches)
+        
+        return f"{self.task_name}-i_{iters_str}-b_{batch_str}-n_{n_str}-h_{self.stable_hash}"
 
     @classmethod
     def from_file(cls, path: Path) -> "MergeRunConfig":

@@ -62,10 +62,7 @@ dep-graph:
 .PHONY: demo-clustering
 demo-clustering:
 	uv run python -m spd.clustering.scripts.main \
-	  --merge-config spd/clustering/configs/demo_i2.json \
-	  --model-path wandb:goodfire/spd/runs/ioprgffh \
-	  --n-batches 2 \
-	  --batch-size 2 \
+	  --config spd/clustering/configs/demo_i2.json \
 	  --devices cuda:0 \
 	  --max-concurrency 99
 
@@ -73,20 +70,14 @@ demo-clustering:
 .PHONY: clustering-small
 clustering-small:
 	uv run python -m spd.clustering.scripts.main \
-	  --merge-config spd/clustering/configs/demo_i100.json \
-	  --model-path wandb:goodfire/spd/runs/ioprgffh \
-	  --n-batches 4 \
-	  --batch-size 4 \
+	  --config spd/clustering/configs/demo_i100.json \
 	  --devices cuda:0 \
 	  --max-concurrency 2
 
 .PHONY: clustering-medium
 clustering-medium:
 	uv run python -m spd.clustering.scripts.main \
-	  --merge-config spd/clustering/configs/demo_i8k.json \
-	  --model-path wandb:goodfire/spd/runs/ioprgffh \
-	  --n-batches 16 \
-	  --batch-size 16 \
+	  --config spd/clustering/configs/demo_i8k.json \
 	  --devices cuda:0 \
 	  --max-concurrency 4
 
@@ -95,10 +86,7 @@ clustering-medium:
 .PHONY: clustering-dev
 clustering-dev:
 	uv run python -m spd.clustering.scripts.main \
-	  --merge-config spd/clustering/configs/demo_dev_1.json \
-	  --model-path wandb:goodfire/spd/runs/ioprgffh \
-	  --n-batches 8 \
-	  --batch-size 4 \
+	  --config spd/clustering/configs/demo_dev_1.json \
 	  --devices cuda:0 \
 	  --max-concurrency 2
 
@@ -107,9 +95,6 @@ clustering-dev:
 .PHONY: clustering-resid_mlp1
 clustering-resid_mlp1:
 	uv run python -m spd.clustering.scripts.main \
-	  --merge-config spd/clustering/configs/resid_mlp1.json \
-	  --model-path spd_exp:resid_mlp1 \
-	  --n-batches 16 \
-	  --batch-size 1024 \
+	  --config spd/clustering/configs/resid_mlp1.json \
 	  --devices cuda:0 \
 	  --max-concurrency 8

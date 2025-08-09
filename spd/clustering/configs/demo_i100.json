@@ -1,9 +1,14 @@
 {
-	"activation_threshold": 0.1,
-	"alpha": 1.0,
-	"iters": 100,
-	"check_threshold": 0.05,
-	"pop_component_prob": 0,
-	"filter_dead_threshold": 0.5,
-	"module_name_filter": "model.layers.0."
+  "activation_threshold": 0.1,
+  "alpha": 1.0,
+  "iters": 100,
+  "check_threshold": 0.05,
+  "pop_component_prob": 0,
+  "filter_dead_threshold": 0.5,
+  "module_name_filter": "model.layers.0.",
+  "rank_cost_fn_name": "const_1",
+  "model_path": "wandb:goodfire/spd/runs/ioprgffh",
+  "task_name": null,
+  "n_batches": 4,
+  "batch_size": 4
 }

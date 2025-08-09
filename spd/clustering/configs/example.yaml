@@ -1,0 +1,18 @@
+# Example MergeRunConfig in YAML format
+# This combines merge algorithm parameters with run configuration
+
+# Merge algorithm parameters
+activation_threshold: 0.01
+alpha: 1.0
+iters: 100
+check_threshold: 0.05
+pop_component_prob: 0
+filter_dead_threshold: 0.001
+module_name_filter: null  # Can be a string prefix like "model.layers.0."
+rank_cost_fn_name: const_1  # Options: const_1, const_2, log, linear
+
+# Run configuration
+model_path: wandb:goodfire/spd/runs/ioprgffh  # Or spd_exp:resid_mlp1
+task_name: null  # Will be inferred from model_path
+n_batches: 10  # Ensemble size
+batch_size: 64  # Batch size for processing

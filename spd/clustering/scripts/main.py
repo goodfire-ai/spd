@@ -9,14 +9,12 @@ from typing import Any
 from matplotlib import pyplot as plt
 
 from spd.clustering.math.merge_distances import DistancesArray, DistancesMethod
-from spd.clustering.merge_config import MergeConfig
+from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.plotting.merge import plot_dists_distribution
-from spd.clustering.scripts._get_model_path import convert_model_path
 from spd.clustering.scripts.s1_split_dataset import split_dataset
 from spd.clustering.scripts.s3_normalize_histories import normalize_histories
 from spd.clustering.scripts.s4_compute_distances import compute_histories_distances
 from spd.log import logger
-from spd.registry import TaskName
 from spd.settings import REPO_ROOT
 from spd.utils.cuda_memory_used import cuda_memory_fraction
 
@@ -25,12 +23,10 @@ from spd.utils.cuda_memory_used import cuda_memory_fraction
 
 # TODO: this is super messy
 def distribute_clustering(
-    merge_config_path: Path,
-    model_path: str,
+    config_path: Path,
     data_files: list[Path],
     devices: list[str],
     save_dir: Path,
-    task_name: TaskName,
     cuda_mem_max: float = 0.8,
     max_concurrency: int | None = None,
 ) -> None:
@@ -51,12 +47,8 @@ def distribute_clustering(
                 "run",
                 "python",
                 str(REPO_ROOT / "spd/clustering/scripts/s2_run_clustering.py"),
-                "--merge-config",
-                str(merge_config_path),
-                "--model-path",
-                model_path,
-                "--task-name",
-                str(task_name),
+                "--config",
+                str(config_path),
                 "--dataset-path",
                 str(dataset),
                 "--save-dir",
@@ -96,12 +88,8 @@ def distribute_clustering(
 
 
 def main(
-    merge_config: Path | MergeConfig,
-    model_path: str = "wandb:goodfire/spd/runs/ioprgffh",
-    task_name: TaskName | None = None,
+    config: Path | MergeRunConfig,
     base_path: Path = REPO_ROOT / "data/clustering/",
-    n_batches: int = 10,
-    batch_size: int = 64,
     distances_method: DistancesMethod = "perm_invariant_hamming",
     devices: Sequence[str] | str = "cuda:0",
     max_concurrency: int | None = None,
@@ -112,9 +100,16 @@ def main(
 
     logger.section("Preprocessing")
 
-    # model path and task name
-    if task_name is None:
-        model_path, task_name = convert_model_path(model_path)
+    # Load config
+    merge_run_config: MergeRunConfig
+    config_path: Path
+    if isinstance(config, Path):
+        merge_run_config = MergeRunConfig.from_file(config)
+        config_path = config
+    else:
+        merge_run_config = config
+        config_path = REPO_ROOT / f"data/clustering/configs/{merge_run_config.stable_hash}.json"
+        merge_run_config.to_file(config_path)
 
     # device
     devices_: list[str]
@@ -125,23 +120,9 @@ def main(
     else:
         raise TypeError("devices must be a string or a list of strings")
 
-    # config
-    merge_config_: MergeConfig
-    merge_config_path: Path
-    if isinstance(merge_config, Path):
-        merge_config_ = MergeConfig.model_validate_json(merge_config.read_text())
-        merge_config_path = merge_config
-    elif isinstance(merge_config, MergeConfig):
-        merge_config_ = merge_config
-        merge_config_path = REPO_ROOT / f"data/clustering/configs/{merge_config_.stable_hash}.json"
-        merge_config_path.write_text(merge_config_.model_dump_json())
-    else:
-        raise TypeError("merge_config must be a MergeConfig or a Path to a JSON file")
-
     # saving some info
-    merge_config_hash: str = merge_config_.stable_hash
-    merge_run_id: str = f"n{n_batches}_b{batch_size}_{merge_config_hash}"
-    run_path: Path = base_path / f"{merge_run_id}"
+    merge_run_id: str = merge_run_config.run_id
+    run_path: Path = base_path / merge_run_id
     run_path.mkdir(parents=True, exist_ok=True)
     figures_path: Path = run_path / "figures"
     figures_path.mkdir(parents=True, exist_ok=True)
@@ -149,12 +130,8 @@ def main(
     run_config_path.write_text(
         json.dumps(
             dict(
-                merge_config=merge_config_.model_dump(mode="json"),
-                model_path=model_path,
-                task_name=task_name,
+                merge_run_config=merge_run_config.model_dump(mode="json"),
                 base_path=str(base_path),
-                n_batches=n_batches,
-                batch_size=batch_size,
                 devices=devices_,
                 max_concurrency=max_concurrency,
                 plot=plot,
@@ -176,10 +153,7 @@ def main(
     _split_dataset_info_path: Path
     split_dataset_info: dict[str, Any]
     _split_dataset_info_path, split_dataset_info = split_dataset(
-        model_path=model_path,
-        task_name=task_name,
-        n_batches=n_batches,
-        batch_size=batch_size,
+        config=merge_run_config,
         base_path=run_path,
         save_file_fmt=f"{batches_path}/batch_{{batch_idx}}.npz",
         cfg_file_fmt=batches_config_path.as_posix(),
@@ -190,9 +164,7 @@ def main(
     # 2. run the clustering on each batch individually
     logger.section("Distributing clustering")
     distribute_clustering(
-        merge_config_path=merge_config_path,
-        model_path=model_path,
-        task_name=task_name,
+        config_path=config_path,
         data_files=data_files,
         save_dir=histories_path,
         devices=devices_,
@@ -235,43 +207,21 @@ if __name__ == "__main__":
     import argparse
 
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="Run clustering on a dataset using a merge config and a model"
+        description="Run clustering on a dataset using a merge run config"
     )
     parser.add_argument(
-        "--merge-config",
+        "--config",
         "-c",
         type=Path,
         required=True,
-        help="Path to the merge config JSON file or a MergeConfig object",
+        help="Path to the merge run config JSON/YAML file",
     )
     parser.add_argument(
-        "--model-path",
-        "-m",
-        type=str,
-        default="wandb:goodfire/spd/runs/ioprgffh",
-        help="Path to the model (e.g., wandb run ID)",
-    )
-    parser.add_argument(
-        "--task-name",
-        "-t",
-        type=str,
-        choices=TaskName.__args__,
-        default=None,
-        help="Task name for the model, if not provided, it will be inferred from the model path which must then be an experiment registry key starting with 'spd_exp:'",
-    )
-    parser.add_argument(
-        "--n-batches",
-        "-n",
-        type=int,
-        default=10,
-        help="Number of batches to split the dataset into",
-    )
-    parser.add_argument(
-        "--batch-size",
-        "-b",
-        type=int,
-        default=64,
-        help="Size of each batch",
+        "--base-path",
+        "-p",
+        type=Path,
+        default=REPO_ROOT / "data/clustering/",
+        help="Base path for saving clustering outputs",
     )
     parser.add_argument(
         "--devices",
@@ -292,11 +242,8 @@ if __name__ == "__main__":
     devices: list[str] = args.devices.split(",")
 
     main(
-        merge_config=args.merge_config,
-        model_path=args.model_path,
-        task_name=args.task_name,
-        n_batches=args.n_batches,
-        batch_size=args.batch_size,
+        config=args.config,
+        base_path=args.base_path,
         devices=devices,
         max_concurrency=args.max_concurrency,
     )

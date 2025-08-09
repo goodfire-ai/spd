@@ -12,10 +12,9 @@ from zanj import ZANJ
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import merge_iteration
-from spd.clustering.merge_config import MergeConfig
+from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_history_costs
-from spd.clustering.scripts._get_model_path import convert_model_path
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.registry import TaskName
 from spd.settings import REPO_ROOT
@@ -24,33 +23,25 @@ from spd.settings import REPO_ROOT
 
 
 def run_clustering(
-    merge_config: MergeConfig | Path,
+    config: MergeRunConfig | Path,
     dataset_path: Path,
-    model_path: str,
-    task_name: TaskName | None = None,
     save_dir: Path = REPO_ROOT / "data/clustering/merge_history/wip/",
     device: str = "cuda",
     plot: bool = True,
 ) -> Path:
-    # get the task name from the model path if not provided
-    if task_name is None:
-        model_path, task_name = convert_model_path(model_path)
-
-    # get the merge config
-    merge_config_: MergeConfig
-    if isinstance(merge_config, Path):
-        merge_config_ = MergeConfig.model_validate_json(merge_config.read_text())
-    elif isinstance(merge_config, MergeConfig):
-        merge_config_ = merge_config
-    else:
-        raise TypeError("merge_config must be a MergeConfig or a Path to a JSON file")
+    # Load config
+    if isinstance(config, Path):
+        config = MergeRunConfig.from_file(config)
+    
+    model_path: str = config.model_path
+    task_name: TaskName = config.task_name
 
     # get the dataset -- for ensembles, each instance of this script gets a different batch
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
 
     this_merge_path: Path = (
         save_dir
-        / f"history-{merge_config_.stable_hash}-b_{data_batch.shape[0]}-{dataset_path.stem}"
+        / f"{config.run_id}-data_{dataset_path.stem}"
     )
     this_merge_figs: Path = Path(this_merge_path.as_posix() + "_plots/")
     if plot:
@@ -78,9 +69,9 @@ def run_clustering(
     # 3. computing coactivations
     processed_activations: dict[str, Any] = process_activations(
         component_acts,
-        filter_dead_threshold=merge_config_.filter_dead_threshold,
-        seq_mode="concat",
-        filter_modules=merge_config_.filter_modules,
+        filter_dead_threshold=config.filter_dead_threshold,
+        seq_mode="concat" if config.task_name == "lm" else None,
+        filter_modules=config.filter_modules,
     )
 
     if plot:
@@ -105,7 +96,7 @@ def run_clustering(
     # run the merge iteration
     merge_history: MergeHistory = merge_iteration(
         activations=processed_activations["activations"],
-        merge_config=merge_config_,
+        merge_config=config.to_merge_config(),
         component_labels=processed_activations["labels"],
     )
 
@@ -134,26 +125,11 @@ if __name__ == "__main__":
         description="Run a merge iteration on a batch of data using a component model."
     )
     parser.add_argument(
-        "--merge-config",
+        "--config",
         "-c",
         type=Path,
         required=True,
-        help="Path to the merge config JSON file",
-    )
-    parser.add_argument(
-        "--model-path",
-        "-m",
-        type=str,
-        required=True,
-        help="Path to the SPD Run starting with 'wandb:', or canonical experiment key starting with 'spd_exp:'. if the former, task_name is assumed to be 'lm'. if the latter, task_name is inferred from the experiment config.",
-    )
-    parser.add_argument(
-        "--task-name",
-        "-t",
-        type=str,
-        choices=TaskName.__args__,
-        default=None,
-        help="Task name for the model, if not provided, it will be inferred from the model path",
+        help="Path to the merge run config JSON/YAML file",
     )
     parser.add_argument(
         "--dataset-path",
@@ -180,8 +156,7 @@ if __name__ == "__main__":
     args: argparse.Namespace = parser.parse_args()
 
     run_clustering(
-        merge_config=args.merge_config,
-        model_path=args.model_path,
+        config=args.config,
         dataset_path=args.dataset_path,
         device=args.device,
         save_dir=args.save_dir,
