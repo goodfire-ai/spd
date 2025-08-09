@@ -10,6 +10,7 @@ from spd.settings import REPO_ROOT
 
 TaskName = Literal["tms", "resid_mlp", "lm", "ih"]
 
+
 @dataclass
 class ExperimentConfig:
     """Configuration for a single experiment.

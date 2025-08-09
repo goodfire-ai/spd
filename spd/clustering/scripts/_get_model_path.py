@@ -2,7 +2,7 @@ from typing import NamedTuple
 
 from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig, TaskName
 
-TypedModelPath = NamedTuple( # noqa: UP014
+TypedModelPath = NamedTuple(  # noqa: UP014
     "TypedModelPath",
     [
         ("wandb_path", str),
@@ -15,10 +15,10 @@ def convert_model_path(
     model_path: str,
 ) -> TypedModelPath:
     """convert a model path to a wandb path and task name
-    
+
     - if a wandb path is given directly, assume its a language model decomposition
     - if a `model_path` starting with `spd_exp:` is given, look in the `EXPERIMENT_REGISTRY`
-      - only 
+      - only
     """
     if model_path.startswith("wandb:"):
         return TypedModelPath(

@@ -8,7 +8,6 @@ from muutils.spinner import SpinnerContext
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from spd.clustering.scripts._get_model_path import convert_model_path
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -110,7 +109,6 @@ def split_dataset_lm(
     return cfg_path, cfg_data
 
 
-
 def split_dataset_resid_mlp(
     model_path: str,
     n_batches: int,
@@ -129,8 +127,6 @@ def split_dataset_resid_mlp(
         component_model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
         cfg: Config = spd_run.config
 
-        n_samples_total: int = 512
-
     with SpinnerContext(message="Creating ResidMLPDataset..."):
         resid_mlp_dataset_kwargs: dict[str, Any] = dict(
             n_features=component_model.patched_model.config.n_features,  # pyright: ignore[reportAttributeAccessIssue, reportArgumentType],
@@ -146,7 +142,6 @@ def split_dataset_resid_mlp(
         dataset: ResidMLPDataset = ResidMLPDataset(**resid_mlp_dataset_kwargs)
 
         dataloader = DatasetGeneratedDataLoader(dataset, batch_size=batch_size, shuffle=False)
-
 
     # make dirs
     base_path.mkdir(parents=True, exist_ok=True)
@@ -231,7 +226,10 @@ def split_dataset(
             cfg_file_fmt=cfg_file_fmt,
         )
     else:
-        raise ValueError(f"Unsupported task name '{task_name}'. Supported tasks are 'lm' and 'resid_mlp'. {model_path=}, {task_name=}")
+        raise ValueError(
+            f"Unsupported task name '{task_name}'. Supported tasks are 'lm' and 'resid_mlp'. {model_path=}, {task_name=}"
+        )
+
 
 if __name__ == "__main__":
     import argparse
