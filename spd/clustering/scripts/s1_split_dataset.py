@@ -8,9 +8,11 @@ from muutils.spinner import SpinnerContext
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from spd.clustering.scripts._get_model_path import convert_model_path
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.registry import TaskName
 from spd.settings import REPO_ROOT
 
 
@@ -204,16 +206,13 @@ def split_dataset(
     model_path: str,
     n_batches: int,
     batch_size: int,
+    task_name: TaskName,
     base_path: Path = REPO_ROOT / "data/split_datasets",
     save_file_fmt: str = "batchsize_{batch_size}/batch_{batch_idx}.npz",
     cfg_file_fmt: str = "batchsize_{batch_size}/_config.json",
 ) -> tuple[Path, dict[str, Any]]:
-    """Split a dataset into n_batches of batch_size and save the batches.
-    
-    - if a wandb path is given directly, assume its a language model decomposition
-    - if a `model_path` starting with `spd_exp:` is given, look in the `EXPERIMENT_REGISTRY`
-    """
-    if model_path.startswith("wandb:"):
+    """Split a dataset into n_batches of batch_size and save the batches"""
+    if task_name == "lm":
         return split_dataset_lm(
             model_path=model_path,
             n_batches=n_batches,
@@ -222,16 +221,9 @@ def split_dataset(
             save_file_fmt=save_file_fmt,
             cfg_file_fmt=cfg_file_fmt,
         )
-    elif model_path.startswith("spd_exp:"):
-        from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
-        key: str = model_path.split("spd_exp:")[1]
-        if key not in EXPERIMENT_REGISTRY:
-            raise ValueError(f"Experiment '{key}' not found in EXPERIMENT_REGISTRY")
-        exp_config: ExperimentConfig = EXPERIMENT_REGISTRY[key]
-        if exp_config.task_name != "resid_mlp":
-            raise ValueError(f"Experiment '{key}' is not a ResidMLP experiment")
+    elif task_name == "resid_mlp":
         return split_dataset_resid_mlp(
-            model_path=exp_config.canonical_run,
+            model_path=model_path,
             n_batches=n_batches,
             batch_size=batch_size,
             base_path=base_path,
@@ -239,7 +231,7 @@ def split_dataset(
             cfg_file_fmt=cfg_file_fmt,
         )
     else:
-        raise ValueError(f"model_path must start with 'wandb:' or 'spd_exp:', got '{model_path}'")
+        raise ValueError(f"Unsupported task name '{task_name}'. Supported tasks are 'lm' and 'resid_mlp'. {model_path=}, {task_name=}")
 
 if __name__ == "__main__":
     import argparse
@@ -254,6 +246,14 @@ if __name__ == "__main__":
         type=str,
         default="wandb:goodfire/spd/runs/ioprgffh",
         help="Path to the SPD Run, usually a wandb run",
+    )
+    parser.add_argument(
+        "--task-name",
+        "-t",
+        type=str,
+        choices=TaskName.__args__,
+        default=None,
+        help="Task name for the model, if not provided, it will be inferred from the model path",
     )
     parser.add_argument(
         "--batch-size",

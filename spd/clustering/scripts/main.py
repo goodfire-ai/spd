@@ -11,10 +11,12 @@ from matplotlib import pyplot as plt
 from spd.clustering.math.merge_distances import DistancesArray, DistancesMethod
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.plotting.merge import plot_dists_distribution
+from spd.clustering.scripts._get_model_path import convert_model_path
 from spd.clustering.scripts.s1_split_dataset import split_dataset
 from spd.clustering.scripts.s3_normalize_histories import normalize_histories
 from spd.clustering.scripts.s4_compute_distances import compute_histories_distances
 from spd.log import logger
+from spd.registry import TaskName
 from spd.settings import REPO_ROOT
 from spd.utils.cuda_memory_used import cuda_memory_fraction
 
@@ -28,6 +30,7 @@ def distribute_clustering(
     data_files: list[Path],
     devices: list[str],
     save_dir: Path,
+    task_name: TaskName,
     cuda_mem_max: float = 0.8,
     max_concurrency: int | None = None,
 ) -> None:
@@ -52,6 +55,8 @@ def distribute_clustering(
                 str(merge_config_path),
                 "--model-path",
                 model_path,
+                "--task-name",
+                str(task_name),
                 "--dataset-path",
                 str(dataset),
                 "--save-dir",
@@ -93,6 +98,7 @@ def distribute_clustering(
 def main(
     merge_config: Path | MergeConfig,
     model_path: str = "wandb:goodfire/spd/runs/ioprgffh",
+    task_name: TaskName | None = None,
     base_path: Path = REPO_ROOT / "data/clustering/",
     n_batches: int = 10,
     batch_size: int = 64,
@@ -105,6 +111,12 @@ def main(
     logger.set_format("console", "terse")
 
     logger.section("Preprocessing")
+
+    # model path and task name
+    if task_name is None:
+        model_path, task_name = convert_model_path(model_path)
+
+    # device
     devices_: list[str]
     if isinstance(devices, str):
         devices_ = [devices]
@@ -113,6 +125,7 @@ def main(
     else:
         raise TypeError("devices must be a string or a list of strings")
 
+    # config
     merge_config_: MergeConfig
     merge_config_path: Path
     if isinstance(merge_config, Path):
@@ -125,6 +138,7 @@ def main(
     else:
         raise TypeError("merge_config must be a MergeConfig or a Path to a JSON file")
 
+    # saving some info
     merge_config_hash: str = merge_config_.stable_hash
     merge_run_id: str = f"n{n_batches}_b{batch_size}_{merge_config_hash}"
     run_path: Path = base_path / f"{merge_run_id}"
@@ -137,6 +151,7 @@ def main(
             dict(
                 merge_config=merge_config_.model_dump(mode="json"),
                 model_path=model_path,
+                task_name=task_name,
                 base_path=str(base_path),
                 n_batches=n_batches,
                 batch_size=batch_size,
@@ -162,6 +177,7 @@ def main(
     split_dataset_info: dict[str, Any]
     _split_dataset_info_path, split_dataset_info = split_dataset(
         model_path=model_path,
+        task_name=task_name,
         n_batches=n_batches,
         batch_size=batch_size,
         base_path=run_path,
@@ -176,6 +192,7 @@ def main(
     distribute_clustering(
         merge_config_path=merge_config_path,
         model_path=model_path,
+        task_name=task_name,
         data_files=data_files,
         save_dir=histories_path,
         devices=devices_,
@@ -235,6 +252,14 @@ if __name__ == "__main__":
         help="Path to the model (e.g., wandb run ID)",
     )
     parser.add_argument(
+        "--task-name",
+        "-t",
+        type=str,
+        choices=TaskName.__args__,
+        default=None,
+        help="Task name for the model, if not provided, it will be inferred from the model path which must then be an experiment registry key starting with 'spd_exp:'",
+    )
+    parser.add_argument(
         "--n-batches",
         "-n",
         type=int,
@@ -269,6 +294,7 @@ if __name__ == "__main__":
     main(
         merge_config=args.merge_config,
         model_path=args.model_path,
+        task_name=args.task_name,
         n_batches=args.n_batches,
         batch_size=args.batch_size,
         devices=devices,

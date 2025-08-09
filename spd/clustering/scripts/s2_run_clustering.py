@@ -15,7 +15,9 @@ from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_history_costs
+from spd.clustering.scripts._get_model_path import convert_model_path
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.registry import TaskName
 from spd.settings import REPO_ROOT
 
 # pyright: reportUnnecessaryIsInstance=false, reportUnreachable=false
@@ -25,10 +27,15 @@ def run_clustering(
     merge_config: MergeConfig | Path,
     dataset_path: Path,
     model_path: str,
+    task_name: TaskName | None = None,
     save_dir: Path = REPO_ROOT / "data/clustering/merge_history/wip/",
     device: str = "cuda",
     plot: bool = True,
 ) -> Path:
+    # get the task name from the model path if not provided
+    if task_name is None:
+        model_path, task_name = convert_model_path(model_path)
+
     # get the merge config
     merge_config_: MergeConfig
     if isinstance(merge_config, Path):
@@ -138,7 +145,15 @@ if __name__ == "__main__":
         "-m",
         type=str,
         required=True,
-        help="Path to the SPD Run, usually a wandb run",
+        help="Path to the SPD Run starting with 'wandb:', or canonical experiment key starting with 'spd_exp:'. if the former, task_name is assumed to be 'lm'. if the latter, task_name is inferred from the experiment config.",
+    )
+    parser.add_argument(
+        "--task-name",
+        "-t",
+        type=str,
+        choices=TaskName.__args__,
+        default=None,
+        help="Task name for the model, if not provided, it will be inferred from the model path",
     )
     parser.add_argument(
         "--dataset-path",
