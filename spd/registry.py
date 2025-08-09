@@ -84,7 +84,7 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_mlp_config.yaml"),
-        expected_runtime=500,
+        expected_runtime=2000,
     ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",
