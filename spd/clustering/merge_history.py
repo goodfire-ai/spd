@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import torch
 from jaxtyping import Float, Int
-from muutils.dbg import dbg_tensor, dbg_auto
+from muutils.dbg import dbg_tensor
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 from torch import Tensor
 

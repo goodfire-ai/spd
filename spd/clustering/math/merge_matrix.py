@@ -5,8 +5,6 @@ import torch
 from jaxtyping import Bool, Int
 from torch import Tensor
 
-from muutils.dbg import dbg_auto, dbg_tensor
-
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming
 
 if TYPE_CHECKING:
@@ -59,8 +57,12 @@ class GroupMerge:
     ) -> Bool[Tensor, "k_groups n_components"]:
         if device is None:
             device = self.group_idxs.device
-        mat: Bool[Tensor, "k_groups n_components"] = torch.zeros((self.k_groups, self.n_components), dtype=torch.bool, device=device)
-        idxs: Int[Tensor, " n_components"] = torch.arange(self.n_components, device=device, dtype=torch.int)
+        mat: Bool[Tensor, "k_groups n_components"] = torch.zeros(
+            (self.k_groups, self.n_components), dtype=torch.bool, device=device
+        )
+        idxs: Int[Tensor, " n_components"] = torch.arange(
+            self.n_components, device=device, dtype=torch.int
+        )
         mat[self.group_idxs.to(dtype=torch.int), idxs] = True
         return mat
 

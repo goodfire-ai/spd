@@ -46,6 +46,70 @@ def component_activations(
         return causal_importances
 
 
+def sort_module_components_by_similarity(
+    activations: Float[Tensor, "n_steps C"],
+) -> tuple[Float[Tensor, "n_steps C"], Int[Tensor, " C"]]:
+    """Sort components within a single module by their similarity using greedy ordering.
+
+    Uses a greedy nearest-neighbor approach: starts with the component most similar
+    to all others, then iteratively picks the most similar unvisited component.
+
+    Args:
+        activations: Activations for a single module
+
+    Returns:
+        Tuple of (sorted_activations, sort_indices)
+    """
+    n_components = activations.shape[1]
+
+    # If only one component, no sorting needed
+    if n_components <= 1:
+        return activations, torch.arange(n_components, device=activations.device)
+
+    # Compute coactivation matrix for this module
+    coact = activations.T @ activations
+
+    # Convert to similarity matrix (normalize by diagonal)
+    diag = torch.diagonal(coact).sqrt()
+    # Avoid division by zero
+    diag = torch.where(diag > 1e-8, diag, torch.ones_like(diag))
+    similarity = coact / (diag.unsqueeze(0) * diag.unsqueeze(1))
+
+    # Greedy ordering: start with component most similar to all others
+    # (highest average similarity)
+    avg_similarity = similarity.mean(dim=1)
+    start_idx = int(torch.argmax(avg_similarity).item())
+
+    # Build ordering greedily
+    ordered_indices = [start_idx]
+    remaining = set(range(n_components))
+    remaining.remove(start_idx)
+
+    # Greedily add the nearest unvisited component
+    current_idx = start_idx
+    while remaining:
+        # Find the unvisited component most similar to current
+        best_similarity = -1
+        best_idx = -1
+        for idx in remaining:
+            sim = similarity[current_idx, idx].item()
+            if sim > best_similarity:
+                best_similarity = sim
+                best_idx = idx
+
+        ordered_indices.append(best_idx)
+        remaining.remove(best_idx)
+        current_idx = best_idx
+
+    # Create sorting tensor
+    sort_indices = torch.tensor(ordered_indices, dtype=torch.long, device=activations.device)
+
+    # Apply sorting
+    sorted_act = activations[:, sort_indices]
+
+    return sorted_act, sort_indices
+
+
 def process_activations(
     activations: dict[
         str,  # module name to
@@ -55,8 +119,17 @@ def process_activations(
     filter_dead_threshold: float = 0.01,
     seq_mode: Literal["concat", "seq_mean", None] = None,
     filter_modules: ModuleFilterFunc | None = None,
+    sort_components: bool = False,
 ) -> dict[str, Any]:
-    """get back a dict of coactivations, slices, and concated activations"""
+    """get back a dict of coactivations, slices, and concated activations
+
+    Args:
+        activations: Dictionary of activations by module
+        filter_dead_threshold: Threshold for filtering dead components
+        seq_mode: How to handle sequence dimension
+        filter_modules: Function to filter modules
+        sort_components: Whether to sort components by similarity within each module
+    """
 
     activations_: dict[str, Float[Tensor, " n_steps C"]]
     if seq_mode == "concat":
@@ -78,12 +151,27 @@ def process_activations(
     if filter_modules is not None:
         activations_ = {key: act for key, act in activations_.items() if filter_modules(key)}
 
+    # Sort components within each module if requested
+    sort_indices_dict: dict[str, Int[Tensor, " C"]] = {}
+    if sort_components:
+        sorted_activations = {}
+        for key, act in activations_.items():
+            sorted_act, sort_idx = sort_module_components_by_similarity(act)
+            sorted_activations[key] = sorted_act
+            sort_indices_dict[key] = sort_idx
+        activations_ = sorted_activations
+
     # compute the labels and total component count
     total_c: int = 0
     labels: list[str] = list()
     for key, act in activations_.items():
         c = act.shape[-1]
-        labels.extend([f"{key}:{i}" for i in range(c)])
+        if sort_components and key in sort_indices_dict:
+            # Use sorted indices for labeling
+            sort_idx = sort_indices_dict[key]
+            labels.extend([f"{key}:{int(sort_idx[i].item())}" for i in range(c)])
+        else:
+            labels.extend([f"{key}:{i}" for i in range(c)])
         total_c += c
 
     # concat the activations
@@ -120,6 +208,7 @@ def process_activations(
         n_components_original=total_c,
         n_components_alive=len(labels),
         n_components_dead=len(dead_components_lst) if dead_components_lst else 0,
+        sort_indices=sort_indices_dict if sort_components else None,
     )
 
     dbg_auto(output)

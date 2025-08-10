@@ -6,8 +6,6 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from muutils.dbg import dbg_auto
-
 from spd.clustering.math.merge_matrix import GroupMerge
 
 
@@ -20,16 +18,16 @@ def compute_merge_costs(
     r"""Compute MDL costs for merge matrices
 
     $$
-        F(P_i, P_j) 
+        F(P_i, P_j)
         = \alpha |s_i| r(P_j) + \alpha |s_j| r(P_i)
         - s_i s_j ( \alpha r(P_i) + \alpha r(P_j) + c )
         = \alpha (
-            |s_i| r(P_j) 
+            |s_i| r(P_j)
             + |s_j| r(P_i)
             - s_i s_j ( r(P_i) + r(P_j) + c/\alpha )
         )
     $$
-    
+
     """
     device: torch.device = coact.device
     ranks: Float[Tensor, " k_groups"] = merges.components_per_group.to(device=device).float()
@@ -44,8 +42,7 @@ def compute_merge_costs(
     rank_sum: Float[Tensor, "k_groups k_groups"] = ranks.view(-1, 1) + ranks.view(1, -1)
     # TODO: use dynamic rank computation
     return alpha * (
-        term_sipj + term_sipj.T
-        - (rank_sum + (rank_cost(merges.k_groups) / alpha)) * coact
+        term_sipj + term_sipj.T - (rank_sum + (rank_cost(merges.k_groups) / alpha)) * coact
     )
 
 

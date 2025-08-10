@@ -69,13 +69,41 @@ def plot_activations(
     # Concatenated activations, sorted samples
     fig3, ax3 = plt.subplots(figsize=figsize_concat)
 
-    # Compute gram matrix (sample similarity) and sort samples
+    # Compute gram matrix (sample similarity) and sort samples using greedy ordering
     gram_matrix: Float[Tensor, " n_steps n_steps"] = act_concat @ act_concat.T
 
-    # Use hierarchical clustering approach for better sorting
-    similarity_scores: Float[Tensor, " n_steps"] = gram_matrix.sum(dim=1)
-    sorted_indices: torch.Tensor = torch.argsort(similarity_scores, descending=True)
+    # Normalize gram matrix to get cosine similarity
+    norms = torch.norm(act_concat, dim=1, keepdim=True)
+    norms = torch.where(norms > 1e-8, norms, torch.ones_like(norms))
+    similarity_matrix = gram_matrix / (norms @ norms.T)
 
+    # Greedy ordering: start with sample most similar to all others
+    avg_similarity = similarity_matrix.mean(dim=1)
+    start_idx = int(torch.argmax(avg_similarity).item())
+
+    # Build ordering greedily
+    n_samples = act_concat.shape[0]
+    ordered_indices = [start_idx]
+    remaining = set(range(n_samples))
+    remaining.remove(start_idx)
+
+    # Greedily add the nearest unvisited sample
+    current_idx = start_idx
+    while remaining:
+        # Find the unvisited sample most similar to current
+        best_similarity = -1
+        best_idx = -1
+        for idx in remaining:
+            sim = similarity_matrix[current_idx, idx].item()
+            if sim > best_similarity:
+                best_similarity = sim
+                best_idx = idx
+
+        ordered_indices.append(best_idx)
+        remaining.remove(best_idx)
+        current_idx = best_idx
+
+    sorted_indices = torch.tensor(ordered_indices, dtype=torch.long, device=act_concat.device)
     act_concat_sorted: Float[Tensor, " n_steps c"] = act_concat[sorted_indices]
 
     # Handle log10 properly - add small epsilon to avoid log(0)
@@ -249,6 +277,8 @@ def add_component_labeling(ax: plt.Axes, component_labels: list[str], axis: str 
         # Style the ticks
         ax.tick_params(axis="x", which="minor", length=2, width=0.5)
         ax.tick_params(axis="x", which="major", length=6, width=1.5)
+        for x in major_ticks:
+            ax.axvline(x - 0.5, color="black", linestyle="--", linewidth=0.5, alpha=0.5)
     else:
         ax.set_yticks(minor_ticks, minor=True)
         ax.set_yticks(major_ticks)
@@ -257,3 +287,5 @@ def add_component_labeling(ax: plt.Axes, component_labels: list[str], axis: str 
         # Style the ticks
         ax.tick_params(axis="y", which="minor", length=2, width=0.5)
         ax.tick_params(axis="y", which="major", length=6, width=1.5)
+        for y in major_ticks:
+            ax.axhline(y - 0.5, color="black", linestyle="--", linewidth=0.5, alpha=0.5)

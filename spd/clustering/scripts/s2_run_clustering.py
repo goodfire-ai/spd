@@ -12,8 +12,8 @@ from zanj import ZANJ
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import merge_iteration
-from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.merge_history import MergeHistory
+from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_history_costs
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.registry import TaskName
@@ -28,21 +28,19 @@ def run_clustering(
     save_dir: Path = REPO_ROOT / "data/clustering/merge_history/wip/",
     device: str = "cuda",
     plot: bool = True,
+    sort_components: bool = False,
 ) -> Path:
     # Load config
     if isinstance(config, Path):
         config = MergeRunConfig.from_file(config)
-    
+
     model_path: str = config.model_path
-    task_name: TaskName = config.task_name
+    _task_name: TaskName = config.task_name
 
     # get the dataset -- for ensembles, each instance of this script gets a different batch
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
 
-    this_merge_path: Path = (
-        save_dir
-        / f"{config.run_id}-data_{dataset_path.stem}"
-    )
+    this_merge_path: Path = save_dir / f"{config.run_id}-data_{dataset_path.stem}"
     this_merge_figs: Path = Path(this_merge_path.as_posix() + "_plots/")
     if plot:
         this_merge_figs.mkdir(parents=True, exist_ok=True)
@@ -72,6 +70,7 @@ def run_clustering(
         filter_dead_threshold=config.filter_dead_threshold,
         seq_mode="concat" if config.task_name == "lm" else None,
         filter_modules=config.filter_modules,
+        sort_components=sort_components,
     )
 
     if plot:
@@ -152,6 +151,11 @@ if __name__ == "__main__":
         required=True,
         help="Directory to save the merge history",
     )
+    parser.add_argument(
+        "--sort-components",
+        action="store_true",
+        help="Sort components by similarity within each module before concatenation",
+    )
 
     args: argparse.Namespace = parser.parse_args()
 
@@ -160,4 +164,5 @@ if __name__ == "__main__":
         dataset_path=args.dataset_path,
         device=args.device,
         save_dir=args.save_dir,
+        sort_components=args.sort_components,
     )

@@ -1,5 +1,6 @@
 # %%
 from typing import Any
+
 import matplotlib.pyplot as plt
 import torch
 from muutils.dbg import dbg_auto
@@ -9,7 +10,13 @@ from spd.clustering.merge import merge_iteration, merge_iteration_ensemble
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.merge_sweep import sweep_multiple_parameters
-from spd.clustering.plotting.merge import plot_dists_distribution, plot_merge_iteration
+from spd.clustering.plotting.activations import plot_activations
+from spd.clustering.plotting.merge import (
+    plot_dists_distribution,
+    plot_merge_history_cluster_sizes,
+    plot_merge_history_costs,
+    plot_merge_iteration,
+)
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.registry import EXPERIMENT_REGISTRY
@@ -18,12 +25,12 @@ from spd.utils.data_utils import DatasetGeneratedDataLoader
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # magic autoreload
-%load_ext autoreload
-%autoreload 2
+# %load_ext autoreload
+# %autoreload 2
 
 # %%
 # Load model
-SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp1"].canonical_run)
+SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp2"].canonical_run)
 # SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run)
 component_model: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 component_model.to(DEVICE)
@@ -68,9 +75,19 @@ dbg_auto(ci)
 coa = process_activations(
     ci,
     filter_dead_threshold=0.001,
+    sort_components=False,  # Test the new sorting functionality
+)
+
+plot_activations(
+    activations=coa["activations_raw"],
+    act_concat=coa["activations"],
+    coact=coa["coactivations"],
+    labels=coa["labels"],
+    save_pdf=False,
 )
 
 # %%
+
 
 def _plot_func(
     costs: torch.Tensor,
@@ -85,8 +102,8 @@ def _plot_func(
     component_labels: list[str],
     sweep_params: dict[str, Any],
 ) -> None:
-    if i % 10 == 0 and i > 0:
-        latest = merge_history.latest()
+    if (i % 100 == 0 and i > 0) or i == 1:
+        # latest = merge_history.latest()
         # latest['merges'].plot()
         plot_merge_iteration(
             current_merge=current_merge,
@@ -97,19 +114,23 @@ def _plot_func(
             component_labels=component_labels,
         )
 
-merge_iteration(
+
+mh: MergeHistory = merge_iteration(
     activations=coa["activations"],
     merge_config=MergeConfig(
-        activation_threshold=None,
-        alpha=1.0,
-        iters=140,
-        check_threshold=0.1,
+        activation_threshold=0.001,
+        alpha=1,
+        iters=501,
+        check_threshold=0.001,
         pop_component_prob=0,
+        filter_dead_threshold=0.001,
+        rank_cost_fn_name="const_1",
     ),
     component_labels=coa["labels"],
     plot_function=_plot_func,
-);
-
+)
+plot_merge_history_costs(mh)
+plot_merge_history_cluster_sizes(mh)
 # %%
 
 ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(

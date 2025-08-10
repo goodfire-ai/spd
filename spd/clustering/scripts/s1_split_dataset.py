@@ -8,10 +8,10 @@ from muutils.spinner import SpinnerContext
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from spd.clustering.merge_run_config import MergeRunConfig
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.clustering.merge_run_config import MergeRunConfig
 from spd.registry import TaskName
 from spd.settings import REPO_ROOT
 
@@ -207,12 +207,12 @@ def split_dataset(
     """Split a dataset into n_batches of batch_size and save the batches"""
     if isinstance(config, Path):
         config = MergeRunConfig.from_file(config)
-    
+
     model_path: str = config.model_path
     task_name: TaskName = config.task_name
     n_batches: int = config.n_batches
     batch_size: int = config.batch_size
-    
+
     if task_name == "lm":
         return split_dataset_lm(
             model_path=model_path,

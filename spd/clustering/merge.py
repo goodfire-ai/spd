@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import random
 import warnings
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import torch
 import tqdm
@@ -25,7 +26,7 @@ def merge_iteration(
     component_labels: list[str],
     initial_merge: GroupMerge | None = None,
     sweep_params: dict[str, Any] | None = None,
-    plot_function: Callable|None = None,
+    plot_function: Callable | None = None,
 ) -> MergeHistory:
     # setup
     # ==================================================
