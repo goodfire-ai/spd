@@ -6,6 +6,8 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+from muutils.dbg import dbg_auto
+
 from spd.clustering.math.merge_matrix import GroupMerge
 
 
@@ -15,16 +17,35 @@ def compute_merge_costs(
     alpha: float = 1.0,
     rank_cost: Callable[[float], float] = lambda _: 1.0,
 ) -> Float[Tensor, "k_groups k_groups"]:
-    """Compute MDL costs for merge matrices"""
+    r"""Compute MDL costs for merge matrices
+
+    $$
+        F(P_i, P_j) 
+        = \alpha |s_i| r(P_j) + \alpha |s_j| r(P_i)
+        - s_i s_j ( \alpha r(P_i) + \alpha r(P_j) + c )
+        = \alpha (
+            |s_i| r(P_j) 
+            + |s_j| r(P_i)
+            - s_i s_j ( r(P_i) + r(P_j) + c/\alpha )
+        )
+    $$
+    
+    """
     device: torch.device = coact.device
     ranks: Float[Tensor, " k_groups"] = merges.components_per_group.to(device=device).float()
-    diag: Float[Tensor, " k_groups"] = torch.diag(coact).to(device=device)
-
+    s_diag: Float[Tensor, " k_groups"] = torch.diag(coact).to(device=device)
+    # dbg_auto(ranks)
+    # dbg_auto(diag)
+    # dbg_auto(coact)
+    # dbg_auto(diag @ ranks.unsqueeze(1))
+    # dbg_auto(ranks @ diag.unsqueeze(1))
+    # dbg_auto(ranks.unsqueeze(0) + ranks.unsqueeze(1))
+    term_sipj: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) * ranks.view(1, -1)
+    rank_sum: Float[Tensor, "k_groups k_groups"] = ranks.view(-1, 1) + ranks.view(1, -1)
     # TODO: use dynamic rank computation
     return alpha * (
-        diag @ ranks.unsqueeze(1)
-        + ranks @ diag.unsqueeze(1)
-        - (ranks.unsqueeze(0) + ranks.unsqueeze(1) + (rank_cost(merges.k_groups) / alpha)) * coact
+        term_sipj + term_sipj.T
+        - (rank_sum + (rank_cost(merges.k_groups) / alpha)) * coact
     )
 
 

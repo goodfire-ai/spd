@@ -29,6 +29,7 @@ def plot_merge_iteration(
     iteration: int,
     component_labels: list[str] | None = None,
     plot_config: dict[str, Any] | None = None,
+    nan_diag: bool = True,
 ) -> None:
     """Plot merge iteration results with merge tree, coactivations, and costs.
 
@@ -55,9 +56,12 @@ def plot_merge_iteration(
     axs[0].set_title("Merge")
 
     # Coactivations plot
-    axs[1].matshow(current_coact.cpu().numpy(), aspect="equal")
     coact_min: float = current_coact.min().item()
     coact_max: float = current_coact.max().item()
+    if nan_diag:
+        current_coact = current_coact.clone()
+        current_coact.fill_diagonal_(np.nan)
+    axs[1].matshow(current_coact.cpu().numpy(), aspect="equal")
     coact_min_str: str = format_scientific_latex(coact_min)
     coact_max_str: str = format_scientific_latex(coact_max)
     axs[1].set_title(f"Coactivations\n[{coact_min_str}, {coact_max_str}]")
@@ -70,9 +74,12 @@ def plot_merge_iteration(
     axs[1].set_xticklabels([])  # Remove x-axis tick labels but keep ticks
 
     # Costs plot
-    axs[2].matshow(costs.cpu().numpy(), aspect="equal")
     costs_min: float = costs.min().item()
     costs_max: float = costs.max().item()
+    if nan_diag:
+        costs = costs.clone()
+        costs.fill_diagonal_(np.nan)
+    axs[2].matshow(costs.cpu().numpy(), aspect="equal")
     costs_min_str: str = format_scientific_latex(costs_min)
     costs_max_str: str = format_scientific_latex(costs_max)
     axs[2].set_title(f"Costs\n[{costs_min_str}, {costs_max_str}]")

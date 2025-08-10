@@ -61,11 +61,6 @@ class GroupMerge:
             device = self.group_idxs.device
         mat: Bool[Tensor, "k_groups n_components"] = torch.zeros((self.k_groups, self.n_components), dtype=torch.bool, device=device)
         idxs: Int[Tensor, " n_components"] = torch.arange(self.n_components, device=device, dtype=torch.int)
-
-        dbg_tensor(mat)
-        dbg_tensor(idxs)
-        dbg_auto(self.group_idxs)
-
         mat[self.group_idxs.to(dtype=torch.int), idxs] = True
         return mat
 

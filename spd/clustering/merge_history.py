@@ -121,7 +121,6 @@ class MergeHistory(SerializableDataclass):
         if not len(self.non_diag_costs_min):
             raise ValueError("No history available")
         latest_idx: int = self.n_iters_current - 1
-        dbg_auto(latest_idx)
         return dict(
             non_diag_costs_min=self.non_diag_costs_min[latest_idx].item(),
             non_diag_costs_max=self.non_diag_costs_max[latest_idx].item(),

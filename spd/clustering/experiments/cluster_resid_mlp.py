@@ -9,7 +9,7 @@ from spd.clustering.merge import merge_iteration, merge_iteration_ensemble
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.merge_sweep import sweep_multiple_parameters
-from spd.clustering.plotting.merge import plot_dists_distribution
+from spd.clustering.plotting.merge import plot_dists_distribution, plot_merge_iteration
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.registry import EXPERIMENT_REGISTRY
@@ -23,7 +23,7 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # %%
 # Load model
-SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp2"].canonical_run)
+SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp1"].canonical_run)
 # SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run)
 component_model: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 component_model.to(DEVICE)
@@ -86,23 +86,29 @@ def _plot_func(
     sweep_params: dict[str, Any],
 ) -> None:
     if i % 10 == 0 and i > 0:
-        dbg_auto(i)
         latest = merge_history.latest()
-        dbg_auto(latest)
-        latest['merges'].plot()
+        # latest['merges'].plot()
+        plot_merge_iteration(
+            current_merge=current_merge,
+            current_coact=current_coact,
+            costs=costs,
+            pair_cost=costs_computed["pair_cost"],
+            iteration=i,
+            component_labels=component_labels,
+        )
 
 merge_iteration(
     activations=coa["activations"],
     merge_config=MergeConfig(
         activation_threshold=None,
-        alpha=0.01,
+        alpha=1.0,
         iters=140,
         check_threshold=0.1,
         pop_component_prob=0,
     ),
     component_labels=coa["labels"],
     plot_function=_plot_func,
-)
+);
 
 # %%
 
