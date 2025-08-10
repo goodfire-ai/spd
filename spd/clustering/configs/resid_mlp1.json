@@ -1,6 +1,6 @@
 {
   "activation_threshold": 0.01,
-  "alpha": 1.0,
+  "alpha": 1000.0,
   "iters": 140,
   "check_threshold": 0.05,
   "pop_component_prob": 0,

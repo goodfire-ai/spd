@@ -1,12 +1,13 @@
 # %%
+from typing import Any
 import matplotlib.pyplot as plt
 import torch
 from muutils.dbg import dbg_auto
 
 from spd.clustering.activations import component_activations, process_activations
-from spd.clustering.merge import merge_iteration_ensemble
+from spd.clustering.merge import merge_iteration, merge_iteration_ensemble
 from spd.clustering.merge_config import MergeConfig
-from spd.clustering.merge_history import MergeHistoryEnsemble
+from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.merge_sweep import sweep_multiple_parameters
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
@@ -17,8 +18,8 @@ from spd.utils.data_utils import DatasetGeneratedDataLoader
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # magic autoreload
-# %load_ext autoreload
-# %autoreload 2
+%load_ext autoreload
+%autoreload 2
 
 # %%
 # Load model
@@ -53,21 +54,6 @@ dbg_auto(
 )
 dataloader = DatasetGeneratedDataLoader(dataset, batch_size=N_SAMPLES, shuffle=False)
 # %%
-
-dl_iter = iter(dataloader)
-
-for x in dl_iter:
-    dbg_auto(x[0])
-    dbg_auto(x[1])  # labels, but we don't need them for clustering
-    dbg_auto(x[0] - x[1])
-    plt.matshow(x[0].cpu().numpy(), cmap="viridis")
-    plt.colorbar()
-    plt.matshow((x[0] - x[1]).cpu().numpy(), cmap="viridis")
-    plt.colorbar()
-    plt.show()
-    break
-
-# %%
 # Get component activations
 ci = component_activations(
     model=component_model,
@@ -82,6 +68,40 @@ dbg_auto(ci)
 coa = process_activations(
     ci,
     filter_dead_threshold=0.001,
+)
+
+# %%
+
+def _plot_func(
+    costs: torch.Tensor,
+    costs_computed: dict[str, Any],
+    merge_history: MergeHistory,
+    current_merge: Any,
+    current_coact: torch.Tensor,
+    current_act_mask: torch.Tensor,
+    i: int,
+    k_groups: int,
+    activation_mask_orig: torch.Tensor,
+    component_labels: list[str],
+    sweep_params: dict[str, Any],
+) -> None:
+    if i % 10 == 0 and i > 0:
+        dbg_auto(i)
+        latest = merge_history.latest()
+        dbg_auto(latest)
+        latest['merges'].plot()
+
+merge_iteration(
+    activations=coa["activations"],
+    merge_config=MergeConfig(
+        activation_threshold=None,
+        alpha=0.01,
+        iters=140,
+        check_threshold=0.1,
+        pop_component_prob=0,
+    ),
+    component_labels=coa["labels"],
+    plot_function=_plot_func,
 )
 
 # %%

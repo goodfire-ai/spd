@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import torch
 from jaxtyping import Float, Int
-from muutils.dbg import dbg_tensor
+from muutils.dbg import dbg_tensor, dbg_auto
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 from torch import Tensor
 
@@ -113,11 +113,15 @@ class MergeHistory(SerializableDataclass):
         self.k_groups[idx] = k_groups
         self.merges[idx] = current_merge
 
+        assert self.n_iters_current == idx
+        self.n_iters_current += 1
+
     def latest(self) -> dict[str, float | int | GroupMerge]:
         """Get the latest values."""
-        if not self.non_diag_costs_min:
+        if not len(self.non_diag_costs_min):
             raise ValueError("No history available")
         latest_idx: int = self.n_iters_current - 1
+        dbg_auto(latest_idx)
         return dict(
             non_diag_costs_min=self.non_diag_costs_min[latest_idx].item(),
             non_diag_costs_max=self.non_diag_costs_max[latest_idx].item(),

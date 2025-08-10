@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 import warnings
-from typing import Any
+from typing import Any, Callable
 
 import torch
 import tqdm
@@ -25,6 +25,7 @@ def merge_iteration(
     component_labels: list[str],
     initial_merge: GroupMerge | None = None,
     sweep_params: dict[str, Any] | None = None,
+    plot_function: Callable|None = None,
 ) -> MergeHistory:
     # setup
     # ==================================================
@@ -177,6 +178,29 @@ def merge_iteration(
             "Activation mask shape should match number of groups"
         )
 
+        # plot if requested
+        if plot_function is not None:
+            plot_function(
+                costs=costs,
+                costs_computed=dict(
+                    non_diag_costs=non_diag_costs,
+                    non_diag_costs_range=non_diag_costs_range,
+                    max_considered_cost=max_considered_cost,
+                    considered_idxs=considered_idxs,
+                    min_pair=min_pair,
+                    pair_cost=pair_cost,
+                ),
+                merge_history=merge_history,
+                current_merge=current_merge,
+                current_coact=current_coact,
+                current_act_mask=current_act_mask,
+                i=i,
+                k_groups=k_groups,
+                activation_mask_orig=activation_mask_orig,
+                component_labels=component_labels,
+                sweep_params=sweep_params,
+            )
+
         # early stopping
         # --------------------------------------------------
 
@@ -185,7 +209,6 @@ def merge_iteration(
             warnings.warn(
                 f"Stopping early at iteration {i} as only {k_groups} groups left", stacklevel=1
             )
-            current_merge.plot(component_labels=component_labels)
             break
 
         i += 1
