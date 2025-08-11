@@ -235,7 +235,7 @@ class Config(BaseModel):
 
     # --- Component Tracking ---
     ci_alive_threshold: Probability = Field(
-        default=0.1,
+        default=0.0,
         description="Causal importance threshold above which a component is considered 'firing'",
     )
     n_examples_until_dead: PositiveInt = Field(
