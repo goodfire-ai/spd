@@ -16,6 +16,7 @@ Usage:
     spd-run --experiments ss_mlp --dp 4                        # Run with 4 data parallelism over 4 GPUs
 """
 
+import argparse
 import copy
 import itertools
 import json
@@ -27,7 +28,6 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-import fire
 import wandb_workspaces.reports.v2 as wr
 import wandb_workspaces.workspaces as ws
 import yaml
@@ -36,6 +36,7 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
+from spd.utils.cli_utils import format_function_docstring
 from spd.utils.general_utils import apply_nested_updates, load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
@@ -623,7 +624,38 @@ def _validate_dp(dp: int, experiments_list: list[str], local: bool, cpu: bool) -
     if dp > 1 and cpu:
         raise ValueError("Can't have both dp > 1 and cpu")
 
+SPD_RUN_EXAMPLES = """
+Examples:
+    # Run subset of experiments locally
+    spd-run --experiments tms_5-2,resid_mlp1 --local
 
+    # Run parameter sweep locally
+    spd-run --experiments tms_5-2 --sweep --local
+
+    # Run subset of experiments (no sweep)
+    spd-run --experiments tms_5-2,resid_mlp1
+
+    # Run parameter sweep on a subset of experiments with default sweep_params.yaml
+    spd-run --experiments tms_5-2,resid_mlp2 --sweep
+
+    # Run parameter sweep on an experiment with custom sweep params at spd/scripts/my_sweep.yaml
+    spd-run --experiments tms_5-2 --sweep my_sweep.yaml
+
+    # Run all experiments (no sweep)
+    spd-run
+
+    # Use custom W&B project
+    spd-run --experiments tms_5-2 --project my-spd-project
+
+    # Run all experiments on CPU
+    spd-run --experiments tms_5-2 --cpu
+
+    # Run with data parallelism over 4 GPUs (only supported for lm experiments)
+    spd-run --experiments ss_mlp --dp 4
+"""
+
+
+@format_function_docstring(dict(spd_run_examples=SPD_RUN_EXAMPLES))
 def main(
     experiments: str | None = None,
     sweep: str | bool = False,
@@ -664,33 +696,7 @@ def main(
             If set to false, `create_report` must also be false.
         report_title: Title for the W&B report (default: None). Will be generated if not provided.
 
-    Examples:
-        # Run subset of experiments locally
-        spd-run --experiments tms_5-2,resid_mlp1 --local
-
-        # Run parameter sweep locally
-        spd-run --experiments tms_5-2 --sweep --local
-
-        # Run subset of experiments (no sweep)
-        spd-run --experiments tms_5-2,resid_mlp1
-
-        # Run parameter sweep on a subset of experiments with default sweep_params.yaml
-        spd-run --experiments tms_5-2,resid_mlp2 --sweep
-
-        # Run parameter sweep on an experiment with custom sweep params at spd/scripts/my_sweep.yaml
-        spd-run --experiments tms_5-2 --sweep my_sweep.yaml
-
-        # Run all experiments (no sweep)
-        spd-run
-
-        # Use custom W&B project
-        spd-run --experiments tms_5-2 --project my-spd-project
-
-        # Run all experiments on CPU
-        spd-run --experiments tms_5-2 --cpu
-
-        # Run with data parallelism over 4 GPUs (only supported for lm experiments)
-        spd-run --experiments ss_mlp --dp 4
+    {spd_run_examples}
     """
     # setup
     # ==========================================================================================
@@ -806,9 +812,156 @@ def main(
             )
 
 
+1
 def cli():
     """Command line interface."""
-    fire.Fire(main)
+    parser = argparse.ArgumentParser(
+        prog="spd-run",
+        description="SPD runner for experiments with optional parameter sweeps.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=SPD_RUN_EXAMPLES,
+    )
+    
+    # main arguments
+    parser.add_argument(
+        "-e",
+        "--experiments",
+        type=str,
+        default=None,
+        help="Comma-separated list of experiment names. If not specified, runs all experiments. "
+        f"Available: {', '.join(EXPERIMENT_REGISTRY.keys())}",
+    )
+    parser.add_argument(
+        "--local",
+        type=bool,
+        default=False,
+        help="Run locally instead of submitting to SLURM (default: False)",
+    )
+    
+    # Sweep arguments
+    parser.add_argument(
+        "--sweep",
+        nargs="?",
+        const=True,
+        default=False,
+        help="Enable parameter sweep. If no argument provided, uses default sweep_params.yaml. "
+        "Otherwise, specify path to custom sweep parameters file.",
+    )
+    
+    parser.add_argument(
+        "--n-agents", "--n_agents",
+        dest="n_agents",
+        type=int,
+        default=None,
+        help="Maximum number of concurrent SLURM tasks. Required for sweeps unless running locally. "
+        "For non-sweep runs, defaults to the number of experiments.",
+    )
+    
+    # Report and project settings
+    parser.add_argument(
+        "--create-report", "--create_report",
+        dest="create_report",
+        type=lambda x: x.lower() in ['true', '1', 'yes'],
+        default=True,
+        help="Create W&B report for aggregated view (default: True)",
+    )
+    
+    parser.add_argument(
+        "--project",
+        type=str,
+        default="spd",
+        help="W&B project name (default: spd). Will be created if it doesn't exist.",
+    )
+    
+    parser.add_argument(
+        "--report-title", "--report_title",
+        dest="report_title",
+        type=str,
+        default=None,
+        help="Title for the W&B report. Generated automatically if not provided.",
+    )
+    
+    # Execution settings    
+    parser.add_argument(
+        "--cpu",
+        type=lambda x: x.lower() in ['true', '1', 'yes'],
+        default=False,
+        help="Use CPU instead of GPU (default: False)",
+    )
+    
+    parser.add_argument(
+        "--dp",
+        "--data-parallelism", "--data_parallelism",
+        type=int,
+        default=1,
+        help="Number of GPUs for data parallelism (1-8). Only supported for lm experiments. "
+        "Cannot be used with local mode (default: 1)",
+    )
+    
+    parser.add_argument(
+        "--job-suffix", "--job_suffix",
+        dest="job_suffix",
+        type=str,
+        default=None,
+        help="Optional suffix for SLURM job names",
+    )
+    
+    # Git and logging settings
+    parser.add_argument(
+        "--create-snapshot", "--create_snapshot",
+        dest="create_snapshot",
+        type=bool,
+        default=True,
+        help="Create a git snapshot branch for the run (default: True)",
+    )
+    
+    parser.add_argument(
+        "--use-wandb", "--use_wandb",
+        dest="use_wandb",
+        type=bool,
+        default=True,
+        help="Use W&B for logging and tracking (default: True)",
+    )
+    
+    parser.add_argument(
+        "--log-format", "--log_format",
+        dest="log_format",
+        type=str,
+        choices=LogFormat.__args__,
+        default="default",
+        help="Logging format for script output. 'terse' removes timestamps/level (default: 'default')",
+    )
+    
+    args = parser.parse_args()
+    
+    # Handle the sweep parameter - convert to the expected type
+    sweep_value = args.sweep
+    if sweep_value is True:
+        # User provided --sweep with no argument
+        sweep_value = True
+    elif sweep_value is False:
+        # User didn't provide --sweep at all
+        sweep_value = False
+    else:
+        # User provided --sweep with a filename
+        sweep_value = str(sweep_value)
+    
+    # Call main with parsed arguments
+    main(
+        experiments=args.experiments,
+        sweep=sweep_value,
+        n_agents=args.n_agents,
+        create_report=args.create_report,
+        job_suffix=args.job_suffix,
+        cpu=args.cpu,
+        dp=args.dp,
+        project=args.project,
+        local=args.local,
+        log_format=args.log_format,
+        create_snapshot=args.create_snapshot,
+        use_wandb=args.use_wandb,
+        report_title=args.report_title,
+    )
 
 
 if __name__ == "__main__":
