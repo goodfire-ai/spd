@@ -11,7 +11,15 @@ n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj"]
+target_module_patterns: [
+  "model.layers.*.mlp.gate_proj", 
+  "model.layers.*.mlp.down_proj", 
+  "model.layers.*.mlp.up_proj",
+  "model.layers.*.self_attn.q_proj",
+  "model.layers.*.self_attn.k_proj", 
+  "model.layers.*.self_attn.v_proj",
+  "model.layers.*.self_attn.o_proj"
+]
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 100000
@@ -27,20 +35,20 @@ pnorm: 0.9
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 64
-steps: 30_000
-lr: 0.001
+batch_size: 96
+steps: 1_000_000
+lr: 0.0003
 lr_schedule: cosine
 lr_warmup_pct: 0.01
 lr_exponential_halflife: null
-gradient_accumulation_steps: 1
+gradient_accumulation_steps: 2
 
 # --- Logging & Saving ---
 train_log_freq: 100
 eval_freq: 1000
 slow_eval_freq: 5000
 slow_eval_on_first_step: true
-n_eval_steps: 5
+n_eval_steps: 50
 save_freq: null
 n_examples_until_dead: 3_276_800  # train_log_freq * batch_size * max_seq_len = 100 * 64 * 512
 eval_metrics:

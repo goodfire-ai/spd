@@ -527,3 +527,168 @@ def plot_geometric_interaction_strength_product_with_coactivation_fraction(
     plt.close(fig)
 
     return fig_img
+
+
+def plot_single_layer_component_co_activation_fractions(
+    module_name: str,
+    component_co_activation_fractions: Float[Tensor, " C C"],
+) -> Image.Image:
+    """Plot the component co-activation fractions for a single component module."""
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    norm = plt.Normalize(vmin=0, vmax=1)
+    im = ax.matshow(
+        component_co_activation_fractions.detach().cpu().numpy(),
+        aspect="auto",
+        cmap="Blues",
+        norm=norm,
+    )
+
+    ax.set_title(f"{module_name} - Component Co-Activation Fractions")
+    ax.set_xlabel("Denominator Component index")
+    ax.set_ylabel("Numerator Component index")
+
+    # Add colorbar
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("Co-activation Fraction", fontsize=12)
+    cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+    cbar.set_ticklabels(["0.0", "0.25", "0.5", "0.75", "1.0"])
+
+    fig.tight_layout()
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+
+    return fig_img
+
+
+def plot_single_layer_component_abs_left_singular_vectors_geometric_interaction_strengths(
+    module_name: str,
+    geometric_interaction_strengths: Float[Tensor, " C C"],
+) -> Image.Image:
+    """Plot the geometric interaction strengths for a single component module."""
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    norm = plt.Normalize(vmin=0, vmax=1)
+    im = ax.matshow(
+        geometric_interaction_strengths.detach().cpu().numpy(),
+        aspect="auto",
+        cmap="Reds",
+        norm=norm,
+    )
+
+    ax.set_title(f"{module_name} - Geometric Interaction Strengths")
+    ax.set_xlabel("Component index")
+    ax.set_ylabel("Component index")
+
+    # Add colorbar
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("Geometric Interaction Strength", fontsize=12)
+    cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+    cbar.set_ticklabels(["0.0", "0.25", "0.5", "0.75", "1.0"])
+
+    fig.tight_layout()
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+
+    return fig_img
+
+
+# def plot_single_layer_geometric_interaction_strength_vs_coactivation(
+#     module_name: str,
+#     geometric_interaction_strength: Float[Tensor, " C C"],
+#     coactivation_fraction: Float[Tensor, " C C"],
+# ) -> Image.Image:
+#     """Plot the geometric interaction strength vs coactivation scatter plot for a single component module."""
+#     fig, ax = plt.subplots(figsize=(12, 12))
+
+#     ax.scatter(
+#         geometric_interaction_strength.detach().cpu().numpy(),
+#         coactivation_fraction.detach().cpu().numpy(),
+#         alpha=0.2,
+#         s=1.2,
+#     )
+
+#     ax.set_xlim(-0.01, 1.01)
+#     ax.set_ylim(-0.01, 1.01)
+#     ax.set_title(f"{module_name} - Geometric Interaction Strength vs Coactivation")
+#     ax.set_xlabel("Geometric Interaction Strength")
+#     ax.set_ylabel("Coactivation Fraction")
+
+#     fig.tight_layout()
+#     fig_img = _render_figure(fig)
+#     plt.close(fig)
+
+#     return fig_img
+
+
+def plot_single_layer_geometric_interaction_strength_vs_coactivation(
+    module_name: str,
+    geometric_interaction_strength: Float[Tensor, " C C"],
+    coactivation_fraction: Float[Tensor, " C C"],
+) -> Image.Image:
+    """Plot the geometric interaction strength vs coactivation scatter plot for a
+    single component module with histograms of the variables along the axes."""
+    # First we set up a 2 x 2 grid of subplots so that the scatter plot is in the
+    # top right and the histograms are along the axes. The histograms are thin and are
+    # mainly there to show the distribution of the variables.
+
+    fig = plt.figure(figsize=(14, 14))
+    gs = fig.add_gridspec(2, 2, width_ratios=[1, 7], height_ratios=[7, 1], wspace=0.1, hspace=0.1)
+
+    # Plot the scatter plot in the top right
+    ax = fig.add_subplot(gs[0, 1])
+    ax.set_xlim(-0.01, 1.01)
+    ax.set_ylim(-0.01, 1.01)
+    ax.scatter(
+        geometric_interaction_strength.detach().cpu().numpy(),
+        coactivation_fraction.detach().cpu().numpy(),
+        alpha=0.2,
+        s=1.2,
+    )
+    ax.set_title(f"{module_name} - Geometric Interaction Strength vs Coactivation Fraction")
+
+    # Plot the histograms along the axes, which share axes with the scatter plot. The y axis in the histograms is log scale.
+    ax = fig.add_subplot(gs[0, 0])
+    ax.hist(coactivation_fraction.detach().cpu().numpy(), bins=250, orientation="horizontal")
+    ax.set_ylim(-0.01, 1.01)
+    ax.set_ylabel("Coactivation Fraction")
+    ax.set_xlabel("Frequency")
+
+    ax = fig.add_subplot(gs[1, 1])
+    ax.set_xlim(-0.01, 1.01)
+    ax.hist(geometric_interaction_strength.detach().cpu().numpy(), bins=250)
+    ax.set_xlabel("Geometric Interaction Strength")
+    ax.set_ylabel("Frequency")
+
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+    return fig_img
+
+
+def plot_single_layer_geometric_interaction_strength_product_with_coactivation_fraction(
+    module_name: str,
+    elementwise_product: Float[Tensor, " C C"],
+) -> Image.Image:
+    """Plot elementwise product of geometric interaction strength matrix with coactivation matrix for a single component module."""
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    norm = plt.Normalize(vmin=0, vmax=1)
+    im = ax.matshow(
+        elementwise_product.detach().cpu().numpy(), aspect="auto", cmap="Purples", norm=norm
+    )
+
+    ax.set_title(f"{module_name} - Geometric Interaction Strength × Coactivation Fraction")
+    ax.set_xlabel("Component index")
+    ax.set_ylabel("Component index")
+
+    # Add colorbar
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("GIS × Coact Fraction", fontsize=12)
+    cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+    cbar.set_ticklabels(["0.0", "0.25", "0.5", "0.75", "1.0"])
+
+    fig.tight_layout()
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+
+    return fig_img

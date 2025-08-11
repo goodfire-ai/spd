@@ -23,11 +23,11 @@ from spd.plotting import (
     get_single_feature_causal_importances,
     plot_causal_importance_vals,
     plot_ci_values_histograms,
-    plot_component_abs_left_singular_vectors_geometric_interaction_strengths,
     plot_component_activation_density,
-    plot_component_co_activation_fractions,
-    plot_geometric_interaction_strength_product_with_coactivation_fraction,
-    plot_geometric_interaction_strength_vs_coactivation,
+    plot_single_layer_component_abs_left_singular_vectors_geometric_interaction_strengths,
+    plot_single_layer_component_co_activation_fractions,
+    plot_single_layer_geometric_interaction_strength_product_with_coactivation_fraction,
+    plot_single_layer_geometric_interaction_strength_vs_coactivation,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_masks
@@ -473,11 +473,18 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             for module_name in self.model.components
         }  # Formerly mean_component_activation_counts
 
-        ## Component Co-Activation Fractions
         sorted_activation_inds = {
             module_name: torch.argsort(activation_densities[module_name], dim=-1, descending=True)
             for module_name in self.model.components
         }
+
+        n_alive_components = {
+            module_name: torch.sum(activation_densities[module_name] > 0.001)
+            for module_name in self.model.components
+        }  # TODO unhardcode
+
+        ## Component Co-Activation Fractions
+
         # Calculate frac components co-activated with each other conditioned on the activation of the other
         component_co_activation_counts_denom = {
             module_name: torch.ones(self.model.C, self.model.C, device=self.device)
@@ -507,9 +514,12 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             for module_name in self.model.components
         }
 
-        component_co_activation_fractions_fig = plot_component_co_activation_fractions(
-            sorted_co_activation_fractions
-        )
+        alive_co_activation_fractions = {
+            module_name: sorted_co_activation_fractions[module_name][
+                : n_alive_components[module_name], : n_alive_components[module_name]
+            ]
+            for module_name in self.model.components
+        }
 
         ## Geometric Interaction Strength
         # Get the geometric interaction strengths between the absolute left singular vectors of the components.
@@ -584,32 +594,14 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             for module_name in self.model.components
         }
 
-        geometric_interaction_strengths_fig = (
-            plot_component_abs_left_singular_vectors_geometric_interaction_strengths(
-                component_abs_left_sing_vecs_geometric_interaction_strengths_matrices
-            )
-        )
-
-        ## Geometric Interaction Strength vs Coactivation scatter plot
-
-        n_alive_components = {
-            module_name: torch.sum(activation_densities[module_name] > 0.0001)
-            for module_name in self.model.components
-        }  # TODO unhardcode
-
-        alive_co_activation_fractions = {
-            module_name: sorted_co_activation_fractions[module_name][
-                : n_alive_components[module_name], : n_alive_components[module_name]
-            ]
-            for module_name in self.model.components
-        }
-
         alive_geometric_interaction_strength_matrices = {
             module_name: component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[
                 module_name
             ][: n_alive_components[module_name], : n_alive_components[module_name]]
             for module_name in self.model.components
         }
+
+        ## Geometric Interaction Strength vs Coactivation scatter plot
 
         # Flatten the matrices
         alive_co_activation_fractions_flattened = {
@@ -622,41 +614,59 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             for module_name in self.model.components
         }
 
-        # Concatenate the flattened matrices per module
-        alive_geometric_interaction_strength_and_coacts_data = {
-            module_name: (
-                alive_geometric_interaction_strength_matrices_flattened[module_name],
-                alive_co_activation_fractions_flattened[module_name],
-            )
-            for module_name in self.model.components
-        }
-
-        geom_int_strength_vs_coact_fig = plot_geometric_interaction_strength_vs_coactivation(
-            alive_geometric_interaction_strength_and_coacts_data
-        )
-
         ## Geometric Interaction Strength Product with Coactivation Fraction heatmap
         # Elementwise multiply the matrices
         elementwise_products = {
-            module_name: component_abs_left_sing_vecs_geometric_interaction_strengths_matrices[
-                module_name
-            ]
-            * sorted_co_activation_fractions[module_name]
+            module_name: alive_geometric_interaction_strength_matrices[module_name]
+            * alive_co_activation_fractions[module_name]
             for module_name in self.model.components
         }
 
-        geom_int_strength_product_with_coact_fig = (
-            plot_geometric_interaction_strength_product_with_coactivation_fraction(
-                elementwise_products
-            )
-        )
+        # Create individual plots for each layer
+        results = {}
 
-        return {
-            "figures/component_co_activation_fractions": component_co_activation_fractions_fig,
-            "figures/component_abs_left_singular_vectors_geometric_interaction_strengths": geometric_interaction_strengths_fig,
-            "figures/geometric_interaction_strength_vs_coactivation": geom_int_strength_vs_coact_fig,
-            "figures/geometric_interaction_strength_product_with_coactivation_fraction": geom_int_strength_product_with_coact_fig,
-        }
+        for module_name in self.model.components:
+            # Create individual co-activation fractions plot for this layer
+            component_co_activation_fractions_fig = (
+                plot_single_layer_component_co_activation_fractions(
+                    module_name, alive_co_activation_fractions[module_name]
+                )
+            )
+            results[f"figures/component_co_activation_fractions/{module_name}"] = (
+                component_co_activation_fractions_fig
+            )
+
+            # Create individual geometric interaction strengths plot for this layer
+            geometric_interaction_strengths_fig = plot_single_layer_component_abs_left_singular_vectors_geometric_interaction_strengths(
+                module_name, alive_geometric_interaction_strength_matrices[module_name]
+            )
+            results[
+                f"figures/component_abs_left_singular_vectors_geometric_interaction_strengths/{module_name}"
+            ] = geometric_interaction_strengths_fig
+
+            # Create individual geometric interaction strength vs coactivation plot for this layer
+            geom_int_strength_vs_coact_fig = (
+                plot_single_layer_geometric_interaction_strength_vs_coactivation(
+                    module_name,
+                    alive_geometric_interaction_strength_matrices_flattened[module_name],
+                    alive_co_activation_fractions_flattened[module_name],
+                )
+            )
+            results[f"figures/geometric_interaction_strength_vs_coactivation/{module_name}"] = (
+                geom_int_strength_vs_coact_fig
+            )
+
+            # Create individual geometric interaction strength product with coactivation plot for this layer
+            geom_int_strength_product_with_coact_fig = (
+                plot_single_layer_geometric_interaction_strength_product_with_coactivation_fraction(
+                    module_name, elementwise_products[module_name]
+                )
+            )
+            results[
+                f"figures/geometric_interaction_strength_product_with_coactivation_fraction/{module_name}"
+            ] = geom_int_strength_product_with_coact_fig
+
+        return results
 
 
 EVAL_CLASSES = {
