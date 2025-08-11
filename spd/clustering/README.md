@@ -124,3 +124,15 @@ Merge visualization functions moved from `merge.py`.
 - `plot_merge_iteration()` - Visualizes merge iteration results with merge tree, coactivations, and costs
 - `plot_dists_distribution()` - Plots distribution of pairwise distances in ensemble
 - `plot_merge_history()` - Plots cost evolution from merge history
+
+
+
+
+
+
+# Notes 2025-08-11 10:33
+
+on mem usage bottleneck for coact matrix:
+- randomly sample components across layers
+- compute coacts chunkwise, filter anything below some threshold
+- hierarchical -- do one modules/layer at a time first
