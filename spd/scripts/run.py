@@ -19,12 +19,16 @@ Usage:
 import copy
 import itertools
 import json
+import os
 import shlex
 import subprocess
 import tempfile
+import time
 from datetime import datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import fire
 import wandb_workspaces.reports.v2 as wr
@@ -375,6 +379,28 @@ def create_wandb_report(
     return report.url
 
 
+# Per-invocation salt so separate spd-run processes don't collide on ports
+_PORT_SALT: str = f"{time.time_ns()}_{os.getpid()}_{uuid4().hex}"
+
+
+def _choose_master_port(run_id_local: str, idx: int) -> int:
+    """Choose a unique rendezvous port per command.
+
+    Uses a stable hash of (run_id, idx) mapped into a high, unprivileged port range,
+    so that we can run multiple DDP processes on the same machine.
+    """
+    base: int = 20000
+    span: int = 20000  # ports in [20000, 40000)
+    h: int = int(sha256(f"{_PORT_SALT}:{run_id_local}:{idx}".encode()).hexdigest(), 16)
+    return base + (h % span)
+
+
+def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
+    """Build an MPI prefix for a command."""
+    port = _choose_master_port(run_id, idx)
+    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} "
+
+
 def generate_commands(
     experiments_list: list[str],
     run_id: str,
@@ -397,7 +423,7 @@ def generate_commands(
         resolve_sweep_params_path(sweep_params_file) if sweep_params_file else None
     )
 
-    dp_prefix = f"mpirun -np {dp} " if dp > 1 else ""
+    cmd_idx: int = 0
 
     for experiment in experiments_list:
         config_entry = EXPERIMENT_REGISTRY[experiment]
@@ -415,13 +441,17 @@ def generate_commands(
 
             config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
 
+            mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
+
+            print(f"mpi_prefix: {mpi_prefix}")
             command = (
-                f"{dp_prefix}python {decomp_script} '{config_json}' "
+                f"{mpi_prefix}python {decomp_script} '{config_json}' "
                 f"--sweep_id {run_id} --evals_id {experiment}"
             )
 
             commands.append(command)
             task_breakdown[experiment] = "1 task"
+            cmd_idx += 1
 
         else:
             # Parameter sweep run
@@ -440,14 +470,16 @@ def generate_commands(
                 config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
                 sweep_params_json = f"json:{json.dumps(sweep_params)}"
 
+                mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
-                    f"{dp_prefix}python {decomp_script} '{config_json}' "
+                    f"{mpi_prefix}python {decomp_script} '{config_json}' "
                     f"--sweep_id {run_id} "
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
                 )
 
                 commands.append(command)
+                cmd_idx += 1
 
                 # Print first combination as example
                 if i == 0:
