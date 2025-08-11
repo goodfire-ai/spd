@@ -47,12 +47,17 @@ def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path)
     fig_dir = out_dir / "figures"
     fig_dir.mkdir(exist_ok=True)
 
-    for k, v in data.items():
-        if isinstance(v, Image.Image):
-            v.save(fig_dir / f"{k.replace('/', '_')}_{step}.png")
+    # Separate numeric metrics from images
+    numeric_data = {k: v for k, v in data.items() if not isinstance(v, Image.Image)}
+    image_data = {k: v for k, v in data.items() if isinstance(v, Image.Image)}
 
+    # Save images to files
+    for k, v in image_data.items():
+        v.save(fig_dir / f"{k.replace('/', '_')}_{step}.png")
+
+    # Write only numeric metrics to JSON file
     with open(metrics_file, "a") as f:
-        f.write(json.dumps({"step": step, **data}) + "\n")
+        f.write(json.dumps({"step": step, **numeric_data}) + "\n")
 
 
 def loop_dataloader[T](dl: DataLoader[T]):
