@@ -30,7 +30,7 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # %%
 # Load model
-SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp2"].canonical_run)
+SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run)
 # SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run)
 component_model: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 component_model.to(DEVICE)
@@ -75,7 +75,7 @@ dbg_auto(ci)
 merge_cfg: MergeConfig = MergeConfig(
     activation_threshold=0.1,
     alpha=1,
-    iters=245,
+    iters=360,
     check_threshold=0.0,
     pop_component_prob=0,
     filter_dead_threshold=0.1,
@@ -136,7 +136,7 @@ mh: MergeHistory = merge_iteration(
 
 # %%
 import numpy as np
-plt.hist(mh[140]['merges'].components_per_group, bins=np.linspace(0, 56, 57))
+plt.hist(mh[270]['merges'].components_per_group, bins=np.linspace(0, 56, 57))
 plt.yscale("log")
 # plt.xscale("log")
 
