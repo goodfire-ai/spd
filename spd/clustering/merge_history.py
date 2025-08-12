@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import torch
@@ -19,6 +19,45 @@ from spd.clustering.math.merge_distances import (
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
 from spd.clustering.merge_config import MergeConfig
 
+StatsKeys = Literal[
+    "mean",
+    "std",
+    "median",
+    "min",
+    "max",
+    "q01",
+    "q05",
+    "q10",
+    "q25",
+    "q50",
+    "q75",
+    "q90",
+    "q95",
+    "q99",
+    "chosen_pair",
+]
+
+IterationInfo = dict[str, float | int | dict[StatsKeys, float] | list[float] | GroupMerge]
+
+
+def stats_dict(data: Tensor) -> dict[StatsKeys, float]:
+    return {
+        "mean": float(data.mean().item()),
+        "std": float(data.std().item()),
+        "median": float(data.median().item()),
+        "min": float(data.min().item()),
+        "max": float(data.max().item()),
+        "q01": float(torch.quantile(data, 0.01).item()),
+        "q05": float(torch.quantile(data, 0.05).item()),
+        "q10": float(torch.quantile(data, 0.10).item()),
+        "q25": float(torch.quantile(data, 0.25).item()),
+        "q50": float(torch.quantile(data, 0.50).item()),
+        "q75": float(torch.quantile(data, 0.75).item()),
+        "q90": float(torch.quantile(data, 0.90).item()),
+        "q95": float(torch.quantile(data, 0.95).item()),
+        "q99": float(torch.quantile(data, 0.99).item()),
+    }
+
 
 # pyright hates muutils :(
 @serializable_dataclass(kw_only=True)  # pyright: ignore[reportUntypedClassDecorator]
@@ -28,12 +67,20 @@ class MergeHistory(SerializableDataclass):
     c_components: int
     component_labels: list[str]
     n_iters_current: int
-    non_diag_costs_min: Float[Tensor, " n_iters"]
-    non_diag_costs_max: Float[Tensor, " n_iters"]
-    max_considered_cost: Float[Tensor, " n_iters"]
-    selected_pair_cost: Float[Tensor, " n_iters"]
-    costs_range: Float[Tensor, " n_iters"]
     k_groups: Int[Tensor, " n_iters"]
+    selected_pairs: Int[Tensor, " n_iters 2"]
+    "Pairs selected for merging at each iteration"
+
+    coactivations_stats: dict[StatsKeys, list[float]] = serializable_field(
+        assert_type=False,
+    )
+    "Coactivation stats at each iteration"
+
+    costs_stats: dict[StatsKeys, list[float]] = serializable_field(
+        assert_type=False,
+    )
+    "Cost stats at each iteration"
+
     merges: BatchedGroupMerge = serializable_field(
         serialization_fn=lambda x: x.serialize(),
         deserialize_fn=lambda x: BatchedGroupMerge.load(x),
@@ -65,12 +112,10 @@ class MergeHistory(SerializableDataclass):
             c_components=c_components,  # pyright: ignore[reportCallIssue]
             component_labels=component_labels,  # pyright: ignore[reportCallIssue]
             n_iters_current=0,  # pyright: ignore[reportCallIssue]
-            non_diag_costs_min=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),  # pyright: ignore[reportCallIssue]
-            non_diag_costs_max=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),  # pyright: ignore[reportCallIssue]
-            max_considered_cost=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),  # pyright: ignore[reportCallIssue]
-            selected_pair_cost=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),  # pyright: ignore[reportCallIssue]
-            costs_range=torch.full((n_iters_target,), float("nan"), dtype=torch.float32),  # pyright: ignore[reportCallIssue]
             k_groups=torch.full((n_iters_target,), -1, dtype=torch.int16),  # pyright: ignore[reportCallIssue]
+            selected_pairs=torch.full((n_iters_target, 2), -1, dtype=torch.int32),  # pyright: ignore[reportCallIssue]
+            coactivations_stats={k: [] for k in StatsKeys.__args__},  # pyright: ignore[reportCallIssue]
+            costs_stats={k: [] for k in StatsKeys.__args__},  # pyright: ignore[reportCallIssue]
             merges=BatchedGroupMerge.init_empty(  # pyright: ignore[reportCallIssue]
                 batch_size=n_iters_target, n_components=c_components
             ),
@@ -78,65 +123,74 @@ class MergeHistory(SerializableDataclass):
             sweep_params=sweep_params,  # pyright: ignore[reportCallIssue]
         )
 
-    def __post_init__(self) -> None:
-        self._validate_lengths()
-
-    def _validate_lengths(self) -> None:
-        """Ensure all lists have the same length."""
-        lengths = [
-            len(self.non_diag_costs_min),
-            len(self.non_diag_costs_max),
-            len(self.max_considered_cost),
-            len(self.selected_pair_cost),
-            len(self.costs_range),
-            len(self.k_groups),
-            len(self.merges),
-        ]
-        if lengths and not all(length == lengths[0] for length in lengths):
-            raise ValueError("All history lists must have the same length")
-
     def add_iteration(
         self,
         idx: int,
-        non_diag_costs_range: tuple[float, float],
-        max_considered_cost: float,
-        pair_cost: float,
+        selected_pair: tuple[int, int],
+        coactivation: Float[Tensor, "k_groups k_groups"],
+        cost_matrix: Float[Tensor, "k_groups k_groups"],
         k_groups: int,
         current_merge: GroupMerge,
     ) -> None:
         """Add data for one iteration."""
-        self.non_diag_costs_min[idx] = non_diag_costs_range[0]
-        self.non_diag_costs_max[idx] = non_diag_costs_range[1]
-        self.max_considered_cost[idx] = max_considered_cost
-        self.costs_range[idx] = non_diag_costs_range[1] - non_diag_costs_range[0]
-        self.selected_pair_cost[idx] = pair_cost
+        assert tuple(coactivation.shape) == (k_groups, k_groups)
+        assert tuple(cost_matrix.shape) == (k_groups, k_groups)
+
+        # costs and coactvations
+        mask: Float[Tensor, "k_groups k_groups"] = ~torch.eye(
+            k_groups, dtype=torch.bool, device=coactivation.device
+        )
+        coact_flat: Float[Tensor, " n_pairs"] = coactivation[mask].flatten()
+        cost_flat: Float[Tensor, " n_pairs"] = cost_matrix[
+            mask.to(device=cost_matrix.device)
+        ].flatten()
+        coact_stats: dict[StatsKeys, float] = stats_dict(coact_flat)
+        cost_stats: dict[StatsKeys, float] = stats_dict(cost_flat)
+
+        for key in coact_stats:
+            self.coactivations_stats[key].append(coact_stats[key])
+            self.costs_stats[key].append(cost_stats[key])
+
+        self.coactivations_stats["chosen_pair"].append(
+            float(coactivation[selected_pair[0], selected_pair[1]])
+        )
+        self.costs_stats["chosen_pair"].append(
+            float(cost_matrix[selected_pair[0], selected_pair[1]])
+        )
+
+        # other data
+        self.selected_pairs[idx] = torch.tensor(selected_pair, dtype=torch.int32)
         self.k_groups[idx] = k_groups
         self.merges[idx] = current_merge
 
         assert self.n_iters_current == idx
         self.n_iters_current += 1
 
-    def __getitem__(self, idx: int) -> dict[str, float | int | GroupMerge]:
+    def __getitem__(self, idx: int) -> IterationInfo:
         """Get data for a specific iteration."""
         if idx < 0 or idx >= self.n_iters_current:
-            raise IndexError(f"Index {idx} out of range for history with {self.n_iters_current} iterations")
-        return dict(
-            non_diag_costs_min=self.non_diag_costs_min[idx].item(),
-            non_diag_costs_max=self.non_diag_costs_max[idx].item(),
-            max_considered_cost=self.max_considered_cost[idx].item(),
-            selected_pair_cost=self.selected_pair_cost[idx].item(),
-            costs_range=self.costs_range[idx].item(),
-            k_groups=self.k_groups[idx].item(),
-            merges=self.merges[idx],
-        )
-    
+            raise IndexError(
+                f"Index {idx} out of range for history with {self.n_iters_current} iterations"
+            )
+
+        return {
+            "idx": idx,
+            "coactivations_stats": {
+                k: self.coactivations_stats[k][idx] for k in StatsKeys.__args__
+            },
+            "costs_stats": {k: self.costs_stats[k][idx] for k in StatsKeys.__args__},
+            "selected_pair": self.selected_pairs[idx].tolist(),
+            "k_groups": self.k_groups[idx].item(),
+            "merges": self.merges[idx],
+        }
+
     def __len__(self) -> int:
         """Get the number of iterations in the history."""
         return self.n_iters_current
-    
-    def latest(self) -> dict[str, float | int | GroupMerge]:
+
+    def latest(self) -> IterationInfo:
         """Get the latest values."""
-        if not len(self.non_diag_costs_min):
+        if self.n_iters_current == 0:
             raise ValueError("No history available")
         latest_idx: int = self.n_iters_current - 1
         return self[latest_idx]
@@ -145,17 +199,20 @@ class MergeHistory(SerializableDataclass):
     @property
     def total_iterations(self) -> int:
         """Total number of iterations performed."""
-        return len(self.non_diag_costs_min)
+        return self.n_iters_current
 
     @property
     def final_k_groups(self) -> int:
         """Final number of groups after merging."""
-        # return self.k_groups[-1] if self.k_groups else 0
+        if self.n_iters_current == 0:
+            return self.c_components
         return int(self.k_groups[self.n_iters_current - 1].item())
 
     @property
     def initial_k_groups(self) -> int:
         """Initial number of groups before merging."""
+        if self.n_iters_current == 0:
+            return self.c_components
         return int(self.k_groups[0].item())
 
 

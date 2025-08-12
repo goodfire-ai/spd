@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 import math
+from collections.abc import Callable
 
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
-
-from muutils.dbg import dbg_auto, dbg_tensor
 
 from spd.clustering.math.merge_matrix import GroupMerge
 
@@ -49,7 +47,7 @@ def compute_merge_costs(
     k_groups: int = coact.shape[0]
     assert coact.shape[1] == k_groups, "Coactivation matrix must be square"
     assert merges.k_groups == k_groups, "Merges must match coactivation matrix shape"
-    
+
     device: torch.device = coact.device
     ranks: Float[Tensor, " k_groups"] = merges.components_per_group.to(device=device).float()
     s_diag: Float[Tensor, " k_groups"] = torch.diag(coact).to(device=device)
@@ -74,11 +72,7 @@ def compute_merge_costs(
     #     )
     # )
 
-
-    coact_OR: Float[Tensor, "k_groups k_groups"] = (
-        s_diag.view(-1, 1) + s_diag.view(1, -1) 
-        - coact
-    )
+    coact_OR: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) + s_diag.view(1, -1) - coact
     # dbg_auto(coact_OR)
 
     # (s_\Sigma - s_i - s_j) log((c-1)/c)
@@ -86,8 +80,7 @@ def compute_merge_costs(
     # + alpha ( s_{i,j} r(P_{i,j} - s_i r(P_i) - s_j r(P_j) )
 
     s_other: Float[Tensor, "k_groups k_groups"] = (
-        s_diag.sum()
-        - s_diag.view(-1, 1) - s_diag.view(1, -1)
+        s_diag.sum() - s_diag.view(-1, 1) - s_diag.view(1, -1)
     ) * math.log((k_groups - 1) / k_groups)
 
     # dbg_auto(s_other)
@@ -107,25 +100,9 @@ def compute_merge_costs(
 
     # dbg_auto(penalty)
 
-    output: Float[Tensor, "k_groups k_groups"] = (
-        s_other
-        + bits_local
-        + alpha * penalty
-    )
+    output: Float[Tensor, "k_groups k_groups"] = s_other + bits_local + alpha * penalty
     # dbg_auto(output)
     return output
-
-
-
-
-
-
-
-
-    
-
-
-
 
 
 def recompute_coacts_merge_pair(

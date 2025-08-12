@@ -49,7 +49,8 @@ def sweep_merge_parameter(
         "activation_threshold": None,
         "alpha": 1.0,
         "iters": 140,
-        "check_threshold": 0.1,
+        "merge_pair_sampling_method": "range",
+        "merge_pair_sampling_kwargs": {"threshold": 0.1},
         "pop_component_prob": 0.1,
         "rank_cost_fn": lambda x: 1.0,
         "stopping_condition": None,
@@ -100,8 +101,8 @@ def sweep_merge_parameter(
         # Format label based on parameter name
         if parameter_name == "alpha":
             label = f"$\\alpha={value:.4f}$"
-        elif parameter_name == "check_threshold":
-            label = f"$c={value:.4f}$"
+        elif parameter_name == "merge_pair_sampling_kwargs":
+            label = f"$kwargs={value}$"
         elif parameter_name == "pop_component_prob":
             label = f"$p={value:.4f}$"
         else:

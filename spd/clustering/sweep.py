@@ -21,7 +21,7 @@ class SweepConfig:
     """Configuration for hyperparameter sweep."""
 
     activation_thresholds: list[float]
-    check_thresholds: list[float]
+    merge_pair_sampling_thresholds: list[float]
     alphas: list[float]
     rank_cost_funcs: list[Callable[[float], float]]
     iters: int = 100
@@ -30,13 +30,17 @@ class SweepConfig:
         """Generate all MergeConfig combinations."""
         configs = []
         # TODO: adapt to new rank cost func
-        for act_thresh, check_thresh, alpha, _rank_func in itertools.product(
-            self.activation_thresholds, self.check_thresholds, self.alphas, self.rank_cost_funcs
+        for act_thresh, sampling_thresh, alpha, _rank_func in itertools.product(
+            self.activation_thresholds,
+            self.merge_pair_sampling_thresholds,
+            self.alphas,
+            self.rank_cost_funcs,
         ):
             merge_config = MergeConfig(
                 activation_threshold=act_thresh,
                 alpha=alpha,
-                check_threshold=check_thresh,
+                merge_pair_sampling_method="range",
+                merge_pair_sampling_kwargs={"threshold": sampling_thresh},
                 iters=self.iters,
             )
             configs.append(merge_config)
@@ -62,7 +66,13 @@ def format_range(values: list[Any]) -> str:
 
 def get_unique_param_values(results: list[MergeHistory]) -> dict[str, list[Any]]:
     """Extract unique parameter values from results."""
-    all_params: list[str] = ["activation_threshold", "check_threshold", "alpha", "rank_cost_name"]
+    all_params: list[str] = [
+        "activation_threshold",
+        "merge_pair_sampling_method",
+        "merge_pair_sampling_kwargs",
+        "alpha",
+        "rank_cost_name",
+    ]
     return {
         param: sorted(list(set(r.sweep_params[param] for r in results if r.sweep_params)))
         for param in all_params
@@ -85,7 +95,13 @@ def validate_plot_params(
     lines_by: str, rows_by: str, cols_by: str, fixed_params: dict[str, Any]
 ) -> None:
     """Validate that all required parameters are fixed for 3D plotting."""
-    all_params: list[str] = ["activation_threshold", "check_threshold", "alpha", "rank_cost_name"]
+    all_params: list[str] = [
+        "activation_threshold",
+        "merge_pair_sampling_method",
+        "merge_pair_sampling_kwargs",
+        "alpha",
+        "rank_cost_name",
+    ]
     used_params: set[str] = {lines_by, rows_by, cols_by}
     unused_params: list[str] = [p for p in all_params if p not in used_params]
 
@@ -233,7 +249,8 @@ def run_hyperparameter_sweep(
             # Store sweep parameters in the merge history for later use
             merge_history.sweep_params = {
                 "activation_threshold": merge_config.activation_threshold,
-                "check_threshold": merge_config.check_threshold,
+                "merge_pair_sampling_method": merge_config.merge_pair_sampling_method,
+                "merge_pair_sampling_kwargs": merge_config.merge_pair_sampling_kwargs,
                 "alpha": merge_config.alpha,
                 "rank_cost_name": merge_config.rank_cost_fn.__name__,
             }
@@ -251,7 +268,7 @@ def plot_evolution_histories(
     metric: str = "non_diag_costs_min",
     lines_by: str = "alpha",
     rows_by: str = "activation_threshold",
-    cols_by: str = "check_threshold",
+    cols_by: str = "merge_pair_sampling_kwargs",
     figsize: tuple[int, int] = (15, 10),
     normalize_to_zero: bool = True,
     log_delta: bool = True,

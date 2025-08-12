@@ -74,6 +74,7 @@ def run_clustering(
     )
 
     if plot:
+        print("Plotting activations...")
         # Import plotting function only when needed
         from spd.clustering.plotting.activations import plot_activations
 
@@ -101,7 +102,12 @@ def run_clustering(
 
     # save the merge iteration
     hist_save_path: Path = Path(this_merge_path.as_posix() + ".zanj")
-    ZANJ().save(merge_history.serialize(), hist_save_path)
+    print(f"Saving merge history to {hist_save_path}")
+
+    merge_history_serialized: dict[str, Any] = merge_history.serialize()
+    dbg_auto(merge_history_serialized)
+
+    ZANJ().save(merge_history_serialized, hist_save_path)
     print(f"Merge history saved to {hist_save_path}")
 
     if plot:

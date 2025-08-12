@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 import warnings
 from collections.abc import Callable
 from typing import Any
@@ -26,10 +25,11 @@ def merge_iteration(
     component_labels: list[str],
     initial_merge: GroupMerge | None = None,
     sweep_params: dict[str, Any] | None = None,
-    plot_function: Callable | None = None,
+    plot_function: Callable[..., None] | None = None,
 ) -> MergeHistory:
     # setup
     # ==================================================
+    print("Starting merge iteration...")
 
     # compute coactivations
     activation_mask_orig: Float[Tensor, "samples c_components"] | None = (
@@ -88,7 +88,8 @@ def merge_iteration(
 
     # merge iteration
     # ==================================================
-    while i < merge_config.iters:
+    # while i < merge_config.iters:
+    for i in tqdm.tqdm(range(merge_config.iters), unit="iteration", total=merge_config.iters):
         # pop components
         # --------------------------------------------------
         if do_pop and iter_pop[i]:  # pyright: ignore[reportPossiblyUnboundVariable]
@@ -126,34 +127,15 @@ def merge_iteration(
         # figure out what to merge, store some things
         # --------------------------------------------------
 
-        # find the maximum cost among non-diagonal elements we should consider
-        non_diag_costs: Float[Tensor, ""] = costs[~torch.eye(k_groups, dtype=torch.bool)]
-        non_diag_costs_range: tuple[float, float] = (
-            non_diag_costs.min().item(),
-            non_diag_costs.max().item(),
-        )
-        max_considered_cost: float = (
-            non_diag_costs_range[1] - non_diag_costs_range[0]
-        ) * merge_config.check_threshold + non_diag_costs_range[0]
+        # Sample a merge pair using the configured sampler
+        merge_pair: tuple[int, int] = merge_config.merge_pair_sample(costs)
 
-        # consider pairs with costs below the threshold
-        considered_idxs = torch.where(costs <= max_considered_cost)
-        considered_idxs = torch.stack(considered_idxs, dim=1)
-        # remove from considered_idxs where i == j
-        considered_idxs = considered_idxs[considered_idxs[:, 0] != considered_idxs[:, 1]]
-
-        # randomly select one of the considered pairs
-        min_pair: tuple[int, int] = tuple(
-            considered_idxs[random.randint(0, considered_idxs.shape[0] - 1)].tolist()
-        )
-        pair_cost: float = costs[min_pair[0], min_pair[1]].item()
-
-        # store for plotting
+        # Store matrices and selected pair in history
         merge_history.add_iteration(
             idx=i,
-            non_diag_costs_range=non_diag_costs_range,
-            max_considered_cost=max_considered_cost,
-            pair_cost=pair_cost,
+            selected_pair=merge_pair,
+            coactivation=current_coact,
+            cost_matrix=costs,
             k_groups=k_groups,
             current_merge=current_merge,
         )
@@ -163,7 +145,7 @@ def merge_iteration(
         current_merge, current_coact, current_act_mask = recompute_coacts_merge_pair(
             coact=current_coact,
             merges=current_merge,
-            merge_pair=min_pair,
+            merge_pair=merge_pair,
             activation_mask=current_act_mask,
         )
 
@@ -184,14 +166,6 @@ def merge_iteration(
         if plot_function is not None:
             plot_function(
                 costs=costs,
-                costs_computed=dict(
-                    non_diag_costs=non_diag_costs,
-                    non_diag_costs_range=non_diag_costs_range,
-                    max_considered_cost=max_considered_cost,
-                    considered_idxs=considered_idxs,
-                    min_pair=min_pair,
-                    pair_cost=pair_cost,
-                ),
                 merge_history=merge_history,
                 current_merge=current_merge,
                 current_coact=current_coact,
@@ -213,10 +187,9 @@ def merge_iteration(
             )
             break
 
-        i += 1
-
     # finish up
     # ==================================================
+    print(f"Merge iteration completed with {k_groups} groups remaining.")
 
     return merge_history
 

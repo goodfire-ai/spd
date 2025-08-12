@@ -22,6 +22,7 @@ def plot_activations(
     figsize_coact: tuple[int, int] = (8, 6),
     hist_scales: tuple[str, str] = ("lin", "log"),
     hist_bins: int = 100,
+    do_sorted_samples: bool = False,
 ) -> None:
     """Plot activation visualizations including raw, concatenated, sorted, and coactivations.
 
@@ -52,6 +53,11 @@ def plot_activations(
         axs_act[i].set_ylabel(f"components\n{key}")
         axs_act[i].set_title(f"Raw Activations: {key} (shape: {act_raw_data.shape})")
 
+    if save_pdf:
+        fig1_fname = f"{pdf_prefix}_raw.pdf"
+        _fig1.savefig(fig1_fname, bbox_inches="tight", dpi=300)
+        print(f"Saved raw activations plot to {fig1_fname}")
+
     # Concatenated activations
     fig2, ax2 = plt.subplots(figsize=figsize_concat)
     act_data: np.ndarray = act_concat.T.cpu().numpy()
@@ -64,63 +70,68 @@ def plot_activations(
     plt.colorbar(im2)
 
     if save_pdf:
-        fig2.savefig(f"{pdf_prefix}_concatenated.pdf", bbox_inches="tight", dpi=300)
+        fig2_fname = f"{pdf_prefix}_concatenated.pdf"
+        fig2.savefig(fig2_fname, bbox_inches="tight", dpi=300)
+        print(f"Saved concatenated activations plot to {fig2_fname}")
 
     # Concatenated activations, sorted samples
-    fig3, ax3 = plt.subplots(figsize=figsize_concat)
+    if do_sorted_samples:
+        fig3, ax3 = plt.subplots(figsize=figsize_concat)
 
-    # Compute gram matrix (sample similarity) and sort samples using greedy ordering
-    gram_matrix: Float[Tensor, " n_steps n_steps"] = act_concat @ act_concat.T
+        # Compute gram matrix (sample similarity) and sort samples using greedy ordering
+        gram_matrix: Float[Tensor, " n_steps n_steps"] = act_concat @ act_concat.T
 
-    # Normalize gram matrix to get cosine similarity
-    norms = torch.norm(act_concat, dim=1, keepdim=True)
-    norms = torch.where(norms > 1e-8, norms, torch.ones_like(norms))
-    similarity_matrix = gram_matrix / (norms @ norms.T)
+        # Normalize gram matrix to get cosine similarity
+        norms = torch.norm(act_concat, dim=1, keepdim=True)
+        norms = torch.where(norms > 1e-8, norms, torch.ones_like(norms))
+        similarity_matrix = gram_matrix / (norms @ norms.T)
 
-    # Greedy ordering: start with sample most similar to all others
-    avg_similarity = similarity_matrix.mean(dim=1)
-    start_idx = int(torch.argmax(avg_similarity).item())
+        # Greedy ordering: start with sample most similar to all others
+        avg_similarity = similarity_matrix.mean(dim=1)
+        start_idx = int(torch.argmax(avg_similarity).item())
 
-    # Build ordering greedily
-    n_samples = act_concat.shape[0]
-    ordered_indices = [start_idx]
-    remaining = set(range(n_samples))
-    remaining.remove(start_idx)
+        # Build ordering greedily
+        n_samples = act_concat.shape[0]
+        ordered_indices = [start_idx]
+        remaining = set(range(n_samples))
+        remaining.remove(start_idx)
 
-    # Greedily add the nearest unvisited sample
-    current_idx = start_idx
-    while remaining:
-        # Find the unvisited sample most similar to current
-        best_similarity = -1
-        best_idx = -1
-        for idx in remaining:
-            sim = similarity_matrix[current_idx, idx].item()
-            if sim > best_similarity:
-                best_similarity = sim
-                best_idx = idx
+        # Greedily add the nearest unvisited sample
+        current_idx = start_idx
+        while remaining:
+            # Find the unvisited sample most similar to current
+            best_similarity = -1
+            best_idx = -1
+            for idx in remaining:
+                sim = similarity_matrix[current_idx, idx].item()
+                if sim > best_similarity:
+                    best_similarity = sim
+                    best_idx = idx
 
-        ordered_indices.append(best_idx)
-        remaining.remove(best_idx)
-        current_idx = best_idx
+            ordered_indices.append(best_idx)
+            remaining.remove(best_idx)
+            current_idx = best_idx
 
-    sorted_indices = torch.tensor(ordered_indices, dtype=torch.long, device=act_concat.device)
-    act_concat_sorted: Float[Tensor, " n_steps c"] = act_concat[sorted_indices]
+        sorted_indices = torch.tensor(ordered_indices, dtype=torch.long, device=act_concat.device)
+        act_concat_sorted: Float[Tensor, " n_steps c"] = act_concat[sorted_indices]
 
-    # Handle log10 properly - add small epsilon to avoid log(0)
-    act_sorted_data: np.ndarray = act_concat_sorted.T.cpu().numpy()
-    act_sorted_log: np.ndarray = np.log10(act_sorted_data + 1e-10)
-    im3 = ax3.matshow(
-        act_sorted_log, aspect="auto", vmin=act_sorted_log.min(), vmax=act_sorted_log.max()
-    )
-    ax3.set_title("Concatenated Activations $\\log_{10}$, Sorted Samples")
+        # Handle log10 properly - add small epsilon to avoid log(0)
+        act_sorted_data: np.ndarray = act_concat_sorted.T.cpu().numpy()
+        act_sorted_log: np.ndarray = np.log10(act_sorted_data + 1e-10)
+        im3 = ax3.matshow(
+            act_sorted_log, aspect="auto", vmin=act_sorted_log.min(), vmax=act_sorted_log.max()
+        )
+        ax3.set_title("Concatenated Activations $\\log_{10}$, Sorted Samples")
 
-    # Add component labeling on y-axis
-    add_component_labeling(ax3, labels, axis="y")
+        # Add component labeling on y-axis
+        add_component_labeling(ax3, labels, axis="y")
 
-    plt.colorbar(im3)
+        plt.colorbar(im3)
 
-    if save_pdf:
-        fig3.savefig(f"{pdf_prefix}_concatenated_sorted.pdf", bbox_inches="tight", dpi=300)
+        if save_pdf:
+            fig3_fname = f"{pdf_prefix}_concatenated_sorted.pdf"
+            fig3.savefig(fig3_fname, bbox_inches="tight", dpi=300)
+            print(f"Saved sorted concatenated activations plot to {fig3_fname}")
 
     # Coactivations
     fig4, ax4 = plt.subplots(figsize=figsize_coact)
@@ -135,7 +146,9 @@ def plot_activations(
     plt.colorbar(im4)
 
     if save_pdf:
-        fig4.savefig(f"{pdf_prefix}_coactivations.pdf", bbox_inches="tight", dpi=300)
+        fig4_fname = f"{pdf_prefix}_coactivations.pdf"
+        fig4.savefig(fig4_fname, bbox_inches="tight", dpi=300)
+        print(f"Saved coactivations plot to {fig4_fname}")
 
     # log coactivations
     fig4_log, ax4_log = plt.subplots(figsize=figsize_coact)
@@ -149,7 +162,9 @@ def plot_activations(
     add_component_labeling(ax4_log, labels, axis="y")
     plt.colorbar(im4_log)
     if save_pdf:
-        fig4_log.savefig(f"{pdf_prefix}_coactivations_log.pdf", bbox_inches="tight", dpi=300)
+        fig4_log_fname = f"{pdf_prefix}_coactivations_log.pdf"
+        fig4_log.savefig(fig4_log_fname, bbox_inches="tight", dpi=300)
+        print(f"Saved log coactivations plot to {fig4_log_fname}")
 
     # Activation histograms
     fig5: plt.Figure
@@ -234,7 +249,9 @@ def plot_activations(
     plt.tight_layout()
 
     if save_pdf:
-        fig5.savefig(f"{pdf_prefix}_histograms.pdf", bbox_inches="tight", dpi=300)
+        fig5_fname = f"{pdf_prefix}_histograms.pdf"
+        fig5.savefig(fig5_fname, bbox_inches="tight", dpi=300)
+        print(f"Saved histograms plot to {fig5_fname}")
 
 
 def add_component_labeling(ax: plt.Axes, component_labels: list[str], axis: str = "x") -> None:

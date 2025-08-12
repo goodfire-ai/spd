@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+import functools
 import hashlib
 import math
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 
+from jaxtyping import Float
 from pydantic import (
     BaseModel,
     Field,
     PositiveInt,
 )
+from torch import Tensor
 
+from spd.clustering.merge_pair_samplers import (
+    MERGE_PAIR_SAMPLERS,
+    MergePairSampler,
+    MergePairSamplerKey,
+)
 from spd.clustering.util import ModuleFilterFunc, ModuleFilterSource
 from spd.spd_types import Probability
 
@@ -18,7 +26,8 @@ MergeConfigKey = Literal[
     "activation_threshold",
     "alpha",
     "iters",
-    "check_threshold",
+    "merge_pair_sampling_method",
+    "merge_pair_sampling_kwargs",
     "pop_component_prob",
     "filter_dead_threshold",
     "rank_cost_fn_name",
@@ -54,9 +63,13 @@ class MergeConfig(BaseModel):
         default=100,
         description="max number of iterations to run the merge algorithm for.",
     )
-    check_threshold: Probability = Field(
-        default=0.05,
-        description="threshold for considering merge pairs, as a fraction of the range of non-diagonal costs. If 0, always select the pair with the lowest cost. if 1, choose randomly among all pairs.",
+    merge_pair_sampling_method: MergePairSamplerKey = Field(
+        default="range",
+        description="Method for sampling merge pairs. Options: 'range', 'mcmc'.",
+    )
+    merge_pair_sampling_kwargs: dict[str, Any] = Field(
+        default_factory=lambda: {"threshold": 0.05},
+        description="Keyword arguments for the merge pair sampling method.",
     )
     pop_component_prob: Probability = Field(
         default=0,
@@ -92,6 +105,23 @@ class MergeConfig(BaseModel):
                 f"Unknown rank cost function: {self.rank_cost_fn_name}. "
                 "Options: 'const_{{value}}' where {{value}} is a float, 'log', 'linear'."
             )
+
+    @property
+    def merge_pair_sample_func(self) -> MergePairSampler:
+        return functools.partial(
+            MERGE_PAIR_SAMPLERS[self.merge_pair_sampling_method],
+            **self.merge_pair_sampling_kwargs,
+        )
+
+    def merge_pair_sample(
+        self,
+        costs: Float[Tensor, "k_groups k_groups"],
+    ) -> tuple[int, int]:
+        """do merge sampling based on the configured method and kwargs
+
+        has signature `MergePairSampler = Callable[[Float[Tensor, "k_groups k_groups"], int], tuple[int, int]]`
+        """
+        return self.merge_pair_sample_func(costs=costs)
 
     @property
     def filter_modules(self) -> ModuleFilterFunc:

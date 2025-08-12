@@ -53,6 +53,7 @@ js_embedding_vis = { git = "https://github.com/mivanit/js-embedding-vis/"}
 
 [project.scripts]
 spd-run = "spd.scripts.run:cli"
+spd-cluster = "spd.clustering.scripts.main:cli"
 
 [build-system]
 requires = ["setuptools", "wheel"]

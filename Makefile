@@ -62,14 +62,18 @@ dep-graph:
 
 .PHONY: clustering-ss
 clustering-ss:
-	uv run python -m spd.clustering.scripts.main \
+	spd-cluster \
 	  --config spd/clustering/configs/simplestories_dev.json \
 	  --devices cuda:0 \
 	  --max-concurrency 1
 
 .PHONY: clustering-resid_mlp1
 clustering-resid_mlp1:
-	uv run python -m spd.clustering.scripts.main \
+	spd-cluster \
 	  --config spd/clustering/configs/resid_mlp1.json \
 	  --devices cuda:0 \
 	  --max-concurrency 8
+
+.PHONY: clustering-test
+clustering-test:
+	pytest tests/clustering/test_clustering_experiments.py --runslow -vvv --durations 10

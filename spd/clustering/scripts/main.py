@@ -27,7 +27,7 @@ def distribute_clustering(
     data_files: list[Path],
     devices: list[str],
     save_dir: Path,
-    cuda_mem_max: float|None = None,
+    cuda_mem_max: float | None = None,
     max_concurrency: int | None = None,
 ) -> None:
     n_devices: int = len(devices)
@@ -204,7 +204,7 @@ def main(
         plt.show()
 
 
-if __name__ == "__main__":
+def cli():
     import argparse
 
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -248,3 +248,6 @@ if __name__ == "__main__":
         devices=devices,
         max_concurrency=args.max_concurrency,
     )
+
+if __name__ == "__main__":
+    cli()

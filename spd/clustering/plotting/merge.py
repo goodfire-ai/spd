@@ -211,12 +211,16 @@ def plot_merge_history_costs(
 ) -> None:
     """Plot cost evolution from merge history"""
     fig, ax = plt.subplots(figsize=figsize)
-    ax.plot(history.max_considered_cost, label="max considered cost")
-    ax.plot(history.non_diag_costs_min, label="non-diag costs min")
-    ax.plot(history.non_diag_costs_max, label="non-diag costs max")
-    ax.plot(history.selected_pair_cost, label="selected pair cost")
+    ax.plot(history.costs_stats["min"], label="min")
+    ax.plot(history.costs_stats["max"], label="max")
+    ax.plot(history.costs_stats["mean"], ":", label="mean")
+    ax.plot(history.costs_stats["median"], label="median")
+    ax.plot(history.costs_stats["q01"], label="1% quantile", alpha=0.2)
+    ax.plot(history.costs_stats["q05"], label="5% quantile", alpha=0.2)
+    ax.plot(history.costs_stats["q10"], label="10% quantile", alpha=0.2)
+    ax.plot(history.costs_stats["chosen_pair"], label="selected pair cost")
     ax.set_xlabel("Iteration")
-    ax.set_ylabel("Cost")
+    ax.set_ylabel("Non-diagonal costs")
     ax.axhline(0, color="black", linestyle="--", linewidth=0.5)
     ax.legend()
 
