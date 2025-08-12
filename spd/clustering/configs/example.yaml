@@ -4,7 +4,9 @@
 activation_threshold: 0.01 # set to null to use scalar activations for cost calculation
 alpha: 1.0 # rak penalty term
 iters: 100 # iterations to run. setting this to exactly the number of components can be buggy when doing ensembles, so set it to a bit less?
-check_threshold: 0.05 # fraction of the range of costs to sample a merge pair from
+merge_pair_sampling_method: "range"  # Method for sampling merge pairs: 'range' or 'mcmc'
+merge_pair_sampling_kwargs:
+  threshold: 0.05  # For range sampler: fraction of the range of costs to sample from
 pop_component_prob: 0 # Probability of popping a component. i recommend 0 if you're doing an ensemble anyway
 filter_dead_threshold: 0.001 # Threshold for filtering dead components
 module_name_filter: null  # Can be a string prefix like "model.layers.0." if you want to do only some modules

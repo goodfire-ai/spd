@@ -1,8 +1,0 @@
-{
-	"activation_threshold": 0.01,
-	"alpha": 1.0,
-	"iters": 8000,
-	"check_threshold": 0.05,
-	"pop_component_prob": 0,
-	"filter_dead_threshold": 0.01
-}
