@@ -59,38 +59,13 @@ dep-graph:
 	ruff analyze graph > $(DEP_GRAPH_DIR)/import_graph.json
 
 
-.PHONY: demo-clustering
-demo-clustering:
+
+.PHONY: clustering-ss
+clustering-ss:
 	uv run python -m spd.clustering.scripts.main \
-	  --config spd/clustering/configs/demo_i2.json \
+	  --config spd/clustering/configs/simplestories_dev.json \
 	  --devices cuda:0 \
-	  --max-concurrency 99
-
-
-.PHONY: clustering-small
-clustering-small:
-	uv run python -m spd.clustering.scripts.main \
-	  --config spd/clustering/configs/demo_i100.json \
-	  --devices cuda:0 \
-	  --max-concurrency 2
-
-.PHONY: clustering-medium
-clustering-medium:
-	uv run python -m spd.clustering.scripts.main \
-	  --config spd/clustering/configs/demo_i8k.json \
-	  --devices cuda:0 \
-	  --max-concurrency 4
-
-
-
-.PHONY: clustering-dev
-clustering-dev:
-	uv run python -m spd.clustering.scripts.main \
-	  --config spd/clustering/configs/demo_dev_1.json \
-	  --devices cuda:0 \
-	  --max-concurrency 2
-
-
+	  --max-concurrency 1
 
 .PHONY: clustering-resid_mlp1
 clustering-resid_mlp1:
