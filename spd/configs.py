@@ -156,6 +156,18 @@ class Config(BaseModel):
         ...,
         description="The p-value used for the importance minimality loss",
     )
+    p_anneal_start_frac: Probability = Field(
+        default=1.0,
+        description="Fraction of training after which to start annealing p (1.0 = no annealing)",
+    )
+    p_anneal_final_p: PositiveFloat | None = Field(
+        default=None,
+        description="Final p value to anneal to (None = no annealing)",
+    )
+    p_anneal_cooldown_frac: Probability = Field(
+        default=0.0,
+        description="Fraction of annealing period to stay at final p value (0.0 = no cooldown)",
+    )
     output_loss_type: Literal["mse", "kl"] = Field(
         ...,
         description="Metric used to measure recon error between model outputs and targets",

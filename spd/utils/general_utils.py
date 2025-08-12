@@ -345,3 +345,26 @@ def save_pre_run_info(
 
         if save_to_wandb:
             wandb.save(str(filepath), base_path=out_dir, policy="now")
+
+
+def get_annealed_p(
+    step: int,
+    steps: int,
+    initial_p: float,
+    p_anneal_start_frac: float,
+    p_anneal_final_p: float | None,
+    p_anneal_cooldown_frac: float = 0.0,
+) -> float:
+    """Calculate the annealed p value for L_p sparsity loss."""
+    if p_anneal_final_p is None or p_anneal_start_frac >= 1.0:
+        return initial_p
+
+    anneal_start_step = int(steps * p_anneal_start_frac)
+    if step < anneal_start_step:
+        return initial_p
+
+    progress = min(
+        1.0,
+        (step - anneal_start_step) / ((steps - anneal_start_step) * (1 - p_anneal_cooldown_frac)),
+    )
+    return initial_p + (p_anneal_final_p - initial_p) * progress

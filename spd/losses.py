@@ -226,6 +226,7 @@ def calculate_losses(
     target_out: Tensor,
     device: str,
     n_params: int,
+    current_p: float | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Calculate all losses and return total loss and individual loss terms.
 
@@ -238,6 +239,8 @@ def calculate_losses(
         target_out: Target model output
         device: Device to run computations on
         n_params: Total number of parameters in the model
+        current_p: Current p value for L_p sparsity loss (if using annealing)
+
     Returns:
         Tuple of (total_loss, loss_terms_dict)
     """
@@ -310,8 +313,9 @@ def calculate_losses(
         loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
 
     # Importance minimality loss
+    pnorm_value = current_p if current_p is not None else config.pnorm
     importance_minimality_loss = calc_importance_minimality_loss(
-        ci_upper_leaky=causal_importances_upper_leaky, pnorm=config.pnorm
+        ci_upper_leaky=causal_importances_upper_leaky, pnorm=pnorm_value
     )
     total_loss += config.importance_minimality_coeff * importance_minimality_loss
     loss_terms["importance_minimality"] = importance_minimality_loss.item()
@@ -320,7 +324,7 @@ def calculate_losses(
     if config.schatten_coeff is not None:
         schatten_loss = calc_schatten_loss(
             ci_upper_leaky=causal_importances_upper_leaky,
-            pnorm=config.pnorm,
+            pnorm=pnorm_value,
             components=model.components,
             device=device,
         )
