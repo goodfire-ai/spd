@@ -3,7 +3,7 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Self
+from typing import Self, override
 
 import yaml
 from muutils.misc.numerical import shorten_numerical_to_str
@@ -50,9 +50,16 @@ class MergeRunConfig(MergeConfig):
         return self
 
     @property
+    @override
     def stable_hash(self) -> str:
         """Generate a stable hash including all config parameters."""
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:8]
+
+    @property
+    def task_name_validated(self) -> TaskName:
+        """Return the validated task name."""
+        assert self.task_name is not None, "task_name must be set"
+        return self.task_name
 
     @property
     def run_id(self) -> str:

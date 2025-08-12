@@ -47,7 +47,7 @@ def _to_module_filter(
     elif callable(filter_modules):
         return filter_modules
     else:
-        raise TypeError(f"filter_modules must be str, set, or callable, got {type(filter_modules)}")
+        raise TypeError(f"filter_modules must be str, set, or callable, got {type(filter_modules)}")  # pyright: ignore[reportUnreachable]
 
 
 class MergeConfig(BaseModel):

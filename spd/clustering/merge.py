@@ -121,7 +121,6 @@ def merge_iteration(
             coact=current_coact / current_act_mask.shape[0],
             merges=current_merge,
             alpha=merge_config.alpha,
-            rank_cost=merge_config.rank_cost_fn,
         )
 
         # figure out what to merge, store some things

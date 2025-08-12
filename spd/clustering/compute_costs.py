@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 
 import torch
 from jaxtyping import Bool, Float, Int
@@ -14,7 +13,6 @@ def compute_merge_costs(
     coact: Float[Tensor, "k_groups k_groups"],
     merges: GroupMerge,
     alpha: float = 1.0,
-    rank_cost: Callable[[float], float] = lambda _: 1.0,
 ) -> Float[Tensor, "k_groups k_groups"]:
     r"""Compute MDL costs for merge matrices
 

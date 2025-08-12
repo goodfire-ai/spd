@@ -130,7 +130,7 @@ def split_dataset_resid_mlp(
 
     with SpinnerContext(message="Creating ResidMLPDataset..."):
         resid_mlp_dataset_kwargs: dict[str, Any] = dict(
-            n_features=component_model.patched_model.config.n_features,  # pyright: ignore[reportAttributeAccessIssue, reportArgumentType],
+            n_features=component_model.patched_model.config.n_features,  # pyright: ignore[reportAttributeAccessIssue],
             feature_probability=cfg.task_config.feature_probability,  # pyright: ignore[reportAttributeAccessIssue]
             device="cpu",
             calc_labels=False,
@@ -209,7 +209,7 @@ def split_dataset(
         config = MergeRunConfig.from_file(config)
 
     model_path: str = config.model_path
-    task_name: TaskName = config.task_name
+    task_name: TaskName = config.task_name_validated
     n_batches: int = config.n_batches
     batch_size: int = config.batch_size
 

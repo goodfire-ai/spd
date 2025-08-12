@@ -118,13 +118,15 @@ def _plot_func(
     merge_history: MergeHistory,
     current_merge: Any,
     current_coact: torch.Tensor,
-    current_act_mask: torch.Tensor,
+    # current_act_mask: torch.Tensor,
     i: int,
-    k_groups: int,
-    activation_mask_orig: torch.Tensor,
+    # k_groups: int,
+    # activation_mask_orig: torch.Tensor,
     component_labels: list[str],
-    sweep_params: dict[str, Any],
+    # sweep_params: dict[str, Any],
+    **kwargs: Any,
 ) -> None:
+    assert kwargs
     if (i % 50 == 0 and i > 0) or i == 1:
         # latest = merge_history.latest()
         # latest['merges'].plot()
@@ -132,7 +134,7 @@ def _plot_func(
             current_merge=current_merge,
             current_coact=current_coact,
             costs=costs,
-            pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],
+            pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType],
             iteration=i,
             component_labels=component_labels,
         )
@@ -190,7 +192,7 @@ SWEEP_RESULTS: dict[str, Any] = sweep_multiple_parameters(
         # "check_threshold": [0.0001, 0.001, 0.01, 0.1, 0.5],
         # "pop_component_prob": [0.0001, 0.01, 0.5],
     },
-    base_config=MERGE_CFG.model_dump(mode="json"),
+    base_config=MERGE_CFG.model_dump(mode="json"),  # pyright: ignore[reportArgumentType],
     component_labels=PROCESSED_ACTIVATIONS["labels"],
     ensemble_size=4,
 )
