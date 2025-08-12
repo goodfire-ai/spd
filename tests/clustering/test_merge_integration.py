@@ -163,8 +163,8 @@ class TestMergeIntegration:
 
         # With low temperature/threshold, costs should be similar
         # (both favor low-cost merges)
-        range_costs = history_range.selected_pair_cost.tolist()
-        mcmc_costs = history_mcmc.selected_pair_cost.tolist()
+        range_costs = history_range.costs_stats["chosen_pair"]
+        mcmc_costs = history_mcmc.costs_stats["chosen_pair"]
 
         # Check that costs are reasonable (not infinite or nan)
         for cost in range_costs + mcmc_costs:
