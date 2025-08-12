@@ -306,8 +306,10 @@ def _process_batch_for_tokens(
 
     # Get activations before each component
     with torch.no_grad():
-        _, pre_weight_acts = model_data.model.forward_with_pre_forward_cache_hooks(
-            batch, module_names=model_data.model.target_module_paths
+        _, pre_weight_acts = model_data.model(
+            batch,
+            mode="pre_forward_cache",
+            module_names=model_data.model.target_module_paths,
         )
 
         causal_importances, _ = model_data.model.calc_causal_importances(

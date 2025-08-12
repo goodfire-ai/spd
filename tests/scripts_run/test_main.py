@@ -95,7 +95,6 @@ class TestSPDRun:
             assert "--evals_id" in cmd
 
         # Check other parameters
-        assert call_kwargs["cpu"] is False
         assert call_kwargs["snapshot_branch"] == repo_current_branch()
         assert call_kwargs["max_concurrent_tasks"] == (n_agents or len(experiments.split(",")))
 

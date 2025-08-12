@@ -1,6 +1,8 @@
 """Tests for AliveComponentsTracker."""
 
+import pytest
 import torch
+from torch.distributed import ReduceOp
 
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 
@@ -10,7 +12,7 @@ def test_watch_batch_single_example():
     module_names = ["layer1", "layer2"]
     C = 5
     n_examples_until_dead = 10
-    device = torch.device("cpu")
+    device = "cpu"
     ci_alive_threshold = 0.1
 
     tracker = AliveComponentsTracker(
@@ -51,7 +53,7 @@ def test_watch_batch_multiple_examples():
     module_names = ["layer1"]
     C = 3
     n_examples_until_dead = 10
-    device = torch.device("cpu")
+    device = "cpu"
     ci_alive_threshold = 0.1
 
     tracker = AliveComponentsTracker(
@@ -93,7 +95,7 @@ def test_n_alive():
     module_names = ["layer1", "layer2"]
     C = 4
     n_examples_until_dead = 5
-    device = torch.device("cpu")
+    device = "cpu"
     ci_alive_threshold = 0.1
 
     tracker = AliveComponentsTracker(
@@ -121,7 +123,7 @@ def test_sequence_dimensions():
     module_names = ["embedding"]
     C = 3
     n_examples_until_dead = 100
-    device = torch.device("cpu")
+    device = "cpu"
     ci_alive_threshold = 0.1
 
     tracker = AliveComponentsTracker(
@@ -201,3 +203,41 @@ def test_sequence_dimensions():
     assert tracker.examples_since_fired["embedding"][0] == 10
     assert tracker.examples_since_fired["embedding"][1] == 0
     assert tracker.examples_since_fired["embedding"][2] == 0
+
+
+def test_watch_batch_distributed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_names = ["embed"]
+    C = 3
+    n_examples_until_dead = 100
+    device = "cpu"
+    ci_alive_threshold = 0.1
+
+    tracker = AliveComponentsTracker(
+        module_names=module_names,
+        C=C,
+        n_examples_until_dead=n_examples_until_dead,
+        device=device,
+        ci_alive_threshold=ci_alive_threshold,
+    )
+
+    # Local batch with shape (batch=2, seq=5, C=3), all below threshold locally
+    importance_vals = {"embed": torch.zeros((2, 5, 3), dtype=torch.float32, device=device)}
+
+    # Simulate peer rank where only component 1 fired at least once somewhere
+    peer_firing_mask = torch.tensor([False, True, False], device=device)
+
+    monkeypatch.setattr("spd.utils.alive_components_tracker.is_distributed", lambda: True)
+
+    def fake_all_reduce(t: torch.Tensor, op: ReduceOp | None = None) -> torch.Tensor:  # pyright: ignore[reportUnusedParameter]
+        return torch.max(t, peer_firing_mask)
+
+    monkeypatch.setattr("spd.utils.alive_components_tracker.all_reduce", fake_all_reduce)
+
+    tracker.watch_batch(importance_vals)
+
+    # n_examples = batch_size * seq_len = 10
+    assert tracker.examples_since_fired["embed"][0] == 10  # never fired on any rank
+    assert tracker.examples_since_fired["embed"][1] == 0  # fired on a peer => reset
+    assert tracker.examples_since_fired["embed"][2] == 10  # never fired on any rank

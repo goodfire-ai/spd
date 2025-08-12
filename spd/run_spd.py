@@ -1,12 +1,15 @@
 """Run SPD on a model."""
 
+import gc
 import json
 from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 
 import torch
 import torch.nn as nn
+import torch.nn.parallel
 import torch.optim as optim
 import wandb
 from jaxtyping import Float, Int
@@ -16,12 +19,20 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import Config
-from spd.eval import EvalMetricValue, eval
+from spd.eval import evaluate
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
+from spd.utils.distributed_utils import (
+    avg_eval_metrics_across_ranks,
+    avg_metrics_across_ranks,
+    get_world_size,
+    is_distributed,
+    is_main_process,
+    sync_across_processes,
+)
 from spd.utils.general_utils import (
     extract_batch_data,
     get_lr_schedule_fn,
@@ -30,23 +41,22 @@ from spd.utils.general_utils import (
 from spd.utils.run_utils import save_file
 
 
-def local_log(data: Mapping[str, EvalMetricValue], step: int, out_dir: Path) -> None:
+def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path) -> None:
     metrics_file = out_dir / "metrics.jsonl"
     metrics_file.touch(exist_ok=True)
 
     fig_dir = out_dir / "figures"
     fig_dir.mkdir(exist_ok=True)
 
+    metrics_without_images = {}
     for k, v in data.items():
-        metrics_dict = {}
-
         if isinstance(v, Image.Image):
             v.save(fig_dir / f"{k.replace('/', '_')}_{step}.png")
         else:
-            metrics_dict[k] = v
+            metrics_without_images[k] = v
 
-        with open(metrics_file, "a") as f:
-            f.write(json.dumps(metrics_dict) + "\n")
+    with open(metrics_file, "a") as f:
+        f.write(json.dumps({"step": step, **metrics_without_images}) + "\n")
 
 
 def loop_dataloader[T](dl: DataLoader[T]):
@@ -77,7 +87,8 @@ def optimize(
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
 
-    logger.info(f"Output directory: {out_dir}")
+    if is_main_process():
+        logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
     target_model.requires_grad_(False)
     model = ComponentModel(
@@ -90,20 +101,40 @@ def optimize(
     )
     model.to(device)
 
+    # Wrap model with DDP if distributed
+    world_size = get_world_size()
+    wrapped_model: nn.Module = model
+    if world_size > 1:
+        if device.startswith("cuda"):
+            # Parse device string to get device id for GPU
+            device_id = int(device.split(":")[1]) if ":" in device else 0
+            wrapped_model = torch.nn.parallel.DistributedDataParallel(
+                model,
+                device_ids=[device_id],
+                output_device=device_id,
+            )
+        else:
+            # For CPU, don't pass device_ids or output_device
+            wrapped_model = torch.nn.parallel.DistributedDataParallel(model)
+        # Access the underlying module for component operations
+        component_model = wrapped_model.module  # type: ignore[attr-defined]
+    else:
+        component_model = model
+
     if tied_weights is not None:
         # Tie component weights. Assume that the first element is a transpose of the second element
         # NOTE: Tying weights will make your training nondeterministic
         for src_name, tgt_name in tied_weights:
-            tgt = model.components_or_modules[tgt_name].components
-            src = model.components_or_modules[src_name].components
+            tgt = component_model.components_or_modules[tgt_name].components
+            src = component_model.components_or_modules[src_name].components
             tgt.U.data = src.V.data.T
             tgt.V.data = src.U.data.T
 
     component_params: list[torch.nn.Parameter] = []
     gate_params: list[torch.nn.Parameter] = []
-    for name, component in model.components.items():
+    for name, component in component_model.components.items():
         component_params.extend(list(component.parameters()))
-        gate_params.extend(list(model.gates[name].parameters()))
+        gate_params.extend(list(component_model.gates[name].parameters()))
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
@@ -113,15 +144,16 @@ def optimize(
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
     n_params = sum(
-        component.original.weight.numel() for component in model.components_or_modules.values()
+        component.original.weight.numel()
+        for component in component_model.components_or_modules.values()
     )
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
-        module_names=model.target_module_paths,
+        module_names=component_model.target_module_paths,
         C=config.C,
         n_examples_until_dead=config.n_examples_until_dead,
-        device=torch.device(device),
+        device=device,
         ci_alive_threshold=config.ci_alive_threshold,
     )
 
@@ -139,24 +171,30 @@ def optimize(
         for group in optimizer.param_groups:
             group["lr"] = step_lr
 
-        microbatch_log_data = defaultdict[str, float](float)
+        microbatch_log_data: defaultdict[str, float] = defaultdict(float)
         for _ in range(config.gradient_accumulation_steps):
             batch = extract_batch_data(next(train_iterator)).to(device)
 
-            target_out, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
-                batch, module_names=model.target_module_paths
+            target_out, pre_weight_acts = wrapped_model(
+                batch,
+                mode="pre_forward_cache",
+                module_names=component_model.target_module_paths,
             )
-
-            causal_importances, causal_importances_upper_leaky = model.calc_causal_importances(
-                pre_weight_acts=pre_weight_acts,
-                sigmoid_type=config.sigmoid_type,
-                detach_inputs=False,
+            # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
+            # through the parameters in calc_causal_importances below, the DDP hook will get called
+            # and gradients will be properly synced across ranks on the next backward pass.
+            causal_importances, causal_importances_upper_leaky = (
+                component_model.calc_causal_importances(
+                    pre_weight_acts=pre_weight_acts,
+                    sigmoid_type=config.sigmoid_type,
+                    detach_inputs=False,
+                )
             )
 
             alive_tracker.watch_batch(causal_importances)
 
             microbatch_total_loss, microbatch_loss_terms = calculate_losses(
-                model=model,
+                model=component_model,
                 batch=batch,
                 config=config,
                 causal_importances=causal_importances,
@@ -165,7 +203,6 @@ def optimize(
                 device=device,
                 n_params=n_params,
             )
-
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
@@ -181,11 +218,11 @@ def optimize(
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
-            tqdm.write(f"--- Step {step} ---")
-            tqdm.write(f"LR: {step_lr:.6f}")
-            for name, value in microbatch_log_data.items():
-                tqdm.write(f"{name}: {value:.7f}")
+            if is_distributed():
+                avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
+                microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
+            # Already reduced alive counts across ranks, so no need to reduce again
             for layer_name, n_alive_count in alive_tracker.n_alive().items():
                 n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
                 microbatch_log_data[n_alive_key] = n_alive_count
@@ -195,13 +232,17 @@ def optimize(
                 if param.grad is not None:
                     grad_norm += param.grad.data.flatten().pow(2).sum()
             microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
-
             microbatch_log_data["train/misc/lr"] = step_lr
 
-            if out_dir is not None:
-                local_log(microbatch_log_data, step, out_dir)
-            if config.wandb_project:
-                wandb.log(microbatch_log_data, step=step)
+            if is_main_process():
+                tqdm.write(f"--- Step {step} ---")
+                tqdm.write(f"LR: {step_lr:.6f}")
+                for name, value in microbatch_log_data.items():
+                    tqdm.write(f"{name}: {value:.15f}")
+                if out_dir is not None:
+                    local_log(microbatch_log_data, step, out_dir)
+                if config.wandb_project:
+                    wandb.log(microbatch_log_data, step=step)
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
@@ -212,8 +253,8 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
-                metrics = eval(
-                    model=model,
+                metrics = evaluate(
+                    model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
                     device=device,
                     config=config,
@@ -221,27 +262,44 @@ def optimize(
                     n_steps=n_eval_steps,
                 )
 
-                if out_dir is not None:
-                    local_log(metrics, step, out_dir)
-                if config.wandb_project:
-                    wandb_logs: dict[str, int | float | str | wandb.Image] = {
-                        f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
-                        for k, v in metrics.items()
-                    }
-                    wandb.log(wandb_logs, step=step)
+                if is_distributed():
+                    metrics = avg_eval_metrics_across_ranks(metrics, device=device)
+
+                if is_main_process():
+                    for k, v in metrics.items():
+                        tqdm.write(f"eval/{k}: {v}")
+                    if out_dir is not None:
+                        local_log(metrics, step, out_dir)
+                    if config.wandb_project:
+                        wandb_logs: dict[str, int | float | str | wandb.Image] = {
+                            f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
+                            for k, v in metrics.items()
+                        }
+                        wandb.log(wandb_logs, step=step)
+
+                del metrics
+                torch.cuda.empty_cache()
+                gc.collect()
 
         # --- Saving Checkpoint --- #
         if (
-            (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
-            or step == config.steps
-        ) and out_dir is not None:
-            save_file(model.state_dict(), out_dir / f"model_{step}.pth")
+            (
+                (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
+                or step == config.steps
+            )
+            and out_dir is not None
+            and is_main_process()
+        ):
+            # Save the state dict of the underlying module (not DDP wrapper)
+            save_file(component_model.state_dict(), out_dir / f"model_{step}.pth")
             logger.info(f"Saved model, optimizer, and out_dir to {out_dir}")
             if config.wandb_project:
                 wandb.save(str(out_dir / f"model_{step}.pth"), base_path=str(out_dir), policy="now")
 
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
+            sync_across_processes()
             optimizer.step()
 
-    logger.info("Finished training loop.")
+    if is_main_process():
+        logger.info("Finished training loop.")
