@@ -42,6 +42,7 @@ lr_schedule: cosine
 lr_warmup_pct: 0.01
 lr_exponential_halflife: null
 gradient_accumulation_steps: 2
+eval_batch_size: 48
 
 # --- Logging & Saving ---
 train_log_freq: 100
