@@ -249,5 +249,6 @@ def cli():
         max_concurrency=args.max_concurrency,
     )
 
+
 if __name__ == "__main__":
     cli()

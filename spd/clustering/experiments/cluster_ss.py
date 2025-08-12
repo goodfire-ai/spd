@@ -4,9 +4,9 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch import Tensor
 from jaxtyping import Int
 from muutils.dbg import dbg_auto
+from torch import Tensor
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import merge_iteration_ensemble
@@ -66,7 +66,7 @@ FILTER_MODULES: str = "model.layers.0"
 PROCESSED_ACTIVATIONS: dict[str, Any] = process_activations(
     activations=COMPONENT_ACTS,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
-	filter_modules=lambda x: x.startswith(FILTER_MODULES),
+    filter_modules=lambda x: x.startswith(FILTER_MODULES),
     seq_mode="concat",
 )
 
@@ -88,7 +88,7 @@ MERGE_CFG: MergeConfig = MergeConfig(
     merge_pair_sampling_method="range",
     merge_pair_sampling_kwargs={"threshold": 0.1},
     pop_component_prob=0,
-	module_name_filter=FILTER_MODULES,
+    module_name_filter=FILTER_MODULES,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
     rank_cost_fn_name="const_1",
 )

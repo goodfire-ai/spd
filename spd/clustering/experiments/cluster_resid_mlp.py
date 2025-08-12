@@ -2,10 +2,9 @@
 from typing import Any
 
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
-from torch import Tensor
 from muutils.dbg import dbg_auto
+from torch import Tensor
 
 from spd.clustering.activations import component_activations, process_activations
 from spd.clustering.merge import merge_iteration, merge_iteration_ensemble
@@ -56,11 +55,13 @@ DATASET: ResidMLPDataset = ResidMLPDataset(
     data_generation_type=SPD_CONFIG.task_config.data_generation_type,  # pyright: ignore[reportAttributeAccessIssue]
 )
 
-dbg_auto(dict(
-    n_features=DATASET.n_features,
-    feature_probability=DATASET.feature_probability,
-    data_generation_type=DATASET.data_generation_type,
-))
+dbg_auto(
+    dict(
+        n_features=DATASET.n_features,
+        feature_probability=DATASET.feature_probability,
+        data_generation_type=DATASET.data_generation_type,
+    )
+)
 DATALOADER = DatasetGeneratedDataLoader(DATASET, batch_size=N_SAMPLES, shuffle=False)
 
 # %%
@@ -88,7 +89,6 @@ PROCESSED_ACTIVATIONS: dict[str, Any] = process_activations(
 )
 
 
-
 plot_activations(
     activations=PROCESSED_ACTIVATIONS["activations_raw"],
     act_concat=PROCESSED_ACTIVATIONS["activations"],
@@ -111,6 +111,7 @@ MERGE_CFG: MergeConfig = MergeConfig(
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
     rank_cost_fn_name="const_1",
 )
+
 
 def _plot_func(
     costs: torch.Tensor,
