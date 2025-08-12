@@ -1,0 +1,15 @@
+{
+  "activation_threshold": 0.1,
+  "alpha": 1.0,
+  "iters": 20,
+  "merge_pair_sampling_method": "range",
+  "merge_pair_sampling_kwargs": {"threshold": 0.05},
+  "pop_component_prob": 0,
+  "filter_dead_threshold": 0.1,
+  "module_name_filter": "model.layers.0",
+  "rank_cost_fn_name": "const_1",
+  "model_path": "wandb:goodfire/spd/runs/ioprgffh",
+  "task_name": null,
+  "n_batches": 2,
+  "batch_size": 1
+}
