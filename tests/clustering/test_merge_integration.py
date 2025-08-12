@@ -16,7 +16,7 @@ class TestMergeIntegration:
         n_components = 10
         activations = torch.rand(n_samples, n_components)
         component_labels = [f"comp_{i}" for i in range(n_components)]
-        
+
         # Configure with range sampler
         config = MergeConfig(
             activation_threshold=0.1,
@@ -27,14 +27,14 @@ class TestMergeIntegration:
             pop_component_prob=0,
             filter_dead_threshold=0.001,
         )
-        
+
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
             merge_config=config,
             component_labels=component_labels,
         )
-        
+
         # Check results
         assert history is not None
         assert len(history.k_groups) > 0
@@ -51,7 +51,7 @@ class TestMergeIntegration:
         n_components = 10
         activations = torch.rand(n_samples, n_components)
         component_labels = [f"comp_{i}" for i in range(n_components)]
-        
+
         # Configure with MCMC sampler
         config = MergeConfig(
             activation_threshold=0.1,
@@ -62,14 +62,14 @@ class TestMergeIntegration:
             pop_component_prob=0,
             filter_dead_threshold=0.001,
         )
-        
+
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
             merge_config=config,
             component_labels=component_labels,
         )
-        
+
         # Check results
         assert history is not None
         assert len(history.k_groups) > 0
@@ -85,7 +85,7 @@ class TestMergeIntegration:
         n_components = 15
         activations = torch.rand(n_samples, n_components)
         component_labels = [f"comp_{i}" for i in range(n_components)]
-        
+
         # Configure with popping enabled
         config = MergeConfig(
             activation_threshold=0.1,
@@ -96,14 +96,14 @@ class TestMergeIntegration:
             pop_component_prob=0.3,  # 30% chance of popping
             filter_dead_threshold=0.001,
         )
-        
+
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
             merge_config=config,
             component_labels=component_labels,
         )
-        
+
         # Check results
         assert history is not None
         assert history.k_groups[0].item() == n_components
@@ -116,13 +116,13 @@ class TestMergeIntegration:
         n_samples = 100
         n_components = 8
         activations = torch.rand(n_samples, n_components)
-        
+
         # Make some components more active to create cost structure
         activations[:, 0] *= 2  # Component 0 is very active
         activations[:, 1] *= 0.1  # Component 1 is rarely active
-        
+
         component_labels = [f"comp_{i}" for i in range(n_components)]
-        
+
         # Run with range sampler (threshold=0 for deterministic minimum selection)
         config_range = MergeConfig(
             activation_threshold=0.1,
@@ -132,13 +132,13 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"threshold": 0.0},  # Always select minimum
             pop_component_prob=0,
         )
-        
+
         history_range = merge_iteration(
             activations=activations.clone(),
             merge_config=config_range,
             component_labels=component_labels.copy(),
         )
-        
+
         # Run with MCMC sampler (low temperature for near-deterministic)
         config_mcmc = MergeConfig(
             activation_threshold=0.1,
@@ -148,24 +148,24 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"temperature": 0.01},  # Very low temp
             pop_component_prob=0,
         )
-        
+
         history_mcmc = merge_iteration(
             activations=activations.clone(),
             merge_config=config_mcmc,
             component_labels=component_labels.copy(),
         )
-        
+
         # Both should reduce groups from initial count
         assert history_range.k_groups[-1].item() < n_components
         assert history_mcmc.k_groups[-1].item() < n_components
         assert history_range.k_groups[-1].item() >= 2
         assert history_mcmc.k_groups[-1].item() >= 2
-        
+
         # With low temperature/threshold, costs should be similar
         # (both favor low-cost merges)
         range_costs = history_range.selected_pair_cost.tolist()
         mcmc_costs = history_mcmc.selected_pair_cost.tolist()
-        
+
         # Check that costs are reasonable (not infinite or nan)
         for cost in range_costs + mcmc_costs:
             assert not torch.isnan(torch.tensor(cost))
@@ -178,7 +178,7 @@ class TestMergeIntegration:
         n_components = 3
         activations = torch.rand(n_samples, n_components)
         component_labels = [f"comp_{i}" for i in range(n_components)]
-        
+
         config = MergeConfig(
             activation_threshold=0.1,
             alpha=1.0,
@@ -187,14 +187,14 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"temperature": 2.0},
             pop_component_prob=0,
         )
-        
+
         history = merge_iteration(
             activations=activations,
             merge_config=config,
             component_labels=component_labels,
         )
-        
-        # Should start with 3 components  
+
+        # Should start with 3 components
         assert history.k_groups[0].item() == 3
         # Early stopping may occur at 2 groups, so final count could be 2 or 3
         assert history.k_groups[-1].item() >= 2

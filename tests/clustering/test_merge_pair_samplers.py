@@ -44,21 +44,18 @@ class TestRangeSampler:
 
         # Find the true minimum
         min_val = float("inf")
-        min_pair = None
+        _min_pair = None
         for i in range(k):
             for j in range(k):
                 if i != j and costs[i, j] < min_val:
                     min_val = costs[i, j].item()
-                    min_pair = (i, j)
+                    _min_pair = (i, j)
 
         # Sample multiple times with threshold=0
         for _ in range(10):
             pair = range_sampler(costs, threshold=0.0)
             # Should always get the minimum (or its symmetric equivalent)
-            assert (
-                costs[pair[0], pair[1]] == min_val
-                or costs[pair[1], pair[0]] == min_val
-            )
+            assert costs[pair[0], pair[1]] == min_val or costs[pair[1], pair[0]] == min_val
 
     def test_range_sampler_threshold_one(self):
         """Test that threshold=1 can select any non-diagonal pair."""
@@ -80,7 +77,6 @@ class TestRangeSampler:
 
     def test_range_sampler_small_matrix(self):
         """Test range sampler with 2x2 matrix."""
-        k = 2
         costs = torch.tensor([[float("inf"), 1.0], [1.0, float("inf")]])
 
         pair = range_sampler(costs, threshold=0.5)
@@ -161,7 +157,6 @@ class TestMCMCSampler:
 
     def test_mcmc_sampler_small_matrix(self):
         """Test MCMC sampler with 2x2 matrix."""
-        k = 2
         costs = torch.tensor([[float("inf"), 1.0], [1.0, float("inf")]])
 
         pair = mcmc_sampler(costs, temperature=1.0)
