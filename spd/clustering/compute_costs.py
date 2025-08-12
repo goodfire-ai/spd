@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import math
 
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+from muutils.dbg import dbg_auto, dbg_tensor
+
 from spd.clustering.math.merge_matrix import GroupMerge
 
 
 def compute_merge_costs(
-    coact: Bool[Tensor, "k_groups k_groups"],
+    coact: Float[Tensor, "k_groups k_groups"],
     merges: GroupMerge,
     alpha: float = 1.0,
     rank_cost: Callable[[float], float] = lambda _: 1.0,
@@ -28,7 +31,25 @@ def compute_merge_costs(
         )
     $$
 
+    new version from nathu 2025-08-11 16:48
+
+    $$
+        (s_\Sigma - s_i - s_j) log((c-1)/c)
+        + s_{i,j} log(c-1) - s_i log(c) - s_j log(c)
+        + alpha ( s_{i,j} r(P_{i,j} - s_i r(P_i) - s_j r(P_j) )
+    $$
+    where:
+     - $s_\Sigma$ average activation of all components
+     - $s_i$ activation of component $i$, $s_j$ activation of component $j$
+     - $s_{i,j}$ activation of the merged component $i,j$
+     - $r(P_i)$ rank of component $i$, $r(P_j)$ rank of component $j$
+     - $r(P_{i,j})$ rank of the merged component $i,j$
+
     """
+    k_groups: int = coact.shape[0]
+    assert coact.shape[1] == k_groups, "Coactivation matrix must be square"
+    assert merges.k_groups == k_groups, "Merges must match coactivation matrix shape"
+    
     device: torch.device = coact.device
     ranks: Float[Tensor, " k_groups"] = merges.components_per_group.to(device=device).float()
     s_diag: Float[Tensor, " k_groups"] = torch.diag(coact).to(device=device)
@@ -38,12 +59,73 @@ def compute_merge_costs(
     # dbg_auto(diag @ ranks.unsqueeze(1))
     # dbg_auto(ranks @ diag.unsqueeze(1))
     # dbg_auto(ranks.unsqueeze(0) + ranks.unsqueeze(1))
-    term_sipj: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) * ranks.view(1, -1)
+    # term_si_rpj: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) * ranks.view(1, -1)
+    # term_si_rpj: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) * (ranks.view(1, -1) + 1/alpha)
+    term_si_rpi: Float[Tensor, " k_groups"] = s_diag * ranks
+    # dbg_auto(term_si_rpi)
     rank_sum: Float[Tensor, "k_groups k_groups"] = ranks.view(-1, 1) + ranks.view(1, -1)
     # TODO: use dynamic rank computation
-    return alpha * (
-        term_sipj + term_sipj.T - (rank_sum + (rank_cost(merges.k_groups) / alpha)) * coact
+    # return alpha * (
+    #     term_si_rpj  # |s_i| r(P_j)
+    #     + term_si_rpj.T  # |s_j| r(P_i)
+    #     - coact * ( # s_i s_j
+    #         rank_sum  # r(P_i) + r(P_j)
+    #         + (rank_cost(merges.k_groups) / alpha) # c / alpha
+    #     )
+    # )
+
+
+    coact_OR: Float[Tensor, "k_groups k_groups"] = (
+        s_diag.view(-1, 1) + s_diag.view(1, -1) 
+        - coact
     )
+    # dbg_auto(coact_OR)
+
+    # (s_\Sigma - s_i - s_j) log((c-1)/c)
+    # + s_{i,j} log(c-1) - s_i log(c) - s_j log(c)
+    # + alpha ( s_{i,j} r(P_{i,j} - s_i r(P_i) - s_j r(P_j) )
+
+    s_other: Float[Tensor, "k_groups k_groups"] = (
+        s_diag.sum()
+        - s_diag.view(-1, 1) - s_diag.view(1, -1)
+    ) * math.log((k_groups - 1) / k_groups)
+
+    # dbg_auto(s_other)
+
+    bits_local: Float[Tensor, "k_groups k_groups"] = (
+        coact_OR * math.log(k_groups - 1)
+        - s_diag.view(-1, 1) * math.log(k_groups)
+        - s_diag.view(1, -1) * math.log(k_groups)
+    )
+    # dbg_auto(bits_local)
+
+    penalty: Float[Tensor, "k_groups k_groups"] = (
+        coact_OR * rank_sum  # s_{i,j} r(P_{i,j})
+        - term_si_rpi.view(-1, 1)  # s_i r(P_i)
+        - term_si_rpi.view(1, -1)  # s_j r(P_j)
+    )
+
+    # dbg_auto(penalty)
+
+    output: Float[Tensor, "k_groups k_groups"] = (
+        s_other
+        + bits_local
+        + alpha * penalty
+    )
+    # dbg_auto(output)
+    return output
+
+
+
+
+
+
+
+
+    
+
+
+
 
 
 def recompute_coacts_merge_pair(

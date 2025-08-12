@@ -116,20 +116,30 @@ class MergeHistory(SerializableDataclass):
         assert self.n_iters_current == idx
         self.n_iters_current += 1
 
+    def __getitem__(self, idx: int) -> dict[str, float | int | GroupMerge]:
+        """Get data for a specific iteration."""
+        if idx < 0 or idx >= self.n_iters_current:
+            raise IndexError(f"Index {idx} out of range for history with {self.n_iters_current} iterations")
+        return dict(
+            non_diag_costs_min=self.non_diag_costs_min[idx].item(),
+            non_diag_costs_max=self.non_diag_costs_max[idx].item(),
+            max_considered_cost=self.max_considered_cost[idx].item(),
+            selected_pair_cost=self.selected_pair_cost[idx].item(),
+            costs_range=self.costs_range[idx].item(),
+            k_groups=self.k_groups[idx].item(),
+            merges=self.merges[idx],
+        )
+    
+    def __len__(self) -> int:
+        """Get the number of iterations in the history."""
+        return self.n_iters_current
+    
     def latest(self) -> dict[str, float | int | GroupMerge]:
         """Get the latest values."""
         if not len(self.non_diag_costs_min):
             raise ValueError("No history available")
         latest_idx: int = self.n_iters_current - 1
-        return dict(
-            non_diag_costs_min=self.non_diag_costs_min[latest_idx].item(),
-            non_diag_costs_max=self.non_diag_costs_max[latest_idx].item(),
-            max_considered_cost=self.max_considered_cost[latest_idx].item(),
-            selected_pair_cost=self.selected_pair_cost[latest_idx].item(),
-            costs_range=self.costs_range[latest_idx].item(),
-            k_groups=self.k_groups[latest_idx].item(),
-            merges=self.merges[latest_idx],
-        )
+        return self[latest_idx]
 
     # Convenience properties for sweep analysis
     @property

@@ -115,8 +115,9 @@ def merge_iteration(
 
         # compute costs
         # --------------------------------------------------
+        # HACK: this is messy
         costs: Float[Tensor, "c_components c_components"] = compute_merge_costs(
-            coact=current_coact,
+            coact=current_coact / current_act_mask.shape[0],
             merges=current_merge,
             alpha=merge_config.alpha,
             rank_cost=merge_config.rank_cost_fn,

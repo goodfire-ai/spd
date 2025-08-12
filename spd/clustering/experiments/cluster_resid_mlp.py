@@ -25,8 +25,8 @@ from spd.utils.data_utils import DatasetGeneratedDataLoader
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # magic autoreload
-# %load_ext autoreload
-# %autoreload 2
+%load_ext autoreload
+%autoreload 2
 
 # %%
 # Load model
@@ -71,10 +71,22 @@ ci = component_activations(
 
 dbg_auto(ci)
 # %%
+
+merge_cfg: MergeConfig = MergeConfig(
+    activation_threshold=0.1,
+    alpha=1,
+    iters=245,
+    check_threshold=0.0,
+    pop_component_prob=0,
+    filter_dead_threshold=0.1,
+    rank_cost_fn_name="const_1",
+)
+
+
 # Process activations
 coa = process_activations(
     ci,
-    filter_dead_threshold=0.001,
+    filter_dead_threshold=merge_cfg.filter_dead_threshold,
     sort_components=False,  # Test the new sorting functionality
 )
 
@@ -102,7 +114,7 @@ def _plot_func(
     component_labels: list[str],
     sweep_params: dict[str, Any],
 ) -> None:
-    if (i % 100 == 0 and i > 0) or i == 1:
+    if (i % 10 == 0 and i > 0) or i == 1:
         # latest = merge_history.latest()
         # latest['merges'].plot()
         plot_merge_iteration(
@@ -117,39 +129,32 @@ def _plot_func(
 
 mh: MergeHistory = merge_iteration(
     activations=coa["activations"],
-    merge_config=MergeConfig(
-        activation_threshold=0.001,
-        alpha=1,
-        iters=501,
-        check_threshold=0.001,
-        pop_component_prob=0,
-        filter_dead_threshold=0.001,
-        rank_cost_fn_name="const_1",
-    ),
+    merge_config=merge_cfg,
     component_labels=coa["labels"],
     plot_function=_plot_func,
 )
+
+# %%
+import numpy as np
+plt.hist(mh[140]['merges'].components_per_group, bins=np.linspace(0, 56, 57))
+plt.yscale("log")
+# plt.xscale("log")
+
 plot_merge_history_costs(mh)
+plot_merge_history_costs(mh, ylim=(-1, 1))
 plot_merge_history_cluster_sizes(mh)
 # %%
 
 ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
     activations=coa["activations"],
     component_labels=coa["labels"],
-    merge_config=MergeConfig(
-        activation_threshold=None,
-        alpha=0.01,
-        iters=140,
-        check_threshold=0.1,
-        pop_component_prob=0,
-        # rank_cost_fn=lambda x: 1.0,
-        # stopping_condition=None,
-    ),
+    merge_config=merge_cfg,
     ensemble_size=16,
 )
 
 
 # %%
+
 DISTANCES = ENSEMBLE.get_distances()
 
 
@@ -167,10 +172,11 @@ plt.legend()
 all_results = sweep_multiple_parameters(
     activations=coa["activations"],
     parameter_sweeps={
-        "alpha": [0.0001, 1, 10000.0],
+        "alpha": [1e-1, 1, 1e1],
         # "check_threshold": [0.0001, 0.001, 0.01, 0.1, 0.5],
         # "pop_component_prob": [0.0001, 0.01, 0.5],
     },
+    base_config=merge_cfg.model_dump(mode="json"),
     component_labels=coa["labels"],
     ensemble_size=16,
 )

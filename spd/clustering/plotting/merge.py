@@ -207,6 +207,7 @@ def plot_merge_history_costs(
     figsize: tuple[int, int] = (10, 5),
     fmt: str = "pdf",
     file_prefix: str | None = None,
+    ylim: tuple[float, float] | None = None,
 ) -> None:
     """Plot cost evolution from merge history"""
     fig, ax = plt.subplots(figsize=figsize)
@@ -216,7 +217,11 @@ def plot_merge_history_costs(
     ax.plot(history.selected_pair_cost, label="selected pair cost")
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Cost")
+    ax.axhline(0, color="black", linestyle="--", linewidth=0.5)
     ax.legend()
+
+    if ylim is not None:
+        ax.set_ylim(ylim)
 
     if file_prefix:
         fig.savefig(f"{file_prefix}_cost_evolution.{fmt}", bbox_inches="tight", dpi=300)

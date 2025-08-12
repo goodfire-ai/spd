@@ -196,6 +196,7 @@ def process_activations(
             dbg((len(dead_components_lst), len(labels)))
 
     # compute coactivations
+    # TODO: this is wrong for anything but boolean activations
     coact: Float[Tensor, " c c"] = act_concat.T @ act_concat
 
     # return the output

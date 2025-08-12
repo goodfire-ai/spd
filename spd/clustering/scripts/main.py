@@ -27,7 +27,7 @@ def distribute_clustering(
     data_files: list[Path],
     devices: list[str],
     save_dir: Path,
-    cuda_mem_max: float = 0.8,
+    cuda_mem_max: float|None = None,
     max_concurrency: int | None = None,
 ) -> None:
     n_devices: int = len(devices)
@@ -58,15 +58,16 @@ def distribute_clustering(
             ]
 
             # wait until at least 20% of GPU memory is free
-            print()
-            while (m := cuda_memory_fraction(device)) > cuda_mem_max:
-                time.sleep(5)
-                print(
-                    f"GPU memory usage is too high ({m:.2%}), waiting for it to drop below {cuda_mem_max:.2%}...",
-                    end="\r",
-                    file=sys.stderr,
-                )
-            print()
+            if cuda_mem_max is not None:
+                print()
+                while (m := cuda_memory_fraction(device)) > cuda_mem_max:
+                    time.sleep(5)
+                    print(
+                        f"GPU memory usage is too high ({m:.2%}), waiting for it to drop below {cuda_mem_max:.2%}...",
+                        end="\r",
+                        file=sys.stderr,
+                    )
+                print()
 
             active.append(subprocess.Popen(cmd))
             print(
