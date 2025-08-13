@@ -14,7 +14,7 @@ from pydantic import (
 )
 from torch import Tensor
 
-from spd.clustering.merge_pair_samplers import (
+from spd.clustering.math.merge_pair_samplers import (
     MERGE_PAIR_SAMPLERS,
     MergePairSampler,
     MergePairSamplerKey,
