@@ -36,7 +36,7 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
-from spd.utils.cli_utils import add_bool_flag, format_function_docstring
+from spd.utils.cli_utils import format_function_docstring
 from spd.utils.general_utils import apply_nested_updates, load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
@@ -833,9 +833,9 @@ def cli():
             f"Available: {list(EXPERIMENT_REGISTRY.keys())}"
         ),
     )
-    add_bool_flag(
-        parser,
-        "local",
+    parser.add_argument(
+        "--local",
+        action=argparse.BooleanOptionalAction,
         default=False,
         help="Run locally instead of submitting to SLURM",
     )
@@ -861,9 +861,10 @@ def cli():
     )
 
     # Report and project settings
-    add_bool_flag(
-        parser,
-        "create-report",
+    parser.add_argument(
+        "--create-report",
+        dest="create_report",
+        action=argparse.BooleanOptionalAction,
         default=True,
         help="Create W&B report for aggregated view",
     )
@@ -884,9 +885,9 @@ def cli():
     )
 
     # Execution settings
-    add_bool_flag(
-        parser,
-        "cpu",
+    parser.add_argument(
+        "--cpu",
+        action=argparse.BooleanOptionalAction,
         default=False,
         help="Use CPU instead of GPU",
     )
@@ -909,16 +910,16 @@ def cli():
     )
 
     # Git and logging settings
-    add_bool_flag(
-        parser,
-        "create-snapshot",
+    parser.add_argument(
+        "--create-snapshot",
+        action=argparse.BooleanOptionalAction,
         default=True,
         help="Create a git snapshot branch for the run",
     )
 
-    add_bool_flag(
-        parser,
-        "use-wandb",
+    parser.add_argument(
+        "--use-wandb",
+        action=argparse.BooleanOptionalAction,
         default=True,
         help="Use W&B for logging and tracking",
     )
@@ -935,7 +936,7 @@ def cli():
     args = parser.parse_args()
 
     # Handle the sweep parameter - convert to the expected type
-    sweep_value = args.sweep
+    sweep_value: bool | str = args.sweep
     if sweep_value is True:
         # User provided --sweep with no argument
         sweep_value = True
