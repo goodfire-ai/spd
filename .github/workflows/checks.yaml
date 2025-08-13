@@ -50,6 +50,6 @@ jobs:
 
       - name: Run tests
         # github actions workers have 4 cores
-        run: NUM_PROCESSES=4 make test-all
+        run: uv run pytest tests/clustering/test_clustering_experiments.py --runslow -vvv --durations 10 --numprocesses 4
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
