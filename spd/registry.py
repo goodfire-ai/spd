@@ -31,60 +31,60 @@ class ExperimentConfig:
 
 
 EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
-    "tms_5-2": ExperimentConfig(
-        task_name="tms",
-        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
-        config_path=Path("spd/experiments/tms/tms_5-2_config.yaml"),
-        expected_runtime=4,
-        canonical_run="wandb:goodfire/spd/runs/55exmro2",
-    ),
-    "tms_5-2-id": ExperimentConfig(
-        task_name="tms",
-        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
-        config_path=Path("spd/experiments/tms/tms_5-2-id_config.yaml"),
-        expected_runtime=4,
-        canonical_run="wandb:goodfire/spd/runs/5irnz0qq",
-    ),
-    "tms_40-10": ExperimentConfig(
-        task_name="tms",
-        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
-        config_path=Path("spd/experiments/tms/tms_40-10_config.yaml"),
-        expected_runtime=5,
-        canonical_run="wandb:goodfire/spd/runs/esgvio15",
-    ),
-    "tms_40-10-id": ExperimentConfig(
-        task_name="tms",
-        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
-        config_path=Path("spd/experiments/tms/tms_40-10-id_config.yaml"),
-        expected_runtime=5,
-        canonical_run="wandb:goodfire/spd/runs/5cknnujj",
-    ),
-    "resid_mlp1": ExperimentConfig(
-        task_name="resid_mlp",
-        decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
-        config_path=Path("spd/experiments/resid_mlp/resid_mlp1_config.yaml"),
-        expected_runtime=3,
-        canonical_run="wandb:goodfire/spd/runs/glbtwl6g",
-    ),
-    "resid_mlp2": ExperimentConfig(
-        task_name="resid_mlp",
-        decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
-        config_path=Path("spd/experiments/resid_mlp/resid_mlp2_config.yaml"),
-        expected_runtime=11,
-        canonical_run="wandb:goodfire/spd/runs/84yirdkb",
-    ),
-    "resid_mlp3": ExperimentConfig(
-        task_name="resid_mlp",
-        decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
-        config_path=Path("spd/experiments/resid_mlp/resid_mlp3_config.yaml"),
-        expected_runtime=60,
-        canonical_run="wandb:goodfire/spd/runs/xawvyhq3",  # A few imperfections in layers 0 and 1
-    ),
+    # "tms_5-2": ExperimentConfig(
+    #     task_name="tms",
+    #     decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+    #     config_path=Path("spd/experiments/tms/tms_5-2_config.yaml"),
+    #     expected_runtime=4,
+    #     canonical_run="wandb:goodfire/spd/runs/55exmro2",
+    # ),
+    # "tms_5-2-id": ExperimentConfig(
+    #     task_name="tms",
+    #     decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+    #     config_path=Path("spd/experiments/tms/tms_5-2-id_config.yaml"),
+    #     expected_runtime=4,
+    #     canonical_run="wandb:goodfire/spd/runs/5irnz0qq",
+    # ),
+    # "tms_40-10": ExperimentConfig(
+    #     task_name="tms",
+    #     decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+    #     config_path=Path("spd/experiments/tms/tms_40-10_config.yaml"),
+    #     expected_runtime=5,
+    #     canonical_run="wandb:goodfire/spd/runs/esgvio15",
+    # ),
+    # "tms_40-10-id": ExperimentConfig(
+    #     task_name="tms",
+    #     decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+    #     config_path=Path("spd/experiments/tms/tms_40-10-id_config.yaml"),
+    #     expected_runtime=5,
+    #     canonical_run="wandb:goodfire/spd/runs/5cknnujj",
+    # ),
+    # "resid_mlp1": ExperimentConfig(
+    #     task_name="resid_mlp",
+    #     decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
+    #     config_path=Path("spd/experiments/resid_mlp/resid_mlp1_config.yaml"),
+    #     expected_runtime=3,
+    #     canonical_run="wandb:goodfire/spd/runs/glbtwl6g",
+    # ),
+    # "resid_mlp2": ExperimentConfig(
+    #     task_name="resid_mlp",
+    #     decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
+    #     config_path=Path("spd/experiments/resid_mlp/resid_mlp2_config.yaml"),
+    #     expected_runtime=11,
+    #     canonical_run="wandb:goodfire/spd/runs/84yirdkb",
+    # ),
+    # "resid_mlp3": ExperimentConfig(
+    #     task_name="resid_mlp",
+    #     decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
+    #     config_path=Path("spd/experiments/resid_mlp/resid_mlp3_config.yaml"),
+    #     expected_runtime=60,
+    #     canonical_run="wandb:goodfire/spd/runs/xawvyhq3",  # A few imperfections in layers 0 and 1
+    # ),
     "ss_mlp": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_mlp_config.yaml"),
-        expected_runtime=30,
+        expected_runtime=1200,
     ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",
