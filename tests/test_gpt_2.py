@@ -62,7 +62,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
             EvalMetricConfig(classname="CI_L0"),
         ],
         # Pretrained model info
-        pretrained_model_class="transformers.AutoModelForCausalLM",
+        pretrained_model_class="transformers.GPT2LMHeadModel",
         pretrained_model_path=None,
         pretrained_model_name_hf="openai-community/gpt2",
         pretrained_model_output_attr="logits",
