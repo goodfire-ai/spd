@@ -39,9 +39,11 @@ check-pre-commit:
 test:
 	pytest tests/
 
+NUM_PROCESSES ?= 4
+
 .PHONY: test-all
 test-all:
-	pytest tests/ --runslow
+	pytest tests/ --runslow -v --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
 
 COVERAGE_DIR=docs/coverage
 
@@ -57,8 +59,6 @@ DEP_GRAPH_DIR=docs/dep_graph
 .PHONY: dep-graph
 dep-graph:
 	ruff analyze graph > $(DEP_GRAPH_DIR)/import_graph.json
-
-
 
 .PHONY: clustering-ss
 clustering-ss:
@@ -76,4 +76,4 @@ clustering-resid_mlp1:
 
 .PHONY: clustering-test
 clustering-test:
-	pytest tests/clustering/test_clustering_experiments.py --runslow -vvv --durations 10
+	pytest tests/clustering/test_clustering_experiments.py --runslow -vvv --durations 10 --numprocesses $(NUM_PROCESSES)

@@ -39,10 +39,6 @@ def test_clustering_with_resid_mlp1_config():
             "spd-cluster",
             "--config",
             str(config_path),
-            "--devices",
-            "cpu",  # Use CPU for testing to avoid GPU requirements
-            "--max-concurrency",
-            "1",
         ],
         capture_output=True,
         text=True,
@@ -87,10 +83,6 @@ def test_clustering_with_simplestories_config():
             "spd-cluster",
             "--config",
             str(config_path),
-            "--devices",
-            "cpu",  # Use CPU for testing to avoid GPU requirements
-            "--max-concurrency",
-            "1",
         ],
         capture_output=True,
         text=True,
