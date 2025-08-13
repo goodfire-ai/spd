@@ -49,6 +49,7 @@ jobs:
           mpi: openmpi
 
       - name: Run tests
-        run: uv run python -m pytest tests/ --runslow --durations=10
+        # github actions workers have 4 cores
+        run: NUM_PROCESSES=4 make test-all
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
