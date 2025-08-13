@@ -36,7 +36,7 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
-from spd.utils.cli_utils import format_function_docstring
+from spd.utils.cli_utils import add_bool_flag, format_function_docstring
 from spd.utils.general_utils import apply_nested_updates, load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
@@ -828,14 +828,16 @@ def cli():
         "--experiments",
         type=str,
         default=None,
-        help="Comma-separated list of experiment names. If not specified, runs all experiments. "
-        f"Available: {', '.join(EXPERIMENT_REGISTRY.keys())}",
+        help=(
+            "Comma-separated list of experiment names. If not specified, runs all experiments. "
+            f"Available: {list(EXPERIMENT_REGISTRY.keys())}"
+        ),
     )
-    parser.add_argument(
-        "--local",
-        type=bool,
+    add_bool_flag(
+        parser,
+        "local",
         default=False,
-        help="Run locally instead of submitting to SLURM (default: False)",
+        help="Run locally instead of submitting to SLURM",
     )
 
     # Sweep arguments
@@ -849,8 +851,8 @@ def cli():
     )
 
     parser.add_argument(
+        "-n",
         "--n-agents",
-        "--n_agents",
         dest="n_agents",
         type=int,
         default=None,
@@ -859,13 +861,11 @@ def cli():
     )
 
     # Report and project settings
-    parser.add_argument(
-        "--create-report",
-        "--create_report",
-        dest="create_report",
-        type=lambda x: x.lower() in ["true", "1", "yes"],
+    add_bool_flag(
+        parser,
+        "create-report",
         default=True,
-        help="Create W&B report for aggregated view (default: True)",
+        help="Create W&B report for aggregated view",
     )
 
     parser.add_argument(
@@ -877,7 +877,6 @@ def cli():
 
     parser.add_argument(
         "--report-title",
-        "--report_title",
         dest="report_title",
         type=str,
         default=None,
@@ -885,17 +884,16 @@ def cli():
     )
 
     # Execution settings
-    parser.add_argument(
-        "--cpu",
-        type=lambda x: x.lower() in ["true", "1", "yes"],
+    add_bool_flag(
+        parser,
+        "cpu",
         default=False,
-        help="Use CPU instead of GPU (default: False)",
+        help="Use CPU instead of GPU",
     )
 
     parser.add_argument(
         "--dp",
         "--data-parallelism",
-        "--data_parallelism",
         type=int,
         default=1,
         help="Number of GPUs for data parallelism (1-8). Only supported for lm experiments. "
@@ -904,7 +902,6 @@ def cli():
 
     parser.add_argument(
         "--job-suffix",
-        "--job_suffix",
         dest="job_suffix",
         type=str,
         default=None,
@@ -912,27 +909,22 @@ def cli():
     )
 
     # Git and logging settings
-    parser.add_argument(
-        "--create-snapshot",
-        "--create_snapshot",
-        dest="create_snapshot",
-        type=bool,
+    add_bool_flag(
+        parser,
+        "create-snapshot",
         default=True,
-        help="Create a git snapshot branch for the run (default: True)",
+        help="Create a git snapshot branch for the run",
     )
 
-    parser.add_argument(
-        "--use-wandb",
-        "--use_wandb",
-        dest="use_wandb",
-        type=bool,
+    add_bool_flag(
+        parser,
+        "use-wandb",
         default=True,
-        help="Use W&B for logging and tracking (default: True)",
+        help="Use W&B for logging and tracking",
     )
 
     parser.add_argument(
         "--log-format",
-        "--log_format",
         dest="log_format",
         type=str,
         choices=LogFormat.__args__,

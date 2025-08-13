@@ -1,6 +1,6 @@
 import argparse
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any, Final
+from typing import Any, Final, override
 
 
 def format_function_docstring[T_callable: Callable[..., Any]](
@@ -107,11 +107,11 @@ class BoolFlagOrValue(argparse.Action):
         option_strings: Sequence[str],
         dest: str,
         nargs: int | str | None = None,
-        **kwargs: object,
+        **kwargs: bool | set[str] | None,
     ) -> None:
         # Extract custom kwargs before calling super().__init__
-        true_set_opt: set[str] | None = kwargs.pop("true_set", None)  # type: ignore[assignment]
-        false_set_opt: set[str] | None = kwargs.pop("false_set", None)  # type: ignore[assignment]
+        true_set_opt: set[str] | None = kwargs.pop("true_set", None)  # pyright: ignore[reportAssignmentType]
+        false_set_opt: set[str] | None = kwargs.pop("false_set", None)  # pyright: ignore[reportAssignmentType]
         allow_no_opt: bool = bool(kwargs.pop("allow_no", True))
         allow_bare_opt: bool = bool(kwargs.pop("allow_bare", True))
 
@@ -125,7 +125,7 @@ class BoolFlagOrValue(argparse.Action):
             option_strings=option_strings,
             dest=dest,
             nargs="?",
-            **kwargs,  # type: ignore[arg-type]
+            **kwargs,  # pyright: ignore[reportArgumentType]
         )
         # Store normalized config
         self.true_set: set[str] = _normalize_set(true_set_opt, TRUE_SET_DEFAULT)
@@ -137,6 +137,7 @@ class BoolFlagOrValue(argparse.Action):
         """Parse a boolean token using this action's configured sets."""
         return parse_bool_token(token, self.true_set, self.false_set)
 
+    @override
     def __call__(
         self,
         parser: argparse.ArgumentParser,
@@ -148,11 +149,11 @@ class BoolFlagOrValue(argparse.Action):
         if option_string is not None and option_string.startswith("--no-"):
             if not self.allow_no:
                 parser.error(f"{option_string} is not allowed for this option")
-                return  # unreachable
+                return  # pyright: ignore[reportUnreachable]
             if values is not None:
                 dest_flag: str = self.dest.replace("_", "-")
                 parser.error(f"{option_string} does not take a value; use --{dest_flag} true|false")
-                return  # unreachable
+                return  # pyright: ignore[reportUnreachable]
             setattr(namespace, self.dest, False)
             return
 
@@ -161,7 +162,7 @@ class BoolFlagOrValue(argparse.Action):
             if not self.allow_bare:
                 valid: list[str] = sorted(self.true_set | self.false_set)
                 parser.error(f"option {option_string} requires a value; expected one of {valid}")
-                return  # unreachable
+                return  # pyright: ignore[reportUnreachable]
             setattr(namespace, self.dest, True)
             return
 
@@ -171,7 +172,7 @@ class BoolFlagOrValue(argparse.Action):
                 parser.error(
                     f"{option_string} expects a single value, got {len(values) = }, {values = }"
                 )
-                return
+                return  # pyright: ignore[reportUnreachable]
             values = values[0]  # type: ignore[assignment]
 
         # Positive flag with explicit value -> parse
@@ -179,7 +180,7 @@ class BoolFlagOrValue(argparse.Action):
             val: bool = self._parse_token(values)
         except argparse.ArgumentTypeError as e:
             parser.error(str(e))
-            return  # unreachable
+            return  # pyright: ignore[reportUnreachable]
         setattr(namespace, self.dest, val)
 
 
@@ -191,7 +192,7 @@ def add_bool_flag(
     help: str = "",
     true_set: set[str] | None = None,
     false_set: set[str] | None = None,
-    allow_no: bool = True,
+    allow_no: bool = False,
     allow_bare: bool = True,
 ) -> None:
     """summary
