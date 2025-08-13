@@ -928,24 +928,12 @@ def cli():
         help="Logging format for script output. 'terse' removes timestamps/level (default: 'default')",
     )
 
-    args = parser.parse_args()
-
-    # Handle the sweep parameter - convert to the expected type
-    sweep_value: bool | str = args.sweep
-    if sweep_value is True:
-        # User provided --sweep with no argument
-        sweep_value = True
-    elif sweep_value is False:
-        # User didn't provide --sweep at all
-        sweep_value = False
-    else:
-        # User provided --sweep with a filename
-        sweep_value = str(sweep_value)
+    args: argparse.Namespace = parser.parse_args()
 
     # Call main with parsed arguments
     main(
         experiments=args.experiments,
-        sweep=sweep_value,
+        sweep=args.sweep,
         n_agents=args.n_agents,
         create_report=args.create_report,
         job_suffix=args.job_suffix,
