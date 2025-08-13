@@ -5,7 +5,7 @@ import einops
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
-from transformers.modeling_utils import Conv1D
+from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.utils.module_utils import init_param_
 
@@ -241,7 +241,7 @@ class EmbeddingComponents(Components):
 class ComponentsOrModule(nn.Module):
     def __init__(
         self,
-        original: nn.Linear | nn.Embedding | Conv1D,
+        original: nn.Linear | nn.Embedding | RadfordConv1D,
         components: Components,
     ):
         super().__init__()
@@ -258,7 +258,7 @@ class ComponentsOrModule(nn.Module):
 
     @property
     def original_weight(self) -> Float[Tensor, "rows cols"]:
-        if isinstance(self.original, Conv1D):
+        if isinstance(self.original, RadfordConv1D):
             return self.original.weight.T
         return self.original.weight
 

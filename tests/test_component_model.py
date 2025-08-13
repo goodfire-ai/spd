@@ -6,7 +6,7 @@ import pytest
 import torch
 from jaxtyping import Float
 from torch import Tensor, nn
-from transformers.modeling_utils import Conv1D
+from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.configs import Config, TMSTaskConfig
 from spd.models.component_model import ComponentModel
@@ -27,8 +27,8 @@ class SimpleTestModel(nn.Module):
         super().__init__()
         self.linear1 = nn.Linear(*self.LINEAR_1_SHAPE, bias=True)
         self.linear2 = nn.Linear(*self.LINEAR_2_SHAPE, bias=False)
-        self.conv1d1 = Conv1D(*self.CONV1D_1_SHAPE)
-        self.conv1d2 = Conv1D(*self.CONV1D_2_SHAPE)
+        self.conv1d1 = RadfordConv1D(*self.CONV1D_1_SHAPE)
+        self.conv1d2 = RadfordConv1D(*self.CONV1D_2_SHAPE)
 
         self.embedding = nn.Embedding(*self.EMBEDDING_SHAPE)
         self.other_layer = nn.ReLU()  # Non‑target layer (should never be wrapped)

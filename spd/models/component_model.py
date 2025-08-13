@@ -10,7 +10,7 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
-from transformers.modeling_utils import Conv1D
+from transformers.modeling_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
 from spd.configs import Config
@@ -180,7 +180,7 @@ class ComponentModel(nn.Module):
                     embedding_dim=module.embedding_dim,
                 )
                 component.init_from_target_weight(module.weight)
-            elif isinstance(module, Conv1D):
+            elif isinstance(module, RadfordConv1D):
                 d_in, d_out = module.weight.shape
                 component = LinearComponents(
                     C=C,
@@ -217,7 +217,7 @@ class ComponentModel(nn.Module):
             else:
                 if isinstance(component.original, nn.Linear):
                     input_dim = component.original.weight.shape[1]
-                elif isinstance(component.original, Conv1D):
+                elif isinstance(component.original, RadfordConv1D):
                     input_dim = component.original.weight.shape[0]
                 else:
                     assert isinstance(component.original, nn.Embedding)
