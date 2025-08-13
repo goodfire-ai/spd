@@ -6,7 +6,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 
-from spd.utils.module_utils import init_param_
+from spd.utils.module_utils import _NonlinearityType, init_param_
 
 GateType = Literal["mlp", "vector_mlp"]
 
@@ -14,7 +14,7 @@ GateType = Literal["mlp", "vector_mlp"]
 class ParallelLinear(nn.Module):
     """C parallel linear layers"""
 
-    def __init__(self, C: int, input_dim: int, output_dim: int, nonlinearity: str):
+    def __init__(self, C: int, input_dim: int, output_dim: int, nonlinearity: _NonlinearityType):
         super().__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim

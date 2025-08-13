@@ -1,6 +1,6 @@
 import math
 from functools import reduce
-from typing import Any
+from typing import Any, Literal
 
 import einops
 import torch
@@ -8,6 +8,22 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 from torch.nn.init import calculate_gain
+
+_NonlinearityType = Literal[
+    "linear",
+    "conv1d",
+    "conv2d",
+    "conv3d",
+    "conv_transpose1d",
+    "conv_transpose2d",
+    "conv_transpose3d",
+    "sigmoid",
+    "tanh",
+    "relu",
+    "leaky_relu",
+    "selu",
+]
+"this is equivalent to `torch.nn.init._NonlinearityType`, but for some reason this is not always importable. see https://github.com/goodfire-ai/spd/actions/runs/16927877557/job/47967138342"
 
 
 def get_nested_module_attr(module: nn.Module, access_string: str) -> Any:
@@ -46,7 +62,7 @@ def init_param_(
     param: Tensor,
     fan_val: float,
     mean: float = 0.0,
-    nonlinearity: str = "linear",
+    nonlinearity: _NonlinearityType = "linear",
     generator: torch.Generator | None = None,
 ) -> None:
     """Fill in param with values sampled from a Kaiming normal distribution.
@@ -58,7 +74,7 @@ def init_param_(
         nonlinearity: The nonlinearity of the activation function
         generator: The generator to sample from
     """
-    gain = calculate_gain(nonlinearity)
-    std = gain / math.sqrt(fan_val)
+    gain: float = calculate_gain(nonlinearity)
+    std: float = gain / math.sqrt(fan_val)
     with torch.no_grad():
         param.normal_(mean, std, generator=generator)
