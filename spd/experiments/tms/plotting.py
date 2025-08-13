@@ -21,6 +21,7 @@ from matplotlib.figure import Figure
 from torch import Tensor
 
 from spd.experiments.tms.models import TMSModel
+from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.models.components import Components, ComponentsOrModule
 from spd.settings import REPO_ROOT
@@ -955,13 +956,14 @@ class TMSPlotter:
             return self.hidden_plotter.plot(self.analyzer.patched_model, self.analyzer.components)
         return None
 
-    def print_analysis_summary(self) -> None:
+    def get_analysis_summary(self) -> dict[str, float]:
         """Print analysis summary statistics."""
+        output: dict[str, float] = {}
         _, max_cosine_sim, subnet_weights_at_max = self.analyzer.compute_cosine_similarities()
 
-        print(f"Max cosine similarity:\n{max_cosine_sim}")
-        print(f"Mean max cosine similarity: {max_cosine_sim.mean():.4f}")
-        print(f"Std max cosine similarity: {max_cosine_sim.std():.4f}")
+        output["Max cosine similarity"] = max_cosine_sim.item()
+        output["Mean max cosine similarity"] = max_cosine_sim.mean().item()
+        output["Std max cosine similarity"] = max_cosine_sim.std().item()
 
         # L2 ratio analysis
         target_weights = cast(
@@ -971,8 +973,10 @@ class TMSPlotter:
         subnet_norm = torch.norm(subnet_weights_at_max, dim=-1, keepdim=True)
         l2_ratio = subnet_norm / target_norm
 
-        print(f"Mean L2 ratio: {l2_ratio.mean():.4f}")
-        print(f"Std L2 ratio: {l2_ratio.std():.4f}")
+        output["Mean L2 ratio"] = l2_ratio.mean().item()
+        output["Std L2 ratio"] = l2_ratio.std().item()
+
+        return output
 
 
 def main():
@@ -982,13 +986,13 @@ def main():
 
     # Define run configurations with custom PlotConfig for each
     run_configs = {
-        # "wandb:spd-tms/runs/f63itpo1": {"config": PlotConfig(), "name": "5-2"},
-        "wandb:spd-tms/runs/8bxfjeu5": {
+        # "wandb:goodfire/spd-tms/runs/f63itpo1": {"config": PlotConfig(), "name": "5-2"},
+        "wandb:goodfire/spd-tms/runs/8bxfjeu5": {
             "config": PlotConfig(subnet_norm_threshold=0.03, hidden_layer_threshold=0.0115),
             "name": "5-2-identity",
         },
-        # "wandb:spd-tms/runs/xq1ivc6b": {"config": PlotConfig(), "name": "40-10"},
-        # "wandb:spd-tms/runs/xyq22lbc": {"config": PlotConfig(), "name": "40-10-identity"},
+        # "wandb:goodfire/spd-tms/runs/xq1ivc6b": {"config": PlotConfig(), "name": "40-10"},
+        # "wandb:goodfire/spd-tms/runs/xyq22lbc": {"config": PlotConfig(), "name": "40-10-identity"},
     }
 
     for run_id, run_info in run_configs.items():
@@ -999,7 +1003,7 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # Load models
-        model = ComponentModel.from_pretrained(run_id)[0]
+        model = ComponentModel.from_pretrained(run_id)
         patched_model = model.patched_model
         assert isinstance(patched_model, TMSModel)
 
@@ -1013,11 +1017,9 @@ def main():
             patched_model=patched_model, components=model.components, config=plot_config
         )
 
-        # Print analysis
-        print("=" * 50)
-        print(f"TMS Analysis Summary - {run_name}")
-        print("=" * 50)
-        plotter.print_analysis_summary()
+        # log analysis
+        logger.section(f"TMS Analysis Summary - {run_name}")
+        logger.values(plotter.get_analysis_summary())
 
         # Generate plots based on model architecture
         if patched_model.config.n_hidden == 2:
@@ -1030,20 +1032,20 @@ def main():
                     bbox_inches="tight",
                     dpi=plotter.config.dpi,
                 )
-                print(f"\nSaved combined diagram to {out_dir / filename}")
+                logger.info(f"Saved combined diagram to {out_dir / filename}")
             else:
                 # Model with hidden layers - use separate plots
                 # Vector plot
                 fig = plotter.plot_vectors()
                 filename = f"tms_vectors_{run_name}.png"
                 fig.savefig(out_dir / filename, bbox_inches="tight", dpi=plotter.config.dpi)
-                print(f"\nSaved vectors plot to {out_dir / filename}")
+                logger.info(f"Saved vectors plot to {out_dir / filename}")
 
                 # Full network plot
                 fig = plotter.plot_full_network()
                 filename = f"tms_full_network_{run_name}.png"
                 fig.savefig(out_dir / filename, bbox_inches="tight", dpi=plotter.config.dpi)
-                print(f"Saved full network diagram to {out_dir / filename}")
+                logger.info(f"Saved full network diagram to {out_dir / filename}")
 
         # Hidden layer heatmaps (if applicable)
         if patched_model.config.n_hidden_layers > 0:
@@ -1051,13 +1053,13 @@ def main():
             if fig:
                 filename = f"tms_hidden_layers_{run_name}.png"
                 fig.savefig(out_dir / filename, bbox_inches="tight", dpi=plotter.config.dpi)
-                print(f"Saved hidden layers plot to {out_dir / filename}")
+                logger.info(f"Saved hidden layers plot to {out_dir / filename}")
 
         # Plot cosine similarity analysis
         fig = plotter.plot_cosine_similarity_analysis()
         filename = f"cosine_similarity_analysis_{run_name}.png"
         fig.savefig(out_dir / filename, bbox_inches="tight", dpi=plotter.config.dpi)
-        print(f"Saved cosine similarity analysis to {out_dir / filename}")
+        logger.info(f"Saved cosine similarity analysis to {out_dir / filename}")
 
 
 if __name__ == "__main__":

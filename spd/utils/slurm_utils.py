@@ -4,8 +4,8 @@ import subprocess
 import textwrap
 from pathlib import Path
 
+from spd.log import logger
 from spd.settings import REPO_ROOT
-from spd.utils.git_utils import create_git_snapshot
 
 
 def format_runtime_str(runtime_minutes: int) -> str:
@@ -26,9 +26,9 @@ def create_slurm_array_script(
     script_path: Path,
     job_name: str,
     commands: list[str],
-    cpu: bool = False,
-    time_limit: str = "24:00:00",
-    snapshot_branch: str | None = None,
+    snapshot_branch: str,
+    n_gpus_per_job: int,
+    time_limit: str = "72:00:00",
     max_concurrent_tasks: int | None = None,
 ) -> None:
     """Create a SLURM job array script with git snapshot for consistent code.
@@ -37,15 +37,12 @@ def create_slurm_array_script(
         script_path: Path where the script should be written
         job_name: Name for the SLURM job array
         commands: List of commands to execute in each array job
-        cpu: If True, use CPU only, otherwise use GPU
-        time_limit: Time limit for each job (default: 24:00:00)
-        snapshot_branch: Git branch to checkout. If None, creates a new snapshot.
+        snapshot_branch: Git branch to checkout.
+        n_gpus_per_job: Number of GPUs per job. If 0, use CPU jobs.
+        time_limit: Time limit for each job (default: 72:00:00)
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
-    if snapshot_branch is None:
-        snapshot_branch, _ = create_git_snapshot(branch_name_prefix="snapshot")
 
-    gpu_config = "#SBATCH --gres=gpu:0" if cpu else "#SBATCH --gres=gpu:1"
     slurm_logs_dir = Path.home() / "slurm_logs"
     slurm_logs_dir.mkdir(exist_ok=True)
 
@@ -65,7 +62,7 @@ def create_slurm_array_script(
     script_content = textwrap.dedent(f"""
         #!/bin/bash
         #SBATCH --nodes=1
-        {gpu_config}
+        #SBATCH --gres=gpu:{n_gpus_per_job}
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}
@@ -121,9 +118,9 @@ def create_analysis_slurm_script(
     job_name: str,
     command: str,
     dependency_job_id: str,
+    snapshot_branch: str,
     cpu: bool = True,
     time_limit: str = "01:00:00",
-    snapshot_branch: str | None = None,
 ) -> None:
     """Create a SLURM script for analysis job with dependency.
 
@@ -134,10 +131,8 @@ def create_analysis_slurm_script(
         dependency_job_id: Job ID to depend on (will wait for this job to complete)
         cpu: If True, use CPU only, otherwise use GPU
         time_limit: Time limit for the job (default: 01:00:00)
-        snapshot_branch: Git branch to checkout. If None, creates a new snapshot.
+        snapshot_branch: Git branch to checkout.
     """
-    if snapshot_branch is None:
-        snapshot_branch, _ = create_git_snapshot(branch_name_prefix="analysis")
 
     gpu_config = "#SBATCH --gres=gpu:0" if cpu else "#SBATCH --gres=gpu:1"
     slurm_logs_dir = Path.home() / "slurm_logs"
@@ -202,16 +197,19 @@ def print_job_summary(job_info_list: list[str]) -> None:
         job_info_list: List of job information strings (can be just job IDs
                       or formatted as "experiment:job_id")
     """
-    print("=" * 50)
-    print("DEPLOYMENT SUMMARY")
-    print("=" * 50)
-    print(f"Deployed {len(job_info_list)} jobs:")
+    logger.section("DEPLOYMENT SUMMARY")
 
+    job_info_dict: dict[str, str] = {}
     for job_info in job_info_list:
         if ":" in job_info:
             experiment, job_id = job_info.split(":", 1)
-            print(f"  {experiment}: {job_id}")
+            job_info_dict[experiment] = job_id
         else:
-            print(f"  Job ID: {job_info}")
+            job_info_dict["Job ID"] = job_info
 
-    print("\nView logs in: ~/slurm_logs/slurm-<job_id>.out")
+    logger.values(
+        msg=f"Deployed {len(job_info_list)} jobs:",
+        data=job_info_dict,
+    )
+
+    logger.info("View logs in: ~/slurm_logs/slurm-<job_id>.out")

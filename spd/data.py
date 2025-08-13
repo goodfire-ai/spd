@@ -2,17 +2,13 @@ from typing import Any, ClassVar
 
 import numpy as np
 from datasets import Dataset, IterableDataset, load_dataset
-from datasets.distributed import split_dataset_by_node
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
 from torch import Tensor
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
-"""
-The bulk of this file is copied from https://github.com/ApolloResearch/e2e_sae
-licensed under MIT, (c) 2024 ApolloResearch.
-"""
+from spd.utils.distributed_utils import is_distributed
 
 
 class DatasetConfig(BaseModel):
@@ -153,6 +149,12 @@ def create_data_loader(
 ) -> tuple[DataLoader[Any], PreTrainedTokenizer]:
     """Create a DataLoader for the given dataset.
 
+    Uses PyTorch's DistributedSampler to ensure each rank gets the correct
+    subset of data in distributed mode. The sampler ensures that:
+    - Each rank gets a different subset of the data
+    - Data is distributed deterministically based on rank
+    - No data is duplicated across ranks
+
     Args:
         dataset_config: The configuration for the dataset.
         batch_size: The batch size.
@@ -164,6 +166,7 @@ def create_data_loader(
     Returns:
         A tuple of the DataLoader and the tokenizer.
     """
+
     dataset = load_dataset(
         dataset_config.name,
         streaming=dataset_config.streaming,
@@ -171,31 +174,32 @@ def create_data_loader(
         trust_remote_code=False,
     )
     seed = dataset_config.seed if dataset_config.seed is not None else global_seed
+
     if dataset_config.streaming:
+        assert ddp_world_size == 1, "DDP with streaming datasets is not yet supported."
         assert isinstance(dataset, IterableDataset)
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     else:
         assert isinstance(dataset, Dataset)
         dataset = dataset.shuffle(seed=seed)
-    dataset = split_dataset_by_node(dataset, ddp_rank, ddp_world_size)  # pyright: ignore[reportArgumentType]
 
     tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)
 
     torch_dataset: Dataset | IterableDataset
     if dataset_config.is_tokenized:
         torch_dataset = dataset.with_format("torch")
-        # Get a sample from the dataset and check if it's tokenized and what the n_ctx is
-        # Note that the dataset may be streamed, so we can't just index into it
+        # Verify tokenization
         sample = next(iter(torch_dataset))[dataset_config.column_name]
         assert isinstance(sample, Tensor) and sample.ndim == 1, (
-            "Expected the dataset to be tokenized."
+            f"Expected the dataset to be tokenized. Got type {type(sample)}"
         )
-        assert len(sample) == dataset_config.n_ctx, "n_ctx does not match the tokenized length."
-
+        assert len(sample) == dataset_config.n_ctx, (
+            f"n_ctx ({dataset_config.n_ctx}) does not match the tokenized length ({len(sample)})."
+        )
     else:
         to_lower = "SimpleStories" in dataset_config.name
         torch_dataset = tokenize_and_concatenate(
-            dataset,
+            dataset,  # pyright: ignore[reportArgumentType]
             tokenizer,
             max_length=dataset_config.n_ctx,
             column_name=dataset_config.column_name,
@@ -203,9 +207,21 @@ def create_data_loader(
             to_lower=to_lower,
         )
 
+    sampler = None
+    if not dataset_config.streaming and is_distributed():
+        sampler = DistributedSampler(
+            torch_dataset,  # pyright: ignore[reportArgumentType]
+            num_replicas=ddp_world_size,
+            rank=ddp_rank,
+            shuffle=False,  # Already shuffled above
+            seed=seed,
+            drop_last=True,
+        )
+
     loader = DataLoader[Dataset | IterableDataset](
         torch_dataset,  # pyright: ignore[reportArgumentType]
         batch_size=batch_size,
+        sampler=sampler,
         shuffle=False,
         drop_last=True,
     )

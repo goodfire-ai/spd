@@ -6,29 +6,16 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from wandb.apis.public import File, Run
 
+from spd.log import logger
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import replace_pydantic_model
+from spd.utils.general_utils import _fetch_latest_checkpoint_name, replace_pydantic_model
 
 
 def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None = None) -> File:
-    """Fetch the latest checkpoint from a wandb run.
-
-    NOTE: Assumes that the only files that end in `.pth` are checkpoints.
-    """
-    # Get the latest checkpoint. Assume format is <name>_<step>.pth or <name>.pth
-    checkpoints = [file for file in run.files() if file.name.endswith(".pth")]
-    if prefix:
-        checkpoints = [file for file in checkpoints if file.name.startswith(prefix)]
-    if not checkpoints:
-        raise ValueError(f"No checkpoint files found in run {run.name}")
-
-    if len(checkpoints) == 1:
-        latest_checkpoint_remote = checkpoints[0]
-    else:
-        # Assume format is <name>_<step>.pth
-        latest_checkpoint_remote = sorted(
-            checkpoints, key=lambda x: int(x.name.split(".pth")[0].split("_")[-1])
-        )[-1]
+    """Fetch the latest checkpoint from a wandb run."""
+    filenames = [file.name for file in run.files() if file.name.endswith(".pth")]
+    latest_checkpoint_name = _fetch_latest_checkpoint_name(filenames, prefix)
+    latest_checkpoint_remote = run.file(latest_checkpoint_name)
     return latest_checkpoint_remote
 
 
@@ -119,7 +106,7 @@ def ensure_project_exists(project: str) -> None:
     # Check if project exists in the list of projects
     if project not in [p.name for p in api.projects()]:
         # Project doesn't exist, create it with a dummy run
-        print(f"Creating W&B project '{project}'...")
+        logger.info(f"Creating W&B project '{project}'...")
         run = wandb.init(project=project, name="project_init", tags=["init"])
         run.finish()
-        print(f"Project '{project}' created successfully")
+        logger.info(f"Project '{project}' created successfully")

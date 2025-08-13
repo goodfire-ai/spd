@@ -3,7 +3,9 @@
 import json
 from typing import Any
 
-from spd.configs import Config, LMTaskConfig, TMSTaskConfig
+from spd.configs import Config
+from spd.experiments.lm.configs import LMTaskConfig
+from spd.experiments.tms.configs import TMSTaskConfig
 from spd.scripts.run import generate_grid_combinations
 from spd.utils.general_utils import apply_nested_updates, load_config
 
@@ -158,8 +160,13 @@ class TestConfigIntegration:
             "lr": 0.001,
             "steps": 1000,
             "batch_size": 32,
+            "train_log_freq": 100,
             "n_eval_steps": 100,
-            "print_freq": 100,
+            "eval_batch_size": 32,
+            "eval_freq": 100,
+            "slow_eval_freq": 100,
+            "ci_alive_threshold": 0.1,
+            "n_examples_until_dead": 3200,
             "pretrained_model_class": "spd.experiments.tms.models.TMSModel",
             "task_config": {
                 "task_name": "tms",
@@ -191,8 +198,13 @@ class TestConfigIntegration:
             "lr": 0.001,
             "steps": 1000,
             "batch_size": 32,
+            "train_log_freq": 100,
             "n_eval_steps": 100,
-            "print_freq": 100,
+            "eval_batch_size": 32,
+            "eval_freq": 100,
+            "slow_eval_freq": 100,
+            "ci_alive_threshold": 0.1,
+            "n_examples_until_dead": 1638400,
             "pretrained_model_class": "transformers.LlamaForCausalLM",
             "task_config": {
                 "task_name": "lm",
@@ -214,7 +226,7 @@ class TestConfigIntegration:
         updated_dict = apply_nested_updates(base_config, updates)
         config = Config(**updated_dict)
 
-        assert config.batch_size == 64
+        assert config.microbatch_size == 64
         assert isinstance(config.task_config, LMTaskConfig)
         assert config.task_config.max_seq_len == 256
         assert config.task_config.buffer_size == 2000
@@ -232,8 +244,13 @@ class TestConfigIntegration:
             "lr": 0.001,
             "steps": 1000,
             "batch_size": 32,
+            "train_log_freq": 100,
             "n_eval_steps": 100,
-            "print_freq": 100,
+            "eval_batch_size": 32,
+            "eval_freq": 100,
+            "slow_eval_freq": 100,
+            "ci_alive_threshold": 0.1,
+            "n_examples_until_dead": 3200,
             "pretrained_model_class": "spd.experiments.tms.models.TMSModel",
             "task_config": {"task_name": "tms", "feature_probability": 0.1},
         }
@@ -265,8 +282,13 @@ class TestConfigIntegration:
             "lr": 0.01,  # Will be overridden
             "steps": 1000,
             "batch_size": 32,
+            "train_log_freq": 100,
             "n_eval_steps": 100,
-            "print_freq": 100,
+            "eval_batch_size": 32,
+            "eval_freq": 100,
+            "slow_eval_freq": 100,
+            "ci_alive_threshold": 0.1,
+            "n_examples_until_dead": 3200,
             "pretrained_model_class": "spd.experiments.tms.models.TMSModel",
             "task_config": {
                 "task_name": "tms",
@@ -292,7 +314,7 @@ class TestConfigIntegration:
             )
 
             # Check other values are preserved
-            assert config.batch_size == 32
+            assert config.microbatch_size == 32
             assert config.task_config.data_generation_type == "at_least_zero_active"
 
             # Verify it can be serialized to JSON and back

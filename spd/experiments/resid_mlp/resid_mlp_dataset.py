@@ -9,7 +9,7 @@ from torch import Tensor
 from spd.utils.data_utils import SparseFeatureDataset
 
 
-class ResidualMLPDataset(SparseFeatureDataset):
+class ResidMLPDataset(SparseFeatureDataset):
     def __init__(
         self,
         n_features: int,

@@ -3,7 +3,6 @@ from typing import Literal
 import einops
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -140,8 +139,9 @@ def calc_masked_recon_layerwise_loss(
     total_loss = torch.tensor(0.0, device=device)
     for mask_info in masks:
         for component_name in model.components:
-            modified_out = model.forward_with_components(
+            modified_out = model(
                 batch,
+                mode="components",
                 masks={component_name: mask_info[component_name]},
             )
             if loss_type == "mse":
@@ -162,7 +162,7 @@ def calc_masked_recon_loss(
 ) -> Float[Tensor, ""]:
     """Calculate the MSE over all masks."""
     # Do a forward pass with all components
-    out = model.forward_with_components(batch, masks=masks)
+    out = model(batch, mode="components", masks=masks)
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
     if loss_type == "mse":
         loss = ((out - target_out) ** 2).mean()
@@ -217,63 +217,6 @@ def calc_faithfulness_loss(
     return faithfulness_loss
 
 
-def calc_ce_losses(
-    model: ComponentModel,
-    batch: Int[Tensor, "..."],
-    masks: dict[str, Float[Tensor, "..."]],
-    unmasked_component_logits: Float[Tensor, "..."],
-    masked_component_logits: Float[Tensor, "..."],
-    target_logits: Float[Tensor, "..."],
-) -> dict[str, float]:
-    """Calculate cross-entropy losses for various masking scenarios.
-
-    Args:
-        model: The component model
-        batch: Input batch
-        masks: Dictionary of masks for components
-        unmasked_component_logits: Logits from unmasked components
-        masked_component_logits: Logits from masked components
-        target_logits: Target model logits
-
-    Returns:
-        Dictionary containing CE losses for different scenarios
-    """
-    ce_losses: dict[str, float] = {}
-
-    # Flatten logits and batch for CE calculation
-    flat_all_component_logits = einops.rearrange(
-        unmasked_component_logits, "... vocab -> (...) vocab"
-    )
-    flat_masked_component_logits = einops.rearrange(
-        masked_component_logits, "... vocab -> (...) vocab"
-    )
-    flat_batch = batch.flatten()
-
-    # CE vs true labels
-    unmasked_ce_loss = F.cross_entropy(input=flat_all_component_logits[:-1], target=flat_batch[1:])
-    masked_ce_loss = F.cross_entropy(input=flat_masked_component_logits[:-1], target=flat_batch[1:])
-
-    flat_target_logits = einops.rearrange(target_logits, "... vocab -> (...) vocab")
-    target_ce_loss = F.cross_entropy(input=flat_target_logits[:-1], target=flat_batch[1:])
-
-    # CE when every component is fully masked (all-zero masks)
-    zero_masks = {k: torch.zeros_like(v) for k, v in masks.items()}
-    zero_masked_component_logits = model.forward_with_components(batch, masks=zero_masks)
-    flat_zero_masked_component_logits = einops.rearrange(
-        zero_masked_component_logits, "... vocab -> (...) vocab"
-    )
-    zero_masked_ce_loss = F.cross_entropy(
-        input=flat_zero_masked_component_logits[:-1], target=flat_batch[1:]
-    )
-
-    ce_losses["misc/unmasked_ce_loss_vs_labels"] = unmasked_ce_loss.item()
-    ce_losses["misc/masked_ce_loss_vs_labels"] = masked_ce_loss.item()
-    ce_losses["misc/target_ce_loss_vs_labels"] = target_ce_loss.item()
-    ce_losses["misc/zero_masked_ce_loss_vs_labels"] = zero_masked_ce_loss.item()
-
-    return ce_losses
-
-
 def calculate_losses(
     model: ComponentModel,
     batch: Int[Tensor, "..."],
@@ -295,7 +238,6 @@ def calculate_losses(
         target_out: Target model output
         device: Device to run computations on
         n_params: Total number of parameters in the model
-
     Returns:
         Tuple of (total_loss, loss_terms_dict)
     """
@@ -306,7 +248,7 @@ def calculate_losses(
     if config.faithfulness_coeff is not None:
         faithfulness_loss = calc_faithfulness_loss(model=model, n_params=n_params, device=device)
         total_loss += config.faithfulness_coeff * faithfulness_loss
-        loss_terms["loss/faithfulness"] = faithfulness_loss.item()
+        loss_terms["faithfulness"] = faithfulness_loss.item()
 
     # Reconstruction loss
     if config.recon_coeff is not None:
@@ -318,7 +260,7 @@ def calculate_losses(
             loss_type=config.output_loss_type,
         )
         total_loss += config.recon_coeff * recon_loss
-        loss_terms["loss/recon"] = recon_loss.item()
+        loss_terms["recon"] = recon_loss.item()
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
@@ -336,7 +278,7 @@ def calculate_losses(
             )
         stochastic_recon_loss = stochastic_recon_loss / len(stochastic_masks)
         total_loss += config.stochastic_recon_coeff * stochastic_recon_loss
-        loss_terms["loss/stochastic_recon"] = stochastic_recon_loss.item()
+        loss_terms["stochastic_recon"] = stochastic_recon_loss.item()
 
     # Reconstruction layerwise loss
     if config.recon_layerwise_coeff is not None:
@@ -349,7 +291,7 @@ def calculate_losses(
             loss_type=config.output_loss_type,
         )
         total_loss += config.recon_layerwise_coeff * recon_layerwise_loss
-        loss_terms["loss/recon_layerwise"] = recon_layerwise_loss.item()
+        loss_terms["recon_layerwise"] = recon_layerwise_loss.item()
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
@@ -365,14 +307,14 @@ def calculate_losses(
             loss_type=config.output_loss_type,
         )
         total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
-        loss_terms["loss/stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
+        loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
 
     # Importance minimality loss
     importance_minimality_loss = calc_importance_minimality_loss(
         ci_upper_leaky=causal_importances_upper_leaky, pnorm=config.pnorm
     )
     total_loss += config.importance_minimality_coeff * importance_minimality_loss
-    loss_terms["loss/importance_minimality"] = importance_minimality_loss.item()
+    loss_terms["importance_minimality"] = importance_minimality_loss.item()
 
     # Schatten loss
     if config.schatten_coeff is not None:
@@ -383,7 +325,7 @@ def calculate_losses(
             device=device,
         )
         total_loss += config.schatten_coeff * schatten_loss
-        loss_terms["loss/schatten"] = schatten_loss.item()
+        loss_terms["schatten"] = schatten_loss.item()
 
     # Output reconstruction loss
     if config.out_recon_coeff is not None:
@@ -396,7 +338,7 @@ def calculate_losses(
             loss_type=config.output_loss_type,
         )
         total_loss += config.out_recon_coeff * out_recon_loss
-        loss_terms["loss/output_recon"] = out_recon_loss.item()
+        loss_terms["output_recon"] = out_recon_loss.item()
 
     # Embedding reconstruction loss
     if config.embedding_recon_coeff is not None:
@@ -411,6 +353,8 @@ def calculate_losses(
             device=device,
         )
         total_loss += config.embedding_recon_coeff * embedding_recon_loss
-        loss_terms["loss/embedding_recon"] = embedding_recon_loss.item()
+        loss_terms["embedding_recon"] = embedding_recon_loss.item()
+
+    loss_terms["total"] = total_loss.item()
 
     return total_loss, loss_terms
