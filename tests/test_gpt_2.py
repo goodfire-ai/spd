@@ -4,8 +4,7 @@ from spd.configs import Config, EvalMetricConfig
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.run_spd import optimize
-from spd.utils.general_utils import resolve_class
-from spd.utils.general_utils import set_seed
+from spd.utils.general_utils import resolve_class, set_seed
 
 
 def test_gpt_2_decomposition_happy_path() -> None:
@@ -104,7 +103,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
 
     train_loader, _tokenizer = create_data_loader(
         dataset_config=train_data_config,
-        batch_size=config.batch_size
+        batch_size=config.batch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
     )
