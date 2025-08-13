@@ -243,6 +243,7 @@ def cli():
     devices: list[str]
     if args.devices is None:
         import torch
+
         devices = ["cuda" if torch.cuda.is_available() else "cpu"]
     else:
         devices = args.devices.split(",")
