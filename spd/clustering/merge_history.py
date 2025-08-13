@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -307,11 +308,20 @@ class MergeHistoryEnsemble:
             label: idx for idx, label in enumerate(unique_labels)
         }
 
-        merges_array: MergesArray = np.full(
-            (self.n_ensemble, self.n_iters, c_components),
-            fill_value=-1,
-            dtype=np.int16,
-        )
+        try:
+            merges_array: MergesArray = np.full(
+                (self.n_ensemble, self.n_iters, c_components),
+                fill_value=-1,
+                dtype=np.int16,
+            )
+        except Exception as e:
+            print(
+                f"failed to create merge array, probably due to issues with getting shape.\n"
+                f"{self = }\n"
+                f"{self.data = }\n",
+                file=sys.stderr,
+            )
+            raise e
 
         overlap_stats: Float[np.ndarray, " n_ens"] = np.full(
             self.n_ensemble,

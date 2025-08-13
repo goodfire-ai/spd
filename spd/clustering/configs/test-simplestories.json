@@ -1,7 +1,7 @@
 {
   "activation_threshold": 0.5,
   "alpha": 1.0,
-  "iters": 2,
+  "iters": 4,
   "merge_pair_sampling_method": "range",
   "merge_pair_sampling_kwargs": {"threshold": 0.05},
   "pop_component_prob": 0,
