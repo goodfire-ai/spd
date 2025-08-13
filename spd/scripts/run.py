@@ -846,14 +846,13 @@ def cli():
         nargs="?",
         const=True,
         default=False,
-        help="Enable parameter sweep. If no argument provided, uses default sweep_params.yaml. "
-        "Otherwise, specify path to custom sweep parameters file.",
+        help="Enable parameter sweep. If `--sweep` passed with argument, uses default sweep_params.yaml. "
+        "Otherwise, specify a single path to custom sweep parameters file.",
     )
 
     parser.add_argument(
         "-n",
         "--n-agents",
-        dest="n_agents",
         type=int,
         default=None,
         help="Maximum number of concurrent SLURM tasks. Required for sweeps unless running locally. "
@@ -863,7 +862,6 @@ def cli():
     # Report and project settings
     parser.add_argument(
         "--create-report",
-        dest="create_report",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Create W&B report for aggregated view",
@@ -878,7 +876,6 @@ def cli():
 
     parser.add_argument(
         "--report-title",
-        dest="report_title",
         type=str,
         default=None,
         help="Title for the W&B report. Generated automatically if not provided.",
@@ -903,7 +900,6 @@ def cli():
 
     parser.add_argument(
         "--job-suffix",
-        dest="job_suffix",
         type=str,
         default=None,
         help="Optional suffix for SLURM job names",
@@ -926,7 +922,6 @@ def cli():
 
     parser.add_argument(
         "--log-format",
-        dest="log_format",
         type=str,
         choices=LogFormat.__args__,
         default="default",
