@@ -164,9 +164,9 @@ class Config(BaseModel):
         default=None,
         description="Final p value to anneal to (None = no annealing)",
     )
-    p_anneal_cooldown_frac: Probability = Field(
-        default=0.0,
-        description="Fraction of annealing period to stay at final p value (0.0 = no cooldown)",
+    p_anneal_end_frac: Probability = Field(
+        default=1.0,
+        description="Fraction of training to end annealing (default 1.0 = anneal until end)",
     )
     output_loss_type: Literal["mse", "kl"] = Field(
         ...,

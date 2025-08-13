@@ -35,7 +35,7 @@ from spd.utils.distributed_utils import (
 )
 from spd.utils.general_utils import (
     extract_batch_data,
-    get_annealed_p,
+    get_linear_annealed_p,
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
@@ -196,13 +196,13 @@ def optimize(
             alive_tracker.watch_batch(causal_importances)
 
             # Calculate current p value with annealing
-            current_p = get_annealed_p(
+            current_p = get_linear_annealed_p(
                 step=step,
                 steps=config.steps,
                 initial_p=config.pnorm,
                 p_anneal_start_frac=config.p_anneal_start_frac,
                 p_anneal_final_p=config.p_anneal_final_p,
-                p_anneal_cooldown_frac=config.p_anneal_cooldown_frac,
+                p_anneal_end_frac=config.p_anneal_end_frac,
             )
 
             microbatch_total_loss, microbatch_loss_terms = calculate_losses(
