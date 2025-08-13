@@ -160,7 +160,7 @@ def test_replaced_component_forward_conv1d_matches_modes():
     input_dim = 6
     output_dim = 4
 
-    original = Conv1D(nf=output_dim, nx=input_dim)
+    original = RadfordConv1D(nf=output_dim, nx=input_dim)
 
     components = LinearComponents(d_in=input_dim, d_out=output_dim, C=C, bias=original.bias)
     components.init_from_target_weight(original.weight)
@@ -218,7 +218,7 @@ def test_replaced_component_forward_embedding_matches_modes():
 
 def test_correct_parameters_require_grad(component_model: ComponentModel):
     for cm in component_model.components_or_modules.values():
-        if isinstance(cm.original, nn.Linear | Conv1D):
+        if isinstance(cm.original, nn.Linear | RadfordConv1D):
             assert not cm.original.weight.requires_grad
             if cm.original.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
                 assert not cm.original.bias.requires_grad
