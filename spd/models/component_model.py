@@ -1,8 +1,9 @@
 import fnmatch
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, override
+from typing import Any, Literal, override
 
 import torch
 import wandb
@@ -10,10 +11,12 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
+from transformers import PreTrainedModel
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
 from spd.configs import Config
+from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
     Components,
     ComponentsOrModule,
@@ -25,7 +28,8 @@ from spd.models.components import (
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.general_utils import load_pretrained
+from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class
+from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
     download_wandb_file,
     fetch_latest_wandb_checkpoint,
@@ -33,7 +37,36 @@ from spd.utils.wandb_utils import (
 )
 
 
-class ComponentModel(nn.Module):
+@dataclass
+class SPDRunInfo(RunInfo[Config]):
+    """Run info from training a ComponentModel (i.e. from an SPD run)."""
+
+    @override
+    @classmethod
+    def from_path(cls, path: ModelPath) -> "SPDRunInfo":
+        """Load the run info from a wandb run or a local path to a checkpoint."""
+        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
+            # Check if run exists in shared filesystem first
+            run_dir = check_run_exists(path)
+            if run_dir:
+                # Use local files from shared filesystem
+                comp_model_path = fetch_latest_local_checkpoint(run_dir, prefix="model")
+                config_path = run_dir / "final_config.yaml"
+            else:
+                # Download from wandb
+                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
+                comp_model_path, config_path = ComponentModel._download_wandb_files(wandb_path)
+        else:
+            comp_model_path = Path(path)
+            config_path = Path(path).parent / "final_config.yaml"
+
+        with open(config_path) as f:
+            config = Config(**yaml.safe_load(f))
+
+        return cls(checkpoint_path=comp_model_path, config=config)
+
+
+class ComponentModel(LoadableModule):
     """Wrapper around an arbitrary model for running SPD.
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
@@ -88,6 +121,23 @@ class ComponentModel(nn.Module):
     @property
     def components(self) -> dict[str, Components]:
         return {name: cm.components for name, cm in self.components_or_modules.items()}
+
+    def _extract_output(self, raw_output: Any) -> Any:
+        """Extract the desired output from the model's raw output.
+
+        If pretrained_model_output_attr is None, returns the raw output directly.
+        Otherwise, returns the specified attribute from the raw output.
+
+        Args:
+            raw_output: The raw output from the model.
+
+        Returns:
+            The extracted output.
+        """
+        if self.pretrained_model_output_attr is None:
+            return raw_output
+        else:
+            return getattr(raw_output, self.pretrained_model_output_attr)
 
     @staticmethod
     def _get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
@@ -227,17 +277,44 @@ class ComponentModel(nn.Module):
         return gates
 
     @override
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def forward(
+        self,
+        *args: Any,
+        mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
+        masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        module_names: list[str] | None = None,
+        **kwargs: Any,
+    ) -> Any:
         """Forward pass of the patched model.
+
+        NOTE: We need all the forward options in forward in order for DistributedDataParallel to
+        work (https://discuss.pytorch.org/t/is-it-ok-to-use-methods-other-than-forward-in-ddp/176509).
+
+        Args:
+            mode: The type of forward pass to perform:
+                - 'target': Standard forward pass of the target model
+                - 'components': Forward with component replacements (requires masks)
+                - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
+            masks: Dictionary mapping component names to masks (required for mode='components')
+            module_names: List of module names to cache inputs for (required for mode='pre_forward_cache')
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
-        raw_out = self.patched_model(*args, **kwargs)
-        if self.pretrained_model_output_attr is None:
-            out = raw_out
+        if mode == "components":
+            assert masks is not None, "masks parameter is required for mode='components'"
+            return self._forward_with_components(*args, masks=masks, **kwargs)
+        elif mode == "pre_forward_cache":
+            assert module_names is not None, (
+                "module_names parameter is required for mode='pre_forward_cache'"
+            )
+            return self._forward_with_pre_forward_cache_hooks(
+                *args, module_names=module_names, **kwargs
+            )
         else:
-            out = getattr(raw_out, self.pretrained_model_output_attr)
-        return out
+            # target forward pass of the patched model
+            raw_out = self.patched_model(*args, **kwargs)
+            out = self._extract_output(raw_out)
+            return out
 
     @contextmanager
     def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
@@ -267,7 +344,7 @@ class ComponentModel(nn.Module):
                 component.forward_mode = None
                 component.mask = None
 
-    def forward_with_components(
+    def _forward_with_components(
         self,
         *args: Any,
         masks: dict[str, Float[Tensor, "... C"]],
@@ -281,9 +358,11 @@ class ComponentModel(nn.Module):
             masks: Optional dictionary mapping component names to masks
         """
         with self._replaced_modules(masks):
-            return self(*args, **kwargs)
+            raw_out = self.patched_model(*args, **kwargs)
+            out = self._extract_output(raw_out)
+            return out
 
-    def forward_with_pre_forward_cache_hooks(
+    def _forward_with_pre_forward_cache_hooks(
         self, *args: Any, module_names: list[str], **kwargs: Any
     ) -> tuple[Any, dict[str, Tensor]]:
         """Forward pass with caching at the input to the modules given by `module_names`.
@@ -312,7 +391,8 @@ class ComponentModel(nn.Module):
             module.forward_mode = "original"
 
         try:
-            out = self(*args, **kwargs)
+            raw_out = self.patched_model(*args, **kwargs)
+            out = self._extract_output(raw_out)
             return out, cache
         finally:
             for handle in handles:
@@ -341,35 +421,29 @@ class ComponentModel(nn.Module):
         return checkpoint_path, final_config_path
 
     @classmethod
-    def from_pretrained(cls, path: ModelPath) -> tuple["ComponentModel", Config, Path]:
-        """Load a trained ComponentModel checkpoint along with its original config.
+    @override
+    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel":
+        """Load a trained ComponentModel checkpoint from a run info object."""
+        config = run_info.config
 
-        The method supports two storage schemes:
-        1.  A direct local path to the checkpoint file (plus `final_config.yaml` in
-            the same directory).
-        2.  A WandB reference of the form ``wandb:<entity>/<project>/runs/<run_id>``.
-        """
-
-        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-            api = wandb.Api()
-            run: Run = api.run(wandb_path)
-            comp_model_path, config_path = cls._download_wandb_files(wandb_path)
-            out_dir = fetch_wandb_run_dir(run.id)
+        # Load the target model
+        model_class = resolve_class(config.pretrained_model_class)
+        if config.pretrained_model_name_hf is not None:
+            assert issubclass(model_class, PreTrainedModel), (
+                f"Model class {model_class} should be a subclass of PreTrainedModel which "
+                "defines a `from_pretrained` method"
+            )
+            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name_hf)
         else:
-            comp_model_path = Path(path)
-            config_path = Path(path).parent / "final_config.yaml"
-            out_dir = Path(path).parent
+            assert issubclass(model_class, LoadableModule), (
+                f"Model class {model_class} should be a subclass of LoadableModule which "
+                "defines a `from_pretrained` method"
+            )
+            assert run_info.config.pretrained_model_path is not None
+            target_model_unpatched = model_class.from_pretrained(
+                run_info.config.pretrained_model_path
+            )
 
-        with open(config_path) as f:
-            config = Config(**yaml.safe_load(f))
-
-        assert config.pretrained_model_class is not None
-        target_model_unpatched = load_pretrained(
-            path_to_class=config.pretrained_model_class,
-            model_path=config.pretrained_model_path,
-            model_name_hf=config.pretrained_model_name_hf,
-        )
         target_model_unpatched.eval()
         target_model_unpatched.requires_grad_(False)
 
@@ -382,9 +456,19 @@ class ComponentModel(nn.Module):
             pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
 
-        comp_model_weights = torch.load(comp_model_path, map_location="cpu", weights_only=True)
+        comp_model_weights = torch.load(
+            run_info.checkpoint_path, map_location="cpu", weights_only=True
+        )
+
         comp_model.load_state_dict(comp_model_weights)
-        return comp_model, config, out_dir
+        return comp_model
+
+    @classmethod
+    @override
+    def from_pretrained(cls, path: ModelPath) -> "ComponentModel":
+        """Load a trained ComponentModel checkpoint from a local or wandb path."""
+        run_info = SPDRunInfo.from_path(path)
+        return cls.from_run_info(run_info)
 
     def calc_causal_importances(
         self,

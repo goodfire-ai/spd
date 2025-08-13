@@ -1,46 +1,51 @@
+from pathlib import Path
 from typing import Any
 
 import einops
-import fire
-import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Float
-from torch import Tensor, nn
+from PIL import Image
+from torch import Tensor
 
-from spd.configs import Config
-from spd.experiments.resid_mlp.models import ResidualMLP
+from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
-from spd.models.component_model import ComponentModel
-from spd.models.components import Components
+from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.models.components import Components, ComponentsOrModule
 from spd.plotting import plot_causal_importance_vals
-from spd.utils.general_utils import get_device, runtime_cast, set_seed
+from spd.registry import EXPERIMENT_REGISTRY
+from spd.utils.distributed_utils import get_device
+from spd.utils.general_utils import runtime_cast, set_seed
 from spd.utils.run_utils import get_output_dir
 
 
-def extract_ci_val_figures(run_id: str, input_magnitude: float = 0.75) -> dict[str, Any]:
+def extract_ci_val_figures(
+    run_id: str, input_magnitude: float = 0.75, device: str = "cuda"
+) -> dict[str, Any]:
     """Extract causal importances from a single run.
 
     Args:
         run_id: Wandb run ID to load model from
         input_magnitude: Magnitude of input features for causal importances plotting
+        device: Device to use for model
 
     Returns:
         Dictionary containing causal importances data and metadata
     """
-    model, config, _ = ComponentModel.from_pretrained(run_id)
-    assert isinstance(model.patched_model, ResidualMLP | TMSModel), (
-        "patched model must be a ResidualMLP or TMSModel"
+    run_info = SPDRunInfo.from_path(run_id)
+    model = ComponentModel.from_run_info(run_info)
+    model.to(device)
+
+    config = run_info.config
+    assert isinstance(model.patched_model, ResidMLP | TMSModel), (
+        "patched model must be a ResidMLP or TMSModel"
     )
     n_features = model.patched_model.config.n_features
 
     # Assume no position dimension
     batch_shape = (1, n_features)
-
-    # Get device from model
-    device = next(model.parameters()).device
 
     # Get mask values without plotting regular masks
     figures, all_perm_indices_ci_vals = plot_causal_importance_vals(
@@ -59,165 +64,6 @@ def extract_ci_val_figures(run_id: str, input_magnitude: float = 0.75) -> dict[s
         "components": model.components,
         "n_features": n_features,
     }
-
-
-def plot_increasing_importance_minimality_coeff_ci_vals(
-    run_ids: list[str], input_magnitude: float = 0.75, best_idx: list[int] | None = None
-) -> plt.Figure:
-    """Plot increasing importance minimality coeff for multiple runs in a combined figure.
-
-    Args:
-        run_ids: List of wandb run IDs to load models from
-        input_magnitude: Magnitude of input features for causal importances plotting
-        best_idx: List of indices indicating which runs are the best (for highlighting)
-
-    Returns:
-        Combined figure with causal importances from all runs
-    """
-    all_mask_data = {}
-    all_components = []
-
-    # Collect causal importances from all runs
-    for run_id in run_ids:
-        logger.info(f"Loading model from {run_id}")
-
-        # Extract causal importances using helper function
-        extraction_result = extract_ci_val_figures(run_id, input_magnitude)
-        figures = extraction_result["figures"]
-        config = extraction_result["config"]
-        assert isinstance(config, Config)
-
-        # Extract causal importances_upper_leaky data from the figure
-        ci_vals_fig = figures["causal_importances_upper_leaky"]
-
-        # Get mask data from the figure axes
-        mask_data = {}
-        for ax in ci_vals_fig.axes[:-1]:  # Skip colorbar axis
-            # Get the image data from the axis
-            images = ax.get_images()
-            if images:
-                data = images[0].get_array()
-                # Get component name from axis title
-                title = ax.get_title()
-                component_name = title.split(" (")[0]  # Extract component name
-                mask_data[component_name] = data
-
-                # Track all unique component names
-                if component_name not in all_components:
-                    all_components.append(component_name)
-
-        all_mask_data[run_id] = {
-            "mask_data": mask_data,
-            "importance_minimality_coeff": config.importance_minimality_coeff,
-        }
-        plt.close(ci_vals_fig)  # Close the individual figure
-
-    # Create combined figure
-    n_runs = len(run_ids)
-    n_components = len(all_components)
-
-    fig, axs = plt.subplots(
-        n_components,
-        n_runs,
-        figsize=(5 * n_runs, 5 * n_components),
-        constrained_layout=False,
-        squeeze=False,
-        dpi=300,
-    )
-
-    # Plot all masks
-    images = []
-    vmin, vmax = float("inf"), float("-inf")
-
-    component_name_map = {"layers.0.mlp_in": "$W_{in}$", "layers.0.mlp_out": "$W_{out}$"}
-    for col_idx, run_id in enumerate(run_ids):
-        for row_idx, component_name in enumerate(all_components):
-            ax = axs[row_idx, col_idx]
-
-            assert component_name in all_mask_data[run_id]["mask_data"]
-            mask_data = all_mask_data[run_id]["mask_data"][component_name]
-            im = ax.matshow(mask_data, aspect="auto", cmap="Reds")
-            images.append(im)
-
-            # Track min/max for unified colorbar
-            vmin = min(vmin, mask_data.min())
-            vmax = max(vmax, mask_data.max())
-
-            component_name = component_name_map.get(component_name, component_name)
-            # Add labels
-            if col_idx == 0:
-                ax.set_ylabel(f"{component_name}\nInput feature index", fontsize=14)
-            else:
-                ax.set_ylabel("")
-
-            if row_idx == n_components - 1:
-                ax.set_xlabel("Subcomponent index", fontsize=14)
-
-            # Increase tick label font sizes
-            ax.tick_params(axis="both", which="major", labelsize=12)
-            # Move x-axis ticks to bottom
-            ax.xaxis.tick_bottom()
-            ax.xaxis.set_label_position("bottom")
-
-            if row_idx == 0:
-                # Add importance_minimality_coeff as column title
-                imp_coeff = all_mask_data[run_id]["importance_minimality_coeff"]
-                title_text = rf"$\beta_3$={imp_coeff:.0e}"
-
-                # Add "BEST" indicator if this is one of the best runs
-                if best_idx is not None and col_idx in best_idx:
-                    title_text += " (BEST)"
-
-                ax.set_title(title_text, fontsize=12, pad=11)
-
-    # Highlight best runs with visual distinctions
-    if best_idx is not None:
-        for best_col_idx in best_idx:
-            if 0 <= best_col_idx < n_runs:
-                # Add colored borders and background to all subplots in the best column
-                for row_idx in range(n_components):
-                    ax = axs[row_idx, best_col_idx]
-
-                    # Add a thick colored border around the subplot
-                    for spine in ax.spines.values():
-                        spine.set_edgecolor("darkblue")
-                        spine.set_linewidth(3)
-                        spine.set_visible(True)
-
-                    # Add a subtle background color
-                    ax.set_facecolor("#f0f8ff")  # Very light blue background
-
-                # Make the title more prominent for the best column
-                if n_components > 0:  # Ensure we have at least one component
-                    top_ax = axs[0, best_col_idx]
-                    current_title = top_ax.get_title()
-                    # Update title with bold formatting and color
-                    top_ax.set_title(current_title, fontsize=16, color="darkblue", pad=18)
-
-    # Add unified colorbar
-    if images:
-        # Clip values at upper bound only (values should already be >= 0)
-        vmax_clip = 1
-
-        # Clip all values at the maximum
-        for im in images:
-            data = im.get_array()
-            if data is not None:
-                # Clip values at 1
-                clipped_data = np.minimum(data, vmax_clip)
-                im.set_array(clipped_data)
-
-        # Use a simple linear normalization from 0 to 1
-        norm = colors.Normalize(vmin=0, vmax=vmax_clip)
-        for im in images:
-            im.set_norm(norm)
-
-        # Add colorbar
-        cbar = fig.colorbar(images[0], ax=axs.ravel().tolist(), label="Importance value")
-        cbar.set_label("Importance value", fontsize=16)
-        cbar.ax.tick_params(labelsize=12)
-
-    return fig
 
 
 def feature_contribution_plot(
@@ -306,15 +152,21 @@ def feature_contribution_plot(
 
 
 def compute_patched_weight_neuron_contributions(
-    patched_model: ResidualMLP, n_features: int | None = None
+    patched_model: ResidMLP, n_features: int | None = None
 ) -> Float[Tensor, "n_layers n_features d_mlp"]:
-    """Compute per-neuron contribution strengths for a *trained* ResidualMLP.
+    """Compute per-neuron contribution strengths for a *trained* ResidMLP.
 
     The returned tensor has shape ``(n_layers, n_features, d_mlp)`` recording – for
     every hidden layer and every input feature – the *virtual* weight connecting
     that feature to each neuron after the ReLU (i.e. the product ``W_in * W_out``)
-    as described in the original script. Only the first ``n_features`` are kept
-    (or all features if ``n_features is None``).
+    as described in the original script.
+
+    Args:
+        patched_model: The patched model (i.e. with ComponentsOrModule layers)
+        n_features: The number of features to keep. If None, all features are kept.
+
+    Returns:
+        A tensor of shape ``(n_layers, n_features, d_mlp)`` recording the neuron contributions.
     """
 
     n_features = patched_model.config.n_features if n_features is None else n_features
@@ -324,10 +176,18 @@ def compute_patched_weight_neuron_contributions(
 
     # Stack mlp_in / mlp_out weights across layers so that einsums can broadcast
     W_in: Float[Tensor, "n_layers d_mlp d_embed"] = torch.stack(
-        [runtime_cast(nn.Linear, layer.mlp_in).weight for layer in patched_model.layers], dim=0
+        [
+            runtime_cast(ComponentsOrModule, layer.mlp_in).original.weight
+            for layer in patched_model.layers
+        ],
+        dim=0,
     )
     W_out: Float[Tensor, "n_layers d_embed d_mlp"] = torch.stack(
-        [runtime_cast(nn.Linear, layer.mlp_out).weight for layer in patched_model.layers], dim=0
+        [
+            runtime_cast(ComponentsOrModule, layer.mlp_out).original.weight
+            for layer in patched_model.layers
+        ],
+        dim=0,
     )
 
     # Compute connection strengths
@@ -352,7 +212,7 @@ def compute_patched_weight_neuron_contributions(
 
 
 def compute_spd_weight_neuron_contributions(
-    patched_model: ResidualMLP,
+    patched_model: ResidMLP,
     components: dict[str, Components],
     n_features: int | None = None,
 ) -> Float[Tensor, "n_layers n_features C d_mlp"]:
@@ -407,7 +267,7 @@ def compute_spd_weight_neuron_contributions(
 
 
 def plot_spd_feature_contributions_truncated(
-    patched_model: ResidualMLP,
+    patched_model: ResidMLP,
     components: dict[str, Components],
     n_features: int | None = 50,
 ):
@@ -493,7 +353,7 @@ def plot_spd_feature_contributions_truncated(
 
 
 def plot_neuron_contribution_pairs(
-    patched_model: ResidualMLP,
+    patched_model: ResidMLP,
     components: dict[str, Components],
     n_features: int | None = 50,
 ) -> plt.Figure:
@@ -611,24 +471,22 @@ def plot_neuron_contribution_pairs(
     return fig
 
 
-def main():
-    out_dir = get_output_dir() / "figures"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    set_seed(0)
-    device = get_device()
-
-    paths: list[str] = [
-        "wandb:spd-resid-mlp/runs/ziro93xq",  # 1 layer
-        "wandb:spd-resid-mlp/runs/wau744ht",  # 2 layer
-        "wandb:spd-resid-mlp/runs/qqdugze1",  # 3 layer
+def main(out_dir: Path, device: str):
+    canonical_runs = [
+        EXPERIMENT_REGISTRY["resid_mlp1"].canonical_run,
+        EXPERIMENT_REGISTRY["resid_mlp2"].canonical_run,
+        EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run,
     ]
 
-    for path in paths:
+    for path in canonical_runs:
+        assert path is not None
         wandb_id = path.split("/")[-1]
 
-        model, config, _ = ComponentModel.from_pretrained(path)
+        run_info = SPDRunInfo.from_path(path)
+        model = ComponentModel.from_run_info(run_info)
+        config = run_info.config
         patched_model = model.patched_model
-        assert isinstance(patched_model, ResidualMLP)
+        assert isinstance(patched_model, ResidMLP)
         model.to(device)
 
         n_layers = patched_model.config.n_layers
@@ -658,7 +516,7 @@ def main():
         )
         logger.info(f"Saved figure to {fname_pairs}")
 
-        # Define a title formatter for ResidualMLP component names
+        # Define a title formatter for ResidMLP component names
         def format_resid_mlp_title(mask_name: str) -> str:
             """Convert 'layers.X.mlp_in/out' to 'Layer Y - $W_{in/out}$' with LaTeX formatting."""
             parts = mask_name.split(".")
@@ -672,13 +530,12 @@ def main():
             return mask_name  # Fallback to original if pattern doesn't match
 
         batch_shape = (1, patched_model.config.n_features)
-        figs_causal = plot_causal_importance_vals(
+        figs_causal: dict[str, Image.Image] = plot_causal_importance_vals(
             model=model,
             batch_shape=batch_shape,
             device=device,
             input_magnitude=0.75,
             plot_raw_cis=False,
-            orientation="vertical",
             title_formatter=format_resid_mlp_title,
             sigmoid_type=config.sigmoid_type,
         )[0]
@@ -686,34 +543,21 @@ def main():
         fname_importances = (
             out_dir / f"causal_importance_upper_leaky_{n_layers}layers_{wandb_id}.png"
         )
-        figs_causal["causal_importances_upper_leaky"].savefig(
-            fname_importances,
-            bbox_inches="tight",
-            dpi=500,
-        )
+        figs_causal["causal_importances_upper_leaky"].save(fname_importances)
         logger.info(f"Saved figure to {fname_importances}")
-
-        ##### Resid_mlp 1-layer varying sparsity ####
-        run_ids = [
-            "wandb:spd-resid-mlp/runs/xh0qlbkj",  # 1e-6
-            "wandb:spd-resid-mlp/runs/kkpzirac",  # 3e-6
-            "wandb:spd-resid-mlp/runs/ziro93xq",  # Best. 1e-5
-            "wandb:spd-resid-mlp/runs/pnxu3d22",  # 1e-4
-            "wandb:spd-resid-mlp/runs/aahzg3zu",  # 1e-3
-        ]
-        best_idx = [2]
-
-        # Create and save the combined figure
-        fig = plot_increasing_importance_minimality_coeff_ci_vals(run_ids, best_idx=best_idx)
-        out_dir = get_output_dir()
-        fname_coeff = out_dir / "resid_mlp_varying_importance_minimality_coeff_ci_vals.png"
-        fig.savefig(
-            fname_coeff,
-            bbox_inches="tight",
-            dpi=400,
-        )
-        logger.info(f"Saved figure to {fname_coeff}")
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    out_dir = get_output_dir(use_wandb_id=False) / "figures"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    set_seed(0)
+    device = get_device()
+
+    main(out_dir, device)
+
+    # NOTE: We used to plot the varying importance minimality coeff runs (Figure 8 in SPD paper) by
+    # hackily plotting each run separately and then combining the figures. Now that out causal
+    # importance plots return Image.Image objects, we can't do this.
+    # We've removed this figure, but it could be supported in the future by doing the sensible thing
+    # of calculating causal importances and using a custom plotting function for plotting them all
+    # side-by-side.

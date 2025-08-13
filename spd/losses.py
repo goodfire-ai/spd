@@ -3,7 +3,6 @@ from typing import Literal
 import einops
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -140,8 +139,9 @@ def calc_masked_recon_layerwise_loss(
     total_loss = torch.tensor(0.0, device=device)
     for mask_info in masks:
         for component_name in model.components:
-            modified_out = model.forward_with_components(
+            modified_out = model(
                 batch,
+                mode="components",
                 masks={component_name: mask_info[component_name]},
             )
             if loss_type == "mse":
@@ -162,7 +162,7 @@ def calc_masked_recon_loss(
 ) -> Float[Tensor, ""]:
     """Calculate the MSE over all masks."""
     # Do a forward pass with all components
-    out = model.forward_with_components(batch, masks=masks)
+    out = model(batch, mode="components", masks=masks)
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
     if loss_type == "mse":
         loss = ((out - target_out) ** 2).mean()
@@ -217,63 +217,6 @@ def calc_faithfulness_loss(
     return faithfulness_loss
 
 
-def calc_ce_losses(
-    model: ComponentModel,
-    batch: Int[Tensor, "..."],
-    masks: dict[str, Float[Tensor, "..."]],
-    unmasked_component_logits: Float[Tensor, "..."],
-    masked_component_logits: Float[Tensor, "..."],
-    target_logits: Float[Tensor, "..."],
-) -> dict[str, float]:
-    """Calculate cross-entropy losses for various masking scenarios.
-
-    Args:
-        model: The component model
-        batch: Input batch
-        masks: Dictionary of masks for components
-        unmasked_component_logits: Logits from unmasked components
-        masked_component_logits: Logits from masked components
-        target_logits: Target model logits
-
-    Returns:
-        Dictionary containing CE losses for different scenarios
-    """
-    ce_losses: dict[str, float] = {}
-
-    # Flatten logits and batch for CE calculation
-    flat_all_component_logits = einops.rearrange(
-        unmasked_component_logits, "... vocab -> (...) vocab"
-    )
-    flat_masked_component_logits = einops.rearrange(
-        masked_component_logits, "... vocab -> (...) vocab"
-    )
-    flat_batch = batch.flatten()
-
-    # CE vs true labels
-    unmasked_ce_loss = F.cross_entropy(input=flat_all_component_logits[:-1], target=flat_batch[1:])
-    masked_ce_loss = F.cross_entropy(input=flat_masked_component_logits[:-1], target=flat_batch[1:])
-
-    flat_target_logits = einops.rearrange(target_logits, "... vocab -> (...) vocab")
-    target_ce_loss = F.cross_entropy(input=flat_target_logits[:-1], target=flat_batch[1:])
-
-    # CE when every component is fully masked (all-zero masks)
-    zero_masks = {k: torch.zeros_like(v) for k, v in masks.items()}
-    zero_masked_component_logits = model.forward_with_components(batch, masks=zero_masks)
-    flat_zero_masked_component_logits = einops.rearrange(
-        zero_masked_component_logits, "... vocab -> (...) vocab"
-    )
-    zero_masked_ce_loss = F.cross_entropy(
-        input=flat_zero_masked_component_logits[:-1], target=flat_batch[1:]
-    )
-
-    ce_losses["misc/unmasked_ce_loss_vs_labels"] = unmasked_ce_loss.item()
-    ce_losses["misc/masked_ce_loss_vs_labels"] = masked_ce_loss.item()
-    ce_losses["misc/target_ce_loss_vs_labels"] = target_ce_loss.item()
-    ce_losses["misc/zero_masked_ce_loss_vs_labels"] = zero_masked_ce_loss.item()
-
-    return ce_losses
-
-
 def calculate_losses(
     model: ComponentModel,
     batch: Int[Tensor, "..."],
@@ -295,7 +238,6 @@ def calculate_losses(
         target_out: Target model output
         device: Device to run computations on
         n_params: Total number of parameters in the model
-
     Returns:
         Tuple of (total_loss, loss_terms_dict)
     """

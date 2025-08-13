@@ -1,4 +1,4 @@
-# ResidMLP 2 layers
+# ResidualMLP 2 layers
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null
@@ -28,31 +28,51 @@ output_loss_type: mse
 
 # --- Training ---
 batch_size: 2048
+eval_batch_size: 2048
 steps: 50_000
 lr: 1e-3
 lr_schedule: constant
 lr_warmup_pct: 0.00
-n_eval_steps: 100
 
 # --- Logging & Saving ---
-image_freq: 5_000
-image_on_first_step: true
-print_freq: 500
+train_log_freq: 50
+eval_freq: 500
+n_eval_steps: 100
+slow_eval_freq: 5_000
+slow_eval_on_first_step: true
 save_freq: null
-n_examples_until_dead: 1_024_000  # print_freq * batch_size = 500 * 2048
-figures_fns:
-  - name: "ci_histograms"
-  - name: "mean_component_activation_counts"
-  - name: "uv_and_identity_ci"
-metrics_fns:
-  - name: "ci_l0"
+ci_alive_threshold: 0.1
+n_examples_until_dead: 1_024_000
+eval_metrics:
+  - classname: "CIHistograms"
+    extra_init_kwargs:
+      n_batches_accum: 5
+  - classname: "ComponentActivationDensity"
+  - classname: "PermutedCIPlots"
+    extra_init_kwargs:
+      identity_patterns: ["layers.*.mlp_in"]
+      dense_patterns: ["layers.*.mlp_out"]
+  - classname: "UVPlots"
+    extra_init_kwargs:
+      identity_patterns: ["layers.*.mlp_in"]
+      dense_patterns: ["layers.*.mlp_out"]
+  - classname: "IdentityCIError"
+    extra_init_kwargs:
+      identity_ci:
+        - layer_pattern: "layers.*.mlp_in"
+          n_features: 100
+      dense_ci:
+        - layer_pattern: "layers.*.mlp_out"
+          k: 25
+  - classname: "CI_L0"
+
 
 # --- Pretrained model info ---
-pretrained_model_class: "spd.experiments.resid_mlp.models.ResidualMLP"
-pretrained_model_path: "wandb:spd/runs/ve78kir3"
+pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"
+pretrained_model_path: "wandb:goodfire/spd/runs/any9ekl9"
 
 # --- Task Specific ---
 task_config:
-  task_name: residual_mlp
+  task_name: resid_mlp
   feature_probability: 0.01
   data_generation_type: "at_least_zero_active"
