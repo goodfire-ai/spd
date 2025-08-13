@@ -14,7 +14,9 @@ GateType = Literal["mlp", "vector_mlp"]
 class ParallelLinear(nn.Module):
     """C parallel linear layers"""
 
-    def __init__(self, C: int, input_dim: int, output_dim: int, nonlinearity: str):
+    def __init__(
+        self, C: int, input_dim: int, output_dim: int, nonlinearity: nn.init._NonlinearityType
+    ):
         super().__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim

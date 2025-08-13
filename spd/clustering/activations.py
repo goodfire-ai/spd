@@ -33,7 +33,7 @@ def component_activations(
 
         batch_ = batch_.to(device)
 
-        _, pre_weight_acts = model.forward_with_pre_forward_cache_hooks(
+        _, pre_weight_acts = model._forward_with_pre_forward_cache_hooks(
             batch_, module_names=model.target_module_paths
         )
 

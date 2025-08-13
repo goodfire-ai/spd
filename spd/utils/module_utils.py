@@ -46,7 +46,7 @@ def init_param_(
     param: Tensor,
     fan_val: float,
     mean: float = 0.0,
-    nonlinearity: str = "linear",
+    nonlinearity: nn.init._NonlinearityType = "linear",
     generator: torch.Generator | None = None,
 ) -> None:
     """Fill in param with values sampled from a Kaiming normal distribution.
