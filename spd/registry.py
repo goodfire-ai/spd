@@ -86,6 +86,18 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/lm/ss_mlp_config.yaml"),
         expected_runtime=1200,
     ),
+    "ss_mlp_p_anneal": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_mlp_config_p_anneal.yaml"),
+        expected_runtime=1200,
+    ),
+    "ss_mlp_p_anneal_aggressive": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_mlp_config_p_anneal_aggressive.yaml"),
+        expected_runtime=1200,
+    ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",
     #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),

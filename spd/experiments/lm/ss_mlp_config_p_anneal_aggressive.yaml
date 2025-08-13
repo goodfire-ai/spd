@@ -1,0 +1,74 @@
+C: 4000
+batch_size: 48
+ci_alive_threshold: 0.0
+dist_backend: null
+embedding_recon_coeff: null
+eval_batch_size: 48
+eval_freq: 1000
+eval_metrics:
+- classname: CIHistograms
+  extra_init_kwargs: {}
+- classname: ComponentActivationDensity
+  extra_init_kwargs: {}
+- classname: CI_L0
+  extra_init_kwargs: {}
+- classname: CEandKLLosses
+  extra_init_kwargs:
+    rounding_threshold: 0
+faithfulness_coeff: 10000000.0
+gate_hidden_dims:
+- 12
+gate_type: vector_mlp
+gradient_accumulation_steps: 1
+importance_minimality_coeff: 0.0003
+is_embed_unembed_recon: false
+lr: 0.0005
+lr_exponential_halflife: null
+lr_schedule: cosine
+lr_warmup_pct: 0.0
+n_eval_steps: 5
+n_examples_until_dead: 3276800
+n_mask_samples: 1
+out_dir: null
+out_recon_coeff: null
+output_loss_type: kl
+pnorm: 1
+p_anneal_start_frac: 0.25
+p_anneal_final_p: 0.5
+p_anneal_cooldown_frac: 0.25
+pretrained_model_class: transformers.LlamaForCausalLM
+pretrained_model_name_hf: SimpleStories/SimpleStories-1.25M
+pretrained_model_output_attr: logits
+pretrained_model_path: null
+recon_coeff: null
+recon_layerwise_coeff: null
+save_freq: null
+schatten_coeff: null
+seed: 0
+sigmoid_type: leaky_hard
+slow_eval_freq: 5000
+slow_eval_on_first_step: true
+steps: 200000
+stochastic_recon_coeff: 1.0
+stochastic_recon_layerwise_coeff: 1.0
+target_module_patterns:
+- model.layers.*.mlp.gate_proj
+- model.layers.*.mlp.down_proj
+- model.layers.*.mlp.up_proj
+- model.layers.*.self_attn.q_proj
+- model.layers.*.self_attn.k_proj
+- model.layers.*.self_attn.v_proj
+- model.layers.*.self_attn.o_proj
+task_config:
+  buffer_size: 1000
+  column_name: story
+  dataset_name: SimpleStories/SimpleStories
+  eval_data_split: test
+  max_seq_len: 512
+  task_name: lm
+  train_data_split: train
+tokenizer_name: SimpleStories/SimpleStories-1.25M
+train_log_freq: 100
+wandb_project: spd
+wandb_run_name: null
+wandb_run_name_prefix: ''
