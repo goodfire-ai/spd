@@ -12,8 +12,8 @@ parser = argparse.ArgumentParser()
 # )
 
 add_bool_flag(
-	parser,
-	"local",
+    parser,
+    "local",
 )
 
 # args = parser.parse_args()

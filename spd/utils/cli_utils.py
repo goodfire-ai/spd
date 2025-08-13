@@ -1,13 +1,12 @@
-
 import argparse
-import argparse
-from typing import Any, Callable, Final, Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any, Final
 
 
 def format_function_docstring[T_callable: Callable[..., Any]](
-        mapping: dict[str, Any],
-        /,
-    ) -> Callable[[T_callable], T_callable]:
+    mapping: dict[str, Any],
+    /,
+) -> Callable[[T_callable], T_callable]:
     """Decorator to format function docstring with the given keyword arguments"""
 
     # I think we don't need to use functools.wraps here, since we return the same function
@@ -19,10 +18,10 @@ def format_function_docstring[T_callable: Callable[..., Any]](
     return decorator
 
 
-
 # Default token sets (lowercase). You can override per-option.
 TRUE_SET_DEFAULT: Final[set[str]] = {"1", "true", "t", "yes", "y", "on"}
 FALSE_SET_DEFAULT: Final[set[str]] = {"0", "false", "f", "no", "n", "off"}
+
 
 def _normalize_set(tokens: Iterable[str] | None, fallback: set[str]) -> set[str]:
     """Normalize a collection of tokens to a lowercase set, or return fallback."""
@@ -102,6 +101,7 @@ class BoolFlagOrValue(argparse.Action):
     # Raises:
      - `ValueError` : if nargs is not '?' or if type= is provided
     """
+
     def __init__(
         self,
         option_strings: Sequence[str],
@@ -122,8 +122,10 @@ class BoolFlagOrValue(argparse.Action):
             raise ValueError("BoolFlagOrValue requires nargs='?'")
 
         super().__init__(
-            option_strings=option_strings, dest=dest, nargs="?",
-            **kwargs  # type: ignore[arg-type]
+            option_strings=option_strings,
+            dest=dest,
+            nargs="?",
+            **kwargs,  # type: ignore[arg-type]
         )
         # Store normalized config
         self.true_set: set[str] = _normalize_set(true_set_opt, TRUE_SET_DEFAULT)
@@ -149,9 +151,7 @@ class BoolFlagOrValue(argparse.Action):
                 return  # unreachable
             if values is not None:
                 dest_flag: str = self.dest.replace("_", "-")
-                parser.error(
-                    f"{option_string} does not take a value; use --{dest_flag} true|false"
-                )
+                parser.error(f"{option_string} does not take a value; use --{dest_flag} true|false")
                 return  # unreachable
             setattr(namespace, self.dest, False)
             return
@@ -160,9 +160,7 @@ class BoolFlagOrValue(argparse.Action):
         if values is None:
             if not self.allow_bare:
                 valid: list[str] = sorted(self.true_set | self.false_set)
-                parser.error(
-                    f"option {option_string} requires a value; expected one of {valid}"
-                )
+                parser.error(f"option {option_string} requires a value; expected one of {valid}")
                 return  # unreachable
             setattr(namespace, self.dest, True)
             return
@@ -245,9 +243,7 @@ def add_bool_flag(
 
     tokens_preview: str = "{true,false}"
     readable_name: str = name.replace("-", " ")
-    arg_help: str = help or (
-        f"enable/disable {readable_name}; also accepts explicit true|false"
-    )
+    arg_help: str = help or (f"enable/disable {readable_name}; also accepts explicit true|false")
 
     parser.add_argument(
         *option_strings,

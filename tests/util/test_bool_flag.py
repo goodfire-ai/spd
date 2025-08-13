@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
-from typing import Callable, Sequence, Tuple
+from collections.abc import Sequence
 
 from spd.utils.cli_utils import BoolFlagOrValue, add_bool_flag, parse_bool_token
+
 
 def _build_parser_feature(
     *,
@@ -29,7 +30,7 @@ def _build_parser_feature(
 
 def _must_parse(p: argparse.ArgumentParser, argv: Sequence[str]) -> bool:
     ns: argparse.Namespace = p.parse_args(list(argv))
-    v: bool = getattr(ns, "feature")
+    v: bool = ns.feature
     return v
 
 
@@ -106,8 +107,8 @@ def test_custom_sets_on_action() -> None:
         default=False,
     )
     assert _must_parse(p, ["--feature", "enable"]) is True
-    _must_exit2(p, ["--feature", "true"])        # not in custom sets
-    _must_exit2(p, ["--no-feature"])             # negated disallowed at parse-time
+    _must_exit2(p, ["--feature", "true"])  # not in custom sets
+    _must_exit2(p, ["--no-feature"])  # negated disallowed at parse-time
 
 
 def test_negated_never_takes_value() -> None:

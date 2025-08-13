@@ -624,6 +624,7 @@ def _validate_dp(dp: int, experiments_list: list[str], local: bool, cpu: bool) -
     if dp > 1 and cpu:
         raise ValueError("Can't have both dp > 1 and cpu")
 
+
 SPD_RUN_EXAMPLES = """
 Examples:
     # Run subset of experiments locally
@@ -812,7 +813,6 @@ def main(
             )
 
 
-1
 def cli():
     """Command line interface."""
     parser = argparse.ArgumentParser(
@@ -821,7 +821,7 @@ def cli():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=SPD_RUN_EXAMPLES,
     )
-    
+
     # main arguments
     parser.add_argument(
         "-e",
@@ -837,7 +837,7 @@ def cli():
         default=False,
         help="Run locally instead of submitting to SLURM (default: False)",
     )
-    
+
     # Sweep arguments
     parser.add_argument(
         "--sweep",
@@ -847,93 +847,101 @@ def cli():
         help="Enable parameter sweep. If no argument provided, uses default sweep_params.yaml. "
         "Otherwise, specify path to custom sweep parameters file.",
     )
-    
+
     parser.add_argument(
-        "--n-agents", "--n_agents",
+        "--n-agents",
+        "--n_agents",
         dest="n_agents",
         type=int,
         default=None,
         help="Maximum number of concurrent SLURM tasks. Required for sweeps unless running locally. "
         "For non-sweep runs, defaults to the number of experiments.",
     )
-    
+
     # Report and project settings
     parser.add_argument(
-        "--create-report", "--create_report",
+        "--create-report",
+        "--create_report",
         dest="create_report",
-        type=lambda x: x.lower() in ['true', '1', 'yes'],
+        type=lambda x: x.lower() in ["true", "1", "yes"],
         default=True,
         help="Create W&B report for aggregated view (default: True)",
     )
-    
+
     parser.add_argument(
         "--project",
         type=str,
         default="spd",
         help="W&B project name (default: spd). Will be created if it doesn't exist.",
     )
-    
+
     parser.add_argument(
-        "--report-title", "--report_title",
+        "--report-title",
+        "--report_title",
         dest="report_title",
         type=str,
         default=None,
         help="Title for the W&B report. Generated automatically if not provided.",
     )
-    
-    # Execution settings    
+
+    # Execution settings
     parser.add_argument(
         "--cpu",
-        type=lambda x: x.lower() in ['true', '1', 'yes'],
+        type=lambda x: x.lower() in ["true", "1", "yes"],
         default=False,
         help="Use CPU instead of GPU (default: False)",
     )
-    
+
     parser.add_argument(
         "--dp",
-        "--data-parallelism", "--data_parallelism",
+        "--data-parallelism",
+        "--data_parallelism",
         type=int,
         default=1,
         help="Number of GPUs for data parallelism (1-8). Only supported for lm experiments. "
         "Cannot be used with local mode (default: 1)",
     )
-    
+
     parser.add_argument(
-        "--job-suffix", "--job_suffix",
+        "--job-suffix",
+        "--job_suffix",
         dest="job_suffix",
         type=str,
         default=None,
         help="Optional suffix for SLURM job names",
     )
-    
+
     # Git and logging settings
     parser.add_argument(
-        "--create-snapshot", "--create_snapshot",
+        "--create-snapshot",
+        "--create_snapshot",
         dest="create_snapshot",
         type=bool,
         default=True,
         help="Create a git snapshot branch for the run (default: True)",
     )
-    
+
     parser.add_argument(
-        "--use-wandb", "--use_wandb",
+        "--use-wandb",
+        "--use_wandb",
         dest="use_wandb",
         type=bool,
         default=True,
         help="Use W&B for logging and tracking (default: True)",
     )
-    
+
     parser.add_argument(
-        "--log-format", "--log_format",
+        "--log-format",
+        "--log_format",
         dest="log_format",
         type=str,
         choices=LogFormat.__args__,
         default="default",
         help="Logging format for script output. 'terse' removes timestamps/level (default: 'default')",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Handle the sweep parameter - convert to the expected type
     sweep_value = args.sweep
     if sweep_value is True:
@@ -945,7 +953,7 @@ def cli():
     else:
         # User provided --sweep with a filename
         sweep_value = str(sweep_value)
-    
+
     # Call main with parsed arguments
     main(
         experiments=args.experiments,
