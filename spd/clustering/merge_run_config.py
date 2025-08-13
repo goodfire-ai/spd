@@ -3,15 +3,14 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Self, override
+from typing import Any, Self, override
 
 import yaml
 from muutils.misc.numerical import shorten_numerical_to_str
 from pydantic import Field, PositiveInt, model_validator
 
 from spd.clustering.merge_config import MergeConfig
-from spd.clustering.scripts._get_model_path import convert_model_path
-from spd.registry import TaskName
+from spd.registry import EXPERIMENT_REGISTRY, TaskName, ExperimentConfig
 
 
 class MergeRunConfig(MergeConfig):
@@ -22,11 +21,14 @@ class MergeRunConfig(MergeConfig):
     """
 
     model_path: str = Field(
-        description="Path to the model (e.g., wandb run ID or spd_exp: key)",
+        description="WandB path to the model (format: wandb:entity/project/run_id)",
     )
-    task_name: TaskName | None = Field(
+    task_name: TaskName = Field(
+        description="Task name for the model (must be explicit)",
+    )
+    experiment_key: str | None = Field(
         default=None,
-        description="Task name for the model. If None, inferred from model_path",
+        description="Original experiment key if created from spd_exp registry",
     )
     n_batches: PositiveInt = Field(
         default=10,
@@ -36,50 +38,107 @@ class MergeRunConfig(MergeConfig):
         default=64,
         description="Size of each batch for processing",
     )
+    
+    # WandB configuration
+    wandb_enabled: bool = Field(
+        default=False,
+        description="Enable WandB logging for clustering runs",
+    )
+    wandb_project: str = Field(
+        default="spd-cluster",
+        description="WandB project name for clustering runs",
+    )
+    wandb_log_frequency: PositiveInt = Field(
+        default=1,
+        description="Log metrics to WandB every N iterations",
+    )
+    wandb_artifact_frequency: PositiveInt = Field(
+        default=100,
+        description="Save GroupMerge artifacts to WandB every N iterations",
+    )
 
     @model_validator(mode="after")
-    def infer_task_name(self) -> Self:
-        """Infer task_name from model_path if not provided."""
-        if self.task_name is None:
-            self.model_path, self.task_name = convert_model_path(self.model_path)
-
+    def validate_model_path(self) -> Self:
+        """Validate that model_path is a proper WandB path."""
+        if not self.model_path.startswith("wandb:"):
+            raise ValueError(f"model_path must start with 'wandb:', got: {self.model_path}")
+        
         assert self.task_name in TaskName.__args__, (
-            f"Invalid task_name inferred from model_path: {self.task_name = }, must be in {TaskName.__args__ = }"
+            f"Invalid task_name: {self.task_name = }, must be in {TaskName.__args__ = }"
         )
         return self
+    
+    @classmethod
+    def from_experiment_key(cls, experiment_key: TaskName, **kwargs: Any) -> "MergeRunConfig":
+        """Create config from experiment registry key.
+        
+        Args:
+            experiment_key: Key from EXPERIMENT_REGISTRY (e.g., 'tms_5-2')
+            **kwargs: Additional config parameters to override defaults
+        
+        Returns:
+            MergeRunConfig with model_path and task_name from registry
+        """
+        exp_config: ExperimentConfig = EXPERIMENT_REGISTRY[experiment_key]
+        return cls(
+            model_path=exp_config.canonical_run,
+            task_name=exp_config.task_name,
+            experiment_key=experiment_key,
+            **kwargs,
+        )
+
+    @property
+    def wandb_decomp_model(self) -> str:
+        """Extract the WandB run ID of the source decomposition from the model_path"""
+        # Format: wandb:entity/project/run_id or wandb:entity/project/runs/run_id
+        parts: list[str] = self.model_path.replace("wandb:", "").split("/")
+        if len(parts) >= 3:
+            # Handle both formats: with and without 'runs' in path
+            return parts[-1] if parts[-1] != "runs" else parts[-2] if len(parts) > 3 else parts[-1]
+        else:
+            raise ValueError(f"Invalid wandb path format: {self.model_path}")
+    
+    @property
+    def wandb_group(self) -> str:
+        """Generate WandB group name based on parent model"""
+        return f"model-{self.wandb_decomp_model}"
+    
+    @property
+    def _iters_str(self) -> str:
+        """Shortened string representation of iterations for run ID"""
+        return shorten_numerical_to_str(self.iters)
+    
+    @property
+    def config_identifier(self) -> str:
+        """Unique identifier for this specific config on this specific model.
+        
+        Format: model_abc123-a0.1-i1k-b64-n10-h_12ab
+        Allows filtering in WandB for all runs with this exact config and model.
+        """        
+        return f"task_{self.task_name}-w_{self.wandb_decomp_model}-a{self.alpha:g}-i{self._iters_str}-b{self.batch_size}-n{self.n_batches}-h_{self.stable_hash}"
 
     @property
     @override
     def stable_hash(self) -> str:
         """Generate a stable hash including all config parameters."""
-        return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:8]
-
-    @property
-    def task_name_validated(self) -> TaskName:
-        """Return the validated task name."""
-        assert self.task_name is not None, "task_name must be set"
-        return self.task_name
-
-    @property
-    def run_id(self) -> str:
-        """Generate a consistent run ID for this configuration"""
-        iters_str: str = shorten_numerical_to_str(self.iters)
-        batch_str: str = shorten_numerical_to_str(self.batch_size)
-        n_str: str = shorten_numerical_to_str(self.n_batches)
-
-        return f"{self.task_name}-i_{iters_str}-b_{batch_str}-n_{n_str}-h_{self.stable_hash}"
+        return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
 
     @classmethod
     def from_file(cls, path: Path) -> "MergeRunConfig":
-        """Load config from JSON or YAML file."""
+        """Load config from JSON or YAML file.
+        
+        Handles legacy spd_exp: model_path format by converting to proper wandb paths.
+        """
         content: str = path.read_text()
 
         if path.suffix == ".json":
-            return cls.model_validate(json.loads(content))
+            data: dict[str, Any] = json.loads(content)
         elif path.suffix in [".yaml", ".yml"]:
-            return cls.model_validate(yaml.safe_load(content))
+            data = yaml.safe_load(content)
         else:
             raise ValueError(f"Unsupported file extension: {path.suffix}")
+
+        return cls.model_validate(data)
 
     def to_file(self, path: Path) -> None:
         """Save config to file (format inferred from extension)."""

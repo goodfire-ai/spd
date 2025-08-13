@@ -35,7 +35,6 @@ def run_clustering(
         config = MergeRunConfig.from_file(config)
 
     model_path: str = config.model_path
-    _task_name: TaskName = config.task_name_validated
 
     # get the dataset -- for ensembles, each instance of this script gets a different batch
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])

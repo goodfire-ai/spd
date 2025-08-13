@@ -30,7 +30,7 @@ MergeConfigKey = Literal[
     "merge_pair_sampling_kwargs",
     "pop_component_prob",
     "filter_dead_threshold",
-    "rank_cost_fn_name",
+    # "rank_cost_fn_name",
 ]
 
 
@@ -85,26 +85,26 @@ class MergeConfig(BaseModel):
     )
 
     # rank_cost_fn: Callable[[float], float] = lambda _: 1.0
-    rank_cost_fn_name: str = Field(
-        default="const_1",
-        description="Name of the rank cost function to use. Options: 'const_1', 'const_2', 'log', 'sqrt'.",
-    )
+    # rank_cost_fn_name: str = Field(
+    #     default="const_1",
+    #     description="Name of the rank cost function to use. Options: 'const_1', 'const_2', 'log', 'sqrt'.",
+    # )
 
-    @property
-    def rank_cost_fn(self) -> Callable[[float], float]:
-        """Get the rank cost function based on the name."""
-        if self.rank_cost_fn_name.startswith("const_"):
-            const_value: float = float(self.rank_cost_fn_name.split("_")[1])
-            return lambda _: const_value
-        elif self.rank_cost_fn_name == "log":
-            return lambda x: math.log(x + 1e-8)
-        elif self.rank_cost_fn_name == "linear":
-            return lambda x: x
-        else:
-            raise ValueError(
-                f"Unknown rank cost function: {self.rank_cost_fn_name}. "
-                "Options: 'const_{{value}}' where {{value}} is a float, 'log', 'linear'."
-            )
+    # @property
+    # def rank_cost_fn(self) -> Callable[[float], float]:
+    #     """Get the rank cost function based on the name."""
+    #     if self.rank_cost_fn_name.startswith("const_"):
+    #         const_value: float = float(self.rank_cost_fn_name.split("_")[1])
+    #         return lambda _: const_value
+    #     elif self.rank_cost_fn_name == "log":
+    #         return lambda x: math.log(x + 1e-8)
+    #     elif self.rank_cost_fn_name == "linear":
+    #         return lambda x: x
+    #     else:
+    #         raise ValueError(
+    #             f"Unknown rank cost function: {self.rank_cost_fn_name}. "
+    #             "Options: 'const_{{value}}' where {{value}} is a float, 'log', 'linear'."
+    #         )
 
     @property
     def merge_pair_sample_func(self) -> MergePairSampler:

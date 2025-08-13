@@ -209,7 +209,7 @@ def split_dataset(
         config = MergeRunConfig.from_file(config)
 
     model_path: str = config.model_path
-    task_name: TaskName = config.task_name_validated
+    task_name: TaskName = config.task_name
     n_batches: int = config.n_batches
     batch_size: int = config.batch_size
 
