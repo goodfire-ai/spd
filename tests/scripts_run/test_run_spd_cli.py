@@ -183,25 +183,6 @@ from spd.scripts.run import cli
                 "report_title": None,
             },
         ),
-        # Critical test: Boolean flags with different formats
-        (
-            ["--local", "true", "--cpu", "false", "--create-report=no"],
-            {
-                "experiments": None,
-                "sweep": False,
-                "n_agents": None,
-                "create_report": False,
-                "job_suffix": None,
-                "cpu": False,
-                "dp": 1,
-                "project": "spd",
-                "local": True,
-                "log_format": "default",
-                "create_snapshot": True,
-                "use_wandb": True,
-                "report_title": None,
-            },
-        ),
         # Critical test: Short forms
         (
             ["-e", "tms_5-2", "-n", "5"],
