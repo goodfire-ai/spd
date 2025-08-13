@@ -228,7 +228,7 @@ def cli():
         "--devices",
         "-d",
         type=str,
-        default="cuda:0",
+        default=None,
         help="comma-separated list of devices to use for clustering (e.g., 'cuda:0,cuda:1')",
     )
     parser.add_argument(
@@ -240,7 +240,12 @@ def cli():
     )
     args: argparse.Namespace = parser.parse_args()
 
-    devices: list[str] = args.devices.split(",")
+    devices: list[str]
+    if args.devices is None:
+        import torch
+        devices = ["cuda" if torch.cuda.is_available() else "cpu"]
+    else:
+        devices = args.devices.split(",")
 
     main(
         config=args.config,
