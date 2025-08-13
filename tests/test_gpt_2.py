@@ -1,7 +1,10 @@
+from transformers import PreTrainedModel
+
 from spd.configs import Config, EvalMetricConfig
+from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.run_spd import optimize
-from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
+from spd.utils.general_utils import resolve_class
 from spd.utils.general_utils import set_seed
 
 
@@ -70,13 +73,15 @@ def test_gpt_2_decomposition_happy_path() -> None:
             task_name="lm",
             max_seq_len=16,
             buffer_size=1000,
-            dataset_name="roneneldan/TinyStories,
+            dataset_name="roneneldan/TinyStories",
             column_name="text",
-            train_data_split="train[:100]"
-            eval_data_split="validation[:100]"
-        ),
+            train_data_split="train[:100]",
+            eval_data_split="validation[:100]",
+        )
     )
 
+    assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
+    
     # Create a GPT-2 model
     hf_model_class = resolve_class(config.pretrained_model_class)
     assert issubclass(hf_model_class, PreTrainedModel), (
