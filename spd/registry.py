@@ -82,13 +82,13 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         expected_runtime=60,
         canonical_run="wandb:goodfire/spd/runs/xawvyhq3",  # A few imperfections in layers 0 and 1
     ),
-    "ss_mlp": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_mlp_config.yaml"),
-        expected_runtime=30,
-        canonical_run="UNKNOWN",
-    ),
+    # "ss_mlp": ExperimentConfig(
+    #     task_name="lm",
+    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+    #     config_path=Path("spd/experiments/lm/ss_mlp_config.yaml"),
+    #     expected_runtime=30,
+    #     canonical_run="UNKNOWN",
+    # ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",
     #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
