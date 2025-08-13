@@ -122,8 +122,8 @@ def main(
         raise TypeError("devices must be a string or a list of strings")
 
     # saving some info
-    merge_run_id: str = merge_run_config.run_id
-    run_path: Path = base_path / merge_run_id
+    merge_run_config_id: str = merge_run_config.config_identifier
+    run_path: Path = base_path / merge_run_config_id
     run_path.mkdir(parents=True, exist_ok=True)
     figures_path: Path = run_path / "figures"
     figures_path.mkdir(parents=True, exist_ok=True)
@@ -137,7 +137,7 @@ def main(
                 max_concurrency=max_concurrency,
                 plot=plot,
                 repo_root=str(REPO_ROOT),
-                run_id=merge_run_id,
+                run_id=merge_run_config_id,
                 run_path=str(run_path),
             ),
             indent="\t",

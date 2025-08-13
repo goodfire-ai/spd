@@ -67,25 +67,6 @@ class MergeRunConfig(MergeConfig):
             f"Invalid task_name: {self.task_name = }, must be in {TaskName.__args__ = }"
         )
         return self
-    
-    @classmethod
-    def from_experiment_key(cls, experiment_key: TaskName, **kwargs: Any) -> "MergeRunConfig":
-        """Create config from experiment registry key.
-        
-        Args:
-            experiment_key: Key from EXPERIMENT_REGISTRY (e.g., 'tms_5-2')
-            **kwargs: Additional config parameters to override defaults
-        
-        Returns:
-            MergeRunConfig with model_path and task_name from registry
-        """
-        exp_config: ExperimentConfig = EXPERIMENT_REGISTRY[experiment_key]
-        return cls(
-            model_path=exp_config.canonical_run,
-            task_name=exp_config.task_name,
-            experiment_key=experiment_key,
-            **kwargs,
-        )
 
     @property
     def wandb_decomp_model(self) -> str:
@@ -127,16 +108,36 @@ class MergeRunConfig(MergeConfig):
     def from_file(cls, path: Path) -> "MergeRunConfig":
         """Load config from JSON or YAML file.
         
-        Handles legacy spd_exp: model_path format by converting to proper wandb paths.
+        Handles legacy spd_exp: model_path format and enforces consistency.
         """
+        # read the file contents, load them according to extension
         content: str = path.read_text()
-
+        data: dict[str, Any]
         if path.suffix == ".json":
-            data: dict[str, Any] = json.loads(content)
+            data = json.loads(content)
         elif path.suffix in [".yaml", ".yml"]:
             data = yaml.safe_load(content)
         else:
             raise ValueError(f"Unsupported file extension: {path.suffix}")
+        
+        # if we provide an experiment_key, then:
+        # 1. use the `EXPERIMENT_REGISTRY` to fill in model_path and task_name
+        # 2. check it's consistent with model_path and task_name from the file if those are provided
+        experiment_key: str | None = data.get("experiment_key")
+        model_path: str | None = data.get("model_path")
+        task_name: str | None = data.get("task_name")
+        if experiment_key is not None:
+            exp_config: ExperimentConfig = EXPERIMENT_REGISTRY[experiment_key]
+            
+            # Enforce consistency if explicit fields present
+            if model_path is not None:
+                assert model_path == exp_config.canonical_run, f"Inconsistent model_path for {experiment_key}, version from file ({model_path}) does not match registry ({exp_config.canonical_run})"
+            if task_name is not None:
+                assert task_name == exp_config.task_name, f"Inconsistent task_name for {experiment_key}, version from file ({task_name}) does not match registry ({exp_config.task_name})"
+
+            # overwrite in data dict
+            data["model_path"] = exp_config.canonical_run
+            data["task_name"] = exp_config.task_name
 
         return cls.model_validate(data)
 

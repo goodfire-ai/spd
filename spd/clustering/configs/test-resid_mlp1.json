@@ -8,8 +8,7 @@
   "filter_dead_threshold": 0.1,
   "module_name_filter": null,
   "rank_cost_fn_name": "const_1",
-  "model_path": "spd_exp:resid_mlp1",
-  "task_name": null,
+  "experiment_key": "resid_mlp1",
   "n_batches": 4,
   "batch_size": 4
 }

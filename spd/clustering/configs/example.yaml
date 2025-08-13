@@ -13,7 +13,14 @@ module_name_filter: null  # Can be a string prefix like "model.layers.0." if you
 rank_cost_fn_name: const_1  # Options: const_1, const_2, log, linear
 
 # Run configuration
-model_path: wandb:goodfire/spd/runs/ioprgffh  # this can be a wandb path (then we assume it's an lm decomposition). can also be `spd_exp:<experiment_name>` to do one of the caonical runs, see the keys in `EXPERIMENT_REGISTRY`
-task_name: null  # Will be inferred from model_path if its an experiment in the registry, assumed to be "lm" if none, or specify explicitly
+model_path: wandb:goodfire/spd/runs/ioprgffh  # WandB path to the decomposed model
+task_name: lm  # Task name (must be explicit: tms, resid_mlp, lm, ih)
+# experiment_key: tms_5-2  # Alternative: use experiment key from EXPERIMENT_REGISTRY
 n_batches: 10  # Ensemble size
 batch_size: 64  # Batch size for processing -- number of samples for each run in the ensemble
+
+# WandB configuration
+wandb_enabled: false  # Enable WandB logging
+wandb_project: spd-cluster  # WandB project name
+wandb_log_frequency: 1  # Log every N iterations
+wandb_artifact_frequency: 100  # Save artifacts every N iterations

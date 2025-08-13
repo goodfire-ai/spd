@@ -39,7 +39,7 @@ def run_clustering(
     # get the dataset -- for ensembles, each instance of this script gets a different batch
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
 
-    this_merge_path: Path = save_dir / f"{config.run_id}-data_{dataset_path.stem}"
+    this_merge_path: Path = save_dir / f"{config.config_identifier}-data_{dataset_path.stem}"
     this_merge_figs: Path = Path(this_merge_path.as_posix() + "_plots/")
     if plot:
         this_merge_figs.mkdir(parents=True, exist_ok=True)

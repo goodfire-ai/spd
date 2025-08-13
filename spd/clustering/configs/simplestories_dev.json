@@ -9,7 +9,7 @@
   "module_name_filter": "model.layers.0",
   "rank_cost_fn_name": "const_1",
   "model_path": "wandb:goodfire/spd/runs/ioprgffh",
-  "task_name": null,
+  "task_name": "lm",
   "n_batches": 4,
   "batch_size": 1
 }
