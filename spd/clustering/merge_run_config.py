@@ -22,7 +22,6 @@ class MergeRunConfig(MergeConfig):
     """
 
     model_path: str = Field(
-        default="wandb:goodfire/spd/runs/ioprgffh",
         description="Path to the model (e.g., wandb run ID or spd_exp: key)",
     )
     task_name: TaskName | None = Field(

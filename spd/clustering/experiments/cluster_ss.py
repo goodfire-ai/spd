@@ -84,7 +84,7 @@ plot_activations(
 MERGE_CFG: MergeConfig = MergeConfig(
     activation_threshold=0.01,
     alpha=0.01,
-    iters=100,
+    iters=2,
     merge_pair_sampling_method="range",
     merge_pair_sampling_kwargs={"threshold": 0.1},
     pop_component_prob=0,

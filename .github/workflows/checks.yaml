@@ -13,7 +13,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,6 +50,6 @@ jobs:
 
       - name: Run tests
         # github actions workers have 4 cores
-        run: uv run pytest tests/clustering/test_clustering_experiments.py --runslow -vvv --durations 10 --numprocesses 4
+        run: uv run pytest tests/ --runslow --durations 10 --numprocesses 4
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}

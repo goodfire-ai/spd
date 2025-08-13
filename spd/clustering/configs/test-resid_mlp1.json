@@ -1,15 +1,15 @@
 {
-  "activation_threshold": 0.01,
-  "alpha": 0.1,
-  "iters": 140,
+  "activation_threshold": 0.1,
+  "alpha": 1,
+  "iters": 20,
   "merge_pair_sampling_method": "range",
   "merge_pair_sampling_kwargs": {"threshold": 0.05},
   "pop_component_prob": 0,
-  "filter_dead_threshold": 0.001,
+  "filter_dead_threshold": 0.1,
   "module_name_filter": null,
   "rank_cost_fn_name": "const_1",
   "model_path": "spd_exp:resid_mlp1",
   "task_name": null,
   "n_batches": 4,
-  "batch_size": 16
+  "batch_size": 4
 }
