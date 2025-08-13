@@ -166,7 +166,7 @@ class Config(BaseModel):
     )
     p_anneal_end_frac: Probability = Field(
         default=1.0,
-        description="Fraction of training to end annealing (default 1.0 = anneal until end)",
+        description="Fraction of training when annealing ends. We stay at the final p value from this point onward (default 1.0 = anneal until end)",
     )
     output_loss_type: Literal["mse", "kl"] = Field(
         ...,

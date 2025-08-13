@@ -361,9 +361,9 @@ def get_linear_annealed_p(
         step: Current training step
         steps: Total number of training steps
         initial_p: Starting p value
-        p_anneal_start_frac: Fraction of training to start annealing
-        p_anneal_final_p: Target p value to anneal to
-        p_anneal_end_frac: Fraction of training to end annealing
+        p_anneal_start_frac: Fraction of training after which to start annealing
+        p_anneal_final_p: Final p value to anneal to
+        p_anneal_end_frac: Fraction of training when annealing ends. We stay at the final p value from this point onward
 
     Returns:
         Current p value based on linear annealing schedule
