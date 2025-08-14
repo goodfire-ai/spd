@@ -26,7 +26,7 @@ import tempfile
 from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import yaml
 
@@ -34,7 +34,7 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import apply_nested_updates, format_function_docstring, load_config
+from spd.utils.general_utils import apply_nested_updates, load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
 from spd.utils.wandb_utils import wandb_setup
@@ -354,38 +354,6 @@ def _validate_dp(dp: int, experiments_list: list[str], local: bool, cpu: bool) -
         raise ValueError("Can't have both dp > 1 and cpu")
 
 
-SPD_RUN_EXAMPLES = """
-Examples:
-    # Run subset of experiments locally
-    spd-run --experiments tms_5-2,resid_mlp1 --local
-
-    # Run parameter sweep locally
-    spd-run --experiments tms_5-2 --sweep --local
-
-    # Run subset of experiments (no sweep)
-    spd-run --experiments tms_5-2,resid_mlp1
-
-    # Run parameter sweep on a subset of experiments with default sweep_params.yaml
-    spd-run --experiments tms_5-2,resid_mlp2 --sweep
-
-    # Run parameter sweep on an experiment with custom sweep params at spd/scripts/my_sweep.yaml
-    spd-run --experiments tms_5-2 --sweep my_sweep.yaml
-
-    # Run all experiments (no sweep)
-    spd-run
-
-    # Use custom W&B project
-    spd-run --experiments tms_5-2 --project my-spd-project
-
-    # Run all experiments on CPU
-    spd-run --experiments tms_5-2 --cpu
-
-    # Run with data parallelism over 4 GPUs (only supported for lm experiments)
-    spd-run --experiments ss_mlp --dp 4
-"""
-
-
-@format_function_docstring(dict(spd_run_examples=SPD_RUN_EXAMPLES))
 def main(
     experiments: str | None = None,
     sweep: str | bool = False,
@@ -426,7 +394,6 @@ def main(
             If set to false, `create_report` must also be false.
         report_title: Title for the W&B report (default: None). Will be generated if not provided.
 
-    {spd_run_examples}
     """
     # setup
     # ==========================================================================================
@@ -542,13 +509,44 @@ def main(
             )
 
 
+_SPD_RUN_EXAMPLES: Final[str] = """
+Examples:
+    # Run subset of experiments locally
+    spd-run --experiments tms_5-2,resid_mlp1 --local
+
+    # Run parameter sweep locally
+    spd-run --experiments tms_5-2 --sweep --local
+
+    # Run subset of experiments (no sweep)
+    spd-run --experiments tms_5-2,resid_mlp1
+
+    # Run parameter sweep on a subset of experiments with default sweep_params.yaml
+    spd-run --experiments tms_5-2,resid_mlp2 --sweep
+
+    # Run parameter sweep on an experiment with custom sweep params at spd/scripts/my_sweep.yaml
+    spd-run --experiments tms_5-2 --sweep my_sweep.yaml
+
+    # Run all experiments (no sweep)
+    spd-run
+
+    # Use custom W&B project
+    spd-run --experiments tms_5-2 --project my-spd-project
+
+    # Run all experiments on CPU
+    spd-run --experiments tms_5-2 --cpu
+
+    # Run with data parallelism over 4 GPUs (only supported for lm experiments)
+    spd-run --experiments ss_llama --dp 4
+"""
+
+
 def cli():
     """Command line interface."""
     parser = argparse.ArgumentParser(
         prog="spd-run",
         description="SPD runner for experiments with optional parameter sweeps.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=SPD_RUN_EXAMPLES,
+        epilog=_SPD_RUN_EXAMPLES,
     )
 
     # main arguments
