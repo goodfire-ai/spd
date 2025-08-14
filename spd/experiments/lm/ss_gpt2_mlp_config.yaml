@@ -1,4 +1,4 @@
-# --- WandB ---Add a comment on line R1Add diff commentMarkdown input: edit mode selected.WritePreviewAdd a suggestionHeadingBoldItalicQuoteCodeLinkUnordered listNumbered listTask listMentionReferenceSaved repliesAdd FilesPaste, drop, or click to add filesCancelCommentStart a review
+# --- WandB ---
 wandb_project: spd
 # wandb_project: null
 wandb_run_name: null
@@ -9,9 +9,9 @@ seed: 0
 C: 4000
 n_mask_samples: 1
 gate_type: "vector_mlp"
-gate_hidden_dims: [64]
+gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["model.layers.0.mlp.gate_proj"]
+target_module_patterns: ["transformer.h.1.mlp.c_fc"]
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1e3
@@ -27,7 +27,7 @@ pnorm: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 128
+batch_size: 48
 steps: 50_000
 lr: 3e-4
 lr_schedule: cosine
@@ -55,10 +55,10 @@ eval_metrics:
       rounding_threshold: 0.0
 
 # --- Pretrained model info ---
-pretrained_model_class: transformers.LlamaForCausalLM
-pretrained_model_name_hf: SimpleStories/SimpleStories-1.25M
+pretrained_model_class: transformers.GPT2LMHeadModel
+pretrained_model_name_hf: SimpleStories/test-SimpleStories-gpt2-1.25M
 pretrained_model_output_attr: logits
-tokenizer_name: SimpleStories/SimpleStories-1.25M
+tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 
 # --- Task Specific ---
 task_config:
