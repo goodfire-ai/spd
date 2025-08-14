@@ -57,9 +57,10 @@ def test_gpt_2_decomposition_happy_path() -> None:
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
         eval_metrics=[
-            EvalMetricConfig(classname="CIHistograms"),
+            EvalMetricConfig(classname="CIHistograms", extra_init_kwargs={"n_batches_accum": 5}),
             EvalMetricConfig(classname="ComponentActivationDensity"),
             EvalMetricConfig(classname="CI_L0"),
+            EvalMetricConfig(classname="CEandKLLosses", extra_init_kwargs={"rounding_threshold": 0.0})
         ],
         # Pretrained model info
         pretrained_model_class="transformers.GPT2LMHeadModel",
