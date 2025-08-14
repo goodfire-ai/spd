@@ -68,6 +68,10 @@ class EvalMetricConfig(BaseModel):
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
+# TODO: this is temporary, remove it later
+IGNORE_DEPRECATED_CONFIG_WARNINGS: bool = True
+
+
 class Config(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     # --- WandB
@@ -296,10 +300,14 @@ class Config(BaseModel):
         for key in list(config_dict.keys()):
             val = config_dict[key]
             if key in cls.DEPRECATED_CONFIG_KEYS:
-                logger.warning(f"{key} is deprecated, but has value: {val}. Removing from config.")
+                if not IGNORE_DEPRECATED_CONFIG_WARNINGS:
+                    logger.warning(
+                        f"{key} is deprecated, but has value: {val}. Removing from config."
+                    )
                 del config_dict[key]
             elif key in cls.RENAMED_CONFIG_KEYS:
-                logger.info(f"Renaming {key} to {cls.RENAMED_CONFIG_KEYS[key]}")
+                if not IGNORE_DEPRECATED_CONFIG_WARNINGS:
+                    logger.info(f"Renaming {key} to {cls.RENAMED_CONFIG_KEYS[key]}")
                 config_dict[cls.RENAMED_CONFIG_KEYS[key]] = val
                 del config_dict[key]
 
