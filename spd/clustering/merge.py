@@ -25,13 +25,14 @@ from spd.utils.wandb_tensor_info import wandb_log_tensor
 
 def merge_iteration(
     activations: Float[Tensor, "samples c_components"],
-    merge_config: MergeConfig | MergeRunConfig,
+    merge_config: MergeRunConfig,
     component_labels: list[str],
     initial_merge: GroupMerge | None = None,
     sweep_params: dict[str, Any] | None = None,
     plot_function: Callable[..., None] | None = None,
     wandb_run: wandb.sdk.wandb_run.Run | None = None,
     prefix: str = "",
+    artifact_callback: Callable[[MergeHistory, int], None] | None = None,
 ) -> MergeHistory:
     # setup
     # ==================================================
@@ -150,8 +151,7 @@ def merge_iteration(
         )
 
         # Log to WandB if enabled
-        wandb_log_freq: int = getattr(merge_config, "wandb_log_frequency", 1)
-        if wandb_run is not None and i % wandb_log_freq == 0:
+        if wandb_run is not None and i % merge_config.wandb_log_frequency == 0:
             wandb_log_tensor(
                 wandb_run,
                 dict(
@@ -170,6 +170,10 @@ def merge_iteration(
                     "iteration": i,
                 }
             )
+        
+        # Call artifact callback periodically for saving group_idxs
+        if artifact_callback is not None and i > 0 and i % merge_config.wandb_artifact_frequency == 0:
+            artifact_callback(merge_history, i)
 
         # merge the pair
         # --------------------------------------------------

@@ -1,5 +1,7 @@
 # %%
 
+import functools
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,38 @@ def log(message: str) -> None:
     print(f"\033[38;5;208m[{_BATCH_ID}]\033[0m {message}")
 
 
+def save_group_idxs_artifact(
+    merge_hist: MergeHistory,
+    iteration: int,
+    wandb_run: wandb.sdk.wandb_run.Run,
+    save_dir: Path,
+    dataset_stem: str,
+    config_identifier: str,
+) -> None:
+    """Save group_idxs to file and upload as WandB artifact periodically."""
+    # Extract group_idxs up to current iteration
+    current_group_idxs = merge_hist.merges.group_idxs[:iteration+1].cpu().numpy()
+    
+    # Save to file in the same directory as merge history
+    group_idxs_path = save_dir / f"{config_identifier}-d_{dataset_stem}.i{iteration}.group_idxs.npy"
+    np.save(group_idxs_path, current_group_idxs)
+    
+    # Create and upload artifact
+    artifact = wandb.Artifact(
+        name=f"group_idxs_{dataset_stem}_iter_{iteration}",
+        type="group_idxs",
+        description=f"Group indices for batch {dataset_stem} at iteration {iteration}",
+        metadata={
+            "batch_name": dataset_stem,
+            "iteration": iteration,
+            "shape": list(current_group_idxs.shape),
+        },
+    )
+    artifact.add_file(str(group_idxs_path))
+    wandb_run.log_artifact(artifact)
+    log(f"Uploaded group_idxs artifact for iteration {iteration}")
+
+
 def run_clustering(
     config: MergeRunConfig | Path,
     dataset_path: Path,
@@ -44,10 +78,13 @@ def run_clustering(
     sort_components: bool = False,
 ) -> Path:
     # Load config
-    if isinstance(config, Path):
-        config = MergeRunConfig.from_file(config)
+    config_: MergeRunConfig
+    if isinstance(config, Path):  # noqa: SIM108
+        config_ = MergeRunConfig.from_file(config)
+    else:
+        config_ = config
 
-    model_path: str = config.model_path
+    model_path: str = config_.model_path
 
     # Extract batch ID from dataset filename (e.g., "batch_01.npz" -> "01")
     global _BATCH_ID
@@ -57,25 +94,25 @@ def run_clustering(
 
     # Initialize WandB run if enabled
     wandb_run: wandb.sdk.wandb_run.Run | None = None
-    if config.wandb_enabled:
+    if config_.wandb_enabled:
         wandb_run = wandb.init(
-            project=config.wandb_project,
-            name=f"{config.config_identifier}-{dataset_path.stem}",
-            group=config.wandb_group,
-            config=config.model_dump_with_properties(),
+            project=config_.wandb_project,
+            name=f"{config_.config_identifier}-{dataset_path.stem}",
+            group=config_.wandb_group,
+            config=config_.model_dump_with_properties(),
             tags=[
-                f"model:{config.wandb_decomp_model}",
-                f"task:{config.task_name}",
+                f"model:{config_.wandb_decomp_model}",
+                f"task:{config_.task_name}",
                 f"batch:{dataset_path.stem}",
-                f"config:{config.config_identifier}",
+                f"config:{config_.config_identifier}",
             ],
         )
-        log(f"Initialized WandB run: {wandb_run.name} in group {config.wandb_group}")
+        log(f"Initialized WandB run: {wandb_run.name} in group {config_.wandb_group}")
 
     # get the dataset -- for ensembles, each instance of this script gets a different batch
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
 
-    this_merge_path: Path = save_dir / f"{config.config_identifier}-data_{dataset_path.stem}"
+    this_merge_path: Path = save_dir / f"{config_.config_identifier}-data_{dataset_path.stem}"
     this_merge_figs: Path = Path(this_merge_path.as_posix() + "_plots/")
     if plot:
         this_merge_figs.mkdir(parents=True, exist_ok=True)
@@ -103,9 +140,9 @@ def run_clustering(
     # 3. computing coactivations
     processed_activations: dict[str, Any] = process_activations(
         component_acts,
-        filter_dead_threshold=config.filter_dead_threshold,
-        seq_mode="concat" if config.task_name == "lm" else None,
-        filter_modules=config.filter_modules,
+        filter_dead_threshold=config_.filter_dead_threshold,
+        seq_mode="concat" if config_.task_name == "lm" else None,
+        filter_modules=config_.filter_modules,
         sort_components=sort_components,
     )
 
@@ -125,13 +162,25 @@ def run_clustering(
             log=log,
         )
 
+    # Create artifact callback if wandb is enabled
+    artifact_callback: Callable[[MergeHistory, int], None] | None = None
+    if wandb_run is not None:
+        artifact_callback = functools.partial(
+            save_group_idxs_artifact,
+            wandb_run=wandb_run,
+            save_dir=save_dir,
+            dataset_stem=dataset_path.stem,
+            config_identifier=config_.config_identifier,
+        )
+    
     # run the merge iteration
     merge_history: MergeHistory = merge_iteration(
         activations=processed_activations["activations"],
-        merge_config=config,  # Pass full MergeRunConfig to access wandb_log_frequency
+        merge_config=config_,  # Pass full MergeRunConfig to access wandb_log_frequency
         component_labels=processed_activations["labels"],
         wandb_run=wandb_run,
         prefix=f"\033[38;5;208m[{_BATCH_ID}]\033[0m",
+        artifact_callback=artifact_callback,
     )
 
     # save the merge iteration
@@ -145,20 +194,34 @@ def run_clustering(
     ZANJ().save(merge_history_serialized, hist_save_path)
     log(f"Merge history saved to {hist_save_path}")
 
+    # Save WandB URL to file
+    if wandb_run is not None:
+        wburl_path = hist_save_path.with_suffix(".wburl")
+        if wandb_run.url:
+            wburl_path.write_text(wandb_run.url)
+            log(f"WandB URL saved to {wburl_path}")
+
     # Save merge history as WandB artifact
     if wandb_run is not None:
+        # Save the group_idxs as a numpy array first
+        group_idxs_path = hist_save_path.with_suffix(".group_idxs.npy")
+        np.save(group_idxs_path, merge_history.merges.group_idxs.cpu().numpy())
+        
         artifact = wandb.Artifact(
             name=f"merge_history_{dataset_path.stem}",
             type="merge_history",
             description=f"Merge history for batch {dataset_path.stem}",
             metadata={
                 "batch_name": dataset_path.stem,
-                "config_identifier": config.config_identifier,
+                "config_identifier": config_.config_identifier,
                 "n_iters_current": merge_history.n_iters_current,
             },
         )
+        # Add both files before logging the artifact
         artifact.add_file(str(hist_save_path))
+        artifact.add_file(str(group_idxs_path))
         wandb_run.log_artifact(artifact)
+        log(f"Group indices saved and added to artifact: {group_idxs_path}")
 
     if plot:
         plot_merge_history_cluster_sizes(

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import wandb
 from zanj import ZANJ
 
 from spd.clustering.math.merge_distances import MergesArray
@@ -13,29 +14,92 @@ from spd.settings import REPO_ROOT
 # pyright: reportUnnecessaryIsInstance=false
 
 
-def load_merge_histories(
-    path: list[Path] | str,
-) -> tuple[list[Path], MergeHistoryEnsemble]:
-    """Load merge histories from a list of paths or a path format with wildcards"""
-    paths_: list[Path]
-    if isinstance(path, str):
-        paths_ = list(Path(path).glob("*.zanj"))
-    elif isinstance(path, list):
-        paths_ = path
+def load_merge_histories_from_wandb(
+    wandb_urls: list[str],
+) -> tuple[list[str], MergeHistoryEnsemble]:
+    """Load merge histories from WandB run URLs"""
+    api = wandb.Api()
+    data: list[MergeHistory] = []
+    
+    for url in wandb_urls:
+        # Parse URL format: wandb:entity/project/run_id or full URL
+        run_path: str
+        if url.startswith("wandb:"):
+            run_path = url.replace("wandb:", "")
+        else:
+            # Extract run path from full URL
+            # e.g. https://wandb.ai/entity/project/runs/run_id -> entity/project/run_id
+            parts: list[str] = url.split("/")
+            if "runs" in parts:
+                run_idx: int = parts.index("runs") + 1
+                run_path = f"{parts[run_idx-3]}/{parts[run_idx-2]}/{parts[run_idx]}"
+            else:
+                raise ValueError(f"Cannot parse WandB URL: {url}")
+        
+        run = api.run(run_path)
+        
+        # Find and download merge history artifact
+        artifacts = run.logged_artifacts()
+        merge_history_artifact = None
+        for artifact in artifacts:
+            if artifact.type == "merge_history":
+                merge_history_artifact = artifact
+                break
+        
+        if merge_history_artifact is None:
+            raise ValueError(f"No merge_history artifact found for run {run_path}")
+        
+        # Download the artifact to a cache directory
+        artifact_dir: str = merge_history_artifact.download(root=str(REPO_ROOT / "wandb_cache"))
+        
+        # Find the .zanj file in the downloaded artifact
+        zanj_files: list[Path] = list(Path(artifact_dir).glob("*.zanj"))
+        if not zanj_files:
+            raise ValueError(f"No .zanj file found in artifact for run {run_path}")
+        
+        # Load the merge history
+        merge_history: MergeHistory = ZANJ().read(zanj_files[0])
+        data.append(merge_history)
+    
+    ensemble = MergeHistoryEnsemble(data=data)
+    return wandb_urls, ensemble
 
-    data: list[MergeHistory] = [ZANJ().read(p) for p in paths_]
-    ensemble: MergeHistoryEnsemble = MergeHistoryEnsemble(data=data)
-    return paths_, ensemble
+
+def load_merge_histories(
+    path: list[Path] | list[str] | str,
+) -> tuple[list[Path] | list[str], MergeHistoryEnsemble]:
+    """Load merge histories from a list of paths, WandB URLs, or a path format with wildcards"""
+    if isinstance(path, str):
+        # Single path with wildcards
+        paths_: list[Path] = list(Path(path).glob("*.zanj"))
+        data: list[MergeHistory] = [ZANJ().read(p) for p in paths_]
+        ensemble: MergeHistoryEnsemble = MergeHistoryEnsemble(data=data)
+        return paths_, ensemble
+    elif isinstance(path, list):
+        if all(isinstance(p, Path) for p in path):
+            # List of file paths
+            paths_paths: list[Path] = path  # type: ignore
+            data = [ZANJ().read(p) for p in paths_paths]
+            ensemble = MergeHistoryEnsemble(data=data)
+            return paths_paths, ensemble
+        elif all(isinstance(p, str) and (p.startswith("wandb:") or "wandb.ai" in p) for p in path):
+            # List of WandB URLs
+            wandb_urls: list[str] = path  # type: ignore
+            return load_merge_histories_from_wandb(wandb_urls)
+        else:
+            raise ValueError("Mixed or unsupported path types in list")
+    else:
+        raise ValueError(f"Unsupported path type: {type(path)}")
 
 
 def normalize_histories(
-    histories: list[Path] | str,
+    histories: list[Path] | list[str] | str,
     run_dir: Path,
 ) -> dict[str, Any]:
     """Main function to load merge histories and compute distances"""
-    # get the histories from paths
+    # get the histories from paths or URLs
     ensemble: MergeHistoryEnsemble
-    paths: list[Path]
+    paths: list[Path] | list[str]
     paths, ensemble = load_merge_histories(histories)
 
     # normalize

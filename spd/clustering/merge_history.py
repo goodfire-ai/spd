@@ -98,9 +98,11 @@ class MergeHistory(SerializableDataclass):
         default=None,
     )
     "Sweep parameters if used in sweep"
-
-    wandb_url: str | None = serializable_field(default=None)
-    "WandB URL for this run, if available"
+    
+    wandb_url: str | None = serializable_field(
+        default=None,
+    )
+    "WandB run URL if logged to WandB"
 
     @classmethod
     def from_config(

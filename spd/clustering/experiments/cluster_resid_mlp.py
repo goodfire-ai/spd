@@ -109,7 +109,6 @@ MERGE_CFG: MergeConfig = MergeConfig(
     merge_pair_sampling_kwargs={"threshold": 0.0},
     pop_component_prob=0,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
-    rank_cost_fn_name="const_1",
 )
 
 
