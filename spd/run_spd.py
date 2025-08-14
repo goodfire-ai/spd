@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import Config
+from spd.data import loop_dataloader
 from spd.eval import evaluate
 from spd.log import logger
 from spd.losses import calculate_losses
@@ -58,17 +59,6 @@ def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path)
 
     with open(metrics_file, "a") as f:
         f.write(json.dumps({"step": step, **metrics_without_images}) + "\n")
-
-
-def loop_dataloader[T](dl: DataLoader[T]):
-    dl_iter = iter(dl)
-    while True:
-        try:
-            yield next(dl_iter)
-        except StopIteration:
-            logger.warning("Dataloader exhausted, resetting iterator.")
-            dl_iter = iter(dl)
-            yield next(dl_iter)
 
 
 def optimize(

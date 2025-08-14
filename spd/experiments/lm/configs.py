@@ -33,3 +33,8 @@ class LMTaskConfig(BaseModel):
         default="test",
         description="Name of the dataset split used for evaluation",
     )
+    shuffle_each_epoch: bool = Field(
+        default=True,
+        description="Whether to reshuffle data at each epoch. Set False in tests to keep fixed "
+        "order across dp modes.",
+    )
