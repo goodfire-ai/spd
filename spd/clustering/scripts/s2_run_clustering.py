@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 import torch
+import wandb
 from jaxtyping import Int
 from muutils.dbg import dbg_auto
 from torch import Tensor
@@ -15,8 +16,10 @@ from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_history_costs
+from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
+from spd.utils.wandb_tensor_info import wandb_log_tensor
 
 # pyright: reportUnnecessaryIsInstance=false, reportUnreachable=false
 
@@ -34,6 +37,23 @@ def run_clustering(
         config = MergeRunConfig.from_file(config)
 
     model_path: str = config.model_path
+
+    # Initialize WandB run if enabled
+    wandb_run: wandb.sdk.wandb_run.Run | None = None
+    if config.wandb_enabled:
+        wandb_run = wandb.init(
+            project=config.wandb_project,
+            name=f"batch_{dataset_path.stem}",
+            group=config.wandb_group,
+            config=config.model_dump_with_properties(),
+            tags=[
+                f"model:{config.wandb_decomp_model}",
+                f"task:{config.task_name}",
+                f"batch:{dataset_path.stem}",
+                f"config:{config.config_identifier}",
+            ],
+        )
+        logger.info(f"Initialized WandB run: {wandb_run.name} in group {config.wandb_group}")
 
     # get the dataset -- for ensembles, each instance of this script gets a different batch
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
@@ -58,7 +78,8 @@ def run_clustering(
         sigmoid_type="hard",
     )
 
-    dbg_auto(component_acts)
+    # TODO: Consider adding fallback to dbg_tensor if wandb_run is None
+    wandb_log_tensor(wandb_run, component_acts, "component_activations", step=0)
     # process the activations by:
     # 1. filtering out dead components
     # 2. concatenating the activations across the sequence
@@ -94,8 +115,9 @@ def run_clustering(
     # run the merge iteration
     merge_history: MergeHistory = merge_iteration(
         activations=processed_activations["activations"],
-        merge_config=config.to_merge_config(),
+        merge_config=config,  # Pass full MergeRunConfig to access wandb_log_frequency
         component_labels=processed_activations["labels"],
+        wandb_run=wandb_run,
     )
 
     # save the merge iteration
@@ -103,7 +125,9 @@ def run_clustering(
     print(f"Saving merge history to {hist_save_path}")
 
     merge_history_serialized: dict[str, Any] = merge_history.serialize()
-    dbg_auto(merge_history_serialized)
+    # TODO: Consider adding fallback to dbg_auto if wandb_run is None  
+    # For now we skip logging merge_history_serialized as it's large and complex
+    # dbg_auto(merge_history_serialized)
 
     ZANJ().save(merge_history_serialized, hist_save_path)
     print(f"Merge history saved to {hist_save_path}")
@@ -117,6 +141,11 @@ def run_clustering(
             history=merge_history,
             file_prefix=(this_merge_figs / "merge").as_posix(),
         )
+
+    # Finish WandB run
+    if wandb_run is not None:
+        wandb_run.finish()
+        logger.info("Finished WandB run")
 
     return hist_save_path
 

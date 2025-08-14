@@ -165,3 +165,17 @@ class MergeRunConfig(MergeConfig):
     def to_merge_config(self) -> MergeConfig:
         """Extract the base MergeConfig from this instance."""
         return MergeConfig(**{field: getattr(self, field) for field in MergeConfig.model_fields})
+
+    def model_dump_with_properties(self) -> dict[str, Any]:
+        """Serialize config including computed properties for WandB logging."""
+        base_dump: dict[str, Any] = self.model_dump()
+        
+        # Add computed properties
+        base_dump.update({
+            "wandb_decomp_model": self.wandb_decomp_model,
+            "wandb_group": self.wandb_group,
+            "config_identifier": self.config_identifier,
+            "stable_hash": self.stable_hash,
+        })
+        
+        return base_dump

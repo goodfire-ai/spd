@@ -6,6 +6,7 @@ from typing import Any
 
 import torch
 import tqdm
+import wandb
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
@@ -17,15 +18,18 @@ from spd.clustering.compute_costs import (
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
+from spd.clustering.merge_run_config import MergeRunConfig
+from spd.utils.wandb_tensor_info import wandb_log_tensor
 
 
 def merge_iteration(
     activations: Float[Tensor, "samples c_components"],
-    merge_config: MergeConfig,
+    merge_config: MergeConfig | MergeRunConfig,
     component_labels: list[str],
     initial_merge: GroupMerge | None = None,
     sweep_params: dict[str, Any] | None = None,
     plot_function: Callable[..., None] | None = None,
+    wandb_run: wandb.sdk.wandb_run.Run | None = None,
 ) -> MergeHistory:
     # setup
     # ==================================================
@@ -138,6 +142,25 @@ def merge_iteration(
             k_groups=k_groups,
             current_merge=current_merge,
         )
+
+        # Log to WandB if enabled
+        wandb_log_freq: int = getattr(merge_config, 'wandb_log_frequency', 1)
+        if wandb_run is not None and i % wandb_log_freq == 0:
+            # Log coactivation matrix stats
+            wandb_log_tensor(
+                wandb_run,
+                current_coact,
+                "coactivation",
+                step=i,
+            )
+            
+            # Log cost matrix stats
+            wandb_log_tensor(
+                wandb_run,
+                costs,
+                "costs",
+                step=i,
+            )
 
         # merge the pair
         # --------------------------------------------------

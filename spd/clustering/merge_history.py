@@ -355,6 +355,8 @@ class MergeHistoryEnsemble:
                     dtype=np.int16,
                 )
 
+        # TODO: Consider logging overlap_stats to WandB if run is available
+        # For now, keep using dbg_tensor for overlap_stats analysis
         dbg_tensor(overlap_stats)
 
         return (
