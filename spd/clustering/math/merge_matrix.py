@@ -261,8 +261,8 @@ class BatchedGroupMerge:
     def load(cls, data: dict[str, Any]) -> "BatchedGroupMerge":
         """Load a BatchedGroupMerge from a serialized dictionary."""
         return cls(
-            group_idxs=torch.tensor(data["group_idxs"], dtype=torch.int64),
-            k_groups=torch.tensor(data["k_groups"], dtype=torch.int64),
+            group_idxs=data["group_idxs"].clone().to(dtype=torch.int64),
+            k_groups=data["k_groups"].clone().to(dtype=torch.int64),
             meta=data.get("meta"),
         )
 

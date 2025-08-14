@@ -10,6 +10,8 @@ import wandb
 from jaxtyping import Float
 from torch import Tensor
 
+from spd.log import logger
+
 
 def plot_activations(
     activations: dict[str, Float[Tensor, " n_steps C"]],
@@ -41,6 +43,8 @@ def plot_activations(
         hist_scales: Tuple of (x_scale, y_scale) where each is "lin" or "log"
         hist_bins: Number of bins for histograms
     """
+    logger.info(f"Saving figures to {'/'.join(pdf_prefix.split('/')[:-1])}")
+
     # Raw activations
     axs_act: Sequence[plt.Axes]
     _fig1, axs_act = plt.subplots(len(activations), 1, figsize=figsize_raw)  # pyright: ignore[reportAssignmentType]
@@ -58,7 +62,6 @@ def plot_activations(
     if save_pdf:
         fig1_fname = f"{pdf_prefix}_raw.pdf"
         _fig1.savefig(fig1_fname, bbox_inches="tight", dpi=300)
-        print(f"Saved raw activations plot to {fig1_fname}")
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -78,7 +81,6 @@ def plot_activations(
     if save_pdf:
         fig2_fname = f"{pdf_prefix}_concatenated.pdf"
         fig2.savefig(fig2_fname, bbox_inches="tight", dpi=300)
-        print(f"Saved concatenated activations plot to {fig2_fname}")
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -141,7 +143,6 @@ def plot_activations(
         if save_pdf:
             fig3_fname = f"{pdf_prefix}_concatenated_sorted.pdf"
             fig3.savefig(fig3_fname, bbox_inches="tight", dpi=300)
-            print(f"Saved sorted concatenated activations plot to {fig3_fname}")
 
         # Log to WandB if available
         if wandb_run is not None:
@@ -162,7 +163,6 @@ def plot_activations(
     if save_pdf:
         fig4_fname = f"{pdf_prefix}_coactivations.pdf"
         fig4.savefig(fig4_fname, bbox_inches="tight", dpi=300)
-        print(f"Saved coactivations plot to {fig4_fname}")
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -182,7 +182,6 @@ def plot_activations(
     if save_pdf:
         fig4_log_fname = f"{pdf_prefix}_coactivations_log.pdf"
         fig4_log.savefig(fig4_log_fname, bbox_inches="tight", dpi=300)
-        print(f"Saved log coactivations plot to {fig4_log_fname}")
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -273,7 +272,6 @@ def plot_activations(
     if save_pdf:
         fig5_fname = f"{pdf_prefix}_histograms.pdf"
         fig5.savefig(fig5_fname, bbox_inches="tight", dpi=300)
-        print(f"Saved histograms plot to {fig5_fname}")
 
     # Log to WandB if available
     if wandb_run is not None:

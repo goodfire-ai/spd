@@ -201,7 +201,6 @@ def main(
         fig_path: Path = figures_path / f"distances_distribution.{distances_method}.png"
         plt.savefig(fig_path)
         logger.info(f"Saved distances distribution plot to {fig_path}")
-        plt.show()
 
 
 def cli():

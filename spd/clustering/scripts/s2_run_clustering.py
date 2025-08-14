@@ -92,7 +92,6 @@ def run_clustering(
     )
 
     if plot:
-        print("Plotting activations...")
         # Import plotting function only when needed
         from spd.clustering.plotting.activations import plot_activations
 
@@ -117,7 +116,6 @@ def run_clustering(
 
     # save the merge iteration
     hist_save_path: Path = Path(this_merge_path.as_posix() + ".zanj")
-    print(f"Saving merge history to {hist_save_path}")
 
     merge_history_serialized: dict[str, Any] = merge_history.serialize()
     # TODO: Consider adding fallback to dbg_auto if wandb_run is None
@@ -141,7 +139,6 @@ def run_clustering(
         )
         artifact.add_file(str(hist_save_path))
         wandb_run.log_artifact(artifact)
-        print(f"Logged merge history artifact: {artifact.name}")
 
     if plot:
         plot_merge_history_cluster_sizes(
@@ -156,7 +153,7 @@ def run_clustering(
     # Finish WandB run
     if wandb_run is not None:
         wandb_run.finish()
-        logger.info("Finished WandB run")
+        logger.info(f"Finished WandB run with url: {wandb_run.url}")
 
     return hist_save_path
 
