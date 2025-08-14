@@ -204,8 +204,8 @@ def calc_faithfulness_loss(
     component_params: dict[str, Float[Tensor, "d_in d_out"]] = {}
 
     for comp_name, components_or_module in model.components_or_modules.items():
-        component_params[comp_name] = components_or_module.components.weight
-        target_params[comp_name] = components_or_module.original.weight
+        component_params[comp_name] = components_or_module.components_weight
+        target_params[comp_name] = components_or_module.original_weight
         assert component_params[comp_name].shape == target_params[comp_name].shape
 
     faithfulness_loss = _calc_tensors_mse(
