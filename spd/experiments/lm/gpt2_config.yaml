@@ -63,7 +63,7 @@ tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 # --- Task Specific ---
 task_config:
   task_name: lm 
-  max_seq_len: 512
+  max_seq_len: 1024
   buffer_size: 1000
   dataset_name: "SimpleStories/SimpleStories"
   column_name: "story"
@@ -71,16 +71,10 @@ task_config:
   eval_data_split: "test"
 
 
-# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
-  # "1.25M": LlamaConfig(
-  #     block_size=512,
-  #     vocab_size=4096,
-  #     n_layer=4,
-  #     n_head=4,
-  #     n_embd=128,
-  #     n_intermediate=128 * 4 * 2 // 3 = 341,
-  #     rotary_dim=128 // 4 = 32,
-  #     n_ctx=512,
-  #     n_key_value_heads=2,
-  #     flash_attention=True,
-  # ),
+# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/train_gpt2.py#L165
+  # class GPTConfig:
+  #     block_size: int = 1024
+  #     vocab_size: int = 50257
+  #     n_layer: int = 12
+  #     n_head: int = 12
+  #     n_embd: int = 768
