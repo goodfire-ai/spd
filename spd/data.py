@@ -8,6 +8,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
+from spd.log import logger
 from spd.utils.distributed_utils import is_distributed
 
 
@@ -226,3 +227,24 @@ def create_data_loader(
         drop_last=True,
     )
     return loader, tokenizer
+
+
+def loop_dataloader[T](dl: DataLoader[T]):
+    """Loop over a dataloader, resetting the iterator when it is exhausted.
+
+    Ensures that each epoch gets different data, even when using a distributed sampler.
+    """
+    epoch = 0
+    dl_iter = iter(dl)
+    if isinstance(dl.sampler, DistributedSampler):
+        dl.sampler.set_epoch(epoch)
+    while True:
+        try:
+            yield next(dl_iter)
+        except StopIteration:
+            logger.warning("Dataloader exhausted, resetting iterator.")
+            dl_iter = iter(dl)
+            epoch += 1
+            if isinstance(dl.sampler, DistributedSampler):
+                dl.sampler.set_epoch(epoch)
+            yield next(dl_iter)

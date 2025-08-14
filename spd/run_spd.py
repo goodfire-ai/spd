@@ -16,10 +16,10 @@ from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
 from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
 from spd.configs import Config
+from spd.data import loop_dataloader
 from spd.eval import evaluate
 from spd.log import logger
 from spd.losses import calculate_losses
@@ -59,27 +59,6 @@ def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path)
 
     with open(metrics_file, "a") as f:
         f.write(json.dumps({"step": step, **metrics_without_images}) + "\n")
-
-
-def loop_dataloader[T](dl: DataLoader[T]):
-    """Loop over a dataloader, resetting the iterator when it is exhausted.
-
-    Ensures that each epoch gets different data, even when using a distributed sampler.
-    """
-    epoch = 0
-    dl_iter = iter(dl)
-    if isinstance(dl.sampler, DistributedSampler):
-        dl.sampler.set_epoch(epoch)
-    while True:
-        try:
-            yield next(dl_iter)
-        except StopIteration:
-            logger.warning("Dataloader exhausted, resetting iterator.")
-            dl_iter = iter(dl)
-            if isinstance(dl.sampler, DistributedSampler):
-                dl.sampler.set_epoch(epoch)
-            epoch += 1
-            yield next(dl_iter)
 
 
 def optimize(
