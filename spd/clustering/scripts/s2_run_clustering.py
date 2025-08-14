@@ -16,7 +16,6 @@ from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_history_costs
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.registry import TaskName
 from spd.settings import REPO_ROOT
 
 # pyright: reportUnnecessaryIsInstance=false, reportUnreachable=false

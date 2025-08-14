@@ -10,7 +10,7 @@ from muutils.misc.numerical import shorten_numerical_to_str
 from pydantic import Field, PositiveInt, model_validator
 
 from spd.clustering.merge_config import MergeConfig
-from spd.registry import EXPERIMENT_REGISTRY, TaskName, ExperimentConfig
+from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig, TaskName
 
 
 class MergeRunConfig(MergeConfig):
@@ -38,7 +38,7 @@ class MergeRunConfig(MergeConfig):
         default=64,
         description="Size of each batch for processing",
     )
-    
+
     # WandB configuration
     wandb_enabled: bool = Field(
         default=False,
@@ -62,7 +62,7 @@ class MergeRunConfig(MergeConfig):
         """Validate that model_path is a proper WandB path."""
         if not self.model_path.startswith("wandb:"):
             raise ValueError(f"model_path must start with 'wandb:', got: {self.model_path}")
-        
+
         assert self.task_name in TaskName.__args__, (
             f"Invalid task_name: {self.task_name = }, must be in {TaskName.__args__ = }"
         )
@@ -78,24 +78,24 @@ class MergeRunConfig(MergeConfig):
             return parts[-1] if parts[-1] != "runs" else parts[-2] if len(parts) > 3 else parts[-1]
         else:
             raise ValueError(f"Invalid wandb path format: {self.model_path}")
-    
+
     @property
     def wandb_group(self) -> str:
         """Generate WandB group name based on parent model"""
         return f"model-{self.wandb_decomp_model}"
-    
+
     @property
     def _iters_str(self) -> str:
         """Shortened string representation of iterations for run ID"""
         return shorten_numerical_to_str(self.iters)
-    
+
     @property
     def config_identifier(self) -> str:
         """Unique identifier for this specific config on this specific model.
-        
+
         Format: model_abc123-a0.1-i1k-b64-n10-h_12ab
         Allows filtering in WandB for all runs with this exact config and model.
-        """        
+        """
         return f"task_{self.task_name}-w_{self.wandb_decomp_model}-a{self.alpha:g}-i{self._iters_str}-b{self.batch_size}-n{self.n_batches}-h_{self.stable_hash}"
 
     @property
@@ -107,7 +107,7 @@ class MergeRunConfig(MergeConfig):
     @classmethod
     def from_file(cls, path: Path) -> "MergeRunConfig":
         """Load config from JSON or YAML file.
-        
+
         Handles legacy spd_exp: model_path format and enforces consistency.
         """
         # read the file contents, load them according to extension
@@ -119,7 +119,7 @@ class MergeRunConfig(MergeConfig):
             data = yaml.safe_load(content)
         else:
             raise ValueError(f"Unsupported file extension: {path.suffix}")
-        
+
         # if we provide an experiment_key, then:
         # 1. use the `EXPERIMENT_REGISTRY` to fill in model_path and task_name
         # 2. check it's consistent with model_path and task_name from the file if those are provided
@@ -128,12 +128,16 @@ class MergeRunConfig(MergeConfig):
         task_name: str | None = data.get("task_name")
         if experiment_key is not None:
             exp_config: ExperimentConfig = EXPERIMENT_REGISTRY[experiment_key]
-            
+
             # Enforce consistency if explicit fields present
             if model_path is not None:
-                assert model_path == exp_config.canonical_run, f"Inconsistent model_path for {experiment_key}, version from file ({model_path}) does not match registry ({exp_config.canonical_run})"
+                assert model_path == exp_config.canonical_run, (
+                    f"Inconsistent model_path for {experiment_key}, version from file ({model_path}) does not match registry ({exp_config.canonical_run})"
+                )
             if task_name is not None:
-                assert task_name == exp_config.task_name, f"Inconsistent task_name for {experiment_key}, version from file ({task_name}) does not match registry ({exp_config.task_name})"
+                assert task_name == exp_config.task_name, (
+                    f"Inconsistent task_name for {experiment_key}, version from file ({task_name}) does not match registry ({exp_config.task_name})"
+                )
 
             # overwrite in data dict
             data["model_path"] = exp_config.canonical_run

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import functools
 import hashlib
-import math
-from collections.abc import Callable
 from typing import Any, Literal
 
 from jaxtyping import Float
