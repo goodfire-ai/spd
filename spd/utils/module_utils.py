@@ -9,6 +9,8 @@ from jaxtyping import Float
 from torch import Tensor
 from torch.nn.init import calculate_gain
 
+# This is equivalent to `torch.nn.init._NonlinearityType`, but for some reason this is not always
+# importable. see https://github.com/goodfire-ai/spd/actions/runs/16927877557/job/47967138342
 _NonlinearityType = Literal[
     "linear",
     "conv1d",
@@ -23,7 +25,6 @@ _NonlinearityType = Literal[
     "leaky_relu",
     "selu",
 ]
-"this is equivalent to `torch.nn.init._NonlinearityType`, but for some reason this is not always importable. see https://github.com/goodfire-ai/spd/actions/runs/16927877557/job/47967138342"
 
 
 def get_nested_module_attr(module: nn.Module, access_string: str) -> Any:
