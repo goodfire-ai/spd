@@ -99,12 +99,13 @@ def main(
         logger.info("Loading dataset...")
     train_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
-        hf_tokenizer_path=config.pretrained_model_name_hf,
+        hf_tokenizer_path=config.tokenizer_name,
         split=config.task_config.train_data_split,
         n_ctx=config.task_config.max_seq_len,
         is_tokenized=False,
         streaming=False,
         column_name=config.task_config.column_name,
+        shuffle_each_epoch=config.task_config.shuffle_each_epoch,
     )
 
     # Keep per-process batch size constant to maintain scale of all metrics so we can simply average
@@ -131,6 +132,7 @@ def main(
         is_tokenized=False,
         streaming=False,
         column_name=config.task_config.column_name,
+        shuffle_each_epoch=config.task_config.shuffle_each_epoch,
     )
 
     assert config.eval_batch_size % dist_state.world_size == 0 and config.eval_batch_size > 0, (

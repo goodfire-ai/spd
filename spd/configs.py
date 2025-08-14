@@ -160,6 +160,19 @@ class Config(BaseModel):
         ...,
         description="The p-value used for the importance minimality loss",
     )
+    p_anneal_start_frac: Probability = Field(
+        default=1.0,
+        description="Fraction of training after which to start annealing p (1.0 = no annealing)",
+    )
+    p_anneal_final_p: PositiveFloat | None = Field(
+        default=None,
+        description="Final p value to anneal to (None = no annealing)",
+    )
+    p_anneal_end_frac: Probability = Field(
+        default=1.0,
+        description="Fraction of training when annealing ends. We stay at the final p value from "
+        "this point onward (default 1.0 = anneal until end)",
+    )
     output_loss_type: Literal["mse", "kl"] = Field(
         ...,
         description="Metric used to measure recon error between model outputs and targets",
@@ -244,7 +257,8 @@ class Config(BaseModel):
     )
     n_examples_until_dead: PositiveInt = Field(
         ...,
-        description="Number of examples without firing before a component is considered dead. Note that in LMs, an example is a token, not a sequence.",
+        description="Number of examples without firing before a component is considered dead. "
+        "Note that in LMs, an example is a token, not a sequence.",
     )
 
     # --- Pretrained model info ---
