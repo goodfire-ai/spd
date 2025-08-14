@@ -1,3 +1,4 @@
+
 import tempfile
 from pathlib import Path
 from typing import Any, override
@@ -6,6 +7,7 @@ import pytest
 import torch
 from jaxtyping import Float
 from torch import Tensor, nn
+from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.configs import Config
 from spd.experiments.tms.configs import TMSTaskConfig
@@ -21,18 +23,25 @@ class SimpleTestModel(LoadableModule):
 
     LINEAR_1_SHAPE = (10, 5)
     LINEAR_2_SHAPE = (5, 3)
+    CONV1D_1_SHAPE = (3, 5)
+    CONV1D_2_SHAPE = (1, 3)
     EMBEDDING_SHAPE = (100, 8)
 
     def __init__(self):
         super().__init__()
         self.linear1 = nn.Linear(*self.LINEAR_1_SHAPE, bias=True)
         self.linear2 = nn.Linear(*self.LINEAR_2_SHAPE, bias=False)
+        self.conv1d1 = RadfordConv1D(*self.CONV1D_1_SHAPE)
+        self.conv1d2 = RadfordConv1D(*self.CONV1D_2_SHAPE)
+
         self.embedding = nn.Embedding(*self.EMBEDDING_SHAPE)
         self.other_layer = nn.ReLU()  # Non‑target layer (should never be wrapped)
 
     @override
     def forward(self, x: Float[Tensor, "... 10"]):  # noqa: D401,E501
-        return self.linear2(self.linear1(x))
+        x = self.linear2(self.linear1(x))
+        x = self.conv1d2(self.conv1d1(x))
+        return x
 
     @classmethod
     @override
@@ -56,7 +65,7 @@ def component_model() -> ComponentModel:
     target_model.requires_grad_(False)
     return ComponentModel(
         target_model=target_model,
-        target_module_patterns=["linear1", "linear2", "embedding"],
+        target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
         C=4,
         gate_type="mlp",
         gate_hidden_dims=[4],
@@ -124,6 +133,7 @@ def test_replaced_component_forward_linear_matches_modes():
 
     original = nn.Linear(input_dim, output_dim, bias=True)
     components = LinearComponents(d_in=input_dim, d_out=output_dim, C=3, bias=original.bias)
+    components.init_from_target_weight(original.weight.T)
     components_or_module = ComponentsOrModule(original=original, components=components)
 
     x = torch.randn(B, input_dim)
@@ -144,6 +154,39 @@ def test_replaced_component_forward_linear_matches_modes():
     torch.testing.assert_close(out_rep, expected_rep, rtol=1e-4, atol=1e-5)
 
 
+def test_replaced_component_forward_conv1d_matches_modes():
+    B = 5
+    S = 10
+    C = 3
+    input_dim = 6
+    output_dim = 4
+
+    original = RadfordConv1D(nf=output_dim, nx=input_dim)
+
+    components = LinearComponents(d_in=input_dim, d_out=output_dim, C=C, bias=original.bias)
+    components.init_from_target_weight(original.weight)
+    components_or_module = ComponentsOrModule(original=original, components=components)
+
+    x = torch.randn(B, S, input_dim)
+
+    # --- Original path ---
+    components_or_module.forward_mode = "original"
+    components_or_module.mask = None
+    out_orig = components_or_module(x)
+    expected_orig = original(x)
+
+    torch.testing.assert_close(out_orig, expected_orig, rtol=1e-4, atol=1e-5)
+
+    # --- Replacement path (with mask) ---
+    mask = torch.rand(B, S, C)  # (B, L, C)
+    components_or_module.forward_mode = "components"
+    components_or_module.mask = mask
+    out_rep = components_or_module(x)
+    expected_rep = components(x, mask)
+
+    torch.testing.assert_close(out_rep, expected_rep, rtol=1e-4, atol=1e-5)
+
+
 def test_replaced_component_forward_embedding_matches_modes():
     vocab_size = 50
     embedding_dim = 16
@@ -151,6 +194,7 @@ def test_replaced_component_forward_embedding_matches_modes():
 
     emb = nn.Embedding(vocab_size, embedding_dim)
     comp = EmbeddingComponents(vocab_size=vocab_size, embedding_dim=embedding_dim, C=C)
+    comp.init_from_target_weight(emb.weight)
     rep = ComponentsOrModule(original=emb, components=comp)
 
     batch_size = 4
@@ -175,7 +219,7 @@ def test_replaced_component_forward_embedding_matches_modes():
 
 def test_correct_parameters_require_grad(component_model: ComponentModel):
     for cm in component_model.components_or_modules.values():
-        if isinstance(cm.original, nn.Linear):
+        if isinstance(cm.original, nn.Linear | RadfordConv1D):
             assert not cm.original.weight.requires_grad
             if cm.original.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
                 assert not cm.original.bias.requires_grad
@@ -211,7 +255,7 @@ def test_from_run_info_works():
             pretrained_model_class="tests.test_component_model.SimpleTestModel",
             pretrained_model_path=base_model_path,
             pretrained_model_name_hf=None,
-            target_module_patterns=["linear1", "linear2", "embedding"],
+            target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
             C=4,
             gate_type="mlp",
             gate_hidden_dims=[4],
@@ -237,7 +281,7 @@ def test_from_run_info_works():
 
         cm = ComponentModel(
             target_model=target_model,
-            target_module_patterns=["linear1", "linear2", "embedding"],
+            target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
             C=4,
             gate_type="mlp",
             gate_hidden_dims=[4],

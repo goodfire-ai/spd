@@ -5,6 +5,7 @@ import einops
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
+from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.utils.module_utils import init_param_
 
@@ -240,7 +241,7 @@ class EmbeddingComponents(Components):
 class ComponentsOrModule(nn.Module):
     def __init__(
         self,
-        original: nn.Linear | nn.Embedding,
+        original: nn.Linear | nn.Embedding | RadfordConv1D,
         components: Components,
     ):
         super().__init__()
@@ -249,6 +250,17 @@ class ComponentsOrModule(nn.Module):
 
         self.forward_mode: Literal["original"] | Literal["components"] | None = None
         self.mask: Tensor | None = None
+
+    @property
+    def components_weight(self) -> Float[Tensor, "rows cols"]:
+        """Get the component weight matrix."""
+        return self.components.weight
+
+    @property
+    def original_weight(self) -> Float[Tensor, "rows cols"]:
+        if isinstance(self.original, RadfordConv1D):
+            return self.original.weight.T
+        return self.original.weight
 
     @override
     def forward(self, x: Tensor) -> Tensor:
