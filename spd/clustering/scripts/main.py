@@ -182,7 +182,7 @@ def main(
     histories_files: list[Path] = list(histories_path.glob("*.zanj"))
 
     # 3. normalize histories to account for different active components
-    logger.section("Computing distances")
+    logger.section("Normalizing histories")
     merged_hists: dict[str, Any] = normalize_histories(
         histories=histories_files,
         run_dir=run_path / "distances",

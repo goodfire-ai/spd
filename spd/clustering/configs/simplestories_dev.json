@@ -11,5 +11,9 @@
   "model_path": "wandb:goodfire/spd/runs/ioprgffh",
   "task_name": "lm",
   "n_batches": 4,
-  "batch_size": 1
+  "batch_size": 1,
+  "wandb_enabled": true,
+  "wandb_project": "spd-cluster",
+  "wandb_log_frequency": 1,
+  "wandb_artifact_frequency": 50
 }
