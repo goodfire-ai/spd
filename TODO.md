@@ -125,12 +125,37 @@ wandb_artifact_frequency: 100
 model_path: "wandb:my-entity/my-project/abc123"  # Links to parent SPD model
 ```
 
-## Next Steps
+## Progress Update
 
-1. Review and approve this plan
-2. Implement configuration changes first
-3. Add WandB initialization logic
-4. Implement per-iteration logging
-5. Add artifact saving
-6. Test end-to-end
-7. Document usage in README
+### ✅ Completed
+1. **Step 1: Configuration Changes** - Implemented WandB configuration in `MergeRunConfig`
+   - Added `wandb_enabled`, `wandb_project`, `wandb_log_frequency`, `wandb_artifact_frequency` fields
+   - Created `wandb_group` and `config_identifier` properties for proper organization
+   - Added `from_experiment_key()` factory method
+   - Updated config files to use new format
+   - Handles both legacy `spd_exp:` format and new `experiment_key` approach
+
+2. **WandB Tensor Logging Utilities** - Created `spd/utils/wandb_tensor_info.py`
+   - `wandb_log_tensor()`: Uses muutils for console output + creates histogram plots for WandB
+   - `wandb_log_dict()`: Uses muutils dbg_auto + logs structured data to WandB  
+   - `wandb_log_figure()`: Logs matplotlib figures/images to WandB
+   - Functions return original values (like dbg_tensor/dbg_auto) for drop-in replacement
+
+### 🔄 In Progress
+3. **Step 2: Initialize WandB in clustering pipeline**
+   - Need to add WandB initialization in `s2_run_clustering.py` for batch runs
+   - Need to add parent WandB run in `main.py` for ensemble coordination
+
+### 📋 Next Steps
+4. Replace `dbg_auto`/`dbg_tensor` calls with WandB equivalents in clustering code
+5. Add WandB logging to `merge_iteration` in `merge.py`
+6. Upload figures to WandB instead of just saving locally
+7. Implement artifact saving for GroupMerge checkpoints
+8. Test end-to-end with small example
+
+## Implementation Notes
+
+- WandB tensor histograms now use actual matplotlib plots with mean/median/stddev marked
+- Console output still uses muutils for consistency
+- All WandB features are opt-in via `wandb_enabled: false` default
+- Config system handles both direct WandB paths and experiment registry keys
