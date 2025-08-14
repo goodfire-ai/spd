@@ -208,7 +208,7 @@ def plot_merge_history_costs(
     fmt: str = "pdf",
     file_prefix: str | None = None,
     ylim: tuple[float, float] | None = None,
-) -> None:
+) -> plt.Figure:
     """Plot cost evolution from merge history"""
     fig, ax = plt.subplots(figsize=figsize)
     ax.plot(history.costs_stats["min"], label="min")
@@ -230,13 +230,15 @@ def plot_merge_history_costs(
     if file_prefix:
         fig.savefig(f"{file_prefix}_cost_evolution.{fmt}", bbox_inches="tight", dpi=300)
 
+    return fig
+
 
 def plot_merge_history_cluster_sizes(
     history: MergeHistory,
     figsize: tuple[int, int] = (10, 5),
     fmt: str = "png",
     file_prefix: str | None = None,
-) -> None:
+) -> plt.Figure:
     k_groups_t: Int[Tensor, " n_iters"] = history.k_groups
     valid_mask: Bool[Tensor, " n_iters"] = k_groups_t.ne(-1)
     has_data: bool = bool(valid_mask.any().item())
@@ -269,3 +271,5 @@ def plot_merge_history_cluster_sizes(
 
     if file_prefix is not None:
         fig.savefig(f"{file_prefix}_cluster_sizes.{fmt}", bbox_inches="tight", dpi=300)
+
+    return fig

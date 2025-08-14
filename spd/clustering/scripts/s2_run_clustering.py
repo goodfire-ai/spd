@@ -10,6 +10,7 @@ import torch
 import wandb
 import wandb.sdk.wandb_run
 from jaxtyping import Int
+from matplotlib import pyplot as plt
 from torch import Tensor
 from zanj import ZANJ
 
@@ -50,7 +51,7 @@ def save_group_idxs_artifact(
     current_group_idxs = merge_hist.merges.group_idxs[: iteration + 1].cpu().numpy()
 
     # Save to file in the same directory as merge history
-    group_idxs_path = save_dir / f"{config_identifier}-d_{dataset_stem}.i{iteration}.group_idxs.npy"
+    group_idxs_path = save_dir / f"iter_{iteration}.npy"
     np.save(group_idxs_path, current_group_idxs)
 
     # Create and upload artifact
@@ -77,6 +78,8 @@ def run_clustering(
     plot: bool = True,
     sort_components: bool = False,
 ) -> Path:
+    # setup
+    # ======================================================================
     # Load config
     config_: MergeRunConfig
     if isinstance(config, Path):  # noqa: SIM108
@@ -109,20 +112,34 @@ def run_clustering(
         )
         log(f"Initialized WandB run: {wandb_run.name} in group {config_.wandb_group}")
 
-    # get the dataset -- for ensembles, each instance of this script gets a different batch
-    data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
-
     this_merge_path: Path = save_dir / f"{config_.config_identifier}-data_{dataset_path.stem}"
-    this_merge_figs: Path = Path(this_merge_path.as_posix() + "_plots/")
+    this_merge_figs: Path = this_merge_path / "plots"
     if plot:
         this_merge_figs.mkdir(parents=True, exist_ok=True)
 
-    # load the spd run
+    # Create artifact callback if wandb is enabled
+    artifact_callback: Callable[[MergeHistory, int], None] | None = None
+    if wandb_run is not None:
+        artifact_callback = functools.partial(
+            save_group_idxs_artifact,
+            wandb_run=wandb_run,
+            save_dir=this_merge_path / "checkpoints",
+            dataset_stem=dataset_path.stem,
+            config_identifier=config_.config_identifier,
+        )
+
+    # get model and data
+    # ======================================================================
+    # get the dataset -- for ensembles, each instance of this script gets a different batch
+    data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
+
+    # load the spd run of the actual model we are decomposing
     spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
     component_model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
     component_model.to(device)
 
-    # compute the activations for the components
+    # get, process, and plot component activations
+    # ======================================================================
     component_acts: dict[str, Tensor] = component_activations(
         model=component_model,
         batch=data_batch,
@@ -162,18 +179,8 @@ def run_clustering(
             log=log,
         )
 
-    # Create artifact callback if wandb is enabled
-    artifact_callback: Callable[[MergeHistory, int], None] | None = None
-    if wandb_run is not None:
-        artifact_callback = functools.partial(
-            save_group_idxs_artifact,
-            wandb_run=wandb_run,
-            save_dir=save_dir,
-            dataset_stem=dataset_path.stem,
-            config_identifier=config_.config_identifier,
-        )
-
     # run the merge iteration
+    # ======================================================================
     merge_history: MergeHistory = merge_iteration(
         activations=processed_activations["activations"],
         merge_config=config_,  # Pass full MergeRunConfig to access wandb_log_frequency
@@ -183,8 +190,11 @@ def run_clustering(
         artifact_callback=artifact_callback,
     )
 
+    # saving and plotting
+    # ======================================================================
+
     # save the merge iteration
-    hist_save_path: Path = Path(this_merge_path.as_posix() + ".zanj")
+    hist_save_path: Path = this_merge_path / "merge_history.zanj"
 
     merge_history_serialized: dict[str, Any] = merge_history.serialize()
     # TODO: Consider adding fallback to dbg_auto if wandb_run is None
@@ -224,14 +234,17 @@ def run_clustering(
         log(f"Group indices saved and added to artifact: {group_idxs_path}")
 
     if plot:
-        plot_merge_history_cluster_sizes(
+        fig_cs: plt.Figure = plot_merge_history_cluster_sizes(
             history=merge_history,
             file_prefix=(this_merge_figs / "merge").as_posix(),
         )
-        plot_merge_history_costs(
+        fig_costs: plt.Figure = plot_merge_history_costs(
             history=merge_history,
             file_prefix=(this_merge_figs / "merge").as_posix(),
         )
+        if wandb_run is not None:
+            wandb_run.log({"plots/merge_history_cluster_sizes": fig_cs})
+            wandb_run.log({"plots/merge_history_costs": fig_costs})
 
     # Finish WandB run
     if wandb_run is not None:
@@ -241,7 +254,7 @@ def run_clustering(
     return hist_save_path
 
 
-if __name__ == "__main__":
+def cli():
     import argparse
 
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -290,3 +303,7 @@ if __name__ == "__main__":
         save_dir=args.save_dir,
         sort_components=args.sort_components,
     )
+
+
+if __name__ == "__main__":
+    cli()
