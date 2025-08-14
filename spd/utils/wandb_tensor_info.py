@@ -9,8 +9,6 @@ import wandb
 from muutils.tensor_info import array_info
 from torch import Tensor
 
-from spd.log import logger
-
 # Track which tensors we've already logged URLs for
 _LOGGED_URLS: set[str] = set()
 
@@ -226,20 +224,3 @@ def _log_one(
 
     if stats_to_log and not single:
         run.log(stats_to_log, step=step)
-
-    # Log URLs only the first time for each tensor name
-    if name not in _LOGGED_URLS:
-        _LOGGED_URLS.add(name)
-        run_url: str | None = run.get_url()
-        if run_url:
-            # Build full URLs for histogram and metrics
-            histogram_url: str = (
-                f"{run_url}#custom-charts/tensor_histograms/{name.replace('/', '%2F')}"
-            )
-            metrics_url: str = (
-                f"{run_url}#scalars/section=tensor_metrics%2F{name.replace('/', '%2F')}"
-            )
-
-            logger.info(
-                f"Logged tensor: {name}\n  Histogram: {histogram_url}\n  Metrics: {metrics_url}"
-            )

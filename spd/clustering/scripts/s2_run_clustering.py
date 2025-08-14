@@ -42,7 +42,7 @@ def run_clustering(
     if config.wandb_enabled:
         wandb_run = wandb.init(
             project=config.wandb_project,
-            name=f"batch_{dataset_path.stem}",
+            name=f"{config.config_identifier}-{dataset_path.stem}",
             group=config.wandb_group,
             config=config.model_dump_with_properties(),
             tags=[
