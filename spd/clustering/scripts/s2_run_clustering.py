@@ -79,7 +79,7 @@ def run_clustering(
     )
 
     # TODO: Consider adding fallback to dbg_tensor if wandb_run is None
-    wandb_log_tensor(wandb_run, component_acts, "component_activations", step=0)
+    wandb_log_tensor(wandb_run, component_acts, "component_activations", step=0, single=True)
     # process the activations by:
     # 1. filtering out dead components
     # 2. concatenating the activations across the sequence

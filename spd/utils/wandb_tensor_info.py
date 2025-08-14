@@ -4,11 +4,15 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly.graph_objects as go
 import wandb
 from muutils.tensor_info import array_info
 from torch import Tensor
 
 from spd.log import logger
+
+# Track which tensors we've already logged URLs for
+_LOGGED_URLS: set[str] = set()
 
 
 def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Figure:
@@ -90,11 +94,75 @@ def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Fi
     return fig
 
 
+def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:
+    """Create Plotly histogram figure."""
+    # Get values for histogram
+    values: np.ndarray = tensor.flatten().detach().cpu().numpy()
+    
+    # Remove NaNs if present
+    if np.isnan(values).any():
+        values = values[~np.isnan(values)]
+    
+    # Get tensor stats for annotations
+    info: dict[str, Any] = array_info(tensor)
+    
+    # Create Plotly histogram
+    fig: go.Figure = go.Figure()
+    
+    fig.add_trace(go.Histogram(
+        x=values,
+        nbinsx=50,
+        name=name,
+        opacity=0.7,
+    ))
+    
+    # Add vertical lines for mean, median, std
+    if info["mean"] is not None:
+        mean_val: float = info["mean"]
+        median_val: float = info["median"]
+        std_val: float = info["std"]
+        
+        # Add mean line
+        fig.add_vline(x=mean_val, line_dash="solid", line_color="red", 
+                      annotation_text=f"μ={mean_val:.3g}")
+        
+        # Add median line
+        fig.add_vline(x=median_val, line_dash="solid", line_color="blue",
+                      annotation_text=f"x̃={median_val:.3g}")
+        
+        # Add std lines
+        if std_val:
+            fig.add_vline(x=mean_val + std_val, line_dash="dash", line_color="orange",
+                          annotation_text=f"μ+σ")
+            fig.add_vline(x=mean_val - std_val, line_dash="dash", line_color="orange",
+                          annotation_text=f"μ-σ")
+    
+    # Update layout with stats
+    title_text: str = f"{name}"
+    if info.get("shape"):
+        shape_str: str = str(tuple(info["shape"]))
+        dtype_str: str = str(info.get("dtype", "unknown")).replace("torch.", "")
+        title_text += f"<br>shape={shape_str}, dtype={dtype_str}"
+        
+    if info["mean"] is not None:
+        title_text += f"<br>range=[{info['min']:.3g}, {info['max']:.3g}], μ={info['mean']:.3g}, x̃={info['median']:.3g}, σ={info['std']:.3g}"
+    
+    fig.update_layout(
+        title=title_text,
+        xaxis_title="Value",
+        yaxis_title="Count",
+        showlegend=False,
+    )
+    
+    return fig
+
+
 def wandb_log_tensor(
     run: wandb.sdk.wandb_run.Run | None,
     data: Tensor | dict[str, Tensor],
     name: str,
     step: int,
+    single: bool = False,
 ) -> None:
     """Log tensor(s) with stats to WandB as metrics and histograms.
 
@@ -103,6 +171,7 @@ def wandb_log_tensor(
         data: Either a Tensor or dict[str, Tensor]
         name: Name for logging
         step: WandB step
+        single: True if this tensor is only logged once (component activations)
     """
     # Skip logging if no WandB run
     if run is None:
@@ -112,10 +181,10 @@ def wandb_log_tensor(
         # Handle dict of tensors
         for key, tensor in data.items():
             full_name: str = f"{name}.{key}"
-            _log_one(run, tensor, full_name, step)
+            _log_one(run, tensor, full_name, step, single=single)
     else:
         # Handle single tensor
-        _log_one(run, data, name, step)
+        _log_one(run, data, name, step, single=single)
 
 
 def _log_one(
@@ -123,16 +192,16 @@ def _log_one(
     tensor: Tensor,
     name: str,
     step: int,
+    single: bool = False,
 ) -> None:
     """Log a single tensor."""
     # Get tensor info once
     info: dict[str, Any] = array_info(tensor)
 
-    # Create and log histogram
-    fig: plt.Figure = _create_histogram(info, tensor, name)
+    # Create and log WandB native histogram
+    wandb_hist = _create_histogram_wandb(tensor, name)
     histogram_key: str = f"tensor_histograms/{name}"
-    run.log({histogram_key: fig}, step=step)
-    plt.close(fig)
+    run.log({histogram_key: wandb_hist}, step=step)
 
     # Log numeric stats as metrics (viewable like loss) using dict comprehension
     stats_to_log: dict[str, float] = {
@@ -146,16 +215,18 @@ def _log_one(
     if nan_percent > 0:
         stats_to_log[f"tensor_metrics/{name}/nan_percent"] = nan_percent
 
-    if stats_to_log:
+    if stats_to_log and not single:
         run.log(stats_to_log, step=step)
 
-    # Log links using the SPD logger
-    run_url: str | None = run.get_url()
-    if run_url:
-        # Build full URLs for histogram and metrics
-        histogram_url: str = f"{run_url}#custom-charts/tensor_histograms/{name.replace('/', '%2F')}"
-        metrics_url: str = f"{run_url}#scalars/section=tensor_metrics%2F{name.replace('/', '%2F')}"
+    # Log URLs only the first time for each tensor name
+    if name not in _LOGGED_URLS:
+        _LOGGED_URLS.add(name)
+        run_url: str | None = run.get_url()
+        if run_url:
+            # Build full URLs for histogram and metrics
+            histogram_url: str = f"{run_url}#custom-charts/tensor_histograms/{name.replace('/', '%2F')}"
+            metrics_url: str = f"{run_url}#scalars/section=tensor_metrics%2F{name.replace('/', '%2F')}"
 
-        logger.info(
-            f"Logged tensor: {name}\n  Histogram: {histogram_url}\n  Metrics: {metrics_url}"
-        )
+            logger.info(
+                f"Logged tensor: {name}\n  Histogram: {histogram_url}\n  Metrics: {metrics_url}"
+            )
