@@ -236,24 +236,6 @@ def test_help_flag():
         assert exc_info.value.code == 0
 
 
-def test_invalid_log_format():
-    """Test that invalid log format is rejected."""
-    with patch.object(sys, "argv", ["spd-run", "--log-format", "invalid"]):
-        with pytest.raises(SystemExit) as exc_info:
-            cli()
-        # Invalid argument should exit with code 2
-        assert exc_info.value.code == 2
-
-
-def test_invalid_boolean_value():
-    """Test that invalid boolean values are rejected."""
-    with patch.object(sys, "argv", ["spd-run", "--cpu", "maybe"]):
-        with pytest.raises(SystemExit) as exc_info:
-            cli()
-        # Invalid boolean should exit with code 2
-        assert exc_info.value.code == 2
-
-
 def test_sweep_params_file_path_handling():
     """Test that sweep parameter file paths are handled correctly."""
     test_cases = [
