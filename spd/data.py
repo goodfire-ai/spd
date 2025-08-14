@@ -8,6 +8,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
+from spd.log import logger
 from spd.utils.distributed_utils import is_distributed
 
 
@@ -24,6 +25,7 @@ class DatasetConfig(BaseModel):
     """The name of the column in the dataset that contains the data (tokenized or non-tokenized).
     Typically 'input_ids' for datasets stored with e2e_sae/scripts/upload_hf_dataset.py, or "tokens"
     for datasets tokenized in TransformerLens (e.g. NeelNanda/pile-10k)."""
+    shuffle_each_epoch: bool = True
 
 
 def _keep_single_column(dataset: Dataset, col_name: str) -> Dataset:
@@ -213,7 +215,7 @@ def create_data_loader(
             torch_dataset,  # pyright: ignore[reportArgumentType]
             num_replicas=ddp_world_size,
             rank=ddp_rank,
-            shuffle=False,  # Already shuffled above
+            shuffle=dataset_config.shuffle_each_epoch,
             seed=seed,
             drop_last=True,
         )
@@ -222,7 +224,26 @@ def create_data_loader(
         torch_dataset,  # pyright: ignore[reportArgumentType]
         batch_size=batch_size,
         sampler=sampler,
-        shuffle=False,
+        shuffle=(sampler is None and dataset_config.shuffle_each_epoch),
         drop_last=True,
     )
     return loader, tokenizer
+
+
+def loop_dataloader[T](dl: DataLoader[T]):
+    """Loop over a dataloader, resetting the iterator when it is exhausted.
+
+    Ensures that each epoch gets different data, even when using a distributed sampler.
+    """
+    epoch = 0
+    dl_iter = iter(dl)
+    while True:
+        try:
+            yield next(dl_iter)
+        except StopIteration:
+            logger.warning("Dataloader exhausted, resetting iterator.")
+            epoch += 1
+            if isinstance(dl.sampler, DistributedSampler):
+                dl.sampler.set_epoch(epoch)
+            dl_iter = iter(dl)
+            yield next(dl_iter)
