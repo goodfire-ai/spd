@@ -24,10 +24,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
         n_mask_samples=1,
         gate_type="vector_mlp",
         gate_hidden_dims=[128],
-        target_module_patterns=[
-            "transformer.h.*.attn.c_attn", 
-            "transformer.h.*.attn.c_proj"
-        ],
+        target_module_patterns=["transformer.h.*.attn.c_attn", "transformer.h.*.attn.c_proj"],
         # Loss Coefficients
         faithfulness_coeff=200,
         stochastic_recon_coeff=1.0,
@@ -60,7 +57,9 @@ def test_gpt_2_decomposition_happy_path() -> None:
             EvalMetricConfig(classname="CIHistograms", extra_init_kwargs={"n_batches_accum": 5}),
             EvalMetricConfig(classname="ComponentActivationDensity"),
             EvalMetricConfig(classname="CI_L0"),
-            EvalMetricConfig(classname="CEandKLLosses", extra_init_kwargs={"rounding_threshold": 0.0})
+            EvalMetricConfig(
+                classname="CEandKLLosses", extra_init_kwargs={"rounding_threshold": 0.0}
+            ),
         ],
         # Pretrained model info
         pretrained_model_class="transformers.GPT2LMHeadModel",
@@ -77,11 +76,11 @@ def test_gpt_2_decomposition_happy_path() -> None:
             column_name="text",
             train_data_split="train[:100]",
             eval_data_split="validation[:100]",
-        )
+        ),
     )
 
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
-    
+
     # Create a GPT-2 model
     hf_model_class = resolve_class(config.pretrained_model_class)
     assert issubclass(hf_model_class, PreTrainedModel), (

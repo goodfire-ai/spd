@@ -1,4 +1,4 @@
-# --- WandB ---
+# --- WandB ---Add a comment on line R1Add diff commentMarkdown input: edit mode selected.WritePreviewAdd a suggestionHeadingBoldItalicQuoteCodeLinkUnordered listNumbered listTask listMentionReferenceSaved repliesAdd FilesPaste, drop, or click to add filesCancelCommentStart a review
 wandb_project: spd
 # wandb_project: null
 wandb_run_name: null
@@ -6,12 +6,12 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 768
+C: 4000
 n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [64]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["transformer.h.*.attn.c_attn"]
+target_module_patterns: ["model.layers.0.mlp.gate_proj"]
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1e3
@@ -27,7 +27,7 @@ pnorm: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 16
+batch_size: 128
 steps: 50_000
 lr: 3e-4
 lr_schedule: cosine
@@ -55,10 +55,10 @@ eval_metrics:
       rounding_threshold: 0.0
 
 # --- Pretrained model info ---
-pretrained_model_class: transformers.GPT2LMHeadModel
-pretrained_model_name_hf: openai-community/gpt2
+pretrained_model_class: transformers.LlamaForCausalLM
+pretrained_model_name_hf: SimpleStories/SimpleStories-1.25M
 pretrained_model_output_attr: logits
-tokenizer_name: openai-community/gpt2
+tokenizer_name: SimpleStories/SimpleStories-1.25M
 
 # --- Task Specific ---
 task_config:
@@ -71,10 +71,16 @@ task_config:
   eval_data_split: "test"
 
 
-# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/train_gpt2.py#L165
-  # class GPTConfig:
-  #     block_size: int = 1024
-  #     vocab_size: int = 50257
-  #     n_layer: int = 12
-  #     n_head: int = 12
-  #     n_embd: int = 768
+# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
+  # "1.25M": LlamaConfig(
+  #     block_size=512,
+  #     vocab_size=4096,
+  #     n_layer=4,
+  #     n_head=4,
+  #     n_embd=128,
+  #     n_intermediate=128 * 4 * 2 // 3 = 341,
+  #     rotary_dim=128 // 4 = 32,
+  #     n_ctx=512,
+  #     n_key_value_heads=2,
+  #     flash_attention=True,
+  # ),

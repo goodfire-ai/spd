@@ -1,4 +1,4 @@
-# --- WandB ---Add a comment on line R1Add diff commentMarkdown input: edit mode selected.WritePreviewAdd a suggestionHeadingBoldItalicQuoteCodeLinkUnordered listNumbered listTask listMentionReferenceSaved repliesAdd FilesPaste, drop, or click to add filesCancelCommentStart a review
+# --- WandB ---
 wandb_project: spd
 # wandb_project: null
 wandb_run_name: null
@@ -9,26 +9,26 @@ seed: 0
 C: 4000
 n_mask_samples: 1
 gate_type: "vector_mlp"
-gate_hidden_dims: [10]
+gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["model.layers.0.mlp.gate_proj"]
+target_module_patterns: ["transformer.h.1.mlp.c_fc"]
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 3000
+faithfulness_coeff: 1e3
 recon_coeff: null
 stochastic_recon_coeff: null
 recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1
-importance_minimality_coeff: 0.005
+importance_minimality_coeff: 1e-3
 schatten_coeff: null
 embedding_recon_coeff: null
 is_embed_unembed_recon: false
-pnorm: 2.0
+pnorm: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 64
-steps: 30_000
+batch_size: 48
+steps: 50_000
 lr: 3e-4
 lr_schedule: cosine
 lr_warmup_pct: 0.01
@@ -42,8 +42,8 @@ slow_eval_freq: 5000
 slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
-n_examples_until_dead: 3_276_800  # train_log_freq * batch_size * max_seq_len = 100 * 64 * 512
 ci_alive_threshold: 0.0
+n_examples_until_dead: 3_276_800  # train_log_freq * batch_size * max_seq_len = 100 * 64 * 512
 eval_metrics:
   - classname: "CIHistograms"
     extra_init_kwargs:
@@ -55,10 +55,10 @@ eval_metrics:
       rounding_threshold: 0.0
 
 # --- Pretrained model info ---
-pretrained_model_class: transformers.LlamaForCausalLM
-pretrained_model_name_hf: SimpleStories/SimpleStories-1.25M
+pretrained_model_class: transformers.GPT2LMHeadModel
+pretrained_model_name_hf: SimpleStories/test-SimpleStories-gpt2-1.25M
 pretrained_model_output_attr: logits
-tokenizer_name: SimpleStories/SimpleStories-1.25M
+tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 
 # --- Task Specific ---
 task_config:

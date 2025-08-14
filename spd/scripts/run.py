@@ -13,7 +13,7 @@ Usage:
     spd-run --experiments tms_5-2 --sweep custom.yaml          # Run with custom sweep params
     spd-run --sweep --n_agents 10                              # Sweep with 10 concurrent agents
     spd-run --project my-project                               # Use custom W&B project
-    spd-run --experiments ss_mlp --dp 4                        # Run with 4 data parallelism over 4 GPUs
+    spd-run --experiments ss_llama --dp 4                      # Run with 4 data parallelism over 4 GPUs
 """
 
 import copy
@@ -690,7 +690,7 @@ def main(
         spd-run --experiments tms_5-2 --cpu
 
         # Run with data parallelism over 4 GPUs (only supported for lm experiments)
-        spd-run --experiments ss_mlp --dp 4
+        spd-run --experiments ss_llama --dp 4
     """
     # setup
     # ==========================================================================================
