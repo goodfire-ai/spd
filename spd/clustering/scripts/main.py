@@ -63,6 +63,7 @@ def distribute_clustering(
                 device,
             ]
 
+            # TODO: this is a hack
             # wait until at least 20% of GPU memory is free
             if cuda_mem_max is not None:
                 log_fn_error("")
