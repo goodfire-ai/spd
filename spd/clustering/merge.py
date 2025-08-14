@@ -7,6 +7,7 @@ from typing import Any
 import torch
 import tqdm
 import wandb
+import wandb.sdk.wandb_run
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
@@ -30,6 +31,7 @@ def merge_iteration(
     sweep_params: dict[str, Any] | None = None,
     plot_function: Callable[..., None] | None = None,
     wandb_run: wandb.sdk.wandb_run.Run | None = None,
+    prefix: str = "",
 ) -> MergeHistory:
     # setup
     # ==================================================
@@ -92,7 +94,8 @@ def merge_iteration(
     # merge iteration
     # ==================================================
     # while i < merge_config.iters:
-    for i in tqdm.tqdm(range(merge_config.iters), unit="iteration", total=merge_config.iters):
+    pbar = tqdm.tqdm(range(merge_config.iters), unit="iteration", total=merge_config.iters)
+    for i in pbar:
         # pop components
         # --------------------------------------------------
         if do_pop and iter_pop[i]:  # pyright: ignore[reportPossiblyUnboundVariable]
@@ -131,6 +134,10 @@ def merge_iteration(
 
         # Sample a merge pair using the configured sampler
         merge_pair: tuple[int, int] = merge_config.merge_pair_sample(costs)
+
+        # Update progress bar description with groups remaining and MDL loss
+        mdl_loss = costs[merge_pair].mean().item()
+        pbar.set_description(f"{prefix} k={k_groups}, mdl={mdl_loss:.4f}")
 
         # Store matrices and selected pair in history
         merge_history.add_iteration(

@@ -1,12 +1,13 @@
 """Plotting functions for activation visualizations."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import wandb
+import wandb.sdk.wandb_run
 from jaxtyping import Float
 from torch import Tensor
 
@@ -27,6 +28,7 @@ def plot_activations(
     hist_bins: int = 100,
     do_sorted_samples: bool = False,
     wandb_run: wandb.sdk.wandb_run.Run | None = None,
+    log: Callable[[str], None] = logger.info,
 ) -> None:
     """Plot activation visualizations including raw, concatenated, sorted, and coactivations.
 
@@ -43,7 +45,7 @@ def plot_activations(
         hist_scales: Tuple of (x_scale, y_scale) where each is "lin" or "log"
         hist_bins: Number of bins for histograms
     """
-    logger.info(f"Saving figures to {'/'.join(pdf_prefix.split('/')[:-1])}")
+    log(f"Saving figures to {'/'.join(pdf_prefix.split('/')[:-1])}")
 
     # Raw activations
     axs_act: Sequence[plt.Axes]

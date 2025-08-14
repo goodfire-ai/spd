@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import torch
 import wandb
+import wandb.sdk.wandb_run
 from jaxtyping import Int
 from torch import Tensor
 from zanj import ZANJ
@@ -15,12 +16,23 @@ from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_history_costs
-from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
 from spd.utils.wandb_tensor_info import wandb_log_tensor
 
 # pyright: reportUnnecessaryIsInstance=false, reportUnreachable=false
+
+# Global batch_id for logging
+_BATCH_ID: str = "unk"
+
+
+def log(message: str) -> None:
+    """Print a message with orange batch ID prefix.
+
+    Works with both regular print and tqdm progress bars.
+    """
+    # ANSI color codes: \033[38;5;208m is orange, \033[0m resets
+    print(f"\033[38;5;208m[{_BATCH_ID}]\033[0m {message}")
 
 
 def run_clustering(
@@ -37,6 +49,12 @@ def run_clustering(
 
     model_path: str = config.model_path
 
+    # Extract batch ID from dataset filename (e.g., "batch_01.npz" -> "01")
+    global _BATCH_ID
+    _BATCH_ID = dataset_path.stem.split("_")[-1] if "_" in dataset_path.stem else dataset_path.stem  # pyright: ignore[reportConstantRedefinition]
+
+    log(f"Starting clustering for {dataset_path.name}")
+
     # Initialize WandB run if enabled
     wandb_run: wandb.sdk.wandb_run.Run | None = None
     if config.wandb_enabled:
@@ -52,7 +70,7 @@ def run_clustering(
                 f"config:{config.config_identifier}",
             ],
         )
-        logger.info(f"Initialized WandB run: {wandb_run.name} in group {config.wandb_group}")
+        log(f"Initialized WandB run: {wandb_run.name} in group {config.wandb_group}")
 
     # get the dataset -- for ensembles, each instance of this script gets a different batch
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
@@ -104,6 +122,7 @@ def run_clustering(
             save_pdf=True,
             pdf_prefix=(this_merge_figs / "activations").as_posix(),
             wandb_run=wandb_run,
+            log=log,
         )
 
     # run the merge iteration
@@ -112,6 +131,7 @@ def run_clustering(
         merge_config=config,  # Pass full MergeRunConfig to access wandb_log_frequency
         component_labels=processed_activations["labels"],
         wandb_run=wandb_run,
+        prefix=f"\033[38;5;208m[{_BATCH_ID}]\033[0m",
     )
 
     # save the merge iteration
@@ -123,7 +143,7 @@ def run_clustering(
     # dbg_auto(merge_history_serialized)
 
     ZANJ().save(merge_history_serialized, hist_save_path)
-    logger.info(f"Merge history saved to {hist_save_path}")
+    log(f"Merge history saved to {hist_save_path}")
 
     # Save merge history as WandB artifact
     if wandb_run is not None:
@@ -153,7 +173,7 @@ def run_clustering(
     # Finish WandB run
     if wandb_run is not None:
         wandb_run.finish()
-        logger.info(f"Finished WandB run with url: {wandb_run.url}")
+        log(f"Finished WandB run with url: {wandb_run.url}")
 
     return hist_save_path
 
