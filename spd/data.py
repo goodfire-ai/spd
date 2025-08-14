@@ -213,7 +213,7 @@ def create_data_loader(
             torch_dataset,  # pyright: ignore[reportArgumentType]
             num_replicas=ddp_world_size,
             rank=ddp_rank,
-            shuffle=False,  # Already shuffled above
+            shuffle=True,  # New data each epoch
             seed=seed,
             drop_last=True,
         )
@@ -222,7 +222,7 @@ def create_data_loader(
         torch_dataset,  # pyright: ignore[reportArgumentType]
         batch_size=batch_size,
         sampler=sampler,
-        shuffle=False,
+        shuffle=sampler is None,  # Shuffle arg not compatible with DistributedSampler
         drop_last=True,
     )
     return loader, tokenizer
