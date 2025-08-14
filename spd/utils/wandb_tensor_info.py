@@ -34,20 +34,20 @@ def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Fi
         mean_val: float = info["mean"]
         median_val: float = info["median"]
         std_val: float = info["std"]
-        
+
         ax.axvline(
             mean_val,
             color="red",
             linestyle="-",
             linewidth=2,
-            label=f"$\\mu={mean_val:.3g}$",
+            label="$\\mu$",
         )
         ax.axvline(
             median_val,
             color="blue",
             linestyle="-",
             linewidth=2,
-            label=f"$\\tilde{{x}}={median_val:.3g}$",
+            label="$\\tilde{x}$",
         )
         if std_val:
             ax.axvline(
@@ -67,7 +67,20 @@ def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Fi
                 label="$\\mu-\\sigma$",
             )
 
-    ax.set_title(f"{name}")
+    # Build informative title with tensor stats
+    shape_str: str = str(tuple(info["shape"])) if "shape" in info else "unknown"
+    dtype_str: str = str(info.get("dtype", "unknown")).replace("torch.", "")
+
+    title_line1: str = f"{name}"
+    title_line2: str = f"shape={shape_str}, dtype={dtype_str}"
+    title_line3: str = (
+        f"range=[{info['min']:.3g}, {info['max']:.3g}], "
+        f"$\\mu$={mean_val:.3g}, $\\tilde{{x}}$={median_val:.3g}, $\\sigma$={std_val:.3g}"
+    )
+
+    # Combine into multi-line title
+    full_title: str = f"{title_line1}\n{title_line2}\n{title_line3}"
+    ax.set_title(full_title, fontsize=10)
     ax.set_xlabel("Value")
     ax.set_ylabel("Count")
     ax.legend()
@@ -110,7 +123,7 @@ def _log_one(
     """Log a single tensor."""
     # Get tensor info once
     info: dict[str, Any] = array_info(tensor)
-    
+
     # Create and log histogram
     fig: plt.Figure = _create_histogram(info, tensor, name)
     histogram_key: str = f"tensor_histograms/{name}"
@@ -123,7 +136,7 @@ def _log_one(
         for key in ["mean", "std", "median", "min", "max"]
         if key in info and info[key] is not None
     }
-    
+
     # Add nan_percent if present
     nan_percent: float = info.get("nan_percent", 0)
     if nan_percent > 0:
@@ -138,9 +151,7 @@ def _log_one(
         # Build full URLs for histogram and metrics
         histogram_url: str = f"{run_url}#custom-charts/tensor_histograms/{name.replace('/', '%2F')}"
         metrics_url: str = f"{run_url}#scalars/section=tensor_metrics%2F{name.replace('/', '%2F')}"
-        
+
         logger.info(
-            f"Logged tensor: {name}\n"
-            f"  Histogram: {histogram_url}\n"
-            f"  Metrics: {metrics_url}"
+            f"Logged tensor: {name}\n  Histogram: {histogram_url}\n  Metrics: {metrics_url}"
         )
