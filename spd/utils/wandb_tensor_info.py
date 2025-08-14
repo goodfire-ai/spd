@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 import wandb
+import wandb.sdk.wandb_run
 from muutils.tensor_info import array_info
 from torch import Tensor
 
@@ -196,31 +197,34 @@ def wandb_log_tensor(
 
 def _log_one(
     run: wandb.sdk.wandb_run.Run,
-    tensor: Tensor,
+    tensor_: Tensor,
     name: str,
     step: int,
     single: bool = False,
 ) -> None:
     """Log a single tensor."""
-    # Get tensor info once
-    info: dict[str, Any] = array_info(tensor)
+    if single:
+        # For single-use logging, use the old path with detailed Plotly histogram
+        info: dict[str, Any] = array_info(tensor_)
+        wandb_hist = _create_histogram_wandb(tensor_, name)
+        histogram_key: str = f"single_hists/{name}"
+        run.log({histogram_key: wandb_hist}, step=step)
+    else:
+        # Log numeric stats as metrics (viewable like loss) using dict comprehension
+        info: dict[str, Any] = array_info(tensor_)
+        stats_to_log: dict[str, float | wandb.Histogram] = {
+            f"tensor_metrics/{name}/{key}": info[key]
+            for key in ["mean", "std", "median", "min", "max"]
+            if key in info and info[key] is not None
+        }
 
-    # Create and log WandB native histogram
-    wandb_hist = _create_histogram_wandb(tensor, name)
-    histogram_key: str = f"tensor_histograms/{name}"
-    run.log({histogram_key: wandb_hist}, step=step)
+        # For regular logging, use wandb.Histogram directly
+        stats_to_log[f"tensor_histograms/{name}"] = wandb.Histogram(tensor_.flatten().cpu().numpy())
 
-    # Log numeric stats as metrics (viewable like loss) using dict comprehension
-    stats_to_log: dict[str, float] = {
-        f"tensor_metrics/{name}/{key}": info[key]
-        for key in ["mean", "std", "median", "min", "max"]
-        if key in info and info[key] is not None
-    }
+        # Add nan_percent if present
+        nan_percent: float = info.get("nan_percent", 0)
+        if nan_percent > 0:
+            stats_to_log[f"tensor_metrics/{name}/nan_percent"] = nan_percent
 
-    # Add nan_percent if present
-    nan_percent: float = info.get("nan_percent", 0)
-    if nan_percent > 0:
-        stats_to_log[f"tensor_metrics/{name}/nan_percent"] = nan_percent
-
-    if stats_to_log and not single:
-        run.log(stats_to_log, step=step)
+        if stats_to_log:
+            run.log(stats_to_log, step=step)

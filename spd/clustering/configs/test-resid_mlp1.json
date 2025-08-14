@@ -10,7 +10,7 @@
   "rank_cost_fn_name": "const_1",
   "experiment_key": "resid_mlp1",
   "n_batches": 1,
-  "batch_size": 4,
+  "batch_size": 100,
   "wandb_enabled": true,
   "wandb_project": "spd-cluster",
   "wandb_log_frequency": 1,

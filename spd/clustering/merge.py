@@ -147,20 +147,23 @@ def merge_iteration(
         # Log to WandB if enabled
         wandb_log_freq: int = getattr(merge_config, "wandb_log_frequency", 1)
         if wandb_run is not None and i % wandb_log_freq == 0:
-            # Log coactivation matrix stats
             wandb_log_tensor(
                 wandb_run,
-                current_coact,
-                "coactivation",
+                dict(
+                    coactivation=current_coact,
+                    costs=costs,
+                    group_sizes=current_merge.components_per_group,
+                ),
+                "iters",
                 step=i,
             )
 
-            # Log cost matrix stats
-            wandb_log_tensor(
-                wandb_run,
-                costs,
-                "costs",
-                step=i,
+            # log chosen pair cost
+            wandb_run.log(
+                {
+                    "merge_pair_cost": costs[merge_pair].mean().item(),
+                    "iteration": i,
+                }
             )
 
         # merge the pair
