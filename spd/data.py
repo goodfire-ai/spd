@@ -236,8 +236,6 @@ def loop_dataloader[T](dl: DataLoader[T]):
     Ensures that each epoch gets different data, even when using a distributed sampler.
     """
     epoch = 0
-    if isinstance(dl.sampler, DistributedSampler):
-        dl.sampler.set_epoch(epoch)
     dl_iter = iter(dl)
     while True:
         try:
