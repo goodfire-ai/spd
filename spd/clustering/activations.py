@@ -6,7 +6,6 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 
 from spd.clustering.util import ModuleFilterFunc
-from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
@@ -193,13 +192,11 @@ def process_activations(
             ]
             labels = [label for label, keep in alive_labels if keep]
             dead_components_lst = [label for label, keep in alive_labels if not keep]
-            logger.values(
-                {
-                    "total_components": total_c,
-                    "n_alive_components": len(labels),
-                    "n_dead_components": len(dead_components_lst),
-                }
-            )
+            # logger.values({
+            #     "total_components": total_c,
+            #     "n_alive_components": len(labels),
+            #     "n_dead_components": len(dead_components_lst),
+            # })
 
     # compute coactivations
     # TODO: this is wrong for anything but boolean activations

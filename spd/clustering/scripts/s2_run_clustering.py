@@ -123,7 +123,7 @@ def run_clustering(
     # dbg_auto(merge_history_serialized)
 
     ZANJ().save(merge_history_serialized, hist_save_path)
-    print(f"Merge history saved to {hist_save_path}")
+    logger.info(f"Merge history saved to {hist_save_path}")
 
     # Save merge history as WandB artifact
     if wandb_run is not None:

@@ -33,8 +33,6 @@ def merge_iteration(
 ) -> MergeHistory:
     # setup
     # ==================================================
-    print("Starting merge iteration...")
-
     # compute coactivations
     activation_mask_orig: Float[Tensor, "samples c_components"] | None = (
         activations > merge_config.activation_threshold
@@ -215,7 +213,6 @@ def merge_iteration(
 
     # finish up
     # ==================================================
-    print(f"Merge iteration completed with {k_groups} groups remaining.")
 
     return merge_history
 

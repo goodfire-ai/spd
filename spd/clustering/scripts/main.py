@@ -1,8 +1,10 @@
+import functools
 import json
+import os
 import subprocess
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,8 @@ from spd.utils.cuda_memory_used import cuda_memory_fraction
 
 # pyright: reportUnreachable=false, reportUnnecessaryIsInstance=false
 
+os.environ["WANDB_QUIET"] = "True"
+
 
 # TODO: this is super messy
 def distribute_clustering(
@@ -29,6 +33,8 @@ def distribute_clustering(
     save_dir: Path,
     cuda_mem_max: float | None = None,
     max_concurrency: int | None = None,
+    log_fn: Callable[[str], None] = print,
+    log_fn_error: Callable[..., None] = functools.partial(print, file=sys.stderr),  # noqa: B008
 ) -> None:
     n_devices: int = len(devices)
     if n_devices == 0:
@@ -59,32 +65,31 @@ def distribute_clustering(
 
             # wait until at least 20% of GPU memory is free
             if cuda_mem_max is not None:
-                print()
+                log_fn_error("")
                 while (m := cuda_memory_fraction(device)) > cuda_mem_max:
                     time.sleep(5)
-                    print(
+                    log_fn_error(
                         f"GPU memory usage is too high ({m:.2%}), waiting for it to drop below {cuda_mem_max:.2%}...",
                         end="\r",
-                        file=sys.stderr,
                     )
-                print()
+                log_fn_error("")
 
             active.append(subprocess.Popen(cmd))
-            print(
-                f"Started clustering for {dataset} on {device} (pid={active[-1].pid}) ({idx + 1}/{n_files})"
+            log_fn(
+                f"Started clustering {idx + 1}/{n_files} on {device} (pid={active[-1].pid})\n\t{dataset}"
             )
             if len(active) >= max_concurrency:
                 active[0].wait()
-                print(f"Process {active[0].pid} finished, removing from active list")
+                log_fn(f"Process {active[0].pid} finished, removing from active list")
                 active.pop(0)
         for proc in active:
             proc.wait()
-            print(f"Process {proc.pid} finished, removing from active list")
+            log_fn(f"Process {proc.pid} finished, removing from active list")
     except Exception as e:
-        print(f"An error occurred: {e}", file=sys.stderr)
+        log_fn_error(f"An error occurred: {e}")
         for proc in active:
             proc.kill()
-            print(f"Killed process {proc.pid} due to error", file=sys.stderr)
+            log_fn_error(f"Killed process {proc.pid} due to error")
         raise e
 
 
@@ -170,6 +175,8 @@ def main(
         save_dir=histories_path,
         devices=devices_,
         max_concurrency=max_concurrency,
+        log_fn=lambda msg: logger.info(f"\x1b[36m[spd-cluster]\x1b[0m {msg}"),
+        log_fn_error=lambda msg: logger.error(f"\x1b[31m[spd-cluster:err] {msg}\x1b[0m"),
     )
 
     histories_files: list[Path] = list(histories_path.glob("*.zanj"))
