@@ -144,7 +144,7 @@ def merge_iteration(
         )
 
         # Log to WandB if enabled
-        wandb_log_freq: int = getattr(merge_config, 'wandb_log_frequency', 1)
+        wandb_log_freq: int = getattr(merge_config, "wandb_log_frequency", 1)
         if wandb_run is not None and i % wandb_log_freq == 0:
             # Log coactivation matrix stats
             wandb_log_tensor(
@@ -153,7 +153,7 @@ def merge_iteration(
                 "coactivation",
                 step=i,
             )
-            
+
             # Log cost matrix stats
             wandb_log_tensor(
                 wandb_run,

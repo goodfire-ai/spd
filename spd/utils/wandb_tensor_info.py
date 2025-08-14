@@ -98,62 +98,71 @@ def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:
     """Create Plotly histogram figure."""
     # Get values for histogram
     values: np.ndarray = tensor.flatten().detach().cpu().numpy()
-    
+
     # Remove NaNs if present
     if np.isnan(values).any():
         values = values[~np.isnan(values)]
-    
+
     # Get tensor stats for annotations
     info: dict[str, Any] = array_info(tensor)
-    
+
     # Create Plotly histogram
     fig: go.Figure = go.Figure()
-    
-    fig.add_trace(go.Histogram(
-        x=values,
-        nbinsx=50,
-        name=name,
-        opacity=0.7,
-    ))
-    
+
+    fig.add_trace(
+        go.Histogram(
+            x=values,
+            nbinsx=50,
+            name=name,
+            opacity=0.7,
+        )
+    )
+
     # Add vertical lines for mean, median, std
     if info["mean"] is not None:
         mean_val: float = info["mean"]
         median_val: float = info["median"]
         std_val: float = info["std"]
-        
+
         # Add mean line
-        fig.add_vline(x=mean_val, line_dash="solid", line_color="red", 
-                      annotation_text=f"μ={mean_val:.3g}")
-        
+        fig.add_vline(
+            x=mean_val, line_dash="solid", line_color="red", annotation_text=f"μ={mean_val:.3g}"
+        )
+
         # Add median line
-        fig.add_vline(x=median_val, line_dash="solid", line_color="blue",
-                      annotation_text=f"x̃={median_val:.3g}")
-        
+        fig.add_vline(
+            x=median_val,
+            line_dash="solid",
+            line_color="blue",
+            annotation_text=f"x̃={median_val:.3g}",
+        )
+
         # Add std lines
         if std_val:
-            fig.add_vline(x=mean_val + std_val, line_dash="dash", line_color="orange",
-                          annotation_text=f"μ+σ")
-            fig.add_vline(x=mean_val - std_val, line_dash="dash", line_color="orange",
-                          annotation_text=f"μ-σ")
-    
+            fig.add_vline(
+                x=mean_val + std_val, line_dash="dash", line_color="orange", annotation_text="μ+σ"
+            )
+            fig.add_vline(
+                x=mean_val - std_val, line_dash="dash", line_color="orange", annotation_text="μ-σ"
+            )
+
     # Update layout with stats
     title_text: str = f"{name}"
     if info.get("shape"):
         shape_str: str = str(tuple(info["shape"]))
         dtype_str: str = str(info.get("dtype", "unknown")).replace("torch.", "")
         title_text += f"<br>shape={shape_str}, dtype={dtype_str}"
-        
+
     if info["mean"] is not None:
         title_text += f"<br>range=[{info['min']:.3g}, {info['max']:.3g}], μ={info['mean']:.3g}, x̃={info['median']:.3g}, σ={info['std']:.3g}"
-    
+
     fig.update_layout(
         title=title_text,
         xaxis_title="Value",
         yaxis_title="Count",
         showlegend=False,
     )
-    
+
     return fig
 
 
@@ -176,7 +185,7 @@ def wandb_log_tensor(
     # Skip logging if no WandB run
     if run is None:
         return
-        
+
     if isinstance(data, dict):
         # Handle dict of tensors
         for key, tensor in data.items():
@@ -224,8 +233,12 @@ def _log_one(
         run_url: str | None = run.get_url()
         if run_url:
             # Build full URLs for histogram and metrics
-            histogram_url: str = f"{run_url}#custom-charts/tensor_histograms/{name.replace('/', '%2F')}"
-            metrics_url: str = f"{run_url}#scalars/section=tensor_metrics%2F{name.replace('/', '%2F')}"
+            histogram_url: str = (
+                f"{run_url}#custom-charts/tensor_histograms/{name.replace('/', '%2F')}"
+            )
+            metrics_url: str = (
+                f"{run_url}#scalars/section=tensor_metrics%2F{name.replace('/', '%2F')}"
+            )
 
             logger.info(
                 f"Logged tensor: {name}\n  Histogram: {histogram_url}\n  Metrics: {metrics_url}"

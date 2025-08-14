@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import wandb
 from jaxtyping import Int
-from muutils.dbg import dbg_auto
 from torch import Tensor
 from zanj import ZANJ
 
@@ -125,7 +124,7 @@ def run_clustering(
     print(f"Saving merge history to {hist_save_path}")
 
     merge_history_serialized: dict[str, Any] = merge_history.serialize()
-    # TODO: Consider adding fallback to dbg_auto if wandb_run is None  
+    # TODO: Consider adding fallback to dbg_auto if wandb_run is None
     # For now we skip logging merge_history_serialized as it's large and complex
     # dbg_auto(merge_history_serialized)
 
