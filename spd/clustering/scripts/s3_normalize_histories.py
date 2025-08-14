@@ -20,7 +20,7 @@ def load_merge_histories_from_wandb(
     """Load merge histories from WandB run URLs"""
     api = wandb.Api()
     data: list[MergeHistory] = []
-    
+
     for url in wandb_urls:
         # Parse URL format: wandb:entity/project/run_id or full URL
         run_path: str
@@ -32,12 +32,12 @@ def load_merge_histories_from_wandb(
             parts: list[str] = url.split("/")
             if "runs" in parts:
                 run_idx: int = parts.index("runs") + 1
-                run_path = f"{parts[run_idx-3]}/{parts[run_idx-2]}/{parts[run_idx]}"
+                run_path = f"{parts[run_idx - 3]}/{parts[run_idx - 2]}/{parts[run_idx]}"
             else:
                 raise ValueError(f"Cannot parse WandB URL: {url}")
-        
+
         run = api.run(run_path)
-        
+
         # Find and download merge history artifact
         artifacts = run.logged_artifacts()
         merge_history_artifact = None
@@ -45,22 +45,22 @@ def load_merge_histories_from_wandb(
             if artifact.type == "merge_history":
                 merge_history_artifact = artifact
                 break
-        
+
         if merge_history_artifact is None:
             raise ValueError(f"No merge_history artifact found for run {run_path}")
-        
+
         # Download the artifact to a cache directory
         artifact_dir: str = merge_history_artifact.download(root=str(REPO_ROOT / "wandb_cache"))
-        
+
         # Find the .zanj file in the downloaded artifact
         zanj_files: list[Path] = list(Path(artifact_dir).glob("*.zanj"))
         if not zanj_files:
             raise ValueError(f"No .zanj file found in artifact for run {run_path}")
-        
+
         # Load the merge history
         merge_history: MergeHistory = ZANJ().read(zanj_files[0])
         data.append(merge_history)
-    
+
     ensemble = MergeHistoryEnsemble(data=data)
     return wandb_urls, ensemble
 

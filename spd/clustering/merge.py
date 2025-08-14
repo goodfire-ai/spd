@@ -170,9 +170,13 @@ def merge_iteration(
                     "iteration": i,
                 }
             )
-        
+
         # Call artifact callback periodically for saving group_idxs
-        if artifact_callback is not None and i > 0 and i % merge_config.wandb_artifact_frequency == 0:
+        if (
+            artifact_callback is not None
+            and i > 0
+            and i % merge_config.wandb_artifact_frequency == 0
+        ):
             artifact_callback(merge_history, i)
 
         # merge the pair

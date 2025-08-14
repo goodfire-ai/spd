@@ -180,7 +180,7 @@ def main(
     )
 
     histories_files: list[Path] = list(histories_path.glob("*.zanj"))
-    
+
     # Collect WandB URLs if wandb is enabled
     wandb_urls: list[str] = []
     if merge_run_config.wandb_enabled:
@@ -189,14 +189,16 @@ def main(
             if wburl_file.exists():
                 wandb_url: str = wburl_file.read_text().strip()
                 wandb_urls.append(wandb_url)
-        
+
         logger.info(f"Found {len(wandb_urls)} WandB URLs from .wburl files")
 
     # 3. normalize histories to account for different active components
     logger.section("Normalizing histories")
-    
+
     # Use WandB URLs if available and enabled, otherwise use local files
-    histories_input: list[str] | list[Path] = wandb_urls if wandb_urls and merge_run_config.wandb_enabled else histories_files
+    histories_input: list[str] | list[Path] = (
+        wandb_urls if wandb_urls and merge_run_config.wandb_enabled else histories_files
+    )
     merged_hists: dict[str, Any] = normalize_histories(
         histories=histories_input,
         run_dir=run_path / "distances",

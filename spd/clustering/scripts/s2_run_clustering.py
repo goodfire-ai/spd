@@ -47,12 +47,12 @@ def save_group_idxs_artifact(
 ) -> None:
     """Save group_idxs to file and upload as WandB artifact periodically."""
     # Extract group_idxs up to current iteration
-    current_group_idxs = merge_hist.merges.group_idxs[:iteration+1].cpu().numpy()
-    
+    current_group_idxs = merge_hist.merges.group_idxs[: iteration + 1].cpu().numpy()
+
     # Save to file in the same directory as merge history
     group_idxs_path = save_dir / f"{config_identifier}-d_{dataset_stem}.i{iteration}.group_idxs.npy"
     np.save(group_idxs_path, current_group_idxs)
-    
+
     # Create and upload artifact
     artifact = wandb.Artifact(
         name=f"group_idxs_{dataset_stem}_iter_{iteration}",
@@ -172,7 +172,7 @@ def run_clustering(
             dataset_stem=dataset_path.stem,
             config_identifier=config_.config_identifier,
         )
-    
+
     # run the merge iteration
     merge_history: MergeHistory = merge_iteration(
         activations=processed_activations["activations"],
@@ -206,7 +206,7 @@ def run_clustering(
         # Save the group_idxs as a numpy array first
         group_idxs_path = hist_save_path.with_suffix(".group_idxs.npy")
         np.save(group_idxs_path, merge_history.merges.group_idxs.cpu().numpy())
-        
+
         artifact = wandb.Artifact(
             name=f"merge_history_{dataset_path.stem}",
             type="merge_history",

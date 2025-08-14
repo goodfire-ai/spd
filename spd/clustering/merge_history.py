@@ -98,7 +98,7 @@ class MergeHistory(SerializableDataclass):
         default=None,
     )
     "Sweep parameters if used in sweep"
-    
+
     wandb_url: str | None = serializable_field(
         default=None,
     )
