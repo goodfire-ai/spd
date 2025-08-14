@@ -91,7 +91,7 @@ def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Fi
 
 
 def wandb_log_tensor(
-    run: wandb.sdk.wandb_run.Run,
+    run: wandb.sdk.wandb_run.Run | None,
     data: Tensor | dict[str, Tensor],
     name: str,
     step: int,
@@ -99,11 +99,15 @@ def wandb_log_tensor(
     """Log tensor(s) with stats to WandB as metrics and histograms.
 
     Args:
-        run: Current WandB run (required)
+        run: Current WandB run (None if WandB disabled)
         data: Either a Tensor or dict[str, Tensor]
         name: Name for logging
         step: WandB step
     """
+    # Skip logging if no WandB run
+    if run is None:
+        return
+        
     if isinstance(data, dict):
         # Handle dict of tensors
         for key, tensor in data.items():
