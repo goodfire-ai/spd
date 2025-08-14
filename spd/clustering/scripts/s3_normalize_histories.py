@@ -62,6 +62,29 @@ def load_merge_histories_from_wandb(
         data.append(merge_history)
 
     ensemble = MergeHistoryEnsemble(data=data)
+
+    # Create WandB view URL for all the runs
+    if wandb_urls:
+        # Extract project and entity from the first URL
+        first_url = wandb_urls[0]
+        if first_url.startswith("wandb:"):
+            run_path_parts = first_url.replace("wandb:", "").split("/")
+        else:
+            # Parse full URL
+            parts = first_url.split("/")
+            if "runs" in parts:
+                run_idx = parts.index("runs") + 1
+                run_path_parts = [parts[run_idx - 3], parts[run_idx - 2]]
+            else:
+                run_path_parts = []
+
+        if len(run_path_parts) >= 2:
+            entity, project = run_path_parts[0], run_path_parts[1]
+            # Create a simple project view URL - users can filter by group manually
+            view_url = f"https://wandb.ai/{entity}/{project}"
+            logger.info(f"WandB project view for batch runs: {view_url}")
+            logger.info("Filter by group to see runs from the same config together")
+
     return wandb_urls, ensemble
 
 

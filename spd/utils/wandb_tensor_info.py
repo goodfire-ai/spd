@@ -201,6 +201,7 @@ def _log_one(
     name: str,
     step: int,
     single: bool = False,
+    # use_log_counts: bool = True,
 ) -> None:
     """Log a single tensor."""
     if single:
@@ -219,7 +220,8 @@ def _log_one(
         }
 
         # For regular logging, use wandb.Histogram directly
-        stats_to_log[f"tensor_histograms/{name}"] = wandb.Histogram(tensor_.flatten().cpu().numpy())
+        hist_key: str = f"tensor_histograms/{name}"
+        stats_to_log[hist_key] = wandb.Histogram(tensor_.flatten().cpu().numpy())
 
         # Add nan_percent if present
         nan_percent: float = info.get("nan_percent", 0)
