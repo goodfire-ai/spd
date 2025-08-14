@@ -22,6 +22,7 @@ def _from_pretrained(canonical_run: str) -> ComponentModel:
     return ComponentModel.from_pretrained(canonical_run)
 
 
+@pytest.mark.requires_wandb
 @pytest.mark.slow
 @pytest.mark.parametrize("from_func", [_from_run_info, _from_pretrained])
 def test_loading_from_wandb(from_func: Callable[[str], ComponentModel]) -> None:
