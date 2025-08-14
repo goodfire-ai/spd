@@ -99,6 +99,9 @@ class MergeHistory(SerializableDataclass):
     )
     "Sweep parameters if used in sweep"
 
+    wandb_url: str | None = serializable_field(default=None)
+    "WandB URL for this run, if available"
+
     @classmethod
     def from_config(
         cls,
@@ -106,6 +109,7 @@ class MergeHistory(SerializableDataclass):
         c_components: int,
         component_labels: list[str],
         sweep_params: dict[str, Any] | None = None,
+        wandb_url: str | None = None,
     ) -> MergeHistory:
         n_iters_target: int = config.iters
         # TODO: pyright doesnt like muutils
@@ -122,6 +126,7 @@ class MergeHistory(SerializableDataclass):
             ),
             config=config,  # pyright: ignore[reportCallIssue]
             sweep_params=sweep_params,  # pyright: ignore[reportCallIssue]
+            wandb_url=wandb_url,  # pyright: ignore[reportCallIssue]
         )
 
     def add_iteration(

@@ -104,11 +104,7 @@ def run_clustering(
             labels=processed_activations["labels"],
             save_pdf=True,
             pdf_prefix=(this_merge_figs / "activations").as_posix(),
-            # figsize_raw=figsize_raw,
-            # figsize_concat=figsize_concat,
-            # figsize_coact=figsize_coact,
-            # hist_scales=hist_scales,
-            # hist_bins=hist_bins,
+            wandb_run=wandb_run,
         )
 
     # run the merge iteration
@@ -130,6 +126,22 @@ def run_clustering(
 
     ZANJ().save(merge_history_serialized, hist_save_path)
     print(f"Merge history saved to {hist_save_path}")
+
+    # Save merge history as WandB artifact
+    if wandb_run is not None:
+        artifact = wandb.Artifact(
+            name=f"merge_history_{dataset_path.stem}",
+            type="merge_history",
+            description=f"Merge history for batch {dataset_path.stem}",
+            metadata={
+                "batch_name": dataset_path.stem,
+                "config_identifier": config.config_identifier,
+                "n_iters_current": merge_history.n_iters_current,
+            },
+        )
+        artifact.add_file(str(hist_save_path))
+        wandb_run.log_artifact(artifact)
+        print(f"Logged merge history artifact: {artifact.name}")
 
     if plot:
         plot_merge_history_cluster_sizes(

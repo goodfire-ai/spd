@@ -2,11 +2,11 @@ from typing import Any, Literal
 
 import torch
 from jaxtyping import Float, Int
-from muutils.dbg import dbg, dbg_auto
 from torch import Tensor
 from torch.utils.data import DataLoader
 
 from spd.clustering.util import ModuleFilterFunc
+from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
@@ -193,7 +193,13 @@ def process_activations(
             ]
             labels = [label for label, keep in alive_labels if keep]
             dead_components_lst = [label for label, keep in alive_labels if not keep]
-            dbg((len(dead_components_lst), len(labels)))
+            logger.values(
+                {
+                    "total_components": total_c,
+                    "n_alive_components": len(labels),
+                    "n_dead_components": len(dead_components_lst),
+                }
+            )
 
     # compute coactivations
     # TODO: this is wrong for anything but boolean activations
@@ -211,7 +217,5 @@ def process_activations(
         n_components_dead=len(dead_components_lst) if dead_components_lst else 0,
         sort_indices=sort_indices_dict if sort_components else None,
     )
-
-    dbg_auto(output)
 
     return output

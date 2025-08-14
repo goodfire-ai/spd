@@ -6,6 +6,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import wandb
 from jaxtyping import Float
 from torch import Tensor
 
@@ -23,6 +24,7 @@ def plot_activations(
     hist_scales: tuple[str, str] = ("lin", "log"),
     hist_bins: int = 100,
     do_sorted_samples: bool = False,
+    wandb_run: wandb.sdk.wandb_run.Run | None = None,
 ) -> None:
     """Plot activation visualizations including raw, concatenated, sorted, and coactivations.
 
@@ -58,6 +60,10 @@ def plot_activations(
         _fig1.savefig(fig1_fname, bbox_inches="tight", dpi=300)
         print(f"Saved raw activations plot to {fig1_fname}")
 
+    # Log to WandB if available
+    if wandb_run is not None:
+        wandb_run.log({"plots/activations/raw": wandb.Image(_fig1)}, step=0)
+
     # Concatenated activations
     fig2, ax2 = plt.subplots(figsize=figsize_concat)
     act_data: np.ndarray = act_concat.T.cpu().numpy()
@@ -73,6 +79,10 @@ def plot_activations(
         fig2_fname = f"{pdf_prefix}_concatenated.pdf"
         fig2.savefig(fig2_fname, bbox_inches="tight", dpi=300)
         print(f"Saved concatenated activations plot to {fig2_fname}")
+
+    # Log to WandB if available
+    if wandb_run is not None:
+        wandb_run.log({"plots/activations/concatenated": wandb.Image(fig2)}, step=0)
 
     # Concatenated activations, sorted samples
     if do_sorted_samples:
@@ -133,6 +143,10 @@ def plot_activations(
             fig3.savefig(fig3_fname, bbox_inches="tight", dpi=300)
             print(f"Saved sorted concatenated activations plot to {fig3_fname}")
 
+        # Log to WandB if available
+        if wandb_run is not None:
+            wandb_run.log({"plots/activations/concatenated_sorted": wandb.Image(fig3)}, step=0)
+
     # Coactivations
     fig4, ax4 = plt.subplots(figsize=figsize_coact)
     coact_data: np.ndarray = coact.cpu().numpy()
@@ -150,6 +164,10 @@ def plot_activations(
         fig4.savefig(fig4_fname, bbox_inches="tight", dpi=300)
         print(f"Saved coactivations plot to {fig4_fname}")
 
+    # Log to WandB if available
+    if wandb_run is not None:
+        wandb_run.log({"plots/activations/coactivations": wandb.Image(fig4)}, step=0)
+
     # log coactivations
     fig4_log, ax4_log = plt.subplots(figsize=figsize_coact)
     coact_log_data: np.ndarray = np.log10(coact_data + 1e-10)
@@ -165,6 +183,10 @@ def plot_activations(
         fig4_log_fname = f"{pdf_prefix}_coactivations_log.pdf"
         fig4_log.savefig(fig4_log_fname, bbox_inches="tight", dpi=300)
         print(f"Saved log coactivations plot to {fig4_log_fname}")
+
+    # Log to WandB if available
+    if wandb_run is not None:
+        wandb_run.log({"plots/activations/coactivations_log": wandb.Image(fig4_log)}, step=0)
 
     # Activation histograms
     fig5: plt.Figure
@@ -252,6 +274,10 @@ def plot_activations(
         fig5_fname = f"{pdf_prefix}_histograms.pdf"
         fig5.savefig(fig5_fname, bbox_inches="tight", dpi=300)
         print(f"Saved histograms plot to {fig5_fname}")
+
+    # Log to WandB if available
+    if wandb_run is not None:
+        wandb_run.log({"plots/activations/histograms": wandb.Image(fig5)}, step=0)
 
 
 def add_component_labeling(ax: plt.Axes, component_labels: list[str], axis: str = "x") -> None:

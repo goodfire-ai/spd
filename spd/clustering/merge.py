@@ -81,6 +81,7 @@ def merge_iteration(
         c_components=c_components,
         component_labels=component_labels,
         sweep_params=sweep_params,
+        wandb_url=wandb_run.url if wandb_run else None,
     )
 
     # free up memory
@@ -203,7 +204,7 @@ def merge_iteration(
         # --------------------------------------------------
 
         # Check stopping conditions
-        if k_groups <= 2:
+        if k_groups <= 3:
             warnings.warn(
                 f"Stopping early at iteration {i} as only {k_groups} groups left", stacklevel=1
             )
