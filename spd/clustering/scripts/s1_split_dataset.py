@@ -12,8 +12,8 @@ from spd.clustering.merge_run_config import MergeRunConfig
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.registry import TaskName
 from spd.settings import REPO_ROOT
+from spd.spd_types import TaskName
 
 
 def split_dataset_lm(

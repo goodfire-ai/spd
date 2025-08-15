@@ -10,7 +10,8 @@ from muutils.misc.numerical import shorten_numerical_to_str
 from pydantic import Field, PositiveInt, model_validator
 
 from spd.clustering.merge_config import MergeConfig
-from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig, TaskName
+from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
+from spd.spd_types import TaskName
 
 
 class MergeRunConfig(MergeConfig):

@@ -2,13 +2,12 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 
 from spd.settings import REPO_ROOT
-
-TaskName = Literal["tms", "resid_mlp", "lm", "ih"]
+from spd.spd_types import TaskName
 
 
 @dataclass

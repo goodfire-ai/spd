@@ -1,6 +1,7 @@
 from typing import NamedTuple
 
-from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig, TaskName
+from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
+from spd.spd_types import TaskName
 
 TypedModelPath = NamedTuple(  # noqa: UP014
     "TypedModelPath",
@@ -30,6 +31,9 @@ def convert_model_path(
         if key not in EXPERIMENT_REGISTRY:
             raise ValueError(f"Experiment '{key}' not found in EXPERIMENT_REGISTRY")
         exp_config: ExperimentConfig = EXPERIMENT_REGISTRY[key]
+        assert exp_config.canonical_run is not None, (
+            f"Experiment '{key}' does not have a canonical run defined!"
+        )
         return TypedModelPath(
             wandb_path=exp_config.canonical_run,
             task_name=exp_config.task_name,
