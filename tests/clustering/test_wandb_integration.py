@@ -102,14 +102,11 @@ def test_save_group_idxs_artifact_creates_file():
                     wandb_run=mock_wandb_run,
                     save_dir=save_dir,
                     dataset_stem="batch_01",
-                    config_identifier="test_config",
                 )
 
-                # Check that np.save was called with the right path
-                expected_path = save_dir / "test_config-d_batch_01.i3.group_idxs.npy"
-                mock_np_save.assert_called_once()
-                called_path = mock_np_save.call_args[0][0]
-                assert str(called_path) == str(expected_path)
+                # Check that the function was called and file was saved
+                expected_path = save_dir / "iter_0003.zanj"
+                mock_history.save.assert_called_once_with(expected_path)
 
                 # Check that artifact was created and logged
                 mock_artifact_class.assert_called_once()

@@ -77,7 +77,6 @@ class TestMergeConfigSampling:
             pop_component_prob=0.1,
             filter_dead_threshold=0.001,
             module_name_filter="model.layers",
-            rank_cost_fn_name="log",
         )
 
         assert config.activation_threshold == 0.01
@@ -88,7 +87,6 @@ class TestMergeConfigSampling:
         assert config.pop_component_prob == 0.1
         assert config.filter_dead_threshold == 0.001
         assert config.module_name_filter == "model.layers"
-        assert config.rank_cost_fn_name == "log"
 
     def test_config_serialization(self):
         """Test that config can be serialized and deserialized."""
