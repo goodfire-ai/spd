@@ -21,7 +21,7 @@ from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.merge_run_config import MergeRunConfig
-from spd.utils.wandb_tensor_info import wandb_log_tensor
+from spd.clustering.wandb_tensor_info import wandb_log_tensor
 
 
 def merge_iteration(
