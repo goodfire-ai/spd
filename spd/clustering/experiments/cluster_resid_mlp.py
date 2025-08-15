@@ -33,7 +33,9 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 # %%
 # Load model
 # ============================================================
-SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp2"].canonical_run)
+_CANONICAL_RUN: str | None = EXPERIMENT_REGISTRY["resid_mlp2"].canonical_run
+assert _CANONICAL_RUN is not None, "No canonical run found for resid_mlp2 experiment"
+SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(_CANONICAL_RUN)
 MODEL: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 MODEL.to(DEVICE)
 SPD_CONFIG: Config = SPD_RUN.config
