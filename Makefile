@@ -39,7 +39,7 @@ check-pre-commit:
 test:
 	pytest tests/
 
-NUM_PROCESSES ?= 4
+NUM_PROCESSES ?= auto
 
 .PHONY: test-all
 test-all:
