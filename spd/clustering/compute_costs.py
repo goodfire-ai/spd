@@ -9,6 +9,33 @@ from torch import Tensor
 from spd.clustering.math.merge_matrix import GroupMerge
 
 
+def compute_mdl_cost(
+    acts: Float[Tensor, " k_groups"],
+    merges: GroupMerge,
+    alpha: float = 1.0,
+) -> float:
+    r"""Compute MDL costs for merge matrices
+
+    $$
+        MDL = \sum_{i \in \N_k} s_i ( \log(k) + \alpha r(P_i) )
+    $$
+
+    where:
+     - $s_i$ activation of component $i$, $s_j$ activation of component $j$
+     - $r(P_i)$ rank of component $i$, $r(P_j)$ rank of component $j$
+     - $k$ is the total number of components
+    """
+
+    k_groups: int = acts.shape[0]
+    assert k_groups == merges.k_groups, "Merges must match activation vector shape"
+
+    return (
+        acts * (
+            math.log(k_groups) + alpha * merges.components_per_group
+        )
+    ).sum().item()
+
+
 def compute_merge_costs(
     coact: Float[Tensor, "k_groups k_groups"],
     merges: GroupMerge,
