@@ -1,9 +1,11 @@
 # %%
 
 import functools
+import json
+import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import numpy as np
 import torch
@@ -35,6 +37,18 @@ _BATCH_ID: str = "unk"
 
 # Delimiter for structured output parsing
 RESULT_DELIMITER: str = "-" * 50
+
+
+def _open_json_fd() -> TextIO:
+    """Open file descriptor for JSON output from environment variable"""
+    fd_num: int = int(os.environ["JSON_FD"])
+    return os.fdopen(fd_num, "w", buffering=1)
+
+
+def emit_result(obj: dict[str, str | None]) -> None:
+    """Emit result JSON via environment fd"""
+    out: TextIO = _open_json_fd()
+    print(json.dumps(obj, separators=(",", ":")), file=out, flush=True)
 
 
 def log(message: str) -> None:
@@ -302,9 +316,7 @@ def run_clustering(
         wandb_run.finish()
         log(f"Finished WandB run with url: {wandb_run.url}")
 
-    # Output structured result for main.py to parse
-    import json
-
+    # Output structured result for main.py to parse via fd 3
     result: dict[str, str | None] = {
         "hist_save_path": str(hist_save_path),
         "wburl_path": str(wburl_path) if wburl_path else None,
@@ -312,9 +324,8 @@ def run_clustering(
         "batch_name": dataset_path.stem,
         "config_identifier": config_.config_identifier,
     }
-    print(RESULT_DELIMITER)
-    print(json.dumps(result))
-    print(RESULT_DELIMITER)
+    
+    emit_result(result)
 
     return hist_save_path
 

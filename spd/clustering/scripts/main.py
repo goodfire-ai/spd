@@ -6,7 +6,7 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, IO
 
 from muutils.dbg import dbg_tensor
 
@@ -27,6 +27,45 @@ os.environ["WANDB_QUIET"] = "True"
 RESULT_DELIMITER: str = "-" * 50
 
 
+def launch_child_with_json_fd(cmd: list[str]) -> tuple[subprocess.Popen[bytes], IO[bytes]]:
+    """Launch child process with JSON fd via environment variable, allowing stdout/stderr streaming"""
+    json_r_fd, json_w_fd = os.pipe()
+    os.set_inheritable(json_w_fd, True)
+    os.set_inheritable(json_r_fd, False)
+
+    # Pass the fd number via environment variable
+    env: dict[str, str] = dict(os.environ)
+    env["JSON_FD"] = str(json_w_fd)
+
+    proc: subprocess.Popen[bytes] = subprocess.Popen(
+        cmd,
+        env=env,
+        stdout=None,  # Let stdout stream to console
+        stderr=None,  # Let stderr stream to console
+        pass_fds=(json_w_fd,),
+        close_fds=True,
+    )
+    
+    # In parent process: close the write fd (child has it) and return read fd
+    os.close(json_w_fd)
+    json_r: IO[bytes] = os.fdopen(json_r_fd, "rb", buffering=0)
+    return proc, json_r
+
+
+def _read_json_result(json_r: IO[bytes], dataset_path: Path) -> dict[str, str | None]:
+    """Read JSON result from file descriptor 3"""
+    json_line: bytes = json_r.readline()
+    if not json_line:
+        raise RuntimeError(f"No JSON result received from {dataset_path.stem}")
+    
+    json_str: str = json_line.decode().strip()
+    try:
+        result: dict[str, str | None] = json.loads(json_str)
+        return result
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse JSON result from {dataset_path.stem}: {e}\nJSON string: {json_str}") from e
+
+
 # TODO: this is super messy
 def distribute_clustering(
     config_path: Path,
@@ -43,7 +82,7 @@ def distribute_clustering(
         raise ValueError("devices must be non-empty")
     if max_concurrency is None:
         max_concurrency = len(data_files)
-    active: list[tuple[subprocess.Popen[str], Path]] = []
+    active: list[tuple[subprocess.Popen[bytes], IO[bytes], Path]] = []
     results: list[dict[str, str | None]] = []
 
     n_files: int = len(data_files)
@@ -78,72 +117,36 @@ def distribute_clustering(
                     )
                 log_fn_error("")
 
-            proc: subprocess.Popen[str] = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-            )
-            active.append((proc, dataset))
+            proc, json_r = launch_child_with_json_fd(cmd)
+            active.append((proc, json_r, dataset))
             log_fn(
                 f"Started clustering {idx + 1}/{n_files} on {device} (pid={proc.pid})\n\t{dataset}"
             )
             if len(active) >= max_concurrency:
-                proc_to_wait: subprocess.Popen[str]
-                dataset_path: Path
-                proc_to_wait, dataset_path = active[0]
-                stdout: str
-                stderr: str
-                stdout, stderr = proc_to_wait.communicate()
-                results.append(_parse_clustering_result(stdout, dataset_path, log_fn))
+                proc_to_wait, json_r_to_wait, dataset_path = active[0]
+                result = _read_json_result(json_r_to_wait, dataset_path)
+                proc_to_wait.wait()
+                results.append(result)
                 log_fn(f"Process {proc_to_wait.pid} finished, removing from active list")
                 active.pop(0)
 
-        for proc, dataset_path in active:
-            stdout, stderr = proc.communicate()
-            results.append(_parse_clustering_result(stdout, dataset_path, log_fn))
+        for proc, json_r, dataset_path in active:
+            result = _read_json_result(json_r, dataset_path)
+            proc.wait()
+            results.append(result)
             log_fn(f"Process {proc.pid} finished, removing from active list")
 
     except Exception as e:
         log_fn_error(f"An error occurred: {e}")
-        for proc, _ in active:
+        for proc, json_r, _ in active:
             proc.kill()
+            json_r.close()
             log_fn_error(f"Killed process {proc.pid} due to error")
         raise e
 
     return results
 
 
-def _parse_clustering_result(
-    stdout: str, dataset_path: Path, log_fn: Callable[[str], None]
-) -> dict[str, str | None]:
-    """Parse the JSON result from s2_run_clustering.py stdout"""
-    import json
-
-    # Print the stdout for user visibility
-    log_fn(f"Output from {dataset_path.stem}:")
-    log_fn(stdout)
-
-    # Split by the delimiter and extract JSON
-    parts: list[str] = stdout.split(RESULT_DELIMITER)
-
-    if len(parts) != 3:
-        # Process crashed before outputting structured result
-        # Check if there was an error in the output
-        if "Traceback" in stdout or "Error" in stdout:
-            raise RuntimeError(
-                f"Process for {dataset_path.stem} crashed with error. Check output above."
-            )
-        else:
-            raise ValueError(
-                f"Expected exactly 3 parts when splitting stdout by '{RESULT_DELIMITER}', got {len(parts)}. Process may have crashed."
-            )
-
-    json_str: str = parts[1].strip()
-    try:
-        result: dict[str, str | None] = json.loads(json_str)
-        return result
-    except json.JSONDecodeError as e:
-        raise ValueError(
-            f"Failed to parse JSON result from {dataset_path.stem}: {e}\nJSON string: {json_str}"
-        ) from e
 
 
 def main(

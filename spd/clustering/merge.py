@@ -137,10 +137,6 @@ def merge_iteration(
         # Sample a merge pair using the configured sampler
         merge_pair: tuple[int, int] = merge_config.merge_pair_sample(costs)
 
-        # Update progress bar description with groups remaining and MDL loss
-        mdl_loss = costs[merge_pair].mean().item()
-        pbar.set_description(f"{prefix} k={k_groups}, mdl={mdl_loss:.4f}")
-
         # Store matrices and selected pair in history
         merge_history.add_iteration(
             idx=i,
@@ -150,6 +146,17 @@ def merge_iteration(
             k_groups=k_groups,
             current_merge=current_merge,
         )
+
+        # compute cost, update progress bar
+        # --------------------------------------------------
+        diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)
+        mdl_loss: float = compute_mdl_cost(
+            acts=diag_acts,
+            merges=current_merge,
+            alpha=merge_config.alpha,
+        )
+        mdl_loss_norm: float = mdl_loss / current_act_mask.shape[0]
+        pbar.set_description(f"{prefix} k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={float(costs[merge_pair].item()):.4f}")
 
         # Log to WandB if enabled
         # --------------------------------------------------
@@ -161,7 +168,6 @@ def merge_iteration(
 
             fraction_zero_coacts: float = (current_coact == 0).float().mean().item()
             coact_no_zeros: Tensor = current_coact[current_coact > 0]
-            diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)
 
             tensor_data_for_wandb: dict[str, Tensor] = dict(
                 coactivation=current_coact,
@@ -187,17 +193,12 @@ def merge_iteration(
             )
 
             # log metrics
-            mdl_cost: float = compute_mdl_cost(
-                acts=diag_acts,
-                merges=current_merge,
-                alpha=merge_config.alpha,
-            )
             wandb_run.log(
                 {
                     "k_groups": k_groups,
                     "merge_pair_cost": costs[merge_pair].item(),
-                    "mdl_cost": mdl_cost,
-                    "mdl_cost_over_batchsize": mdl_cost / current_act_mask.shape[0],
+                    "mdl_loss": mdl_loss,
+                    "mdl_loss_norm": mdl_loss_norm,
                     "fraction_singleton_groups": fraction_singleton_groups,
                     "fraction_zero_coacts": fraction_zero_coacts,
                 },
