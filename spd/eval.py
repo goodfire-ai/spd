@@ -278,6 +278,9 @@ class PermutedCIPlots(StreamingEval):
         self.dense_patterns = dense_patterns
 
         self.batch_shape = None
+        assert config.task_config.task_name != "lm", (
+            "PermutedCIPlots currently only works with models that take float inputs (not lms). "
+        )
 
     @override
     def watch_batch(
@@ -323,6 +326,9 @@ class UVPlots(StreamingEval):
         self.dense_patterns = dense_patterns
 
         self.batch_shape = None
+        assert config.task_config.task_name != "lm", (
+            "UVPlots currently only works with models that take float inputs (not lms). "
+        )
 
     @override
     def watch_batch(
@@ -372,6 +378,9 @@ class IdentityCIError(StreamingEval):
         self.dense_ci = dense_ci
 
         self.batch_shape = None
+        assert config.task_config.task_name != "lm", (
+            "IdentityCIError currently only works with models that take float inputs (not lms). "
+        )
 
     @override
     def watch_batch(
