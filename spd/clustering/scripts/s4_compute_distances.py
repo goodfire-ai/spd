@@ -56,12 +56,12 @@ def _create_clustering_report(
     config_identifier: str,
 ) -> None:
     """Create a WandB report with clustering results and distances plot"""
-    
+
     # Extract entity/project from first URL for the report
     first_url: str = wandb_urls[0]
     entity: str
     project: str
-    
+
     if first_url.startswith("wandb:"):
         run_path_parts: list[str] = first_url.replace("wandb:", "").split("/")
         entity, project = run_path_parts[0], run_path_parts[1]
@@ -81,49 +81,52 @@ def _create_clustering_report(
         entity=entity,
         name=f"clustering-summary-{config_identifier}",
         tags=["clustering-summary", f"config:{config_identifier}", f"method:{method}"],
-        job_type="clustering-analysis"
+        job_type="clustering-analysis",
     ) as run:
-        
         # Create and log the distances distribution plot
         ax = plot_dists_distribution(
-            distances=distances,
-            mode="points",
-            label=f"{method} distances"
+            distances=distances, mode="points", label=f"{method} distances"
         )
         plt.title(f"Distance Distribution ({method})")
-        
+
         # Only add legend if there are labeled artists
         handles, labels = ax.get_legend_handles_labels()
         if handles:
             plt.legend()
-        
+
         # Get the figure from the axes
         fig = ax.get_figure()
-        
+
         # Log the plot
-        run.log({
-            f"distances/{method}": wandb.Image(fig),
-            "clustering/config_identifier": config_identifier,
-        })
-        
+        run.log(
+            {
+                f"distances/{method}": wandb.Image(fig),
+                "clustering/config_identifier": config_identifier,
+            }
+        )
+
         plt.close(fig)
-        
+
         # Log metadata about the batch runs
-        run.log({
-            "batch_runs/urls": wandb_urls,
-        })
-        
+        run.log(
+            {
+                "batch_runs/urls": wandb_urls,
+            }
+        )
+
         # Create a summary table of run information
         run_ids: list[str] = []
         for url in wandb_urls:
             if "runs/" in url:
                 run_id = url.split("runs/")[-1]
                 run_ids.append(run_id)
-        
+
         if run_ids:
             run.log({"batch_runs/run_ids": run_ids})
-        
-        logger.info(f"Created WandB clustering summary report with {len(wandb_urls)} batch runs from config {config_identifier}: {run.url}")
+
+        logger.info(
+            f"Created WandB clustering summary report with {len(wandb_urls)} batch runs from config {config_identifier}: {run.url}"
+        )
 
 
 if __name__ == "__main__":

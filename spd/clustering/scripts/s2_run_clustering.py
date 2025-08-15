@@ -288,8 +288,14 @@ def run_clustering(
             file_prefix=(this_merge_figs / "merge").as_posix(),
         )
         if wandb_run is not None:
-            wandb_run.log({"plots/merge_history_cluster_sizes": wandb.Image(fig_cs)}, step=merge_history.n_iters_current)
-            wandb_run.log({"plots/merge_history_costs": wandb.Image(fig_costs)}, step=merge_history.n_iters_current)
+            wandb_run.log(
+                {"plots/merge_history_cluster_sizes": wandb.Image(fig_cs)},
+                step=merge_history.n_iters_current,
+            )
+            wandb_run.log(
+                {"plots/merge_history_costs": wandb.Image(fig_costs)},
+                step=merge_history.n_iters_current,
+            )
 
     # Finish WandB run
     if wandb_run is not None:
@@ -298,6 +304,7 @@ def run_clustering(
 
     # Output structured result for main.py to parse
     import json
+
     result: dict[str, str | None] = {
         "hist_save_path": str(hist_save_path),
         "wburl_path": str(wburl_path) if wburl_path else None,
@@ -308,7 +315,7 @@ def run_clustering(
     print(RESULT_DELIMITER)
     print(json.dumps(result))
     print(RESULT_DELIMITER)
-    
+
     return hist_save_path
 
 

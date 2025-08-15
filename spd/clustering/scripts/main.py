@@ -8,12 +8,10 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from matplotlib import pyplot as plt
 from muutils.dbg import dbg_tensor
 
 from spd.clustering.math.merge_distances import DistancesArray, DistancesMethod
 from spd.clustering.merge_run_config import MergeRunConfig
-from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.clustering.scripts.s1_split_dataset import split_dataset
 from spd.clustering.scripts.s3_normalize_histories import normalize_histories
 from spd.clustering.scripts.s4_compute_distances import compute_histories_distances
@@ -27,6 +25,7 @@ os.environ["WANDB_QUIET"] = "True"
 
 # Delimiter for parsing structured output from s2_run_clustering.py
 RESULT_DELIMITER: str = "-" * 50
+
 
 # TODO: this is super messy
 def distribute_clustering(
@@ -79,7 +78,9 @@ def distribute_clustering(
                     )
                 log_fn_error("")
 
-            proc: subprocess.Popen[str] = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            proc: subprocess.Popen[str] = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
             active.append((proc, dataset))
             log_fn(
                 f"Started clustering {idx + 1}/{n_files} on {device} (pid={proc.pid})\n\t{dataset}"
@@ -94,47 +95,55 @@ def distribute_clustering(
                 results.append(_parse_clustering_result(stdout, dataset_path, log_fn))
                 log_fn(f"Process {proc_to_wait.pid} finished, removing from active list")
                 active.pop(0)
-        
+
         for proc, dataset_path in active:
             stdout, stderr = proc.communicate()
             results.append(_parse_clustering_result(stdout, dataset_path, log_fn))
             log_fn(f"Process {proc.pid} finished, removing from active list")
-            
+
     except Exception as e:
         log_fn_error(f"An error occurred: {e}")
         for proc, _ in active:
             proc.kill()
             log_fn_error(f"Killed process {proc.pid} due to error")
         raise e
-    
+
     return results
 
 
-def _parse_clustering_result(stdout: str, dataset_path: Path, log_fn: Callable[[str], None]) -> dict[str, str | None]:
+def _parse_clustering_result(
+    stdout: str, dataset_path: Path, log_fn: Callable[[str], None]
+) -> dict[str, str | None]:
     """Parse the JSON result from s2_run_clustering.py stdout"""
     import json
-    
+
     # Print the stdout for user visibility
     log_fn(f"Output from {dataset_path.stem}:")
     log_fn(stdout)
-    
+
     # Split by the delimiter and extract JSON
     parts: list[str] = stdout.split(RESULT_DELIMITER)
-    
+
     if len(parts) != 3:
         # Process crashed before outputting structured result
         # Check if there was an error in the output
         if "Traceback" in stdout or "Error" in stdout:
-            raise RuntimeError(f"Process for {dataset_path.stem} crashed with error. Check output above.")
+            raise RuntimeError(
+                f"Process for {dataset_path.stem} crashed with error. Check output above."
+            )
         else:
-            raise ValueError(f"Expected exactly 3 parts when splitting stdout by '{RESULT_DELIMITER}', got {len(parts)}. Process may have crashed.")
-    
+            raise ValueError(
+                f"Expected exactly 3 parts when splitting stdout by '{RESULT_DELIMITER}', got {len(parts)}. Process may have crashed."
+            )
+
     json_str: str = parts[1].strip()
     try:
         result: dict[str, str | None] = json.loads(json_str)
         return result
     except json.JSONDecodeError as e:
-        raise ValueError(f"Failed to parse JSON result from {dataset_path.stem}: {e}\nJSON string: {json_str}") from e
+        raise ValueError(
+            f"Failed to parse JSON result from {dataset_path.stem}: {e}\nJSON string: {json_str}"
+        ) from e
 
 
 def main(
@@ -236,7 +245,7 @@ def main(
                 wandb_urls.append(result["wandb_url"])
         histories_input = wandb_urls
     else:
-        # Use local file paths from the actual results  
+        # Use local file paths from the actual results
         histories_files: list[Path] = []
         for result in clustering_results:
             if result["hist_save_path"] is not None:
@@ -248,12 +257,14 @@ def main(
     actual_batch_count: int = len(clustering_results)
     if actual_batch_count != expected_batch_count:
         logger.error(f"Expected {expected_batch_count} batch results, got {actual_batch_count}")
-        raise ValueError(f"Missing batch results: expected {expected_batch_count}, got {actual_batch_count}")
-    
+        raise ValueError(
+            f"Missing batch results: expected {expected_batch_count}, got {actual_batch_count}"
+        )
+
     if not histories_input:
         logger.error("No merge histories found in clustering results.")
         raise FileNotFoundError(f"No merge histories found in results: {clustering_results=}")
-    
+
     # Log what we collected
     logger.info(f"Successfully collected {len(histories_input)} merge histories from batch results")
     if merge_run_config.wandb_enabled:
@@ -275,15 +286,17 @@ def main(
     logger.section("Computing distances between merge histories")
     _dists_path: Path
     distances: DistancesArray
-    
+
     # Prepare WandB URLs if using WandB mode
     wandb_urls_for_report: list[str] | None = None
-    if (merge_run_config.wandb_enabled 
-        and isinstance(histories_input, list) 
-        and histories_input 
-        and isinstance(histories_input[0], str)):
+    if (
+        merge_run_config.wandb_enabled
+        and isinstance(histories_input, list)
+        and histories_input
+        and isinstance(histories_input[0], str)
+    ):
         wandb_urls_for_report = histories_input  # type: ignore
-    
+
     _dists_path, distances = compute_histories_distances(
         merges_path=merged_hists["paths"]["merge_array"],
         method=distances_method,
@@ -291,6 +304,7 @@ def main(
         config_identifier=merge_run_config.config_identifier,
     )
     dbg_tensor(distances)
+
 
 def cli():
     import argparse
