@@ -27,7 +27,7 @@ def _from_pretrained(canonical_run: str) -> ComponentModel:
 @pytest.mark.parametrize("from_func", [_from_run_info, _from_pretrained])
 def test_loading_from_wandb(from_func: Callable[[str], ComponentModel]) -> None:
     for exp_name, exp_config in EXPERIMENT_REGISTRY.items():
-        if exp_config.canonical_run is None:
+        if exp_config.canonical_run is None:  # pyright: ignore[reportUnnecessaryComparison]
             # No canonical run for this experiment
             continue
         try:

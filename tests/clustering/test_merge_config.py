@@ -64,7 +64,7 @@ class TestMergeConfigSampling:
 
         # Pydantic validates at construction time
         with pytest.raises(ValidationError):
-            _config = MergeConfig(merge_pair_sampling_method="invalid")
+            _config = MergeConfig(merge_pair_sampling_method="invalid")  # pyright: ignore[reportArgumentType]
 
     def test_config_with_all_parameters(self):
         """Test MergeConfig with all parameters set."""

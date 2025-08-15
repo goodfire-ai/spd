@@ -5,6 +5,9 @@ import pytest
 
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming
 
+# pyright complains about the types when calling perm_invariant_hamming
+# pyright: reportCallIssue=false
+
 
 def brute_force_min_hamming(a: np.ndarray, b: np.ndarray) -> int:
     """Exhaustive check for small k."""

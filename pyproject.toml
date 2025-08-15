@@ -104,13 +104,13 @@ known-third-party = ["wandb"]
 
 # TODO: remove this when actually cleaned up
 [tool.ruff.lint.per-file-ignores]
-"spd/clustering/*" = [
+"spd/clustering/experiments/*" = [
     "E703", # semicolons fine for notebooks
 ]
 
 [tool.pyright]
 include = ["spd", "tests"]
-exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py", "tests/**"]
+exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py"]
 
 strictListInference = true
 strictDictionaryInference = true

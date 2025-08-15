@@ -208,7 +208,7 @@ class TestSamplerRegistry:
             elif name == "mcmc":
                 pair = sampler(costs, temperature=1.0)
             else:
-                pair = sampler(costs, k)
+                pytest.fail(f"Unknown sampler {name}")
 
             # Should return valid pair
             assert isinstance(pair, tuple)
