@@ -31,13 +31,13 @@ class ExperimentConfig:
 
 
 EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
-    # "tms_5-2": ExperimentConfig(
-    #     task_name="tms",
-    #     decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
-    #     config_path=Path("spd/experiments/tms/tms_5-2_config.yaml"),
-    #     expected_runtime=4,
-    #     canonical_run="wandb:goodfire/spd/runs/55exmro2",
-    # ),
+    "tms_5-2": ExperimentConfig(
+        task_name="tms",
+        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+        config_path=Path("spd/experiments/tms/tms_5-2_config.yaml"),
+        expected_runtime=4,
+        canonical_run="wandb:goodfire/spd/runs/55exmro2",
+    ),
     # "tms_5-2-id": ExperimentConfig(
     #     task_name="tms",
     #     decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
@@ -97,6 +97,24 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_mlp_config_p_anneal_aggressive.yaml"),
         expected_runtime=1200,
+    ),
+    "ss_mlp_no_layerwise1": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_mlp_config_no_layerwise1.yaml"),
+        expected_runtime=1200,
+    ),
+    "ss_mlp_no_layerwise2": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_mlp_config_no_layerwise2.yaml"),
+        expected_runtime=1200,
+    ),
+    "ss_mlp_layerwise_act": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_mlp_config_layerwise_act.yaml"),
+        expected_runtime=2400,
     ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",

@@ -132,6 +132,14 @@ class Config(BaseModel):
         default=None,
         description="Coefficient for per-layer recon loss with stochastically sampled masks",
     )
+    stochastic_activation_recon_layerwise_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for layerwise activation reconstruction loss (L2 between post-module activations)",
+    )
+    stochastic_activation_nll_layerwise_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for layerwise activation reconstruction loss weighted by NLL gradients",
+    )
     importance_minimality_coeff: NonNegativeFloat = Field(
         ...,
         description="Coefficient for importance minimality loss",

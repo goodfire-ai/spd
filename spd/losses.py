@@ -171,6 +171,135 @@ def calc_masked_recon_loss(
 
     return loss
 
+#%%
+def calc_layerwise_activation_recon_loss(
+    model: ComponentModel,
+    batch: Int[Tensor, "..."],
+    device: str,
+    pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
+    masks: list[dict[str, Float[Tensor, "... C"]]],
+) -> Float[Tensor, ""]:
+    """Calculate L2 activation reconstruction loss one component at a time.
+    
+    Following the pattern of calc_masked_recon_layerwise_loss, this computes
+    L2 distance between original and masked post-module activations, normalized
+    by the original activation norm for scale invariance.
+    
+    Args:
+        model: The component model
+        batch: Input batch
+        device: Device to run computations on
+        pre_weight_acts: Pre-weight activations from forward pass
+        masks: List of mask dictionaries for stochastic sampling
+        
+    Returns:
+        Average activation reconstruction loss
+    """
+    # Get original post-module activations
+    _, original_post_acts, _ = model._forward_with_post_module_cache_hooks(
+        batch,
+        module_names=list(model.target_module_paths),
+        compute_grads=False,
+    )
+    
+    total_loss = torch.tensor(0.0, device=device)
+    
+    # Following the pattern of calc_masked_recon_layerwise_loss
+    for mask_info in masks:
+        for component_name in model.components:
+            # Only support Linear modules for now
+            module = model.components_or_modules[component_name].original
+            assert isinstance(module, nn.Linear), f"Only Linear modules supported, got {type(module)}"
+            
+            # Get pre-activation for this module
+            pre_act = pre_weight_acts[component_name]
+            
+            # Compute masked activation using components
+            components = model.components[component_name]
+            mask = mask_info[component_name]
+            masked_post_act = components(pre_act, mask=mask)
+            
+            # Get original post-activation
+            original_post_act = original_post_acts[component_name]
+            
+            # Compute difference
+            act_diff = masked_post_act - original_post_act.detach()
+            
+            # L2 loss normalized by original activation norm
+            # This makes the loss scale-invariant
+            original_norm_sq = (original_post_act ** 2).sum(dim=-1).mean()
+            loss = (act_diff ** 2).sum(dim=-1).mean() / (original_norm_sq + 1e-8)
+                
+            total_loss += loss
+    
+    # Divide by number of components and masks (same as layerwise recon)
+    n_modified_components = len(masks[0])
+    return total_loss / (n_modified_components * len(masks))
+
+#%%
+def calc_layerwise_activation_nll_loss(
+    model: ComponentModel,
+    batch: Int[Tensor, "..."],
+    device: str,
+    pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
+    masks: list[dict[str, Float[Tensor, "... C"]]],
+) -> Float[Tensor, ""]:
+    """Calculate NLL gradient-weighted activation reconstruction loss.
+    
+    This estimates the effect of activation changes on the NLL loss by using
+    first-order Taylor approximation: ΔL ≈ (∂L/∂a) · Δa
+    
+    Args:
+        model: The component model
+        batch: Input batch
+        device: Device to run computations on
+        pre_weight_acts: Pre-weight activations from forward pass
+        masks: List of mask dictionaries for stochastic sampling
+        
+    Returns:
+        Average NLL gradient-weighted activation reconstruction loss
+    """
+    # Get original post-module activations and NLL gradients
+    _, original_post_acts, grads = model._forward_with_post_module_cache_hooks(
+        batch,
+        module_names=list(model.target_module_paths),
+        compute_grads=True,
+        grad_mode="nll",
+    )
+    
+    total_loss = torch.tensor(0.0, device=device)
+    
+    # Following the pattern of calc_masked_recon_layerwise_loss
+    for mask_info in masks:
+        for component_name in model.components:
+            # Only support Linear modules for now
+            module = model.components_or_modules[component_name].original
+            assert isinstance(module, nn.Linear), f"Only Linear modules supported, got {type(module)}"
+            
+            # Get pre-activation for this module
+            pre_act = pre_weight_acts[component_name]
+            
+            # Compute masked activation using components
+            components = model.components[component_name]
+            mask = mask_info[component_name]
+            masked_post_act = components(pre_act, mask=mask)
+            
+            # Get original post-activation
+            original_post_act = original_post_acts[component_name]
+            
+            # Compute difference
+            act_diff = masked_post_act - original_post_act.detach()
+            
+            # Use gradients to estimate NLL change: ΔL ≈ (∂L/∂a) · Δa
+            loss = (act_diff * grads[component_name]).sum(dim=-1).mean()
+                
+            total_loss += loss
+    
+    # Divide by number of components and masks (same as layerwise recon)
+    n_modified_components = len(masks[0])
+    return total_loss / (n_modified_components * len(masks))
+
+#%%
 
 def _calc_tensors_mse(
     params1: dict[str, Float[Tensor, "d_in d_out"]],
@@ -227,6 +356,7 @@ def calculate_losses(
     device: str,
     n_params: int,
     current_p: float | None = None,
+    pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]] | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Calculate all losses and return total loss and individual loss terms.
 
@@ -240,6 +370,7 @@ def calculate_losses(
         device: Device to run computations on
         n_params: Total number of parameters in the model
         current_p: Current p value for L_p sparsity loss (if using annealing)
+        pre_weight_acts: Pre-weight activations for activation reconstruction losses
     Returns:
         Tuple of (total_loss, loss_terms_dict)
     """
@@ -357,6 +488,36 @@ def calculate_losses(
         )
         total_loss += config.embedding_recon_coeff * embedding_recon_loss
         loss_terms["embedding_recon"] = embedding_recon_loss.item()
+
+    # Stochastic activation reconstruction layerwise loss
+    if config.stochastic_activation_recon_layerwise_coeff is not None and pre_weight_acts is not None:
+        stochastic_masks = calc_stochastic_masks(
+            causal_importances=causal_importances, n_mask_samples=config.n_mask_samples
+        )
+        activation_recon_loss = calc_layerwise_activation_recon_loss(
+            model=model,
+            batch=batch,
+            device=device,
+            pre_weight_acts=pre_weight_acts,
+            masks=stochastic_masks,
+        )
+        total_loss += config.stochastic_activation_recon_layerwise_coeff * activation_recon_loss
+        loss_terms["stochastic_activation_recon_layerwise"] = activation_recon_loss.item()
+
+    # Stochastic activation NLL layerwise loss
+    if config.stochastic_activation_nll_layerwise_coeff is not None and pre_weight_acts is not None:
+        stochastic_masks = calc_stochastic_masks(
+            causal_importances=causal_importances, n_mask_samples=config.n_mask_samples
+        )
+        activation_nll_loss = calc_layerwise_activation_nll_loss(
+            model=model,
+            batch=batch,
+            device=device,
+            pre_weight_acts=pre_weight_acts,
+            masks=stochastic_masks,
+        )
+        total_loss += config.stochastic_activation_nll_layerwise_coeff * activation_nll_loss
+        loss_terms["stochastic_activation_nll_layerwise"] = activation_nll_loss.item()
 
     loss_terms["total"] = total_loss.item()
 

@@ -389,6 +389,81 @@ class ComponentModel(LoadableModule):
             for module in self.components_or_modules.values():
                 module.forward_mode = None
 
+    def _forward_with_post_module_cache_hooks(
+        self, *args: Any, module_names: list[str], compute_grads: bool = False, grad_mode: Literal["nll", "l1_logit", 'l1_prob'] = "nll", **kwargs: Any
+    ) -> tuple[Any, dict[str, Tensor], dict[str, Tensor]]:
+        """Forward pass with caching at the output of the modules given by `module_names`.
+        
+        Args:
+            module_names: List of module names to cache the outputs of.
+            compute_grads: Whether to compute gradients of the loss w.r.t. the cached outputs.
+            grad_mode: Type of loss to compute gradients for ("nll" or "l1").
+            
+        Returns:
+            Tuple of (model output, cache, gradients dict)
+        """
+        cache = {}
+        handles: list[RemovableHandle] = []
+        
+        def cache_hook(_: nn.Module, input: tuple[Tensor, ...], output: Tensor, param_name: str) -> Tensor:
+            # Clone and enable gradients to maintain computational graph
+            if compute_grads:
+                output = output.clone().requires_grad_(True)
+            cache[param_name] = output
+            return output
+            
+        # Register hooks
+        for module_name in module_names:
+            module = self.patched_model.get_submodule(module_name)
+            assert module is not None, f"Module {module_name} not found"
+            handles.append(
+                module.register_forward_hook(partial(cache_hook, param_name=module_name))
+            )
+        
+        for module in self.components_or_modules.values():
+            module.forward_mode = "original"
+            
+        try:
+            raw_out = self.patched_model(*args, **kwargs)
+            out = self._extract_output(raw_out)
+            
+            grads_dict = {}
+            if compute_grads:
+                if grad_mode == "nll":
+                    # Shift for next token prediction
+                    # Assume input is token ids in args[0]
+                    batch = args[0]
+                    output_flat = out[:, :-1].reshape(-1, out.size(-1))
+                    target_flat = batch[:, 1:].reshape(-1)
+                    loss = nn.functional.cross_entropy(output_flat, target_flat)
+                else:
+                    raise ValueError(f"Unknown grad_mode: {grad_mode}. Only 'nll' is supported.")
+                
+                # Compute gradients w.r.t. post-module activations
+                grads = torch.autograd.grad(
+                    outputs=loss,
+                    inputs=list(cache.values()),
+                    retain_graph=False,
+                    create_graph=False,
+                )
+                
+                grads_dict = {name: grad.detach() for name, grad in zip(module_names, grads)}
+                
+                # Verify gradient shapes match activation shapes
+                for name in module_names:
+                    assert cache[name].shape == grads_dict[name].shape, (
+                        f"Gradient shape mismatch for {name}: "
+                        f"activation shape {cache[name].shape} != gradient shape {grads_dict[name].shape}"
+                    )
+                
+            return out, cache, grads_dict
+        finally:
+            for handle in handles:
+                handle.remove()
+                
+            for module in self.components_or_modules.values():
+                module.forward_mode = None
+
     @staticmethod
     def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:
         """Download the relevant files from a wandb run.
