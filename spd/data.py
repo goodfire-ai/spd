@@ -251,8 +251,7 @@ def create_data_loader(
 
     # Ensure determinicity when not distributed and not streaming
     generator = torch.Generator(device="cpu")
-    if not dataset_config.streaming and not is_ddp:
-        generator.manual_seed(seed)
+    generator.manual_seed(seed)
 
     loader = DataLoader[Dataset | IterableDataset](
         torch_dataset,  # pyright: ignore[reportArgumentType]
