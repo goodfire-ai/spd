@@ -26,9 +26,9 @@ from spd.clustering.plotting.merge import (
     plot_merge_history_costs,
     plot_merge_iteration,
 )
+from spd.clustering.wandb_tensor_info import wandb_log_tensor
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
-from spd.clustering.wandb_tensor_info import wandb_log_tensor
 
 # pyright: reportUnnecessaryIsInstance=false, reportUnreachable=false
 
