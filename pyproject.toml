@@ -69,10 +69,6 @@ include = ["spd*"]
 line-length = 100
 fix = true
 
-exclude = [
-    "spd/clustering/old/",
-]
-
 [tool.ruff.lint]
 ignore = [
     "F722", # Incompatible with jaxtyping
