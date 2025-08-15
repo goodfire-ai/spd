@@ -82,6 +82,7 @@ def _create_clustering_report(
         name=f"clustering-summary-{config_identifier}",
         tags=["clustering-summary", f"config:{config_identifier}", f"method:{method}"],
         job_type="clustering-analysis",
+        config=dict(config_identifier=config_identifier, method=method),
     ) as run:
         # Create and log the distances distribution plot
         ax = plot_dists_distribution(
@@ -125,7 +126,7 @@ def _create_clustering_report(
             run.log({"batch_runs/run_ids": run_ids})
 
         logger.info(
-            f"Created WandB clustering summary report with {len(wandb_urls)} batch runs from config {config_identifier}: {run.url}"
+            f"Created wandb clustering summary report with {len(wandb_urls)} batch runs from config {config_identifier}:\n{run.url}/overview"
         )
 
 

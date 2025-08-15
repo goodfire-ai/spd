@@ -153,6 +153,7 @@ def run_clustering(
             group=config_.wandb_group,
             config=config_.model_dump_with_properties(),
             tags=[
+                "cluster-run",
                 f"model:{config_.wandb_decomp_model}",
                 f"task:{config_.task_name}",
                 f"batch:{dataset_path.stem}",
