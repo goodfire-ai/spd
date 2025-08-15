@@ -31,7 +31,7 @@ def compute_mdl_cost(
 
     return (
         acts * (
-            math.log2(k_groups) + alpha * merges.components_per_group
+            math.log2(k_groups) + alpha * merges.components_per_group.to(device=acts.device)
         )
     ).sum().item()
 

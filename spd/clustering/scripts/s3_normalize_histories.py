@@ -14,6 +14,7 @@ from spd.settings import REPO_ROOT
 # pyright: reportUnnecessaryIsInstance=false
 
 
+# TODO: this is messy, possible duplicates code from elsewhere
 def load_merge_histories_from_wandb(
     wandb_urls: list[str],
 ) -> tuple[list[str], MergeHistoryEnsemble]:

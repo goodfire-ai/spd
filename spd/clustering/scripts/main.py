@@ -103,6 +103,7 @@ def main(
     plot: bool = True,
 ):
     # 0. preprocessing
+    # ================================================================================
     logger.set_format("console", "terse")
 
     logger.section("Preprocessing")
@@ -156,6 +157,7 @@ def main(
     histories_path: Path = run_path / "merge_history"
 
     # 1. tokenize and split the dataset into n_batches of batch_size
+    # ================================================================================
     logger.section("Splitting dataset")
     _split_dataset_info_path: Path
     split_dataset_info: dict[str, Any]
@@ -169,6 +171,7 @@ def main(
     data_files: list[Path] = list(map(Path, split_dataset_info["output_files"]))
 
     # 2. run the clustering on each batch individually
+    # ================================================================================
     logger.section("Distributing clustering")
     distribute_clustering(
         config_path=config_path,
@@ -196,6 +199,7 @@ def main(
         raise FileNotFoundError(f"No merge histories found: {histories_path=}")
 
     # 3. normalize histories to account for different active components
+    # ================================================================================
     logger.section("Normalizing histories")
 
     merged_hists: dict[str, Any] = normalize_histories(
@@ -204,6 +208,7 @@ def main(
     )
 
     # 4. compute distances between merge histories
+    # ================================================================================
     logger.section("Computing distances between merge histories")
     _dists_path: Path
     distances: DistancesArray
@@ -212,6 +217,7 @@ def main(
         method=distances_method,
     )
 
+    # ================================================================================
     if plot:
         logger.section("Plotting distances")
         plot_dists_distribution(

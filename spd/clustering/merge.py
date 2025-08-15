@@ -12,6 +12,7 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
 from spd.clustering.compute_costs import (
+    compute_mdl_cost,
     compute_merge_costs,
     recompute_coacts_merge_pair,
     recompute_coacts_pop_group,
@@ -166,8 +167,13 @@ def merge_iteration(
             # log chosen pair cost
             wandb_run.log(
                 {
-                    "merge_pair_cost": costs[merge_pair].mean().item(),
                     "iteration": i,
+                    "merge_pair_cost": costs[merge_pair].mean().item(),
+                    "mdl_cost": compute_mdl_cost(
+                        acts=torch.diag(current_coact),
+                        merges=current_merge,
+                        alpha=merge_config.alpha,
+                    ),
                 }
             )
 
