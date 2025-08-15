@@ -51,8 +51,8 @@ def load_merge_histories_from_wandb(
         if merge_history_artifact is None:
             raise ValueError(f"No merge_history artifact found for run {run_path}")
 
-        # Download the artifact to a cache directory
-        artifact_dir: str = merge_history_artifact.download(root=str(REPO_ROOT / "wandb_cache"))
+        # Download the artifact using WandB's built-in caching
+        artifact_dir: str = merge_history_artifact.download()
 
         # Find the .zanj file in the downloaded artifact
         zanj_files: list[Path] = list(Path(artifact_dir).glob("*.zanj"))

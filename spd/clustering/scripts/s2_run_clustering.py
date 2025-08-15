@@ -33,6 +33,9 @@ from spd.utils.wandb_tensor_info import wandb_log_tensor
 # Global batch_id for logging
 _BATCH_ID: str = "unk"
 
+# Delimiter for structured output parsing
+RESULT_DELIMITER: str = "-" * 50
+
 
 def log(message: str) -> None:
     """Print a message with orange batch ID prefix.
@@ -58,7 +61,7 @@ def save_group_idxs_artifact(
     # Create and upload artifact
     artifact = wandb.Artifact(
         name=f"merge_hist.{dataset_stem}.iter_{iteration}",
-        type="merge_hist",
+        type="merge_hist_iter",
         description=f"Group indices for batch {dataset_stem} at iteration {iteration}",
         metadata={
             "batch_name": dataset_stem,
@@ -250,10 +253,13 @@ def run_clustering(
     log(f"Merge history saved to {hist_save_path}")
 
     # Save WandB URL to file
+    wburl_path: Path | None = None
+    wandb_url: str | None = None
     if wandb_run is not None:
         wburl_path = hist_save_path.with_suffix(".wburl")
         if wandb_run.url:
             wburl_path.write_text(wandb_run.url)
+            wandb_url = wandb_run.url
             log(f"WandB URL saved to {wburl_path}")
 
     # Save merge history as WandB artifact
@@ -292,6 +298,19 @@ def run_clustering(
         wandb_run.finish()
         log(f"Finished WandB run with url: {wandb_run.url}")
 
+    # Output structured result for main.py to parse
+    import json
+    result: dict[str, str | None] = {
+        "hist_save_path": str(hist_save_path),
+        "wburl_path": str(wburl_path) if wburl_path else None,
+        "wandb_url": wandb_url,
+        "batch_name": dataset_path.stem,
+        "config_identifier": config_.config_identifier,
+    }
+    print(RESULT_DELIMITER)
+    print(json.dumps(result))
+    print(RESULT_DELIMITER)
+    
     return hist_save_path
 
 

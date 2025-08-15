@@ -25,6 +25,8 @@ from spd.utils.cuda_memory_used import cuda_memory_fraction
 
 os.environ["WANDB_QUIET"] = "True"
 
+# Delimiter for parsing structured output from s2_run_clustering.py
+RESULT_DELIMITER: str = "-" * 50
 
 # TODO: this is super messy
 def distribute_clustering(
@@ -36,13 +38,14 @@ def distribute_clustering(
     max_concurrency: int | None = None,
     log_fn: Callable[[str], None] = print,
     log_fn_error: Callable[..., None] = functools.partial(print, file=sys.stderr),  # noqa: B008
-) -> None:
+) -> list[dict[str, str | None]]:
     n_devices: int = len(devices)
     if n_devices == 0:
         raise ValueError("devices must be non-empty")
     if max_concurrency is None:
         max_concurrency = len(data_files)
-    active: list[subprocess.Popen[bytes]] = []
+    active: list[tuple[subprocess.Popen[str], Path]] = []
+    results: list[dict[str, str | None]] = []
 
     n_files: int = len(data_files)
     try:
@@ -76,23 +79,55 @@ def distribute_clustering(
                     )
                 log_fn_error("")
 
-            active.append(subprocess.Popen(cmd))
+            proc: subprocess.Popen[str] = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            active.append((proc, dataset))
             log_fn(
-                f"Started clustering {idx + 1}/{n_files} on {device} (pid={active[-1].pid})\n\t{dataset}"
+                f"Started clustering {idx + 1}/{n_files} on {device} (pid={proc.pid})\n\t{dataset}"
             )
             if len(active) >= max_concurrency:
-                active[0].wait()
-                log_fn(f"Process {active[0].pid} finished, removing from active list")
+                proc_to_wait: subprocess.Popen[str]
+                dataset_path: Path
+                proc_to_wait, dataset_path = active[0]
+                stdout: str
+                stderr: str
+                stdout, stderr = proc_to_wait.communicate()
+                results.append(_parse_clustering_result(stdout, dataset_path, log_fn))
+                log_fn(f"Process {proc_to_wait.pid} finished, removing from active list")
                 active.pop(0)
-        for proc in active:
-            proc.wait()
+        
+        for proc, dataset_path in active:
+            stdout, stderr = proc.communicate()
+            results.append(_parse_clustering_result(stdout, dataset_path, log_fn))
             log_fn(f"Process {proc.pid} finished, removing from active list")
+            
     except Exception as e:
         log_fn_error(f"An error occurred: {e}")
-        for proc in active:
+        for proc, _ in active:
             proc.kill()
             log_fn_error(f"Killed process {proc.pid} due to error")
         raise e
+    
+    return results
+
+
+def _parse_clustering_result(stdout: str, dataset_path: Path, log_fn: Callable[[str], None]) -> dict[str, str | None]:
+    """Parse the JSON result from s2_run_clustering.py stdout"""
+    import json
+    
+    # Print the stdout for user visibility
+    log_fn(f"Output from {dataset_path.stem}:")
+    log_fn(stdout)
+    
+    # Split by the delimiter and extract JSON
+    parts: list[str] = stdout.split(RESULT_DELIMITER)
+    assert len(parts) == 3, f"Expected exactly 3 parts when splitting stdout by '{RESULT_DELIMITER}', got {len(parts)}"
+    
+    json_str: str = parts[1].strip()
+    try:
+        result: dict[str, str | None] = json.loads(json_str)
+        return result
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse JSON result from {dataset_path.stem}: {e}\nJSON string: {json_str}") from e
 
 
 def main(
@@ -174,7 +209,7 @@ def main(
     # 2. run the clustering on each batch individually
     # ================================================================================
     logger.section("Distributing clustering")
-    distribute_clustering(
+    clustering_results: list[dict[str, str | None]] = distribute_clustering(
         config_path=config_path,
         data_files=data_files,
         save_dir=histories_path,
@@ -184,17 +219,40 @@ def main(
         log_fn_error=lambda msg: logger.error(f"\x1b[31m[spd-cluster:err] {msg}\x1b[0m"),
     )
 
-    # collect histories -- Use WandB URLs if available and enabled, otherwise use local files
-    histories_files: list[Path] = list(histories_path.rglob("merge_history.zanj"))
-
-    histories_input: list[str] | list[Path] = histories_files
+    # collect histories from the actual results, not by globbing
+    histories_input: list[str] | list[Path]
     if merge_run_config.wandb_enabled:
-        wandb_urls: list[str] = [x.read_text().strip() for x in histories_path.rglob("*.wburl")]
+        # Use WandB URLs from the actual results
+        wandb_urls: list[str] = []
+        for result in clustering_results:
+            if result["wandb_url"] is not None:
+                wandb_urls.append(result["wandb_url"])
         histories_input = wandb_urls
+    else:
+        # Use local file paths from the actual results  
+        histories_files: list[Path] = []
+        for result in clustering_results:
+            if result["hist_save_path"] is not None:
+                histories_files.append(Path(result["hist_save_path"]))
+        histories_input = histories_files
 
+    # Validate that we got results for all expected batches
+    expected_batch_count: int = len(data_files)
+    actual_batch_count: int = len(clustering_results)
+    if actual_batch_count != expected_batch_count:
+        logger.error(f"Expected {expected_batch_count} batch results, got {actual_batch_count}")
+        raise ValueError(f"Missing batch results: expected {expected_batch_count}, got {actual_batch_count}")
+    
     if not histories_input:
-        logger.error("No merge histories found.")
-        raise FileNotFoundError(f"No merge histories found: {histories_path=}")
+        logger.error("No merge histories found in clustering results.")
+        raise FileNotFoundError(f"No merge histories found in results: {clustering_results=}")
+    
+    # Log what we collected
+    logger.info(f"Successfully collected {len(histories_input)} merge histories from batch results")
+    if merge_run_config.wandb_enabled:
+        logger.info("Using WandB URLs for history collection")
+    else:
+        logger.info("Using local file paths for history collection")
 
     # 3. normalize histories to account for different active components
     # ================================================================================
