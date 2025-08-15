@@ -88,6 +88,7 @@ def plot_merge_iteration_callback(
 
     # Only plot at artifact frequency (same as when we save artifacts)
     if wandb_run is not None and i > 0 and i % artifact_frequency == 0:
+        print(f"Plotting merge iteration {i} for batch {batch_id}")
         # Create the plot and get the figure
         fig = plot_merge_iteration(
             current_merge=current_merge,
@@ -100,7 +101,7 @@ def plot_merge_iteration_callback(
         )
 
         # Log to WandB
-        wandb_run.log({"plots/merges": wandb.Image(fig)})
+        wandb_run.log({"plots/merges": wandb.Image(fig)}, step=i)
 
 
 def run_clustering(
@@ -283,8 +284,8 @@ def run_clustering(
             file_prefix=(this_merge_figs / "merge").as_posix(),
         )
         if wandb_run is not None:
-            wandb_run.log({"plots/merge_history_cluster_sizes": wandb.Image(fig_cs)})
-            wandb_run.log({"plots/merge_history_costs": wandb.Image(fig_costs)})
+            wandb_run.log({"plots/merge_history_cluster_sizes": wandb.Image(fig_cs)}, step=merge_history.n_iters_current)
+            wandb_run.log({"plots/merge_history_costs": wandb.Image(fig_costs)}, step=merge_history.n_iters_current)
 
     # Finish WandB run
     if wandb_run is not None:

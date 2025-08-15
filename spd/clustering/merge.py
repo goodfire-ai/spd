@@ -194,14 +194,14 @@ def merge_iteration(
             )
             wandb_run.log(
                 {
-                    "iteration": i,
                     "k_groups": k_groups,
                     "merge_pair_cost": costs[merge_pair].item(),
                     "mdl_cost": mdl_cost,
                     "mdl_cost_over_batchsize": mdl_cost / current_act_mask.shape[0],
                     "fraction_singleton_groups": fraction_singleton_groups,
                     "fraction_zero_coacts": fraction_zero_coacts,
-                }
+                },
+                step=i,
             )
 
         # Call artifact callback periodically for saving group_idxs

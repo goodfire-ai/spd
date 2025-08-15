@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from muutils.dbg import dbg_auto, dbg_tensor
 import numpy as np
 import wandb
+from muutils.dbg import dbg_tensor
 from zanj import ZANJ
 
 from spd.clustering.math.merge_distances import MergesArray
