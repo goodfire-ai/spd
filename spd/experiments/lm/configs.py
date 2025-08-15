@@ -38,3 +38,7 @@ class LMTaskConfig(BaseModel):
         description="Whether to reshuffle data at each epoch. Set False in tests to keep fixed "
         "order across dp modes.",
     )
+    streaming: bool = Field(
+        default=False,
+        description="Whether to use a streaming dataset",
+    )
