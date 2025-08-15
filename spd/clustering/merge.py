@@ -152,6 +152,7 @@ def merge_iteration(
         )
 
         # Log to WandB if enabled
+        # --------------------------------------------------
         if wandb_run is not None and i % merge_config.wandb_log_frequency == 0:
             # Prepare additional stats
             group_sizes: Int[Tensor, " k_groups"] = current_merge.components_per_group
@@ -177,6 +178,7 @@ def merge_iteration(
             if fraction_zero_coacts > 0:
                 tensor_data_for_wandb["coact_no_zeros"] = coact_no_zeros
 
+            # log the tensors -- this makes histograms, and also stats about the tensors in tensor_metrics
             wandb_log_tensor(
                 run=wandb_run,
                 data=tensor_data_for_wandb,
@@ -184,7 +186,7 @@ def merge_iteration(
                 step=i,
             )
 
-            # log chosen pair cost
+            # log metrics
             mdl_cost: float = compute_mdl_cost(
                 acts=diag_acts,
                 merges=current_merge,
@@ -203,6 +205,7 @@ def merge_iteration(
             )
 
         # Call artifact callback periodically for saving group_idxs
+        # --------------------------------------------------
         if (
             artifact_callback is not None
             and i > 0
@@ -233,6 +236,7 @@ def merge_iteration(
         )
 
         # plot if requested
+        # --------------------------------------------------
         if plot_function is not None:
             plot_function(
                 costs=costs,

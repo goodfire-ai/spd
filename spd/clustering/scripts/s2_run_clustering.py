@@ -101,7 +101,6 @@ def plot_merge_iteration_callback(
 
         # Log to WandB
         wandb_run.log({"plots/merges": wandb.Image(fig)})
-        plt.close(fig)
 
 
 def run_clustering(
