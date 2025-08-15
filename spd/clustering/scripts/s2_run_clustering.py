@@ -324,7 +324,7 @@ def run_clustering(
         "batch_name": dataset_path.stem,
         "config_identifier": config_.config_identifier,
     }
-    
+
     emit_result(result)
 
     return hist_save_path

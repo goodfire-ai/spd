@@ -156,7 +156,9 @@ def merge_iteration(
             alpha=merge_config.alpha,
         )
         mdl_loss_norm: float = mdl_loss / current_act_mask.shape[0]
-        pbar.set_description(f"{prefix} k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={float(costs[merge_pair].item()):.4f}")
+        pbar.set_description(
+            f"{prefix} k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={float(costs[merge_pair].item()):.4f}"
+        )
 
         # Log to WandB if enabled
         # --------------------------------------------------

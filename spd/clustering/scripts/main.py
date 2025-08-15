@@ -6,7 +6,7 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, IO
+from typing import IO, Any
 
 from muutils.dbg import dbg_tensor
 
@@ -45,7 +45,7 @@ def launch_child_with_json_fd(cmd: list[str]) -> tuple[subprocess.Popen[bytes], 
         pass_fds=(json_w_fd,),
         close_fds=True,
     )
-    
+
     # In parent process: close the write fd (child has it) and return read fd
     os.close(json_w_fd)
     json_r: IO[bytes] = os.fdopen(json_r_fd, "rb", buffering=0)
@@ -57,13 +57,15 @@ def _read_json_result(json_r: IO[bytes], dataset_path: Path) -> dict[str, str | 
     json_line: bytes = json_r.readline()
     if not json_line:
         raise RuntimeError(f"No JSON result received from {dataset_path.stem}")
-    
+
     json_str: str = json_line.decode().strip()
     try:
         result: dict[str, str | None] = json.loads(json_str)
         return result
     except json.JSONDecodeError as e:
-        raise ValueError(f"Failed to parse JSON result from {dataset_path.stem}: {e}\nJSON string: {json_str}") from e
+        raise ValueError(
+            f"Failed to parse JSON result from {dataset_path.stem}: {e}\nJSON string: {json_str}"
+        ) from e
 
 
 # TODO: this is super messy
@@ -145,8 +147,6 @@ def distribute_clustering(
         raise e
 
     return results
-
-
 
 
 def main(
