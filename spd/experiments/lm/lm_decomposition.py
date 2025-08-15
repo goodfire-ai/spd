@@ -106,6 +106,7 @@ def main(
         streaming=config.task_config.streaming,
         column_name=config.task_config.column_name,
         shuffle_each_epoch=config.task_config.shuffle_each_epoch,
+        seed=None,
     )
 
     # Keep per-process batch size constant to maintain scale of all metrics so we can simply average
@@ -133,6 +134,7 @@ def main(
         streaming=config.task_config.streaming,
         column_name=config.task_config.column_name,
         shuffle_each_epoch=config.task_config.shuffle_each_epoch,
+        seed=None,
     )
 
     assert config.eval_batch_size % dist_state.world_size == 0 and config.eval_batch_size > 0, (
@@ -144,7 +146,7 @@ def main(
         dataset_config=eval_data_config,
         batch_size=eval_rank_batch_size,
         buffer_size=config.task_config.buffer_size,
-        global_seed=config.seed,
+        global_seed=config.seed + 1,
         ddp_rank=dist_state.rank,
         ddp_world_size=dist_state.world_size,
     )
