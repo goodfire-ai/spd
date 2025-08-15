@@ -90,7 +90,6 @@ MERGE_CFG: MergeConfig = MergeConfig(
     pop_component_prob=0,
     module_name_filter=FILTER_MODULES,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
-    rank_cost_fn_name="const_1",
 )
 
 ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(

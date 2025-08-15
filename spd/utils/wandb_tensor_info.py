@@ -35,11 +35,11 @@ def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Fi
     ax.hist(values, bins=50, alpha=0.7, edgecolor="black", linewidth=0.5)
 
     # Add stat lines
-    if info["mean"] is not None:
-        mean_val: float = info["mean"]
-        median_val: float = info["median"]
-        std_val: float = info["std"]
+    mean_val: float = info["mean"] or float("nan")
+    median_val: float = info["median"] or float("nan")
+    std_val: float = info["std"] or float("nan")
 
+    if info["mean"] is not None:
         ax.axvline(
             mean_val,
             color="red",
@@ -207,15 +207,15 @@ def _log_one(
     # use_log_counts: bool = True,
 ) -> None:
     """Log a single tensor."""
+    info: dict[str, Any] = array_info(tensor_)
+
     if single:
         # For single-use logging, use the old path with detailed Plotly histogram
-        info: dict[str, Any] = array_info(tensor_)
         wandb_hist = _create_histogram_wandb(tensor_, name)
         histogram_key: str = f"single_hists/{name}"
         run.log({histogram_key: wandb_hist}, step=step)
     else:
         # Log numeric stats as metrics (viewable like loss) using dict comprehension
-        info: dict[str, Any] = array_info(tensor_)
         stats_to_log: dict[str, float | wandb.Histogram] = {
             f"tensor_metrics/{name}/{key}": info[key]
             for key in ["mean", "std", "median", "min", "max"]
@@ -224,10 +224,10 @@ def _log_one(
 
         # For regular logging, use wandb.Histogram directly
         hist_key: str = f"tensor_histograms/{name}"
-        stats_to_log[hist_key] = wandb.Histogram(tensor_.flatten().cpu().numpy())
+        stats_to_log[hist_key] = wandb.Histogram(tensor_.flatten().cpu().numpy())  # pyright: ignore[reportArgumentType]
 
         # Add nan_percent if present
-        nan_percent: float = info["nan_percent"]
+        nan_percent: float | None = info["nan_percent"]
         # TODO: this is a hack for when the tensor is empty
         if nan_percent is None:
             dbg_tensor(tensor_)

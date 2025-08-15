@@ -81,13 +81,13 @@ def load_merge_histories(
     elif isinstance(path, list):
         if all(isinstance(p, Path) for p in path):
             # List of file paths
-            paths_paths: list[Path] = path  # type: ignore
+            paths_paths: list[Path] = path  # pyright: ignore[reportAssignmentType]
             data = [ZANJ().read(p) for p in paths_paths]
             ensemble = MergeHistoryEnsemble(data=data)
             return paths_paths, ensemble
         elif all(isinstance(p, str) and (p.startswith("wandb:") or "wandb.ai" in p) for p in path):
             # List of WandB URLs
-            wandb_urls: list[str] = path  # type: ignore
+            wandb_urls: list[str] = path  # pyright: ignore[reportAssignmentType]
             return load_merge_histories_from_wandb(wandb_urls)
         else:
             raise ValueError("Mixed or unsupported path types in list")

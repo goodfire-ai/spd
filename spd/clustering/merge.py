@@ -26,7 +26,7 @@ from spd.utils.wandb_tensor_info import wandb_log_tensor
 
 def merge_iteration(
     activations: Float[Tensor, "samples c_components"],
-    merge_config: MergeRunConfig,
+    merge_config: MergeConfig | MergeRunConfig,
     component_labels: list[str],
     initial_merge: GroupMerge | None = None,
     sweep_params: dict[str, Any] | None = None,
@@ -162,7 +162,7 @@ def merge_iteration(
 
         # Log to WandB if enabled
         # --------------------------------------------------
-        if wandb_run is not None and i % merge_config.wandb_log_frequency == 0:
+        if wandb_run is not None and i % getattr(merge_config, "wandb_log_frequency", 100) == 0:
             # Prepare additional stats
             group_sizes: Int[Tensor, " k_groups"] = current_merge.components_per_group
             fraction_singleton_groups: float = (group_sizes == 1).float().mean().item()
@@ -212,7 +212,7 @@ def merge_iteration(
         if (
             artifact_callback is not None
             and i > 0
-            and i % merge_config.wandb_artifact_frequency == 0
+            and i % getattr(merge_config, "wandb_artifact_frequency", 100) == 0
         ):
             artifact_callback(merge_history, i)
 

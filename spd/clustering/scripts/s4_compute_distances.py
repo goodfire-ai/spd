@@ -91,7 +91,7 @@ def _create_clustering_report(
         plt.title(f"Distance Distribution ({method})")
 
         # Only add legend if there are labeled artists
-        handles, labels = ax.get_legend_handles_labels()
+        handles, _labels = ax.get_legend_handles_labels()
         if handles:
             plt.legend()
 

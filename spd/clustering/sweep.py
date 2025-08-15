@@ -252,7 +252,7 @@ def run_hyperparameter_sweep(
                 "merge_pair_sampling_method": merge_config.merge_pair_sampling_method,
                 "merge_pair_sampling_kwargs": merge_config.merge_pair_sampling_kwargs,
                 "alpha": merge_config.alpha,
-                "rank_cost_name": merge_config.rank_cost_fn.__name__,
+                # rank_cost_name field removed from MergeConfig
             }
             results.append(merge_history)
         except Exception as e:

@@ -235,9 +235,6 @@ class MergeHistory(SerializableDataclass):
         """Read the merge history from a file."""
         zanj_: ZANJ = zanj or ZANJ()
         output: MergeHistory = zanj_.read(path)
-        # TODO: probably unnecessary?
-        if not isinstance(output, MergeHistory):
-            output = MergeHistory.load(output)
         return output
 
 

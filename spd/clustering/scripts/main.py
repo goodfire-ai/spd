@@ -77,8 +77,11 @@ def distribute_clustering(
     cuda_mem_max: float | None = None,
     max_concurrency: int | None = None,
     log_fn: Callable[[str], None] = print,
-    log_fn_error: Callable[..., None] = functools.partial(print, file=sys.stderr),  # noqa: B008
+    log_fn_error: Callable[..., None] | None = None,
 ) -> list[dict[str, str | None]]:
+    if log_fn_error is None:
+        log_fn_error = functools.partial(print, file=sys.stderr)
+
     n_devices: int = len(devices)
     if n_devices == 0:
         raise ValueError("devices must be non-empty")
@@ -298,7 +301,7 @@ def main(
         and histories_input
         and isinstance(histories_input[0], str)
     ):
-        wandb_urls_for_report = histories_input  # type: ignore
+        wandb_urls_for_report = histories_input  # pyright: ignore[reportAssignmentType]
 
     _dists_path, distances = compute_histories_distances(
         merges_path=merged_hists["paths"]["merge_array"],
