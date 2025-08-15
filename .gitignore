@@ -1,6 +1,7 @@
 spd/scripts/sweep_params.yaml
 docs/coverage/**
 artifacts/**
+docs/dep_graph/**
 
 **/out/
 neuronpedia_outputs/
