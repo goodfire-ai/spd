@@ -30,7 +30,8 @@ def plot_merge_iteration(
     component_labels: list[str] | None = None,
     plot_config: dict[str, Any] | None = None,
     nan_diag: bool = True,
-) -> None:
+    show: bool = False,
+) -> plt.Figure:
     """Plot merge iteration results with merge tree, coactivations, and costs.
 
     Args:
@@ -41,6 +42,11 @@ def plot_merge_iteration(
             iteration: Current iteration number
             component_labels: Component labels for axis labeling
             plot_config: Plot configuration settings
+            nan_diag: Whether to set diagonal to NaN for visualization
+            show: Whether to display the plot (default: False)
+
+    Returns:
+            The matplotlib figure object
     """
     plot_config_: dict[str, Any] = {
         **DEFAULT_PLOT_CONFIG,
@@ -97,7 +103,10 @@ def plot_merge_iteration(
             f"{plot_config_['pdf_prefix']}_iter_{iteration:03d}.pdf", bbox_inches="tight", dpi=300
         )
 
-    plt.show()
+    if show:
+        plt.show()
+
+    return fig
 
 
 def plot_dists_distribution(

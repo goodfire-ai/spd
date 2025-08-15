@@ -13,5 +13,5 @@
   "wandb_enabled": true,
   "wandb_project": "spd-cluster",
   "wandb_log_frequency": 1,
-  "wandb_artifact_frequency": 5
+  "wandb_artifact_frequency": 32
 }

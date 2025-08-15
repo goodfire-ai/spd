@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from muutils.dbg import dbg_auto, dbg_tensor
 import numpy as np
 import wandb
 from zanj import ZANJ
@@ -130,6 +131,7 @@ def normalize_histories(
     normalized_merge_array: MergesArray
     normalized_merge_meta: dict[str, Any]
     normalized_merge_array, normalized_merge_meta = ensemble.normalized()
+    dbg_tensor(normalized_merge_array)
 
     # save things
     run_dir.mkdir(parents=True, exist_ok=True)

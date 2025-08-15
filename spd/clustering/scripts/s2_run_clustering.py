@@ -19,7 +19,11 @@ from spd.clustering.activations import component_activations, process_activation
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import MergeRunConfig
-from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_history_costs
+from spd.clustering.plotting.merge import (
+    plot_merge_history_cluster_sizes,
+    plot_merge_history_costs,
+    plot_merge_iteration,
+)
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
 from spd.utils.wandb_tensor_info import wandb_log_tensor
@@ -65,6 +69,39 @@ def save_group_idxs_artifact(
     artifact.add_file(str(group_idxs_path))
     wandb_run.log_artifact(artifact)
     log(f"Uploaded history artifact '{group_idxs_path}'")
+
+
+def plot_merge_iteration_callback(
+    costs: torch.Tensor,
+    merge_history: MergeHistory,
+    current_merge: Any,
+    current_coact: torch.Tensor,
+    i: int,
+    component_labels: list[str],
+    wandb_run: wandb.sdk.wandb_run.Run | None,
+    artifact_frequency: int,
+    batch_id: str,
+    **kwargs: Any,
+) -> None:
+    """Plot merge iteration at artifact frequency and log to WandB."""
+    assert kwargs  # Ensure unused kwargs are passed
+
+    # Only plot at artifact frequency (same as when we save artifacts)
+    if wandb_run is not None and i > 0 and i % artifact_frequency == 0:
+        # Create the plot and get the figure
+        fig = plot_merge_iteration(
+            current_merge=current_merge,
+            current_coact=current_coact,
+            costs=costs,
+            pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType]
+            iteration=i,
+            component_labels=component_labels,
+            show=False,  # Don't display the plot
+        )
+
+        # Log to WandB
+        wandb_run.log({"plots/merges": wandb.Image(fig)})
+        plt.close(fig)
 
 
 def run_clustering(
@@ -114,14 +151,23 @@ def run_clustering(
     if plot:
         this_merge_figs.mkdir(parents=True, exist_ok=True)
 
-    # Create artifact callback if wandb is enabled
+    # Create callbacks if wandb is enabled
     artifact_callback: Callable[[MergeHistory, int], None] | None = None
+    plot_callback: Callable[..., None] | None = None
+
     if wandb_run is not None:
         artifact_callback = functools.partial(
             save_group_idxs_artifact,
             wandb_run=wandb_run,
             save_dir=this_merge_path / "checkpoints",
             dataset_stem=dataset_path.stem,
+        )
+
+        plot_callback = functools.partial(
+            plot_merge_iteration_callback,
+            wandb_run=wandb_run,
+            artifact_frequency=config_.wandb_artifact_frequency,
+            batch_id=_BATCH_ID,
         )
 
     # get model and data
@@ -186,6 +232,7 @@ def run_clustering(
         wandb_run=wandb_run,
         prefix=f"\033[38;5;208m[{_BATCH_ID}]\033[0m",
         artifact_callback=artifact_callback,
+        plot_function=plot_callback,
     )
 
     # saving and plotting

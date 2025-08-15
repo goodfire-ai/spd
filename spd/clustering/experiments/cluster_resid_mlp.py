@@ -136,6 +136,7 @@ def _plot_func(
             pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType],
             iteration=i,
             component_labels=component_labels,
+            show=True,  # Show the plot interactively
         )
 
 

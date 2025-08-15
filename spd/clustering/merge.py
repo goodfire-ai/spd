@@ -159,7 +159,7 @@ def merge_iteration(
             group_sizes_no_singletons: Tensor = group_sizes[group_sizes > 1]
 
             fraction_zero_coacts: float = (current_coact == 0).float().mean().item()
-            coact_no_zeros: Tensor = current_coact[current_coact != 0]
+            coact_no_zeros: Tensor = current_coact[current_coact > 0]
             diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)
 
             tensor_data_for_wandb: dict[str, Tensor] = dict(
@@ -185,16 +185,18 @@ def merge_iteration(
             )
 
             # log chosen pair cost
+            mdl_cost: float = compute_mdl_cost(
+                acts=diag_acts,
+                merges=current_merge,
+                alpha=merge_config.alpha,
+            )
             wandb_run.log(
                 {
                     "iteration": i,
                     "k_groups": k_groups,
                     "merge_pair_cost": costs[merge_pair].item(),
-                    "mdl_cost": compute_mdl_cost(
-                        acts=diag_acts,
-                        merges=current_merge,
-                        alpha=merge_config.alpha,
-                    ),
+                    "mdl_cost": mdl_cost,
+                    "mdl_cost_over_batchsize": mdl_cost / current_act_mask.shape[0],
                     "fraction_singleton_groups": fraction_singleton_groups,
                     "fraction_zero_coacts": fraction_zero_coacts,
                 }

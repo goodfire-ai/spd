@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from matplotlib import pyplot as plt
+from muutils.dbg import dbg_auto, dbg_tensor
 
 from spd.clustering.math.merge_distances import DistancesArray, DistancesMethod
 from spd.clustering.merge_run_config import MergeRunConfig
@@ -213,6 +214,7 @@ def main(
         merges_path=merged_hists["paths"]["merge_array"],
         method=distances_method,
     )
+    dbg_tensor(distances)
 
     # ================================================================================
     if plot:
