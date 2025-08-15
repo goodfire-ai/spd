@@ -96,9 +96,10 @@ def test_gpt_2_decomposition_happy_path() -> None:
         hf_tokenizer_path=config.pretrained_model_name_hf,
         split=config.task_config.train_data_split,
         n_ctx=config.task_config.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
+        is_tokenized=config.task_config.is_tokenized,
+        streaming=config.task_config.streaming,
         column_name=config.task_config.column_name,
+        seed=None,
     )
 
     train_loader, _tokenizer = create_data_loader(
@@ -113,15 +114,16 @@ def test_gpt_2_decomposition_happy_path() -> None:
         hf_tokenizer_path=config.pretrained_model_name_hf,
         split=config.task_config.eval_data_split,
         n_ctx=config.task_config.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
+        is_tokenized=config.task_config.is_tokenized,
+        streaming=config.task_config.streaming,
         column_name=config.task_config.column_name,
+        seed=None,
     )
     eval_loader, _ = create_data_loader(
         dataset_config=eval_data_config,
         batch_size=config.batch_size,
         buffer_size=config.task_config.buffer_size,
-        global_seed=config.seed,
+        global_seed=config.seed + 1,
     )
 
     # Run optimize function

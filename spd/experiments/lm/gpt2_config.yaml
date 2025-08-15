@@ -9,9 +9,9 @@ seed: 0
 C: 768
 n_mask_samples: 1
 gate_type: "vector_mlp"
-gate_hidden_dims: [64]
+gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["transformer.h.*.attn.c_attn"]
+target_module_patterns: ["transformer.h.1.attn.c_attn"]
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1e3
@@ -27,7 +27,7 @@ pnorm: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 16
+batch_size: 2
 steps: 50_000
 lr: 3e-4
 lr_schedule: cosine
@@ -63,12 +63,12 @@ tokenizer_name: openai-community/gpt2
 # --- Task Specific ---
 task_config:
   task_name: lm 
-  max_seq_len: 512
-  buffer_size: 1000
-  dataset_name: "SimpleStories/SimpleStories"
-  column_name: "story"
+  max_seq_len: 1024
+  dataset_name: "apollo-research/Skylion007-openwebtext-tokenizer-gpt2"
+  is_tokenized: True
+  column_name: "input_ids"
   train_data_split: "train"
-  eval_data_split: "test"
+  eval_data_split: "train"  # TODO: handle different seeding for train and eval
 
 
 # Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/train_gpt2.py#L165

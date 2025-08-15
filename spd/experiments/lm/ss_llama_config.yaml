@@ -27,7 +27,7 @@ pnorm: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 128
+batch_size: 32
 steps: 50_000
 lr: 3e-4
 lr_schedule: cosine
@@ -64,11 +64,11 @@ tokenizer_name: SimpleStories/SimpleStories-1.25M
 task_config:
   task_name: lm 
   max_seq_len: 512
-  buffer_size: 1000
   dataset_name: "SimpleStories/SimpleStories"
   column_name: "story"
   train_data_split: "train"
   eval_data_split: "test"
+  streaming: True
 
 
 # Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
