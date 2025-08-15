@@ -30,10 +30,10 @@ def compute_mdl_cost(
     assert k_groups == merges.k_groups, "Merges must match activation vector shape"
 
     return (
-        acts * (
-            math.log2(k_groups) + alpha * merges.components_per_group.to(device=acts.device)
-        )
-    ).sum().item()
+        (acts * (math.log2(k_groups) + alpha * merges.components_per_group.to(device=acts.device)))
+        .sum()
+        .item()
+    )
 
 
 def compute_merge_costs(

@@ -153,14 +153,34 @@ def merge_iteration(
 
         # Log to WandB if enabled
         if wandb_run is not None and i % merge_config.wandb_log_frequency == 0:
-            wandb_log_tensor(
-                wandb_run,
-                dict(
-                    coactivation=current_coact,
-                    costs=costs,
-                    group_sizes=current_merge.components_per_group,
+            # Prepare additional stats
+            group_sizes: Int[Tensor, " k_groups"] = current_merge.components_per_group
+            fraction_singleton_groups: float = (group_sizes == 1).float().mean().item()
+            group_sizes_no_singletons: Tensor = group_sizes[group_sizes > 1]
+
+            fraction_zero_coacts: float = (current_coact == 0).float().mean().item()
+            coact_no_zeros: Tensor = current_coact[current_coact != 0]
+            diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)
+
+            tensor_data_for_wandb: dict[str, Tensor] = dict(
+                coactivation=current_coact,
+                costs=costs,
+                group_sizes=group_sizes,
+                group_activations=diag_acts,
+                group_activations_over_sizes=(
+                    diag_acts / group_sizes.to(device=diag_acts.device).float()
                 ),
-                "iters",
+            )
+
+            if fraction_singleton_groups > 0:
+                tensor_data_for_wandb["group_sizes_no_singletons"] = group_sizes_no_singletons
+            if fraction_zero_coacts > 0:
+                tensor_data_for_wandb["coact_no_zeros"] = coact_no_zeros
+
+            wandb_log_tensor(
+                run=wandb_run,
+                data=tensor_data_for_wandb,
+                name="iters",
                 step=i,
             )
 
@@ -168,12 +188,15 @@ def merge_iteration(
             wandb_run.log(
                 {
                     "iteration": i,
-                    "merge_pair_cost": costs[merge_pair].mean().item(),
+                    "k_groups": k_groups,
+                    "merge_pair_cost": costs[merge_pair].item(),
                     "mdl_cost": compute_mdl_cost(
-                        acts=torch.diag(current_coact),
+                        acts=diag_acts,
                         merges=current_merge,
                         alpha=merge_config.alpha,
                     ),
+                    "fraction_singleton_groups": fraction_singleton_groups,
+                    "fraction_zero_coacts": fraction_zero_coacts,
                 }
             )
 

@@ -1,5 +1,6 @@
 """Minimal WandB tensor logging utilities using muutils."""
 
+import warnings
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -7,6 +8,7 @@ import numpy as np
 import plotly.graph_objects as go
 import wandb
 import wandb.sdk.wandb_run
+from muutils.dbg import dbg_tensor
 from muutils.tensor_info import array_info
 from torch import Tensor
 
@@ -166,7 +168,7 @@ def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:
 
 
 def wandb_log_tensor(
-    run: wandb.sdk.wandb_run.Run | None,
+    run: wandb.sdk.wandb_run.Run,
     data: Tensor | dict[str, Tensor],
     name: str,
     step: int,
@@ -181,18 +183,19 @@ def wandb_log_tensor(
         step: WandB step
         single: True if this tensor is only logged once (component activations)
     """
-    # Skip logging if no WandB run
-    if run is None:
-        return
-
-    if isinstance(data, dict):
-        # Handle dict of tensors
-        for key, tensor in data.items():
-            full_name: str = f"{name}.{key}"
-            _log_one(run, tensor, full_name, step, single=single)
-    else:
-        # Handle single tensor
-        _log_one(run, data, name, step, single=single)
+    try:
+        if isinstance(data, dict):
+            # Handle dict of tensors
+            for key, tensor in data.items():
+                full_name: str = f"{name}.{key}"
+                _log_one(run, tensor, full_name, step, single=single)
+        else:
+            # Handle single tensor
+            _log_one(run, data, name, step, single=single)
+    except Exception as e:
+        warnings.warn(f"Failed to log tensor {name}: {e}")  # noqa: B028
+        dbg_tensor(data)
+        raise e
 
 
 def _log_one(
@@ -224,7 +227,11 @@ def _log_one(
         stats_to_log[hist_key] = wandb.Histogram(tensor_.flatten().cpu().numpy())
 
         # Add nan_percent if present
-        nan_percent: float = info.get("nan_percent", 0)
+        nan_percent: float = info["nan_percent"]
+        # TODO: this is a hack for when the tensor is empty
+        if nan_percent is None:
+            dbg_tensor(tensor_)
+            nan_percent = float("nan")
         if nan_percent > 0:
             stats_to_log[f"tensor_metrics/{name}/nan_percent"] = nan_percent
 

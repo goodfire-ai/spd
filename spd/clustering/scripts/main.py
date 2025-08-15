@@ -185,13 +185,10 @@ def main(
 
     # collect histories -- Use WandB URLs if available and enabled, otherwise use local files
     histories_files: list[Path] = list(histories_path.rglob("merge_history.zanj"))
-    
+
     histories_input: list[str] | list[Path] = histories_files
     if merge_run_config.wandb_enabled:
-        wandb_urls: list[str] = [
-            x.read_text().strip()
-            for x in histories_path.rglob("*.wburl")
-        ]
+        wandb_urls: list[str] = [x.read_text().strip() for x in histories_path.rglob("*.wburl")]
         histories_input = wandb_urls
 
     if not histories_input:

@@ -11,6 +11,7 @@ import wandb
 import wandb.sdk.wandb_run
 from jaxtyping import Int
 from matplotlib import pyplot as plt
+from muutils.dbg import dbg_tensor
 from torch import Tensor
 from zanj import ZANJ
 
@@ -45,23 +46,20 @@ def save_group_idxs_artifact(
     save_dir: Path,
     dataset_stem: str,
 ) -> None:
-    """Save group_idxs to file and upload as WandB artifact periodically."""
-    # Extract group_idxs up to current iteration
-    current_group_idxs = merge_hist.merges.group_idxs[: iteration + 1].cpu().numpy()
-
+    """Save merge_hist to file and upload as WandB artifact"""
     # Save to file in the same directory as merge history
     group_idxs_path: Path = save_dir / f"iter_{iteration:04}.zanj"
     merge_hist.save(group_idxs_path)
 
     # Create and upload artifact
     artifact = wandb.Artifact(
-        name=f"group_idxs_{dataset_stem}_iter_{iteration}",
-        type="group_idxs",
+        name=f"merge_hist.{dataset_stem}.iter_{iteration}",
+        type="merge_hist",
         description=f"Group indices for batch {dataset_stem} at iteration {iteration}",
         metadata={
             "batch_name": dataset_stem,
             "iteration": iteration,
-            "shape": list(current_group_idxs.shape),
+            "config": merge_hist.config.model_dump(mode="json"),
         },
     )
     artifact.add_file(str(group_idxs_path))
@@ -147,8 +145,10 @@ def run_clustering(
         sigmoid_type="hard",
     )
 
-    # TODO: Consider adding fallback to dbg_tensor if wandb_run is None
-    wandb_log_tensor(wandb_run, component_acts, "component_activations", step=0, single=True)
+    if wandb_run is not None:
+        wandb_log_tensor(wandb_run, component_acts, "component_activations", step=0, single=True)
+    else:
+        dbg_tensor(component_acts)
     # process the activations by:
     # 1. filtering out dead components
     # 2. concatenating the activations across the sequence
