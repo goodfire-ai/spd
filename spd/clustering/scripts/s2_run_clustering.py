@@ -60,7 +60,7 @@ def save_group_idxs_artifact(
 
     # Create and upload artifact
     artifact = wandb.Artifact(
-        name=f"merge_hist.{dataset_stem}.iter_{iteration}",
+        name=f"merge_hist_iter.{dataset_stem}.iter_{iteration}",
         type="merge_hist_iter",
         description=f"Group indices for batch {dataset_stem} at iteration {iteration}",
         metadata={
@@ -71,7 +71,6 @@ def save_group_idxs_artifact(
     )
     artifact.add_file(str(group_idxs_path))
     wandb_run.log_artifact(artifact)
-    log(f"Uploaded history artifact '{group_idxs_path}'")
 
 
 def plot_merge_iteration_callback(
@@ -91,7 +90,6 @@ def plot_merge_iteration_callback(
 
     # Only plot at artifact frequency (same as when we save artifacts)
     if wandb_run is not None and i > 0 and i % artifact_frequency == 0:
-        print(f"Plotting merge iteration {i} for batch {batch_id}")
         # Create the plot and get the figure
         fig = plot_merge_iteration(
             current_merge=current_merge,

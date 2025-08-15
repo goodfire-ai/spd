@@ -120,7 +120,14 @@ def _parse_clustering_result(stdout: str, dataset_path: Path, log_fn: Callable[[
     
     # Split by the delimiter and extract JSON
     parts: list[str] = stdout.split(RESULT_DELIMITER)
-    assert len(parts) == 3, f"Expected exactly 3 parts when splitting stdout by '{RESULT_DELIMITER}', got {len(parts)}"
+    
+    if len(parts) != 3:
+        # Process crashed before outputting structured result
+        # Check if there was an error in the output
+        if "Traceback" in stdout or "Error" in stdout:
+            raise RuntimeError(f"Process for {dataset_path.stem} crashed with error. Check output above.")
+        else:
+            raise ValueError(f"Expected exactly 3 parts when splitting stdout by '{RESULT_DELIMITER}', got {len(parts)}. Process may have crashed.")
     
     json_str: str = parts[1].strip()
     try:
@@ -268,25 +275,22 @@ def main(
     logger.section("Computing distances between merge histories")
     _dists_path: Path
     distances: DistancesArray
+    
+    # Prepare WandB URLs if using WandB mode
+    wandb_urls_for_report: list[str] | None = None
+    if (merge_run_config.wandb_enabled 
+        and isinstance(histories_input, list) 
+        and histories_input 
+        and isinstance(histories_input[0], str)):
+        wandb_urls_for_report = histories_input  # type: ignore
+    
     _dists_path, distances = compute_histories_distances(
         merges_path=merged_hists["paths"]["merge_array"],
         method=distances_method,
+        wandb_urls=wandb_urls_for_report,
+        config_identifier=merge_run_config.config_identifier,
     )
     dbg_tensor(distances)
-
-    # ================================================================================
-    if plot:
-        logger.section("Plotting distances")
-        plot_dists_distribution(
-            distances=distances,
-            mode="points",
-            # label="v1"
-        )
-        plt.legend()
-        fig_path: Path = figures_path / f"distances_distribution.{distances_method}.png"
-        plt.savefig(fig_path)
-        logger.info(f"Saved distances distribution plot to {fig_path}")
-
 
 def cli():
     import argparse
