@@ -194,7 +194,12 @@ def create_data_loader(
 
     if dataset_config.streaming:
         assert isinstance(dataset, IterableDataset)
+        logger.warning(
+            "WARNING: Streaming is currently quite slow and not well tested. In general, we suggest"
+            " setting streaming=False and having the dataset download (and cache)."
+        )
         if is_ddp:
+            logger.warning("WARNING: Streaming with ddp has not been well tested. Use at own risk.")
             ds_num_shards = getattr(dataset, "num_shards", None)
             if isinstance(ds_num_shards, int) and ds_num_shards >= ddp_world_size:
                 dataset = dataset.shard(num_shards=ddp_world_size, index=ddp_rank)
