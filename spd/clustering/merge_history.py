@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
@@ -10,6 +11,7 @@ from jaxtyping import Float, Int
 from muutils.dbg import dbg_tensor
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 from torch import Tensor
+from zanj import ZANJ
 
 from spd.clustering.math.merge_distances import (
     DistancesArray,
@@ -222,6 +224,21 @@ class MergeHistory(SerializableDataclass):
         if self.n_iters_current == 0:
             return self.c_components
         return int(self.k_groups[0].item())
+
+    def save(self, path: Path, zanj: ZANJ | None = None) -> None:
+        """Save the merge history to a file."""
+        zanj_: ZANJ = zanj or ZANJ()
+        zanj_.save(self, path)
+
+    @classmethod
+    def read(cls, path: Path, zanj: ZANJ | None = None) -> MergeHistory:
+        """Read the merge history from a file."""
+        zanj_: ZANJ = zanj or ZANJ()
+        output: MergeHistory = zanj_.read(path)
+        # TODO: probably unnecessary?
+        if not isinstance(output, MergeHistory):
+            output = MergeHistory.load(output)
+        return output
 
 
 @dataclass

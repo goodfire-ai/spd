@@ -44,15 +44,14 @@ def save_group_idxs_artifact(
     wandb_run: wandb.sdk.wandb_run.Run,
     save_dir: Path,
     dataset_stem: str,
-    config_identifier: str,
 ) -> None:
     """Save group_idxs to file and upload as WandB artifact periodically."""
     # Extract group_idxs up to current iteration
     current_group_idxs = merge_hist.merges.group_idxs[: iteration + 1].cpu().numpy()
 
     # Save to file in the same directory as merge history
-    group_idxs_path = save_dir / f"iter_{iteration}.npy"
-    np.save(group_idxs_path, current_group_idxs)
+    group_idxs_path: Path = save_dir / f"iter_{iteration:04}.zanj"
+    merge_hist.save(group_idxs_path)
 
     # Create and upload artifact
     artifact = wandb.Artifact(
@@ -67,7 +66,7 @@ def save_group_idxs_artifact(
     )
     artifact.add_file(str(group_idxs_path))
     wandb_run.log_artifact(artifact)
-    log(f"Uploaded group_idxs artifact for iteration {iteration}")
+    log(f"Uploaded history artifact '{group_idxs_path}'")
 
 
 def run_clustering(
@@ -125,7 +124,6 @@ def run_clustering(
             wandb_run=wandb_run,
             save_dir=this_merge_path / "checkpoints",
             dataset_stem=dataset_path.stem,
-            config_identifier=config_.config_identifier,
         )
 
     # get model and data
@@ -213,10 +211,6 @@ def run_clustering(
 
     # Save merge history as WandB artifact
     if wandb_run is not None:
-        # Save the group_idxs as a numpy array first
-        group_idxs_path = hist_save_path.with_suffix(".group_idxs.npy")
-        np.save(group_idxs_path, merge_history.merges.group_idxs.cpu().numpy())
-
         artifact = wandb.Artifact(
             name=f"merge_history_{dataset_path.stem}",
             type="merge_history",
@@ -225,13 +219,13 @@ def run_clustering(
                 "batch_name": dataset_path.stem,
                 "config_identifier": config_.config_identifier,
                 "n_iters_current": merge_history.n_iters_current,
+                "filename": hist_save_path,
             },
         )
         # Add both files before logging the artifact
         artifact.add_file(str(hist_save_path))
-        artifact.add_file(str(group_idxs_path))
         wandb_run.log_artifact(artifact)
-        log(f"Group indices saved and added to artifact: {group_idxs_path}")
+        log(f"Group indices saved and added to artifact: {hist_save_path}")
 
     if plot:
         fig_cs: plt.Figure = plot_merge_history_cluster_sizes(
@@ -243,8 +237,8 @@ def run_clustering(
             file_prefix=(this_merge_figs / "merge").as_posix(),
         )
         if wandb_run is not None:
-            wandb_run.log({"plots/merge_history_cluster_sizes": fig_cs})
-            wandb_run.log({"plots/merge_history_costs": fig_costs})
+            wandb_run.log({"plots/merge_history_cluster_sizes": wandb.Image(fig_cs)})
+            wandb_run.log({"plots/merge_history_costs": wandb.Image(fig_costs)})
 
     # Finish WandB run
     if wandb_run is not None:

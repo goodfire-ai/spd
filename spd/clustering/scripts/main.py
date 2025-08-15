@@ -180,26 +180,24 @@ def main(
         log_fn_error=lambda msg: logger.error(f"\x1b[31m[spd-cluster:err] {msg}\x1b[0m"),
     )
 
-    histories_files: list[Path] = list(histories_path.glob("*.zanj"))
-
-    # Collect WandB URLs if wandb is enabled
-    wandb_urls: list[str] = []
+    # collect histories -- Use WandB URLs if available and enabled, otherwise use local files
+    histories_files: list[Path] = list(histories_path.rglob("merge_history.zanj"))
+    
+    histories_input: list[str] | list[Path] = histories_files
     if merge_run_config.wandb_enabled:
-        for hist_file in histories_files:
-            wburl_file: Path = hist_file.with_suffix(".wburl")
-            if wburl_file.exists():
-                wandb_url: str = wburl_file.read_text().strip()
-                wandb_urls.append(wandb_url)
+        wandb_urls: list[str] = [
+            x.read_text().strip()
+            for x in histories_path.rglob("*.wburl")
+        ]
+        histories_input = wandb_urls
 
-        logger.info(f"Found {len(wandb_urls)} WandB URLs from .wburl files")
+    if not histories_input:
+        logger.error("No merge histories found.")
+        raise FileNotFoundError(f"No merge histories found: {histories_path=}")
 
     # 3. normalize histories to account for different active components
     logger.section("Normalizing histories")
 
-    # Use WandB URLs if available and enabled, otherwise use local files
-    histories_input: list[str] | list[Path] = (
-        wandb_urls if wandb_urls and merge_run_config.wandb_enabled else histories_files
-    )
     merged_hists: dict[str, Any] = normalize_histories(
         histories=histories_input,
         run_dir=run_path / "distances",
