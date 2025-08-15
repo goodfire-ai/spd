@@ -36,14 +36,6 @@ def cuda_mem_info(dev: torch.device) -> tuple[int, int]:
     return free, total
 
 
-def cuda_memory_used(device: int | str | torch.device = 0) -> int:
-    """Return bytes currently allocated on a CUDA device."""
-    dev: torch.device = _to_cuda_device(device)
-    free, total = cuda_mem_info(dev)
-    used: int = total - free
-    return used
-
-
 def cuda_memory_fraction(device: int | str | torch.device = 0) -> float:
     """Return fraction of total memory in use on a CUDA device."""
     dev: torch.device = _to_cuda_device(device)
