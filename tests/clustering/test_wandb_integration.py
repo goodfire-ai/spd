@@ -94,7 +94,7 @@ def test_save_group_idxs_artifact_creates_file():
         ) as mock_artifact_class:
             mock_artifact_class.return_value = mock_artifact
 
-            with patch("spd.clustering.scripts.s2_run_clustering.np.save") as mock_np_save:
+            with patch("spd.clustering.scripts.s2_run_clustering.np.save") as _mock_np_save:
                 # Call the function
                 save_group_idxs_artifact(
                     merge_hist=mock_history,
