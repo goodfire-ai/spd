@@ -102,8 +102,8 @@ def main(
         hf_tokenizer_path=config.tokenizer_name,
         split=config.task_config.train_data_split,
         n_ctx=config.task_config.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
+        is_tokenized=config.task_config.is_tokenized,
+        streaming=config.task_config.streaming,
         column_name=config.task_config.column_name,
         shuffle_each_epoch=config.task_config.shuffle_each_epoch,
     )
@@ -129,8 +129,8 @@ def main(
         hf_tokenizer_path=config.pretrained_model_name_hf,
         split=config.task_config.eval_data_split,
         n_ctx=config.task_config.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
+        is_tokenized=config.task_config.is_tokenized,
+        streaming=config.task_config.streaming,
         column_name=config.task_config.column_name,
         shuffle_each_epoch=config.task_config.shuffle_each_epoch,
     )

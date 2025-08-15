@@ -38,3 +38,11 @@ class LMTaskConfig(BaseModel):
         description="Whether to reshuffle data at each epoch. Set False in tests to keep fixed "
         "order across dp modes.",
     )
+    is_tokenized: bool = Field(
+        default=False,
+        description="Whether the dataset is already tokenized",
+    )
+    streaming: bool = Field(
+        default=False,
+        description="Whether to use a streaming dataset",
+    )

@@ -53,8 +53,8 @@ def create_dataloader_iterator(model_data: ModelData) -> Iterator[PromptData]:
         hf_tokenizer_path=model_data.config.pretrained_model_name_hf,
         split=task_cfg.eval_data_split,
         n_ctx=task_cfg.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
+        is_tokenized=task_cfg.is_tokenized,
+        streaming=task_cfg.streaming,
         column_name=task_cfg.column_name,
     )
 

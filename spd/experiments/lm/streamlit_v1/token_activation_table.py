@@ -24,6 +24,8 @@ class AnalysisConfig:
     dataset_name: str
     dataset_split: str
     column_name: str
+    is_tokenized: bool
+    streaming: bool
     causal_importance_threshold: float
     n_steps: int
     batch_size: int
@@ -82,6 +84,16 @@ def _render_configuration_form() -> AnalysisConfig | None:
                     value="story",
                     help="Column containing the text to analyze",
                 )
+                is_tokenized = st.checkbox(
+                    "Is Tokenized",
+                    value=False,
+                    help="Whether the dataset is already tokenized",
+                )
+                streaming = st.checkbox(
+                    "Streaming",
+                    value=False,
+                    help="Whether the dataset is streamed",
+                )
                 causal_importance_threshold = st.slider(
                     "Causal Importance Threshold",
                     min_value=0.0,
@@ -138,6 +150,8 @@ def _render_configuration_form() -> AnalysisConfig | None:
                 dataset_name=dataset_name,
                 dataset_split=dataset_split,
                 column_name=column_name,
+                is_tokenized=is_tokenized,
+                streaming=streaming,
                 causal_importance_threshold=causal_importance_threshold,
                 n_steps=n_steps,
                 batch_size=batch_size,
@@ -433,8 +447,8 @@ def analyze_component_token_table(
         hf_tokenizer_path=_model_data.config.pretrained_model_name_hf,
         split=config.dataset_split,
         n_ctx=config.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
+        is_tokenized=config.is_tokenized,
+        streaming=config.streaming,
         column_name=config.column_name,
     )
 

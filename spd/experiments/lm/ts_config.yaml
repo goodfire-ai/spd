@@ -65,7 +65,6 @@ tokenizer_name: EleutherAI/gpt-neo-125M
 task_config:
   task_name: lm
   max_seq_len: 2048
-  buffer_size: 1000
   dataset_name: "roneneldan/TinyStories"
   column_name: "text"
   train_data_split: "train"
