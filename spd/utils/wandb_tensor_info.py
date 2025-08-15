@@ -16,7 +16,7 @@ from torch import Tensor
 _LOGGED_URLS: set[str] = set()
 
 
-def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Figure:
+def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Figure:  # pyright: ignore[reportUnusedFunction]
     """Create histogram with stats markers."""
     if info["status"] != "ok" or info["size"] == 0:
         fig: plt.Figure

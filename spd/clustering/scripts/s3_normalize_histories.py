@@ -92,7 +92,7 @@ def load_merge_histories(
         else:
             raise ValueError("Mixed or unsupported path types in list")
     else:
-        raise ValueError(f"Unsupported path type: {type(path)}")
+        raise ValueError(f"Unsupported path type: {type(path)}")  # pyright: ignore[reportUnreachable]
 
 
 def normalize_histories(

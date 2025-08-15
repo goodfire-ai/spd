@@ -110,7 +110,7 @@ known-third-party = ["wandb"]
 
 [tool.pyright]
 include = ["spd", "tests"]
-exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py", "spd/clustering/old/**", "tests/**"]
+exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py", "tests/**"]
 
 strictListInference = true
 strictDictionaryInference = true

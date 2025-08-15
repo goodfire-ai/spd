@@ -96,7 +96,7 @@ def plot_merge_iteration_callback(
     component_labels: list[str],
     wandb_run: wandb.sdk.wandb_run.Run | None,
     artifact_frequency: int,
-    batch_id: str,  # noqa: ARG001
+    _batch_id: str,
     **kwargs: Any,
 ) -> None:
     """Plot merge iteration at artifact frequency and log to WandB."""
