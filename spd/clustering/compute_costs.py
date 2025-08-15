@@ -31,7 +31,7 @@ def compute_mdl_cost(
 
     return (
         acts * (
-            math.log(k_groups) + alpha * merges.components_per_group
+            math.log2(k_groups) + alpha * merges.components_per_group
         )
     ).sum().item()
 
@@ -106,14 +106,14 @@ def compute_merge_costs(
 
     s_other: Float[Tensor, "k_groups k_groups"] = (
         s_diag.sum() - s_diag.view(-1, 1) - s_diag.view(1, -1)
-    ) * math.log((k_groups - 1) / k_groups)
+    ) * math.log2((k_groups - 1) / k_groups)
 
     # dbg_auto(s_other)
 
     bits_local: Float[Tensor, "k_groups k_groups"] = (
-        coact_OR * math.log(k_groups - 1)
-        - s_diag.view(-1, 1) * math.log(k_groups)
-        - s_diag.view(1, -1) * math.log(k_groups)
+        coact_OR * math.log2(k_groups - 1)
+        - s_diag.view(-1, 1) * math.log2(k_groups)
+        - s_diag.view(1, -1) * math.log2(k_groups)
     )
     # dbg_auto(bits_local)
 
