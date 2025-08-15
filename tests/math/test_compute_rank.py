@@ -30,7 +30,7 @@ def brute_rank(m: np.ndarray, tol: float = 1.0e-12) -> int:
     return int(np.sum(np.linalg.svd(m, compute_uv=False) > tol))
 
 
-@pytest.mark.parametrize("d,r1,r2", [(8, 0, 0), (8, 0, 5), (8, 5, 0), (32, 3, 3)])
+@pytest.mark.parametrize("d,_r1,r2", [(8, 0, 0), (8, 0, 5), (8, 5, 0), (32, 3, 3)])
 def test_edge_zero_ranks(
     d: int,
     _r1: int,
