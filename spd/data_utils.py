@@ -104,6 +104,7 @@ class SparseFeatureDataset(
             batch = torch.where(mask, random_values, batch)
         return batch
 
+    @torch.inference_mode()
     def generate_batch(
         self, batch_size: int
     ) -> tuple[Float[Tensor, "batch n_features"], Float[Tensor, "batch n_features"]]:

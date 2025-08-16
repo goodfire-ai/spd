@@ -73,6 +73,7 @@ class ResidualMLPDataset(SparseFeatureDataset):
             elif label_type == "abs":
                 self.label_fn = lambda batch: self.calc_abs_labels(batch)
 
+    @torch.inference_mode()
     def generate_batch(
         self, batch_size: int
     ) -> tuple[Float[Tensor, "batch n_functions"], Float[Tensor, "batch n_functions"]]:
