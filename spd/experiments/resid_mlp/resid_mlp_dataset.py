@@ -74,7 +74,6 @@ class ResidMLPDataset(SparseFeatureDataset):
                 self.label_fn = lambda batch: self.calc_abs_labels(batch)
 
     @override
-    @torch.inference_mode()
     def generate_batch(
         self, batch_size: int
     ) -> tuple[Float[Tensor, "batch n_functions"], Float[Tensor, "batch n_functions"]]:
