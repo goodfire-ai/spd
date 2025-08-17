@@ -1,7 +1,7 @@
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from torch.utils.data import DataLoader
 
@@ -109,6 +109,68 @@ def sort_module_components_by_similarity(
     return sorted_act, sort_indices
 
 
+class FilteredActivations(NamedTuple):
+    activations: Float[Tensor, " n_steps c"]
+    "activations after filtering dead components"
+
+    labels: list[str]
+    "list of length c with labels for each preserved component"
+
+    dead_components_labels: list[str] | None
+    "list of labels for dead components, or None if no filtering was applied"
+
+    @property
+    def n_alive(self) -> int:
+        """Number of alive components after filtering."""
+        n_alive: int = len(self.labels)
+        assert n_alive == self.activations.shape[1], (
+            f"{n_alive = } != {self.activations.shape[1] = }"
+        )
+        return n_alive
+
+    @property
+    def n_dead(self) -> int:
+        """Number of dead components after filtering."""
+        return len(self.dead_components_labels) if self.dead_components_labels else 0
+
+
+def filter_dead_components(
+    activations: Float[Tensor, " n_steps c"],
+    labels: list[str],
+    filter_dead_threshold: float = 0.01,
+) -> FilteredActivations:
+    """Filter out dead components based on a threshold
+
+    if `filter_dead_threshold` is 0, no filtering is applied.
+    activations and labels are returned as is, `dead_components_labels` is `None`.
+
+    otherwise, components whose **maximum** activations across all samples is below the threshold
+    are considered dead and filtered out. The labels of these components are returned in `dead_components_labels`.
+    `dead_components_labels` will also be `None` if no components were below the threshold.
+    """
+    dead_components_lst: list[str] | None = None
+    if filter_dead_threshold > 0:
+        dead_components_lst = list()
+        max_act: Float[Tensor, " c"] = activations.max(dim=0).values
+        dead_components: Bool[Tensor, " n_steps c"] = max_act < filter_dead_threshold
+
+        if dead_components.any():
+            activations = activations[:, ~dead_components]
+            alive_labels: list[tuple[str, bool]] = [
+                (lbl, bool(keep.item()))
+                for lbl, keep in zip(labels, ~dead_components, strict=False)
+            ]
+            # re-assign labels only if we are filtering
+            labels = [label for label, keep in alive_labels if keep]
+            dead_components_lst = [label for label, keep in alive_labels if not keep]
+
+    return FilteredActivations(
+        activations=activations,
+        labels=labels,
+        dead_components_labels=dead_components_lst,
+    )
+
+
 def process_activations(
     activations: dict[
         str,  # module name to
@@ -130,6 +192,8 @@ def process_activations(
         sort_components: Whether to sort components by similarity within each module
     """
 
+    # reshape -- special cases for llms
+    # ============================================================
     activations_: dict[str, Float[Tensor, " n_steps C"]]
     if seq_mode == "concat":
         # Concatenate the sequence dimension into the sample dimension
@@ -145,6 +209,9 @@ def process_activations(
     else:
         # Use the activations as they are
         activations_ = activations
+
+    # put the labelled activations into one big matrix and filter them
+    # ============================================================
 
     # filter activations for only the modules we want
     if filter_modules is not None:
@@ -179,26 +246,20 @@ def process_activations(
     )
 
     # filter dead components
-    dead_components_lst: list[str] | None = None
-    if filter_dead_threshold > 0:
-        dead_components_lst = list()
-        max_act = act_concat.max(dim=0).values
-        dead_components = max_act < filter_dead_threshold
-        if dead_components.any():
-            act_concat = act_concat[:, ~dead_components]
-            alive_labels: list[tuple[str, bool]] = [
-                (lbl, bool(keep.item()))
-                for lbl, keep in zip(labels, ~dead_components, strict=False)
-            ]
-            labels = [label for label, keep in alive_labels if keep]
-            dead_components_lst = [label for label, keep in alive_labels if not keep]
-            # logger.values({
-            #     "total_components": total_c,
-            #     "n_alive_components": len(labels),
-            #     "n_dead_components": len(dead_components_lst),
-            # })
+    filtered_components: FilteredActivations = filter_dead_components(
+        activations=act_concat,
+        labels=labels,
+        filter_dead_threshold=filter_dead_threshold,
+    )
+
+    # logger.values({
+    #     "total_components": total_c,
+    #     "n_alive_components": len(labels),
+    #     "n_dead_components": len(dead_components_lst),
+    # })
 
     # compute coactivations
+    # ============================================================
     # TODO: this is wrong for anything but boolean activations
     coact: Float[Tensor, " c c"] = act_concat.T @ act_concat
 
@@ -208,10 +269,10 @@ def process_activations(
         activations=act_concat,
         labels=labels,
         coactivations=coact,
-        dead_components_lst=dead_components_lst,
+        dead_components_lst=filtered_components.dead_components_labels,
         n_components_original=total_c,
-        n_components_alive=len(labels),
-        n_components_dead=len(dead_components_lst) if dead_components_lst else 0,
+        n_components_alive=filtered_components.n_alive,
+        n_components_dead=filtered_components.n_dead,
         sort_indices=sort_indices_dict if sort_components else None,
     )
 
