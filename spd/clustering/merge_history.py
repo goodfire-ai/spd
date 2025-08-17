@@ -1,7 +1,7 @@
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import torch
@@ -18,46 +18,10 @@ from spd.clustering.math.merge_distances import (
     compute_distances,
 )
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
+from spd.clustering.math.tensor_stats import StatsKeys, stats_dict
 from spd.clustering.merge_config import MergeConfig
 
-StatsKeys = Literal[
-    "mean",
-    "std",
-    "median",
-    "min",
-    "max",
-    "q01",
-    "q05",
-    "q10",
-    "q25",
-    "q50",
-    "q75",
-    "q90",
-    "q95",
-    "q99",
-    "chosen_pair",
-]
-
 IterationInfo = dict[str, float | int | dict[StatsKeys, float] | list[float] | GroupMerge]
-
-
-def stats_dict(data: Tensor) -> dict[StatsKeys, float]:
-    return {
-        "mean": float(data.mean().item()),
-        "std": float(data.std().item()),
-        "median": float(data.median().item()),
-        "min": float(data.min().item()),
-        "max": float(data.max().item()),
-        "q01": float(torch.quantile(data, 0.01).item()),
-        "q05": float(torch.quantile(data, 0.05).item()),
-        "q10": float(torch.quantile(data, 0.10).item()),
-        "q25": float(torch.quantile(data, 0.25).item()),
-        "q50": float(torch.quantile(data, 0.50).item()),
-        "q75": float(torch.quantile(data, 0.75).item()),
-        "q90": float(torch.quantile(data, 0.90).item()),
-        "q95": float(torch.quantile(data, 0.95).item()),
-        "q99": float(torch.quantile(data, 0.99).item()),
-    }
 
 
 # pyright hates muutils :(
