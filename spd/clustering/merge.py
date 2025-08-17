@@ -195,12 +195,12 @@ def merge_iteration(
             # log metrics
             wandb_run.log(
                 {
-                    "k_groups": k_groups,
-                    "merge_pair_cost": costs[merge_pair].item(),
-                    "mdl_loss": mdl_loss,
-                    "mdl_loss_norm": mdl_loss_norm,
-                    "fraction_singleton_groups": fraction_singleton_groups,
-                    "fraction_zero_coacts": fraction_zero_coacts,
+                    "k_groups": int(k_groups),
+                    "merge_pair_cost": float(costs[merge_pair].item()),
+                    "mdl_loss": float(mdl_loss),
+                    "mdl_loss_norm": float(mdl_loss_norm),
+                    "fraction_singleton_groups": float(fraction_singleton_groups),
+                    "fraction_zero_coacts": float(fraction_zero_coacts),
                 },
                 step=i,
             )
