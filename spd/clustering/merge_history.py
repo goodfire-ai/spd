@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -114,7 +112,7 @@ class MergeHistory(SerializableDataclass):
         component_labels: list[str],
         sweep_params: dict[str, Any] | None = None,
         wandb_url: str | None = None,
-    ) -> MergeHistory:
+    ) -> "MergeHistory":
         n_iters_target: int = config.iters
         # TODO: pyright doesnt like muutils
         return MergeHistory(
@@ -231,7 +229,7 @@ class MergeHistory(SerializableDataclass):
         zanj_.save(self, path)
 
     @classmethod
-    def read(cls, path: Path, zanj: ZANJ | None = None) -> MergeHistory:
+    def read(cls, path: Path, zanj: ZANJ | None = None) -> "MergeHistory":
         """Read the merge history from a file."""
         zanj_: ZANJ = zanj or ZANJ()
         output: MergeHistory = zanj_.read(path)

@@ -1,7 +1,5 @@
 """Utilities for parameter sweeps in merge ensemble analysis."""
 
-from __future__ import annotations
-
 from typing import Any, Literal
 
 import matplotlib.pyplot as plt
