@@ -267,7 +267,7 @@ def process_activations(
     output: dict[str, Any] = dict(
         activations_raw=activations_,
         activations=act_concat,
-        labels=labels,
+        labels=filtered_components.labels,
         coactivations=coact,
         dead_components_lst=filtered_components.dead_components_labels,
         n_components_original=total_c,

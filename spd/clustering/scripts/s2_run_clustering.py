@@ -208,8 +208,9 @@ def run_clustering(
 
     if wandb_run is not None:
         wandb_log_tensor(wandb_run, component_acts, "component_activations", step=0, single=True)
-    else:
-        dbg_tensor(component_acts)
+
+    dbg_tensor(component_acts)
+
     # process the activations by:
     # 1. filtering out dead components
     # 2. concatenating the activations across the sequence
@@ -364,10 +365,16 @@ def cli():
         required=True,
         help="Directory to save the merge history",
     )
+    # parser.add_argument(
+    #     "--sort-components",
+    #     action="store_true",
+    #     help="Sort components by similarity within each module before concatenation",
+    # )
     parser.add_argument(
-        "--sort-components",
+        "--plot",
         action="store_true",
-        help="Sort components by similarity within each module before concatenation",
+        dest="plot",
+        help="plotting of activations",
     )
 
     args: argparse.Namespace = parser.parse_args()
@@ -377,7 +384,9 @@ def cli():
         dataset_path=args.dataset_path,
         device=args.device,
         save_dir=args.save_dir,
-        sort_components=args.sort_components,
+        # sort_components=args.sort_components,
+        sort_components=True,
+        plot=args.plot,
     )
 
 
