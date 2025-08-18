@@ -19,6 +19,7 @@ def plot_activations(
     act_concat: Float[Tensor, " n_steps c"],
     coact: Float[Tensor, " c c"],
     labels: list[str],
+    n_samples_max: int | None = None,
     save_pdf: bool = False,
     pdf_prefix: str = "activations",
     figsize_raw: tuple[int, int] = (12, 4),
@@ -46,6 +47,14 @@ def plot_activations(
         hist_bins: Number of bins for histograms
     """
     log(f"Saving figures to {'/'.join(pdf_prefix.split('/')[:-1])}")
+
+    # trim the activations if n_samples_max is specified
+    if n_samples_max is not None:
+        # clone here so we don't modify the original tensor
+        act_concat = act_concat[:n_samples_max].clone()
+        # we don't use the stuff in this dict again, so we can modify it in-place
+        for key in activations:
+            activations[key] = activations[key][:n_samples_max]
 
     # Raw activations
     axs_act: Sequence[plt.Axes]

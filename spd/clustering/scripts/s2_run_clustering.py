@@ -233,6 +233,7 @@ def run_clustering(
             act_concat=processed_activations["activations"],
             coact=processed_activations["coactivations"],
             labels=processed_activations["labels"],
+            n_samples_max=256,
             save_pdf=True,
             pdf_prefix=(this_merge_figs / "activations").as_posix(),
             wandb_run=wandb_run,

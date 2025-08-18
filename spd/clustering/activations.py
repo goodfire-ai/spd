@@ -252,6 +252,10 @@ def process_activations(
         filter_dead_threshold=filter_dead_threshold,
     )
 
+    assert filtered_components.n_alive + filtered_components.n_dead == total_c, (
+        f"({filtered_components.n_alive = }) + ({filtered_components.n_dead = }) != ({total_c = })"
+    )
+
     # logger.values({
     #     "total_components": total_c,
     #     "n_alive_components": len(labels),
