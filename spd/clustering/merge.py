@@ -16,6 +16,7 @@ from spd.clustering.compute_costs import (
     recompute_coacts_pop_group,
 )
 from spd.clustering.math.merge_matrix import GroupMerge
+from spd.clustering.math.semilog import semilog
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.merge_run_config import MergeRunConfig
@@ -43,6 +44,8 @@ def _wandb_iter_log(
     # callbacks
     artifact_callback: Callable[[MergeHistory, int], None] | None = None,
     plot_function: Callable[..., None] | None = None,
+    # config
+    semilog_epsilon: float = 1e-3,
 ) -> None:
     """store in merge history, log to wandb, update progress bar, save artifacts, and make plots"""
     # compute things we need to log
@@ -58,6 +61,12 @@ def _wandb_iter_log(
     mdl_loss_norm: float = mdl_loss / n_samples
     pbar.set_description(
         f"{prefix} k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={float(costs[merge_pair].item()):.4f}"
+    )
+    # this is the cost for the selected pair
+    merge_pair_cost: float = float(costs[merge_pair].item())
+    merge_pair_cost_semilog: float = semilog(
+        value=merge_pair_cost,
+        epsilon=semilog_epsilon,
     )
 
     # Store matrices and selected pair in history
@@ -109,7 +118,8 @@ def _wandb_iter_log(
         wandb_run.log(
             {
                 "k_groups": int(k_groups),
-                "merge_pair_cost": float(costs[merge_pair].item()),
+                "merge_pair_cost": merge_pair_cost,
+                f"merge_pair_cost_semilog[{semilog_epsilon}]": merge_pair_cost_semilog,
                 "mdl_loss": float(mdl_loss),
                 "mdl_loss_norm": float(mdl_loss_norm),
                 "fraction_singleton_groups": float(fraction_singleton_groups),
