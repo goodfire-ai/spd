@@ -11,4 +11,4 @@ def semilog(
     else:
         sign: Literal[1, -1] = 1 if value >= 0 else -1
         # log10 here is safe, since we know the value is not close to zero
-        return sign * math.log10(abs(value))
+        return sign * epsilon * math.log1p(abs(value) / epsilon)
