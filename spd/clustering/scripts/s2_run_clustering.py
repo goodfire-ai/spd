@@ -11,13 +11,17 @@ import numpy as np
 import torch
 import wandb
 import wandb.sdk.wandb_run
-from jaxtyping import Int
+from jaxtyping import Float, Int
 from matplotlib import pyplot as plt
-from muutils.dbg import dbg_tensor
+from muutils.dbg import dbg_auto
 from torch import Tensor
 from zanj import ZANJ
 
-from spd.clustering.activations import component_activations, process_activations
+from spd.clustering.activations import (
+    ProcessedActivations,
+    component_activations,
+    process_activations,
+)
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import MergeRunConfig
@@ -208,14 +212,14 @@ def run_clustering(
 
     if wandb_run is not None:
         wandb_log_tensor(wandb_run, component_acts, "component_activations", step=0, single=True)
-
-    dbg_tensor(component_acts)
+    else:
+        dbg_auto(component_acts)
 
     # process the activations by:
     # 1. filtering out dead components
     # 2. concatenating the activations across the sequence
     # 3. computing coactivations
-    processed_activations: dict[str, Any] = process_activations(
+    processed_activations: ProcessedActivations = process_activations(
         component_acts,
         filter_dead_threshold=config_.filter_dead_threshold,
         seq_mode="concat" if config_.task_name == "lm" else None,
@@ -229,10 +233,7 @@ def run_clustering(
 
         # Use original activations for raw plots, but filtered data for concat/coact/histograms
         plot_activations(
-            activations=processed_activations["activations_raw"],
-            act_concat=processed_activations["activations"],
-            coact=processed_activations["coactivations"],
-            labels=processed_activations["labels"],
+            processed_activations=processed_activations,
             n_samples_max=256,
             save_pdf=True,
             pdf_prefix=(this_merge_figs / "activations").as_posix(),
@@ -240,12 +241,22 @@ def run_clustering(
             log=log,
         )
 
+    # memory cleanup
+    # ======================================================================
+    # copy what we need, delete the rest to free memory
+    activations_: Float[Tensor, "n_steps c"] = processed_activations.activations
+    labels: list[str] = processed_activations.labels.copy()
+    del processed_activations  # we copied what we needed
+    del component_acts  # processed already
+    del component_model  # already did the forward pass
+    del data_batch  # already did the forward pass
+
     # run the merge iteration
     # ======================================================================
     merge_history: MergeHistory = merge_iteration(
-        activations=processed_activations["activations"],
+        activations=activations_,
         merge_config=config_,  # Pass full MergeRunConfig to access wandb_log_frequency
-        component_labels=processed_activations["labels"],
+        component_labels=labels,
         wandb_run=wandb_run,
         prefix=f"\033[38;5;208m[{_BATCH_ID}]\033[0m",
         artifact_callback=artifact_callback,
@@ -274,7 +285,6 @@ def run_clustering(
         if wandb_run.url:
             wburl_path.write_text(wandb_run.url)
             wandb_url = wandb_run.url
-            log(f"WandB URL saved to {wburl_path}")
 
     # Save merge history as WandB artifact
     if wandb_run is not None:
@@ -292,7 +302,6 @@ def run_clustering(
         # Add both files before logging the artifact
         artifact.add_file(str(hist_save_path))
         wandb_run.log_artifact(artifact)
-        log(f"Group indices saved and added to artifact: {hist_save_path}")
 
     if plot:
         fig_cs: plt.Figure = plot_merge_history_cluster_sizes(

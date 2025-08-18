@@ -13,7 +13,9 @@ from muutils.tensor_info import array_info
 from torch import Tensor
 
 
-def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Figure:  # pyright: ignore[reportUnusedFunction]
+def _create_histogram(
+    info: dict[str, Any], tensor: Tensor, name: str, logy: bool = True
+) -> plt.Figure:  # pyright: ignore[reportUnusedFunction]
     """Create histogram with stats markers."""
     if info["status"] != "ok" or info["size"] == 0:
         fig: plt.Figure
@@ -87,6 +89,8 @@ def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Fi
     ax.set_ylabel("Count")
     ax.legend()
     ax.grid(True, alpha=0.3)
+    if logy:
+        ax.set_yscale("log")
 
     plt.tight_layout()
     return fig

@@ -3,11 +3,11 @@ from collections.abc import Callable
 from typing import Any
 
 import torch
-import tqdm
 import wandb
 import wandb.sdk.wandb_run
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+from tqdm import tqdm
 
 from spd.clustering.compute_costs import (
     compute_mdl_cost,
@@ -20,6 +20,128 @@ from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
+
+
+def _wandb_iter_log(
+    # general
+    wandb_run: wandb.sdk.wandb_run.Run | None,
+    merge_config: MergeConfig | MergeRunConfig,
+    merge_history: MergeHistory,
+    component_labels: list[str],
+    # dims
+    iter_idx: int,
+    k_groups: int,
+    n_samples: int,
+    # actual data
+    current_merge: GroupMerge,
+    merge_pair: tuple[int, int],
+    costs: Float[Tensor, "k_groups k_groups"],
+    current_coact: Float[Tensor, "k_groups k_groups"],
+    # progress bar stuff
+    prefix: str,
+    pbar: "tqdm[int]",
+    # callbacks
+    artifact_callback: Callable[[MergeHistory, int], None] | None = None,
+    plot_function: Callable[..., None] | None = None,
+) -> None:
+    """store in merge history, log to wandb, update progress bar, save artifacts, and make plots"""
+    # compute things we need to log
+    # ============================================================
+    diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)
+    # the MDL loss computed here is the *cost of the current merge*, a single scalar value
+    # rather than the *delta in cost from merging a specific pair* (which is what `costs` matrix contains)
+    mdl_loss: float = compute_mdl_cost(
+        acts=diag_acts,
+        merges=current_merge,
+        alpha=merge_config.alpha,
+    )
+    mdl_loss_norm: float = mdl_loss / n_samples
+    pbar.set_description(
+        f"{prefix} k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={float(costs[merge_pair].item()):.4f}"
+    )
+
+    # Store matrices and selected pair in history
+    # ============================================================
+    merge_history.add_iteration(
+        idx=iter_idx,
+        selected_pair=merge_pair,
+        coactivation=current_coact,
+        cost_matrix=costs,
+        k_groups=k_groups,
+        current_merge=current_merge,
+    )
+
+    # Log to WandB if enabled
+    # ============================================================
+    if wandb_run is not None and iter_idx % getattr(merge_config, "wandb_log_frequency", 100) == 0:
+        # Prepare additional stats
+        group_sizes: Int[Tensor, " k_groups"] = current_merge.components_per_group
+        fraction_singleton_groups: float = (group_sizes == 1).float().mean().item()
+        group_sizes_no_singletons: Tensor = group_sizes[group_sizes > 1]
+
+        fraction_zero_coacts: float = (current_coact == 0).float().mean().item()
+        coact_no_zeros: Tensor = current_coact[current_coact > 0]
+
+        tensor_data_for_wandb: dict[str, Tensor] = dict(
+            coactivation=current_coact,
+            costs=costs,
+            group_sizes=group_sizes,
+            group_activations=diag_acts,
+            group_activations_over_sizes=(
+                diag_acts / group_sizes.to(device=diag_acts.device).float()
+            ),
+        )
+
+        if fraction_singleton_groups > 0:
+            tensor_data_for_wandb["group_sizes_no_singletons"] = group_sizes_no_singletons
+        if fraction_zero_coacts > 0:
+            tensor_data_for_wandb["coact_no_zeros"] = coact_no_zeros
+
+        # log the tensors -- this makes histograms, and also stats about the tensors in tensor_metrics
+        wandb_log_tensor(
+            run=wandb_run,
+            data=tensor_data_for_wandb,
+            name="iters",
+            step=iter_idx,
+        )
+
+        # log metrics
+        wandb_run.log(
+            {
+                "k_groups": int(k_groups),
+                "merge_pair_cost": float(costs[merge_pair].item()),
+                "mdl_loss": float(mdl_loss),
+                "mdl_loss_norm": float(mdl_loss_norm),
+                "fraction_singleton_groups": float(fraction_singleton_groups),
+                "fraction_zero_coacts": float(fraction_zero_coacts),
+            },
+            step=iter_idx,
+        )
+
+    # Call artifact callback periodically for saving group_idxs
+    # ============================================================
+    if (
+        artifact_callback is not None
+        and iter_idx > 0
+        and iter_idx % getattr(merge_config, "wandb_artifact_frequency", 100) == 0
+    ):
+        artifact_callback(merge_history, iter_idx)
+
+    # plot if requested
+    # ============================================================
+    if plot_function is not None:
+        plot_function(
+            costs=costs,
+            merge_history=merge_history,
+            current_merge=current_merge,
+            current_coact=current_coact,
+            i=iter_idx,
+            k_groups=k_groups,
+            component_labels=component_labels,
+            # current_act_mask=current_act_mask,
+            # activation_mask_orig=activation_mask_orig,
+            # sweep_params=sweep_params,
+        )
 
 
 def merge_iteration(
@@ -73,7 +195,7 @@ def merge_iteration(
     k_groups: int = c_components
     current_coact: Float[Tensor, "k_groups k_groups"] = coact.clone()
     current_act_mask: Bool[Tensor, "samples k_groups"] = activation_mask_orig.clone()
-    i: int = 0
+    iter_idx: int = 0
 
     # variables we keep track of
     merge_history: MergeHistory = MergeHistory.from_config(
@@ -94,13 +216,17 @@ def merge_iteration(
     # merge iteration
     # ==================================================
     # while i < merge_config.iters:
-    pbar = tqdm.tqdm(range(merge_config.iters), unit="iteration", total=merge_config.iters)
-    for i in pbar:
+    pbar: tqdm[int] = tqdm(
+        range(merge_config.iters),
+        unit="iter",
+        total=merge_config.iters,
+    )
+    for iter_idx in pbar:
         # pop components
         # --------------------------------------------------
-        if do_pop and iter_pop[i]:  # pyright: ignore[reportPossiblyUnboundVariable]
+        if do_pop and iter_pop[iter_idx]:  # pyright: ignore[reportPossiblyUnboundVariable]
             # we split up the group which our chosen component belongs to
-            pop_component_idx_i: int = int(pop_component_idx[i].item())  # pyright: ignore[reportPossiblyUnboundVariable]
+            pop_component_idx_i: int = int(pop_component_idx[iter_idx].item())  # pyright: ignore[reportPossiblyUnboundVariable]
             components_in_pop_grp: int = int(
                 current_merge.components_per_group[  # pyright: ignore[reportArgumentType]
                     current_merge.group_idxs[pop_component_idx_i].item()
@@ -120,7 +246,7 @@ def merge_iteration(
                 )
                 k_groups = current_coact.shape[0]
 
-        # compute costs
+        # compute costs, figure out what to merge
         # --------------------------------------------------
         # HACK: this is messy
         costs: Float[Tensor, "c_components c_components"] = compute_merge_costs(
@@ -129,93 +255,38 @@ def merge_iteration(
             alpha=merge_config.alpha,
         )
 
-        # figure out what to merge, store some things
-        # --------------------------------------------------
-
-        # Sample a merge pair using the configured sampler
         merge_pair: tuple[int, int] = merge_config.merge_pair_sample(costs)
 
-        # Store matrices and selected pair in history
-        merge_history.add_iteration(
-            idx=i,
-            selected_pair=merge_pair,
-            coactivation=current_coact,
-            cost_matrix=costs,
+        # handle logging/history/artifacts/progress bar/plotting/etc
+        # basically, everything that is not the actual merge computation
+        # --------------------------------------------------
+        _wandb_iter_log(
+            # general
+            wandb_run=wandb_run,
+            merge_config=merge_config,
+            merge_history=merge_history,
+            component_labels=component_labels,
+            # dims
+            iter_idx=iter_idx,
             k_groups=k_groups,
+            n_samples=current_act_mask.shape[0],
+            # actual data
             current_merge=current_merge,
+            merge_pair=merge_pair,
+            costs=costs,
+            current_coact=current_coact,
+            # progress bar stuff
+            prefix=prefix,
+            pbar=pbar,
+            # callbacks
+            artifact_callback=artifact_callback,
+            plot_function=plot_function,
         )
-
-        # compute cost, update progress bar
-        # --------------------------------------------------
-        diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)
-        mdl_loss: float = compute_mdl_cost(
-            acts=diag_acts,
-            merges=current_merge,
-            alpha=merge_config.alpha,
-        )
-        mdl_loss_norm: float = mdl_loss / current_act_mask.shape[0]
-        pbar.set_description(
-            f"{prefix} k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={float(costs[merge_pair].item()):.4f}"
-        )
-
-        # Log to WandB if enabled
-        # --------------------------------------------------
-        if wandb_run is not None and i % getattr(merge_config, "wandb_log_frequency", 100) == 0:
-            # Prepare additional stats
-            group_sizes: Int[Tensor, " k_groups"] = current_merge.components_per_group
-            fraction_singleton_groups: float = (group_sizes == 1).float().mean().item()
-            group_sizes_no_singletons: Tensor = group_sizes[group_sizes > 1]
-
-            fraction_zero_coacts: float = (current_coact == 0).float().mean().item()
-            coact_no_zeros: Tensor = current_coact[current_coact > 0]
-
-            tensor_data_for_wandb: dict[str, Tensor] = dict(
-                coactivation=current_coact,
-                costs=costs,
-                group_sizes=group_sizes,
-                group_activations=diag_acts,
-                group_activations_over_sizes=(
-                    diag_acts / group_sizes.to(device=diag_acts.device).float()
-                ),
-            )
-
-            if fraction_singleton_groups > 0:
-                tensor_data_for_wandb["group_sizes_no_singletons"] = group_sizes_no_singletons
-            if fraction_zero_coacts > 0:
-                tensor_data_for_wandb["coact_no_zeros"] = coact_no_zeros
-
-            # log the tensors -- this makes histograms, and also stats about the tensors in tensor_metrics
-            wandb_log_tensor(
-                run=wandb_run,
-                data=tensor_data_for_wandb,
-                name="iters",
-                step=i,
-            )
-
-            # log metrics
-            wandb_run.log(
-                {
-                    "k_groups": int(k_groups),
-                    "merge_pair_cost": float(costs[merge_pair].item()),
-                    "mdl_loss": float(mdl_loss),
-                    "mdl_loss_norm": float(mdl_loss_norm),
-                    "fraction_singleton_groups": float(fraction_singleton_groups),
-                    "fraction_zero_coacts": float(fraction_zero_coacts),
-                },
-                step=i,
-            )
-
-        # Call artifact callback periodically for saving group_idxs
-        # --------------------------------------------------
-        if (
-            artifact_callback is not None
-            and i > 0
-            and i % getattr(merge_config, "wandb_artifact_frequency", 100) == 0
-        ):
-            artifact_callback(merge_history, i)
 
         # merge the pair
         # --------------------------------------------------
+        # we do this *after* logging, so we can see how the sampled pair cost compares
+        # to the costs of all the other possible pairs
         current_merge, current_coact, current_act_mask = recompute_coacts_merge_pair(
             coact=current_coact,
             merges=current_merge,
@@ -236,35 +307,17 @@ def merge_iteration(
             "Activation mask shape should match number of groups"
         )
 
-        # plot if requested
+        # early stopping failsafe
         # --------------------------------------------------
-        if plot_function is not None:
-            plot_function(
-                costs=costs,
-                merge_history=merge_history,
-                current_merge=current_merge,
-                current_coact=current_coact,
-                current_act_mask=current_act_mask,
-                i=i,
-                k_groups=k_groups,
-                activation_mask_orig=activation_mask_orig,
-                component_labels=component_labels,
-                sweep_params=sweep_params,
-            )
-
-        # early stopping
-        # --------------------------------------------------
-
-        # Check stopping conditions
         if k_groups <= 3:
             warnings.warn(
-                f"Stopping early at iteration {i} as only {k_groups} groups left", stacklevel=1
+                f"Stopping early at iteration {iter_idx} as only {k_groups} groups left",
+                stacklevel=1,
             )
             break
 
     # finish up
     # ==================================================
-
     return merge_history
 
 

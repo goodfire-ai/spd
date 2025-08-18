@@ -11,14 +11,12 @@ import wandb.sdk.wandb_run
 from jaxtyping import Float
 from torch import Tensor
 
+from spd.clustering.activations import ProcessedActivations, compute_coactivatons
 from spd.log import logger
 
 
 def plot_activations(
-    activations: dict[str, Float[Tensor, " n_steps C"]],
-    act_concat: Float[Tensor, " n_steps c"],
-    coact: Float[Tensor, " c c"],
-    labels: list[str],
+    processed_activations: ProcessedActivations,
     n_samples_max: int | None = None,
     save_pdf: bool = False,
     pdf_prefix: str = "activations",
@@ -48,21 +46,26 @@ def plot_activations(
     """
     log(f"Saving figures to {'/'.join(pdf_prefix.split('/')[:-1])}")
 
+    act_dict: dict[str, Float[Tensor, " n_steps c"]] = processed_activations.activations_raw
+    act_concat: Float[Tensor, " n_steps c"] = processed_activations.activations
+    coact: Float[Tensor, " c c"] = compute_coactivatons(act_concat)
+    labels: list[str] = processed_activations.labels
+
     # trim the activations if n_samples_max is specified
     if n_samples_max is not None:
         # clone here so we don't modify the original tensor
         act_concat = act_concat[:n_samples_max].clone()
         # we don't use the stuff in this dict again, so we can modify it in-place
-        for key in activations:
-            activations[key] = activations[key][:n_samples_max]
+        for key in act_dict:
+            act_dict[key] = act_dict[key][:n_samples_max]
 
     # Raw activations
     axs_act: Sequence[plt.Axes]
-    _fig1, axs_act = plt.subplots(len(activations), 1, figsize=figsize_raw)  # pyright: ignore[reportAssignmentType]
-    if len(activations) == 1:
+    _fig1, axs_act = plt.subplots(len(act_dict), 1, figsize=figsize_raw)  # pyright: ignore[reportAssignmentType]
+    if len(act_dict) == 1:
         assert isinstance(axs_act, plt.Axes)
         axs_act = [axs_act]
-    for i, (key, act) in enumerate(activations.items()):
+    for i, (key, act) in enumerate(act_dict.items()):
         act_raw_data: np.ndarray = act.T.cpu().numpy()
         axs_act[i].matshow(
             act_raw_data, aspect="auto", vmin=act_raw_data.min(), vmax=act_raw_data.max()

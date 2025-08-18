@@ -1,7 +1,9 @@
-from typing import Any, Literal, NamedTuple
+from dataclasses import dataclass
+from functools import cached_property
+from typing import Literal, NamedTuple
 
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Bool, Float, Float16, Int
 from torch import Tensor
 from torch.utils.data import DataLoader
 
@@ -43,6 +45,17 @@ def component_activations(
         )
 
         return causal_importances
+
+
+def compute_coactivatons(
+    activations: Float[Tensor, " n_steps c"] | Bool[Tensor, " n_steps c"],
+) -> Float16[Tensor, " c c"]:
+    """Compute the coactivations matrix from the activations."""
+    # TODO: this works for both boolean and continuous activations,
+    # but we could do better by just using OR for boolean activations
+    # and maybe even some bitshift hacks. but for now, we convert to float16
+    activations = activations.to(torch.float16)
+    return activations.T @ activations
 
 
 def sort_module_components_by_similarity(
@@ -171,6 +184,86 @@ def filter_dead_components(
     )
 
 
+@dataclass(frozen=True)
+class ProcessedActivations:
+    """Processed activations after filtering and concatenation"""
+
+    activations_raw: dict[str, Float[Tensor, " n_steps C"]]
+    "activations after filtering, but prior to concatenation"
+
+    activations: Float[Tensor, " n_steps c"]
+    "activations after filtering and concatenation"
+
+    labels: list[str]
+    "list of length c with labels for each preserved component, format `{module_name}:{component_index}`"
+
+    dead_components_lst: list[str] | None
+    "list of labels for dead components, or None if no filtering was applied"
+
+    def validate(self) -> None:
+        """Validate the processed activations"""
+        # getting this property will also perform a variety of other checks
+        assert self.n_components_alive > 0
+
+    @property
+    def n_components_original(self) -> int:
+        """Total number of components before filtering. equal to the sum of all components in `activations_raw`, or to `n_components_alive + n_components_dead`"""
+        return sum(act.shape[1] for act in self.activations_raw.values())
+
+    @property
+    def n_components_alive(self) -> int:
+        """Number of alive components after filtering. equal to the length of `labels`"""
+        n_alive: int = len(self.labels)
+        assert n_alive + self.n_components_dead == self.n_components_original, (
+            f"({n_alive = }) + ({self.n_components_dead = }) != ({self.n_components_original = })"
+        )
+        assert n_alive == self.activations.shape[1], (
+            f"{n_alive = } != {self.activations.shape[1] = }"
+        )
+
+        return n_alive
+
+    @property
+    def n_components_dead(self) -> int:
+        """Number of dead components after filtering. equal to the length of `dead_components_lst` if it is not None, or 0 otherwise"""
+        return len(self.dead_components_lst) if self.dead_components_lst else 0
+
+    @cached_property
+    def label_index(self) -> dict[str, int | None]:
+        """Create a mapping from label to alive index (`None` if dead)"""
+        return {
+            **{label: i for i, label in enumerate(self.labels)},
+            **(
+                {label: None for label in self.dead_components_lst}
+                if self.dead_components_lst
+                else {}
+            ),
+        }
+
+    def get_label_index(self, label: str) -> int | None:
+        """Get the index of a label in the activations, or None if it is dead"""
+        return self.label_index[label]
+
+    def get_label_index_alive(self, label: str) -> int:
+        """Get the index of a label in the activations, or raise if it is dead"""
+        idx: int | None = self.get_label_index(label)
+        if idx is None:
+            raise ValueError(f"Label '{label}' is dead and has no index in the activations.")
+        return idx
+
+    @property
+    def module_keys(self) -> list[str]:
+        """Get the module keys from the activations_raw"""
+        return list(self.activations_raw.keys())
+
+    def get_module_indices(self, module_key: str) -> list[int | None]:
+        """given a module key, return a list len "num components in that moduel", with int index in alive components, or None if dead"""
+        return [
+            self.label_index[f"{module_key}:{i}"]
+            for i in range(self.activations_raw[module_key].shape[1])
+        ]
+
+
 def process_activations(
     activations: dict[
         str,  # module name to
@@ -181,7 +274,7 @@ def process_activations(
     seq_mode: Literal["concat", "seq_mean", None] = None,
     filter_modules: ModuleFilterFunc | None = None,
     sort_components: bool = False,
-) -> dict[str, Any]:
+) -> ProcessedActivations:
     """get back a dict of coactivations, slices, and concated activations
 
     Args:
@@ -262,22 +355,11 @@ def process_activations(
     #     "n_dead_components": len(dead_components_lst),
     # })
 
-    # compute coactivations
+    # return
     # ============================================================
-    # TODO: this is wrong for anything but boolean activations
-    coact: Float[Tensor, " c c"] = act_concat.T @ act_concat
-
-    # return the output
-    output: dict[str, Any] = dict(
+    return ProcessedActivations(
         activations_raw=activations_,
-        activations=act_concat,
+        activations=filtered_components.activations,
         labels=filtered_components.labels,
-        coactivations=coact,
         dead_components_lst=filtered_components.dead_components_labels,
-        n_components_original=total_c,
-        n_components_alive=filtered_components.n_alive,
-        n_components_dead=filtered_components.n_dead,
-        sort_indices=sort_indices_dict if sort_components else None,
     )
-
-    return output
