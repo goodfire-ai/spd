@@ -1,3 +1,7 @@
+spd/scripts/sweep_params.yaml
+spd/scripts/sweep_params.yaml
+docs/coverage/**
+
 **/out/
 neuronpedia_outputs/
 .env
@@ -6,6 +10,7 @@ neuronpedia_outputs/
 wandb/
 .data/
 .checkpoints/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

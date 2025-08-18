@@ -6,13 +6,13 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from spd.experiments.resid_mlp.models import ResidualMLPConfig
+from spd.experiments.resid_mlp.configs import ResidMLPModelConfig
 
 
 def plot_individual_feature_response(
     model_fn: Callable[[Tensor], Tensor],
     device: str,
-    model_config: ResidualMLPConfig,
+    model_config: ResidMLPModelConfig,
     sweep: bool = False,
     subtract_inputs: bool = True,
     plot_type: Literal["line", "scatter"] = "scatter",
@@ -25,6 +25,9 @@ def plot_individual_feature_response(
     If sweep is True then the amplitude of the active feature is swept from -1 to 1. This is an
     arbitrary choice (choosing feature 0 to be the one where we test x=-1 etc) made for convenience.
     """
+
+    assert plot_type in ["line", "scatter"], "Unknown plot_type"
+
     n_features = model_config.n_features
     batch_size = model_config.n_features
     batch = torch.zeros(batch_size, n_features, device=device)
@@ -62,13 +65,11 @@ def plot_individual_feature_response(
                 color=cmap_viridis(f / n_features),
                 marker=".",
                 s=s[order],
-                alpha=alpha[order].numpy(),  # type: ignore
+                alpha=alpha[order].numpy(),  # pyright: ignore[reportArgumentType]
                 # According to the announcement, alpha is allowed to be an iterable since v3.4.0,
                 # but the docs & type annotations seem to be wrong. Here's the announcement:
                 # https://matplotlib.org/stable/users/prev_whats_new/whats_new_3.4.0.html#transparency-alpha-can-be-set-as-an-array-in-collections
             )
-        else:
-            raise ValueError("Unknown plot_type")
     # Plot labels
     label_fn = F.relu if model_config.act_fn_name == "relu" else F.gelu
     inputs = batch[torch.arange(n_features), torch.arange(n_features)].detach().cpu()
@@ -88,7 +89,7 @@ def plot_individual_feature_response(
             linestyle=":",
             label="Baseline (Identity)",
         )
-    elif plot_type == "scatter":
+    else:
         ax.scatter(
             torch.arange(n_features),
             targets.cpu().detach(),
@@ -97,8 +98,7 @@ def plot_individual_feature_response(
             marker="x",
             s=5,
         )
-    else:
-        raise ValueError("Unknown plot_type")
+
     ax.legend()
     if cbar:
         # Colorbar
@@ -117,7 +117,7 @@ def plot_individual_feature_response(
 def plot_single_feature_response(
     model_fn: Callable[[Tensor], Tensor],
     device: str,
-    model_config: ResidualMLPConfig,
+    model_config: ResidMLPModelConfig,
     subtract_inputs: bool = True,
     feature_idx: int = 15,
     plot_type: Literal["line", "scatter"] = "scatter",
@@ -129,6 +129,8 @@ def plot_single_feature_response(
     If sweep is True then the amplitude of the active feature is swept from -1 to 1. This is an
     arbitrary choice (choosing feature 0 to be the one where we test x=-1 etc) made for convenience.
     """
+    assert plot_type in ["line", "scatter"], "Unknown plot_type"
+
     n_features = model_config.n_features
     batch_size = 1
     batch_idx = 0
@@ -153,7 +155,7 @@ def plot_single_feature_response(
             color="red",
             label=r"Label ($x+\mathrm{ReLU}(x)$)",
         )
-    elif plot_type == "scatter":
+    else:
         ax.scatter(
             x,
             y,
@@ -170,9 +172,8 @@ def plot_single_feature_response(
             marker="x",
             s=5,
         )
-    else:
-        raise ValueError("Unknown plot_type")
-    handles, labels = ax.get_legend_handles_labels()
+
+    handles, _ = ax.get_legend_handles_labels()
     if handles:
         ax.legend()
     ax.set_xlabel("Output index")
@@ -193,7 +194,7 @@ def plot_single_feature_response(
 def plot_single_relu_curve(
     model_fn: Callable[[Tensor], Tensor],
     device: str,
-    model_config: ResidualMLPConfig,
+    model_config: ResidMLPModelConfig,
     subtract_inputs: bool = True,
     feature_idx: int = 15,
     ax: plt.Axes | None = None,
@@ -223,7 +224,7 @@ def plot_single_relu_curve(
         label=r"Label ($x+\mathrm{ReLU}(x)$)" if label else None,
         ls="--",
     )
-    handles, labels = ax.get_legend_handles_labels()
+    handles, _ = ax.get_legend_handles_labels()
     if handles:
         ax.legend()
     ax.set_xlabel(f"Input value $x_{{{feature_idx}}}$")
@@ -240,7 +241,7 @@ def plot_single_relu_curve(
 def plot_all_relu_curves(
     model_fn: Callable[[Tensor], Tensor],
     device: str,
-    model_config: ResidualMLPConfig,
+    model_config: ResidMLPModelConfig,
     ax: plt.Axes,
     subtract_inputs: bool = True,
 ):

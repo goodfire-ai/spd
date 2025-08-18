@@ -1,5 +1,8 @@
 """Config classes of various types"""
 
+import importlib
+import inspect
+from pathlib import Path
 from typing import Any, ClassVar, Literal, Self
 
 from pydantic import (
@@ -13,78 +16,60 @@ from pydantic import (
     model_validator,
 )
 
+from spd.experiments.ih.configs import IHTaskConfig
+from spd.experiments.lm.configs import LMTaskConfig
+from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
+from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
+from spd.models.components import GateType
 from spd.spd_types import ModelPath, Probability
 
 
-class TMSTaskConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    task_name: Literal["tms"] = Field(
-        default="tms",
-        description="Task identifier for TMS",
-    )
-    feature_probability: Probability = Field(
+class EvalMetricConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+    classname: str = Field(
         ...,
-        description="Probability that a given feature is active in generated data",
+        description="Name of the class to instantiate",
     )
-    data_generation_type: Literal["exactly_one_active", "at_least_zero_active"] = Field(
-        default="at_least_zero_active",
-        description="Strategy for generating synthetic data for TMS training",
-    )
-
-
-class ResidualMLPTaskConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    task_name: Literal["residual_mlp"] = Field(
-        default="residual_mlp",
-        description="Identifier for the residual-MLP decomposition task",
-    )
-    feature_probability: Probability = Field(
-        ...,
-        description="Probability that a given feature is active in generated data",
-    )
-    data_generation_type: Literal[
-        "exactly_one_active", "exactly_two_active", "at_least_zero_active"
-    ] = Field(
-        default="at_least_zero_active",
-        description="Strategy for generating synthetic data for residual-MLP training",
+    extra_init_kwargs: dict[str, Any] = Field(
+        default={},
+        description="Extra keyword arguments to pass to the class constructor besides `model: ComponentModel` and `config: Config`",
     )
 
+    def _get_metric_class(self) -> type:
+        available_classes = importlib.import_module("spd.eval").EVAL_CLASSES
+        cls = available_classes.get(self.classname)
+        if cls is None:
+            raise ValueError(
+                f"Metric class {self.classname!r} not found. Available classes: {available_classes.keys()}"
+            )
+        return cls
 
-class LMTaskConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    task_name: Literal["lm"] = Field(
-        default="lm",
-        description="Identifier for the language-model decomposition task",
-    )
-    max_seq_len: PositiveInt = Field(
-        default=512,
-        description="Maximum sequence length to truncate or pad inputs to",
-    )
-    buffer_size: PositiveInt = Field(
-        default=1000,
-        description="Buffered sample count for streaming dataset shuffling",
-    )
-    dataset_name: str = Field(
-        default="lennart-finke/SimpleStories",
-        description="HuggingFace dataset identifier to use for the LM task",
-    )
-    column_name: str = Field(
-        default="story",
-        description="Dataset column that contains the text to train on",
-    )
-    train_data_split: str = Field(
-        default="train",
-        description="Name of the dataset split used for training",
-    )
-    eval_data_split: str = Field(
-        default="test",
-        description="Name of the dataset split used for evaluation",
-    )
+    @model_validator(mode="after")
+    def validate_class_kwargs(self) -> Self:
+        cls = self._get_metric_class()
+
+        sig = inspect.signature(cls.__init__)
+        # Skip 'self' plus the first two actual parameters (model: ComponentModel, config: Config)
+        params_after_required = list(sig.parameters.values())[3:]
+        sig_extra_only = inspect.Signature(params_after_required)
+
+        # see if our kwargs are valid
+        try:
+            sig_extra_only.bind(**self.extra_init_kwargs)
+        except TypeError as e:
+            # replace the error as e will include something like
+            # "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
+            raise ValueError(f"Invalid kwargs for {self.classname!r}: {e}") from None
+
+        return self
+
+
+TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
 class Config(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     # --- WandB
     wandb_project: str | None = Field(
         default=None,
@@ -109,10 +94,17 @@ class Config(BaseModel):
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",
     )
-    n_ci_mlp_neurons: NonNegativeInt = Field(
-        default=0,
-        description="Number of hidden neurons in the MLP used to calculate the causal importance."
-        "If 0, use a single-layer gate.",
+    gate_type: GateType = Field(
+        default="vector_mlp",
+        description="Type of gate used to calculate the causal importance.",
+    )
+    gate_hidden_dims: list[NonNegativeInt] = Field(
+        default=[8],
+        description="Hidden dimensions for the gate used to calculate the causal importance",
+    )
+    sigmoid_type: Literal["normal", "hard", "leaky_hard", "upper_leaky_hard", "swish_hard"] = Field(
+        default="leaky_hard",
+        description="Type of sigmoid to use for causal importance calculation",
     )
     target_module_patterns: list[str] = Field(
         ...,
@@ -164,6 +156,19 @@ class Config(BaseModel):
         ...,
         description="The p-value used for the importance minimality loss",
     )
+    p_anneal_start_frac: Probability = Field(
+        default=1.0,
+        description="Fraction of training after which to start annealing p (1.0 = no annealing)",
+    )
+    p_anneal_final_p: PositiveFloat | None = Field(
+        default=None,
+        description="Final p value to anneal to (None = no annealing)",
+    )
+    p_anneal_end_frac: Probability = Field(
+        default=1.0,
+        description="Fraction of training when annealing ends. We stay at the final p value from "
+        "this point onward (default 1.0 = anneal until end)",
+    )
     output_loss_type: Literal["mse", "kl"] = Field(
         ...,
         description="Metric used to measure recon error between model outputs and targets",
@@ -171,8 +176,23 @@ class Config(BaseModel):
 
     # --- Training ---
     lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
-    steps: PositiveInt = Field(..., description="Total number of optimisation steps")
-    batch_size: PositiveInt = Field(..., description="Mini-batch size used for optimisation")
+    steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
+    batch_size: PositiveInt = Field(
+        ...,
+        description=(
+            "The effective batch size used for optimisation. Depending on gradient accumulation "
+            "steps, it may be processed as multiple micro-batches."
+        ),
+    )
+    gradient_accumulation_steps: PositiveInt = Field(
+        default=1,
+        description="Number of steps to accumulate gradients over before updating parameters",
+    )
+
+    @property
+    def microbatch_size(self) -> PositiveInt:
+        return self.batch_size // self.gradient_accumulation_steps
+
     lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
         default="constant",
         description="Type of learning-rate schedule to apply",
@@ -185,32 +205,56 @@ class Config(BaseModel):
         default=0.0,
         description="Fraction of total steps to linearly warm up the learning rate",
     )
-    n_eval_steps: PositiveInt = Field(
-        ...,
-        description="Frequency (in optimisation steps) at which to run evaluation",
-    )
 
     # --- Logging & Saving ---
-    image_freq: PositiveInt | None = Field(
+    out_dir: Path | None = Field(
         default=None,
-        description="Interval (in steps) at which to log diagnostic images to WandB",
+        description="Directory to save output to. If None, creates a dir using the wandb run id or "
+        "randomly generates one",
     )
-    image_on_first_step: bool = Field(
-        default=True,
-        description="Whether to log images at optimisation step 0",
-    )
-    print_freq: PositiveInt = Field(
+    train_log_freq: PositiveInt = Field(
         ...,
-        description="Interval (in steps) at which to print training metrics to stdout",
+        description="Interval (in steps) at which to log training metrics",
+    )
+    eval_freq: PositiveInt = Field(
+        ...,
+        description="Interval (in steps) at which to log evaluation metrics",
+    )
+    eval_batch_size: PositiveInt = Field(
+        ...,
+        description="Batch size used for evaluation",
+    )
+    slow_eval_freq: PositiveInt = Field(
+        ...,
+        description="Interval (in steps) at which to run slow evaluation metrics. Must be a multiple of `eval_freq`.",
+    )
+    n_eval_steps: PositiveInt = Field(
+        ...,
+        description="Number of steps to run evaluation for",
+    )
+    slow_eval_on_first_step: bool = Field(
+        default=True,
+        description="Whether to run slow evaluation on the first step",
     )
     save_freq: PositiveInt | None = Field(
         default=None,
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    log_ce_losses: bool = Field(
-        default=False,
-        description="If True, additionally track cross-entropy losses during training",
+    eval_metrics: list[EvalMetricConfig] = Field(
+        default=[],
+        description="List of metrics to use for evaluation",
+    )
+
+    # --- Component Tracking ---
+    ci_alive_threshold: Probability = Field(
+        default=0.0,
+        description="Causal importance threshold above which a component is considered 'firing'",
+    )
+    n_examples_until_dead: PositiveInt = Field(
+        ...,
+        description="Number of examples without firing before a component is considered dead. "
+        "Note that in LMs, an example is a token, not a sequence.",
     )
 
     # --- Pretrained model info ---
@@ -218,12 +262,12 @@ class Config(BaseModel):
         ...,
         description="Fully-qualified class name of the pretrained model to load. Can be defined "
         "locally or an in external package (e.g. 'transformers.LlamaForCausalLM' or "
-        "'spd.experiments.resid_mlp.models.ResidualMLP').",
+        "'spd.experiments.resid_mlp.models.ResidMLP').",
     )
     pretrained_model_path: ModelPath | None = Field(
         default=None,
         description="Model identifier. Local path or wandb reference "
-        "(e.g. 'wandb:spd-train-resid-mlp/runs/otxwx80v' or 'mnt/my_model/checkpoint.pth')",
+        "(e.g. 'wandb:goodfire/spd/runs/otxwx80v' or 'mnt/my_model/checkpoint.pth')",
     )
     pretrained_model_name_hf: str | None = Field(
         default=None,
@@ -239,14 +283,26 @@ class Config(BaseModel):
     )
 
     # --- Task Specific ---
-    task_config: TMSTaskConfig | ResidualMLPTaskConfig | LMTaskConfig = Field(
+    task_config: TaskConfig = Field(
         ...,
         discriminator="task_name",
         description="Nested task-specific configuration selected by the `task_name` discriminator",
     )
 
-    DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = []
-    RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {}
+    # --- Distributed ---
+    dist_backend: Literal["nccl", "gloo"] | None = Field(
+        default=None,
+        description="Backend for distributed training (nccl for GPU, gloo for CPU). If None, "
+        "uses the default backend for the current device.",
+    )
+
+    DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = [
+        "image_on_first_step",
+        "image_freq",
+        "metrics_fns",
+        "figures_fns",
+    ]
+    RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {"print_freq": "eval_freq"}
 
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
@@ -260,6 +316,13 @@ class Config(BaseModel):
                 logger.info(f"Renaming {key} to {cls.RENAMED_CONFIG_KEYS[key]}")
                 config_dict[cls.RENAMED_CONFIG_KEYS[key]] = val
                 del config_dict[key]
+
+        if "eval_batch_size" not in config_dict:
+            config_dict["eval_batch_size"] = config_dict["batch_size"]
+        if "train_log_freq" not in config_dict:
+            config_dict["train_log_freq"] = 50
+        if "slow_eval_freq" not in config_dict:
+            config_dict["slow_eval_freq"] = config_dict["eval_freq"]
         return config_dict
 
     @model_validator(mode="after")
@@ -278,4 +341,16 @@ class Config(BaseModel):
             assert self.lr_exponential_halflife is not None, (
                 "lr_exponential_halflife must be set if lr_schedule is exponential"
             )
+
+        assert self.batch_size % self.gradient_accumulation_steps == 0, (
+            "batch_size must be divisible by gradient_accumulation_steps"
+        )
+
+        assert self.slow_eval_freq % self.eval_freq == 0, (
+            "slow_eval_freq must be a multiple of eval_freq"
+        )
+        assert self.slow_eval_freq // self.eval_freq >= 1, (
+            "slow_eval_freq must be at least eval_freq"
+        )
+
         return self

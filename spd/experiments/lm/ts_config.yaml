@@ -1,7 +1,7 @@
 # Config for tinystories
 
 # --- WandB ---
-wandb_project: spd-lm
+wandb_project: spd
 # wandb_project: null
 wandb_run_name: null
 wandb_run_name_prefix: ""
@@ -10,7 +10,9 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 100
 n_mask_samples: 1
-n_ci_mlp_neurons: 0
+gate_type: "vector_mlp"
+gate_hidden_dims: [8]
+sigmoid_type: "leaky_hard"
 target_module_patterns: ["transformer.h.3.mlp.c_fc"]
 
 # --- Loss Coefficients ---
@@ -29,19 +31,29 @@ output_loss_type: kl
 
 # --- Training ---
 batch_size: 4
+eval_batch_size: 4
 steps: 50_000
 lr: 1e-4
 lr_schedule: constant
 lr_warmup_pct: 0.01
 lr_exponential_halflife: null
-n_eval_steps: 100
 
 # --- Logging & Saving ---
-image_freq: 2000
-image_on_first_step: true
-print_freq: 1000
+train_log_freq: 50
+eval_freq: 200
+n_eval_steps: 10
+slow_eval_freq: 2000
+slow_eval_on_first_step: true
 save_freq: null
-log_ce_losses: true
+n_examples_until_dead: 8_192_000
+eval_metrics:
+  - classname: "CIHistograms"
+  - classname: "ComponentActivationDensity"
+  - classname: "CI_L0"
+  - classname: "CEandKLLosses"
+    extra_init_kwargs:
+      rounding_threshold: 0.1
+
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.AutoModelForCausalLM
@@ -53,7 +65,6 @@ tokenizer_name: EleutherAI/gpt-neo-125M
 task_config:
   task_name: lm
   max_seq_len: 2048
-  buffer_size: 1000
   dataset_name: "roneneldan/TinyStories"
   column_name: "text"
   train_data_split: "train"

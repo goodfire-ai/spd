@@ -1,6 +1,6 @@
 from torch import nn
 
-from spd.module_utils import get_nested_module_attr
+from spd.utils.module_utils import get_nested_module_attr
 
 
 def test_get_nested_module_attr():

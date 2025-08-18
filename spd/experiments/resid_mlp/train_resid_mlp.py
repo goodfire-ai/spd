@@ -1,77 +1,29 @@
-"""Trains a residual linear model on one-hot input vectors."""
-
-import json
-from datetime import datetime
-from pathlib import Path
-from typing import Literal, Self
+"""Trains a residual MLP model on one-hot input vectors."""
 
 import einops
 import torch
 import wandb
-import yaml
 from jaxtyping import Float
-from pydantic import BaseModel, ConfigDict, PositiveFloat, PositiveInt, model_validator
 from torch import Tensor, nn
 from tqdm import tqdm
 
-from spd.data_utils import DatasetGeneratedDataLoader
-from spd.experiments.resid_mlp.models import ResidualMLP, ResidualMLPConfig
+from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTrainConfig
+from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import (
-    ResidualMLPDataset,
+    ResidMLPDataset,
 )
 from spd.log import logger
-from spd.utils import compute_feature_importances, get_lr_schedule_fn, set_seed
-from spd.wandb_utils import init_wandb
-
-wandb.require("core")
-
-
-class ResidMLPTrainConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    wandb_project: str | None = None  # The name of the wandb project (if None, don't log to wandb)
-    seed: int = 0
-    resid_mlp_config: ResidualMLPConfig
-    label_fn_seed: int = 0
-    label_type: Literal["act_plus_resid", "abs"] = "act_plus_resid"
-    loss_type: Literal["readoff", "resid"] = "readoff"
-    use_trivial_label_coeffs: bool = False
-    feature_probability: PositiveFloat
-    synced_inputs: list[list[int]] | None = None
-    importance_val: float | None = None
-    data_generation_type: Literal[
-        "exactly_one_active", "exactly_two_active", "at_least_zero_active"
-    ] = "at_least_zero_active"
-    batch_size: PositiveInt
-    steps: PositiveInt
-    print_freq: PositiveInt
-    lr: PositiveFloat
-    lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = "constant"
-    fixed_random_embedding: bool = False
-    fixed_identity_embedding: bool = False
-    n_batches_final_losses: PositiveInt = 1
-
-    @model_validator(mode="after")
-    def validate_model(self) -> Self:
-        assert not (self.fixed_random_embedding and self.fixed_identity_embedding), (
-            "Can't have both fixed_random_embedding and fixed_identity_embedding"
-        )
-        if self.fixed_identity_embedding:
-            assert self.resid_mlp_config.n_features == self.resid_mlp_config.d_embed, (
-                "n_features must equal d_embed if we are using an identity embedding matrix"
-            )
-        if self.synced_inputs is not None:
-            # Ensure that the synced_inputs are non-overlapping with eachother
-            all_indices = [item for sublist in self.synced_inputs for item in sublist]
-            if len(all_indices) != len(set(all_indices)):
-                raise ValueError("Synced inputs must be non-overlapping")
-        return self
+from spd.utils.data_utils import DatasetGeneratedDataLoader
+from spd.utils.general_utils import compute_feature_importances, get_lr_schedule_fn, set_seed
+from spd.utils.run_utils import get_output_dir, save_file
+from spd.utils.wandb_utils import init_wandb
 
 
 def loss_function(
     out: Float[Tensor, "batch n_features"] | Float[Tensor, "batch d_embed"],
     labels: Float[Tensor, "batch n_features"],
     feature_importances: Float[Tensor, "batch n_features"],
-    model: ResidualMLP,
+    model: ResidMLP,
     config: ResidMLPTrainConfig,
 ) -> Float[Tensor, "batch n_features"] | Float[Tensor, "batch d_embed"]:
     if config.loss_type == "readoff":
@@ -94,7 +46,7 @@ def loss_function(
 
 def train(
     config: ResidMLPTrainConfig,
-    model: ResidualMLP,
+    model: ResidMLP,
     trainable_params: list[nn.Parameter],
     dataloader: DatasetGeneratedDataLoader[
         tuple[
@@ -104,29 +56,27 @@ def train(
     ],
     feature_importances: Float[Tensor, "batch n_features"],
     device: str,
-    out_dir: Path,
     run_name: str,
 ) -> Float[Tensor, ""]:
     if config.wandb_project:
-        config = init_wandb(config, config.wandb_project, name=run_name)
+        tags = [f"resid_mlp{config.resid_mlp_model_config.n_layers}-train"]
+        config = init_wandb(config, config.wandb_project, name=run_name, tags=tags)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
 
     # Save config
     config_path = out_dir / "resid_mlp_train_config.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(config.model_dump(mode="json"), f, indent=2)
+    save_file(config.model_dump(mode="json"), config_path)
     logger.info(f"Saved config to {config_path}")
     if config.wandb_project:
         wandb.save(str(config_path), base_path=out_dir, policy="now")
 
     # Save the coefficients used to generate the labels
-    assert isinstance(dataloader.dataset, ResidualMLPDataset)
+    assert isinstance(dataloader.dataset, ResidMLPDataset)
     assert dataloader.dataset.label_coeffs is not None
     label_coeffs = dataloader.dataset.label_coeffs.tolist()
     label_coeffs_path = out_dir / "label_coeffs.json"
-    with open(label_coeffs_path, "w") as f:
-        json.dump(label_coeffs, f)
+    save_file(label_coeffs, label_coeffs_path)
     logger.info(f"Saved label coefficients to {label_coeffs_path}")
     if config.wandb_project:
         wandb.save(str(label_coeffs_path), base_path=out_dir, policy="now")
@@ -162,10 +112,10 @@ def train(
                 wandb.log({"loss": loss.item(), "lr": current_lr}, step=step)
 
     model_path = out_dir / "resid_mlp.pth"
-    torch.save(model.state_dict(), model_path)
+    save_file(model.state_dict(), model_path)
     if config.wandb_project:
         wandb.save(str(model_path), base_path=out_dir, policy="now")
-    print(f"Saved model to {model_path}")
+    logger.info(f"Saved model to {model_path}")
 
     # Calculate final losses by averaging many batches
     final_losses = []
@@ -178,12 +128,12 @@ def train(
         loss = loss.mean()
         final_losses.append(loss)
     final_losses = torch.stack(final_losses).mean().cpu().detach()
-    print(f"Final losses: {final_losses.numpy()}")
+    logger.info(f"Final losses: {final_losses.numpy()}")
     return final_losses
 
 
 def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
-    model_cfg = config.resid_mlp_config
+    model_cfg = config.resid_mlp_model_config
     run_name = (
         f"resid_mlp_identity_{config.label_type}_"
         f"n-features{model_cfg.n_features}_d-resid{model_cfg.d_embed}_"
@@ -192,10 +142,8 @@ def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
         f"identity_embedding_{config.fixed_identity_embedding}_bias_{model_cfg.in_bias}_"
         f"{model_cfg.out_bias}_loss{config.loss_type}"
     )
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-    out_dir = Path(__file__).parent / "out" / f"{run_name}_{timestamp}"
 
-    model = ResidualMLP(config=model_cfg).to(device)
+    model = ResidMLP(config=model_cfg).to(device)
 
     if config.fixed_random_embedding or config.fixed_identity_embedding:
         # Don't train the embedding matrices
@@ -221,7 +169,7 @@ def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
     if config.use_trivial_label_coeffs:
         label_coeffs = torch.ones(model_cfg.n_features, device=device)
 
-    dataset = ResidualMLPDataset(
+    dataset = ResidMLPDataset(
         n_features=model_cfg.n_features,
         feature_probability=config.feature_probability,
         device=device,
@@ -249,7 +197,6 @@ def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
         dataloader=dataloader,
         feature_importances=feature_importances,
         device=device,
-        out_dir=out_dir,
         run_name=run_name,
     )
     return final_losses
@@ -259,9 +206,9 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # 1 layer
     config = ResidMLPTrainConfig(
-        wandb_project="spd-train-resid-mlp",
+        wandb_project="spd",
         seed=0,
-        resid_mlp_config=ResidualMLPConfig(
+        resid_mlp_model_config=ResidMLPModelConfig(
             n_features=100,  # 1 layer
             d_embed=1000,
             d_mlp=50,  # 1 layer
@@ -288,10 +235,10 @@ if __name__ == "__main__":
         n_batches_final_losses=10,
     )
     # # 2 layers
-    # config = ResidMLPTrainConfig(
-    #     wandb_project="spd-train-resid-mlp",
+    # config = ResidualMLPTrainConfig(
+    #     wandb_project="spd",
     #     seed=0,
-    #     resid_mlp_config=ResidualMLPConfig(
+    #     resid_mlp_model_config=ResidMLPModelConfig(
     #         n_features=100, # 2 layers
     #         d_embed=1000,
     #         d_mlp=25, # 2 layers
@@ -318,10 +265,10 @@ if __name__ == "__main__":
     #     n_batches_final_losses=10,
     # )
     # # 3 layers
-    # config = ResidMLPTrainConfig(
-    #     wandb_project="spd-train-resid-mlp",
+    # config = ResidualMLPTrainConfig(
+    #     wandb_project="spd",
     #     seed=0,
-    #     resid_mlp_config=ResidualMLPConfig(
+    #     resid_mlp_model_config=ResidMLPModelConfig(
     #         n_features=102,  # 3 layers
     #         d_embed=1000,
     #         d_mlp=17,  # 3 layers

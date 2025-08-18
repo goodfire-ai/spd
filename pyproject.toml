@@ -2,38 +2,42 @@
 name = "spd"
 version = "0.0.1"
 description = "Sparse Parameter Decomposition"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 urls = { "Homepage" = "https://github.com/goodfire-ai/spd" }
 license = { text = "MIT" }
 readme = "README.md"
 dependencies = [
-    "torch<2.6.0",
+    "torch>=2.6",
     "torchvision",
     "pydantic",
-    "wandb",
+    "wandb>=0.20.1", # Avoid wandb.sdk.wandb_manager.ManagerConnectionRefusedError
     "fire",
     "tqdm",
-    "pytest",
     "ipykernel",
     "transformers",
     "jaxtyping",
     "einops",
-    "matplotlib==3.9.1",  # Avoid frequent pyright errors with new matplotlib versions
+    "matplotlib==3.9.1", # Avoid frequent pyright errors with new matplotlib versions
     "numpy",
     "python-dotenv",
-    "wandb",
+    "wandb-workspaces==0.1.12", # See https://github.com/wandb/wandb-workspaces/issues/65
     "sympy",
     "streamlit",
     "streamlit-antd-components",
     "datasets",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
+    "pytest",
+    "pytest-cov", # for coverage reports
     "ruff",
-    "pyright",
+    "basedpyright",
     "pre-commit",
 ]
+
+[project.scripts]
+spd-run = "spd.scripts.run:cli"
 
 [build-system]
 requires = ["setuptools", "wheel"]
@@ -46,12 +50,13 @@ include = ["spd*"]
 [tool.ruff]
 line-length = 100
 fix = true
-ignore = [
-    "F722", # Incompatible with jaxtyping
-    "E731" # I think lambda functions are fine in several places
-]
 
 [tool.ruff.lint]
+ignore = [
+    "F722", # Incompatible with jaxtyping
+    "E731", # I think lambda functions are fine in several places
+    "E501", # there are a lot of long lines in the codebase
+]
 select = [
     # pycodestyle
     "E",
@@ -71,12 +76,13 @@ select = [
 # Enable reformatting of code snippets in docstrings.
 docstring-code-format = true
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-third-party = ["wandb"]
 
 [tool.pyright]
 include = ["spd", "tests"]
-exclude = ["**/wandb/**"]
+exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py"]
+stubPath = "typings" # Having type stubs for transformers shaves 10 seconds off basedpyright calls
 
 strictListInference = true
 strictDictionaryInference = true
@@ -85,7 +91,6 @@ reportFunctionMemberAccess = true
 reportUnknownParameterType = true
 reportIncompatibleMethodOverride = true
 reportIncompatibleVariableOverride = true
-reportInconsistentConstructorType = true
 reportOverlappingOverload = true
 reportConstantRedefinition = true
 reportImportCycles = true
@@ -98,10 +103,26 @@ reportUnusedExpression = true
 reportMatchNotExhaustive = true
 reportShadowedImports = true
 reportPrivateImportUsage = false
+# basedpyright
 reportCallIssue = true
+reportAny = false
+reportUnusedCallResult = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+reportExplicitAny = false
+reportMissingTypeStubs = false
+reportImplicitStringConcatenation = false
+reportPrivateUsage = false
+reportUnannotatedClassAttribute = false
+reportUnknownLambdaType = false
+
+
 
 [tool.pytest.ini_options]
 filterwarnings = [
     # https://github.com/google/python-fire/pull/447
     "ignore::DeprecationWarning:fire:59",
+    # Ignore Pydantic V1 deprecation warnings from wandb_workspaces
+    "ignore:Pydantic V1 style.*:DeprecationWarning:wandb_workspaces",
 ]

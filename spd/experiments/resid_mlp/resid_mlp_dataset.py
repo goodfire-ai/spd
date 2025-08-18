@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, override
 
 import einops
 import torch
@@ -6,10 +6,10 @@ import torch.nn.functional as F
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.data_utils import SparseFeatureDataset
+from spd.utils.data_utils import SparseFeatureDataset
 
 
-class ResidualMLPDataset(SparseFeatureDataset):
+class ResidMLPDataset(SparseFeatureDataset):
     def __init__(
         self,
         n_features: int,
@@ -73,6 +73,7 @@ class ResidualMLPDataset(SparseFeatureDataset):
             elif label_type == "abs":
                 self.label_fn = lambda batch: self.calc_abs_labels(batch)
 
+    @override
     def generate_batch(
         self, batch_size: int
     ) -> tuple[Float[Tensor, "batch n_functions"], Float[Tensor, "batch n_functions"]]:

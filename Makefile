@@ -1,30 +1,53 @@
+# setup
 .PHONY: install
-install:
-	pip install -e .
+install: copy-templates
+	uv sync --no-dev
 
 .PHONY: install-dev
-install-dev:
-	pip install -e .[dev]
+install-dev: copy-templates
+	uv sync
 	pre-commit install
 
+.PHONY: copy-templates
+copy-templates:
+	@if [ ! -f spd/scripts/sweep_params.yaml ]; then \
+		cp spd/scripts/sweep_params.yaml.example spd/scripts/sweep_params.yaml; \
+		echo "Created spd/scripts/sweep_params.yaml from template"; \
+	fi
+
+
+# checks
 .PHONY: type
 type:
-	SKIP=no-commit-to-branch pre-commit run -a pyright
+	basedpyright
 
 .PHONY: format
 format:
 	# Fix all autofixable problems (which sorts imports) then format errors
-	SKIP=no-commit-to-branch pre-commit run -a ruff-lint
-	SKIP=no-commit-to-branch pre-commit run -a ruff-format
+	ruff check --fix
+	ruff format
 
 .PHONY: check
-check:
+check: format type
+
+.PHONY: check-pre-commit
+check-pre-commit:
 	SKIP=no-commit-to-branch pre-commit run -a --hook-stage commit
 
+# tests
 .PHONY: test
 test:
-	python -m pytest tests/
+	pytest tests/
 
 .PHONY: test-all
 test-all:
-	python -m pytest tests/ --runslow
+	pytest tests/ --runslow
+
+COVERAGE_DIR=docs/coverage
+
+.PHONY: coverage
+coverage:
+	uv run pytest tests/ --cov=spd --runslow
+	mkdir -p $(COVERAGE_DIR)
+	uv run python -m coverage report -m > $(COVERAGE_DIR)/coverage.txt
+	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/

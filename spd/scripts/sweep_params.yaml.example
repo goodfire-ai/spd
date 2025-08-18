@@ -1,0 +1,16 @@
+# Params used for all experiments
+global:
+  seed:
+    values: [0, 1]
+
+# Experiment-specific params that override the global params
+tms_5-2-id:
+  C:
+    values: [5, 10]
+
+resid_mlp1:
+  seed:
+    values: [2, 3]
+  task_config:
+    feature_probability:
+      values: [0.1]

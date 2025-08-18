@@ -1,0 +1,55 @@
+name: Checks
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - '**'
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.7.15"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Print dependencies
+        run: uv pip list
+
+      - name: Run basedpyright
+        run: uv run basedpyright
+
+      - name: Run ruff lint
+        run: uv run ruff check --fix-only .
+
+      - name: Run ruff format
+        run: uv run ruff format .
+
+      - name: Install MPI for tests
+        uses: mpi4py/setup-mpi@v1
+        with:
+          mpi: openmpi
+
+      - name: Run tests
+        run: uv run python -m pytest tests/ --runslow --durations=10
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}

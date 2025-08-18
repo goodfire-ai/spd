@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python Debugger: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
             "name": "Python: Attach",
             "type": "debugpy",
             "request": "attach",
@@ -14,11 +22,37 @@
             }
         },
         {
-            "name": "tms",
+            "name": "spd-tms_5-2-sweep",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/scripts/run.py",
+            "args": ["--experiments", "tms_5-2", "--sweep", "--n_agents", "2"],
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "analyze_evals",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/evals/analyze_evals.py",
+            "args": ["eval_20250627_131926", "https://wandb.ai/goodfire/spd/reports/SPD-Evaluation-Report---eval_20250627_131926--VmlldzoxMzM3NTkzNw=="],
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "tms_5-2",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/spd/experiments/tms/tms_decomposition.py",
-            "args": "${workspaceFolder}/spd/experiments/tms/tms_config.yaml",
+            "args": "${workspaceFolder}/spd/experiments/tms/tms_5-2_config.yaml",
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -27,11 +61,50 @@
             }
         },
         {
-            "name": "resid_mlp",
+            "name": "tms_5-2-id",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/tms/tms_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/tms/tms_5-2-id_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "tms_40-10",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/tms/tms_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/tms/tms_40-10_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "tms_40-10-id",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/tms/tms_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/tms/tms_40-10-id_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "resid_mlp1",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp_decomposition.py",
-            "args": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp_config.yaml",
+            "args": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp1_config.yaml",
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -40,11 +113,11 @@
             }
         },
         {
-            "name": "ss",
+            "name": "resid_mlp2",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
-            "args": "${workspaceFolder}/spd/experiments/lm/ss_config.yaml",
+            "program": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp2_config.yaml",
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -53,11 +126,63 @@
             }
         },
         {
-            "name": "ts",
+            "name": "resid_mlp3",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp3_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "ss_emb",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
-            "args": "${workspaceFolder}/spd/experiments/lm/ts_config.yaml",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_emb_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "ss_llama",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_llama_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "ss_gpt2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_gpt2_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "gpt2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/gpt2_config.yaml",
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -72,9 +197,12 @@
             "module": "streamlit",
             "args": [
                 "run",
-                "${workspaceFolder}/spd/experiments/lm/app.py",
+                "${workspaceFolder}/spd/experiments/lm/streamlit_v1/app.py",
                 "--server.port",
-                "2000"
+                "2000",
+                "--",
+                "--model_path",
+                "wandb:goodfire/spd/runs/ioprgffh"
             ]
         }
     ]

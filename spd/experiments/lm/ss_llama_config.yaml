@@ -1,0 +1,86 @@
+# --- WandB ---Add a comment on line R1Add diff commentMarkdown input: edit mode selected.WritePreviewAdd a suggestionHeadingBoldItalicQuoteCodeLinkUnordered listNumbered listTask listMentionReferenceSaved repliesAdd FilesPaste, drop, or click to add filesCancelCommentStart a review
+wandb_project: spd
+# wandb_project: null
+wandb_run_name: null
+wandb_run_name_prefix: ""
+
+# --- General ---
+seed: 0
+C: 4000
+n_mask_samples: 1
+gate_type: "vector_mlp"
+gate_hidden_dims: [12]
+sigmoid_type: "leaky_hard"
+target_module_patterns: ["model.layers.0.mlp.gate_proj"]
+
+# --- Loss Coefficients ---
+faithfulness_coeff: 1e3
+recon_coeff: null
+stochastic_recon_coeff: null
+recon_layerwise_coeff: null
+stochastic_recon_layerwise_coeff: 1
+importance_minimality_coeff: 1e-3
+schatten_coeff: null
+embedding_recon_coeff: null
+is_embed_unembed_recon: false
+pnorm: 1.0
+output_loss_type: kl
+
+# --- Training ---
+batch_size: 32
+steps: 50_000
+lr: 3e-4
+lr_schedule: cosine
+lr_warmup_pct: 0.01
+lr_exponential_halflife: null
+gradient_accumulation_steps: 1
+
+# --- Logging & Saving ---
+train_log_freq: 100
+eval_freq: 1000
+slow_eval_freq: 5000
+slow_eval_on_first_step: true
+n_eval_steps: 5
+save_freq: null
+ci_alive_threshold: 0.0
+n_examples_until_dead: 3_276_800  # train_log_freq * batch_size * max_seq_len = 100 * 64 * 512
+eval_metrics:
+  - classname: "CIHistograms"
+    extra_init_kwargs:
+      n_batches_accum: 5
+  - classname: "ComponentActivationDensity"
+  - classname: "CI_L0"
+  - classname: "CEandKLLosses"
+    extra_init_kwargs:
+      rounding_threshold: 0.0
+
+# --- Pretrained model info ---
+pretrained_model_class: transformers.LlamaForCausalLM
+pretrained_model_name_hf: SimpleStories/SimpleStories-1.25M
+pretrained_model_output_attr: logits
+tokenizer_name: SimpleStories/SimpleStories-1.25M
+
+# --- Task Specific ---
+task_config:
+  task_name: lm 
+  max_seq_len: 512
+  dataset_name: "SimpleStories/SimpleStories"
+  column_name: "story"
+  train_data_split: "train"
+  eval_data_split: "test"
+  streaming: True
+
+
+# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
+  # "1.25M": LlamaConfig(
+  #     block_size=512,
+  #     vocab_size=4096,
+  #     n_layer=4,
+  #     n_head=4,
+  #     n_embd=128,
+  #     n_intermediate=128 * 4 * 2 // 3 = 341,
+  #     rotary_dim=128 // 4 = 32,
+  #     n_ctx=512,
+  #     n_key_value_heads=2,
+  #     flash_attention=True,
+  # ),
