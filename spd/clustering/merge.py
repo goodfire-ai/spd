@@ -86,10 +86,10 @@ def _wandb_iter_log(
         # Prepare additional stats
         group_sizes: Int[Tensor, " k_groups"] = current_merge.components_per_group
         fraction_singleton_groups: float = (group_sizes == 1).float().mean().item()
-        group_sizes_no_singletons: Tensor = group_sizes[group_sizes > 1]
+        group_sizes_log1p: Tensor = torch.log1p(group_sizes.float())
 
         fraction_zero_coacts: float = (current_coact == 0).float().mean().item()
-        coact_no_zeros: Tensor = current_coact[current_coact > 0]
+        coact_log1p: Tensor = torch.log1p(current_coact.float())
 
         tensor_data_for_wandb: dict[str, Tensor] = dict(
             coactivation=current_coact,
@@ -102,9 +102,9 @@ def _wandb_iter_log(
         )
 
         if fraction_singleton_groups > 0:
-            tensor_data_for_wandb["group_sizes_no_singletons"] = group_sizes_no_singletons
+            tensor_data_for_wandb["group_sizes.log1p"] = group_sizes_log1p
         if fraction_zero_coacts > 0:
-            tensor_data_for_wandb["coact_no_zeros"] = coact_no_zeros
+            tensor_data_for_wandb["coactivation.log1p"] = coact_log1p
 
         # log the tensors -- this makes histograms, and also stats about the tensors in tensor_metrics
         wandb_log_tensor(
