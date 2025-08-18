@@ -12,9 +12,6 @@ from muutils.dbg import dbg_tensor
 from muutils.tensor_info import array_info
 from torch import Tensor
 
-# Track which tensors we've already logged URLs for
-_LOGGED_URLS: set[str] = set()
-
 
 def _create_histogram(info: dict[str, Any], tensor: Tensor, name: str) -> plt.Figure:  # pyright: ignore[reportUnusedFunction]
     """Create histogram with stats markers."""
@@ -210,10 +207,10 @@ def _log_one(
     info: dict[str, Any] = array_info(tensor_)
 
     if single:
-        # For single-use logging, use the old path with detailed Plotly histogram
-        wandb_hist = _create_histogram_wandb(tensor_, name)
+        # For single-use logging, log a single histogram as a figure
+        hist_fig: plt.Figure = _create_histogram(info=info, tensor=tensor_, name=name)
         histogram_key: str = f"single_hists/{name}"
-        run.log({histogram_key: wandb_hist}, step=step)
+        run.log({histogram_key: wandb.Image(hist_fig)}, step=step)
     else:
         # Log numeric stats as metrics (viewable like loss) using dict comprehension
         stats_to_log: dict[str, float | wandb.Histogram] = {
