@@ -130,7 +130,7 @@ def test_wandb_url_field_in_merge_history():
     history = MergeHistory.from_config(
         config=config,
         c_components=5,
-        component_labels=["comp0", "comp1", "comp2", "comp3", "comp4"],
+        labels=["comp0", "comp1", "comp2", "comp3", "comp4"],
         wandb_url=test_url,
     )
 
@@ -138,6 +138,9 @@ def test_wandb_url_field_in_merge_history():
     assert history.wandb_url == test_url
 
     # Check that it can be serialized and deserialized
-    serialized = history.serialize()
-    assert "wandb_url" in serialized
-    assert serialized["wandb_url"] == test_url
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        save_path = Path(tmp_dir) / "test_history.zip"
+        history.save(save_path)
+        loaded_history = MergeHistory.read(save_path)
+
+        assert loaded_history.wandb_url == test_url

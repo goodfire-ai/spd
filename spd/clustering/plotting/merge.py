@@ -228,15 +228,17 @@ def plot_merge_history_costs(
         Caller is responsible for closing the returned figure with plt.close(fig)
         to prevent memory leaks.
     """
-    fig, ax = plt.subplots(figsize=figsize)
-    ax.plot(history.costs_stats["min"], label="min")
-    ax.plot(history.costs_stats["max"], label="max")
-    ax.plot(history.costs_stats["mean"], ":", label="mean")
-    ax.plot(history.costs_stats["median"], label="median")
-    ax.plot(history.costs_stats["q01"], label="1% quantile", alpha=0.2)
-    ax.plot(history.costs_stats["q05"], label="5% quantile", alpha=0.2)
-    ax.plot(history.costs_stats["q10"], label="10% quantile", alpha=0.2)
-    ax.plot(history.costs_stats["chosen_pair"], label="selected pair cost")
+    assert history
+    raise NotImplementedError("we dont keep costs in history anymore, rely on wandb for this")
+    fig, ax = plt.subplots(figsize=figsize)  # pyright: ignore[reportUnreachable]
+    # ax.plot(history.costs_stats["min"], label="min")
+    # ax.plot(history.costs_stats["max"], label="max")
+    # ax.plot(history.costs_stats["mean"], ":", label="mean")
+    # ax.plot(history.costs_stats["median"], label="median")
+    # ax.plot(history.costs_stats["q01"], label="1% quantile", alpha=0.2)
+    # ax.plot(history.costs_stats["q05"], label="5% quantile", alpha=0.2)
+    # ax.plot(history.costs_stats["q10"], label="10% quantile", alpha=0.2)
+    # ax.plot(history.costs_stats["chosen_pair"], label="selected pair cost")
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Non-diagonal costs")
     ax.axhline(0, color="black", linestyle="--", linewidth=0.5)
@@ -263,7 +265,7 @@ def plot_merge_history_cluster_sizes(
         Caller is responsible for closing the returned figure with plt.close(fig)
         to prevent memory leaks.
     """
-    k_groups_t: Int[Tensor, " n_iters"] = history.k_groups
+    k_groups_t: Int[Tensor, " n_iters"] = history.merges.k_groups
     valid_mask: Bool[Tensor, " n_iters"] = k_groups_t.ne(-1)
     has_data: bool = bool(valid_mask.any().item())
     if not has_data:

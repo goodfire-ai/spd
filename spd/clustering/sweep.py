@@ -1,5 +1,4 @@
 import itertools
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,18 +22,15 @@ class SweepConfig:
     activation_thresholds: list[float]
     merge_pair_sampling_thresholds: list[float]
     alphas: list[float]
-    rank_cost_funcs: list[Callable[[float], float]]
     iters: int = 100
 
     def generate_configs(self) -> list[MergeConfig]:
         """Generate all MergeConfig combinations."""
         configs = []
-        # TODO: adapt to new rank cost func
-        for act_thresh, sampling_thresh, alpha, _rank_func in itertools.product(
+        for act_thresh, sampling_thresh, alpha in itertools.product(
             self.activation_thresholds,
             self.merge_pair_sampling_thresholds,
             self.alphas,
-            self.rank_cost_funcs,
         ):
             merge_config = MergeConfig(
                 activation_threshold=act_thresh,
@@ -71,12 +67,17 @@ def get_unique_param_values(results: list[MergeHistory]) -> dict[str, list[Any]]
         "merge_pair_sampling_method",
         "merge_pair_sampling_kwargs",
         "alpha",
-        "rank_cost_name",
     ]
-    return {
-        param: sorted(list(set(r.sweep_params[param] for r in results if r.sweep_params)))
-        for param in all_params
-    }
+    unique_values = {}
+    for param in all_params:
+        values = [getattr(r.config, param) for r in results if r.config]
+        if param == "merge_pair_sampling_kwargs":
+            # Handle dictionary by converting to tuples for hashability
+            unique_dicts = {tuple(sorted(v.items())) for v in values}
+            unique_values[param] = [dict(d) for d in sorted(unique_dicts)]
+        else:
+            unique_values[param] = sorted(list(set(values)))
+    return unique_values
 
 
 def filter_results_by_params(
@@ -86,7 +87,7 @@ def filter_results_by_params(
     filtered_results: list[MergeHistory] = results
     for param, value in fixed_params.items():
         filtered_results = [
-            r for r in filtered_results if r.sweep_params and r.sweep_params[param] == value
+            r for r in filtered_results if r.config and getattr(r.config, param) == value
         ]
     return filtered_results
 
@@ -100,7 +101,6 @@ def validate_plot_params(
         "merge_pair_sampling_method",
         "merge_pair_sampling_kwargs",
         "alpha",
-        "rank_cost_name",
     ]
     used_params: set[str] = {lines_by, rows_by, cols_by}
     unused_params: list[str] = [p for p in all_params if p not in used_params]
@@ -246,14 +246,7 @@ def run_hyperparameter_sweep(
                 component_labels=component_labels,
             )
 
-            # Store sweep parameters in the merge history for later use
-            merge_history.sweep_params = {
-                "activation_threshold": merge_config.activation_threshold,
-                "merge_pair_sampling_method": merge_config.merge_pair_sampling_method,
-                "merge_pair_sampling_kwargs": merge_config.merge_pair_sampling_kwargs,
-                "alpha": merge_config.alpha,
-                # rank_cost_name field removed from MergeConfig
-            }
+            # Config is already stored in merge_history from merge_iteration
             results.append(merge_history)
         except Exception as e:
             print(f"Failed: {e}")
@@ -306,16 +299,16 @@ def plot_evolution_histories(
             subset_results: list[MergeHistory] = [
                 r
                 for r in filtered_results
-                if r.sweep_params
-                and r.sweep_params[rows_by] == row_val
-                and r.sweep_params[cols_by] == col_val
+                if r.config
+                and getattr(r.config, rows_by) == row_val
+                and getattr(r.config, cols_by) == col_val
             ]
 
             for line_val in line_values:
                 line_results: list[MergeHistory] = [
                     r
                     for r in subset_results
-                    if r.sweep_params and r.sweep_params[lines_by] == line_val
+                    if r.config and getattr(r.config, lines_by) == line_val
                 ]
 
                 if line_results:

@@ -163,6 +163,7 @@ def recompute_coacts_merge_pair(
         merge_pair[0],
         merge_pair[1],
     )
+    # TODO: we don't use this index for anything, and could reconstruct it from the merge pair if needed. get rid of it
     # `merge_groups` will set `old_to_new_idx` to be an actual dict for `merge_new`
     old_to_new_idx: dict[int | None, int | None] = merge_new.old_to_new_idx  # pyright: ignore[reportAssignmentType]
     assert old_to_new_idx[None] == new_group_idx, (

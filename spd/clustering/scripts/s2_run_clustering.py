@@ -15,7 +15,6 @@ from jaxtyping import Float, Int
 from matplotlib import pyplot as plt
 from muutils.dbg import dbg_auto, dbg_tensor
 from torch import Tensor
-from zanj import ZANJ
 
 from spd.clustering.activations import (
     ProcessedActivations,
@@ -277,14 +276,13 @@ def run_clustering(
     # ======================================================================
 
     # save the merge iteration
-    hist_save_path: Path = this_merge_path / "merge_history.zanj"
+    hist_save_path: Path = this_merge_path / "merge_history.zip"
 
-    merge_history_serialized: dict[str, Any] = merge_history.serialize()
     # TODO: Consider adding fallback to dbg_auto if wandb_run is None
     # For now we skip logging merge_history_serialized as it's large and complex
     # dbg_auto(merge_history_serialized)
 
-    ZANJ().save(merge_history_serialized, hist_save_path)
+    merge_history.save(hist_save_path)
     log(f"Merge history saved to {hist_save_path}")
 
     # Save WandB URL to file

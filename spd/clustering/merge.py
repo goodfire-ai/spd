@@ -1,6 +1,5 @@
 import warnings
 from collections.abc import Callable
-from typing import Any
 
 import torch
 import wandb
@@ -74,9 +73,6 @@ def _wandb_iter_log(
     merge_history.add_iteration(
         idx=iter_idx,
         selected_pair=merge_pair,
-        coactivation=current_coact,
-        cost_matrix=costs,
-        k_groups=k_groups,
         current_merge=current_merge,
     )
 
@@ -159,7 +155,6 @@ def merge_iteration(
     merge_config: MergeConfig | MergeRunConfig,
     component_labels: list[str],
     initial_merge: GroupMerge | None = None,
-    sweep_params: dict[str, Any] | None = None,
     plot_function: Callable[..., None] | None = None,
     wandb_run: wandb.sdk.wandb_run.Run | None = None,
     prefix: str = "",
@@ -211,8 +206,7 @@ def merge_iteration(
     merge_history: MergeHistory = MergeHistory.from_config(
         config=merge_config,
         c_components=c_components,
-        component_labels=component_labels,
-        sweep_params=sweep_params,
+        labels=component_labels,
         wandb_url=wandb_run.url if wandb_run else None,
     )
 

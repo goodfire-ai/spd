@@ -37,12 +37,12 @@ class TestMergeIntegration:
 
         # Check results
         assert history is not None
-        assert len(history.k_groups) > 0
-        assert history.k_groups[0].item() == n_components
+        assert len(history.merges.k_groups) > 0
+        assert history.merges.k_groups[0].item() == n_components
         # After iterations, should have fewer groups (merges reduce count)
         # Exact count depends on early stopping conditions
-        assert history.k_groups[-1].item() < n_components
-        assert history.k_groups[-1].item() >= 2  # Should stop before going below 2
+        assert history.merges.k_groups[-1].item() < n_components
+        assert history.merges.k_groups[-1].item() >= 2  # Should stop before going below 2
 
     def test_merge_with_mcmc_sampler(self):
         """Test merge iteration with MCMC sampler."""
@@ -72,11 +72,11 @@ class TestMergeIntegration:
 
         # Check results
         assert history is not None
-        assert len(history.k_groups) > 0
-        assert history.k_groups[0].item() == n_components
+        assert len(history.merges.k_groups) > 0
+        assert history.merges.k_groups[0].item() == n_components
         # Should have fewer groups after iterations
-        assert history.k_groups[-1].item() < n_components
-        assert history.k_groups[-1].item() >= 2
+        assert history.merges.k_groups[-1].item() < n_components
+        assert history.merges.k_groups[-1].item() >= 2
 
     def test_merge_with_popping(self):
         """Test merge iteration with component popping."""
@@ -106,9 +106,9 @@ class TestMergeIntegration:
 
         # Check results
         assert history is not None
-        assert history.k_groups[0].item() == n_components
+        assert history.merges.k_groups[0].item() == n_components
         # Final group count depends on pops, but should be less than initial
-        assert history.k_groups[-1].item() < n_components
+        assert history.merges.k_groups[-1].item() < n_components
 
     def test_merge_comparison_samplers(self):
         """Compare behavior of different samplers with same data."""
@@ -156,20 +156,10 @@ class TestMergeIntegration:
         )
 
         # Both should reduce groups from initial count
-        assert history_range.k_groups[-1].item() < n_components
-        assert history_mcmc.k_groups[-1].item() < n_components
-        assert history_range.k_groups[-1].item() >= 2
-        assert history_mcmc.k_groups[-1].item() >= 2
-
-        # With low temperature/threshold, costs should be similar
-        # (both favor low-cost merges)
-        range_costs = history_range.costs_stats["chosen_pair"]
-        mcmc_costs = history_mcmc.costs_stats["chosen_pair"]
-
-        # Check that costs are reasonable (not infinite or nan)
-        for cost in range_costs + mcmc_costs:
-            assert not torch.isnan(torch.tensor(cost))
-            assert not torch.isinf(torch.tensor(cost))
+        assert history_range.merges.k_groups[-1].item() < n_components
+        assert history_mcmc.merges.k_groups[-1].item() < n_components
+        assert history_range.merges.k_groups[-1].item() >= 2
+        assert history_mcmc.merges.k_groups[-1].item() >= 2
 
     def test_merge_with_small_components(self):
         """Test merge with very few components."""
@@ -195,7 +185,7 @@ class TestMergeIntegration:
         )
 
         # Should start with 3 components
-        assert history.k_groups[0].item() == 3
+        assert history.merges.k_groups[0].item() == 3
         # Early stopping may occur at 2 groups, so final count could be 2 or 3
-        assert history.k_groups[-1].item() >= 2
-        assert history.k_groups[-1].item() <= 3
+        assert history.merges.k_groups[-1].item() >= 2
+        assert history.merges.k_groups[-1].item() <= 3

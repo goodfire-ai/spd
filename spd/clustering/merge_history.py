@@ -1,4 +1,7 @@
+import io
+import json
 import sys
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -7,9 +10,6 @@ import numpy as np
 import torch
 from jaxtyping import Float, Int
 from muutils.dbg import dbg_tensor
-from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
-from torch import Tensor
-from zanj import ZANJ
 
 from spd.clustering.math.merge_distances import (
     DistancesArray,
@@ -18,121 +18,66 @@ from spd.clustering.math.merge_distances import (
     compute_distances,
 )
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
-from spd.clustering.math.tensor_stats import StatsKeys, stats_dict
 from spd.clustering.merge_config import MergeConfig
 
-IterationInfo = dict[str, float | int | dict[StatsKeys, float] | list[float] | GroupMerge]
+IterationInfo = dict[str, int | list[int] | GroupMerge]
 
 
-# pyright hates muutils :(
-@serializable_dataclass(kw_only=True)  # pyright: ignore[reportUntypedClassDecorator]
-class MergeHistory(SerializableDataclass):
+def _zip_save_arr(zf: zipfile.ZipFile, name: str, arr: np.ndarray) -> None:
+    """Save a numpy array to a zip file."""
+    buf = io.BytesIO()
+    np.save(buf, arr)
+    zf.writestr(name, buf.getvalue())
+
+
+def _zip_save_arr_dict(zf: zipfile.ZipFile, data: dict[str, np.ndarray]) -> None:
+    """Save a dictionary of numpy arrays to a zip file, {key}.npy used as path"""
+    for key, arr in data.items():
+        _zip_save_arr(zf, f"{key}.npy", arr)
+
+
+@dataclass(kw_only=True)
+class MergeHistory:
     """Track merge iteration history"""
 
+    merges: BatchedGroupMerge
+    selected_pairs: Int[np.ndarray, " n_iters 2"]
+    labels: list[str]
+    config: MergeConfig
+    wandb_url: str | None
     c_components: int
-    component_labels: list[str]
     n_iters_current: int
-    k_groups: Int[Tensor, " n_iters"]
-    selected_pairs: Int[Tensor, " n_iters 2"]
-    "Pairs selected for merging at each iteration"
-
-    coactivations_stats: dict[StatsKeys, list[float]] = serializable_field(
-        assert_type=False,
-    )
-    "Coactivation stats at each iteration"
-
-    costs_stats: dict[StatsKeys, list[float]] = serializable_field(
-        assert_type=False,
-    )
-    "Cost stats at each iteration"
-
-    merges: BatchedGroupMerge = serializable_field(
-        serialization_fn=lambda x: x.serialize(),
-        deserialize_fn=lambda x: BatchedGroupMerge.load(x),
-    )
-    "State of groups at each iteration"
-
-    config: MergeConfig = serializable_field(
-        serialization_fn=lambda x: x.model_dump(mode="json"),
-        deserialize_fn=lambda x: MergeConfig.model_validate(x),
-    )
-    "Configuration used for this merge"
-
-    sweep_params: dict[str, Any] | None = serializable_field(
-        default=None,
-    )
-    "Sweep parameters if used in sweep"
-
-    wandb_url: str | None = serializable_field(
-        default=None,
-    )
-    "WandB run URL if logged to WandB"
 
     @classmethod
     def from_config(
         cls,
         config: MergeConfig,
         c_components: int,
-        component_labels: list[str],
-        sweep_params: dict[str, Any] | None = None,
-        wandb_url: str | None = None,
+        labels: list[str],
+        wandb_url: str | None,
     ) -> "MergeHistory":
         n_iters_target: int = config.iters
-        # TODO: pyright doesnt like muutils
         return MergeHistory(
-            c_components=c_components,  # pyright: ignore[reportCallIssue]
-            component_labels=component_labels,  # pyright: ignore[reportCallIssue]
-            n_iters_current=0,  # pyright: ignore[reportCallIssue]
-            k_groups=torch.full((n_iters_target,), -1, dtype=torch.int16),  # pyright: ignore[reportCallIssue]
-            selected_pairs=torch.full((n_iters_target, 2), -1, dtype=torch.int32),  # pyright: ignore[reportCallIssue]
-            coactivations_stats={k: [] for k in StatsKeys.__args__},  # pyright: ignore[reportCallIssue]
-            costs_stats={k: [] for k in StatsKeys.__args__},  # pyright: ignore[reportCallIssue]
-            merges=BatchedGroupMerge.init_empty(  # pyright: ignore[reportCallIssue]
+            c_components=c_components,
+            labels=labels,
+            n_iters_current=0,
+            selected_pairs=np.full((n_iters_target, 2), -1, dtype=np.int16),
+            merges=BatchedGroupMerge.init_empty(
                 batch_size=n_iters_target, n_components=c_components
             ),
-            config=config,  # pyright: ignore[reportCallIssue]
-            sweep_params=sweep_params,  # pyright: ignore[reportCallIssue]
-            wandb_url=wandb_url,  # pyright: ignore[reportCallIssue]
+            config=config,
+            wandb_url=wandb_url,
         )
 
     def add_iteration(
         self,
         idx: int,
         selected_pair: tuple[int, int],
-        coactivation: Float[Tensor, "k_groups k_groups"],
-        cost_matrix: Float[Tensor, "k_groups k_groups"],
-        k_groups: int,
         current_merge: GroupMerge,
     ) -> None:
         """Add data for one iteration."""
-        assert tuple(coactivation.shape) == (k_groups, k_groups)
-        assert tuple(cost_matrix.shape) == (k_groups, k_groups)
-
-        # costs and coactvations
-        mask: Float[Tensor, "k_groups k_groups"] = ~torch.eye(
-            k_groups, dtype=torch.bool, device=coactivation.device
-        )
-        coact_flat: Float[Tensor, " n_pairs"] = coactivation[mask].flatten()
-        cost_flat: Float[Tensor, " n_pairs"] = cost_matrix[
-            mask.to(device=cost_matrix.device)
-        ].flatten()
-        coact_stats: dict[StatsKeys, float] = stats_dict(coact_flat)
-        cost_stats: dict[StatsKeys, float] = stats_dict(cost_flat)
-
-        for key in coact_stats:
-            self.coactivations_stats[key].append(coact_stats[key])
-            self.costs_stats[key].append(cost_stats[key])
-
-        self.coactivations_stats["chosen_pair"].append(
-            float(coactivation[selected_pair[0], selected_pair[1]])
-        )
-        self.costs_stats["chosen_pair"].append(
-            float(cost_matrix[selected_pair[0], selected_pair[1]])
-        )
-
         # other data
-        self.selected_pairs[idx] = torch.tensor(selected_pair, dtype=torch.int32)
-        self.k_groups[idx] = k_groups
+        self.selected_pairs[idx] = np.array(selected_pair, dtype=np.int16)
         self.merges[idx] = current_merge
 
         assert self.n_iters_current == idx
@@ -147,12 +92,7 @@ class MergeHistory(SerializableDataclass):
 
         return {
             "idx": idx,
-            "coactivations_stats": {
-                k: self.coactivations_stats[k][idx] for k in StatsKeys.__args__
-            },
-            "costs_stats": {k: self.costs_stats[k][idx] for k in StatsKeys.__args__},
             "selected_pair": self.selected_pairs[idx].tolist(),
-            "k_groups": self.k_groups[idx].item(),
             "merges": self.merges[idx],
         }
 
@@ -178,26 +118,63 @@ class MergeHistory(SerializableDataclass):
         """Final number of groups after merging."""
         if self.n_iters_current == 0:
             return self.c_components
-        return int(self.k_groups[self.n_iters_current - 1].item())
+        return int(self.merges.k_groups[self.n_iters_current - 1].item())
 
     @property
     def initial_k_groups(self) -> int:
         """Initial number of groups before merging."""
         if self.n_iters_current == 0:
             return self.c_components
-        return int(self.k_groups[0].item())
+        return int(self.merges.k_groups[0].item())
 
-    def save(self, path: Path, zanj: ZANJ | None = None) -> None:
-        """Save the merge history to a file."""
-        zanj_: ZANJ = zanj or ZANJ()
-        zanj_.save(self, path)
+    def save(self, path: Path) -> None:
+        with zipfile.ZipFile(path, "w") as zf:
+            # save arrays
+            _zip_save_arr_dict(
+                zf=zf,
+                data={
+                    "merge.group_idxs": self.merges.group_idxs.cpu().numpy(),
+                    "merge.k_groups": self.merges.k_groups.cpu().numpy(),
+                    "selected_pairs": self.selected_pairs,
+                },
+            )
+            # Save labels
+            zf.writestr("labels.txt", "\n".join(self.labels))
+            # Save metadata
+            zf.writestr(
+                "metadata.json",
+                json.dumps(
+                    dict(
+                        config=self.config.model_dump(mode="json"),
+                        wandb_url=self.wandb_url,
+                        c_components=self.c_components,
+                        n_iters_current=self.n_iters_current,
+                    )
+                ),
+            )
 
     @classmethod
-    def read(cls, path: Path, zanj: ZANJ | None = None) -> "MergeHistory":
-        """Read the merge history from a file."""
-        zanj_: ZANJ = zanj or ZANJ()
-        output: MergeHistory = zanj_.read(path)
-        return output
+    def read(cls, path: Path) -> "MergeHistory":
+        with zipfile.ZipFile(path, "r") as zf:
+            group_idxs: np.ndarray = np.load(io.BytesIO(zf.read("merge.group_idxs.npy")))
+            k_groups: np.ndarray = np.load(io.BytesIO(zf.read("merge.k_groups.npy")))
+            merges: BatchedGroupMerge = BatchedGroupMerge(
+                group_idxs=torch.from_numpy(group_idxs),
+                k_groups=torch.from_numpy(k_groups),
+            )
+            labels: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
+            metadata: dict[str, Any] = json.loads(zf.read("metadata.json").decode("utf-8"))
+            config: MergeConfig = MergeConfig.model_validate_json(metadata["config"])
+
+        return cls(
+            merges=merges,
+            selected_pairs=np.load(io.BytesIO(zf.read("selected_pairs.npy"))),
+            labels=labels,
+            config=config,
+            wandb_url=metadata["wandb_url"],
+            c_components=metadata["c_components"],
+            n_iters_current=metadata["n_iters_current"],
+        )
 
 
 @dataclass
@@ -228,8 +205,8 @@ class MergeHistoryEnsemble:
     @property
     def n_iters(self) -> int:
         """Number of iterations in the ensemble."""
-        n_iterations: int = len(self.data[0].k_groups)
-        assert all(len(history.k_groups) == n_iterations for history in self.data), (
+        n_iterations: int = len(self.data[0].merges.k_groups)
+        assert all(len(history.merges.k_groups) == n_iterations for history in self.data), (
             "All histories must have the same number of iterations"
         )
         return n_iterations
@@ -283,7 +260,7 @@ class MergeHistoryEnsemble:
 
         unique_labels_set: set[str] = set()
         for history in self.data:
-            unique_labels_set.update(history.component_labels)
+            unique_labels_set.update(history.labels)
 
         unique_labels: list[str] = sorted(unique_labels_set)
         c_components: int = len(unique_labels)
@@ -314,7 +291,7 @@ class MergeHistoryEnsemble:
         i_ens: int
         history: MergeHistory
         for i_ens, history in enumerate(self.data):
-            hist_c_labels: list[str] = history.component_labels
+            hist_c_labels: list[str] = history.labels
             hist_n_components: int = len(hist_c_labels)
             overlap_stats[i_ens] = hist_n_components / c_components
             # map from old component indices to new component indices
