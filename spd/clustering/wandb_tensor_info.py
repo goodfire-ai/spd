@@ -215,6 +215,7 @@ def _log_one(
         hist_fig: plt.Figure = _create_histogram(info=info, tensor=tensor_, name=name)
         histogram_key: str = f"single_hists/{name}"
         run.log({histogram_key: wandb.Image(hist_fig)}, step=step)
+        plt.close(hist_fig)  # Close figure to free memory
     else:
         # Log numeric stats as metrics (viewable like loss) using dict comprehension
         stats_to_log: dict[str, float | wandb.Histogram] = {

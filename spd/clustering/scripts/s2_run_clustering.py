@@ -120,6 +120,7 @@ def plot_merge_iteration_callback(
 
         # Log to WandB
         wandb_run.log({"plots/merges": wandb.Image(fig)}, step=i)
+        plt.close(fig)  # Close figure to free memory
 
 
 def run_clustering(
@@ -191,16 +192,19 @@ def run_clustering(
 
     # get model and data
     # ======================================================================
+    log(f"getting data batch from {dataset_path}")
     # get the dataset -- for ensembles, each instance of this script gets a different batch
     data_batch: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(dataset_path)["input_ids"])
 
     # load the spd run of the actual model we are decomposing
+    log(f"getting spd run {model_path}")
     spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
     component_model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
     component_model.to(device)
 
     # get, process, and plot component activations
     # ======================================================================
+    log("computing activations")
     component_acts: dict[str, Tensor] = component_activations(
         model=component_model,
         batch=data_batch,
@@ -219,6 +223,7 @@ def run_clustering(
     # 1. filtering out dead components
     # 2. concatenating the activations across the sequence
     # 3. computing coactivations
+    log("processing activations")
     processed_activations: ProcessedActivations = process_activations(
         component_acts,
         filter_dead_threshold=config_.filter_dead_threshold,
@@ -228,6 +233,7 @@ def run_clustering(
     )
 
     if plot:
+        log("plotting")
         # Import plotting function only when needed
         from spd.clustering.plotting.activations import plot_activations
 
@@ -244,6 +250,7 @@ def run_clustering(
     # memory cleanup
     # ======================================================================
     # copy what we need, delete the rest to free memory
+    log("cleaning up memory")
     activations_: Float[Tensor, "n_steps c"] = processed_activations.activations
     labels: list[str] = processed_activations.labels.copy()
     del processed_activations  # we copied what we needed
@@ -253,6 +260,7 @@ def run_clustering(
 
     # run the merge iteration
     # ======================================================================
+    log("starting merge iteration")
     merge_history: MergeHistory = merge_iteration(
         activations=activations_,
         merge_config=config_,  # Pass full MergeRunConfig to access wandb_log_frequency
@@ -321,6 +329,9 @@ def run_clustering(
                 {"plots/merge_history_costs": wandb.Image(fig_costs)},
                 step=merge_history.n_iters_current,
             )
+        # Close figures to free memory
+        plt.close(fig_cs)
+        plt.close(fig_costs)
 
     # Finish WandB run
     if wandb_run is not None:

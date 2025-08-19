@@ -47,6 +47,10 @@ def plot_merge_iteration(
 
     Returns:
             The matplotlib figure object
+
+    Note:
+            Caller is responsible for closing the returned figure with plt.close(fig)
+            to prevent memory leaks.
     """
     plot_config_: dict[str, Any] = {
         **DEFAULT_PLOT_CONFIG,
@@ -218,7 +222,12 @@ def plot_merge_history_costs(
     file_prefix: str | None = None,
     ylim: tuple[float, float] | None = None,
 ) -> plt.Figure:
-    """Plot cost evolution from merge history"""
+    """Plot cost evolution from merge history.
+
+    Note:
+        Caller is responsible for closing the returned figure with plt.close(fig)
+        to prevent memory leaks.
+    """
     fig, ax = plt.subplots(figsize=figsize)
     ax.plot(history.costs_stats["min"], label="min")
     ax.plot(history.costs_stats["max"], label="max")
@@ -248,6 +257,12 @@ def plot_merge_history_cluster_sizes(
     fmt: str = "png",
     file_prefix: str | None = None,
 ) -> plt.Figure:
+    """Plot cluster sizes over iterations.
+
+    Note:
+        Caller is responsible for closing the returned figure with plt.close(fig)
+        to prevent memory leaks.
+    """
     k_groups_t: Int[Tensor, " n_iters"] = history.k_groups
     valid_mask: Bool[Tensor, " n_iters"] = k_groups_t.ne(-1)
     has_data: bool = bool(valid_mask.any().item())

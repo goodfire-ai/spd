@@ -81,6 +81,9 @@ def plot_activations(
     if wandb_run is not None:
         wandb_run.log({"plots/activations/raw": wandb.Image(_fig1)}, step=0)
 
+    # Close figure to free memory
+    plt.close(_fig1)
+
     # Concatenated activations
     fig2, ax2 = plt.subplots(figsize=figsize_concat)
     act_data: np.ndarray = act_concat.T.cpu().numpy()
@@ -99,6 +102,9 @@ def plot_activations(
     # Log to WandB if available
     if wandb_run is not None:
         wandb_run.log({"plots/activations/concatenated": wandb.Image(fig2)}, step=0)
+
+    # Close figure to free memory
+    plt.close(fig2)
 
     # Concatenated activations, sorted samples
     if do_sorted_samples:
@@ -162,6 +168,9 @@ def plot_activations(
         if wandb_run is not None:
             wandb_run.log({"plots/activations/concatenated_sorted": wandb.Image(fig3)}, step=0)
 
+        # Close figure to free memory
+        plt.close(fig3)
+
     # Coactivations
     fig4, ax4 = plt.subplots(figsize=figsize_coact)
     coact_data: np.ndarray = coact.cpu().numpy()
@@ -182,6 +191,9 @@ def plot_activations(
     if wandb_run is not None:
         wandb_run.log({"plots/activations/coactivations": wandb.Image(fig4)}, step=0)
 
+    # Close figure to free memory
+    plt.close(fig4)
+
     # log coactivations
     fig4_log, ax4_log = plt.subplots(figsize=figsize_coact)
     coact_log_data: np.ndarray = np.log10(coact_data + 1e-10)
@@ -200,6 +212,9 @@ def plot_activations(
     # Log to WandB if available
     if wandb_run is not None:
         wandb_run.log({"plots/activations/coactivations_log": wandb.Image(fig4_log)}, step=0)
+
+    # Close figure to free memory
+    plt.close(fig4_log)
 
     # Activation histograms
     fig5: plt.Figure
@@ -290,6 +305,9 @@ def plot_activations(
     # Log to WandB if available
     if wandb_run is not None:
         wandb_run.log({"plots/activations/histograms": wandb.Image(fig5)}, step=0)
+
+    # Close figure to free memory
+    plt.close(fig5)
 
 
 def add_component_labeling(ax: plt.Axes, component_labels: list[str], axis: str = "x") -> None:
