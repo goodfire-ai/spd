@@ -1,4 +1,6 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import Any, Protocol
 
 import numpy as np
 import torch
@@ -13,6 +15,24 @@ from transformers import AutoTokenizer, PreTrainedTokenizer
 The bulk of this file is copied from https://github.com/ApolloResearch/e2e_sae
 licensed under MIT, (c) 2024 ApolloResearch.
 """
+
+
+class TokenizerProtocol(Protocol):
+    """Protocol for tokenizers with required attributes for tokenize_and_concatenate."""
+
+    def encode(self, text: str) -> list[int]:
+        """Encode text to token IDs."""
+        ...
+
+    @property
+    def eos_token(self) -> str:
+        """End of sequence token."""
+        ...
+
+    @property
+    def bos_token_id(self) -> int:
+        """Beginning of sequence token ID."""
+        ...
 
 
 class DatasetConfig(BaseModel):
@@ -43,7 +63,7 @@ def _keep_single_column(dataset: Dataset, col_name: str) -> Dataset:
 
 def tokenize_and_concatenate(
     dataset: Dataset,
-    tokenizer: PreTrainedTokenizer,
+    tokenizer: TokenizerProtocol,
     column_name: str,
     max_length: int = 1024,
     add_bos_token: bool = False,
@@ -59,8 +79,6 @@ def tokenize_and_concatenate(
     NOTE: Adapted from
     https://github.com/TransformerLensOrg/TransformerLens/blob/main/transformer_lens/utils.py#L267
     to handle IterableDataset.
-
-    TODO: Fix typing of tokenizer
 
     This tokenization is useful for training language models, as it allows us to efficiently train
     on a large corpus of text of varying lengths (without, eg, a lot of truncation or padding).
@@ -95,8 +113,7 @@ def tokenize_and_concatenate(
     ]:
         text = examples[column_name]
         # Concatenate all the text into a single string, separated by EOS tokens
-        assert hasattr(tokenizer, "eos_token")
-        full_text = tokenizer.eos_token.join(text)  # type: ignore
+        full_text = tokenizer.eos_token.join(text)
 
         # Split the text into chunks for parallel tokenization
         num_chunks = 20
@@ -106,7 +123,7 @@ def tokenize_and_concatenate(
         # Tokenize the chunks using the Tokenizer library
         if to_lower:
             chunks = [
-                chunk.replace(tokenizer.eos_token.lower(), tokenizer.eos_token)  # type: ignore
+                chunk.replace(tokenizer.eos_token.lower(), tokenizer.eos_token)
                 for chunk in chunks
             ]
         tokens = [tokenizer.encode(chunk) for chunk in chunks]  # Get token IDs for each chunk
@@ -122,7 +139,6 @@ def tokenize_and_concatenate(
 
         # Optionally, add BOS token at the beginning of each sequence
         if add_bos_token:
-            assert hasattr(tokenizer, "bos_token_id")
             prefix = np.full((num_batches, 1), tokenizer.bos_token_id)
             tokens = np.concatenate([prefix, tokens], axis=1)
 

@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 """Config classes of various types"""
 
-from typing import Any, ClassVar, Literal, Self
+from pathlib import Path
+from typing import Any, ClassVar, Literal
+from typing_extensions import Self
 
 from pydantic import (
     BaseModel,

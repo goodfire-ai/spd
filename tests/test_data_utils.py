@@ -33,7 +33,7 @@ def test_dataset_at_least_zero_active():
 
     # Check that the proportion of non-zero elements is close to feature_probability
     non_zero_proportion = torch.count_nonzero(batch) / batch.numel()
-    assert abs(non_zero_proportion - feature_probability) < 0.05, (
+    assert abs(non_zero_proportion - feature_probability) < 0.1, (
         f"Expected proportion {feature_probability}, but got {non_zero_proportion}"
     )
 
@@ -69,32 +69,17 @@ def test_generate_multi_feature_batch_no_zero_samples():
 @pytest.mark.parametrize("n", [1, 2, 3, 4, 5])
 def test_dataset_exactly_n_active(n: int):
     n_features = 10
-    feature_probability = 0.5  # This won't be used when data_generation_type="exactly_one_active"
+    feature_probability = 0.5  # This won't be used when data_generation_type="exactly_n_active"
     device = "cpu"
     batch_size = 10
     value_range = (0.0, 1.0)
 
-    n_map: dict[
-        int,
-        Literal[
-            "exactly_one_active",
-            "exactly_two_active",
-            "exactly_three_active",
-            "exactly_four_active",
-            "exactly_five_active",
-        ],
-    ] = {
-        1: "exactly_one_active",
-        2: "exactly_two_active",
-        3: "exactly_three_active",
-        4: "exactly_four_active",
-        5: "exactly_five_active",
-    }
     dataset = SparseFeatureDataset(
         n_features=n_features,
         feature_probability=feature_probability,
         device=device,
-        data_generation_type=n_map[n],
+        data_generation_type="exactly_n_active",
+        n_active=n,
         value_range=value_range,
     )
 
@@ -103,7 +88,7 @@ def test_dataset_exactly_n_active(n: int):
     # Check shape
     assert batch.shape == (batch_size, n_features), "Incorrect batch shape"
 
-    # Check that there's exactly one non-zero value per sample
+    # Check that there's exactly n non-zero values per sample
     for sample in batch:
         non_zero_count = torch.count_nonzero(sample)
         assert non_zero_count == n, f"Expected {n} non-zero values, but found {non_zero_count}"

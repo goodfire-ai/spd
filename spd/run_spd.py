@@ -1,24 +1,24 @@
 """Run SPD on a model."""
 
-from collections.abc import Callable
+from __future__ import annotations
+
+import json
 from pathlib import Path
+from typing import Any, Callable, Union
 
 import matplotlib.pyplot as plt
 import torch
-import torch.nn as nn
 import torch.optim as optim
 import wandb
 from jaxtyping import Bool, Float, Int
-from torch import Tensor
+from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import Config
+from spd.data_utils import SparseFeatureDataset
 from spd.log import logger
-from spd.losses import (
-    calc_ce_losses,
-    calculate_losses,
-)
+from spd.losses import calc_ce_losses, calc_kl_divergence_lm, calculate_losses
 from spd.models.component_model import ComponentModel, init_As_and_Bs_
 from spd.models.component_utils import (
     calc_causal_importances,
@@ -31,32 +31,25 @@ from spd.plotting import (
     plot_ci_histograms,
     plot_mean_component_activation_counts,
 )
-from spd.utils import (
-    calc_kl_divergence_lm,
-    extract_batch_data,
-    get_lr_schedule_fn,
-    get_lr_with_warmup,
-)
+from spd.utils import extract_batch_data, get_lr_schedule_fn, get_lr_with_warmup
+
+wandb.require("core")
 
 
 def get_common_run_name_suffix(config: Config) -> str:
-    """Generate a run suffix based on Config that is common to all experiments."""
-    run_suffix = ""
-    run_suffix += f"nmasks{config.n_mask_samples}_"
-    if config.stochastic_recon_coeff is not None:
-        run_suffix += f"stochrecon{config.stochastic_recon_coeff:.2e}_"
-    if config.stochastic_recon_layerwise_coeff is not None:
-        run_suffix += f"stochreconlayer{config.stochastic_recon_layerwise_coeff:.2e}_"
-    if config.schatten_coeff is not None:
-        run_suffix += f"schatten{config.schatten_coeff:.2e}_"
-    if config.embedding_recon_coeff is not None:
-        run_suffix += f"embedrecon{config.embedding_recon_coeff:.2e}_"
-    run_suffix += f"p{config.pnorm:.2e}_"
-    run_suffix += f"impmin{config.importance_minimality_coeff:.2e}_"
-    run_suffix += f"C{config.C}_"
-    run_suffix += f"sd{config.seed}_"
-    run_suffix += f"lr{config.lr:.2e}_"
-    run_suffix += f"bs{config.batch_size}_"
+    """Common code for setting WandB run names."""
+    run_suffix = f"C{config.C}"
+    run_suffix += f"_imp{config.importance_minimality_coeff:.0e}"
+    if config.n_ci_mlp_neurons > 0:
+        run_suffix += f"_mlp{config.n_ci_mlp_neurons}"
+    if config.stochastic_recon_coeff:
+        run_suffix += f"_srec{config.stochastic_recon_coeff:.0e}"
+    if config.stochastic_recon_layerwise_coeff:
+        run_suffix += f"_srclay{config.stochastic_recon_layerwise_coeff:.0e}"
+    if config.lr_exponential_halflife is not None:
+        run_suffix += f"_hlf{config.lr_exponential_halflife:.0e}"
+    run_suffix += f"_bs{config.batch_size}"
+    run_suffix += f"_pnorm{config.pnorm}"
     return run_suffix
 
 
@@ -64,14 +57,18 @@ def optimize(
     target_model: nn.Module,
     config: Config,
     device: str,
-    train_loader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-    eval_loader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    train_loader: Union[
+        DataLoader[Int[Tensor, "..."]], 
+        DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
+    ],
+    eval_loader: Union[
+        DataLoader[Int[Tensor, "..."]], 
+        DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
+    ],
     n_eval_steps: int,
-    out_dir: Path | None,
-    plot_results_fn: Callable[..., dict[str, plt.Figure]] | None = None,
-    tied_weights: list[tuple[str, str]] | None = None,
+    out_dir: Union[Path, None],
+    plot_results_fn: Union[Callable[..., dict[str, plt.Figure]], None] = None,
+    tied_weights: Union[list[tuple[str, str]], None] = None,
 ) -> None:
     """Run the optimization loop for LM decomposition."""
 

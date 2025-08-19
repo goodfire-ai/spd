@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Residual Linear decomposition script."""
 
 import json
@@ -128,8 +130,6 @@ def main(config_path_or_obj: Path | str | Config) -> None:
     train_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
     eval_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
 
-    # TODO: Below not needed when TMS supports config.n_eval_steps
-    assert config.n_eval_steps is not None, "n_eval_steps must be set"
     optimize(
         target_model=target_model,
         config=config,

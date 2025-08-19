@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # %%
 # Example / sandbox script for running ComponentModel on a pretrained model.
 

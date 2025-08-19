@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Union
 
 from pydantic import BeforeValidator, Field, PlainSerializer
 
@@ -8,12 +10,12 @@ from spd.settings import REPO_ROOT
 WANDB_PATH_PREFIX = "wandb:"
 
 
-def to_root_path(path: str | Path) -> Path:
+def to_root_path(path: Union[str, Path]) -> Path:
     """Converts relative paths to absolute ones, assuming they are relative to the rib root."""
     return Path(path) if Path(path).is_absolute() else Path(REPO_ROOT / path)
 
 
-def from_root_path(path: str | Path) -> Path:
+def from_root_path(path: Union[str, Path]) -> Path:
     """Converts absolute paths to relative ones, relative to the repo root."""
     path = Path(path)
     try:
@@ -23,7 +25,7 @@ def from_root_path(path: str | Path) -> Path:
         return path
 
 
-def validate_path(v: str | Path) -> str | Path:
+def validate_path(v: Union[str, Path]) -> Union[str, Path]:
     """Check if wandb path. If not, convert to relative to repo root."""
     if isinstance(v, str) and v.startswith(WANDB_PATH_PREFIX):
         return v
@@ -33,7 +35,7 @@ def validate_path(v: str | Path) -> str | Path:
 # Type for paths that can either be wandb paths (starting with "wandb:")
 # or regular paths (converted to be relative to repo root)
 ModelPath = Annotated[
-    str | Path,
+    Union[str, Path],
     BeforeValidator(validate_path),
     PlainSerializer(lambda x: str(from_root_path(x)) if isinstance(x, Path) else x),
 ]

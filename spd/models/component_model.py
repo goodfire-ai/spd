@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import fnmatch
 from collections.abc import Mapping
 from contextlib import contextmanager
