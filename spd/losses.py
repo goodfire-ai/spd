@@ -312,6 +312,20 @@ def calculate_losses(
         total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
         loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
 
+    # Unmasked (all-ones) reconstruction layerwise loss
+    if config.unmasked_recon_layerwise_coeff is not None:
+        layerwise_all_ones_masks = [{k: torch.ones_like(v) for k, v in causal_importances.items()}]
+        unmasked_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
+            model=model,
+            batch=batch,
+            device=device,
+            masks=layerwise_all_ones_masks,
+            target_out=target_out,
+            loss_type=config.output_loss_type,
+        )
+        total_loss += config.unmasked_recon_layerwise_coeff * unmasked_recon_layerwise_loss
+        loss_terms["unmasked_recon_layerwise"] = unmasked_recon_layerwise_loss.item()
+
     # Importance minimality loss
     pnorm_value = current_p if current_p is not None else config.pnorm
     importance_minimality_loss = calc_importance_minimality_loss(

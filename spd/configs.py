@@ -132,6 +132,10 @@ class Config(BaseModel):
         default=None,
         description="Coefficient for per-layer recon loss with stochastically sampled masks",
     )
+    unmasked_recon_layerwise_coeff: NonNegativeFloat | None = Field(
+        default=0.0,
+        description="Coefficient for per-layer recon loss with unmasked (all-ones) masks",
+    )
     importance_minimality_coeff: NonNegativeFloat = Field(
         ...,
         description="Coefficient for importance minimality loss",

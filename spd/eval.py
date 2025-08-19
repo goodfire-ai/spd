@@ -422,6 +422,51 @@ class IdentityCIError(StreamingEval):
         return target_metrics
 
 
+class StochasticReconLayerwisePerComponent(StreamingEval):
+    SLOW = True
+
+    def __init__(self, model: ComponentModel, config: Config):
+        self.model = model
+        self.config = config
+        self.per_component_losses = defaultdict[str, list[float]](list)
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        stochastic_masks = calc_stochastic_masks(
+            causal_importances=ci, n_mask_samples=self.config.n_mask_samples
+        )
+        loss_type = self.config.output_loss_type
+
+        for mask_info in stochastic_masks:
+            for component_name in self.model.components:
+                masked_logits = self.model(
+                    batch,
+                    mode="components",
+                    masks={component_name: mask_info[component_name]},
+                )
+
+                if loss_type == "mse":
+                    loss_val = ((masked_logits - target_out) ** 2).mean().item()
+                else:
+                    loss_val = calc_kl_divergence_lm(pred=masked_logits, target=target_out).item()
+
+                self.per_component_losses[component_name].append(loss_val)
+
+    @override
+    def compute(self) -> Mapping[str, float]:
+        out: dict[str, float] = {}
+        for component_name, values in self.per_component_losses.items():
+            if len(values) == 0:
+                continue
+            out[f"stochastic_recon_layerwise/{component_name}"] = sum(values) / len(values)
+        return out
+
+
 EVAL_CLASSES = {
     cls.__name__: cls
     for cls in [
@@ -432,6 +477,7 @@ EVAL_CLASSES = {
         PermutedCIPlots,
         UVPlots,
         IdentityCIError,
+        StochasticReconLayerwisePerComponent,
     ]
 }
 
