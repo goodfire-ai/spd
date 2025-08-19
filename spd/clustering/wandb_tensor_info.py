@@ -15,7 +15,7 @@ from torch import Tensor
 
 def _create_histogram(
     info: dict[str, Any], tensor: Tensor, name: str, logy: bool = True
-) -> plt.Figure:  # pyright: ignore[reportUnusedFunction]
+) -> plt.Figure:
     """Create histogram with stats markers."""
     if info["status"] != "ok" or info["size"] == 0:
         fig: plt.Figure
@@ -96,7 +96,7 @@ def _create_histogram(
     return fig
 
 
-def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:
+def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:  # pyright: ignore[reportUnusedFunction]
     """Create Plotly histogram figure."""
     # Get values for histogram
     values: np.ndarray = tensor.flatten().detach().cpu().numpy()

@@ -1,5 +1,4 @@
 # %%
-from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,7 +7,11 @@ from jaxtyping import Int
 from muutils.dbg import dbg_auto
 from torch import Tensor
 
-from spd.clustering.activations import component_activations, process_activations
+from spd.clustering.activations import (
+    ProcessedActivations,
+    component_activations,
+    process_activations,
+)
 from spd.clustering.merge import merge_iteration_ensemble
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistoryEnsemble
@@ -63,7 +66,7 @@ _ = dbg_auto(COMPONENT_ACTS)
 FILTER_DEAD_THRESHOLD: float = 0.001
 FILTER_MODULES: str = "model.layers.0"
 
-PROCESSED_ACTIVATIONS: dict[str, Any] = process_activations(
+PROCESSED_ACTIVATIONS: ProcessedActivations = process_activations(
     activations=COMPONENT_ACTS,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
     filter_modules=lambda x: x.startswith(FILTER_MODULES),
@@ -71,10 +74,7 @@ PROCESSED_ACTIVATIONS: dict[str, Any] = process_activations(
 )
 
 plot_activations(
-    activations=PROCESSED_ACTIVATIONS["activations_raw"],
-    act_concat=PROCESSED_ACTIVATIONS["activations"],
-    coact=PROCESSED_ACTIVATIONS["coactivations"],
-    labels=PROCESSED_ACTIVATIONS["labels"],
+    processed_activations=PROCESSED_ACTIVATIONS,
     save_pdf=False,
 )
 
@@ -93,8 +93,8 @@ MERGE_CFG: MergeConfig = MergeConfig(
 )
 
 ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
-    activations=PROCESSED_ACTIVATIONS["activations"],
-    component_labels=PROCESSED_ACTIVATIONS["labels"],
+    activations=PROCESSED_ACTIVATIONS.activations,
+    component_labels=PROCESSED_ACTIVATIONS.labels,
     merge_config=MERGE_CFG,
     ensemble_size=2,
 )

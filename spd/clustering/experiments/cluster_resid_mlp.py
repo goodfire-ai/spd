@@ -6,7 +6,11 @@ import torch
 from muutils.dbg import dbg_auto
 from torch import Tensor
 
-from spd.clustering.activations import component_activations, process_activations
+from spd.clustering.activations import (
+    ProcessedActivations,
+    component_activations,
+    process_activations,
+)
 from spd.clustering.merge import merge_iteration, merge_iteration_ensemble
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
@@ -84,7 +88,7 @@ FILTER_DEAD_THRESHOLD: float = 0.1
 
 # Process activations
 # ============================================================
-PROCESSED_ACTIVATIONS: dict[str, Any] = process_activations(
+PROCESSED_ACTIVATIONS: ProcessedActivations = process_activations(
     COMPONENT_ACTS,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
     sort_components=False,  # Test the new sorting functionality
@@ -92,10 +96,7 @@ PROCESSED_ACTIVATIONS: dict[str, Any] = process_activations(
 
 
 plot_activations(
-    activations=PROCESSED_ACTIVATIONS["activations_raw"],
-    act_concat=PROCESSED_ACTIVATIONS["activations"],
-    coact=PROCESSED_ACTIVATIONS["coactivations"],
-    labels=PROCESSED_ACTIVATIONS["labels"],
+    processed_activations=PROCESSED_ACTIVATIONS,
     save_pdf=False,
 )
 
@@ -106,7 +107,7 @@ plot_activations(
 MERGE_CFG: MergeConfig = MergeConfig(
     activation_threshold=0.1,
     alpha=1,
-    iters=int(PROCESSED_ACTIVATIONS["coactivations"].shape[0] * 0.9),
+    iters=int(PROCESSED_ACTIVATIONS.n_components_alive * 0.9),
     merge_pair_sampling_method="range",
     merge_pair_sampling_kwargs={"threshold": 0.0},
     pop_component_prob=0,
@@ -143,9 +144,9 @@ def _plot_func(
 
 
 MERGE_HIST: MergeHistory = merge_iteration(
-    activations=PROCESSED_ACTIVATIONS["activations"],
+    activations=PROCESSED_ACTIVATIONS.activations,
     merge_config=MERGE_CFG,
-    component_labels=PROCESSED_ACTIVATIONS["labels"],
+    component_labels=PROCESSED_ACTIVATIONS.labels,
     plot_function=_plot_func,
 )
 
@@ -167,8 +168,8 @@ plot_merge_history_cluster_sizes(MERGE_HIST)
 # ============================================================
 
 ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
-    activations=PROCESSED_ACTIVATIONS["activations"],
-    component_labels=PROCESSED_ACTIVATIONS["labels"],
+    activations=PROCESSED_ACTIVATIONS.activations,
+    component_labels=PROCESSED_ACTIVATIONS.labels,
     merge_config=MERGE_CFG,
     ensemble_size=4,
 )
@@ -188,14 +189,14 @@ plt.legend()
 # ============================================================
 
 SWEEP_RESULTS: dict[str, Any] = sweep_multiple_parameters(
-    activations=PROCESSED_ACTIVATIONS["activations"],
+    activations=PROCESSED_ACTIVATIONS.activations,
     parameter_sweeps={
         "alpha": [1, 5],
         # "check_threshold": [0.0001, 0.001, 0.01, 0.1, 0.5],
         # "pop_component_prob": [0.0001, 0.01, 0.5],
     },
     base_config=MERGE_CFG.model_dump(mode="json"),  # pyright: ignore[reportArgumentType],
-    component_labels=PROCESSED_ACTIVATIONS["labels"],
+    component_labels=PROCESSED_ACTIVATIONS.labels,
     ensemble_size=4,
 )
 

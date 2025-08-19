@@ -341,7 +341,7 @@ def merge_iteration_ensemble(
     """Run many merge iterations"""
 
     output: list[MergeHistory] = []
-    for _ in tqdm.tqdm(range(ensemble_size), unit="ensemble"):
+    for _ in tqdm(range(ensemble_size), unit="ensemble"):
         # run the merge iteration
         merge_history = merge_iteration(
             activations=activations,

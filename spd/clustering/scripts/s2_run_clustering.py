@@ -234,7 +234,6 @@ def run_clustering(
     )
     dbg_tensor(processed_activations.activations)
 
-
     if plot:
         log("plotting")
         # Import plotting function only when needed
