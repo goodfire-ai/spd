@@ -14,7 +14,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: mfisherman/openmpi:4.1.5-ubuntu20.04   
+      image: mfisherman/openmpi:5.0.8-ubuntu20.04   
     timeout-minutes: 15
     steps:
       - name: Checkout
