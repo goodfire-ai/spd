@@ -54,13 +54,13 @@ def load_merge_histories_from_wandb(
         # Download the artifact using WandB's built-in caching
         artifact_dir: str = merge_history_artifact.download()
 
-        # Find the .zanj file in the downloaded artifact
-        zanj_files: list[Path] = list(Path(artifact_dir).glob("*.zanj"))
-        if not zanj_files:
-            raise ValueError(f"No .zanj file found in artifact for run {run_path}")
+        # Find the .zip file in the downloaded artifact
+        zip_files: list[Path] = list(Path(artifact_dir).glob("*.zip"))
+        if not zip_files:
+            raise ValueError(f"No .zip file found in artifact for run {run_path}")
 
         # Load the merge history
-        merge_history: MergeHistory = ZANJ().read(zanj_files[0])
+        merge_history: MergeHistory = MergeHistory.read(zip_files[0])
         data.append(merge_history)
 
     ensemble = MergeHistoryEnsemble(data=data)
@@ -75,14 +75,14 @@ def load_merge_histories(
     if isinstance(path, str):
         # Single path with wildcards
         paths_: list[Path] = list(Path(path).glob("*.zanj"))
-        data: list[MergeHistory] = [ZANJ().read(p) for p in paths_]
+        data: list[MergeHistory] = [MergeHistory.read(p) for p in paths_]
         ensemble: MergeHistoryEnsemble = MergeHistoryEnsemble(data=data)
         return paths_, ensemble
     elif isinstance(path, list):
         if all(isinstance(p, Path) for p in path):
             # List of file paths
             paths_paths: list[Path] = path  # pyright: ignore[reportAssignmentType]
-            data = [ZANJ().read(p) for p in paths_paths]
+            data = [MergeHistory.read(p) for p in paths_paths]
             ensemble = MergeHistoryEnsemble(data=data)
             return paths_paths, ensemble
         elif all(isinstance(p, str) and (p.startswith("wandb:") or "wandb.ai" in p) for p in path):

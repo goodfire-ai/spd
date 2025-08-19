@@ -72,7 +72,8 @@ def save_group_idxs_artifact(
 ) -> None:
     """Save merge_hist to file and upload as WandB artifact"""
     # Save to file in the same directory as merge history
-    group_idxs_path: Path = save_dir / f"iter_{iteration:04}.zanj"
+    group_idxs_path: Path = save_dir / f"iter_{iteration:04}.zip"
+    group_idxs_path.parent.mkdir(parents=True, exist_ok=True)
     merge_hist.save(group_idxs_path)
 
     # Create and upload artifact
@@ -84,6 +85,7 @@ def save_group_idxs_artifact(
             "batch_name": dataset_stem,
             "iteration": iteration,
             "config": merge_hist.config.model_dump(mode="json"),
+            "config_identifier": merge_hist.config,
         },
     )
     artifact.add_file(str(group_idxs_path))
@@ -111,7 +113,7 @@ def plot_merge_iteration_callback(
             current_merge=current_merge,
             current_coact=current_coact,
             costs=costs,
-            pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType]
+            # pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType]
             iteration=i,
             component_labels=component_labels,
             show=False,  # Don't display the plot
@@ -352,7 +354,7 @@ def run_clustering(
     return hist_save_path
 
 
-def cli():
+def cli(argv: list[str] | None = None) -> None:
     import argparse
 
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -397,8 +399,17 @@ def cli():
         dest="plot",
         help="plotting of activations",
     )
+    parser.add_argument(
+        "--override-json-fd",
+        type=int,
+        default=None,
+        help="Override the JSON file descriptor for structured output (for debugging)",
+    )
 
-    args: argparse.Namespace = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args(argv)
+
+    if args.override_json_fd is not None:
+        os.environ["JSON_FD"] = str(args.override_json_fd)
 
     run_clustering(
         config=args.config,

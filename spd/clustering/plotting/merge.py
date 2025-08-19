@@ -25,7 +25,7 @@ def plot_merge_iteration(
     current_merge: GroupMerge,
     current_coact: Float[Tensor, "k_groups k_groups"],
     costs: Float[Tensor, "k_groups k_groups"],
-    pair_cost: float,
+    # pair_cost: float,
     iteration: int,
     component_labels: list[str] | None = None,
     plot_config: dict[str, Any] | None = None,
@@ -99,7 +99,8 @@ def plot_merge_iteration(
     axs[2].set_xticks(minor_ticks)
     axs[2].set_xticklabels([])  # Remove x-axis tick labels but keep ticks
 
-    fig.suptitle(f"Iteration {iteration} with cost {pair_cost:.4f}")
+    # fig.suptitle(f"Iteration {iteration} with cost {pair_cost:.4f}")
+    fig.suptitle(f"Iteration {iteration}")
     plt.tight_layout()
 
     if plot_config_["save_pdf"]:
