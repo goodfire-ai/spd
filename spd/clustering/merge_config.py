@@ -126,7 +126,6 @@ class MergeConfig(BaseModel):
     @property
     def stable_hash(self) -> str:
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
-    
 
     @property
     def config_identifier(self) -> str:
