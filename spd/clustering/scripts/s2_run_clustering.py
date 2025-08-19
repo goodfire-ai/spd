@@ -406,7 +406,7 @@ def cli():
         device=args.device,
         save_dir=args.save_dir,
         # sort_components=args.sort_components,
-        sort_components=True,
+        sort_components=False,
         plot=args.plot,
     )
 
