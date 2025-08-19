@@ -274,7 +274,7 @@ def init_As_and_Bs_(
 ) -> None:
     """Initialize the A and B matrices.
     1. Normalize every component to 1.
-    2. Take inner product with original model
+    2. Take inner product with target model
     3. This gives you roughly how much overlap there is with the target model.
     4. Scale the Bs by this value (we can choose either matrix)
     """
