@@ -158,6 +158,7 @@ class MergeHistory:
         with zipfile.ZipFile(path, "r") as zf:
             group_idxs: np.ndarray = np.load(io.BytesIO(zf.read("merge.group_idxs.npy")))
             k_groups: np.ndarray = np.load(io.BytesIO(zf.read("merge.k_groups.npy")))
+            selected_pairs: np.ndarray = np.load(io.BytesIO(zf.read("selected_pairs.npy")))
             merges: BatchedGroupMerge = BatchedGroupMerge(
                 group_idxs=torch.from_numpy(group_idxs),
                 k_groups=torch.from_numpy(k_groups),
@@ -168,7 +169,7 @@ class MergeHistory:
 
         return cls(
             merges=merges,
-            selected_pairs=np.load(io.BytesIO(zf.read("selected_pairs.npy"))),
+            selected_pairs=selected_pairs,
             labels=labels,
             config=config,
             wandb_url=metadata["wandb_url"],
