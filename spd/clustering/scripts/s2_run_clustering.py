@@ -100,14 +100,12 @@ def plot_merge_iteration_callback(
     i: int,
     component_labels: list[str],
     wandb_run: wandb.sdk.wandb_run.Run | None,
-    artifact_frequency: int,
     **kwargs: Any,
 ) -> None:
-    """Plot merge iteration at artifact frequency and log to WandB."""
+    """Plot merge iteration and log to WandB."""
     assert kwargs  # Ensure unused kwargs are passed
 
-    # Only plot at artifact frequency (same as when we save artifacts)
-    if wandb_run is not None and i > 0 and i % artifact_frequency == 0:
+    if wandb_run is not None:
         # Create the plot and get the figure
         fig = plot_merge_iteration(
             current_merge=current_merge,
@@ -187,7 +185,6 @@ def run_clustering(
         plot_callback = functools.partial(
             plot_merge_iteration_callback,
             wandb_run=wandb_run,
-            artifact_frequency=config_.wandb_artifact_frequency,
             batch_id=_BATCH_ID,
         )
 

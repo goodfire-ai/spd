@@ -12,6 +12,10 @@
   "batch_size": 1024,
   "wandb_enabled": true,
   "wandb_project": "spd-cluster",
-  "wandb_log_frequency": 1,
-  "wandb_artifact_frequency": 5
+  "intervals": {
+    "stat": 1,
+    "tensor": 5,
+    "plot": 5,
+    "artifact": 5
+  }
 }

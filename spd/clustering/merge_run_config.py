@@ -2,8 +2,9 @@
 
 import hashlib
 import json
+import warnings
 from pathlib import Path
-from typing import Any, Self, override
+from typing import Any, Literal, Self, override
 
 import yaml
 from muutils.misc.numerical import shorten_numerical_to_str
@@ -12,6 +13,18 @@ from pydantic import Field, PositiveInt, model_validator
 from spd.clustering.merge_config import MergeConfig
 from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
 from spd.spd_types import TaskName
+
+# Define interval types and defaults
+IntervalKey = Literal["stat", "tensor", "plot", "artifact"]
+
+IntervalsDict = dict[IntervalKey, PositiveInt]
+
+_DEFAULT_INTERVALS: IntervalsDict = {
+    "stat": 1,  # for k_groups, merge_pair_cost (and semilog), mdl_loss and normed version
+    "tensor": 100,  # for wandb_log_tensor and fraction_* calculations
+    "plot": 100,  # for calling the plotting callback
+    "artifact": 100,  # for calling the artifact callback
+}
 
 
 class MergeRunConfig(MergeConfig):
@@ -49,13 +62,9 @@ class MergeRunConfig(MergeConfig):
         default="spd-cluster",
         description="WandB project name for clustering runs",
     )
-    wandb_log_frequency: PositiveInt = Field(
-        default=1,
-        description="Log metrics to WandB every N iterations",
-    )
-    wandb_artifact_frequency: PositiveInt = Field(
-        default=100,
-        description="Save GroupMerge artifacts to WandB every N iterations",
+    intervals: dict[IntervalKey, PositiveInt] = Field(
+        default_factory=lambda: _DEFAULT_INTERVALS.copy(),
+        description="Intervals for different logging operations",
     )
 
     @model_validator(mode="after")
@@ -67,6 +76,25 @@ class MergeRunConfig(MergeConfig):
         assert self.task_name in TaskName.__args__, (
             f"Invalid task_name: {self.task_name = }, must be in {TaskName.__args__ = }"
         )
+        return self
+
+    @model_validator(mode="after")
+    def validate_intervals(self) -> Self:
+        """Ensure all required interval keys are present."""
+        # warning if any keys are missing
+        missing_keys: set[IntervalKey] = set(_DEFAULT_INTERVALS.keys()) - set(self.intervals.keys())
+        if missing_keys:
+            warnings.warn(
+                f"Missing interval keys in {self.intervals = }: {missing_keys}. Using defaults for those.",
+                UserWarning,
+                stacklevel=1,
+            )
+
+        self.intervals = {
+            **_DEFAULT_INTERVALS,
+            **self.intervals,
+        }
+
         return self
 
     @property
@@ -91,6 +119,7 @@ class MergeRunConfig(MergeConfig):
         return shorten_numerical_to_str(self.iters)
 
     @property
+    @override
     def config_identifier(self) -> str:
         """Unique identifier for this specific config on this specific model.
 

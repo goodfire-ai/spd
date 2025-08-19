@@ -1,7 +1,7 @@
 {
   "activation_threshold": 0.5,
   "alpha": 1.0,
-  "iters": 100,
+  "iters": 5,
   "merge_pair_sampling_method": "range",
   "merge_pair_sampling_kwargs": {"threshold": 0.05},
   "pop_component_prob": 0,
@@ -13,6 +13,10 @@
   "batch_size": 1,
   "wandb_enabled": true,
   "wandb_project": "spd-cluster",
-  "wandb_log_frequency": 1,
-  "wandb_artifact_frequency": 10
+  "intervals": {
+    "stat": 1,
+    "tensor": 2,
+    "plot": 3,
+    "artifact": 4
+  }
 }

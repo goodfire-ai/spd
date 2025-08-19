@@ -18,7 +18,7 @@ from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
-from spd.clustering.merge_run_config import MergeRunConfig
+from spd.clustering.merge_run_config import _DEFAULT_INTERVALS, IntervalsDict, MergeRunConfig
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
 
 
@@ -47,6 +47,7 @@ def _wandb_iter_log(
     semilog_epsilon: float = 1e-3,
 ) -> None:
     """store in merge history, log to wandb, update progress bar, save artifacts, and make plots"""
+    intervals: IntervalsDict = getattr(merge_config, "intervals", _DEFAULT_INTERVALS)
     # compute things we need to log
     # ============================================================
     diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)
@@ -78,64 +79,70 @@ def _wandb_iter_log(
 
     # Log to WandB if enabled
     # ============================================================
-    if wandb_run is not None and iter_idx % getattr(merge_config, "wandb_log_frequency", 100) == 0:
-        # Prepare additional stats
-        group_sizes: Int[Tensor, " k_groups"] = current_merge.components_per_group
-        fraction_singleton_groups: float = (group_sizes == 1).float().mean().item()
-        group_sizes_log1p: Tensor = torch.log1p(group_sizes.float())
+    if wandb_run is not None:
+        # Log basic stats at "stat" interval
+        if iter_idx % intervals["stat"] == 0:
+            wandb_run.log(
+                {
+                    "k_groups": int(k_groups),
+                    "merge_pair_cost": merge_pair_cost,
+                    f"merge_pair_cost_semilog[{semilog_epsilon}]": merge_pair_cost_semilog,
+                    "mdl_loss": float(mdl_loss),
+                    "mdl_loss_norm": float(mdl_loss_norm),
+                },
+                step=iter_idx,
+            )
 
-        fraction_zero_coacts: float = (current_coact == 0).float().mean().item()
-        coact_log1p: Tensor = torch.log1p(current_coact.float())
+        # Log tensors and fraction stats at "tensor" interval
+        if iter_idx % intervals["tensor"] == 0:
+            # Prepare additional stats
+            group_sizes: Int[Tensor, " k_groups"] = current_merge.components_per_group
+            fraction_singleton_groups: float = (group_sizes == 1).float().mean().item()
+            group_sizes_log1p: Tensor = torch.log1p(group_sizes.float())
 
-        tensor_data_for_wandb: dict[str, Tensor] = dict(
-            coactivation=current_coact,
-            costs=costs,
-            group_sizes=group_sizes,
-            group_activations=diag_acts,
-            group_activations_over_sizes=(
-                diag_acts / group_sizes.to(device=diag_acts.device).float()
-            ),
-        )
+            fraction_zero_coacts: float = (current_coact == 0).float().mean().item()
+            coact_log1p: Tensor = torch.log1p(current_coact.float())
 
-        if fraction_singleton_groups > 0:
-            tensor_data_for_wandb["group_sizes.log1p"] = group_sizes_log1p
-        if fraction_zero_coacts > 0:
-            tensor_data_for_wandb["coactivation.log1p"] = coact_log1p
+            tensor_data_for_wandb: dict[str, Tensor] = dict(
+                coactivation=current_coact,
+                costs=costs,
+                group_sizes=group_sizes,
+                group_activations=diag_acts,
+                group_activations_over_sizes=(
+                    diag_acts / group_sizes.to(device=diag_acts.device).float()
+                ),
+            )
 
-        # log the tensors -- this makes histograms, and also stats about the tensors in tensor_metrics
-        wandb_log_tensor(
-            run=wandb_run,
-            data=tensor_data_for_wandb,
-            name="iters",
-            step=iter_idx,
-        )
+            if fraction_singleton_groups > 0:
+                tensor_data_for_wandb["group_sizes.log1p"] = group_sizes_log1p
+            if fraction_zero_coacts > 0:
+                tensor_data_for_wandb["coactivation.log1p"] = coact_log1p
 
-        # log metrics
-        wandb_run.log(
-            {
-                "k_groups": int(k_groups),
-                "merge_pair_cost": merge_pair_cost,
-                f"merge_pair_cost_semilog[{semilog_epsilon}]": merge_pair_cost_semilog,
-                "mdl_loss": float(mdl_loss),
-                "mdl_loss_norm": float(mdl_loss_norm),
-                "fraction_singleton_groups": float(fraction_singleton_groups),
-                "fraction_zero_coacts": float(fraction_zero_coacts),
-            },
-            step=iter_idx,
-        )
+            # log the tensors -- this makes histograms, and also stats about the tensors in tensor_metrics
+            wandb_log_tensor(
+                run=wandb_run,
+                data=tensor_data_for_wandb,
+                name="iters",
+                step=iter_idx,
+            )
+
+            # Also log the fraction stats
+            wandb_run.log(
+                {
+                    "fraction_singleton_groups": float(fraction_singleton_groups),
+                    "fraction_zero_coacts": float(fraction_zero_coacts),
+                },
+                step=iter_idx,
+            )
 
     # Call artifact callback periodically for saving group_idxs
     # ============================================================
-    if (
-        artifact_callback is not None
-        and iter_idx > 0
-        and iter_idx % getattr(merge_config, "wandb_artifact_frequency", 100) == 0
-    ):
+    if artifact_callback is not None and iter_idx > 0 and iter_idx % intervals["artifact"] == 0:
         artifact_callback(merge_history, iter_idx)
 
     # plot if requested
     # ============================================================
-    if plot_function is not None:
+    if plot_function is not None and iter_idx % intervals["plot"] == 0:
         plot_function(
             costs=costs,
             merge_history=merge_history,

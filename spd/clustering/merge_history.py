@@ -164,7 +164,7 @@ class MergeHistory:
             )
             labels: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
             metadata: dict[str, Any] = json.loads(zf.read("metadata.json").decode("utf-8"))
-            config: MergeConfig = MergeConfig.model_validate_json(metadata["config"])
+            config: MergeConfig = MergeConfig.model_validate(metadata["config"])
 
         return cls(
             merges=merges,

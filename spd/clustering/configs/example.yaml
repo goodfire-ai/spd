@@ -22,5 +22,8 @@ batch_size: 64  # Batch size for processing -- number of samples for each run in
 # WandB configuration
 wandb_enabled: false  # Enable WandB logging
 wandb_project: spd-cluster  # WandB project name
-wandb_log_frequency: 1  # Log every N iterations
-wandb_artifact_frequency: 100  # Save artifacts every N iterations
+intervals:
+  stat: 1       # for k_groups, merge_pair_cost, mdl_loss 
+  tensor: 100   # for wandb_log_tensor and fraction_* calculations
+  plot: 100     # for calling the plotting callback
+  artifact: 100 # for calling the artifact callback
