@@ -13,7 +13,7 @@ import wandb
 import wandb.sdk.wandb_run
 from jaxtyping import Float, Int
 from matplotlib import pyplot as plt
-from muutils.dbg import dbg_auto
+from muutils.dbg import dbg_auto, dbg_tensor
 from torch import Tensor
 from zanj import ZANJ
 
@@ -204,7 +204,7 @@ def run_clustering(
 
     # get, process, and plot component activations
     # ======================================================================
-    log("computing activations")
+    log(f"computing activations on {device = }")
     component_acts: dict[str, Tensor] = component_activations(
         model=component_model,
         batch=data_batch,
@@ -215,6 +215,7 @@ def run_clustering(
     )
 
     if wandb_run is not None:
+        log("logging stats to wandb")
         wandb_log_tensor(wandb_run, component_acts, "component_activations", step=0, single=True)
     else:
         dbg_auto(component_acts)
@@ -231,6 +232,8 @@ def run_clustering(
         filter_modules=config_.filter_modules,
         sort_components=sort_components,
     )
+    dbg_tensor(processed_activations.activations)
+
 
     if plot:
         log("plotting")

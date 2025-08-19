@@ -285,12 +285,7 @@ def process_activations(
         sort_components: Whether to sort components by similarity within each module
     """
 
-    def log(msg: str) -> None:
-        """Log a message to the console"""
-        print(f"\t[pa] {msg}")
-
     # reshape -- special cases for llms
-    log("reshaping")
     # ============================================================
     activations_: dict[str, Float[Tensor, " n_steps C"]]
     if seq_mode == "concat":
@@ -312,14 +307,12 @@ def process_activations(
     # ============================================================
 
     # filter activations for only the modules we want
-    log("filter modules")
     if filter_modules is not None:
         activations_ = {key: act for key, act in activations_.items() if filter_modules(key)}
 
     # Sort components within each module if requested
     sort_indices_dict: dict[str, Int[Tensor, " C"]] = {}
     if sort_components:
-        log("sort")
         sorted_activations = {}
         for key, act in activations_.items():
             sorted_act, sort_idx = sort_module_components_by_similarity(act)
@@ -328,7 +321,6 @@ def process_activations(
         activations_ = sorted_activations
 
     # compute the labels and total component count
-    log("compute labels")
     total_c: int = 0
     labels: list[str] = list()
     for key, act in activations_.items():
@@ -342,13 +334,11 @@ def process_activations(
         total_c += c
 
     # concat the activations
-    log("concat")
     act_concat: Float[Tensor, " n_steps c"] = torch.cat(
         [activations_[key] for key in activations_], dim=-1
     )
 
     # filter dead components
-    log("filter dead components")
     filtered_components: FilteredActivations = filter_dead_components(
         activations=act_concat,
         labels=labels,

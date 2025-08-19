@@ -6,7 +6,7 @@
   "merge_pair_sampling_kwargs": {"threshold": 0.05},
   "pop_component_prob": 0,
   "filter_dead_threshold": 0.5,
-  "module_name_filter": "model.layers.0",
+  "module_name_filter": null,
   "model_path": "wandb:goodfire/spd/runs/okd93sk2",
   "task_name": "lm",
   "n_batches": 1,
