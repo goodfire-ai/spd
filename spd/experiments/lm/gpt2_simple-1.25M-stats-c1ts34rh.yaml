@@ -1,0 +1,20 @@
+model_path: wandb:goodfire/spd-play/runs/c1ts34rh
+stats:
+  h.0.ln_1:
+    sigma_avg: 0.028240166567265988
+  h.0.ln_2:
+    sigma_avg: 0.02835928600281477
+  h.1.ln_1:
+    sigma_avg: 0.033890058510005476
+  h.1.ln_2:
+    sigma_avg: 0.03405493091791868
+  h.2.ln_1:
+    sigma_avg: 0.038599050417542455
+  h.2.ln_2:
+    sigma_avg: 0.0388024190813303
+  h.3.ln_1:
+    sigma_avg: 0.04278482597321272
+  h.3.ln_2:
+    sigma_avg: 0.043013818375766275
+  ln_f:
+    sigma_avg: 0.047013497389853

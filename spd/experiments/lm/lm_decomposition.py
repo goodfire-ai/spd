@@ -5,7 +5,6 @@ from pathlib import Path
 
 import fire
 import wandb
-from transformers import PreTrainedModel
 
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
@@ -74,12 +73,15 @@ def main(
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
 
     hf_model_class = resolve_class(config.pretrained_model_class)
-    assert issubclass(hf_model_class, PreTrainedModel), (
-        f"Model class {hf_model_class} should be a subclass of PreTrainedModel which "
-        "defines a `from_pretrained` method"
+    # assert issubclass(hf_model_class, PreTrainedModel), (
+    #     f"Model class {hf_model_class} should be a subclass of PreTrainedModel which "
+    #     "defines a `from_pretrained` method"
+    # )
+    assert hasattr(hf_model_class, "from_pretrained"), (
+        f"Model class {hf_model_class} should have a `from_pretrained` method"
     )
     assert config.pretrained_model_name_hf is not None
-    target_model = hf_model_class.from_pretrained(config.pretrained_model_name_hf)
+    target_model = hf_model_class.from_pretrained(config.pretrained_model_name_hf)  # pyright: ignore[reportAttributeAccessIssue]
     target_model.eval()
 
     if is_main_process():
@@ -127,7 +129,7 @@ def main(
 
     eval_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
-        hf_tokenizer_path=config.pretrained_model_name_hf,
+        hf_tokenizer_path=config.tokenizer_name,
         split=config.task_config.eval_data_split,
         n_ctx=config.task_config.max_seq_len,
         is_tokenized=config.task_config.is_tokenized,
