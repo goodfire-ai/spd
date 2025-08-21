@@ -15,6 +15,7 @@ from spd.utils.distributed_utils import (
     get_device,
     init_distributed,
     is_main_process,
+    sync_across_processes,
     with_distributed_cleanup,
 )
 from spd.utils.general_utils import (
@@ -24,7 +25,12 @@ from spd.utils.general_utils import (
     set_seed,
 )
 from spd.utils.run_utils import get_output_dir
-from spd.utils.wandb_utils import init_wandb
+from spd.utils.wandb_utils import (
+    download_wandb_file,
+    fetch_latest_wandb_checkpoint,
+    fetch_wandb_run_dir,
+    init_wandb,
+)
 
 
 @with_distributed_cleanup
@@ -81,7 +87,24 @@ def main(
         f"Model class {hf_model_class} should have a `from_pretrained` method"
     )
     assert config.pretrained_model_name_hf is not None
-    target_model = hf_model_class.from_pretrained(config.pretrained_model_name_hf)  # pyright: ignore[reportAttributeAccessIssue]
+
+    # Resolve potential W&B run reference to a local checkpoint path once (rank 0), then load on all ranks
+    resolved_model_name_or_path = config.pretrained_model_name_hf
+    if resolved_model_name_or_path.startswith("wandb:"):
+        wandb_run_path = resolved_model_name_or_path.removeprefix("wandb:")
+        api = wandb.Api()
+        run = api.run(wandb_run_path)
+        checkpoint_file = fetch_latest_wandb_checkpoint(run, prefix="model")
+        run_dir = fetch_wandb_run_dir(run.id)
+        local_checkpoint_path = run_dir / checkpoint_file.name
+        if is_main_process():
+            # Only rank 0 downloads the file if missing; others will see it after barrier
+            download_wandb_file(run, run_dir, checkpoint_file.name)
+        # Ensure the file is present before non-zero ranks proceed to read it
+        sync_across_processes()
+        resolved_model_name_or_path = str(local_checkpoint_path)
+
+    target_model = hf_model_class.from_pretrained(resolved_model_name_or_path)  # pyright: ignore[reportAttributeAccessIssue]
     target_model.eval()
 
     if is_main_process():
