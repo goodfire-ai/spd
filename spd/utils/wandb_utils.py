@@ -27,7 +27,7 @@ WORKSPACE_TEMPLATES = {
 
 def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None = None) -> File:
     """Fetch the latest checkpoint from a wandb run."""
-    filenames = [file.name for file in run.files() if file.name.endswith(".pth")]
+    filenames = [file.name for file in run.files() if file.name.endswith((".pth", ".pt"))]
     latest_checkpoint_name = _fetch_latest_checkpoint_name(filenames, prefix)
     latest_checkpoint_remote = run.file(latest_checkpoint_name)
     return latest_checkpoint_remote
