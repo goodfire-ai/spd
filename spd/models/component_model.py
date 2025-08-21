@@ -136,6 +136,9 @@ class ComponentModel(LoadableModule):
         """
         if self.pretrained_model_output_attr is None:
             return raw_output
+        elif self.pretrained_model_output_attr.startswith("idx_"):
+            idx_val = int(self.pretrained_model_output_attr.split("_")[1])
+            return raw_output[idx_val]
         else:
             return getattr(raw_output, self.pretrained_model_output_attr)
 
@@ -220,7 +223,7 @@ class ComponentModel(LoadableModule):
                     C=C,
                     d_in=d_in,
                     d_out=d_out,
-                    bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                    bias=module.bias if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
                 )
                 component.init_from_target_weight(module.weight.T)
             elif isinstance(module, nn.Embedding):

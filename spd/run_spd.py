@@ -12,8 +12,10 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.optim as optim
 import wandb
+import yaml
 from jaxtyping import Float, Int
 from PIL import Image
+from simple_stories_train.models.gpt2_simple import LayerNorm
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -24,6 +26,7 @@ from spd.eval import evaluate
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
+from spd.settings import REPO_ROOT
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
@@ -40,6 +43,7 @@ from spd.utils.general_utils import (
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
+from spd.utils.module_utils import get_nested_module_attr
 from spd.utils.run_utils import save_file
 
 
@@ -90,6 +94,18 @@ def optimize(
         gate_hidden_dims=config.gate_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
+
+    # TEMP. maybe handle in the target model config in simple_stories_train or something cleaner
+    # Patch the std values in layernorm to the values given in replace_std_values_path
+    if config.replace_std_values_path is not None:
+        with open(REPO_ROOT / config.replace_std_values_path) as f:
+            std_values = yaml.safe_load(f)
+        for name, stats in std_values["stats"].items():
+            # TODO: I thought there was a built-in python or pytorch way to do this. Replace if so
+            module = get_nested_module_attr(model, "patched_model." + name)
+            assert isinstance(module, LayerNorm)
+            module.std = stats["sigma_avg"]
+
     model.to(device)
 
     # Wrap model with DDP if distributed
@@ -124,7 +140,12 @@ def optimize(
     component_params: list[torch.nn.Parameter] = []
     gate_params: list[torch.nn.Parameter] = []
     for name, component in component_model.components.items():
-        component_params.extend(list(component.parameters()))
+        for n, p in component.named_parameters():
+            # We don't optimize component biases
+            if "bias" in n:
+                p.requires_grad = False
+            else:
+                component_params.append(p)
         gate_params.extend(list(component_model.gates[name].parameters()))
 
     assert len(component_params) > 0, "No parameters found in components to optimize"

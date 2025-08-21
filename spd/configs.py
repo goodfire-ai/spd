@@ -281,6 +281,10 @@ class Config(BaseModel):
         default=None,
         description="Name or path of the tokenizer to use when loading an LM",
     )
+    replace_std_values_path: Path | None = Field(
+        default=None,
+        description="Path to a YAML file containing std values to replace in the model",
+    )
 
     # --- Task Specific ---
     task_config: TaskConfig = Field(
