@@ -43,7 +43,6 @@ from spd.utils.general_utils import (
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
-from spd.utils.module_utils import get_nested_module_attr
 from spd.utils.run_utils import save_file
 
 
@@ -98,28 +97,37 @@ def optimize(
     # TEMP. maybe handle in the target model config in simple_stories_train or something cleaner
     # Patch the std values in layernorm to the values given in replace_std_values_path
     if config.replace_std_values_path is not None:
+        logger.info("Before loading std values")
         with open(REPO_ROOT / config.replace_std_values_path) as f:
             std_values = yaml.safe_load(f)
+        logger.info("After loading std values")
         for name, stats in std_values["stats"].items():
             # TODO: I thought there was a built-in python or pytorch way to do this. Replace if so
-            module = get_nested_module_attr(model, "patched_model." + name)
+            # module = get_nested_module_attr(model, "patched_model." + name)
+            logger.info(f"before loading {name}")
+            module = [m for n, m in model.named_modules() if n == "patched_model." + name][0]
+            logger.info(f"after loading {name}")
             assert isinstance(module, LayerNorm)
             module.std = stats["sigma_avg"]
 
     model.to(device)
 
+    logger.info("Before DDP")
     # Wrap model with DDP if distributed
     world_size = get_world_size()
     wrapped_model: nn.Module = model
     if world_size > 1:
+        logger.info("after world size")
         if device.startswith("cuda"):
             # Parse device string to get device id for GPU
             device_id = int(device.split(":")[1]) if ":" in device else 0
+            logger.info("after device id")
             wrapped_model = torch.nn.parallel.DistributedDataParallel(
                 model,
                 device_ids=[device_id],
                 output_device=device_id,
             )
+            logger.info("after wrapped model")
         else:
             # For CPU, don't pass device_ids or output_device
             wrapped_model = torch.nn.parallel.DistributedDataParallel(model)
@@ -127,6 +135,8 @@ def optimize(
         component_model = wrapped_model.module  # type: ignore[attr-defined]
     else:
         component_model = model
+
+    logger.info("After DDP")
 
     if tied_weights is not None:
         # Tie component weights. Assume that the first element is a transpose of the second element
@@ -168,7 +178,7 @@ def optimize(
         device=device,
         ci_alive_threshold=config.ci_alive_threshold,
     )
-
+    logger.info("Start of training loop")
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
 
@@ -203,7 +213,7 @@ def optimize(
                     detach_inputs=False,
                 )
             )
-
+            logger.info("After causal importances")
             alive_tracker.watch_batch(causal_importances)
 
             # Calculate current p value with annealing
@@ -215,7 +225,7 @@ def optimize(
                 p_anneal_final_p=config.p_anneal_final_p,
                 p_anneal_end_frac=config.p_anneal_end_frac,
             )
-
+            logger.info("After current p")
             microbatch_total_loss, microbatch_loss_terms = calculate_losses(
                 model=component_model,
                 batch=batch,
@@ -228,29 +238,29 @@ def optimize(
                 current_p=current_p,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
-
+            logger.info("After backward pass")
             for loss_name, loss_value in microbatch_loss_terms.items():
                 microbatch_log_data[f"train/loss/{loss_name}"] += (
                     loss_value / config.gradient_accumulation_steps
                 )
-
+            logger.info("After loss terms")
             for layer_name, layer_ci in causal_importances.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
                 microbatch_log_data[f"train/{layer_name}/l0"] += (
                     l0_val / config.gradient_accumulation_steps
                 )
-
+            logger.info("After l0")
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
             if is_distributed():
                 avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
                 microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
-
+            logger.info("After avg metrics")
             # Already reduced alive counts across ranks, so no need to reduce again
             for layer_name, n_alive_count in alive_tracker.n_alive().items():
                 n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
                 microbatch_log_data[n_alive_key] = n_alive_count
-
+            logger.info("After n_alive")
             grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
             for param in component_params + gate_params:
                 if param.grad is not None:
