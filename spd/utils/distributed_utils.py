@@ -186,6 +186,12 @@ def all_reduce(
         dist.all_reduce(tensor, op=op)
     return tensor
 
+def broadcast_str(value: str) -> str:
+    assert dist.is_initialized()
+    payload: list[str] = [value if is_main_process() else ""]
+    dist.broadcast_object_list(payload, src=0)
+    return payload[0]
+
 
 def avg_metrics_across_ranks(metrics: Mapping[str, float], device: str) -> Mapping[str, float]:
     """Get the average of metrics across ranks."""
