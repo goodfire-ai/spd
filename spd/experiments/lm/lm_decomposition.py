@@ -5,6 +5,7 @@ from pathlib import Path
 
 import fire
 import wandb
+from simple_stories_train.run_info import RunInfo as SSRunInfo
 
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
@@ -12,8 +13,10 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
+    broadcast_str,
     get_device,
     init_distributed,
+    is_distributed,
     is_main_process,
     with_distributed_cleanup,
 )
@@ -81,7 +84,16 @@ def main(
         f"Model class {hf_model_class} should have a `from_pretrained` method"
     )
     assert config.pretrained_model_name_hf is not None
-    target_model = hf_model_class.from_pretrained(config.pretrained_model_name_hf)  # pyright: ignore[reportAttributeAccessIssue]
+
+    if is_distributed() and config.pretrained_model_name_hf.startswith("wandb:"):
+        # Only download the model on rank 0 then broadcast the path to all ranks
+        checkpoint_path: Path = Path("")
+        if is_main_process():
+            checkpoint_path = SSRunInfo.from_path(config.pretrained_model_name_hf).checkpoint_path
+        checkpoint_path = Path(broadcast_str(str(checkpoint_path)))
+        target_model = hf_model_class.from_pretrained(checkpoint_path)  # pyright: ignore[reportAttributeAccessIssue]
+    else:
+        target_model = hf_model_class.from_pretrained(config.pretrained_model_name_hf)  # pyright: ignore[reportAttributeAccessIssue]
     target_model.eval()
 
     if is_main_process():
@@ -95,7 +107,6 @@ def main(
             train_config=None,
             task_name=None,
         )
-
     # --- Load Data --- #
     if is_main_process():
         logger.info("Loading dataset...")
@@ -117,7 +128,6 @@ def main(
         f"Microbatch size {config.microbatch_size} is not divisible by world size {dist_state.world_size}. "
     )
     train_rank_microbatch_size = config.microbatch_size // dist_state.world_size
-
     train_loader, _tokenizer = create_data_loader(
         dataset_config=train_data_config,
         batch_size=train_rank_microbatch_size,
@@ -126,7 +136,6 @@ def main(
         ddp_rank=dist_state.rank,
         ddp_world_size=dist_state.world_size,
     )
-
     eval_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
         hf_tokenizer_path=config.tokenizer_name,
