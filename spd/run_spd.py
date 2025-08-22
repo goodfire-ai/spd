@@ -43,7 +43,6 @@ from spd.utils.general_utils import (
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
-from spd.utils.module_utils import get_nested_module_attr
 from spd.utils.run_utils import save_file
 
 
@@ -94,15 +93,13 @@ def optimize(
         gate_hidden_dims=config.gate_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
-
     # TEMP. maybe handle in the target model config in simple_stories_train or something cleaner
     # Patch the std values in layernorm to the values given in replace_std_values_path
     if config.replace_std_values_path is not None:
         with open(REPO_ROOT / config.replace_std_values_path) as f:
             std_values = yaml.safe_load(f)
         for name, stats in std_values["stats"].items():
-            # TODO: I thought there was a built-in python or pytorch way to do this. Replace if so
-            module = get_nested_module_attr(model, "patched_model." + name)
+            module = model.get_submodule("patched_model." + name)
             assert isinstance(module, LayerNorm)
             module.std = stats["sigma_avg"]
 
@@ -153,7 +150,6 @@ def optimize(
     optimizer = optim.AdamW(component_params + gate_params, lr=config.lr, weight_decay=0)
 
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
-    logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
     n_params = sum(
         component.original.weight.numel()
@@ -168,7 +164,6 @@ def optimize(
         device=device,
         ci_alive_threshold=config.ci_alive_threshold,
     )
-
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
 
@@ -203,7 +198,6 @@ def optimize(
                     detach_inputs=False,
                 )
             )
-
             alive_tracker.watch_batch(causal_importances)
 
             # Calculate current p value with annealing
@@ -215,7 +209,6 @@ def optimize(
                 p_anneal_final_p=config.p_anneal_final_p,
                 p_anneal_end_frac=config.p_anneal_end_frac,
             )
-
             microbatch_total_loss, microbatch_loss_terms = calculate_losses(
                 model=component_model,
                 batch=batch,
@@ -228,29 +221,24 @@ def optimize(
                 current_p=current_p,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
-
             for loss_name, loss_value in microbatch_loss_terms.items():
                 microbatch_log_data[f"train/loss/{loss_name}"] += (
                     loss_value / config.gradient_accumulation_steps
                 )
-
             for layer_name, layer_ci in causal_importances.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
                 microbatch_log_data[f"train/{layer_name}/l0"] += (
                     l0_val / config.gradient_accumulation_steps
                 )
-
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
             if is_distributed():
                 avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
                 microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
-
             # Already reduced alive counts across ranks, so no need to reduce again
             for layer_name, n_alive_count in alive_tracker.n_alive().items():
                 n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
                 microbatch_log_data[n_alive_key] = n_alive_count
-
             grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
             for param in component_params + gate_params:
                 if param.grad is not None:

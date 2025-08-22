@@ -11,7 +11,6 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
-from transformers import PreTrainedModel
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
@@ -314,10 +313,7 @@ class ComponentModel(LoadableModule):
                 *args, module_names=module_names, **kwargs
             )
         else:
-            # target forward pass of the patched model
-            raw_out = self.patched_model(*args, **kwargs)
-            out = self._extract_output(raw_out)
-            return out
+            return self._forward_target(*args, **kwargs)
 
     @contextmanager
     def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
@@ -404,6 +400,23 @@ class ComponentModel(LoadableModule):
             for module in self.components_or_modules.values():
                 module.forward_mode = None
 
+    def _forward_target(self, *args: Any, **kwargs: Any) -> Any:
+        """Forward pass of the target model."""
+        for module in self.components_or_modules.values():
+            assert module.forward_mode is None, (
+                f"Component should be in pristine state, but forward_mode is {module.forward_mode}"
+            )
+            module.forward_mode = "original"
+        try:
+            out = self.patched_model(*args, **kwargs)
+        finally:
+            for module in self.components_or_modules.values():
+                module.forward_mode = None
+
+        out = self._extract_output(out)
+
+        return out
+
     @staticmethod
     def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:
         """Download the relevant files from a wandb run.
@@ -431,22 +444,15 @@ class ComponentModel(LoadableModule):
 
         # Load the target model
         model_class = resolve_class(config.pretrained_model_class)
+        assert hasattr(model_class, "from_pretrained"), (
+            f"Model class {model_class} should have a `from_pretrained` method"
+        )
         if config.pretrained_model_name_hf is not None:
-            assert issubclass(model_class, PreTrainedModel), (
-                f"Model class {model_class} should be a subclass of PreTrainedModel which "
-                "defines a `from_pretrained` method"
-            )
-            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name_hf)
+            pretrained_path = config.pretrained_model_name_hf
         else:
-            assert issubclass(model_class, LoadableModule), (
-                f"Model class {model_class} should be a subclass of LoadableModule which "
-                "defines a `from_pretrained` method"
-            )
             assert run_info.config.pretrained_model_path is not None
-            target_model_unpatched = model_class.from_pretrained(
-                run_info.config.pretrained_model_path
-            )
-
+            pretrained_path = run_info.config.pretrained_model_path
+        target_model_unpatched = model_class.from_pretrained(pretrained_path)  # pyright: ignore[reportAttributeAccessIssue]
         target_model_unpatched.eval()
         target_model_unpatched.requires_grad_(False)
 
