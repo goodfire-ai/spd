@@ -1,6 +1,7 @@
 from typing import Any, ClassVar
 
 import numpy as np
+import torch
 from datasets import Dataset, IterableDataset, load_dataset
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
@@ -8,7 +9,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
-from spd.utils.distributed_utils import is_distributed
+from spd.log import logger
 
 
 class DatasetConfig(BaseModel):
@@ -24,6 +25,7 @@ class DatasetConfig(BaseModel):
     """The name of the column in the dataset that contains the data (tokenized or non-tokenized).
     Typically 'input_ids' for datasets stored with e2e_sae/scripts/upload_hf_dataset.py, or "tokens"
     for datasets tokenized in TransformerLens (e.g. NeelNanda/pile-10k)."""
+    shuffle_each_epoch: bool = True
 
 
 def _keep_single_column(dataset: Dataset, col_name: str) -> Dataset:
@@ -126,7 +128,9 @@ def tokenize_and_concatenate(
     # Apply the tokenization function to the dataset
     if isinstance(dataset, IterableDataset):
         tokenized_dataset = dataset.map(
-            tokenize_function, batched=True, remove_columns=[column_name]
+            tokenize_function,
+            batched=True,
+            remove_columns=[column_name],
         )
     else:
         tokenized_dataset = dataset.map(
@@ -141,7 +145,7 @@ def tokenize_and_concatenate(
 def create_data_loader(
     dataset_config: DatasetConfig,
     batch_size: int,
-    buffer_size: int = 1000,
+    buffer_size: int,
     global_seed: int = 0,
     ddp_rank: int = 0,
     ddp_world_size: int = 1,
@@ -154,6 +158,17 @@ def create_data_loader(
     - Each rank gets a different subset of the data
     - Data is distributed deterministically based on rank
     - No data is duplicated across ranks
+
+    For shuffling datasets between epochs:
+    - When dp>1 and streaming=True, we shard the dataset across ranks and use the default sampler.
+        If the dataset has fewer dataset shards than we have ddp ranks, we split up the dataset
+        by example. We also use dataset.set_epoch(epoch) during training.
+    - When dp>1 and streaming=False, we use a DistributedSampler and run
+        sampler.set_epoch(epoch) during training.
+    - When dp=1 and streaming=True, we use the default sampler and run
+        dataset.set_epoch(epoch) during training.
+    - When dp=1 and streaming=False, we use the default sampler and set shuffle=True on the
+        DataLoader.
 
     Args:
         dataset_config: The configuration for the dataset.
@@ -175,9 +190,25 @@ def create_data_loader(
     )
     seed = dataset_config.seed if dataset_config.seed is not None else global_seed
 
+    is_ddp = ddp_world_size > 1
+
     if dataset_config.streaming:
-        assert ddp_world_size == 1, "DDP with streaming datasets is not yet supported."
         assert isinstance(dataset, IterableDataset)
+        logger.warning(
+            "WARNING: Streaming is currently quite slow and not well tested. In general, we suggest"
+            " setting streaming=False and having the dataset download (and cache)."
+        )
+        if is_ddp:
+            logger.warning("WARNING: Streaming with ddp has not been well tested. Use at own risk.")
+            ds_num_shards = getattr(dataset, "num_shards", None)
+            if isinstance(ds_num_shards, int) and ds_num_shards >= ddp_world_size:
+                dataset = dataset.shard(num_shards=ddp_world_size, index=ddp_rank)
+            else:
+                # Fallback: example-level partitioning before shuffle
+                dataset = dataset.filter(
+                    lambda _ex, idx, r=ddp_rank, ws=ddp_world_size: idx % ws == r,
+                    with_indices=True,
+                )
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     else:
         assert isinstance(dataset, Dataset)
@@ -208,21 +239,49 @@ def create_data_loader(
         )
 
     sampler = None
-    if not dataset_config.streaming and is_distributed():
+    if not dataset_config.streaming and is_ddp:
         sampler = DistributedSampler(
             torch_dataset,  # pyright: ignore[reportArgumentType]
             num_replicas=ddp_world_size,
             rank=ddp_rank,
-            shuffle=False,  # Already shuffled above
+            shuffle=dataset_config.shuffle_each_epoch,
             seed=seed,
             drop_last=True,
         )
+
+    # Ensure determinicity when not distributed and not streaming
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(seed)
 
     loader = DataLoader[Dataset | IterableDataset](
         torch_dataset,  # pyright: ignore[reportArgumentType]
         batch_size=batch_size,
         sampler=sampler,
-        shuffle=False,
+        shuffle=(
+            sampler is None and dataset_config.shuffle_each_epoch and not dataset_config.streaming
+        ),
         drop_last=True,
+        generator=generator,
     )
     return loader, tokenizer
+
+
+def loop_dataloader[T](dl: DataLoader[T]):
+    """Loop over a dataloader, resetting the iterator when it is exhausted.
+
+    Ensures that each epoch gets different data, even when using a distributed sampler.
+    """
+    epoch = 0
+    dl_iter = iter(dl)
+    while True:
+        try:
+            yield next(dl_iter)
+        except StopIteration:
+            logger.warning("Dataloader exhausted, resetting iterator.")
+            epoch += 1
+            if isinstance(dl.sampler, DistributedSampler):
+                dl.sampler.set_epoch(epoch)
+            if isinstance(dl.dataset, IterableDataset):
+                dl.dataset.set_epoch(epoch)
+            dl_iter = iter(dl)
+            yield next(dl_iter)

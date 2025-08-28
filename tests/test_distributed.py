@@ -74,6 +74,7 @@ TEST_CONFIG = {
         "column_name": "story",
         "train_data_split": "train[:100]",
         "eval_data_split": "test[:100]",
+        "shuffle_each_epoch": False,  # Need False in order to maintain determinicity
     },
     # --- Distributed ---
     "dist_backend": "gloo",  # Want to run this test on CPU

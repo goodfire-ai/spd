@@ -24,10 +24,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
         n_mask_samples=1,
         gate_type="vector_mlp",
         gate_hidden_dims=[128],
-        target_module_patterns=[
-            "transformer.h.*.attn.c_attn", 
-            "transformer.h.*.attn.c_proj"
-        ],
+        target_module_patterns=["transformer.h.*.attn.c_attn", "transformer.h.*.attn.c_proj"],
         # Loss Coefficients
         faithfulness_coeff=200,
         stochastic_recon_coeff=1.0,
@@ -60,7 +57,9 @@ def test_gpt_2_decomposition_happy_path() -> None:
             EvalMetricConfig(classname="CIHistograms", extra_init_kwargs={"n_batches_accum": 5}),
             EvalMetricConfig(classname="ComponentActivationDensity"),
             EvalMetricConfig(classname="CI_L0"),
-            EvalMetricConfig(classname="CEandKLLosses", extra_init_kwargs={"rounding_threshold": 0.0})
+            EvalMetricConfig(
+                classname="CEandKLLosses", extra_init_kwargs={"rounding_threshold": 0.0}
+            ),
         ],
         # Pretrained model info
         pretrained_model_class="transformers.GPT2LMHeadModel",
@@ -77,11 +76,11 @@ def test_gpt_2_decomposition_happy_path() -> None:
             column_name="text",
             train_data_split="train[:100]",
             eval_data_split="validation[:100]",
-        )
+        ),
     )
 
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
-    
+
     # Create a GPT-2 model
     hf_model_class = resolve_class(config.pretrained_model_class)
     assert issubclass(hf_model_class, PreTrainedModel), (
@@ -97,9 +96,10 @@ def test_gpt_2_decomposition_happy_path() -> None:
         hf_tokenizer_path=config.pretrained_model_name_hf,
         split=config.task_config.train_data_split,
         n_ctx=config.task_config.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
+        is_tokenized=config.task_config.is_tokenized,
+        streaming=config.task_config.streaming,
         column_name=config.task_config.column_name,
+        seed=None,
     )
 
     train_loader, _tokenizer = create_data_loader(
@@ -114,15 +114,16 @@ def test_gpt_2_decomposition_happy_path() -> None:
         hf_tokenizer_path=config.pretrained_model_name_hf,
         split=config.task_config.eval_data_split,
         n_ctx=config.task_config.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
+        is_tokenized=config.task_config.is_tokenized,
+        streaming=config.task_config.streaming,
         column_name=config.task_config.column_name,
+        seed=None,
     )
     eval_loader, _ = create_data_loader(
         dataset_config=eval_data_config,
         batch_size=config.batch_size,
         buffer_size=config.task_config.buffer_size,
-        global_seed=config.seed,
+        global_seed=config.seed + 1,
     )
 
     # Run optimize function

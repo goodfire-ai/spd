@@ -9,7 +9,7 @@ from typing import cast
 
 import streamlit as st
 import torch
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from spd.configs import Config
 from spd.experiments.lm.configs import LMTaskConfig
@@ -24,7 +24,7 @@ class ModelData:
     """Core model data that gets cached."""
 
     model: ComponentModel
-    tokenizer: AutoTokenizer
+    tokenizer: PreTrainedTokenizer
     config: Config
     gates: dict[str, GateMLPs | VectorGateMLPs]
     components: dict[str, LinearComponents | EmbeddingComponents]

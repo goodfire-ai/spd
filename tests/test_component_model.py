@@ -221,7 +221,7 @@ def test_correct_parameters_require_grad(component_model: ComponentModel):
     for cm in component_model.components_or_modules.values():
         if isinstance(cm.original, nn.Linear | RadfordConv1D):
             assert not cm.original.weight.requires_grad
-            if cm.original.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
+            if cm.original.bias is not None:  # pyright: ignore [reportUnnecessaryComparison]
                 assert not cm.original.bias.requires_grad
             assert isinstance(cm.components, LinearComponents)
             if cm.components.bias is not None:

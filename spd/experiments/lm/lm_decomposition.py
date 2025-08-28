@@ -99,12 +99,14 @@ def main(
         logger.info("Loading dataset...")
     train_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
-        hf_tokenizer_path=config.pretrained_model_name_hf,
+        hf_tokenizer_path=config.tokenizer_name,
         split=config.task_config.train_data_split,
         n_ctx=config.task_config.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
+        is_tokenized=config.task_config.is_tokenized,
+        streaming=config.task_config.streaming,
         column_name=config.task_config.column_name,
+        shuffle_each_epoch=config.task_config.shuffle_each_epoch,
+        seed=None,
     )
 
     # Keep per-process batch size constant to maintain scale of all metrics so we can simply average
@@ -128,9 +130,11 @@ def main(
         hf_tokenizer_path=config.pretrained_model_name_hf,
         split=config.task_config.eval_data_split,
         n_ctx=config.task_config.max_seq_len,
-        is_tokenized=False,
-        streaming=False,
+        is_tokenized=config.task_config.is_tokenized,
+        streaming=config.task_config.streaming,
         column_name=config.task_config.column_name,
+        shuffle_each_epoch=config.task_config.shuffle_each_epoch,
+        seed=None,
     )
 
     assert config.eval_batch_size % dist_state.world_size == 0 and config.eval_batch_size > 0, (
@@ -142,7 +146,7 @@ def main(
         dataset_config=eval_data_config,
         batch_size=eval_rank_batch_size,
         buffer_size=config.task_config.buffer_size,
-        global_seed=config.seed,
+        global_seed=config.seed + 1,
         ddp_rank=dist_state.rank,
         ddp_world_size=dist_state.world_size,
     )
