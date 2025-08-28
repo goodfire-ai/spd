@@ -1,5 +1,5 @@
-# --- WandB ---Add a comment on line R1Add diff commentMarkdown input: edit mode selected.WritePreviewAdd a suggestionHeadingBoldItalicQuoteCodeLinkUnordered listNumbered listTask listMentionReferenceSaved repliesAdd FilesPaste, drop, or click to add filesCancelCommentStart a review
-# wandb_project: spd
+# --- WandB ---
+wandb_project: spd
 # wandb_project: null
 wandb_run_name: null
 wandb_run_name_prefix: ""
