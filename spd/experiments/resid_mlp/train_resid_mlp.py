@@ -27,7 +27,7 @@ wandb.require("core")
 
 
 class ResidMLPTrainConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="allow", frozen=True)
     wandb_project: str | None = None  # The name of the wandb project (if None, don't log to wandb)
     seed: int = 0
     resid_mlp_config: ResidualMLPConfig
