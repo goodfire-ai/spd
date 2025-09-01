@@ -36,11 +36,11 @@ class EvalMetricConfig(BaseModel):
         description="Extra keyword arguments to pass to the class constructor besides `model: ComponentModel` and `config: Config`",
     )
 
-    def _get_metric_class(self) -> type:
+    def _get_metric_class(self) -> type | None:
         available_classes = importlib.import_module("spd.eval").EVAL_CLASSES
         cls = available_classes.get(self.classname)
         if cls is None:
-            raise ValueError(
+            logger.warning(
                 f"Metric class {self.classname!r} not found. Available classes: {available_classes.keys()}"
             )
         return cls
@@ -48,7 +48,8 @@ class EvalMetricConfig(BaseModel):
     @model_validator(mode="after")
     def validate_class_kwargs(self) -> Self:
         cls = self._get_metric_class()
-
+        if cls is None:
+            return self
         sig = inspect.signature(cls.__init__)
         # Skip 'self' plus the first two actual parameters (model: ComponentModel, config: Config)
         params_after_required = list(sig.parameters.values())[3:]
@@ -58,9 +59,9 @@ class EvalMetricConfig(BaseModel):
         try:
             sig_extra_only.bind(**self.extra_init_kwargs)
         except TypeError as e:
-            # replace the error as e will include something like
-            # "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
-            raise ValueError(f"Invalid kwargs for {self.classname!r}: {e}") from None
+            # Raise a warning instead of an error
+            # e.g. "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
+            logger.warning(f"Invalid kwargs for {self.classname!r}: {e}")
 
         return self
 

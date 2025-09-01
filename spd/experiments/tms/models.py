@@ -126,6 +126,7 @@ class TMSModel(LoadableModule):
         tms_model.load_state_dict(
             torch.load(run_info.checkpoint_path, weights_only=True, map_location="cpu")
         )
+        tms_model.tie_weights_()
         return tms_model
 
     @classmethod
