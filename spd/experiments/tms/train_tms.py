@@ -25,7 +25,7 @@ wandb.require("core")
 
 
 class TMSTrainConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="allow", frozen=True)
     wandb_project: str | None = None  # The name of the wandb project (if None, don't log to wandb)
     tms_model_config: TMSModelConfig
     feature_probability: float
