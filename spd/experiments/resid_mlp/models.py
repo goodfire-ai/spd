@@ -28,7 +28,7 @@ class ResidualMLPPaths(BaseModel):
 
 
 class ResidualMLPConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="allow", frozen=True)
     n_features: PositiveInt
     d_embed: PositiveInt
     d_mlp: PositiveInt
