@@ -124,12 +124,7 @@ def optimize(
     component_params: list[torch.nn.Parameter] = []
     gate_params: list[torch.nn.Parameter] = []
     for name, component in component_model.components.items():
-        for n, p in component.named_parameters():
-            # We don't optimize component biases
-            if "bias" in n:
-                p.requires_grad = False
-            else:
-                component_params.append(p)
+        component_params.extend(list(component.parameters()))
         gate_params.extend(list(component_model.gates[name].parameters()))
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
