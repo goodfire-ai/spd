@@ -16,7 +16,7 @@ licensed under MIT, (c) 2024 ApolloResearch.
 
 
 class DatasetConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="allow", frozen=True)
     name: str = "lennart-finke/SimpleStories"
     is_tokenized: bool = True
     hf_tokenizer_path: str | None = None
