@@ -1,4 +1,5 @@
 import fnmatch
+from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -126,6 +127,8 @@ class ComponentModel(LoadableModule):
         """Extract the desired output from the model's raw output.
 
         If pretrained_model_output_attr is None, returns the raw output directly.
+        If pretrained_model_output_attr starts with "idx_", returns the index specified by the
+        second part of the string. E.g. "idx_0" returns the first element of the raw output.
         Otherwise, returns the specified attribute from the raw output.
 
         Args:
@@ -136,6 +139,15 @@ class ComponentModel(LoadableModule):
         """
         if self.pretrained_model_output_attr is None:
             return raw_output
+        elif self.pretrained_model_output_attr.startswith("idx_"):
+            idx_val = int(self.pretrained_model_output_attr.split("_")[1])
+            assert isinstance(raw_output, Sequence), (
+                f"raw_output must be a sequence, not {type(raw_output)}"
+            )
+            assert idx_val < len(raw_output), (
+                f"Index {idx_val} out of range for raw_output of length {len(raw_output)}"
+            )
+            return raw_output[idx_val]
         else:
             return getattr(raw_output, self.pretrained_model_output_attr)
 
