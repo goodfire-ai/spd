@@ -5,7 +5,6 @@ from pathlib import Path
 
 import fire
 import wandb
-from transformers import PreTrainedModel
 
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
@@ -73,13 +72,12 @@ def main(
     device = get_device()
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
 
-    hf_model_class = resolve_class(config.pretrained_model_class)
-    assert issubclass(hf_model_class, PreTrainedModel), (
-        f"Model class {hf_model_class} should be a subclass of PreTrainedModel which "
-        "defines a `from_pretrained` method"
+    pretrained_model_class = resolve_class(config.pretrained_model_class)
+    assert hasattr(pretrained_model_class, "from_pretrained"), (
+        f"Model class {pretrained_model_class} should have a `from_pretrained` method"
     )
     assert config.pretrained_model_name_hf is not None
-    target_model = hf_model_class.from_pretrained(config.pretrained_model_name_hf)
+    target_model = pretrained_model_class.from_pretrained(config.pretrained_model_name_hf)  # pyright: ignore[reportAttributeAccessIssue]
     target_model.eval()
 
     if is_main_process():
