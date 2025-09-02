@@ -125,7 +125,7 @@ def main(
 
     eval_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
-        hf_tokenizer_path=config.pretrained_model_name_hf,
+        hf_tokenizer_path=config.tokenizer_name,
         split=config.task_config.eval_data_split,
         n_ctx=config.task_config.max_seq_len,
         is_tokenized=config.task_config.is_tokenized,
