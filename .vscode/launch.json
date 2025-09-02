@@ -26,7 +26,7 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/spd/scripts/run.py",
-            "args": ["--experiments", "tms_5-2", "--sweep", "--n_agents", "2"],
+            "args": ["--experiments", "tms_5-2", "--sweep", "--n-agents", "2"],
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,
