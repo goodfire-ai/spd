@@ -323,10 +323,7 @@ class ComponentModel(LoadableModule):
                 *args, module_names=module_names, **kwargs
             )
         else:
-            # target forward pass of the patched model
-            raw_out = self.patched_model(*args, **kwargs)
-            out = self._extract_output(raw_out)
-            return out
+            return self._forward_target(*args, **kwargs)
 
     @contextmanager
     def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
@@ -355,6 +352,23 @@ class ComponentModel(LoadableModule):
             for component in self.components_or_modules.values():
                 component.forward_mode = None
                 component.mask = None
+
+    def _forward_target(self, *args: Any, **kwargs: Any) -> Any:
+        """Forward pass of the target model."""
+        for module in self.components_or_modules.values():
+            assert module.forward_mode is None, (
+                f"Component should be in pristine state, but forward_mode is {module.forward_mode}"
+            )
+            module.forward_mode = "original"
+        try:
+            out = self.patched_model(*args, **kwargs)
+        finally:
+            for module in self.components_or_modules.values():
+                module.forward_mode = None
+
+        out = self._extract_output(out)
+
+        return out
 
     def _forward_with_components(
         self,
