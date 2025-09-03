@@ -67,6 +67,7 @@ def create_slurm_array_script(
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}
         #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
+        #SBATCH --partition=h100-dev
 
         # Create job-specific working directory
         WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
