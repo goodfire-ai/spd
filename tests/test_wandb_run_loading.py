@@ -22,16 +22,22 @@ def _from_pretrained(canonical_run: str) -> ComponentModel:
     return ComponentModel.from_pretrained(canonical_run)
 
 
+CANONICAL_EXPS = [
+    (exp_name, exp_config.canonical_run, from_func)
+    for exp_name, exp_config in EXPERIMENT_REGISTRY.items()
+    if exp_config.canonical_run is not None
+    for from_func in [_from_run_info, _from_pretrained]
+]
+
+
 @pytest.mark.requires_wandb
 @pytest.mark.slow
-@pytest.mark.parametrize("from_func", [_from_run_info, _from_pretrained])
-def test_loading_from_wandb(from_func: Callable[[str], ComponentModel]) -> None:
-    for exp_name, exp_config in EXPERIMENT_REGISTRY.items():
-        if exp_config.canonical_run is None:
-            # No canonical run for this experiment
-            continue
-        try:
-            from_func(exp_config.canonical_run)
-        except Exception as e:
-            e.add_note(f"Error loading {exp_name} from {exp_config.canonical_run}")
-            raise e
+@pytest.mark.parametrize("exp_name, canonical_run, from_func", CANONICAL_EXPS)
+def test_loading_from_wandb(
+    exp_name: str, canonical_run: str, from_func: Callable[[str], ComponentModel]
+) -> None:
+    try:
+        from_func(canonical_run)
+    except Exception as e:
+        e.add_note(f"Error loading {exp_name} from {canonical_run}")
+        raise e

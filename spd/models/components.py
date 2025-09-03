@@ -142,6 +142,8 @@ class Components(ABC, nn.Module):
 class LinearComponents(Components):
     """A floating point linear component. The basic building block of SPD."""
 
+    bias: Float[Tensor, "... d_out"] | None
+
     def __init__(
         self,
         C: int,
@@ -152,7 +154,9 @@ class LinearComponents(Components):
         super().__init__(C, v_dim=d_in, u_dim=d_out)  # NOTE: linear weights are (d_out, d_in)
         self.d_in = d_in
         self.d_out = d_out
-        self.bias = bias
+
+        # We don't train biases in SPD
+        self.register_buffer("bias", bias)
 
     @property
     @override
