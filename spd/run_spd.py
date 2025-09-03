@@ -40,6 +40,7 @@ from spd.utils.general_utils import (
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
+from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
 
@@ -90,6 +91,10 @@ def optimize(
         gate_hidden_dims=config.gate_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
+
+    if config.replace_std_values_path is not None:
+        # Patch the std values in layernorm to the fixed values given in replace_std_values_path
+        replace_std_values_in_layernorm(model, config.replace_std_values_path)
     model.to(device)
 
     # Wrap model with DDP if distributed

@@ -10,27 +10,27 @@ n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["model.layers.0.mlp.gate_proj"]
+target_module_patterns: ["h.2.mlp.c_proj", "h.1.attn.q_proj",]
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1e3
+faithfulness_coeff: 1e7
 recon_coeff: null
-stochastic_recon_coeff: null
+stochastic_recon_coeff: 1
 recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1
-importance_minimality_coeff: 1e-3
+importance_minimality_coeff: 1e-4
 schatten_coeff: null
 embedding_recon_coeff: null
 is_embed_unembed_recon: false
-pnorm: 1.0
+pnorm: 0.9
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 32
+batch_size: 6
 steps: 50_000
-lr: 3e-4
+lr: 1e-4
 lr_schedule: cosine
-lr_warmup_pct: 0.01
+lr_warmup_pct: 0
 lr_exponential_halflife: null
 gradient_accumulation_steps: 1
 
@@ -54,10 +54,10 @@ eval_metrics:
       rounding_threshold: 0.0
 
 # --- Pretrained model info ---
-pretrained_model_class: transformers.LlamaForCausalLM
-pretrained_model_name_hf: SimpleStories/SimpleStories-1.25M
-pretrained_model_output_attr: logits
-tokenizer_name: SimpleStories/SimpleStories-1.25M
+pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
+pretrained_model_name_hf: wandb:goodfire/spd/runs/syhzse3u # With ln
+pretrained_model_output_attr: idx_0
+tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # We'll load this from wandb in future
 
 # --- Task Specific ---
 task_config:
@@ -67,7 +67,6 @@ task_config:
   column_name: "story"
   train_data_split: "train"
   eval_data_split: "test"
-  streaming: True
 
 
 # Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54

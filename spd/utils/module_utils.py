@@ -1,13 +1,18 @@
 import math
 from functools import reduce
+from pathlib import Path
 from typing import Any, Literal
 
 import einops
 import torch
 import torch.nn as nn
+import yaml
 from jaxtyping import Float
+from simple_stories_train.models.gpt2_simple import LayerNorm
 from torch import Tensor
 from torch.nn.init import calculate_gain
+
+from spd.settings import REPO_ROOT
 
 # This is equivalent to `torch.nn.init._NonlinearityType`, but for some reason this is not always
 # importable. see https://github.com/goodfire-ai/spd/actions/runs/16927877557/job/47967138342
@@ -79,3 +84,16 @@ def init_param_(
     std: float = gain / math.sqrt(fan_val)
     with torch.no_grad():
         param.normal_(mean, std, generator=generator)
+
+
+def replace_std_values_in_layernorm(
+    component_model: nn.Module, replace_std_values_path: Path
+) -> None:
+    with open(REPO_ROOT / replace_std_values_path) as f:
+        std_values = yaml.safe_load(f)
+    for name, std in std_values["stats"].items():
+        module = component_model.get_submodule("patched_model." + name)
+        assert isinstance(module, LayerNorm), (
+            f"Expected {name} to be a LayerNorm instance, got {type(module)}"
+        )
+        module.std = std
