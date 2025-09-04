@@ -5,7 +5,6 @@ from pathlib import Path
 
 import fire
 import wandb
-from simple_stories_train.run_info import RunInfo as SSRunInfo
 
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
@@ -13,10 +12,8 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
-    broadcast_str,
     get_device,
     init_distributed,
-    is_distributed,
     is_main_process,
     with_distributed_cleanup,
 )
@@ -79,17 +76,37 @@ def main(
     assert hasattr(pretrained_model_class, "from_pretrained"), (
         f"Model class {pretrained_model_class} should have a `from_pretrained` method"
     )
-    assert config.pretrained_model_name_hf is not None
+    assert config.pretrained_model_name is not None
 
-    if is_distributed() and config.pretrained_model_name_hf.startswith("wandb:"):
-        # Only download the model on rank 0 then broadcast the path to all ranks
-        checkpoint_path = Path("")
-        if is_main_process():
-            checkpoint_path = SSRunInfo.from_path(config.pretrained_model_name_hf).checkpoint_path
-        checkpoint_path = Path(broadcast_str(str(checkpoint_path)))
-    else:
-        checkpoint_path = config.pretrained_model_name_hf
-    target_model = pretrained_model_class.from_pretrained(config.pretrained_model_name_hf)  # pyright: ignore[reportAttributeAccessIssue]
+    # ln_stds: dict[str, float] | None = None
+    target_model = pretrained_model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
+    # if config.pretrained_model_class.startswith("simple_stories_train"):
+    #     # Need to check if this model had enable_ln_ablation set to True.
+    #     if is_distributed():
+    #         if is_main_process():
+    #             run_info = SSRunInfo.from_path(config.pretrained_model_name)
+    #         else:
+    #             run_info = None
+    #         run_info = broadcast_obj(run_info)
+    #         assert run_info is not None
+    #     else:
+    #         run_info = SSRunInfo.from_path(config.pretrained_model_name)
+    #     if run_info.config_dict["enable_ln_ablation"]:
+    #         ln_stds = run_info.ln_stds
+    #         assert ln_stds is not None, "Run had enable_ln_ablation set to True but no ln_stds"
+    #     assert hasattr(pretrained_model_class, "from_run_info")
+    #     target_model = pretrained_model_class.from_run_info(run_info)  # pyright: ignore[reportAttributeAccessIssue]
+    # else:
+    #     if is_distributed():
+    #         # Only download the model on rank 0 then broadcast the path to all ranks
+    #         if is_main_process():
+    #             target_model = pretrained_model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
+    #         else:
+    #             target_model = None
+    #         target_model = broadcast_obj(target_model)
+    #         assert target_model is not None
+    #     else:
+    #         target_model = pretrained_model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
     target_model.eval()
 
     if is_main_process():

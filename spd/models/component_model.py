@@ -454,12 +454,12 @@ class ComponentModel(LoadableModule):
 
         # Load the target model
         model_class = resolve_class(config.pretrained_model_class)
-        if config.pretrained_model_name_hf is not None:
+        if config.pretrained_model_name is not None:
             assert issubclass(model_class, PreTrainedModel), (
                 f"Model class {model_class} should be a subclass of PreTrainedModel which "
                 "defines a `from_pretrained` method"
             )
-            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name_hf)
+            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name)
         else:
             assert issubclass(model_class, LoadableModule), (
                 f"Model class {model_class} should be a subclass of LoadableModule which "

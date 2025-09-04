@@ -56,7 +56,7 @@ eval_metrics:
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.GPT2LMHeadModel
-pretrained_model_name_hf: SimpleStories/test-SimpleStories-gpt2-1.25M
+pretrained_model_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 pretrained_model_output_attr: logits
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 
