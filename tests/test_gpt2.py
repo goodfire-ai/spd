@@ -64,7 +64,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
         # Pretrained model info
         pretrained_model_class="transformers.GPT2LMHeadModel",
         pretrained_model_path=None,
-        pretrained_model_name_hf="SimpleStories/test-SimpleStories-gpt2-1.25M",
+        pretrained_model_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
         pretrained_model_output_attr="logits",
         tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
         # Task Specific
@@ -87,13 +87,13 @@ def test_gpt_2_decomposition_happy_path() -> None:
         f"Model class {hf_model_class} should be a subclass of PreTrainedModel which "
         "defines a `from_pretrained` method"
     )
-    assert config.pretrained_model_name_hf is not None
-    target_model = hf_model_class.from_pretrained(config.pretrained_model_name_hf)
+    assert config.pretrained_model_name is not None
+    target_model = hf_model_class.from_pretrained(config.pretrained_model_name)
     target_model.eval()
 
     train_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
-        hf_tokenizer_path=config.pretrained_model_name_hf,
+        hf_tokenizer_path=config.pretrained_model_name,
         split=config.task_config.train_data_split,
         n_ctx=config.task_config.max_seq_len,
         is_tokenized=config.task_config.is_tokenized,
@@ -111,7 +111,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
 
     eval_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
-        hf_tokenizer_path=config.pretrained_model_name_hf,
+        hf_tokenizer_path=config.pretrained_model_name,
         split=config.task_config.eval_data_split,
         n_ctx=config.task_config.max_seq_len,
         is_tokenized=config.task_config.is_tokenized,
