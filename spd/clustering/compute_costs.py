@@ -74,12 +74,6 @@ def compute_merge_costs(
     device: torch.device = coact.device
     ranks: Float[Tensor, " k_groups"] = merges.components_per_group.to(device=device).float()
     s_diag: Float[Tensor, " k_groups"] = torch.diag(coact).to(device=device)
-    # dbg_auto(ranks)
-    # dbg_auto(diag)
-    # dbg_auto(coact)
-    # dbg_auto(diag @ ranks.unsqueeze(1))
-    # dbg_auto(ranks @ diag.unsqueeze(1))
-    # dbg_auto(ranks.unsqueeze(0) + ranks.unsqueeze(1))
     # term_si_rpj: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) * ranks.view(1, -1)
     # term_si_rpj: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) * (ranks.view(1, -1) + 1/alpha)
     term_si_rpi: Float[Tensor, " k_groups"] = s_diag * ranks
@@ -96,7 +90,6 @@ def compute_merge_costs(
     # )
 
     coact_OR: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) + s_diag.view(1, -1) - coact
-    # dbg_auto(coact_OR)
 
     # (s_\Sigma - s_i - s_j) log((c-1)/c)
     # + s_{i,j} log(c-1) - s_i log(c) - s_j log(c)
@@ -106,14 +99,11 @@ def compute_merge_costs(
         s_diag.sum() - s_diag.view(-1, 1) - s_diag.view(1, -1)
     ) * math.log2((k_groups - 1) / k_groups)
 
-    # dbg_auto(s_other)
-
     bits_local: Float[Tensor, "k_groups k_groups"] = (
         coact_OR * math.log2(k_groups - 1)
         - s_diag.view(-1, 1) * math.log2(k_groups)
         - s_diag.view(1, -1) * math.log2(k_groups)
     )
-    # dbg_auto(bits_local)
 
     penalty: Float[Tensor, "k_groups k_groups"] = (
         coact_OR * rank_sum  # s_{i,j} r(P_{i,j})
@@ -121,10 +111,7 @@ def compute_merge_costs(
         - term_si_rpi.view(1, -1)  # s_j r(P_j)
     )
 
-    # dbg_auto(penalty)
-
     output: Float[Tensor, "k_groups k_groups"] = s_other + bits_local + alpha * penalty
-    # dbg_auto(output)
     return output
 
 
@@ -148,15 +135,12 @@ def recompute_coacts_merge_pair(
     )
 
     # coactivations with the new merged group
-    # dbg_tensor(activation_mask_grp)
-    # dbg_tensor(activation_mask)
     coact_with_merge: Float[Tensor, " k_groups"] = (
         activation_mask_grp.float() @ activation_mask.float()
     )
     new_group_idx: int = min(merge_pair)
     remove_idx: int = max(merge_pair)
     new_group_self_coact: float = activation_mask_grp.float().sum().item()
-    # dbg_tensor(coact_with_merge)
 
     # assemble the merge pair
     merge_new: GroupMerge = merges.merge_groups(
@@ -186,7 +170,6 @@ def recompute_coacts_merge_pair(
     coact_new: Float[Tensor, "k_groups-1 k_groups-1"] = coact_temp[mask, :][:, mask]
     # add in the self-coactivation of the new group
     coact_new[new_group_idx, new_group_idx] = new_group_self_coact
-    # dbg_tensor(coact_new)
 
     # reindex mask
     activation_mask_new: Float[Tensor, "samples ..."] = activation_mask.clone()
@@ -194,8 +177,6 @@ def recompute_coacts_merge_pair(
     activation_mask_new[:, new_group_idx] = activation_mask_grp
     # remove the old group
     activation_mask_new = activation_mask_new[:, mask]
-
-    # dbg_tensor(activation_mask_new)
 
     return (
         merge_new,
@@ -217,13 +198,9 @@ def recompute_coacts_pop_group(
 ]:
     # sanity check dims
     # ==================================================
-    # dbg_tensor(coact)
-    # dbg_tensor(activation_mask)
-    # dbg_tensor(activation_mask_orig)
 
     k_groups: int = coact.shape[0]
     n_samples: int = activation_mask.shape[0]
-    # n_components: int = activation_mask_orig.shape[1]
     k_groups_new: int = k_groups + 1
     assert coact.shape[1] == k_groups, "Coactivation matrix must be square"
     assert activation_mask.shape[1] == k_groups, (
@@ -245,18 +222,6 @@ def recompute_coacts_pop_group(
 
     # activations of the "remainder" -- everything other than the component we are popping out,
     # in the group we're popping it out of
-    # dims: dict[str, int] = dict(
-    # 	n_samples=n_samples,
-    # 	k_groups=k_groups,
-    # 	k_groups_new=k_groups_new,
-    # 	group_size_old=group_size_old,
-    # 	group_size_new=group_size_new,
-    # 	n_components=n_components,
-    # )
-    # dbg_auto(dims)
-    # dbg_tensor(acts_pop)
-    # dbg_tensor(merges.components_in_group(group_idx))
-
     acts_remainder: Bool[Tensor, " samples"] = (
         activation_mask_orig[
             :, [i for i in merges.components_in_group(group_idx) if i != component_idx]
@@ -275,9 +240,6 @@ def recompute_coacts_pop_group(
     # then replace the group we are popping out of with the remainder
     activation_mask_new[:, group_idx] = acts_remainder
 
-    # dbg_tensor(acts_remainder)
-    # dbg_tensor(activation_mask_new)
-
     # assemble the new coactivation matrix
     # ==================================================
     coact_new: Float[Tensor, "k_groups+1 k_groups+1"] = torch.full(
@@ -293,11 +255,6 @@ def recompute_coacts_pop_group(
     coact_remainder: Float[Tensor, " k_groups"] = (
         acts_remainder.float() @ activation_mask_new.float()
     )
-
-    # dbg_tensor(coact)
-    # dbg_tensor(coact_new)
-    # dbg_tensor(coact_pop)
-    # dbg_tensor(coact_remainder)
 
     # replace the relevant rows and columns
     coact_new[group_idx, :] = coact_remainder

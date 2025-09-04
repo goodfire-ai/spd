@@ -18,12 +18,20 @@ from spd.spd_types import TaskName
 IntervalKey = Literal["stat", "tensor", "plot", "artifact"]
 
 IntervalsDict = dict[IntervalKey, PositiveInt]
+"""Type alias for intervals dictionary
+
+- `stat`: logging statistics (e.g., k_groups, merge_pair_cost, mdl_loss)
+- `tensor`: logging tensors (e.g., wandb_log_tensor, fraction calculations)
+- `plot`: generating plots
+- `artifact`: creating artifacts (checkpoints)
+
+"""
 
 _DEFAULT_INTERVALS: IntervalsDict = {
-    "stat": 1,  # for k_groups, merge_pair_cost (and semilog), mdl_loss and normed version
-    "tensor": 100,  # for wandb_log_tensor and fraction_* calculations
-    "plot": 100,  # for calling the plotting callback
-    "artifact": 100,  # for calling the artifact callback
+    "stat": 1,
+    "tensor": 100,
+    "plot": 100,
+    "artifact": 100,
 }
 
 
@@ -99,8 +107,10 @@ class MergeRunConfig(MergeConfig):
 
     @property
     def wandb_decomp_model(self) -> str:
-        """Extract the WandB run ID of the source decomposition from the model_path"""
-        # Format: wandb:entity/project/run_id or wandb:entity/project/runs/run_id
+        """Extract the WandB run ID of the source decomposition from the model_path
+
+        Format: wandb:entity/project/run_id or wandb:entity/project/runs/run_id
+        """
         parts: list[str] = self.model_path.replace("wandb:", "").split("/")
         if len(parts) >= 3:
             # Handle both formats: with and without 'runs' in path

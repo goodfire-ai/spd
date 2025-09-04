@@ -76,7 +76,6 @@ class MergeHistory:
         current_merge: GroupMerge,
     ) -> None:
         """Add data for one iteration."""
-        # other data
         self.selected_pairs[idx] = np.array(selected_pair, dtype=np.int16)
         self.merges[idx] = current_merge
 

@@ -94,7 +94,7 @@ def save_group_idxs_artifact(
 
 def plot_merge_iteration_callback(
     costs: torch.Tensor,
-    merge_history: MergeHistory,
+    # merge_history: MergeHistory,
     current_merge: Any,
     current_coact: torch.Tensor,
     i: int,
@@ -111,7 +111,7 @@ def plot_merge_iteration_callback(
             current_merge=current_merge,
             current_coact=current_coact,
             costs=costs,
-            # pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType]
+            # pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],
             iteration=i,
             component_labels=component_labels,
             show=False,  # Don't display the plot

@@ -16,7 +16,8 @@ from torch import Tensor
 def _create_histogram(
     info: dict[str, Any], tensor: Tensor, name: str, logy: bool = True
 ) -> plt.Figure:
-    """Create histogram with stats markers."""
+    """Create matplotlib histogram with stats markers."""
+    # sanity check
     if info["status"] != "ok" or info["size"] == 0:
         fig: plt.Figure
         ax: plt.Axes
@@ -25,7 +26,7 @@ def _create_histogram(
         ax.set_title(f"{name} - {info['status']}")
         return fig
 
-    # Get values for histogram
+    # make basic hist
     values: np.ndarray = tensor.flatten().detach().cpu().numpy()
     if info["has_nans"]:
         values = values[~np.isnan(values)]
@@ -98,19 +99,14 @@ def _create_histogram(
 
 def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:  # pyright: ignore[reportUnusedFunction]
     """Create Plotly histogram figure."""
-    # Get values for histogram
+    # get the values and stats about them
     values: np.ndarray = tensor.flatten().detach().cpu().numpy()
-
-    # Remove NaNs if present
     if np.isnan(values).any():
         values = values[~np.isnan(values)]
-
-    # Get tensor stats for annotations
     info: dict[str, Any] = array_info(tensor)
 
     # Create Plotly histogram
     fig: go.Figure = go.Figure()
-
     fig.add_trace(
         go.Histogram(
             x=values,
@@ -126,12 +122,10 @@ def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:  # pyright:
         median_val: float = info["median"]
         std_val: float = info["std"]
 
-        # Add mean line
         fig.add_vline(
             x=mean_val, line_dash="solid", line_color="red", annotation_text=f"μ={mean_val:.3g}"
         )
 
-        # Add median line
         fig.add_vline(
             x=median_val,
             line_dash="solid",
@@ -139,7 +133,6 @@ def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:  # pyright:
             annotation_text=f"x̃={median_val:.3g}",
         )
 
-        # Add std lines
         if std_val:
             fig.add_vline(
                 x=mean_val + std_val, line_dash="dash", line_color="orange", annotation_text="μ+σ"

@@ -78,7 +78,7 @@ def sort_module_components_by_similarity(
     if n_components <= 1:
         return activations, torch.arange(n_components, device=activations.device)
 
-    # Compute coactivation matrix for this module
+    # Compute coactivation matrix
     coact = activations.T @ activations
 
     # Convert to similarity matrix (normalize by diagonal)
