@@ -26,7 +26,7 @@ pnorm: 0.9
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 6
+batch_size: 16
 steps: 50_000
 lr: 1e-4
 lr_schedule: cosine
@@ -55,7 +55,7 @@ eval_metrics:
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
-pretrained_model_name_hf: wandb:goodfire/spd/runs/syhzse3u # With ln
+pretrained_model_name: wandb:goodfire/spd/runs/syhzse3u # With ln
 pretrained_model_output_attr: idx_0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # We'll load this from wandb in future
 

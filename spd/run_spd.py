@@ -73,6 +73,7 @@ def optimize(
     n_eval_steps: int,
     out_dir: Path | None,
     tied_weights: list[tuple[str, str]] | None = None,
+    ln_stds: dict[str, float] | None = None,
 ) -> None:
     """Run the optimization loop for LM decomposition."""
 
@@ -92,9 +93,9 @@ def optimize(
         pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
 
-    if config.replace_std_values_path is not None:
-        # Patch the std values in layernorm to the fixed values given in replace_std_values_path
-        replace_std_values_in_layernorm(model, config.replace_std_values_path)
+    if ln_stds is not None:
+        # model has ablated layernorms, patch in the fixed std values
+        replace_std_values_in_layernorm(model, ln_stds)
     model.to(device)
 
     # Wrap model with DDP if distributed

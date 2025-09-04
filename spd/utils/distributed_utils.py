@@ -4,7 +4,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import wraps
-from typing import Literal
+from typing import Literal, cast
 
 import torch
 import torch.distributed as dist
@@ -187,11 +187,33 @@ def all_reduce(
     return tensor
 
 
-def broadcast_str(value: str) -> str:
+def broadcast_obj[T](value: T) -> T:
+    """Broadcast an object from rank 0 to all ranks."""
     assert dist.is_initialized()
-    payload: list[str] = [value if is_main_process() else ""]
+    payload: list[object] = [value if is_main_process() else None]
     dist.broadcast_object_list(payload, src=0)
-    return payload[0]
+    return cast(T, payload[0])
+
+
+def call_on_rank0_then_broadcast[**P, T](
+    fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs
+) -> T:
+    """Call `fn` only on rank 0 and broadcast the result to all ranks."""
+    if is_distributed():
+        result = fn(*args, **kwargs) if is_main_process() else None
+        result = broadcast_obj(result)
+        return cast(T, result)
+    return fn(*args, **kwargs)
+
+
+def ensure_cached_and_call[**P, T](fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
+    """Call `fn` on rank 0 to cache any download side effects, barrier, then call on all ranks."""
+    if is_distributed():
+        if is_main_process():
+            _ = fn(*args, **kwargs)
+        sync_across_processes()
+        return fn(*args, **kwargs)
+    return fn(*args, **kwargs)
 
 
 def avg_metrics_across_ranks(metrics: Mapping[str, float], device: str) -> Mapping[str, float]:
