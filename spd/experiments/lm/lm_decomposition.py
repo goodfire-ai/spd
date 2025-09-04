@@ -83,13 +83,13 @@ def main(
 
     if is_distributed() and config.pretrained_model_name_hf.startswith("wandb:"):
         # Only download the model on rank 0 then broadcast the path to all ranks
-        checkpoint_path: Path = Path("")
+        checkpoint_path = Path("")
         if is_main_process():
             checkpoint_path = SSRunInfo.from_path(config.pretrained_model_name_hf).checkpoint_path
         checkpoint_path = Path(broadcast_str(str(checkpoint_path)))
-        target_model = pretrained_model_class.from_pretrained(checkpoint_path)  # pyright: ignore[reportAttributeAccessIssue]
     else:
-        target_model = pretrained_model_class.from_pretrained(config.pretrained_model_name_hf)  # pyright: ignore[reportAttributeAccessIssue]
+        checkpoint_path = config.pretrained_model_name_hf
+    target_model = pretrained_model_class.from_pretrained(config.pretrained_model_name_hf)  # pyright: ignore[reportAttributeAccessIssue]
     target_model.eval()
 
     if is_main_process():
