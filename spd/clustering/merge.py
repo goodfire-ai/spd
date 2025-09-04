@@ -257,14 +257,14 @@ def merge_iteration(
         if do_pop and iter_pop[iter_idx]:  # pyright: ignore[reportPossiblyUnboundVariable]
             # we split up the group which our chosen component belongs to
             pop_component_idx_i: int = int(pop_component_idx[iter_idx].item())  # pyright: ignore[reportPossiblyUnboundVariable]
-            components_in_pop_grp: int = int(
+            n_components_in_pop_grp: int = int(
                 current_merge.components_per_group[  # pyright: ignore[reportArgumentType]
                     current_merge.group_idxs[pop_component_idx_i].item()
                 ]
             )
 
             # but, if the component is the only one in its group, there is nothing to do
-            if components_in_pop_grp > 1:
+            if n_components_in_pop_grp > 1:
                 current_merge, current_coact, current_act_mask = recompute_coacts_pop_group(
                     coact=current_coact,
                     merges=current_merge,
