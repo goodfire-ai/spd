@@ -162,11 +162,24 @@ def merge_iteration(
     merge_config: MergeConfig | MergeRunConfig,
     component_labels: list[str],
     initial_merge: GroupMerge | None = None,
-    plot_function: Callable[..., None] | None = None,
     wandb_run: wandb.sdk.wandb_run.Run | None = None,
     prefix: str = "",
+    plot_callback: Callable[..., None] | None = None,
     artifact_callback: Callable[[MergeHistory, int], None] | None = None,
 ) -> MergeHistory:
+    """primary component merging function
+
+    Args:
+        activations: (samples, c_components) component causal importances
+        merge_config: configuration for the merge process
+        component_labels: list of strings naming each component, should be length c_components
+        initial_merge: optional initial GroupMerge to start from. if None, starts from identity
+        wandb_run: optional wandb run for logging
+        prefix: optional string prefix for progress bar, usually used to identify different parallel runs in an ensemble
+        plot_callback: optional function to call for plotting at intervals
+        artifact_callback: optional function to call to save artifacts at intervals
+
+    """
     # setup
     # ==================================================
     # compute coactivations
@@ -187,11 +200,17 @@ def merge_iteration(
     )
 
     # for speed, we precompute whether to pop components and which components to pop
+    # if we are not popping, we don't need these variables and can also delete other things
     do_pop: bool = merge_config.pop_component_prob > 0.0
     if do_pop:
+        # at each iteration, we will pop a component with probability `pop_component_prob`
         iter_pop: Bool[Tensor, " iters"] = (
             torch.rand(merge_config.iters, device=coact.device) < merge_config.pop_component_prob
         )
+        # we pick a subcomponent at random, and if we decide to pop, we pop that one out of its group
+        # if the component is a singleton, nothing happens. this naturally biases towards popping
+        # less at the start and more at the end, since the effective probability of popping a component
+        # is actually something like `pop_component_prob * (c_components - k_groups) / c_components`
         pop_component_idx: Int[Tensor, " iters"] = torch.randint(
             0, c_components, (merge_config.iters,), device=coact.device
         )
@@ -291,7 +310,7 @@ def merge_iteration(
             pbar=pbar,
             # callbacks
             artifact_callback=artifact_callback,
-            plot_function=plot_function,
+            plot_function=plot_callback,
         )
 
         # merge the pair

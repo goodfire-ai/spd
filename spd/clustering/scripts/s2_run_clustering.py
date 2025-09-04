@@ -268,7 +268,7 @@ def run_clustering(
         wandb_run=wandb_run,
         prefix=f"\033[38;5;208m[{_BATCH_ID}]\033[0m",
         artifact_callback=artifact_callback,
-        plot_function=plot_callback,
+        plot_callback=plot_callback,
     )
 
     # saving and plotting

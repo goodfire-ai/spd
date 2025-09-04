@@ -147,7 +147,7 @@ MERGE_HIST: MergeHistory = merge_iteration(
     activations=PROCESSED_ACTIVATIONS.activations,
     merge_config=MERGE_CFG,
     component_labels=PROCESSED_ACTIVATIONS.labels,
-    plot_function=_plot_func,
+    plot_callback=_plot_func,
 )
 
 # %%
