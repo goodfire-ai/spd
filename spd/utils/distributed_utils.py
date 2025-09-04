@@ -4,7 +4,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import wraps
-from typing import Literal
+from typing import Literal, cast
 
 import torch
 import torch.distributed as dist
@@ -187,11 +187,20 @@ def all_reduce(
     return tensor
 
 
-def broadcast_str(value: str) -> str:
+def broadcast_obj[T](value: T) -> T:
     assert dist.is_initialized()
-    payload: list[str] = [value if is_main_process() else ""]
+    payload: list[object] = [value if is_main_process() else None]
     dist.broadcast_object_list(payload, src=0)
-    return payload[0]
+    return cast(T, payload[0])
+
+
+# def load_on_rank_0_and_broadcast(factory: Callable[[], T]) -> T:
+#     if is_distributed():
+#         obj = factory() if is_main_process() else None
+#         obj = broadcast_obj(obj)
+#         assert obj is not None
+#         return obj
+#     return factory()
 
 
 def avg_metrics_across_ranks(metrics: Mapping[str, float], device: str) -> Mapping[str, float]:

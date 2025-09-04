@@ -275,7 +275,7 @@ class Config(BaseModel):
         description="Model identifier. Local path or wandb reference "
         "(e.g. 'wandb:goodfire/spd/runs/otxwx80v' or 'mnt/my_model/checkpoint.pth')",
     )
-    pretrained_model_name_hf: str | None = Field(
+    pretrained_model_name: str | None = Field(
         default=None,
         description="hf model identifier. E.g. 'SimpleStories/SimpleStories-1.25M'",
     )
@@ -286,11 +286,6 @@ class Config(BaseModel):
     tokenizer_name: str | None = Field(
         default=None,
         description="Name or path of the tokenizer to use when loading an LM",
-    )
-    replace_std_values_path: Path | None = Field(
-        default=None,
-        description="For target models with LN 'removed'. Path to a YAML file containing std stats "
-        "for the target model.",
     )
 
     # --- Task Specific ---
@@ -313,7 +308,10 @@ class Config(BaseModel):
         "metrics_fns",
         "figures_fns",
     ]
-    RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {"print_freq": "eval_freq"}
+    RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
+        "print_freq": "eval_freq",
+        "pretrained_model_name_hf": "pretrained_model_name",
+    }
 
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
