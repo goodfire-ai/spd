@@ -76,7 +76,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         # Pretrained model info
         pretrained_model_class="spd.experiments.ih.model.InductionTransformer",
         pretrained_model_path=None,
-        pretrained_model_name_hf=None,
+        pretrained_model_name=None,
         pretrained_model_output_attr=None,
         tokenizer_name=None,
         # Task Specific

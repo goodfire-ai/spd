@@ -13,10 +13,10 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
-    broadcast_str,
+    call_on_rank0_then_broadcast,
+    ensure_cached_and_call,
     get_device,
     init_distributed,
-    is_distributed,
     is_main_process,
     with_distributed_cleanup,
 )
@@ -79,17 +79,25 @@ def main(
     assert hasattr(pretrained_model_class, "from_pretrained"), (
         f"Model class {pretrained_model_class} should have a `from_pretrained` method"
     )
-    assert config.pretrained_model_name_hf is not None
+    assert config.pretrained_model_name is not None
 
-    if is_distributed() and config.pretrained_model_name_hf.startswith("wandb:"):
-        # Only download the model on rank 0 then broadcast the path to all ranks
-        checkpoint_path = Path("")
-        if is_main_process():
-            checkpoint_path = SSRunInfo.from_path(config.pretrained_model_name_hf).checkpoint_path
-        checkpoint_path = Path(broadcast_str(str(checkpoint_path)))
+    ln_stds: dict[str, float] | None = None
+    if config.pretrained_model_class.startswith("simple_stories_train"):
+        # Handle differently in case run has layernorm ablations (we'd need to collect ln_stds)
+        # Avoid concurrent wandb API requests on each rank
+        run_info = call_on_rank0_then_broadcast(SSRunInfo.from_path, config.pretrained_model_name)
+        if run_info.config_dict["enable_ln_ablation"]:
+            ln_stds = run_info.ln_stds
+            assert ln_stds is not None, "Run had enable_ln_ablation set to True but no ln_stds"
+        assert hasattr(pretrained_model_class, "from_run_info")
+        # Just loads from local file
+        target_model = pretrained_model_class.from_run_info(run_info)  # pyright: ignore[reportAttributeAccessIssue]
     else:
-        checkpoint_path = config.pretrained_model_name_hf
-    target_model = pretrained_model_class.from_pretrained(config.pretrained_model_name_hf)  # pyright: ignore[reportAttributeAccessIssue]
+        # Avoid concurrent wandb API requests by first calling from_pretrained on rank 0 only
+        target_model = ensure_cached_and_call(
+            pretrained_model_class.from_pretrained,  # pyright: ignore[reportAttributeAccessIssue]
+            config.pretrained_model_name,
+        )
     target_model.eval()
 
     if is_main_process():
@@ -171,6 +179,7 @@ def main(
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
         out_dir=out_dir,
+        ln_stds=ln_stds,
     )
 
     if is_main_process():

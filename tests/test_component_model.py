@@ -253,7 +253,7 @@ def test_from_run_info_works():
         config = Config(
             pretrained_model_class="tests.test_component_model.SimpleTestModel",
             pretrained_model_path=base_model_path,
-            pretrained_model_name_hf=None,
+            pretrained_model_name=None,
             target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
             C=4,
             gate_type="mlp",
