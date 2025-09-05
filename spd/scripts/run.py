@@ -421,7 +421,7 @@ def main(
             n_agents = len(experiments_list)
         else:
             assert local, (
-                "n_agents must be provided if sweep is enabled (unless running with --local)"
+                "n-agents must be provided if sweep is enabled (unless running with --local)"
             )
 
     # wandb and snapshot setup
