@@ -89,6 +89,7 @@ def create_slurm_array_script(
         esac
     """).strip()
 
+    print(script_content)
     with open(script_path, "w") as f:
         f.write(script_content)
 
