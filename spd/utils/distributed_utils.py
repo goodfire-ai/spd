@@ -196,7 +196,7 @@ def broadcast_obj[T](value: T) -> T:
 
 
 def call_on_rank0_then_broadcast[**P, T](
-    fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs
+    fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs
 ) -> T:
     """Call `fn` only on rank 0 and broadcast the result to all ranks."""
     if is_distributed():
@@ -206,7 +206,7 @@ def call_on_rank0_then_broadcast[**P, T](
     return fn(*args, **kwargs)
 
 
-def ensure_cached_and_call[**P, T](fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
+def ensure_cached_and_call[**P, T](fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
     """Call `fn` on rank 0 to cache any download side effects, barrier, then call on all ranks."""
     if is_distributed():
         if is_main_process():
