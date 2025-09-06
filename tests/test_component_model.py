@@ -220,7 +220,7 @@ def test_correct_parameters_require_grad(component_model: ComponentModel):
     for cm in component_model.components_or_modules.values():
         if isinstance(cm.original, nn.Linear | RadfordConv1D):
             assert not cm.original.weight.requires_grad
-            if cm.original.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
+            if cm.original.bias is not None:  # pyright: ignore [reportUnnecessaryComparison]
                 assert not cm.original.bias.requires_grad
             assert isinstance(cm.components, LinearComponents)
             if cm.components.bias is not None:
@@ -253,7 +253,7 @@ def test_from_run_info_works():
         config = Config(
             pretrained_model_class="tests.test_component_model.SimpleTestModel",
             pretrained_model_path=base_model_path,
-            pretrained_model_name_hf=None,
+            pretrained_model_name=None,
             target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
             C=4,
             gate_type="mlp",

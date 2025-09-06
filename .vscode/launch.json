@@ -26,7 +26,7 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/spd/scripts/run.py",
-            "args": ["--experiments", "tms_5-2", "--sweep", "--n_agents", "2"],
+            "args": ["--experiments", "tms_5-2", "--sweep", "--n-agents", "2"],
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -170,6 +170,32 @@
             "request": "launch",
             "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
             "args": "${workspaceFolder}/spd/experiments/lm/ss_gpt2_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "ss_gpt2_simple",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_gpt2_simple_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "ss_gpt2_simple_noln",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_gpt2_simple_noln_config.yaml",
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,

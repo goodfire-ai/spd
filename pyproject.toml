@@ -25,7 +25,8 @@ dependencies = [
     "streamlit",
     "streamlit-antd-components",
     "datasets",
-]   
+    "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
+]
 
 [dependency-groups]
 dev = [
@@ -107,6 +108,7 @@ known-third-party = ["wandb"]
 [tool.pyright]
 include = ["spd", "tests"]
 exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py"]
+stubPath = "typings" # Having type stubs for transformers shaves 10 seconds off basedpyright calls
 
 strictListInference = true
 strictDictionaryInference = true

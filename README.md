@@ -1,8 +1,7 @@
 # SPD - Stochastic Parameter Decomposition
-The main branch contains code used in the paper [Stochastic Parameter Decomposition](https://arxiv.org/abs/2506.20790)
 
-**Note: The [dev](https://github.com/goodfire-ai/spd/tree/dev) branch contains active work from Goodfire and collaborators since this paper's release. This is now an open source
-research project. Please feel free to view the issues (or add to them) and make a PR to the dev branch!**
+**Note: The [spd-paper](https://github.com/goodfire-ai/spd/tree/spd-paper) branch contains code used in the paper [Stochastic Parameter Decomposition](https://arxiv.org/abs/2506.20790). The main branch contains active work from Goodfire and collaborators since this paper's release. This is now an open source
+research project. Please feel free to view the issues (or add to them) and make a PR!**
 
 Weights and Bias [report](https://wandb.ai/goodfire/spd-tms/reports/SPD-paper-report--VmlldzoxMzE3NzU0MQ) accompanying the paper.
 
@@ -61,15 +60,15 @@ spd-run                                          # Run all experiments
 For running parameter sweeps on a SLURM cluster:
 
 ```bash
-spd-run --experiments <experiment_name> --sweep --n_agents <n_agents> [--cpu] [--job_suffix <suffix>]
+spd-run --experiments <experiment_name> --sweep --n-agents <n-agents> [--cpu] [--job_suffix <suffix>]
 ```
 
 **Examples:**
 ```bash
-spd-run --experiments tms_5-2 --sweep --n_agents 4            # Run TMS 5-2 sweep with 4 GPU agents
-spd-run --experiments resid_mlp2 --sweep --n_agents 3 --cpu   # Run ResidualMLP2 sweep with 3 CPU agents
-spd-run --sweep --n_agents 10                                 # Sweep all experiments with 10 agents
-spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom sweep params file
+spd-run --experiments tms_5-2 --sweep --n-agents 4            # Run TMS 5-2 sweep with 4 GPU agents
+spd-run --experiments resid_mlp2 --sweep --n-agents 3 --cpu   # Run ResidualMLP2 sweep with 3 CPU agents
+spd-run --sweep --n-agents 10                                 # Sweep all experiments with 10 agents
+spd-run --experiments tms_5-2 --sweep custom.yaml --n-agents 2 # Use custom sweep params file
 ```
 
 **Sweep parameters:**

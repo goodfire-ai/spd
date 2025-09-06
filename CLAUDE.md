@@ -144,15 +144,15 @@ the config of a given experiment.  This allows for easy extension and customizat
 Run hyperparameter sweeps using WandB on the GPU cluster:
 
 ```bash
-spd-run --experiments <experiment_name> --sweep --n_agents <n_agents> [--cpu] [--job_suffix <suffix>]
+spd-run --experiments <experiment_name> --sweep --n-agents <n-agents> [--cpu] [--job_suffix <suffix>]
 ```
 
 Examples:
 ```bash
-spd-run --experiments tms_5-2 --sweep --n_agents 4            # Run TMS 5-2 sweep with 4 GPU agents
-spd-run --experiments resid_mlp2 --sweep --n_agents 3 --cpu   # Run ResidualMLP2 sweep with 3 CPU agents
-spd-run --sweep --n_agents 10                                 # Sweep all experiments with 10 agents
-spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom sweep params file
+spd-run --experiments tms_5-2 --sweep --n-agents 4            # Run TMS 5-2 sweep with 4 GPU agents
+spd-run --experiments resid_mlp2 --sweep --n-agents 3 --cpu   # Run ResidualMLP2 sweep with 3 CPU agents
+spd-run --sweep --n-agents 10                                 # Sweep all experiments with 10 agents
+spd-run --experiments tms_5-2 --sweep custom.yaml --n-agents 2 # Use custom sweep params file
 ```
 
 **Supported experiments:** `tms_5-2`, `tms_5-2-id`, `tms_40-10`, `tms_40-10-id`, `resid_mlp1`, `resid_mlp2`, `resid_mlp3`, `ss_emb`

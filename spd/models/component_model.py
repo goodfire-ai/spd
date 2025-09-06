@@ -1,4 +1,5 @@
 import fnmatch
+from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -126,6 +127,8 @@ class ComponentModel(LoadableModule):
         """Extract the desired output from the model's raw output.
 
         If pretrained_model_output_attr is None, returns the raw output directly.
+        If pretrained_model_output_attr starts with "idx_", returns the index specified by the
+        second part of the string. E.g. "idx_0" returns the first element of the raw output.
         Otherwise, returns the specified attribute from the raw output.
 
         Args:
@@ -136,6 +139,15 @@ class ComponentModel(LoadableModule):
         """
         if self.pretrained_model_output_attr is None:
             return raw_output
+        elif self.pretrained_model_output_attr.startswith("idx_"):
+            idx_val = int(self.pretrained_model_output_attr.split("_")[1])
+            assert isinstance(raw_output, Sequence), (
+                f"raw_output must be a sequence, not {type(raw_output)}"
+            )
+            assert idx_val < len(raw_output), (
+                f"Index {idx_val} out of range for raw_output of length {len(raw_output)}"
+            )
+            return raw_output[idx_val]
         else:
             return getattr(raw_output, self.pretrained_model_output_attr)
 
@@ -236,7 +248,7 @@ class ComponentModel(LoadableModule):
                     C=C,
                     d_in=d_in,
                     d_out=d_out,
-                    bias=None,
+                    bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
                 )
                 component.init_from_target_weight(module.weight)
             else:
@@ -311,10 +323,7 @@ class ComponentModel(LoadableModule):
                 *args, module_names=module_names, **kwargs
             )
         else:
-            # target forward pass of the patched model
-            raw_out = self.patched_model(*args, **kwargs)
-            out = self._extract_output(raw_out)
-            return out
+            return self._forward_target(*args, **kwargs)
 
     @contextmanager
     def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
@@ -343,6 +352,23 @@ class ComponentModel(LoadableModule):
             for component in self.components_or_modules.values():
                 component.forward_mode = None
                 component.mask = None
+
+    def _forward_target(self, *args: Any, **kwargs: Any) -> Any:
+        """Forward pass of the target model."""
+        for module in self.components_or_modules.values():
+            assert module.forward_mode is None, (
+                f"Component should be in pristine state, but forward_mode is {module.forward_mode}"
+            )
+            module.forward_mode = "original"
+        try:
+            out = self.patched_model(*args, **kwargs)
+        finally:
+            for module in self.components_or_modules.values():
+                module.forward_mode = None
+
+        out = self._extract_output(out)
+
+        return out
 
     def _forward_with_components(
         self,
@@ -428,12 +454,12 @@ class ComponentModel(LoadableModule):
 
         # Load the target model
         model_class = resolve_class(config.pretrained_model_class)
-        if config.pretrained_model_name_hf is not None:
+        if config.pretrained_model_name is not None:
             assert issubclass(model_class, PreTrainedModel), (
                 f"Model class {model_class} should be a subclass of PreTrainedModel which "
                 "defines a `from_pretrained` method"
             )
-            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name_hf)
+            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name)
         else:
             assert issubclass(model_class, LoadableModule), (
                 f"Model class {model_class} should be a subclass of LoadableModule which "

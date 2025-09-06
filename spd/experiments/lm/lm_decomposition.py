@@ -5,7 +5,7 @@ from pathlib import Path
 
 import fire
 import wandb
-from transformers import PreTrainedModel
+from simple_stories_train.run_info import RunInfo as SSRunInfo
 
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
@@ -13,6 +13,8 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
+    call_on_rank0_then_broadcast,
+    ensure_cached_and_call,
     get_device,
     init_distributed,
     is_main_process,
@@ -73,13 +75,29 @@ def main(
     device = get_device()
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
 
-    hf_model_class = resolve_class(config.pretrained_model_class)
-    assert issubclass(hf_model_class, PreTrainedModel), (
-        f"Model class {hf_model_class} should be a subclass of PreTrainedModel which "
-        "defines a `from_pretrained` method"
+    pretrained_model_class = resolve_class(config.pretrained_model_class)
+    assert hasattr(pretrained_model_class, "from_pretrained"), (
+        f"Model class {pretrained_model_class} should have a `from_pretrained` method"
     )
-    assert config.pretrained_model_name_hf is not None
-    target_model = hf_model_class.from_pretrained(config.pretrained_model_name_hf)
+    assert config.pretrained_model_name is not None
+
+    ln_stds: dict[str, float] | None = None
+    if config.pretrained_model_class.startswith("simple_stories_train"):
+        # Handle differently in case run has layernorm ablations (we'd need to collect ln_stds)
+        # Avoid concurrent wandb API requests on each rank
+        run_info = call_on_rank0_then_broadcast(SSRunInfo.from_path, config.pretrained_model_name)
+        if run_info.config_dict["enable_ln_ablation"]:
+            ln_stds = run_info.ln_stds
+            assert ln_stds is not None, "Run had enable_ln_ablation set to True but no ln_stds"
+        assert hasattr(pretrained_model_class, "from_run_info")
+        # Just loads from local file
+        target_model = pretrained_model_class.from_run_info(run_info)  # pyright: ignore[reportAttributeAccessIssue]
+    else:
+        # Avoid concurrent wandb API requests by first calling from_pretrained on rank 0 only
+        target_model = ensure_cached_and_call(
+            pretrained_model_class.from_pretrained,  # pyright: ignore[reportAttributeAccessIssue]
+            config.pretrained_model_name,
+        )
     target_model.eval()
 
     if is_main_process():
@@ -127,7 +145,7 @@ def main(
 
     eval_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
-        hf_tokenizer_path=config.pretrained_model_name_hf,
+        hf_tokenizer_path=config.tokenizer_name,
         split=config.task_config.eval_data_split,
         n_ctx=config.task_config.max_seq_len,
         is_tokenized=config.task_config.is_tokenized,
@@ -161,6 +179,7 @@ def main(
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
         out_dir=out_dir,
+        ln_stds=ln_stds,
     )
 
     if is_main_process():
