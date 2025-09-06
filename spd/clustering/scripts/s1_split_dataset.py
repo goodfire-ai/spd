@@ -11,6 +11,8 @@ from tqdm import tqdm
 from spd.clustering.merge_run_config import MergeRunConfig
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
+from spd.experiments.lm.configs import LMTaskConfig
+from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
 from spd.spd_types import TaskName
@@ -36,15 +38,27 @@ def split_dataset_lm(
         spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
         cfg: Config = spd_run.config
 
+        try:
+            pretrained_model_name: str = cfg.pretrained_model_name  # pyright: ignore[reportAssignmentType]
+            assert pretrained_model_name is not None
+        except Exception as e:
+            raise AttributeError(
+                "Could not find 'pretrained_model_name' in the SPD Run config, but called `split_dataset_lm`"
+            ) from e
+
+        assert isinstance(cfg.task_config, LMTaskConfig), (
+            f"Expected task_config to be of type LMTaskConfig since using `split_dataset_lm`, but got {type(cfg.task_config) = }"
+        )
+
         dataset_config: DatasetConfig = DatasetConfig(
-            name=cfg.task_config.dataset_name,  # pyright: ignore[reportAttributeAccessIssue]
-            hf_tokenizer_path=cfg.pretrained_model_name_hf,
-            split=cfg.task_config.train_data_split,  # pyright: ignore[reportAttributeAccessIssue]
-            n_ctx=cfg.task_config.max_seq_len,  # pyright: ignore[reportAttributeAccessIssue]
+            name=cfg.task_config.dataset_name,
+            hf_tokenizer_path=pretrained_model_name,
+            split=cfg.task_config.train_data_split,
+            n_ctx=cfg.task_config.max_seq_len,
             is_tokenized=False,
             streaming=False,
             seed=0,
-            column_name=cfg.task_config.column_name,  # pyright: ignore[reportAttributeAccessIssue]
+            column_name=cfg.task_config.column_name,
         )
 
     with SpinnerContext(message="getting dataloader..."):
@@ -52,7 +66,7 @@ def split_dataset_lm(
         dataloader, _tokenizer = create_data_loader(
             dataset_config=dataset_config,
             batch_size=batch_size,
-            buffer_size=cfg.task_config.buffer_size,  # pyright: ignore[reportAttributeAccessIssue]
+            buffer_size=cfg.task_config.buffer_size,
             global_seed=cfg.seed,
             ddp_rank=0,
             ddp_world_size=1,
@@ -129,16 +143,22 @@ def split_dataset_resid_mlp(
         cfg: Config = spd_run.config
 
     with SpinnerContext(message="Creating ResidMLPDataset..."):
+        assert isinstance(cfg.task_config, ResidMLPTaskConfig), (
+            f"Expected task_config to be of type ResidMLPTaskConfig since using `split_dataset_resid_mlp`, but got {type(cfg.task_config) = }"
+        )
+        assert isinstance(component_model.patched_model.config, ResidMLPModelConfig), (
+            f"Expected patched_model.config to be of type ResidMLPModelConfig since using `split_dataset_resid_mlp`, but got {type(component_model.patched_model.config) = }"
+        )
         resid_mlp_dataset_kwargs: dict[str, Any] = dict(
-            n_features=component_model.patched_model.config.n_features,  # pyright: ignore[reportAttributeAccessIssue],
-            feature_probability=cfg.task_config.feature_probability,  # pyright: ignore[reportAttributeAccessIssue]
+            n_features=component_model.patched_model.config.n_features,
+            feature_probability=cfg.task_config.feature_probability,
             device="cpu",
             calc_labels=False,
             label_type=None,
             act_fn_name=None,
             label_fn_seed=None,
             label_coeffs=None,
-            data_generation_type=cfg.task_config.data_generation_type,  # pyright: ignore[reportAttributeAccessIssue]
+            data_generation_type=cfg.task_config.data_generation_type,
         )
         dataset: ResidMLPDataset = ResidMLPDataset(**resid_mlp_dataset_kwargs)
 
