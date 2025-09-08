@@ -296,7 +296,9 @@ class ComponentModel(LoadableModule):
                 identity_component = LinearComponents(
                     C=C, d_in=d_identity, d_out=d_identity, bias=None
                 )
-                identity_component.init_from_target_weight(module.weight.T)
+                identity_component.init_from_target_weight(
+                    torch.eye(d_identity, device=module.weight.device, dtype=module.weight.dtype)
+                )
 
             replacement = ComponentsOrModule(
                 original=module,
@@ -402,7 +404,6 @@ class ComponentModel(LoadableModule):
             masks: Optional dictionary mapping component names to masks
         """
         for module_name, component in self.components_or_modules.items():
-            is_identity = component.identity_components is not None
             assert component.forward_mode is None, (
                 f"Component must be in pristine state, but forward_mode is {component.forward_mode}"
             )
@@ -415,9 +416,9 @@ class ComponentModel(LoadableModule):
 
             if module_name in masks:
                 component.forward_mode = "components"
-                if is_identity:
-                    component.identity_mask = masks[module_name]
-                else:
+                if component.identity_components is not None:
+                    component.identity_mask = masks[f"identity_{module_name}"]
+                if component.components is not None:
                     component.mask = masks[module_name]
             else:
                 component.forward_mode = "original"
