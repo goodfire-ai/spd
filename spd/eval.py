@@ -305,6 +305,7 @@ class PermutedCIPlots(StreamingEval):
             sigmoid_type=self.config.sigmoid_type,
             identity_patterns=self.identity_patterns,
             dense_patterns=self.dense_patterns,
+            sampling=self.config.sampling,
         )[0]
 
         return {f"figures/{k}": v for k, v in figures.items()}
@@ -353,6 +354,7 @@ class UVPlots(StreamingEval):
             sigmoid_type=self.config.sigmoid_type,
             identity_patterns=self.identity_patterns,
             dense_patterns=self.dense_patterns,
+            sampling=self.config.sampling,
         )[1]
 
         uv_matrices = plot_UV_matrices(
