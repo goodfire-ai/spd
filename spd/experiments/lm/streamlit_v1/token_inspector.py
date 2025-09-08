@@ -110,6 +110,7 @@ def compute_causal_importances(
             pre_weight_acts=pre_weight_acts,
             detach_inputs=True,
             sigmoid_type=_model_data.config.sigmoid_type,
+            sampling=_model_data.config.sampling,
         )
     return cis
 

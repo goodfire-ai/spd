@@ -462,7 +462,9 @@ def evaluate(
             batch, mode="pre_forward_cache", module_names=model.target_module_paths
         )
         ci, _ci_upper_leaky = model.calc_causal_importances(
-            pre_weight_acts, sigmoid_type=config.sigmoid_type
+            pre_weight_acts,
+            sigmoid_type=config.sigmoid_type,
+            sampling=config.sampling,
         )
 
         for eval in evals:

@@ -133,6 +133,7 @@ def get_single_feature_causal_importances(
         pre_weight_acts=pre_weight_acts,
         sigmoid_type=sigmoid_type,
         detach_inputs=False,
+        sampling="continuous",
     )
 
     return ci_raw, ci_upper_leaky_raw

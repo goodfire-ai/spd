@@ -118,8 +118,6 @@ class ComponentModel(LoadableModule):
         # these are the actual registered submodules
         self.patched_model = patched_model
         self._gates = nn.ModuleDict({k.replace(".", "-"): v for k, v in self.gates.items()})
-        # Default sampling mode; can be overridden by training/eval config
-        self.sampling = "continuous"
 
     @property
     def components(self) -> dict[str, Components]:
@@ -483,8 +481,7 @@ class ComponentModel(LoadableModule):
             gate_type=config.gate_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
-        # Set sampling mode from saved config (defaults to continuous if absent)
-        comp_model.sampling = getattr(config, "sampling", "continuous")
+        # sampling mode is supplied at call sites; do not set attributes here
 
         comp_model_weights = torch.load(
             run_info.checkpoint_path, map_location="cpu", weights_only=True
@@ -505,6 +502,7 @@ class ComponentModel(LoadableModule):
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
         sigmoid_type: SigmoidTypes,
         detach_inputs: bool = False,
+        sampling: Literal["continuous", "binomial"] = "continuous",
     ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
         """Calculate causal importances.
 
@@ -537,28 +535,27 @@ class ComponentModel(LoadableModule):
             gate_output = gates(gate_input)
 
             if sigmoid_type == "leaky_hard":
-                if hasattr(self, "sampling") and self.sampling == "binomial":
-                    noisy_out = 1.05 * gate_output - 0.05 * torch.rand_like(gate_output)
-                    causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](noisy_out)
-                    causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
-                        noisy_out
+                # lower leaky: optionally noise for binomial sampling
+                if sampling == "binomial":
+                    causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](
+                        1.05 * gate_output - 0.05 * torch.rand_like(gate_output)
                     )
                 else:
                     causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](gate_output)
-                    causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
-                        gate_output
-                    )
+                # upper leaky: never noise
+                causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
+                    gate_output
+                )
             else:
                 # For other sigmoid types, use the same function for both
                 sigmoid_fn = SIGMOID_TYPES[sigmoid_type]
-                if hasattr(self, "sampling") and self.sampling == "binomial":
-                    noisy_out = 1.05 * gate_output - 0.05 * torch.rand_like(gate_output)
-                    causal_importances[param_name] = sigmoid_fn(noisy_out)
-                    # Use absolute value to ensure upper_leaky values are non-negative for importance minimality loss
-                    causal_importances_upper_leaky[param_name] = sigmoid_fn(noisy_out).abs()
+                if sampling == "binomial":
+                    causal_importances[param_name] = sigmoid_fn(
+                        1.05 * gate_output - 0.05 * torch.rand_like(gate_output)
+                    )
                 else:
                     causal_importances[param_name] = sigmoid_fn(gate_output)
-                    # Use absolute value to ensure upper_leaky values are non-negative for importance minimality loss
-                    causal_importances_upper_leaky[param_name] = sigmoid_fn(gate_output).abs()
+                # Use absolute value to ensure upper_leaky values are non-negative for importance minimality loss
+                causal_importances_upper_leaky[param_name] = sigmoid_fn(gate_output).abs()
 
         return causal_importances, causal_importances_upper_leaky

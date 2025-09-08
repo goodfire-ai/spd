@@ -659,6 +659,7 @@ def _process_batch_for_contexts(
             pre_weight_acts=pre_weight_acts,
             sigmoid_type=model_data.config.sigmoid_type,
             detach_inputs=True,
+            sampling=model_data.config.sampling,
         )
 
     # Calculate L0 scores

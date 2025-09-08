@@ -92,8 +92,6 @@ def optimize(
         gate_hidden_dims=config.gate_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
-    # Set sampling behavior from config
-    model.sampling = getattr(config, "sampling", "continuous")
 
     if ln_stds is not None:
         # model has ablated layernorms, patch in the fixed std values
@@ -188,6 +186,7 @@ def optimize(
                     pre_weight_acts=pre_weight_acts,
                     sigmoid_type=config.sigmoid_type,
                     detach_inputs=False,
+                    sampling=config.sampling,
                 )
             )
 
