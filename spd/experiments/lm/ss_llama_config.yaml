@@ -12,6 +12,7 @@ gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.layers.0.mlp.gate_proj"]
 identity_module_patterns: null
+sampling: "binomial"
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1e3
