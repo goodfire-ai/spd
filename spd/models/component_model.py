@@ -118,6 +118,8 @@ class ComponentModel(LoadableModule):
         # these are the actual registered submodules
         self.patched_model = patched_model
         self._gates = nn.ModuleDict({k.replace(".", "-"): v for k, v in self.gates.items()})
+        # Default sampling mode; can be overridden by training/eval config
+        self.sampling = "continuous"
 
     @property
     def components(self) -> dict[str, Components]:
@@ -481,6 +483,8 @@ class ComponentModel(LoadableModule):
             gate_type=config.gate_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
+        # Set sampling mode from saved config (defaults to continuous if absent)
+        comp_model.sampling = getattr(config, "sampling", "continuous")
 
         comp_model_weights = torch.load(
             run_info.checkpoint_path, map_location="cpu", weights_only=True
@@ -533,15 +537,28 @@ class ComponentModel(LoadableModule):
             gate_output = gates(gate_input)
 
             if sigmoid_type == "leaky_hard":
-                causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](gate_output)
-                causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
-                    gate_output
-                )
+                if hasattr(self, "sampling") and self.sampling == "binomial":
+                    noisy_out = 1.05 * gate_output - 0.05 * torch.rand_like(gate_output)
+                    causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](noisy_out)
+                    causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
+                        noisy_out
+                    )
+                else:
+                    causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](gate_output)
+                    causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
+                        gate_output
+                    )
             else:
                 # For other sigmoid types, use the same function for both
                 sigmoid_fn = SIGMOID_TYPES[sigmoid_type]
-                causal_importances[param_name] = sigmoid_fn(gate_output)
-                # Use absolute value to ensure upper_leaky values are non-negative for importance minimality loss
-                causal_importances_upper_leaky[param_name] = sigmoid_fn(gate_output).abs()
+                if hasattr(self, "sampling") and self.sampling == "binomial":
+                    noisy_out = 1.05 * gate_output - 0.05 * torch.rand_like(gate_output)
+                    causal_importances[param_name] = sigmoid_fn(noisy_out)
+                    # Use absolute value to ensure upper_leaky values are non-negative for importance minimality loss
+                    causal_importances_upper_leaky[param_name] = sigmoid_fn(noisy_out).abs()
+                else:
+                    causal_importances[param_name] = sigmoid_fn(gate_output)
+                    # Use absolute value to ensure upper_leaky values are non-negative for importance minimality loss
+                    causal_importances_upper_leaky[param_name] = sigmoid_fn(gate_output).abs()
 
         return causal_importances, causal_importances_upper_leaky
