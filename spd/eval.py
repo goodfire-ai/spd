@@ -414,6 +414,7 @@ class IdentityCIError(StreamingEval):
             batch_shape=self.batch_shape,
             device=self.device,
             input_magnitude=0.75,
+            sampling=self.config.sampling,
             sigmoid_type=self.config.sigmoid_type,
         )
 
