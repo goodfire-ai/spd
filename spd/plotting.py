@@ -126,7 +126,7 @@ def get_single_feature_causal_importances(
         batch = batch.unsqueeze(1)
 
     pre_weight_acts = model(
-        batch, mode="pre_forward_cache", module_names=model.target_module_paths
+        batch, mode="pre_forward_cache", module_names=list(model.components.keys())
     )[1]
 
     ci_raw, ci_upper_leaky_raw = model.calc_causal_importances(
