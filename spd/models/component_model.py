@@ -234,14 +234,14 @@ class ComponentModel(LoadableModule):
                     d_out=d_out,
                     bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
                 )
-                component.init_from_target_weight(module.weight.T)
+                # Components are initialized in __init__
             elif isinstance(module, nn.Embedding):
                 component = EmbeddingComponents(
                     C=C,
                     vocab_size=module.num_embeddings,
                     embedding_dim=module.embedding_dim,
                 )
-                component.init_from_target_weight(module.weight)
+                # Components are initialized in __init__
             elif isinstance(module, RadfordConv1D):
                 d_in, d_out = module.weight.shape
                 component = LinearComponents(
@@ -250,7 +250,7 @@ class ComponentModel(LoadableModule):
                     d_out=d_out,
                     bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
                 )
-                component.init_from_target_weight(module.weight)
+                # Components are initialized in __init__
             else:
                 raise ValueError(
                     f"Module '{module_path}' matched pattern is not nn.Linear, nn.Embedding,"
