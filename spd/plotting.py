@@ -104,7 +104,7 @@ def get_single_feature_causal_importances(
     batch_shape: tuple[int, ...],
     device: str | torch.device,
     input_magnitude: float,
-    sigmoid_type: SigmoidTypes = "leaky_hard",
+    sigmoid_type: SigmoidTypes,
     sampling: Literal["continuous", "binomial"] = "continuous",
 ) -> tuple[dict[str, Float[Tensor, "batch C"]], dict[str, Float[Tensor, "batch C"]]]:
     """Compute causal importance arrays for single active features.
