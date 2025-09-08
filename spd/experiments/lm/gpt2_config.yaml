@@ -12,6 +12,7 @@ gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["transformer.h.1.attn.c_attn"]
+sampling: "binomial"
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1e3
