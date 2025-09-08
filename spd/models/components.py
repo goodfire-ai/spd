@@ -100,8 +100,6 @@ class Components(ABC, nn.Module):
     def weight(self) -> Float[Tensor, "rows cols"]:
         raise NotImplementedError()
 
-    
-
     @override
     @abstractmethod
     def forward(self, x: Tensor, mask: Tensor | None) -> Tensor:
