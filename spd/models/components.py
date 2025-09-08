@@ -92,6 +92,8 @@ class Components(ABC, nn.Module):
         self.C = C
         self.V = nn.Parameter(torch.empty(v_dim, C))
         self.U = nn.Parameter(torch.empty(C, u_dim))
+        # init_param_(self.V, fan_val=v_dim, nonlinearity="linear")
+        # init_param_(self.U, fan_val=C, nonlinearity="linear")
 
     @property
     @abstractmethod
