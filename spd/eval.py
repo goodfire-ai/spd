@@ -80,6 +80,7 @@ class CEandKLLosses(StreamingEval):
 
     def __init__(self, model: ComponentModel, config: Config, rounding_threshold: float):
         self.model = model
+        self.config = config
         self.rounding_threshold = rounding_threshold
         self.ce_losses = defaultdict[str, list[float]](list)
 
@@ -123,9 +124,7 @@ class CEandKLLosses(StreamingEval):
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
         # we use the regular stochastic masks
-        stoch_masks = calc_stochastic_masks(
-            ci, n_mask_samples=1, sampling=getattr(self.model, "sampling", "continuous")
-        )[0]
+        stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1, sampling=self.config.sampling)[0]
         stoch_masked_logits = self.model(batch, mode="components", masks=stoch_masks)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)

@@ -270,7 +270,7 @@ def calculate_losses(
         stochastic_masks = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
-            sampling=getattr(config, "sampling", "continuous"),
+            sampling=config.sampling,
         )
         stochastic_recon_loss = torch.tensor(0.0, device=target_out.device)
         for i in range(len(stochastic_masks)):
@@ -303,7 +303,7 @@ def calculate_losses(
         layerwise_stochastic_masks = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
-            sampling=getattr(config, "sampling", "continuous"),
+            sampling=config.sampling,
         )
         stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
@@ -353,7 +353,7 @@ def calculate_losses(
         stochastic_masks = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
-            sampling=getattr(config, "sampling", "continuous"),
+            sampling=config.sampling,
         )
         embedding_recon_loss = calc_embedding_recon_loss(
             model=model,
