@@ -108,6 +108,10 @@ class Config(BaseModel):
         default=[8],
         description="Hidden dimensions for the gate used to calculate the causal importance",
     )
+    sampling: Literal["continuous", "binomial"] = Field(
+        default="continuous",
+        description="Sampling mode for stochastic elements: 'continuous' (default) or 'binomial'",
+    )
     sigmoid_type: Literal["normal", "hard", "leaky_hard", "upper_leaky_hard", "swish_hard"] = Field(
         default="leaky_hard",
         description="Type of sigmoid to use for causal importance calculation",
