@@ -497,6 +497,7 @@ class ComponentModel(LoadableModule):
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
         sigmoid_type: SigmoidTypes,
+        sampling: Literal["continuous", "binomial"],
         detach_inputs: bool = False,
     ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
         """Calculate causal importances.
@@ -530,15 +531,20 @@ class ComponentModel(LoadableModule):
             gate_output = gates(gate_input)
 
             if sigmoid_type == "leaky_hard":
-                causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](gate_output)
-                causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
-                    gate_output
-                )
+                lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
+                upper_leaky_fn = SIGMOID_TYPES["upper_leaky_hard"]
             else:
                 # For other sigmoid types, use the same function for both
-                sigmoid_fn = SIGMOID_TYPES[sigmoid_type]
-                causal_importances[param_name] = sigmoid_fn(gate_output)
-                # Use absolute value to ensure upper_leaky values are non-negative for importance minimality loss
-                causal_importances_upper_leaky[param_name] = sigmoid_fn(gate_output).abs()
+                lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+                upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+
+            gate_output_for_lower_leaky = gate_output
+            if sampling == "binomial":
+                gate_output_for_lower_leaky = 1.05 * gate_output - 0.05 * torch.rand_like(
+                    gate_output
+                )
+
+            causal_importances[param_name] = lower_leaky_fn(gate_output_for_lower_leaky)
+            causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs()
 
         return causal_importances, causal_importances_upper_leaky

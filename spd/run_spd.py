@@ -186,6 +186,7 @@ def optimize(
                     pre_weight_acts=pre_weight_acts,
                     sigmoid_type=config.sigmoid_type,
                     detach_inputs=False,
+                    sampling=config.sampling,
                 )
             )
 
