@@ -92,6 +92,8 @@ class Components(ABC, nn.Module):
         self.C = C
         self.V = nn.Parameter(torch.empty(v_dim, C))
         self.U = nn.Parameter(torch.empty(C, u_dim))
+        init_param_(self.V, fan_val=v_dim, nonlinearity="linear")
+        init_param_(self.U, fan_val=C, nonlinearity="linear")
 
     @property
     @abstractmethod
@@ -109,23 +111,23 @@ class Components(ABC, nn.Module):
             target_weight: The weight matrix of the original model. In the orientation of V @ U.
             Note that this is the transpose of the orientation of the weight matrix in the original code.
         """
-        target_weight = target_weight.to(self.U.device)
+        # target_weight = target_weight.to(self.U.device)
 
-        V = self.V
-        U = self.U
+        # V = self.V
+        # U = self.U
 
-        # Make V and U have unit norm in the d_in and d_out dimensions
-        V.data[:] = torch.randn_like(V.data)
-        U.data[:] = torch.randn_like(U.data)
-        V.data[:] = V.data / V.data.norm(dim=-2, keepdim=True)
-        U.data[:] = U.data / U.data.norm(dim=-1, keepdim=True)
+        # # Make V and U have unit norm in the d_in and d_out dimensions
+        # V.data[:] = torch.randn_like(V.data)
+        # U.data[:] = torch.randn_like(U.data)
+        # V.data[:] = V.data / V.data.norm(dim=-2, keepdim=True)
+        # U.data[:] = U.data / U.data.norm(dim=-1, keepdim=True)
 
-        # Calculate inner products
-        inner = einops.einsum(U, target_weight, "C cols, rows cols -> C rows")
-        C_norms = einops.einsum(inner, V, "C rows, rows C -> C")
+        # # Calculate inner products
+        # inner = einops.einsum(U, target_weight, "C cols, rows cols -> C rows")
+        # C_norms = einops.einsum(inner, V, "C rows, rows C -> C")
 
-        # Scale U by the inner product.
-        U.data[:] = U.data * C_norms.unsqueeze(-1)
+        # # Scale U by the inner product.
+        # U.data[:] = U.data * C_norms.unsqueeze(-1)
 
     @override
     @abstractmethod
