@@ -535,14 +535,12 @@ class ComponentModel(LoadableModule):
             gate_output = gates(gate_input)
 
             if sigmoid_type == "leaky_hard":
-                # lower leaky: optionally noise for binomial sampling
                 if sampling == "binomial":
                     causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](
                         1.05 * gate_output - 0.05 * torch.rand_like(gate_output)
                     )
                 else:
                     causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](gate_output)
-                # upper leaky: never noise
                 causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
                     gate_output
                 )
