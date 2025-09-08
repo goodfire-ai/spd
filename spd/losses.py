@@ -8,7 +8,7 @@ from torch import Tensor
 
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
-from spd.models.components import Components, EmbeddingComponents
+from spd.models.components import Components, ComponentsOrModule, EmbeddingComponents
 from spd.utils.component_utils import calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm
 
@@ -175,45 +175,51 @@ def calc_masked_recon_loss(
 def _calc_tensors_mse(
     params1: dict[str, Float[Tensor, "d_in d_out"]],
     params2: dict[str, Float[Tensor, "d_in d_out"]],
-    n_params: int,
     device: str,
 ) -> Float[Tensor, ""]:
     """Calculate the MSE between params1 and params2, summing over the d_in and d_out dimensions.
 
-    Normalizes by the number of parameters in the model.
-
     Args:
         params1: The first set of parameters
         params2: The second set of parameters
-        n_params: The number of parameters in the model
         device: The device to use for calculations
     """
-    faithfulness_loss = torch.tensor(0.0, device=device)
+    mse = torch.tensor(0.0, device=device)
     for name in params1:
-        faithfulness_loss = faithfulness_loss + ((params2[name] - params1[name]) ** 2).sum()
-    return faithfulness_loss / n_params
+        mse = mse + ((params2[name] - params1[name]) ** 2).sum()
+    return mse
 
 
 def calc_faithfulness_loss(
     model: ComponentModel,
-    n_params: int,
     device: str,
 ) -> Float[Tensor, ""]:
-    """Calculate the MSE loss between component parameters (V@U + bias) and target parameters."""
+    """Calculate the MSE loss between component parameters (V@U) and target parameters."""
     target_params: dict[str, Float[Tensor, "d_in d_out"]] = {}
     component_params: dict[str, Float[Tensor, "d_in d_out"]] = {}
 
     for comp_name, components_or_module in model.components_or_modules.items():
-        component_params[comp_name] = components_or_module.components_weight
-        target_params[comp_name] = components_or_module.original_weight
-        assert component_params[comp_name].shape == target_params[comp_name].shape
+        assert isinstance(components_or_module, ComponentsOrModule)
+        if components_or_module.components is not None:
+            component_params[comp_name] = components_or_module.components_weight
+            target_params[comp_name] = components_or_module.original_weight
+            assert component_params[comp_name].shape == target_params[comp_name].shape
+        if components_or_module.identity_components is not None:
+            id_name = f"identity_{comp_name}"
+            id_mat = components_or_module.identity_weight
+            component_params[id_name] = id_mat
+            target_params[id_name] = torch.eye(id_mat.shape[0], device=device, dtype=id_mat.dtype)
+            assert component_params[id_name].shape == target_params[id_name].shape
 
     faithfulness_loss = _calc_tensors_mse(
         params1=component_params,
         params2=target_params,
-        n_params=n_params,
         device=device,
     )
+
+    # Normalize by the number of parameters in the model (including any inserted identity matrices)
+    n_params = sum(param.numel() for param in target_params.values())
+    faithfulness_loss = faithfulness_loss / n_params
     return faithfulness_loss
 
 
@@ -225,7 +231,6 @@ def calculate_losses(
     causal_importances_upper_leaky: dict[str, Float[Tensor, "batch C"]],
     target_out: Tensor,
     device: str,
-    n_params: int,
     current_p: float | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Calculate all losses and return total loss and individual loss terms.
@@ -238,7 +243,6 @@ def calculate_losses(
         causal_importances_upper_leaky: Upper leaky causal importances for regularization
         target_out: Target model output
         device: Device to run computations on
-        n_params: Total number of parameters in the model
         current_p: Current p value for L_p sparsity loss (if using annealing)
 
     Returns:
@@ -249,7 +253,7 @@ def calculate_losses(
 
     # Faithfulness loss
     if config.faithfulness_coeff is not None:
-        faithfulness_loss = calc_faithfulness_loss(model=model, n_params=n_params, device=device)
+        faithfulness_loss = calc_faithfulness_loss(model=model, device=device)
         total_loss += config.faithfulness_coeff * faithfulness_loss
         loss_terms["faithfulness"] = faithfulness_loss.item()
 

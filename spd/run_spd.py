@@ -91,6 +91,7 @@ def optimize(
         gate_type=config.gate_type,
         gate_hidden_dims=config.gate_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
+        identity_module_patterns=config.identity_module_patterns,
     )
 
     if ln_stds is not None:
@@ -124,6 +125,9 @@ def optimize(
         for src_name, tgt_name in tied_weights:
             tgt = component_model.components_or_modules[tgt_name].components
             src = component_model.components_or_modules[src_name].components
+            assert tgt is not None and src is not None, (
+                f"Cannot tie weights between {src_name} and {tgt_name} - components are None"
+            )
             tgt.U.data = src.V.data.T
             tgt.V.data = src.U.data.T
 
@@ -140,14 +144,9 @@ def optimize(
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
-    n_params = sum(
-        component.original.weight.numel()
-        for component in component_model.components_or_modules.values()
-    )
-
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
-        module_names=component_model.target_module_paths,
+        module_names=list(component_model.components.keys()),
         C=config.C,
         n_examples_until_dead=config.n_examples_until_dead,
         device=device,
@@ -176,7 +175,7 @@ def optimize(
             target_out, pre_weight_acts = wrapped_model(
                 batch,
                 mode="pre_forward_cache",
-                module_names=component_model.target_module_paths,
+                module_names=list(component_model.components.keys()),
             )
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
             # through the parameters in calc_causal_importances below, the DDP hook will get called
@@ -209,7 +208,6 @@ def optimize(
                 causal_importances_upper_leaky=causal_importances_upper_leaky,
                 target_out=target_out,
                 device=device,
-                n_params=n_params,
                 current_p=current_p,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()

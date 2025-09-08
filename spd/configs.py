@@ -116,6 +116,11 @@ class Config(BaseModel):
         ...,
         description="List of fnmatch-style patterns that select modules to decompose",
     )
+    identity_module_patterns: list[str] | None = Field(
+        default=None,
+        description="List of fnmatch-style patterns that select modules in which an identity "
+        "matrix should be inserted and decomposed beforehand",
+    )
 
     # --- Loss Coefficients
     faithfulness_coeff: NonNegativeFloat | None = Field(

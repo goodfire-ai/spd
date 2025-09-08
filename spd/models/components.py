@@ -245,33 +245,56 @@ class EmbeddingComponents(Components):
 class ComponentsOrModule(nn.Module):
     def __init__(
         self,
-        original: nn.Linear | nn.Embedding | RadfordConv1D,
-        components: Components,
+        original: nn.Module,
+        components: Components | None = None,
+        identity_components: Components | None = None,
     ):
         super().__init__()
+        assert components is not None or identity_components is not None, (
+            "At least one of components or identity_components must be provided"
+        )
+
         self.original = original
         self.components = components
+        self.identity_components = identity_components
 
         self.forward_mode: Literal["original"] | Literal["components"] | None = None
         self.mask: Tensor | None = None
+        self.identity_mask: Tensor | None = None
 
     @property
     def components_weight(self) -> Float[Tensor, "rows cols"]:
-        """Get the component weight matrix."""
+        assert self.components is not None
         return self.components.weight
+
+    @property
+    def identity_weight(self) -> Float[Tensor, "d d"]:
+        assert self.identity_components is not None
+        return self.identity_components.weight
 
     @property
     def original_weight(self) -> Float[Tensor, "rows cols"]:
         if isinstance(self.original, RadfordConv1D):
             return self.original.weight.T
-        return self.original.weight
+        elif isinstance(self.original, nn.Linear | nn.Embedding):
+            return self.original.weight
+        else:
+            raise AttributeError(
+                f"Module type {type(self.original)} does not have a weight attribute"
+            )
 
     @override
     def forward(self, x: Tensor) -> Tensor:
         if self.forward_mode == "original":
-            assert self.mask is None, "Mask should not be present in original mode"
+            assert self.mask is None and self.identity_mask is None
             return self.original(x)
         elif self.forward_mode == "components":
-            # mask *can* but doesn't *need to* be present here
-            return self.components(x, self.mask)
+            if self.identity_components is not None:
+                x = self.identity_components(x, self.identity_mask)
+
+            if self.components is not None:
+                return self.components(x, self.mask)
+            else:
+                return self.original(x)
+
         raise ValueError(f"Invalid forward mode: {self.forward_mode}")
