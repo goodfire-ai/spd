@@ -77,19 +77,8 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n-agents 2 # Use custom swee
 - Sweep parameters support both experiment-specific and global configurations:
   ```yaml
   # Global parameters applied to all experiments
-  global:
-    seed:
-      values: [0, 1, 2]
-    lr:
-      values: [0.001, 0.01]
   
   # Experiment-specific parameters (override global)
-  tms_5-2:
-    seed:
-      values: [100, 200]  # Overrides global seed
-    task_config:
-      feature_probability:
-        values: [0.05, 0.1]
   ```
 
 #### Evaluation Runs
