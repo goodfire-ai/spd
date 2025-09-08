@@ -296,7 +296,9 @@ class ComponentModel(LoadableModule):
                 identity_component = LinearComponents(
                     C=C, d_in=d_identity, d_out=d_identity, bias=None
                 )
-                identity_component.init_from_target_weight(module.weight.T)
+                identity_component.init_from_target_weight(
+                    torch.eye(d_identity, device=module.weight.device, dtype=module.weight.dtype)
+                )
 
             replacement = ComponentsOrModule(
                 original=module,
