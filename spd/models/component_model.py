@@ -478,7 +478,6 @@ class ComponentModel(LoadableModule):
             gate_type=config.gate_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
-        # sampling mode is supplied at call sites; do not set attributes here
 
         comp_model_weights = torch.load(
             run_info.checkpoint_path, map_location="cpu", weights_only=True
