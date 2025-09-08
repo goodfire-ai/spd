@@ -497,8 +497,8 @@ class ComponentModel(LoadableModule):
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
         sigmoid_type: SigmoidTypes,
+        sampling: Literal["continuous", "binomial"],
         detach_inputs: bool = False,
-        sampling: Literal["continuous", "binomial"] = "continuous",
     ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
         """Calculate causal importances.
 
