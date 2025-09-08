@@ -167,7 +167,7 @@ class Config(BaseModel):
         description="The p-value used for the importance minimality loss",
     )
     p_anneal_start_frac: Probability = Field(
-        default=1.0,
+        default=0.5,
         description="Fraction of training after which to start annealing p (1.0 = no annealing)",
     )
     p_anneal_final_p: PositiveFloat | None = Field(
