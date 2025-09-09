@@ -24,6 +24,7 @@ from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_values_histograms,
     plot_component_activation_density,
+    plot_named_matrices,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_masks
@@ -361,7 +362,18 @@ class UVPlots(StreamingEval):
             components=self.model.components, all_perm_indices=all_perm_indices
         )
 
-        return {"figures/uv_matrices": uv_matrices}
+        out: dict[str, Image.Image] = {"figures/uv_matrices": uv_matrices}
+        if self.config.identity_module_patterns:
+            identity_weights = {
+                k: v.weight
+                for k, v in self.model.components.items()
+                if k.startswith("identity_")
+                and k.removeprefix("identity_") in self.config.identity_module_patterns
+            }
+            identity_img = plot_named_matrices(matrices=identity_weights, title_suffix="(U@V)")
+
+            out["figures/identity_weights"] = identity_img
+        return out
 
 
 class IdentityCIError(StreamingEval):
