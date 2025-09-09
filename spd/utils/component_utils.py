@@ -9,35 +9,50 @@ def calc_stochastic_masks(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     n_mask_samples: int,
     sampling: Literal["continuous", "binomial"],
-) -> list[dict[str, Float[Tensor, "... C"]]]:
-    """Calculate n_mask_samples stochastic masks with the formula `ci + (1 - ci) * rand_unif(0,1)`.
+) -> tuple[list[dict[str, Float[Tensor, "... C"]]], list[dict[str, Float[Tensor, "..."]]]]:
+    """Calculate n_mask_samples stochastic masks and corresponding r values.
+
+    Stochastic masks are computed as:
+        ci + (1 - ci) * base - r
+    where base is either binomial(0/1) or uniform(0,1) depending on ``sampling``,
+    and ``r`` is a dictionary with the same keys as ``causal_importances`` but
+    lacks the trailing C dimension (so it broadcasts across components).
 
     Args:
         causal_importances: The causal importances to use for the stochastic masks.
         n_mask_samples: The number of stochastic masks to calculate.
+        sampling: "continuous" uses uniform noise, "binomial" uses 0/1 draws.
     Return:
-        A list of n_mask_samples dictionaries, each containing the stochastic masks for each layer.
+        Tuple of:
+            - list of n_mask_samples dictionaries of stochastic masks per layer (shape ... C)
+            - list of n_mask_samples dictionaries of r per layer (shape ...)
     """
 
     stochastic_masks: list[dict[str, Float[Tensor, "... C"]]] = []
+    rs: list[dict[str, Float[Tensor, ...]]] = []
 
     for _ in range(n_mask_samples):
-        if sampling == "binomial":
-            stochastic_masks.append(
-                {
-                    layer: ci + (1 - ci) * torch.randint(0, 2, ci.shape, device=ci.device).float()
-                    for layer, ci in causal_importances.items()
-                }
-            )
-        else:
-            stochastic_masks.append(
-                {
-                    layer: ci + (1 - ci) * torch.rand_like(ci)
-                    for layer, ci in causal_importances.items()
-                }
-            )
+        r_dict: dict[str, Float[Tensor, ...]] = {
+            layer: torch.rand_like(ci[..., 0]) for layer, ci in causal_importances.items()
+        }
 
-    return stochastic_masks
+        if sampling == "binomial":
+            mask_dict = {
+                layer: ci
+                + (1 - ci) * torch.randint(0, 2, ci.shape, device=ci.device).float()
+                - r_dict[layer][..., None]
+                for layer, ci in causal_importances.items()
+            }
+        else:
+            mask_dict = {
+                layer: ci + (1 - ci) * torch.rand_like(ci) - r_dict[layer][..., None]
+                for layer, ci in causal_importances.items()
+            }
+
+        stochastic_masks.append(mask_dict)
+        rs.append(r_dict)
+
+    return stochastic_masks, rs
 
 
 def calc_ci_l_zero(ci: Float[Tensor, "... C"], threshold: float) -> float:
