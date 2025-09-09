@@ -12,7 +12,7 @@ gate_type: "mlp"
 gate_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["linear1", "linear2"]
-identity_module_patterns: ["linear2"]
+identity_module_patterns: null
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1.0
@@ -48,11 +48,9 @@ eval_metrics:
   - classname: "PermutedCIPlots"
     extra_init_kwargs:
       identity_patterns: ["linear1", "linear2"]
-      dense_patterns: ["identity_linear2"]
   - classname: "UVPlots"
     extra_init_kwargs:
       identity_patterns: ["linear1", "linear2"]
-      dense_patterns: ["identity_linear2"]
   - classname: "IdentityCIError"
     extra_init_kwargs:
       identity_ci:
@@ -60,9 +58,6 @@ eval_metrics:
           n_features: 40
         - layer_pattern: "linear2"
           n_features: 40
-      dense_ci:
-        - layer_pattern: "identity_linear2"
-          k: 10
   - classname: "CI_L0"
   - classname: "CIMeanPerComponent"
 
