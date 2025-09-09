@@ -225,8 +225,9 @@ class ComponentsOrModule(nn.Module):
         self.original = original
         self.components = components
 
-        self.forward_mode: Literal["original"] | Literal["components"] | None = None
+        self.forward_mode: Literal["original", "components", "blend"] | None = None
         self.mask: Tensor | None = None
+        self.r: Tensor | None = None
 
     @property
     def components_weight(self) -> Float[Tensor, "rows cols"]:
@@ -247,4 +248,16 @@ class ComponentsOrModule(nn.Module):
         elif self.forward_mode == "components":
             # mask *can* but doesn't *need to* be present here
             return self.components(x, self.mask)
+        elif self.forward_mode == "blend":
+            # Compute SPD and target outputs, then blend using r: out_spd + r * out_target
+            out_spd = self.components(x, self.mask)
+            out_target = self.original(x)
+            assert self.r is not None, "r must be provided in blend mode"
+            scale = self.r
+            # Broadcast r over the last feature dimension
+            if scale.ndim == out_target.ndim:
+                blended = out_spd + scale * out_target
+            else:
+                blended = out_spd + scale[..., None] * out_target
+            return blended
         raise ValueError(f"Invalid forward mode: {self.forward_mode}")

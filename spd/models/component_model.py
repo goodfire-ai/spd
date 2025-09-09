@@ -291,6 +291,7 @@ class ComponentModel(LoadableModule):
         *args: Any,
         mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
         masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        r: dict[str, Float[Tensor, "..."]] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
     ) -> Any:
@@ -311,7 +312,7 @@ class ComponentModel(LoadableModule):
         """
         if mode == "components":
             assert masks is not None, "masks parameter is required for mode='components'"
-            return self._forward_with_components(*args, masks=masks, **kwargs)
+            return self._forward_with_components(*args, masks=masks, r=r, **kwargs)
         elif mode == "pre_forward_cache":
             assert module_names is not None, (
                 "module_names parameter is required for mode='pre_forward_cache'"
@@ -323,7 +324,11 @@ class ComponentModel(LoadableModule):
             return self._forward_target(*args, **kwargs)
 
     @contextmanager
-    def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
+    def _replaced_modules(
+        self,
+        masks: dict[str, Float[Tensor, "... C"]],
+        r: dict[str, Float[Tensor, "..."]] | None,
+    ):
         """Context manager for temporarily replacing modules with components.
 
         Args:
@@ -338,17 +343,26 @@ class ComponentModel(LoadableModule):
             )
 
             if module_name in masks:
-                component.forward_mode = "components"
+                component.forward_mode = "blend"
                 component.mask = masks[module_name]
+                # Provide r for blending; default to zeros if not provided
+                if r is not None and module_name in r:
+                    component.r = r[module_name]
+                else:
+                    # Create a zeros tensor with the same broadcastable shape as mask without C
+                    mask = masks[module_name]
+                    component.r = torch.zeros_like(mask[..., 0])
             else:
                 component.forward_mode = "original"
                 component.mask = None
+                component.r = None
         try:
             yield
         finally:
             for component in self.components_or_modules.values():
                 component.forward_mode = None
                 component.mask = None
+                component.r = None
 
     def _forward_target(self, *args: Any, **kwargs: Any) -> Any:
         """Forward pass of the target model."""
@@ -371,6 +385,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         masks: dict[str, Float[Tensor, "... C"]],
+        r: dict[str, Float[Tensor, "..."]] | None = None,
         **kwargs: Any,
     ) -> Any:
         """Forward pass with temporary component replacements. `masks` is a dictionary mapping
@@ -380,7 +395,7 @@ class ComponentModel(LoadableModule):
         Args:
             masks: Optional dictionary mapping component names to masks
         """
-        with self._replaced_modules(masks):
+        with self._replaced_modules(masks, r):
             raw_out = self.patched_model(*args, **kwargs)
             out = self._extract_output(raw_out)
             return out
