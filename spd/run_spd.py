@@ -54,7 +54,9 @@ def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path)
     metrics_without_images = {}
     for k, v in data.items():
         if isinstance(v, Image.Image):
-            v.save(fig_dir / f"{k.replace('/', '_')}_{step}.png")
+            filename = f"{k.replace('/', '_')}_{step}.png"
+            v.save(fig_dir / filename)
+            tqdm.write(f"Saved figure {k} to {fig_dir / filename}")
         else:
             metrics_without_images[k] = v
 

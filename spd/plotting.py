@@ -97,6 +97,30 @@ def _plot_causal_importances_figure(
     return img
 
 
+def plot_mean_component_cis(mean_component_cis: dict[str, Float[Tensor, " C"]]) -> Image.Image:
+    """Scatter plot of the mean CI per component across modules."""
+    fig, axs = plt.subplots(len(mean_component_cis), 1, figsize=(8, 4), dpi=200)
+    axs = np.array(axs)
+    for i, (module_name, mean_component_ci) in enumerate(mean_component_cis.items()):
+        sorted_components = torch.sort(mean_component_ci, descending=True)[0]
+        ax = axs[i]
+        ax.scatter(
+            range(sorted_components.numel()),
+            sorted_components.detach().cpu().numpy(),
+            marker="x",
+            s=10,
+        )
+        if i == len(mean_component_cis) - 1:
+            ax.set_xlabel("Component")
+        ax.set_ylabel("mean CI")
+        ax.set_title(module_name)
+
+    fig.tight_layout()
+    img = _render_figure(fig)
+    plt.close(fig)
+    return img
+
+
 def get_single_feature_causal_importances(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
@@ -279,56 +303,6 @@ def plot_UV_matrices(
     plt.close(fig)
 
     return fig_img
-
-
-def plot_named_matrices(
-    matrices: dict[str, Float[Tensor, "d_in d_out"]], title_suffix: str | None = None
-) -> Image.Image:
-    """Plot matrices.
-
-    The title of each subplot will be the name of the matrix, optionally with a suffix.
-
-    Returns a single image with one row per matrix.
-    """
-
-    n = len(matrices)
-    fig, axs = plt.subplots(
-        n,
-        1,
-        figsize=(5, 5 * n),
-        constrained_layout=True,
-        squeeze=False,
-        dpi=300,
-    )
-    axs = np.array(axs)
-
-    images = []
-    for j, (name, W) in enumerate(matrices.items()):
-        W_np = W.detach().cpu().numpy()
-        ax = axs[j, 0]
-        im = ax.matshow(W_np, aspect="auto", cmap="Reds")
-        images.append(im)
-
-        # Match axis styling with _plot_causal_importances_figure
-        ax.xaxis.tick_bottom()
-        ax.xaxis.set_label_position("bottom")
-        ax.set_xlabel("d_in index")
-        ax.set_ylabel("d_out index")
-        title_str = name
-        if title_suffix is not None:
-            title_str += f" {title_suffix}"
-        ax.set_title(title_str)
-    # Unified color scale
-    vmin = min(W.min().item() for _, W in matrices.items())
-    vmax = max(W.max().item() for _, W in matrices.items())
-    norm = plt.Normalize(vmin=vmin, vmax=vmax)
-    for im in images:
-        im.set_norm(norm)
-    fig.colorbar(images[0], ax=axs.ravel().tolist())
-
-    img = _render_figure(fig)
-    plt.close(fig)
-    return img
 
 
 def plot_component_activation_density(
