@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from jaxtyping import Float
 from matplotlib import pyplot as plt
+from matplotlib.ticker import ScalarFormatter
 from PIL import Image
 from torch import Tensor
 
@@ -653,6 +654,9 @@ def plot_single_layer_geometric_interaction_strength_vs_coactivation(
     ax.set_ylim(-0.01, 1.01)
     ax.set_ylabel("Coactivation Fraction")
     ax.set_xlabel("Frequency")
+    ax.set_xscale("log")
+    ax.tick_params(axis="x", labelsize=8, rotation=45)
+    ax.xaxis.set_major_formatter(ScalarFormatter())
 
     ax = fig.add_subplot(gs[1, 1])
     ax.set_xlim(-0.01, 1.01)

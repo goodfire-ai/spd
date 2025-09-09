@@ -536,7 +536,7 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
         # Scale the U matrices by the norms of the V matrices
         component_abs_left_sing_vecs = {
             module_name: self.model.components[module_name].U.data
-            / component_right_sing_vecs_norms_vecs[module_name].unsqueeze(1)
+            * component_right_sing_vecs_norms_vecs[module_name].unsqueeze(1)
             for module_name in self.model.components
         }
 
@@ -552,7 +552,7 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             for module_name in self.model.components
         }
 
-        # Get inner products of the U vectors with themselves
+        # Get inner products of the abs(U) vectors with themselves
         component_abs_left_sing_vecs_inner_products = {
             module_name: einsum(
                 component_abs_left_sing_vecs[module_name],
@@ -616,11 +616,13 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
 
         ## Geometric Interaction Strength Product with Coactivation Fraction heatmap
         # Elementwise multiply the matrices
-        elementwise_products = {
+        gis_coact_elementwise_products = {
             module_name: alive_geometric_interaction_strength_matrices[module_name]
             * alive_co_activation_fractions[module_name]
             for module_name in self.model.components
         }
+
+        ## Make Desctructive interference metric
 
         # Create individual plots for each layer
         results = {}
@@ -659,7 +661,7 @@ class ActivationsAndInteractions(StreamingEval):  # TODO factorize compute funct
             # Create individual geometric interaction strength product with coactivation plot for this layer
             geom_int_strength_product_with_coact_fig = (
                 plot_single_layer_geometric_interaction_strength_product_with_coactivation_fraction(
-                    module_name, elementwise_products[module_name]
+                    module_name, gis_coact_elementwise_products[module_name]
                 )
             )
             results[
