@@ -7,7 +7,7 @@ import torch
 from PIL import Image
 
 from spd.configs import Config
-from spd.eval import CIHistograms
+from spd.eval import ActivationsAndInteractions, CIHistograms
 from spd.models.component_model import ComponentModel
 
 
@@ -95,3 +95,102 @@ class TestCIHistograms:
             # Dict will be empty since no batches were watched
             assert len(combined_ci) == 0
             assert "figures/causal_importance_values" in result
+
+
+class TestActivationsAndInteractions:
+    """Test suite for ActivationsAndInteractions class."""
+
+    @pytest.fixture
+    def mock_config(self):
+        """Create a mock Config object."""
+        config = Mock(spec=Config)
+        config.ci_alive_threshold = 0.5
+        return config
+
+    @pytest.fixture
+    def mock_model(self):
+        """Create a mock ComponentModel with components that have U and V matrices."""
+        model = Mock(spec=ComponentModel)
+        model.C = 10  # Number of components
+        model.components = {
+            "layer1": Mock(),
+            "layer2": Mock(),
+        }
+
+        # Mock U and V matrices for each component
+        for component in model.components.values():
+            component.U.data = torch.randn(10, 20)  # C x d
+            component.V.data = torch.randn(20, 10)  # d x C
+
+        # Mock parameters to return a tensor with a device
+        mock_param = Mock()
+        mock_param.device = torch.device("cpu")
+        model.parameters.return_value = [mock_param]
+
+        return model
+
+    @pytest.fixture
+    def sample_ci(self):
+        """Create sample causal importance tensors."""
+        return {
+            "layer1": torch.randn(4, 8, 10),  # batch_size=4, seq_len=8, C=10
+            "layer2": torch.randn(4, 8, 10),
+        }
+
+    def test_individual_layer_plots(
+        self, mock_model: Mock, mock_config: Mock, sample_ci: dict[str, torch.Tensor]
+    ):
+        """Test that ActivationsAndInteractions creates individual plots for each layer."""
+        activations_and_interactions = ActivationsAndInteractions(mock_model, mock_config)
+
+        # Create dummy batch and target_out
+        batch = torch.randn(4, 8)
+        target_out = torch.randn(4, 8, 100)
+
+        # Watch a few batches to accumulate data
+        for _ in range(3):
+            activations_and_interactions.watch_batch(batch, target_out, sample_ci)
+
+        with (
+            patch(
+                "spd.eval.plot_single_layer_component_co_activation_fractions"
+            ) as mock_co_act_plot,
+            patch(
+                "spd.eval.plot_single_layer_component_abs_left_singular_vectors_geometric_interaction_strengths"
+            ) as mock_geom_plot,
+            patch(
+                "spd.eval.plot_single_layer_geometric_interaction_strength_vs_coactivation"
+            ) as mock_scatter_plot,
+            patch(
+                "spd.eval.plot_single_layer_geometric_interaction_strength_product_with_coactivation_fraction"
+            ) as mock_product_plot,
+        ):
+            # Mock all plotting functions to return dummy images
+            mock_co_act_plot.return_value = Image.new("RGB", (100, 100))
+            mock_geom_plot.return_value = Image.new("RGB", (100, 100))
+            mock_scatter_plot.return_value = Image.new("RGB", (100, 100))
+            mock_product_plot.return_value = Image.new("RGB", (100, 100))
+
+            result = activations_and_interactions.compute()
+
+            # Check that we get individual plots for each layer
+            expected_keys = [
+                "figures/component_co_activation_fractions/layer1",
+                "figures/component_co_activation_fractions/layer2",
+                "figures/component_abs_left_singular_vectors_geometric_interaction_strengths/layer1",
+                "figures/component_abs_left_singular_vectors_geometric_interaction_strengths/layer2",
+                "figures/geometric_interaction_strength_vs_coactivation/layer1",
+                "figures/geometric_interaction_strength_vs_coactivation/layer2",
+                "figures/geometric_interaction_strength_product_with_coactivation_fraction/layer1",
+                "figures/geometric_interaction_strength_product_with_coactivation_fraction/layer2",
+            ]
+
+            for key in expected_keys:
+                assert key in result
+                assert isinstance(result[key], Image.Image)
+
+            # Check that plotting functions were called for each layer
+            assert mock_co_act_plot.call_count == 2  # Once for each layer
+            assert mock_geom_plot.call_count == 2
+            assert mock_scatter_plot.call_count == 2
+            assert mock_product_plot.call_count == 2
