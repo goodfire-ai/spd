@@ -1,4 +1,5 @@
 import fnmatch
+from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -126,6 +127,8 @@ class ComponentModel(LoadableModule):
         """Extract the desired output from the model's raw output.
 
         If pretrained_model_output_attr is None, returns the raw output directly.
+        If pretrained_model_output_attr starts with "idx_", returns the index specified by the
+        second part of the string. E.g. "idx_0" returns the first element of the raw output.
         Otherwise, returns the specified attribute from the raw output.
 
         Args:
@@ -136,6 +139,15 @@ class ComponentModel(LoadableModule):
         """
         if self.pretrained_model_output_attr is None:
             return raw_output
+        elif self.pretrained_model_output_attr.startswith("idx_"):
+            idx_val = int(self.pretrained_model_output_attr.split("_")[1])
+            assert isinstance(raw_output, Sequence), (
+                f"raw_output must be a sequence, not {type(raw_output)}"
+            )
+            assert idx_val < len(raw_output), (
+                f"Index {idx_val} out of range for raw_output of length {len(raw_output)}"
+            )
+            return raw_output[idx_val]
         else:
             return getattr(raw_output, self.pretrained_model_output_attr)
 
@@ -222,23 +234,20 @@ class ComponentModel(LoadableModule):
                     d_out=d_out,
                     bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
                 )
-                component.init_from_target_weight(module.weight.T)
             elif isinstance(module, nn.Embedding):
                 component = EmbeddingComponents(
                     C=C,
                     vocab_size=module.num_embeddings,
                     embedding_dim=module.embedding_dim,
                 )
-                component.init_from_target_weight(module.weight)
             elif isinstance(module, RadfordConv1D):
                 d_in, d_out = module.weight.shape
                 component = LinearComponents(
                     C=C,
                     d_in=d_in,
                     d_out=d_out,
-                    bias=None,
+                    bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
                 )
-                component.init_from_target_weight(module.weight)
             else:
                 raise ValueError(
                     f"Module '{module_path}' matched pattern is not nn.Linear, nn.Embedding,"
@@ -311,10 +320,7 @@ class ComponentModel(LoadableModule):
                 *args, module_names=module_names, **kwargs
             )
         else:
-            # target forward pass of the patched model
-            raw_out = self.patched_model(*args, **kwargs)
-            out = self._extract_output(raw_out)
-            return out
+            return self._forward_target(*args, **kwargs)
 
     @contextmanager
     def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
@@ -343,6 +349,23 @@ class ComponentModel(LoadableModule):
             for component in self.components_or_modules.values():
                 component.forward_mode = None
                 component.mask = None
+
+    def _forward_target(self, *args: Any, **kwargs: Any) -> Any:
+        """Forward pass of the target model."""
+        for module in self.components_or_modules.values():
+            assert module.forward_mode is None, (
+                f"Component should be in pristine state, but forward_mode is {module.forward_mode}"
+            )
+            module.forward_mode = "original"
+        try:
+            out = self.patched_model(*args, **kwargs)
+        finally:
+            for module in self.components_or_modules.values():
+                module.forward_mode = None
+
+        out = self._extract_output(out)
+
+        return out
 
     def _forward_with_components(
         self,
@@ -428,12 +451,12 @@ class ComponentModel(LoadableModule):
 
         # Load the target model
         model_class = resolve_class(config.pretrained_model_class)
-        if config.pretrained_model_name_hf is not None:
+        if config.pretrained_model_name is not None:
             assert issubclass(model_class, PreTrainedModel), (
                 f"Model class {model_class} should be a subclass of PreTrainedModel which "
                 "defines a `from_pretrained` method"
             )
-            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name_hf)
+            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name)
         else:
             assert issubclass(model_class, LoadableModule), (
                 f"Model class {model_class} should be a subclass of LoadableModule which "
@@ -474,6 +497,7 @@ class ComponentModel(LoadableModule):
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
         sigmoid_type: SigmoidTypes,
+        sampling: Literal["continuous", "binomial"],
         detach_inputs: bool = False,
     ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
         """Calculate causal importances.
@@ -507,15 +531,20 @@ class ComponentModel(LoadableModule):
             gate_output = gates(gate_input)
 
             if sigmoid_type == "leaky_hard":
-                causal_importances[param_name] = SIGMOID_TYPES["lower_leaky_hard"](gate_output)
-                causal_importances_upper_leaky[param_name] = SIGMOID_TYPES["upper_leaky_hard"](
-                    gate_output
-                )
+                lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
+                upper_leaky_fn = SIGMOID_TYPES["upper_leaky_hard"]
             else:
                 # For other sigmoid types, use the same function for both
-                sigmoid_fn = SIGMOID_TYPES[sigmoid_type]
-                causal_importances[param_name] = sigmoid_fn(gate_output)
-                # Use absolute value to ensure upper_leaky values are non-negative for importance minimality loss
-                causal_importances_upper_leaky[param_name] = sigmoid_fn(gate_output).abs()
+                lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+                upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+
+            gate_output_for_lower_leaky = gate_output
+            if sampling == "binomial":
+                gate_output_for_lower_leaky = 1.05 * gate_output - 0.05 * torch.rand_like(
+                    gate_output
+                )
+
+            causal_importances[param_name] = lower_leaky_fn(gate_output_for_lower_leaky)
+            causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs()
 
         return causal_importances, causal_importances_upper_leaky

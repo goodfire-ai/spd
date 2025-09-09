@@ -50,7 +50,7 @@ def create_dataloader_iterator(model_data: ModelData) -> Iterator[PromptData]:
 
     eval_cfg = DatasetConfig(
         name=task_cfg.dataset_name,
-        hf_tokenizer_path=model_data.config.pretrained_model_name_hf,
+        hf_tokenizer_path=model_data.config.pretrained_model_name,
         split=task_cfg.eval_data_split,
         n_ctx=task_cfg.max_seq_len,
         is_tokenized=task_cfg.is_tokenized,
@@ -110,6 +110,7 @@ def compute_causal_importances(
             pre_weight_acts=pre_weight_acts,
             detach_inputs=True,
             sigmoid_type=_model_data.config.sigmoid_type,
+            sampling=_model_data.config.sampling,
         )
     return cis
 

@@ -1,3 +1,5 @@
+from typing import Literal
+
 import torch
 from jaxtyping import Float
 from torch import Tensor
@@ -6,6 +8,7 @@ from torch import Tensor
 def calc_stochastic_masks(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     n_mask_samples: int,
+    sampling: Literal["continuous", "binomial"],
 ) -> list[dict[str, Float[Tensor, "... C"]]]:
     """Calculate n_mask_samples stochastic masks with the formula `ci + (1 - ci) * rand_unif(0,1)`.
 
@@ -19,9 +22,20 @@ def calc_stochastic_masks(
     stochastic_masks: list[dict[str, Float[Tensor, "... C"]]] = []
 
     for _ in range(n_mask_samples):
-        stochastic_masks.append(
-            {layer: ci + (1 - ci) * torch.rand_like(ci) for layer, ci in causal_importances.items()}
-        )
+        if sampling == "binomial":
+            stochastic_masks.append(
+                {
+                    layer: ci + (1 - ci) * torch.randint(0, 2, ci.shape, device=ci.device).float()
+                    for layer, ci in causal_importances.items()
+                }
+            )
+        else:
+            stochastic_masks.append(
+                {
+                    layer: ci + (1 - ci) * torch.rand_like(ci)
+                    for layer, ci in causal_importances.items()
+                }
+            )
 
     return stochastic_masks
 

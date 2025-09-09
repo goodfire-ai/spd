@@ -14,6 +14,7 @@ gate_type: "vector_mlp"
 gate_hidden_dims: [8]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["transformer.h.3.mlp.c_fc"]
+sampling: "binomial"
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1.0
@@ -57,7 +58,7 @@ eval_metrics:
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.AutoModelForCausalLM
-pretrained_model_name_hf: roneneldan/TinyStories-1M
+pretrained_model_name: roneneldan/TinyStories-1M
 pretrained_model_output_attr: logits
 tokenizer_name: EleutherAI/gpt-neo-125M
 

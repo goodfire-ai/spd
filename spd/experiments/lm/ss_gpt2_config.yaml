@@ -1,6 +1,5 @@
 # --- WandB ---
 wandb_project: spd
-# wandb_project: null
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
@@ -12,6 +11,7 @@ gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["transformer.h.1.mlp.c_fc"]
+sampling: "binomial"
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1e3
@@ -56,7 +56,7 @@ eval_metrics:
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.GPT2LMHeadModel
-pretrained_model_name_hf: SimpleStories/test-SimpleStories-gpt2-1.25M
+pretrained_model_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 pretrained_model_output_attr: logits
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 

@@ -330,6 +330,7 @@ def _process_batch_for_tokens(
             pre_weight_acts=pre_weight_acts,
             sigmoid_type=model_data.config.sigmoid_type,
             detach_inputs=True,
+            sampling=model_data.config.sampling,
         )
 
     # Calculate L0 scores for this batch
@@ -444,7 +445,7 @@ def analyze_component_token_table(
     # Create dataloader
     data_config = DatasetConfig(
         name=config.dataset_name,
-        hf_tokenizer_path=_model_data.config.pretrained_model_name_hf,
+        hf_tokenizer_path=_model_data.config.pretrained_model_name,
         split=config.dataset_split,
         n_ctx=config.max_seq_len,
         is_tokenized=config.is_tokenized,

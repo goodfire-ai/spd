@@ -36,31 +36,37 @@ class EvalMetricConfig(BaseModel):
         description="Extra keyword arguments to pass to the class constructor besides `model: ComponentModel` and `config: Config`",
     )
 
-    def _get_metric_class(self) -> type:
+    def _get_metric_class(self) -> type | None:
         available_classes = importlib.import_module("spd.eval").EVAL_CLASSES
         cls = available_classes.get(self.classname)
         if cls is None:
-            raise ValueError(
+            logger.warning(
                 f"Metric class {self.classname!r} not found. Available classes: {available_classes.keys()}"
             )
         return cls
 
     @model_validator(mode="after")
     def validate_class_kwargs(self) -> Self:
-        cls = self._get_metric_class()
+        """Check that the classname and kwargs are valid.
 
+        If the classname is not found, we warn instead of raising an error. This allows us to
+        load checkpoints from a run where a user might have added custom metrics.
+        """
+        cls = self._get_metric_class()
+        if cls is None:
+            return self
         sig = inspect.signature(cls.__init__)
         # Skip 'self' plus the first two actual parameters (model: ComponentModel, config: Config)
         params_after_required = list(sig.parameters.values())[3:]
         sig_extra_only = inspect.Signature(params_after_required)
 
-        # see if our kwargs are valid
+        # Check that kwargs are valid
         try:
             sig_extra_only.bind(**self.extra_init_kwargs)
         except TypeError as e:
-            # replace the error as e will include something like
-            # "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
-            raise ValueError(f"Invalid kwargs for {self.classname!r}: {e}") from None
+            # Raise a warning instead of an error
+            # e.g. "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
+            logger.warning(f"Invalid kwargs for {self.classname!r}: {e}")
 
         return self
 
@@ -101,6 +107,10 @@ class Config(BaseModel):
     gate_hidden_dims: list[NonNegativeInt] = Field(
         default=[8],
         description="Hidden dimensions for the gate used to calculate the causal importance",
+    )
+    sampling: Literal["continuous", "binomial"] = Field(
+        default="continuous",
+        description="Sampling mode for stochastic elements: 'continuous' (default) or 'binomial'",
     )
     sigmoid_type: Literal["normal", "hard", "leaky_hard", "upper_leaky_hard", "swish_hard"] = Field(
         default="leaky_hard",
@@ -269,7 +279,7 @@ class Config(BaseModel):
         description="Model identifier. Local path or wandb reference "
         "(e.g. 'wandb:goodfire/spd/runs/otxwx80v' or 'mnt/my_model/checkpoint.pth')",
     )
-    pretrained_model_name_hf: str | None = Field(
+    pretrained_model_name: str | None = Field(
         default=None,
         description="hf model identifier. E.g. 'SimpleStories/SimpleStories-1.25M'",
     )
@@ -302,7 +312,10 @@ class Config(BaseModel):
         "metrics_fns",
         "figures_fns",
     ]
-    RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {"print_freq": "eval_freq"}
+    RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
+        "print_freq": "eval_freq",
+        "pretrained_model_name_hf": "pretrained_model_name",
+    }
 
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
