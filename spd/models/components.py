@@ -260,14 +260,17 @@ class ComponentsOrModule(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         if self.forward_mode == "original":
             assert self.mask is None and self.identity_mask is None
-            return self.original(x)
+            x = self.original(x)
         elif self.forward_mode == "components":
-            if self.identity_components is not None:
+            if self.identity_mask is not None:
+                assert self.identity_components is not None
                 x = self.identity_components(x, self.identity_mask)
 
-            if self.components is not None:
-                return self.components(x, self.mask)
+            if self.mask is not None:
+                assert self.components is not None
+                x = self.components(x, self.mask)
             else:
-                return self.original(x)
-
-        raise ValueError(f"Invalid forward mode: {self.forward_mode}")
+                x = self.original(x)
+        else:
+            raise ValueError(f"Invalid forward mode: {self.forward_mode}")
+        return x
