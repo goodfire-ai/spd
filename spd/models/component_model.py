@@ -200,40 +200,43 @@ class ComponentModel(LoadableModule):
         This method mutates and returns `model`, and returns a dictionary of references
         to the newly inserted ComponentsOrModule objects.
 
-        Example:
-            >>> model
-            MyModel(
-                (linear): Linear(in_features=10, out_features=10, bias=True)
-            )
-            >>> target_module_paths = ["linear"]
-            >>> components_or_modules = create_components_or_modules(
-            ...     model,
-            ...     target_module_paths,
-            ...     C=2,
-            ... )
-            >>> print(model)
-            MyModel(
-                (linear): ComponentsOrModule(
-                    (original): Linear(in_features=10, out_features=10, bias=True),
-                    (components): LinearComponents(C=2, d_in=10, d_out=10, bias=True),
-                )
-            )
-            >>> print(components_or_modules)
-            {
-                "linear": ComponentsOrModule(
-                    (original): Linear(in_features=10, out_features=10, bias=True),
-                    (components): LinearComponents(C=2, d_in=10, d_out=10, bias=True),
-                ),
-            }
+        A module is modified in the target model if that module exists in either module_paths or
+        identity_module_patterns. If it exists in both, we just have the single ComponentsOrModule
+        object with non-None values for components and identity_components.
+
 
         Args:
             model: The model to replace modules in.
             module_paths: The paths to the modules to replace.
+            identity_module_paths: The paths to the modules to replace for identity components.
             C: The number of components to use.
 
         Returns:
             A dictionary mapping module paths to the newly inserted ComponentsOrModule objects
             within `model`.
+
+
+        Example:
+            >>> model
+            MyModel(
+                (linear): Linear(in_features=10, out_features=20, bias=True)
+            )
+            >>> target_module_paths = ["linear"]
+            >>> module_paths = ["linear"]
+            >>> components_or_modules = _patch_modules(
+            ...     model,
+            ...     module_paths,
+            ...     identity_module_paths,
+            ...     C=2,
+            ... )
+            >>> print(model)
+            MyModel(
+                (linear): ComponentsOrModule(
+                    (original): Linear(in_features=10, out_features=20, bias=True),
+                    (components): LinearComponents(C=2, d_in=10, d_out=20, bias=True),
+                    (identity_components): LinearComponents(C=2, d_in=10, d_out=10, bias=None),
+                )
+            )
         """
         components_or_modules: dict[str, ComponentsOrModule] = {}
         identity_paths_set = set(identity_module_paths)
