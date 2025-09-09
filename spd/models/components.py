@@ -29,7 +29,7 @@ class ParallelLinear(nn.Module):
 
 
 class GateMLPs(nn.Module):
-    """MLP based gates that map a scalar input to a scalar output."""
+    """MLP based gates that map component 'inner acts' to a scalar output for each component."""
 
     def __init__(self, C: int, hidden_dims: list[int]):
         super().__init__()
@@ -53,7 +53,7 @@ class GateMLPs(nn.Module):
 
 
 class VectorGateMLPs(nn.Module):
-    """MLP based gates that map a vector valued input to a single output."""
+    """MLP based gates that map a module's input vector to a scalar output for each component."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
