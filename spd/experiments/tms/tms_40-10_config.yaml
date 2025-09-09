@@ -12,6 +12,7 @@ gate_type: "mlp"
 gate_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["linear1", "linear2"]
+identity_module_patterns: ["linear2"]
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1.0
@@ -32,7 +33,7 @@ lr_schedule: cosine
 lr_warmup_pct: 0.0
 
 # --- Logging & Saving ---
-train_log_freq: 100
+train_log_freq: 500
 eval_freq: 1000
 n_eval_steps: 100
 slow_eval_freq: 5_000
@@ -47,9 +48,11 @@ eval_metrics:
   - classname: "PermutedCIPlots"
     extra_init_kwargs:
       identity_patterns: ["linear1", "linear2"]
+      dense_patterns: ["identity_linear2"]
   - classname: "UVPlots"
     extra_init_kwargs:
       identity_patterns: ["linear1", "linear2"]
+      dense_patterns: ["identity_linear2"]
   - classname: "IdentityCIError"
     extra_init_kwargs:
       identity_ci:
@@ -57,7 +60,11 @@ eval_metrics:
           n_features: 40
         - layer_pattern: "linear2"
           n_features: 40
+      dense_ci:
+        - layer_pattern: "identity_linear2"
+          k: 10
   - classname: "CI_L0"
+  - classname: "CIMeanPerComponent"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"

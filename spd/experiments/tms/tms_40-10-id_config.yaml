@@ -37,7 +37,7 @@ eval_freq: 1000
 n_eval_steps: 100
 slow_eval_freq: 5_000
 save_freq: null
-ci_alive_threshold: 0.1
+ci_alive_threshold: 0.4
 n_examples_until_dead: 4_096_000
 eval_metrics:
   - classname: "CIHistograms"
@@ -63,6 +63,7 @@ eval_metrics:
         - layer_pattern: "hidden_layers.0"
           k: 10
   - classname: "CI_L0"
+  - classname: "CIMeanPerComponent"
 
 
 # --- Pretrained model info ---
