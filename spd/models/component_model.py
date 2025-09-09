@@ -411,12 +411,14 @@ class ComponentModel(LoadableModule):
                 "Component must be in pristine state, but identity_mask is not None"
             )
 
-            if module_name in masks:
+            if module_name in masks or f"identity_{module_name}" in masks:
                 component.forward_mode = "components"
-                if component.identity_components is not None:
-                    component.identity_mask = masks[f"identity_{module_name}"]
-                if component.components is not None:
+                if module_name in masks:
+                    assert component.components is not None
                     component.mask = masks[module_name]
+                if f"identity_{module_name}" in masks:
+                    assert component.identity_components is not None
+                    component.identity_mask = masks[f"identity_{module_name}"]
             else:
                 component.forward_mode = "original"
         try:
@@ -498,8 +500,8 @@ class ComponentModel(LoadableModule):
             )
 
         for module in self.components_or_modules.values():
-            assert module.identity_mask is None, (
-                "Component should be in pristine state, but identity_mask is not None"
+            assert module.identity_mask is None and module.mask is None, (
+                "Component should be in pristine state, but identity_mask or mask is not None"
             )
             module.forward_mode = "original"
 
