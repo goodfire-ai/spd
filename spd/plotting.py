@@ -1,6 +1,7 @@
 import fnmatch
 import io
 from collections.abc import Callable
+from typing import Literal
 
 import numpy as np
 import torch
@@ -103,7 +104,8 @@ def get_single_feature_causal_importances(
     batch_shape: tuple[int, ...],
     device: str | torch.device,
     input_magnitude: float,
-    sigmoid_type: SigmoidTypes = "leaky_hard",
+    sampling: Literal["continuous", "binomial"],
+    sigmoid_type: SigmoidTypes,
 ) -> tuple[dict[str, Float[Tensor, "batch C"]], dict[str, Float[Tensor, "batch C"]]]:
     """Compute causal importance arrays for single active features.
 
@@ -133,6 +135,7 @@ def get_single_feature_causal_importances(
         pre_weight_acts=pre_weight_acts,
         sigmoid_type=sigmoid_type,
         detach_inputs=False,
+        sampling=sampling,
     )
 
     return ci_raw, ci_upper_leaky_raw
@@ -143,6 +146,7 @@ def plot_causal_importance_vals(
     batch_shape: tuple[int, ...],
     device: str | torch.device,
     input_magnitude: float,
+    sampling: Literal["continuous", "binomial"],
     sigmoid_type: SigmoidTypes,
     identity_patterns: list[str] | None = None,
     dense_patterns: list[str] | None = None,
@@ -172,6 +176,7 @@ def plot_causal_importance_vals(
         device=device,
         input_magnitude=input_magnitude,
         sigmoid_type=sigmoid_type,
+        sampling=sampling,
     )
 
     ci: dict[str, Float[Tensor, "... C"]] = {}

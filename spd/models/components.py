@@ -29,7 +29,7 @@ class ParallelLinear(nn.Module):
 
 
 class GateMLPs(nn.Module):
-    """MLP based gates that map a scalar input to a scalar output."""
+    """MLP based gates that map component 'inner acts' to a scalar output for each component."""
 
     def __init__(self, C: int, hidden_dims: list[int]):
         super().__init__()
@@ -53,7 +53,7 @@ class GateMLPs(nn.Module):
 
 
 class VectorGateMLPs(nn.Module):
-    """MLP based gates that map a vector valued input to a single output."""
+    """MLP based gates that map a module's input vector to a scalar output for each component."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
@@ -92,40 +92,13 @@ class Components(ABC, nn.Module):
         self.C = C
         self.V = nn.Parameter(torch.empty(v_dim, C))
         self.U = nn.Parameter(torch.empty(C, u_dim))
+        init_param_(self.V, fan_val=v_dim, nonlinearity="linear")
+        init_param_(self.U, fan_val=C, nonlinearity="linear")
 
     @property
     @abstractmethod
     def weight(self) -> Float[Tensor, "rows cols"]:
         raise NotImplementedError()
-
-    def init_from_target_weight(self, target_weight: Tensor) -> None:
-        """Initialize the V and U matrices.
-        1. Normalize every component to 1.
-        2. Take inner product with original model
-        3. This gives you roughly how much overlap there is with the target model.
-        4. Scale the Us by this value (we can choose either matrix)
-
-        args:
-            target_weight: The weight matrix of the original model. In the orientation of V @ U.
-            Note that this is the transpose of the orientation of the weight matrix in the original code.
-        """
-        target_weight = target_weight.to(self.U.device)
-
-        V = self.V
-        U = self.U
-
-        # Make V and U have unit norm in the d_in and d_out dimensions
-        V.data[:] = torch.randn_like(V.data)
-        U.data[:] = torch.randn_like(U.data)
-        V.data[:] = V.data / V.data.norm(dim=-2, keepdim=True)
-        U.data[:] = U.data / U.data.norm(dim=-1, keepdim=True)
-
-        # Calculate inner products
-        inner = einops.einsum(U, target_weight, "C cols, rows cols -> C rows")
-        C_norms = einops.einsum(inner, V, "C rows, rows C -> C")
-
-        # Scale U by the inner product.
-        U.data[:] = U.data * C_norms.unsqueeze(-1)
 
     @override
     @abstractmethod

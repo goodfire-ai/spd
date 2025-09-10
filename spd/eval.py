@@ -80,6 +80,7 @@ class CEandKLLosses(StreamingEval):
 
     def __init__(self, model: ComponentModel, config: Config, rounding_threshold: float):
         self.model = model
+        self.config = config
         self.rounding_threshold = rounding_threshold
         self.ce_losses = defaultdict[str, list[float]](list)
 
@@ -123,7 +124,7 @@ class CEandKLLosses(StreamingEval):
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
         # we use the regular stochastic masks
-        stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1)[0]
+        stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1, sampling=self.config.sampling)[0]
         stoch_masked_logits = self.model(batch, mode="components", masks=stoch_masks)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
@@ -304,6 +305,7 @@ class PermutedCIPlots(StreamingEval):
             sigmoid_type=self.config.sigmoid_type,
             identity_patterns=self.identity_patterns,
             dense_patterns=self.dense_patterns,
+            sampling=self.config.sampling,
         )[0]
 
         return {f"figures/{k}": v for k, v in figures.items()}
@@ -352,6 +354,7 @@ class UVPlots(StreamingEval):
             sigmoid_type=self.config.sigmoid_type,
             identity_patterns=self.identity_patterns,
             dense_patterns=self.dense_patterns,
+            sampling=self.config.sampling,
         )[1]
 
         uv_matrices = plot_UV_matrices(
@@ -411,6 +414,7 @@ class IdentityCIError(StreamingEval):
             batch_shape=self.batch_shape,
             device=self.device,
             input_magnitude=0.75,
+            sampling=self.config.sampling,
             sigmoid_type=self.config.sigmoid_type,
         )
 
@@ -460,7 +464,9 @@ def evaluate(
             batch, mode="pre_forward_cache", module_names=model.target_module_paths
         )
         ci, _ci_upper_leaky = model.calc_causal_importances(
-            pre_weight_acts, sigmoid_type=config.sigmoid_type
+            pre_weight_acts,
+            sigmoid_type=config.sigmoid_type,
+            sampling=config.sampling,
         )
 
         for eval in evals:
