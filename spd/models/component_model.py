@@ -474,6 +474,9 @@ class ComponentModel(LoadableModule):
 
         # Register hooks
         for raw_module_name in module_names:
+            # NOTE: Currently this might create two hooks on the same module if there is both an
+            # identity and a non-identity module with the same name. If memory is an issue for this
+            # (which would be surprising), we could cache the non-identity module only.
             is_identity = raw_module_name.startswith("identity_")
             module_name = (
                 raw_module_name.removeprefix("identity_") if is_identity else raw_module_name
