@@ -16,13 +16,13 @@ target_module_patterns:
   - "layers.*.mlp_out"
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1.0
+faithfulness_coeff: 0
 out_recon_coeff: 0.0
 recon_coeff: null
 stochastic_recon_coeff: 1.0
 recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1.0
-importance_minimality_coeff: 5e-6
+importance_minimality_coeff: 1e-5
 pnorm: 2
 output_loss_type: mse
 
