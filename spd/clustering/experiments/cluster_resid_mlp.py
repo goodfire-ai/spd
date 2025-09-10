@@ -18,8 +18,6 @@ from spd.clustering.merge_sweep import sweep_multiple_parameters
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import (
     plot_dists_distribution,
-    plot_merge_history_cluster_sizes,
-    plot_merge_history_costs,
     plot_merge_iteration,
 )
 from spd.configs import Config
@@ -117,7 +115,7 @@ MERGE_CFG: MergeConfig = MergeConfig(
 
 def _plot_func(
     costs: torch.Tensor,
-    merge_history: MergeHistory,
+    # merge_history: MergeHistory,
     current_merge: Any,
     current_coact: torch.Tensor,
     # current_act_mask: torch.Tensor,
@@ -136,7 +134,6 @@ def _plot_func(
             current_merge=current_merge,
             current_coact=current_coact,
             costs=costs,
-            pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType],
             iteration=i,
             component_labels=component_labels,
             show=True,  # Show the plot interactively
@@ -157,10 +154,6 @@ MERGE_HIST: MergeHistory = merge_iteration(
 # plt.hist(mh[270]["merges"].components_per_group, bins=np.linspace(0, 56, 57))
 # plt.yscale("log")
 # plt.xscale("log")
-
-plot_merge_history_costs(MERGE_HIST)
-plot_merge_history_costs(MERGE_HIST, ylim=(-1, 1))
-plot_merge_history_cluster_sizes(MERGE_HIST)
 
 
 # %%
