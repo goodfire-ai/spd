@@ -24,6 +24,7 @@ from spd.models.components import (
     EmbeddingComponents,
     GateMLPs,
     GateType,
+    LayerwiseGlobalGateMLP,
     LinearComponents,
     VectorGateMLPs,
 )
@@ -281,7 +282,17 @@ class ComponentModel(LoadableModule):
                 else:
                     assert isinstance(component.original, nn.Embedding)
                     input_dim = component.original.num_embeddings
-                gate = VectorGateMLPs(C=C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
+
+                assert gate_type in ["vector_mlp", "layerwise_global_mlp"], (
+                    f"Unknown gate type: {gate_type}"
+                )
+                if gate_type == "vector_mlp":
+                    gate = VectorGateMLPs(C=C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
+                else:
+                    assert gate_type == "layerwise_global_mlp"
+                    gate = LayerwiseGlobalGateMLP(
+                        C=C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+                    )
             gates[module_path] = gate
         return gates
 
@@ -520,7 +531,7 @@ class ComponentModel(LoadableModule):
             if isinstance(gates, GateMLPs):
                 # need to get the inner activation for GateMLP
                 gate_input = self.components[param_name].get_inner_acts(acts)
-            elif isinstance(gates, VectorGateMLPs):
+            elif isinstance(gates, VectorGateMLPs | LayerwiseGlobalGateMLP):
                 gate_input = acts
             else:
                 raise ValueError(f"Unknown gate type: {type(gates)}")
