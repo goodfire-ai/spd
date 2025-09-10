@@ -12,7 +12,6 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
-from transformers import PreTrainedModel
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
@@ -395,21 +394,17 @@ class ComponentModel(LoadableModule):
 
     @contextmanager
     def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
-        """Context manager for temporarily replacing modules with components.
+        """Set the forward_mode of ComponentOrModule objects and apply masks.
+
+        A module's forward_mode is set to "components" if the module name is a key in masks
+        (including if "identity_" is prefixed to the module name).
 
         Args:
-            masks: Optional dictionary mapping component names to masks
+            masks: Dictionary mapping module names to masks. Module names may be prefixed with
+                "identity_" to indicate that the identity components should be used.
         """
         for module_name, component in self.components_or_modules.items():
-            assert component.forward_mode is None, (
-                f"Component must be in pristine state, but forward_mode is {component.forward_mode}"
-            )
-            assert component.mask is None, (
-                "Component must be in pristine state, but mask is not None"
-            )
-            assert component.identity_mask is None, (
-                "Component must be in pristine state, but identity_mask is not None"
-            )
+            component.assert_pristine()
 
             if module_name in masks or f"identity_{module_name}" in masks:
                 component.forward_mode = "components"
@@ -425,28 +420,18 @@ class ComponentModel(LoadableModule):
             yield
         finally:
             for component in self.components_or_modules.values():
-                component.forward_mode = None
-                component.mask = None
-                component.identity_mask = None
+                component.make_pristine()
 
     def _forward_target(self, *args: Any, **kwargs: Any) -> Any:
         """Forward pass of the target model."""
         for module in self.components_or_modules.values():
-            assert module.forward_mode is None, (
-                f"Component should be in pristine state, but forward_mode is {module.forward_mode}"
-            )
-            assert module.mask is None, (
-                "Component should be in pristine state, but mask is not None"
-            )
-            assert module.identity_mask is None, (
-                "Component should be in pristine state, but identity_mask is not None"
-            )
+            module.assert_pristine()
             module.forward_mode = "original"
         try:
             out = self.patched_model(*args, **kwargs)
         finally:
             for module in self.components_or_modules.values():
-                module.forward_mode = None
+                module.make_pristine()
 
         out = self._extract_output(out)
 
@@ -500,9 +485,7 @@ class ComponentModel(LoadableModule):
             )
 
         for module in self.components_or_modules.values():
-            assert module.identity_mask is None and module.mask is None, (
-                "Component should be in pristine state, but identity_mask or mask is not None"
-            )
+            module.assert_pristine()
             module.forward_mode = "original"
 
         try:
@@ -514,7 +497,7 @@ class ComponentModel(LoadableModule):
                 handle.remove()
 
             for module in self.components_or_modules.values():
-                module.forward_mode = None
+                module.make_pristine()
 
     @staticmethod
     def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:
@@ -544,11 +527,10 @@ class ComponentModel(LoadableModule):
         # Load the target model
         model_class = resolve_class(config.pretrained_model_class)
         if config.pretrained_model_name is not None:
-            assert issubclass(model_class, PreTrainedModel), (
-                f"Model class {model_class} should be a subclass of PreTrainedModel which "
-                "defines a `from_pretrained` method"
+            assert hasattr(model_class, "from_pretrained"), (
+                f"Model class {model_class} should have a `from_pretrained` method"
             )
-            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name)
+            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
         else:
             assert issubclass(model_class, LoadableModule), (
                 f"Model class {model_class} should be a subclass of LoadableModule which "

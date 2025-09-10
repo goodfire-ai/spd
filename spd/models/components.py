@@ -274,3 +274,15 @@ class ComponentsOrModule(nn.Module):
         else:
             raise ValueError(f"Invalid forward mode: {self.forward_mode}")
         return x
+
+    def make_pristine(self) -> None:
+        """Set forward_mode, mask, and identity_mask to None."""
+        self.forward_mode = None
+        self.mask = None
+        self.identity_mask = None
+
+    def assert_pristine(self) -> None:
+        """Assert that forward_mode, mask, and identity_mask are None."""
+        assert self.forward_mode is None, f"forward_mode should be None, got {self.forward_mode}"
+        assert self.mask is None, f"mask should be None, got {self.mask}"
+        assert self.identity_mask is None, f"identity_mask should be None, got {self.identity_mask}"

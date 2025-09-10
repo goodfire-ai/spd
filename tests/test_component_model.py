@@ -76,8 +76,8 @@ def test_no_replacement_masks_means_original_mode(component_model: ComponentMode
     cm = component_model
 
     # Initial state: nothing should be active
-    assert all(comp.forward_mode is None for comp in cm.components_or_modules.values())
-    assert all(comp.mask is None for comp in cm.components_or_modules.values())
+    for comp in cm.components_or_modules.values():
+        comp.assert_pristine()
 
     # No masks supplied: everything should stay in "original" mode
     with cm._replaced_modules({}):
@@ -85,8 +85,8 @@ def test_no_replacement_masks_means_original_mode(component_model: ComponentMode
         assert all(comp.mask is None for comp in cm.components_or_modules.values())
 
     # After the context the state must be fully reset
-    assert all(comp.forward_mode is None for comp in cm.components_or_modules.values())
-    assert all(comp.mask is None for comp in cm.components_or_modules.values())
+    for comp in cm.components_or_modules.values():
+        comp.assert_pristine()
 
 
 def test_replaced_modules_sets_and_restores_masks(component_model: ComponentModel):
@@ -100,9 +100,8 @@ def test_replaced_modules_sets_and_restores_masks(component_model: ComponentMode
             assert comp.forward_mode == "components"
             assert torch.equal(comp.mask, full_masks[name])  # pyright: ignore [reportArgumentType]
 
-    # Back to pristine state
-    assert all(comp.forward_mode is None for comp in cm.components_or_modules.values())
-    assert all(comp.mask is None for comp in cm.components_or_modules.values())
+    for comp in cm.components_or_modules.values():
+        comp.assert_pristine()
 
 
 def test_replaced_modules_sets_and_restores_masks_partial(
@@ -119,9 +118,8 @@ def test_replaced_modules_sets_and_restores_masks_partial(
         assert cm.components_or_modules["linear2"].mask is None
         assert cm.components_or_modules["embedding"].forward_mode == "original"
 
-    # Back to pristine state
-    assert all(comp.forward_mode is None for comp in cm.components_or_modules.values())
-    assert all(comp.mask is None for comp in cm.components_or_modules.values())
+    for comp in cm.components_or_modules.values():
+        comp.assert_pristine()
 
 
 def test_replaced_component_forward_linear_matches_modes():
