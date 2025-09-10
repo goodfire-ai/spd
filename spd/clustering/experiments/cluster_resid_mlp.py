@@ -136,7 +136,7 @@ def _plot_func(
             current_merge=current_merge,
             current_coact=current_coact,
             costs=costs,
-            pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType],
+            #pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType],
             iteration=i,
             component_labels=component_labels,
             show=True,  # Show the plot interactively
@@ -158,8 +158,8 @@ MERGE_HIST: MergeHistory = merge_iteration(
 # plt.yscale("log")
 # plt.xscale("log")
 
-plot_merge_history_costs(MERGE_HIST)
-plot_merge_history_costs(MERGE_HIST, ylim=(-1, 1))
+# plot_merge_history_costs(MERGE_HIST)
+# plot_merge_history_costs(MERGE_HIST, ylim=(-1, 1))
 plot_merge_history_cluster_sizes(MERGE_HIST)
 
 
