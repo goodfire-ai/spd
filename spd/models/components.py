@@ -102,7 +102,7 @@ class Components(ABC, nn.Module):
 
     @override
     @abstractmethod
-    def forward(self, x: Tensor, mask: Tensor | None) -> Tensor:
+    def forward(self, x: Tensor, mask: Tensor | None, r: Tensor | None = None) -> Tensor:
         """Forward pass through the component."""
         raise NotImplementedError()
 
@@ -143,7 +143,10 @@ class LinearComponents(Components):
 
     @override
     def forward(
-        self, x: Float[Tensor, "... d_in"], mask: Tensor | None = None
+        self,
+        x: Float[Tensor, "... d_in"],
+        mask: Tensor | None = None,
+        r: Tensor | None = None,
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
 
@@ -162,7 +165,15 @@ class LinearComponents(Components):
         out = einops.einsum(component_acts, self.U, "... C, C d_out -> ... d_out")
 
         if self.bias is not None:
-            out += self.bias
+            if r is None:
+                out += self.bias
+            else:
+                # Adjust bias to avoid double-counting when blending with original output
+                # Add bias with factor (1 - r) so that out_spd + r*out_target has +bias once
+                if r.ndim == out.ndim:
+                    out += self.bias - r * self.bias
+                else:
+                    out += self.bias - r[..., None] * self.bias
 
         return out
 
@@ -197,6 +208,7 @@ class EmbeddingComponents(Components):
         self,
         x: Int[Tensor, "..."],
         mask: Float[Tensor, "... C"] | Bool[Tensor, "... C"] | None,
+        r: Tensor | None = None,
     ) -> Float[Tensor, "... embedding_dim"]:
         """Forward through the embedding component using indexing instead of one-hot matmul.
 
@@ -225,8 +237,9 @@ class ComponentsOrModule(nn.Module):
         self.original = original
         self.components = components
 
-        self.forward_mode: Literal["original"] | Literal["components"] | None = None
+        self.forward_mode: Literal["original", "components", "blend"] | None = None
         self.mask: Tensor | None = None
+        self.r: Tensor | None = None
 
     @property
     def components_weight(self) -> Float[Tensor, "rows cols"]:
@@ -246,5 +259,17 @@ class ComponentsOrModule(nn.Module):
             return self.original(x)
         elif self.forward_mode == "components":
             # mask *can* but doesn't *need to* be present here
-            return self.components(x, self.mask)
+            return self.components(x, self.mask, self.r)
+        elif self.forward_mode == "blend":
+            # Compute SPD and target outputs, then blend using r: out_spd + r * out_target
+            out_spd = self.components(x, self.mask, self.r)
+            out_target = self.original(x)
+            assert self.r is not None, "r must be provided in blend mode"
+            scale = self.r
+            # Broadcast r over the last feature dimension
+            if scale.ndim == out_target.ndim:
+                blended = out_spd + scale * out_target
+            else:
+                blended = out_spd + scale[..., None] * out_target
+            return blended
         raise ValueError(f"Invalid forward mode: {self.forward_mode}")
