@@ -4,16 +4,7 @@ This script provides a single entry point for running SPD experiments, supportin
 fixed configurations and parameter sweeps. All runs are tracked in W&B with workspace
 views created for each experiment.
 
-Usage:
-    spd-run                                                    # Run all experiments
-    spd-run --experiments tms_5-2,resid_mlp1                   # Run specific experiments
-    spd-run --experiments tms_5-2 --local                      # Run locally instead of SLURM
-    spd-run --experiments tms_5-2 --sweep                      # Run with parameter sweep
-    spd-run --experiments tms_5-2 --sweep --local              # Run sweep locally
-    spd-run --experiments tms_5-2 --sweep custom.yaml          # Run with custom sweep params
-    spd-run --sweep --n-agents 10                              # Sweep with 10 concurrent agents
-    spd-run --project my-project                               # Use custom W&B project
-    spd-run --experiments ss_llama --dp 4                      # Run with 4 data parallelism over 4 GPUs
+For full CLI usage and examples, see the bottom of this file (or run `spd-run --help`).
 """
 
 import argparse
