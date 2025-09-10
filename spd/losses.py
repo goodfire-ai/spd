@@ -133,16 +133,21 @@ def calc_masked_recon_layerwise_loss(
     masks: list[dict[str, Float[Tensor, "... C"]]],
     target_out: Float[Tensor, "... d_model_out"],
     loss_type: Literal["mse", "kl"] = "kl",
+    rs: list[dict[str, Float[Tensor, "..."]]] | None = None,
 ) -> Float[Tensor, ""]:
     """Calculate the recon loss when augmenting the model one (masked) component at a time."""
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
     total_loss = torch.tensor(0.0, device=device)
-    for mask_info in masks:
+    for i, mask_info in enumerate(masks):
         for component_name in model.components:
+            r_for_component = None
+            if rs is not None:
+                r_for_component = {component_name: rs[i][component_name]}
             modified_out = model(
                 batch,
                 mode="components",
                 masks={component_name: mask_info[component_name]},
+                r=r_for_component,
             )
             if loss_type == "mse":
                 loss = ((modified_out - target_out) ** 2).mean()
@@ -159,10 +164,11 @@ def calc_masked_recon_loss(
     masks: dict[str, Float[Tensor, "... C"]],
     target_out: Float[Tensor, "... d_mdoel_out"],
     loss_type: Literal["mse", "kl"] = "mse",
+    r: dict[str, Float[Tensor, "..."]] | None = None,
 ) -> Float[Tensor, ""]:
     """Calculate the MSE over all masks."""
     # Do a forward pass with all components
-    out = model(batch, mode="components", masks=masks)
+    out = model(batch, mode="components", masks=masks, r=r)
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
     if loss_type == "mse":
         loss = ((out - target_out) ** 2).mean()
@@ -267,7 +273,7 @@ def calculate_losses(
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
-        stochastic_masks = calc_stochastic_masks(
+        stochastic_masks, rs = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
@@ -278,6 +284,7 @@ def calculate_losses(
                 model=model,
                 batch=batch,
                 masks=stochastic_masks[i],
+                r=rs[i],
                 target_out=target_out,
                 loss_type=config.output_loss_type,
             )
@@ -300,7 +307,7 @@ def calculate_losses(
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
-        layerwise_stochastic_masks = calc_stochastic_masks(
+        layerwise_stochastic_masks, layerwise_rs = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
@@ -310,6 +317,7 @@ def calculate_losses(
             batch=batch,
             device=device,
             masks=layerwise_stochastic_masks,
+            rs=layerwise_rs,
             target_out=target_out,
             loss_type=config.output_loss_type,
         )
@@ -350,7 +358,7 @@ def calculate_losses(
 
     # Embedding reconstruction loss
     if config.embedding_recon_coeff is not None:
-        stochastic_masks = calc_stochastic_masks(
+        stochastic_masks, _ = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
