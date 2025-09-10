@@ -31,13 +31,13 @@ class ExperimentConfig:
 
 
 EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
-    "tms_5-2": ExperimentConfig(
-        task_name="tms",
-        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
-        config_path=Path("spd/experiments/tms/tms_5-2_config.yaml"),
-        expected_runtime=4,
-        canonical_run="wandb:goodfire/spd/runs/qndu7oz4",
-    ),
+    # "tms_5-2": ExperimentConfig(
+    #     task_name="tms",
+    #     decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+    #     config_path=Path("spd/experiments/tms/tms_5-2_config.yaml"),
+    #     expected_runtime=4,
+    #     canonical_run="wandb:goodfire/spd/runs/qndu7oz4",
+    # ),
     "tms_5-2-id": ExperimentConfig(
         task_name="tms",
         decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
@@ -45,27 +45,27 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         expected_runtime=4,
         canonical_run="wandb:goodfire/spd/runs/z6wxr9vk",
     ),
-    "tms_40-10": ExperimentConfig(
-        task_name="tms",
-        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
-        config_path=Path("spd/experiments/tms/tms_40-10_config.yaml"),
-        expected_runtime=5,
-        canonical_run="wandb:goodfire/spd/runs/pq2r77l5",
-    ),
-    "tms_40-10-id": ExperimentConfig(
-        task_name="tms",
-        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
-        config_path=Path("spd/experiments/tms/tms_40-10-id_config.yaml"),
-        expected_runtime=5,
-        canonical_run="wandb:goodfire/spd/runs/0sz0scrh",
-    ),
-    "resid_mlp1": ExperimentConfig(
-        task_name="resid_mlp",
-        decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
-        config_path=Path("spd/experiments/resid_mlp/resid_mlp1_config.yaml"),
-        expected_runtime=3,
-        canonical_run="wandb:goodfire/spd/runs/glbtwl6g",
-    ),
+    # "tms_40-10": ExperimentConfig(
+    #     task_name="tms",
+    #     decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+    #     config_path=Path("spd/experiments/tms/tms_40-10_config.yaml"),
+    #     expected_runtime=5,
+    #     canonical_run="wandb:goodfire/spd/runs/pq2r77l5",
+    # ),
+    # "tms_40-10-id": ExperimentConfig(
+    #     task_name="tms",
+    #     decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+    #     config_path=Path("spd/experiments/tms/tms_40-10-id_config.yaml"),
+    #     expected_runtime=5,
+    #     canonical_run="wandb:goodfire/spd/runs/0sz0scrh",
+    # ),
+    # "resid_mlp1": ExperimentConfig(
+    #     task_name="resid_mlp",
+    #     decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
+    #     config_path=Path("spd/experiments/resid_mlp/resid_mlp1_config.yaml"),
+    #     expected_runtime=3,
+    #     canonical_run="wandb:goodfire/spd/runs/glbtwl6g",
+    # ),
     "resid_mlp2": ExperimentConfig(
         task_name="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
@@ -80,36 +80,36 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         expected_runtime=60,
         canonical_run="wandb:goodfire/spd/runs/xawvyhq3",  # A few imperfections in layers 0 and 1
     ),
-    "ss_llama": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_config.yaml"),
-        expected_runtime=60,
-    ),
-    "ss_gpt2": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_gpt2_config.yaml"),
-        expected_runtime=60,
-    ),
-    "gpt2": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/gpt2_config.yaml"),
-        expected_runtime=60,
-    ),
-    "ss_gpt2_simple": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_gpt2_simple_config.yaml"),
-        expected_runtime=330,
-    ),
-    "ss_gpt2_simple_noln": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_gpt2_simple_noln_config.yaml"),
-        expected_runtime=330,
-    ),
+    # "ss_llama": ExperimentConfig(
+    #     task_name="lm",
+    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+    #     config_path=Path("spd/experiments/lm/ss_llama_config.yaml"),
+    #     expected_runtime=60,
+    # ),
+    # "ss_gpt2": ExperimentConfig(
+    #     task_name="lm",
+    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+    #     config_path=Path("spd/experiments/lm/ss_gpt2_config.yaml"),
+    #     expected_runtime=60,
+    # ),
+    # "gpt2": ExperimentConfig(
+    #     task_name="lm",
+    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+    #     config_path=Path("spd/experiments/lm/gpt2_config.yaml"),
+    #     expected_runtime=60,
+    # ),
+    # "ss_gpt2_simple": ExperimentConfig(
+    #     task_name="lm",
+    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+    #     config_path=Path("spd/experiments/lm/ss_gpt2_simple_config.yaml"),
+    #     expected_runtime=330,
+    # ),
+    # "ss_gpt2_simple_noln": ExperimentConfig(
+    #     task_name="lm",
+    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+    #     config_path=Path("spd/experiments/lm/ss_gpt2_simple_noln_config.yaml"),
+    #     expected_runtime=660,
+    # ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",
     #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
