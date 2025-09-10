@@ -105,7 +105,7 @@ def test_save_group_idxs_artifact_creates_file():
                 )
 
                 # Check that the function was called and file was saved
-                expected_path = save_dir / "iter_0003.zanj"
+                expected_path = save_dir / "iter_0003.zip"
                 mock_history.save.assert_called_once_with(expected_path)
 
                 # Check that artifact was created and logged
