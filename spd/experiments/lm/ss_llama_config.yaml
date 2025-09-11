@@ -36,7 +36,7 @@ output_loss_type: kl
 # --- Training ---
 batch_size: 48
 eval_batch_size: 48
-steps: 300000
+steps: 100000
 lr: 5e-4
 lr_schedule: cosine
 lr_warmup_pct: 0.0
