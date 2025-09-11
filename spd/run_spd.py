@@ -102,6 +102,7 @@ def optimize(
     model.to(device)
 
     # Wrap model with DDP if distributed
+    sync_across_processes()
     world_size = get_world_size()
     wrapped_model: nn.Module = model
     if world_size > 1:
