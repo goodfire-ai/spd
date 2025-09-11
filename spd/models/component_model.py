@@ -238,15 +238,20 @@ class ComponentModel(LoadableModule):
         components_or_modules: dict[str, ComponentsOrModule] = {}
         identity_paths_set = set(identity_module_paths)
 
-        all_paths = set(module_paths) | identity_paths_set
+        # Deterministic, order-preserving union (critical for DDP param order)
+        seen: set[str] = set()
+        all_paths: list[str] = []
+        for p in list(module_paths) + list(identity_module_paths):
+            if p not in seen:
+                seen.add(p)
+                all_paths.append(p)
 
         for module_path in all_paths:
             module = model.get_submodule(module_path)
-
             needs_components = module_path in module_paths
             needs_identity = module_path in identity_paths_set
-
             components: Components | None = None
+
             if needs_components:
                 if isinstance(module, nn.Linear):
                     d_out, d_in = module.weight.shape

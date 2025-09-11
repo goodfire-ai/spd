@@ -1,5 +1,5 @@
 # --- WandB ---
-wandb_project: spd
+# wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
@@ -32,8 +32,8 @@ p_anneal_end_frac: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 48
-eval_batch_size: 48
+batch_size: 2
+eval_batch_size: 2
 steps: 300000
 lr: 0.0005
 lr_schedule: cosine
