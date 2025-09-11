@@ -29,6 +29,7 @@ from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_eval_metrics_across_ranks,
     avg_metrics_across_ranks,
+    get_rank,
     get_world_size,
     is_distributed,
     is_main_process,
@@ -95,6 +96,12 @@ def optimize(
         pretrained_model_output_attr=config.pretrained_model_output_attr,
         identity_module_patterns=config.identity_module_patterns,
     )
+    # For ranks 0,1,2,3, print the name and shape of all gates
+    rank = get_rank()
+    if rank in [0, 1, 2, 3]:
+        for name, module in model.state_dict().items():
+            if "_gate" in name and "layers-0" in name:
+                print(f"Rank {rank} {name}: {module.shape}")
 
     if ln_stds is not None:
         # model has ablated layernorms, patch in the fixed std values
