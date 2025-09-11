@@ -6,3 +6,14 @@ ss_llama_l0_balance:
   # Test different probability values/distributions
   l0_balancing_coeff:
     values: [0, .0001,0.001, 0.01, 0.1, 1.0, 10, 100]
+
+ss_llama_subset_recon:
+  # Test different probability values/distributions
+
+  l0_balancing_coeff:
+    values: [ .0001, 0.001, 0.01, 0.1, 1.0]
+  stochastic_recon_subset_p:
+    values: 
+     - [0.1, 0.2, 0.3, 0.4, 0.5]
+  stochastic_recon_subset_mode:
+    values: [independent]
