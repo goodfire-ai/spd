@@ -65,6 +65,7 @@ eval_metrics:
         - layer_pattern: "layers.*.mlp_out"
           k: 17
   - classname: "CI_L0"
+  - classname: "CIMeanPerComponent"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"

@@ -63,6 +63,7 @@ eval_metrics:
         - layer_pattern: "hidden_layers.0"
           k: 10
   - classname: "CI_L0"
+  - classname: "CIMeanPerComponent"
 
 
 # --- Pretrained model info ---

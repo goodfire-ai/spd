@@ -51,7 +51,7 @@ eval_metrics:
   - classname: "CEandKLLosses"
     extra_init_kwargs:
       rounding_threshold: 0.1
- 
+  - classname: "CIMeanPerComponent"
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM
 pretrained_model_name: SimpleStories/SimpleStories-1.25M

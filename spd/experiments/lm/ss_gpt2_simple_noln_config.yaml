@@ -11,7 +11,8 @@ n_mask_samples: 1
 gate_type: "layerwise_global_mlp"
 gate_hidden_dims: [1000]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["h.2.mlp.c_proj", "h.1.attn.q_proj",]
+target_module_patterns: ["h.2.mlp.c_proj", "h.1.attn.q_proj"]
+identity_module_patterns: null
 sampling: "binomial"
 
 # --- Loss Coefficients ---
@@ -54,6 +55,7 @@ eval_metrics:
   - classname: "CEandKLLosses"
     extra_init_kwargs:
       rounding_threshold: 0.0
+  - classname: "CIMeanPerComponent"
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
