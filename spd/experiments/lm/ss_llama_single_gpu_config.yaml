@@ -31,14 +31,14 @@ p_anneal_end_frac: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 48
-eval_batch_size: 48
+batch_size: 12
+eval_batch_size: 12
 steps: 300000
 lr: 0.0005
 lr_schedule: cosine
 lr_warmup_pct: 0.0
 lr_exponential_halflife: null
-gradient_accumulation_steps: 1
+gradient_accumulation_steps: 4
 
 # --- Logging & Saving ---
 train_log_freq: 100

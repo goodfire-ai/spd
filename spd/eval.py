@@ -7,6 +7,7 @@ These can be selected and configured in the Config.
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterator, Mapping
+from fnmatch import fnmatch
 from typing import Any, ClassVar, override
 
 import einops
@@ -52,9 +53,12 @@ class StreamingEval(ABC):
 class CI_L0(StreamingEval):
     SLOW = False
 
-    def __init__(self, model: ComponentModel, config: Config):
+    def __init__(
+        self, model: ComponentModel, config: Config, groups: dict[str, list[str]] | None = None
+    ):
         self.l0_threshold = config.ci_alive_threshold
         self.l0s = defaultdict[str, list[float]](list)
+        self.groups = groups  # Optional: {"layer_0": ["model.layers.0.*"], ...}
 
     @override
     def watch_batch(
@@ -63,15 +67,33 @@ class CI_L0(StreamingEval):
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None:
+        import re
+
+        # Track group sums for this batch
+        group_sums = defaultdict(float) if self.groups else {}
+
         for layer_name, layer_ci in ci.items():
             l0_val = calc_ci_l_zero(layer_ci, self.l0_threshold)
             self.l0s[layer_name].append(l0_val)
 
+            # Accumulate into matching groups
+            if self.groups:
+                for group_name, patterns in self.groups.items():
+                    for pattern in patterns:
+                        if re.match(pattern.replace("*", ".*"), layer_name):
+                            group_sums[group_name] += l0_val
+                            break
+
+        # Append group sums to their lists
+        for group_name, group_sum in group_sums.items():
+            self.l0s[group_name].append(group_sum)
+
     @override
     def compute(self) -> Mapping[str, float]:
         out = {}
-        for layer_name, l0s in self.l0s.items():
-            out[f"l0_{self.l0_threshold}/{layer_name}"] = sum(l0s) / len(l0s)
+        for name, l0s in self.l0s.items():
+            avg_l0 = sum(l0s) / len(l0s)
+            out[f"l0_{self.l0_threshold}/{name}"] = avg_l0
         return out
 
 
@@ -426,6 +448,186 @@ class IdentityCIError(StreamingEval):
         return target_metrics
 
 
+class SubsetReconstructionLoss(StreamingEval):
+    """Compute reconstruction loss for specific subsets of components."""
+
+    SLOW = False
+
+    def __init__(
+        self,
+        model: ComponentModel,
+        config: Config,
+        include_patterns: dict[str, list[str]] | None = None,
+        exclude_patterns: dict[str, list[str]] | None = None,
+        use_all_ones_for_non_replaced: bool = False,
+        n_mask_samples: int = 5,
+    ):
+        """Initialize SubsetReconstructionLoss.
+
+        Args:
+            include_patterns: Dict mapping subset names to patterns for modules to REPLACE
+                            e.g., {"layer_0_only": ["model.layers.0.*"]}
+            exclude_patterns: Dict mapping subset names to patterns for modules to EXCLUDE from replacement
+                            e.g., {"all_but_layer_0": ["model.layers.0.*"]}
+            use_all_ones_for_non_replaced: If True, use all-ones mask for non-replaced modules
+            n_mask_samples: Number of stochastic mask samples to average over
+        """
+        self.model = model
+        self.config = config
+        self.use_all_ones_for_non_replaced = use_all_ones_for_non_replaced
+        self.n_mask_samples = n_mask_samples
+        self.include_patterns = include_patterns or {}
+        self.exclude_patterns = exclude_patterns or {}
+
+        if not self.include_patterns and not self.exclude_patterns:
+            raise ValueError(
+                "At least one of include_patterns or exclude_patterns must be provided"
+            )
+
+        self.losses = defaultdict[str, list[float]](list)
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        losses = self._calc_subset_losses(batch, target_out, ci)
+        for key, value in losses.items():
+            self.losses[key].append(value)
+
+    def _calc_subset_losses(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> Mapping[str, float]:
+        assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
+
+        # Setup CE calculation
+        masked_batch = batch.clone()
+        masked_batch[:, 0] = -100
+        flat_masked_batch = masked_batch.flatten()
+
+        def ce_vs_labels(logits: Tensor) -> float:
+            flat_logits = einops.rearrange(logits, "b seq_len vocab -> (b seq_len) vocab")
+            return F.cross_entropy(
+                flat_logits[:-1], flat_masked_batch[1:], ignore_index=-100
+            ).item()
+
+        def kl_vs_target(logits: Tensor) -> float:
+            return calc_kl_divergence_lm(pred=logits, target=target_out).item()
+
+        # Compute baselines for CE unrecovered
+        target_ce = ce_vs_labels(target_out)
+        zero_masks = {k: torch.zeros_like(v) for k, v in ci.items()}
+        zero_out = self.model(batch, mode="components", masks=zero_masks)
+        zero_ce = ce_vs_labels(zero_out)
+
+        # Generate stochastic masks
+        stoch_masks = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
+
+        results = {}
+        all_modules = list(ci.keys())
+
+        # Process include patterns
+        for name, patterns in self.include_patterns.items():
+            active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
+
+            kl_losses, ce_losses = [], []
+            for stoch_mask in stoch_masks:
+                mask = {}
+                for m in all_modules:
+                    if m in active:
+                        mask[m] = stoch_mask[m]
+                    elif self.use_all_ones_for_non_replaced:
+                        mask[m] = torch.ones_like(stoch_mask[m])
+
+                out = self.model(batch, mode="components", masks=mask)
+                kl_losses.append(kl_vs_target(out))
+                ce_losses.append(ce_vs_labels(out))
+
+            mean_kl = sum(kl_losses) / len(kl_losses)
+            mean_ce = sum(ce_losses) / len(ce_losses)
+            ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
+
+            suffix = "_all_ones" if self.use_all_ones_for_non_replaced else ""
+            results[f"subset/{name}/kl{suffix}"] = mean_kl
+            results[f"subset/{name}/ce{suffix}"] = mean_ce
+            results[f"subset/{name}/ce_unrec{suffix}"] = ce_unrec
+
+        # Process exclude patterns
+        for name, patterns in self.exclude_patterns.items():
+            excluded = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
+            active = [m for m in all_modules if m not in excluded]
+
+            kl_losses, ce_losses = [], []
+            for stoch_mask in stoch_masks:
+                mask = {}
+                for m in all_modules:
+                    if m in active:
+                        mask[m] = stoch_mask[m]
+                    elif self.use_all_ones_for_non_replaced:
+                        mask[m] = torch.ones_like(stoch_mask[m])
+
+                out = self.model(batch, mode="components", masks=mask)
+                kl_losses.append(kl_vs_target(out))
+                ce_losses.append(ce_vs_labels(out))
+
+            mean_kl = sum(kl_losses) / len(kl_losses)
+            mean_ce = sum(ce_losses) / len(ce_losses)
+            ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
+
+            suffix = "_all_ones" if self.use_all_ones_for_non_replaced else ""
+            results[f"subset/{name}/kl{suffix}"] = mean_kl
+            results[f"subset/{name}/ce{suffix}"] = mean_ce
+            results[f"subset/{name}/ce_unrec{suffix}"] = ce_unrec
+
+        return results
+
+    @override
+    def compute(self) -> Mapping[str, float]:
+        # Compute averages for all metrics
+        results = {k: sum(v) / len(v) for k, v in self.losses.items()}
+
+        # Find worst (highest) metrics across all subsets
+        metrics_by_type = {"kl": {}, "ce": {}, "ce_unrec": {}}
+
+        for key, value in results.items():
+            if not key.startswith("subset/"):
+                continue
+
+            parts = key.split("/")
+            if len(parts) != 3:
+                continue
+
+            subset_name = parts[1]
+            metric_type = parts[2]
+
+            # Skip all_ones variants for worst tracking
+            if metric_type.endswith("_all_ones"):
+                continue
+
+            # Group metrics by type
+            if metric_type == "kl":
+                metrics_by_type["kl"][subset_name] = value
+            elif metric_type == "ce":
+                metrics_by_type["ce"][subset_name] = value
+            elif metric_type == "ce_unrec":
+                metrics_by_type["ce_unrec"][subset_name] = value
+
+        # Add worst metrics to results
+        for metric_type, subset_values in metrics_by_type.items():
+            if subset_values:
+                worst_subset = max(subset_values, key=lambda k: subset_values[k])
+                worst_value = subset_values[worst_subset]
+                results[f"subset_worst/{metric_type}"] = worst_value
+                results[f"subset_worst/{metric_type}_subset"] = worst_subset
+
+        return results
+
+
 EVAL_CLASSES = {
     cls.__name__: cls
     for cls in [
@@ -436,6 +638,7 @@ EVAL_CLASSES = {
         PermutedCIPlots,
         UVPlots,
         IdentityCIError,
+        SubsetReconstructionLoss,
     ]
 }
 
