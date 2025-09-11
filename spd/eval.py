@@ -25,6 +25,7 @@ from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_values_histograms,
     plot_component_activation_density,
+    plot_mean_component_cis,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_masks
@@ -448,6 +449,48 @@ class IdentityCIError(StreamingEval):
         return target_metrics
 
 
+class CIMeanPerComponent(StreamingEval):
+    SLOW = False
+
+    def __init__(self, model: ComponentModel, config: Config) -> None:
+        self.model = model
+        self.config = config
+        self.device = next(iter(model.parameters())).device
+
+        self.component_ci_sums: dict[str, Float[Tensor, " C"]] = {
+            module_name: torch.zeros(model.C, device=self.device)
+            for module_name in model.components
+        }
+
+        self.samples_seen: dict[str, int] = {module_name: 0 for module_name in model.components}
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        for module_name, ci_vals in ci.items():
+            n_batch_dims = ci_vals.ndim - 1
+            batch_indices = tuple(range(n_batch_dims))
+            batch_size = ci_vals.shape[:n_batch_dims].numel()
+            self.samples_seen[module_name] += batch_size
+
+            self.component_ci_sums[module_name] += ci_vals.sum(dim=batch_indices)
+
+    @override
+    def compute(self) -> Mapping[str, Image.Image]:
+        mean_component_cis = {
+            module_name: (component_sums / self.samples_seen[module_name])
+            for module_name, component_sums in self.component_ci_sums.items()
+        }
+
+        img = plot_mean_component_cis(mean_component_cis)
+
+        return {"figures/ci_mean_per_component": img}
+
+
 class SubsetReconstructionLoss(StreamingEval):
     """Compute reconstruction loss for specific subsets of components."""
 
@@ -638,6 +681,7 @@ EVAL_CLASSES = {
         PermutedCIPlots,
         UVPlots,
         IdentityCIError,
+        CIMeanPerComponent,
         SubsetReconstructionLoss,
     ]
 }
@@ -664,7 +708,7 @@ def evaluate(
         batch = extract_batch_data(next(eval_iterator))
         batch = batch.to(device)
         target_out, pre_weight_acts = model(
-            batch, mode="pre_forward_cache", module_names=model.target_module_paths
+            batch, mode="pre_forward_cache", module_names=list(model.components.keys())
         )
         ci, _ci_upper_leaky = model.calc_causal_importances(
             pre_weight_acts,

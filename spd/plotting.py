@@ -11,9 +11,7 @@ from PIL import Image
 from torch import Tensor
 
 from spd.models.component_model import ComponentModel
-from spd.models.components import (
-    Components,
-)
+from spd.models.components import Components
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.target_ci_solutions import permute_to_dense, permute_to_identity
 
@@ -99,6 +97,30 @@ def _plot_causal_importances_figure(
     return img
 
 
+def plot_mean_component_cis(mean_component_cis: dict[str, Float[Tensor, " C"]]) -> Image.Image:
+    """Scatter plot of the mean CI per component across modules."""
+    fig, axs = plt.subplots(len(mean_component_cis), 1, figsize=(8, 4), dpi=200)
+    axs = np.array(axs)
+    for i, (module_name, mean_component_ci) in enumerate(mean_component_cis.items()):
+        sorted_components = torch.sort(mean_component_ci, descending=True)[0]
+        ax = axs[i]
+        ax.scatter(
+            range(sorted_components.numel()),
+            sorted_components.detach().cpu().numpy(),
+            marker="x",
+            s=10,
+        )
+        if i == len(mean_component_cis) - 1:
+            ax.set_xlabel("Component")
+        ax.set_ylabel("mean CI")
+        ax.set_title(module_name)
+
+    fig.tight_layout()
+    img = _render_figure(fig)
+    plt.close(fig)
+    return img
+
+
 def get_single_feature_causal_importances(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
@@ -128,7 +150,7 @@ def get_single_feature_causal_importances(
         batch = batch.unsqueeze(1)
 
     pre_weight_acts = model(
-        batch, mode="pre_forward_cache", module_names=model.target_module_paths
+        batch, mode="pre_forward_cache", module_names=list(model.components.keys())
     )[1]
 
     ci_raw, ci_upper_leaky_raw = model.calc_causal_importances(

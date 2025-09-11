@@ -14,6 +14,7 @@ sigmoid_type: "leaky_hard"
 target_module_patterns:
   - "layers.*.mlp_in"
   - "layers.*.mlp_out"
+identity_module_patterns: null
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1.0
@@ -35,7 +36,7 @@ lr_schedule: constant
 lr_warmup_pct: 0.0
 
 # --- Logging & Saving ---
-train_log_freq: 50
+train_log_freq: 100
 eval_freq: 500
 n_eval_steps: 100
 slow_eval_freq: 5_000
@@ -65,6 +66,7 @@ eval_metrics:
         - layer_pattern: "layers.*.mlp_out"
           k: 50
   - classname: "CI_L0"
+  - classname: "CIMeanPerComponent"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"
