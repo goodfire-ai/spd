@@ -124,7 +124,9 @@ class ComponentModel(LoadableModule):
 
         # these are the actual registered submodules
         self.patched_model = patched_model
-        self._gates = nn.ModuleDict({k.replace(".", "-"): v for k, v in self.gates.items()})
+        self._gates = nn.ModuleDict(
+            {k.replace(".", "-"): self.gates[k] for k in sorted(self.gates)}
+        )
 
     @property
     def components(self) -> dict[str, Components]:
@@ -239,15 +241,15 @@ class ComponentModel(LoadableModule):
         components_or_modules: dict[str, ComponentsOrModule] = {}
         identity_paths_set = set(identity_module_paths)
 
-        all_paths = set(module_paths) | identity_paths_set
+        # Deterministic, order-preserving union (critical for DDP param order)
+        all_paths = list(dict.fromkeys(list(module_paths) + list(identity_module_paths)))
 
         for module_path in all_paths:
             module = model.get_submodule(module_path)
-
             needs_components = module_path in module_paths
             needs_identity = module_path in identity_paths_set
-
             components: Components | None = None
+
             if needs_components:
                 if isinstance(module, nn.Linear):
                     d_out, d_in = module.weight.shape
@@ -348,7 +350,8 @@ class ComponentModel(LoadableModule):
     ) -> dict[str, nn.Module]:
         gates: dict[str, nn.Module] = {}
 
-        for module_path, component_or_module in components_or_modules.items():
+        for module_path in sorted(components_or_modules):
+            component_or_module = components_or_modules[module_path]
             if component_or_module.components is not None:
                 gates[module_path] = ComponentModel._create_gate(
                     component_or_module.original,
