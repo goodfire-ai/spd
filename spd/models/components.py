@@ -143,7 +143,7 @@ class LinearComponents(Components):
 
     @override
     def forward(
-        self, x: Float[Tensor, "... d_in"], mask: Tensor | None = None
+        self, x: Float[Tensor, "... d_in"], mask: Tensor | None = None, r: Tensor | None = None
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
 
@@ -162,7 +162,10 @@ class LinearComponents(Components):
         out = einops.einsum(component_acts, self.U, "... C, C d_out -> ... d_out")
 
         if self.bias is not None:
-            out += self.bias
+            if r is not None:
+                out += self.bias - r.unsqueeze(-1) * self.bias
+            else:
+                out += self.bias
 
         return out
 
@@ -234,6 +237,7 @@ class ComponentsOrModule(nn.Module):
         self.forward_mode: Literal["original"] | Literal["components"] | None = None
         self.mask: Tensor | None = None
         self.identity_mask: Tensor | None = None
+        self.r: Tensor | None = None
 
     @property
     def components_weight(self) -> Float[Tensor, "rows cols"]:
@@ -260,26 +264,38 @@ class ComponentsOrModule(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         if self.forward_mode == "original":
             assert self.mask is None and self.identity_mask is None
-            x = self.original(x)
+            out = self.original(x)
         elif self.forward_mode == "components":
+            # Compute target/original output
+            out_target = self.original(x)
+
+            # Compute SPD output (identity + components as applicable)
+            out_spd = 0.0 * out_target
             if self.identity_mask is not None:
                 assert self.identity_components is not None
-                x = self.identity_components(x, self.identity_mask)
+                out_spd = self.identity_components(x, self.identity_mask)
 
             if self.mask is not None:
                 assert self.components is not None
-                x = self.components(x, self.mask)
-            else:
-                x = self.original(x)
+                # Pass r into components for correct bias handling
+                out_spd = out_spd + self.components(x, self.mask, r=self.r)
+
+            # Mix with target output using r (defaults to 0 if not set)
+            r = self.r
+            if r is None:
+                # Create a zeros-like broadcastable r (no trailing feature dim)
+                r = torch.zeros_like(out_target[..., 0])
+            out = out_spd + r.unsqueeze(-1) * out_target
         else:
             raise ValueError(f"Invalid forward mode: {self.forward_mode}")
-        return x
+        return out
 
     def make_pristine(self) -> None:
         """Set forward_mode, mask, and identity_mask to None."""
         self.forward_mode = None
         self.mask = None
         self.identity_mask = None
+        self.r = None
 
     def assert_pristine(self) -> None:
         """Assert that forward_mode, mask, and identity_mask are None."""
