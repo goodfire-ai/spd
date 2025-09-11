@@ -7,6 +7,7 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
+from spd.utils.distributed_utils import get_rank
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
 GateType = Literal["mlp", "vector_mlp"]
@@ -68,6 +69,11 @@ class VectorGateMLPs(nn.Module):
             self.layers.append(nn.GELU())
 
         self.layers.append(ParallelLinear(C, hidden_dims[-1], 1, nonlinearity="linear"))
+
+        # Print each module name and shape
+        rank = get_rank()
+        for name, module in self.layers.named_modules():
+            print(f"Rank {rank} {name}: {module.weight.shape}")
 
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
