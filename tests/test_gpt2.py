@@ -1,3 +1,4 @@
+import pytest
 from transformers import PreTrainedModel
 
 from spd.configs import Config, EvalMetricConfig
@@ -7,6 +8,7 @@ from spd.run_spd import optimize
 from spd.utils.general_utils import resolve_class, set_seed
 
 
+@pytest.mark.slow
 def test_gpt_2_decomposition_happy_path() -> None:
     """Test that SPD decomposition works on for GPT-2"""
     set_seed(0)
