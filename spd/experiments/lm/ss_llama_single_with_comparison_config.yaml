@@ -83,6 +83,11 @@ eval_metrics:
         all_but_layer_2: ["model.layers.2.*"]
         all_but_layer_3: ["model.layers.3.*"]
 
+# --- Geometric Similarity Comparison ---
+geometric_similarity_comparison:
+  reference_run_path: "wandb:goodfire/spd/runs/014mp4gremc"
+  metric_prefix: "vs_reference"
+
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM
 pretrained_model_name: SimpleStories/SimpleStories-1.25M
