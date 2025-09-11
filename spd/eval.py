@@ -569,7 +569,7 @@ class SubsetReconstructionLoss(StreamingEval):
         zero_ce = ce_vs_labels(zero_out)
 
         # Generate stochastic masks
-        stoch_masks = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
+        stoch_masks, _ = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
 
         results = {}
         all_modules = list(ci.keys())
@@ -666,7 +666,6 @@ class SubsetReconstructionLoss(StreamingEval):
                 worst_subset = max(subset_values, key=lambda k: subset_values[k])
                 worst_value = subset_values[worst_subset]
                 results[f"subset_worst/{metric_type}"] = worst_value
-                results[f"subset_worst/{metric_type}_subset"] = worst_subset
 
         return results
 
