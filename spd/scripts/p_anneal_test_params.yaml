@@ -1,0 +1,12 @@
+# P-annealing test parameters
+# This sets fixed values (not a true sweep) to test p_annealing functionality
+
+global:
+  pnorm:
+    values: [2.0]
+  p_anneal_start_frac:
+    values: [0.25]
+  p_anneal_final_p:
+    values: [0.9]
+  p_anneal_end_frac:
+    values: [0.75]
