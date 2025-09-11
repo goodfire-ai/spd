@@ -359,6 +359,7 @@ class ComponentModel(LoadableModule):
         *args: Any,
         mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
         masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        r: dict[str, Float[Tensor, "..."]] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
     ) -> Any:
@@ -380,7 +381,7 @@ class ComponentModel(LoadableModule):
         """
         if mode == "components":
             assert masks is not None, "masks parameter is required for mode='components'"
-            return self._forward_with_components(*args, masks=masks, **kwargs)
+            return self._forward_with_components(*args, masks=masks, r=r, **kwargs)
         elif mode == "pre_forward_cache":
             assert module_names is not None, (
                 "module_names parameter is required for mode='pre_forward_cache'"
@@ -392,11 +393,12 @@ class ComponentModel(LoadableModule):
             return self._forward_target(*args, **kwargs)
 
     @contextmanager
-    def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
-        """Set the forward_mode of ComponentOrModule objects and apply masks.
-
-        A module's forward_mode is set to "components" if the module name is a key in masks
-        (including if "identity_" is prefixed to the module name).
+    def _replaced_modules(
+        self,
+        masks: dict[str, Float[Tensor, "... C"]],
+        r: dict[str, Float[Tensor, "..."]] | None,
+    ):
+        """Context manager for temporarily replacing modules with components.
 
         Args:
             masks: Dictionary mapping module names to masks. Module names may be prefixed with
@@ -405,16 +407,28 @@ class ComponentModel(LoadableModule):
         for module_name, component in self.components_or_modules.items():
             component.assert_pristine()
 
+            # Set mode and masks. Support both dense and identity components.
             if module_name in masks or f"identity_{module_name}" in masks:
-                component.forward_mode = "components"
+                # Prefer blend mode if r provided; otherwise use components mode
+                component.forward_mode = (
+                    "blend" if (r is not None and module_name in r) else "components"
+                )
                 if module_name in masks:
                     assert component.components is not None
                     component.mask = masks[module_name]
                 if f"identity_{module_name}" in masks:
                     assert component.identity_components is not None
                     component.identity_mask = masks[f"identity_{module_name}"]
+                # Handle r
+                if r is not None and module_name in r:
+                    component.r = r[module_name]
+                else:
+                    component.r = None
             else:
                 component.forward_mode = "original"
+                component.mask = None
+                component.identity_mask = None
+                component.r = None
         try:
             yield
         finally:
@@ -440,6 +454,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         masks: dict[str, Float[Tensor, "... C"]],
+        r: dict[str, Float[Tensor, "..."]] | None = None,
         **kwargs: Any,
     ) -> Any:
         """Forward pass with temporary component replacements. `masks` is a dictionary mapping
@@ -449,7 +464,7 @@ class ComponentModel(LoadableModule):
         Args:
             masks: Optional dictionary mapping component names to masks
         """
-        with self._replaced_modules(masks):
+        with self._replaced_modules(masks, r):
             raw_out = self.patched_model(*args, **kwargs)
             out = self._extract_output(raw_out)
             return out

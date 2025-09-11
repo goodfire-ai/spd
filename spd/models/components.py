@@ -102,7 +102,7 @@ class Components(ABC, nn.Module):
 
     @override
     @abstractmethod
-    def forward(self, x: Tensor, mask: Tensor | None) -> Tensor:
+    def forward(self, x: Tensor, mask: Tensor | None, r: Tensor | None = None) -> Tensor:
         """Forward pass through the component."""
         raise NotImplementedError()
 
@@ -143,7 +143,10 @@ class LinearComponents(Components):
 
     @override
     def forward(
-        self, x: Float[Tensor, "... d_in"], mask: Tensor | None = None
+        self,
+        x: Float[Tensor, "... d_in"],
+        mask: Tensor | None = None,
+        r: Tensor | None = None,
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
 
@@ -162,7 +165,15 @@ class LinearComponents(Components):
         out = einops.einsum(component_acts, self.U, "... C, C d_out -> ... d_out")
 
         if self.bias is not None:
-            out += self.bias
+            if r is None:
+                out += self.bias
+            else:
+                # Adjust bias to avoid double-counting when blending with original output
+                # Add bias with factor (1 - r) so that out_spd + r*out_target has +bias once
+                if r.ndim == out.ndim:
+                    out += self.bias - r * self.bias
+                else:
+                    out += self.bias - r[..., None] * self.bias
 
         return out
 
@@ -197,6 +208,7 @@ class EmbeddingComponents(Components):
         self,
         x: Int[Tensor, "..."],
         mask: Float[Tensor, "... C"] | Bool[Tensor, "... C"] | None,
+        r: Tensor | None = None,
     ) -> Float[Tensor, "... embedding_dim"]:
         """Forward through the embedding component using indexing instead of one-hot matmul.
 
@@ -231,9 +243,10 @@ class ComponentsOrModule(nn.Module):
         self.components = components
         self.identity_components = identity_components
 
-        self.forward_mode: Literal["original"] | Literal["components"] | None = None
+        self.forward_mode: Literal["original", "components", "blend"] | None = None
         self.mask: Tensor | None = None
         self.identity_mask: Tensor | None = None
+        self.r: Tensor | None = None
 
     @property
     def components_weight(self) -> Float[Tensor, "rows cols"]:
@@ -262,27 +275,46 @@ class ComponentsOrModule(nn.Module):
             assert self.mask is None and self.identity_mask is None
             x = self.original(x)
         elif self.forward_mode == "components":
+            # Support identity and dense components; allow optional r for bias handling
             if self.identity_mask is not None:
                 assert self.identity_components is not None
-                x = self.identity_components(x, self.identity_mask)
-
+                x = self.identity_components(x, self.identity_mask, self.r)
             if self.mask is not None:
                 assert self.components is not None
-                x = self.components(x, self.mask)
+                x = self.components(x, self.mask, self.r)
             else:
                 x = self.original(x)
-        else:
-            raise ValueError(f"Invalid forward mode: {self.forward_mode}")
-        return x
+            return x
+        elif self.forward_mode == "blend":
+            # Compute SPD and target outputs, then blend using r: out_spd + r * out_target
+            out_spd = 0
+            if self.identity_mask is not None:
+                assert self.identity_components is not None
+                out_spd = self.identity_components(x, self.identity_mask, self.r)
+            if self.mask is not None:
+                assert self.components is not None
+                out_spd = out_spd + self.components(x, self.mask, self.r)
+            out_target = self.original(x)
+            assert self.r is not None, "r must be provided in blend mode"
+            scale = self.r
+            # Broadcast r over the last feature dimension
+            if scale.ndim == out_target.ndim:
+                blended = out_spd + scale * out_target
+            else:
+                blended = out_spd + scale[..., None] * out_target
+            return blended
+        raise ValueError(f"Invalid forward mode: {self.forward_mode}")
 
     def make_pristine(self) -> None:
-        """Set forward_mode, mask, and identity_mask to None."""
+        """Set forward_mode, mask, identity_mask, and r to None."""
         self.forward_mode = None
         self.mask = None
         self.identity_mask = None
+        self.r = None
 
     def assert_pristine(self) -> None:
-        """Assert that forward_mode, mask, and identity_mask are None."""
+        """Assert that forward_mode, mask, identity_mask, and r are None."""
         assert self.forward_mode is None, f"forward_mode should be None, got {self.forward_mode}"
         assert self.mask is None, f"mask should be None, got {self.mask}"
         assert self.identity_mask is None, f"identity_mask should be None, got {self.identity_mask}"
+        assert self.r is None, f"r should be None, got {self.r}"

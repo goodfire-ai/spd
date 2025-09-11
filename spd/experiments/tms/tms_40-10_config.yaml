@@ -15,7 +15,7 @@ target_module_patterns: ["linear1", "linear2"]
 identity_module_patterns: null
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1.0
+faithfulness_coeff: 0
 pnorm: 2.0
 importance_minimality_coeff: 1e-4
 recon_coeff: null
