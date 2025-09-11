@@ -21,11 +21,16 @@ analyse results, and optionally a train a target model:
 - `spd/experiments/tms` - Toy model of superposition
 - `spd/experiments/resid_mlp` - Toy model of compressed computation and toy model of distributed
   representations
+- `spd/experiments/ih` - Small model trained on a toy induction head task.
 - `spd/experiments/lm` - Language model loaded from huggingface.
 
-Note that the `lm` experiment allows for running SPD on any model pulled from huggingface, provided
-you only need to decompose `nn.Linear` or `nn.Embedding` layers (other layer types are not yet
-supported, though these should cover most parameters).
+Note that the `lm` experiment allows for running SPD on any model from huggingface or that is
+accessible to the environment, provided that you only need to decompose `nn.Linear`, `nn.Embedding`
+or `transformers.modeling_utils.Conv1D` layers (other layer types are not yet supported, though
+these should cover most modules). See `spd/experiments/lm/ss_gpt2_config.yaml` for an example which
+loads from huggingface and `spd/experiments/lm/ss_gpt2_simple_config.yaml` for an example which
+loads from https://github.com/goodfire-ai/simple_stories_train (with the model weights saved on
+wandb).
 
 ### Run SPD
 
@@ -33,42 +38,19 @@ The unified `spd-run` command provides a single entry point for running SPD expe
 fixed configurations, parameter sweeps, and evaluation runs. All runs are tracked in W&B with
 workspace views created for each experiment.
 
-#### Individual Experiments
-SPD can either be run by executing any of the `*_decomposition.py` scripts defined in the experiment
-subdirectories, along with a corresponding config file. E.g.
-```bash
-uv run spd/experiments/tms/tms_decomposition.py spd/experiments/tms/tms_5-2_config.yaml
-```
+For full CLI usage and more examples, run `spd-run --help` or see `scripts/run.py`.
 
-Or by using the unified runner:
+Below we show a small subset of the functionality provided in the CLI:
 ```bash
 spd-run --experiments tms_5-2                    # Run a specific experiment
 spd-run --experiments tms_5-2,resid_mlp1         # Run multiple experiments
 spd-run                                          # Run all experiments
 ```
 
-**Available experiments** (defined in `spd/registry.py`):
-- `tms_5-2` - TMS with 5 features, 2 hidden dimensions
-- `tms_5-2-id` - TMS with 5 features, 2 hidden dimensions (fixed identity in-between)
-- `tms_40-10` - TMS with 40 features, 10 hidden dimensions  
-- `tms_40-10-id` - TMS with 40 features, 10 hidden dimensions (fixed identity in-between)
-- `resid_mlp1` - ResidualMLP with 1 layer
-- `resid_mlp2` - ResidualMLP with 2 layers
-- `resid_mlp3` - ResidualMLP with 3 layers
-
-#### Sweeps
-For running parameter sweeps on a SLURM cluster:
+For running hyperparameter sweeps:
 
 ```bash
-spd-run --experiments <experiment_name> --sweep --n-agents <n-agents> [--cpu] [--job_suffix <suffix>]
-```
-
-**Examples:**
-```bash
-spd-run --experiments tms_5-2 --sweep --n-agents 4            # Run TMS 5-2 sweep with 4 GPU agents
-spd-run --experiments resid_mlp2 --sweep --n-agents 3 --cpu   # Run ResidualMLP2 sweep with 3 CPU agents
-spd-run --sweep --n-agents 10                                 # Sweep all experiments with 10 agents
-spd-run --experiments tms_5-2 --sweep custom.yaml --n-agents 2 # Use custom sweep params file
+spd-run --experiments <experiment_name> --sweep --n-agents <n-agents> [--cpu]
 ```
 
 **Sweep parameters:**
@@ -92,21 +74,10 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n-agents 2 # Use custom swee
         values: [0.05, 0.1]
   ```
 
-#### Evaluation Runs
-To run SPD with just the default hyperparameters for each experiment, use:
+Note that SPD can also be run by executing any of the `*_decomposition.py` scripts defined in the experiment
+subdirectories, along with a corresponding config file. E.g.
 ```bash
-spd-run                                                    # Run all experiments
-spd-run --experiments tms_5-2-id,resid_mlp2,resid_mlp3     # Run specific experiments
-```
-
-When multiple experiments are run without `--sweep`, it creates a W&B report with aggregated
-visualizations across all experiments.
-
-#### Additional Options
-```bash
-spd-run --project my-project                 # Use custom W&B project
-spd-run --job_suffix test                    # Add suffix to SLURM job names
-spd-run --no-create_report                   # Skip W&B report creation
+python spd/experiments/tms/tms_decomposition.py spd/experiments/tms/tms_5-2_config.yaml
 ```
 
 ## Development

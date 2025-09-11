@@ -25,6 +25,9 @@ d. **Optional AI review**: Consider asking Claude to review your PR with a comme
 ### 5. Search Before Creating
 Before making an issue or PR, search for existing issues or PRs in the repository. If you find related (but not duplicate) issues or PRs, reference them in your submission.
 
+### 6. Review yourself before asking
+Before asking for a PR review, read every line of the PR diff and ask yourself "should this line be in the PR?".
+
 ## Code Quality
 - Run `make check` before committing to ensure your code passes all quality checks
 - See [STYLE.md](./STYLE.md) for our coding style guide.
