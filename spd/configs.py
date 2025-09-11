@@ -74,6 +74,18 @@ class EvalMetricConfig(BaseModel):
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
+class GeometricSimilarityComparisonConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+    reference_run_path: ModelPath = Field(
+        ...,
+        description="Path to reference run (wandb:project/runs/run_id or local path)"
+    )
+    metric_prefix: str = Field(
+        default="geometric_similarity",
+        description="Prefix for logged metrics"
+    )
+
+
 class Config(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     # --- WandB
@@ -295,6 +307,12 @@ class Config(BaseModel):
     tokenizer_name: str | None = Field(
         default=None,
         description="Name or path of the tokenizer to use when loading an LM",
+    )
+
+    # --- Geometric Similarity Comparison ---
+    geometric_similarity_comparison: "GeometricSimilarityComparisonConfig | None" = Field(
+        default=None,
+        description="Configuration for comparing subcomponent geometry with a reference run"
     )
 
     # --- Task Specific ---
