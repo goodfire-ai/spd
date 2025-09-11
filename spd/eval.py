@@ -19,7 +19,9 @@ from PIL import Image
 from torch import Tensor
 
 from spd.configs import Config
+from spd.log import logger
 from spd.models.component_model import ComponentModel
+from spd.spd_types import ModelPath
 from spd.plotting import (
     get_single_feature_causal_importances,
     plot_causal_importance_vals,
@@ -671,6 +673,103 @@ class SubsetReconstructionLoss(StreamingEval):
         return results
 
 
+class GeometricSimilarityComparison(StreamingEval):
+    SLOW = True  # This involves loading another model, so it's slow
+    
+    def __init__(self, model: ComponentModel, config: Config, reference_run_path: str | ModelPath):
+        self.model = model
+        self.config = config
+        self.reference_run_path = reference_run_path
+        self.reference_model: ComponentModel | None = None
+        self._computed_this_eval = False
+        
+    def _load_reference_model(self) -> ComponentModel:
+        """Load the reference model from wandb or local path"""
+        if self.reference_model is None:
+            from spd.models.component_model import ComponentModel
+            self.reference_model = ComponentModel.from_pretrained(self.reference_run_path)
+        return self.reference_model
+    
+    def _compute_subcomponent_geometric_similarities(self) -> dict[str, float]:
+        """Compute mean max cosine similarity between subcomponent rank-one matrices"""
+        reference_model = self._load_reference_model()
+        similarities = {}
+        
+        # Iterate through all component layers in both models
+        for layer_name in self.model.components:
+            if layer_name not in reference_model.components:
+                logger.warning(f"Layer {layer_name} not found in reference model, skipping")
+                continue
+                
+            current_components = self.model.components[layer_name]
+            reference_components = reference_model.components[layer_name]
+            
+            # Verify component counts match
+            if current_components.C != reference_components.C:
+                logger.warning(f"Component count mismatch for {layer_name}: {current_components.C} vs {reference_components.C}")
+                continue
+            
+            # Extract U and V matrices
+            current_U = current_components.U  # Shape: [C, d_out]
+            current_V = current_components.V  # Shape: [d_in, C]
+            ref_U = reference_components.U
+            ref_V = reference_components.V
+            
+            # Compute rank-one matrices: V @ U for each component
+            # Each component c produces a rank-one matrix of shape [d_in, d_out]
+            current_rank_one = torch.einsum("d_in C, C d_out -> C d_in d_out", 
+                                          current_V, current_U)
+            ref_rank_one = torch.einsum("d_in C, C d_out -> C d_in d_out", 
+                                      ref_V, ref_U)
+            
+            # Flatten to vectors for cosine similarity computation
+            current_flat = current_rank_one.view(current_rank_one.shape[0], -1)
+            ref_flat = ref_rank_one.view(ref_rank_one.shape[0], -1)
+            
+            # Compute cosine similarities between all pairs
+            current_norm = F.normalize(current_flat, p=2, dim=1)
+            ref_norm = F.normalize(ref_flat, p=2, dim=1)
+            
+            cosine_sim_matrix = torch.mm(current_norm, ref_norm.T)
+            
+            # Find max cosine similarity for each current component
+            max_similarities = cosine_sim_matrix.max(dim=1).values
+            
+            # Compute mean max cosine similarity
+            similarities[f"{layer_name}/mean_max_cosine_sim"] = max_similarities.mean().item()
+            
+            # Also log individual component similarities for debugging
+            similarities[f"{layer_name}/max_cosine_sim_std"] = max_similarities.std().item()
+            similarities[f"{layer_name}/max_cosine_sim_min"] = max_similarities.min().item()
+            similarities[f"{layer_name}/max_cosine_sim_max"] = max_similarities.max().item()
+            
+        return similarities
+    
+    @override
+    def watch_batch(
+        self,
+        batch: Tensor,
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        """Not used for this metric - we compute once per evaluation"""
+        pass
+        
+    @override
+    def compute(self) -> Mapping[str, float]:
+        """Compute the geometric similarity metrics"""
+        if self._computed_this_eval:
+            return {}
+            
+        try:
+            similarities = self._compute_subcomponent_geometric_similarities()
+            self._computed_this_eval = True
+            return similarities
+        except Exception as e:
+            logger.warning(f"Failed to compute geometric similarity comparison: {e}")
+            return {}
+
+
 EVAL_CLASSES = {
     cls.__name__: cls
     for cls in [
@@ -683,6 +782,7 @@ EVAL_CLASSES = {
         IdentityCIError,
         CIMeanPerComponent,
         SubsetReconstructionLoss,
+        GeometricSimilarityComparison,
     ]
 }
 
@@ -702,6 +802,15 @@ def evaluate(
         if not run_slow and eval_cls.SLOW:
             continue
         evals.append(eval_cls(model, config, **eval_config.extra_init_kwargs))
+    
+    # Automatically add geometric similarity comparison if configured
+    if config.geometric_similarity_comparison is not None and run_slow:
+        comparison_metric = GeometricSimilarityComparison(
+            model=model,
+            config=config,
+            reference_run_path=config.geometric_similarity_comparison.reference_run_path
+        )
+        evals.append(comparison_metric)
 
     for _ in range(n_steps):
         # Do the common work:
