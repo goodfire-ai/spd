@@ -29,6 +29,7 @@ from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_eval_metrics_across_ranks,
     avg_metrics_across_ranks,
+    get_rank,
     get_world_size,
     is_distributed,
     is_main_process,
@@ -95,6 +96,35 @@ def optimize(
         pretrained_model_output_attr=config.pretrained_model_output_attr,
         identity_module_patterns=config.identity_module_patterns,
     )
+    # For ranks 0,1,2,3, print the name and shape of all gates
+    rank = get_rank()
+    if rank in [0, 1, 2, 3]:
+        for name, module in model.state_dict().items():
+            if "_gate" in name and "down_proj" in name:
+                print(f"Rank {rank} {name}: {module.shape}")
+    # Add this debugging code to identify params[80]
+    if rank == 0 or rank == 6:  # Compare rank 0 and rank 6 (the one with the error)
+        all_params = list(model.parameters())
+        print(f"\n[Rank {rank}] Total number of parameters: {len(all_params)}")
+
+        # Print info about params[80] specifically
+        if len(all_params) > 80:
+            param_80 = all_params[80]
+            print(f"[Rank {rank}] params[80] shape: {param_80.shape}")
+
+            # Find the name of this parameter
+            param_to_name = {}
+            for name, param in model.named_parameters():
+                param_to_name[id(param)] = name
+
+            param_name = param_to_name.get(id(param_80), "Unknown")
+            print(f"[Rank {rank}] params[80] name: {param_name}")
+
+            # Print a few params around index 80 for context
+            for i in range(max(0, 78), min(len(all_params), 83)):
+                param = all_params[i]
+                name = param_to_name.get(id(param), "Unknown")
+                print(f"[Rank {rank}] params[{i}]: {name} - shape: {param.shape}")
 
     if ln_stds is not None:
         # model has ablated layernorms, patch in the fixed std values
