@@ -274,6 +274,7 @@ class ComponentsOrModule(nn.Module):
         if self.forward_mode == "original":
             assert self.mask is None and self.identity_mask is None
             x = self.original(x)
+            return x
         elif self.forward_mode == "components":
             # Support identity and dense components; allow optional r for bias handling
             if self.identity_mask is not None:
