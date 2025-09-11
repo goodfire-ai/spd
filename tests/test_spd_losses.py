@@ -1,18 +1,20 @@
 import torch
 
-from spd.losses import _calc_tensors_mse
+from spd.losses import _calc_tensors_squared_error
 
 
-class TestCalcParamMatchLoss:
-    # Actually testing _calc_tensors_mse. calc_faithfulness_loss should fail hard in most cases, and
-    # testing it would require lots of mocking the way it is currently written.
+class TestCalcFaithfulnessLoss:
+    # Actually testing _calc_tensors_squared_error. calc_faithfulness_loss should fail hard in most
+    # cases, and testing it would require lots of mocking the way it is currently written. Though
+    # now that we don't normalize _calc_tensors_squared_error by the number of parameters, having a
+    # test would be helpful.
     def test_calc_faithfulness_loss_single_instance_single_param(self):
         V = torch.ones(2, 3)
         U = torch.ones(3, 2)
         spd_params = {"layer1": U.T @ V.T}
         target_params = {"layer1": torch.tensor([[1.0, 1.0], [1.0, 1.0]])}
 
-        result = _calc_tensors_mse(
+        result = _calc_tensors_squared_error(
             params1=target_params,
             params2=spd_params,
             device="cpu",
@@ -36,7 +38,7 @@ class TestCalcParamMatchLoss:
             "layer1": Us[0].T @ Vs[0].T,
             "layer2": Us[1].T @ Vs[1].T,
         }
-        result = _calc_tensors_mse(
+        result = _calc_tensors_squared_error(
             params1=target_params,
             params2=spd_params,
             device="cpu",

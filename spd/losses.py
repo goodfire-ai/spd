@@ -170,12 +170,12 @@ def calc_masked_recon_loss(
     return loss
 
 
-def _calc_tensors_mse(
+def _calc_tensors_squared_error(
     params1: dict[str, Float[Tensor, "d_in d_out"]],
     params2: dict[str, Float[Tensor, "d_in d_out"]],
     device: str,
 ) -> Float[Tensor, ""]:
-    """Calculate the MSE between params1 and params2, summing over the d_in and d_out dimensions.
+    """Calculate the squared error between params1 and params2, summing over d_in and d_out dims.
 
     Args:
         params1: The first set of parameters
@@ -209,7 +209,7 @@ def calc_faithfulness_loss(
             target_params[id_name] = torch.eye(id_mat.shape[0], device=device, dtype=id_mat.dtype)
             assert component_params[id_name].shape == target_params[id_name].shape
 
-    faithfulness_loss = _calc_tensors_mse(
+    faithfulness_loss = _calc_tensors_squared_error(
         params1=component_params,
         params2=target_params,
         device=device,

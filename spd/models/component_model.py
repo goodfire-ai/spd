@@ -203,7 +203,6 @@ class ComponentModel(LoadableModule):
         identity_module_patterns. If it exists in both, we just have the single ComponentsOrModule
         object with non-None values for components and identity_components.
 
-
         Args:
             model: The model to replace modules in.
             module_paths: The paths to the modules to replace.
@@ -213,7 +212,6 @@ class ComponentModel(LoadableModule):
         Returns:
             A dictionary mapping module paths to the newly inserted ComponentsOrModule objects
             within `model`.
-
 
         Example:
             >>> model

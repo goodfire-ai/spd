@@ -128,7 +128,7 @@ def optimize(
             tgt = component_model.components_or_modules[tgt_name].components
             src = component_model.components_or_modules[src_name].components
             assert tgt is not None and src is not None, (
-                f"Cannot tie weights between {src_name} and {tgt_name} - components are None"
+                f"Cannot tie weights between {src_name} and {tgt_name} - one or both are None"
             )
             tgt.U.data = src.V.data.T
             tgt.V.data = src.U.data.T
