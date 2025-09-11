@@ -1,4 +1,5 @@
 batch_size: 48
+C: 4000
 ci_alive_threshold: 0.0
 dist_backend: null
 embedding_recon_coeff: null
@@ -15,6 +16,8 @@ eval_metrics:
 - classname: CEandKLLosses
   extra_init_kwargs:
     rounding_threshold: 0.0
+- classname: SubsetReconstructionLoss
+  extra_init_kwargs: {}
 faithfulness_coeff: 0
 gate_hidden_dims:
 - 12

@@ -569,7 +569,7 @@ class SubsetReconstructionLoss(StreamingEval):
         zero_ce = ce_vs_labels(zero_out)
 
         # Generate stochastic masks
-        stoch_masks = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
+        stoch_masks, rs = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
 
         results = {}
         all_modules = list(ci.keys())
@@ -579,7 +579,7 @@ class SubsetReconstructionLoss(StreamingEval):
             active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
 
             kl_losses, ce_losses = [], []
-            for stoch_mask in stoch_masks:
+            for stoch_mask, r in zip(stoch_masks, rs, strict=False):
                 mask = {}
                 for m in all_modules:
                     if m in active:
@@ -587,7 +587,7 @@ class SubsetReconstructionLoss(StreamingEval):
                     elif self.use_all_ones_for_non_replaced:
                         mask[m] = torch.ones_like(stoch_mask[m])
 
-                out = self.model(batch, mode="components", masks=mask)
+                out = self.model(batch, mode="components", masks=mask, r=r)
                 kl_losses.append(kl_vs_target(out))
                 ce_losses.append(ce_vs_labels(out))
 
@@ -606,7 +606,7 @@ class SubsetReconstructionLoss(StreamingEval):
             active = [m for m in all_modules if m not in excluded]
 
             kl_losses, ce_losses = [], []
-            for stoch_mask in stoch_masks:
+            for stoch_mask, r in zip(stoch_masks, rs, strict=False):
                 mask = {}
                 for m in all_modules:
                     if m in active:
@@ -614,7 +614,7 @@ class SubsetReconstructionLoss(StreamingEval):
                     elif self.use_all_ones_for_non_replaced:
                         mask[m] = torch.ones_like(stoch_mask[m])
 
-                out = self.model(batch, mode="components", masks=mask)
+                out = self.model(batch, mode="components", masks=mask, r=r)
                 kl_losses.append(kl_vs_target(out))
                 ce_losses.append(ce_vs_labels(out))
 
