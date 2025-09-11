@@ -53,9 +53,12 @@ class StreamingEval(ABC):
 class CI_L0(StreamingEval):
     SLOW = False
 
-    def __init__(self, model: ComponentModel, config: Config):
+    def __init__(
+        self, model: ComponentModel, config: Config, groups: dict[str, list[str]] | None = None
+    ):
         self.l0_threshold = config.ci_alive_threshold
         self.l0s = defaultdict[str, list[float]](list)
+        self.groups = groups  # Optional: {"layer_0": ["model.layers.0.*"], ...}
 
     @override
     def watch_batch(
@@ -64,15 +67,33 @@ class CI_L0(StreamingEval):
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None:
+        import re
+
+        # Track group sums for this batch
+        group_sums = defaultdict(float) if self.groups else {}
+
         for layer_name, layer_ci in ci.items():
             l0_val = calc_ci_l_zero(layer_ci, self.l0_threshold)
             self.l0s[layer_name].append(l0_val)
 
+            # Accumulate into matching groups
+            if self.groups:
+                for group_name, patterns in self.groups.items():
+                    for pattern in patterns:
+                        if re.match(pattern.replace("*", ".*"), layer_name):
+                            group_sums[group_name] += l0_val
+                            break
+
+        # Append group sums to their lists
+        for group_name, group_sum in group_sums.items():
+            self.l0s[group_name].append(group_sum)
+
     @override
     def compute(self) -> Mapping[str, float]:
         out = {}
-        for layer_name, l0s in self.l0s.items():
-            out[f"l0_{self.l0_threshold}/{layer_name}"] = sum(l0s) / len(l0s)
+        for name, l0s in self.l0s.items():
+            avg_l0 = sum(l0s) / len(l0s)
+            out[f"l0_{self.l0_threshold}/{name}"] = avg_l0
         return out
 
 
