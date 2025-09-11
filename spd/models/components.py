@@ -9,7 +9,7 @@ from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
-GateType = Literal["mlp", "vector_mlp"]
+GateType = Literal["mlp", "vector_mlp", "layerwise_global_mlp"]
 
 
 class ParallelLinear(nn.Module):
@@ -29,7 +29,7 @@ class ParallelLinear(nn.Module):
 
 
 class GateMLPs(nn.Module):
-    """MLP based gates that map component 'inner acts' to a scalar output for each component."""
+    """MLP-based gates that map component 'inner acts' to a scalar output for each component."""
 
     def __init__(self, C: int, hidden_dims: list[int]):
         super().__init__()
@@ -53,7 +53,7 @@ class GateMLPs(nn.Module):
 
 
 class VectorGateMLPs(nn.Module):
-    """MLP based gates that map a module's input vector to a scalar output for each component."""
+    """MLP-based gates that map a module's input vector to a scalar output for each component."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
@@ -75,6 +75,24 @@ class VectorGateMLPs(nn.Module):
         x = self.layers(einops.rearrange(x, "... d_in -> ... 1 d_in"))
         assert x.shape[-1] == 1, "Last dimension should be 1 after the final layer"
         return x[..., 0]
+
+
+class LayerwiseGlobalGateMLP(nn.Module):
+    """MLP-based gate that maps a module's input vector to a scalar output for each component."""
+
+    def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
+        super().__init__()
+        self.layers = nn.Sequential()
+        for i in range(len(hidden_dims)):
+            input_dim = input_dim if i == 0 else hidden_dims[i - 1]
+            output_dim = hidden_dims[i]
+            self.layers.append(nn.Linear(input_dim, output_dim))
+            self.layers.append(nn.GELU())
+        self.layers.append(nn.Linear(hidden_dims[-1], C))
+
+    @override
+    def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
+        return self.layers(x)
 
 
 class Components(ABC, nn.Module):
