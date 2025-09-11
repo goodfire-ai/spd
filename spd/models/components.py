@@ -253,7 +253,7 @@ class ComponentsOrModule(nn.Module):
             return self.original.weight
         else:
             raise AttributeError(
-                f"Module type {type(self.original)} does not have a weight attribute"
+                f"Module {type(self.original)} not one of nn.Linear, nn.Embedding, or RadfordConv1D"
             )
 
     @override

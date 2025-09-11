@@ -248,25 +248,25 @@ class ComponentModel(LoadableModule):
             needs_components = module_path in module_paths
             needs_identity = module_path in identity_paths_set
 
-            component = None
+            components: Components | None = None
             if needs_components:
                 if isinstance(module, nn.Linear):
                     d_out, d_in = module.weight.shape
-                    component = LinearComponents(
+                    components = LinearComponents(
                         C=C,
                         d_in=d_in,
                         d_out=d_out,
                         bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
                     )
                 elif isinstance(module, nn.Embedding):
-                    component = EmbeddingComponents(
+                    components = EmbeddingComponents(
                         C=C,
                         vocab_size=module.num_embeddings,
                         embedding_dim=module.embedding_dim,
                     )
                 elif isinstance(module, RadfordConv1D):
                     d_in, d_out = module.weight.shape
-                    component = LinearComponents(
+                    components = LinearComponents(
                         C=C,
                         d_in=d_in,
                         d_out=d_out,
@@ -278,7 +278,7 @@ class ComponentModel(LoadableModule):
                         f"or Huggingface Conv1D. Found type: {type(module)}"
                     )
 
-            identity_component = None
+            identity_components: Components | None = None
             if needs_identity:
                 if isinstance(module, nn.Linear):
                     d_identity = module.weight.shape[1]
@@ -292,14 +292,15 @@ class ComponentModel(LoadableModule):
                         f"at path '{module_path}' for identity components"
                     )
 
-                identity_component = LinearComponents(
+                identity_components = LinearComponents(
                     C=C, d_in=d_identity, d_out=d_identity, bias=None
                 )
 
+            assert components is not None or identity_components is not None
             replacement = ComponentsOrModule(
                 original=module,
-                components=component,
-                identity_components=identity_component,
+                components=components,
+                identity_components=identity_components,
             )
 
             model.set_submodule(module_path, replacement)
