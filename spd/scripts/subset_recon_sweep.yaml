@@ -1,0 +1,18 @@
+# Sweep parameters for stochastic reconstruction subset loss experiments
+# This sweep explores different probability distributions and truncation modes
+
+# Experiment-specific parameters
+ss_llama_subset_recon:
+  # Test different probability values/distributions
+  stochastic_recon_subset_p:
+    values:
+      - 0.25  # Low probability - sparse selection
+      - 0.5   # Medium probability
+      - 0.75  # High probability
+      - 1.0   # Always select (when not rejected)
+      - [0.25, 0.5, 0.75]  # Sample from low/medium
+      - [0.1, 0.25, 0.5, 0.75, 0.9]  # Sample from all values
+  
+  # Test both truncation modes
+  stochastic_recon_subset_mode::
+    values: [independent, truncation]

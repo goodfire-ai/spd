@@ -1,3 +1,4 @@
+import random
 from typing import Literal
 
 import einops
@@ -102,6 +103,55 @@ def calc_schatten_loss(
     return total_loss
 
 
+def calc_l0_balancing_loss(
+    ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
+    pnorm: float,
+    groups: list[list[str]],
+    eps: float = 1e-12,
+) -> Float[Tensor, ""]:
+    """Calculate L0 balancing loss to encourage uniform sparsity across groups.
+
+    Args:
+        ci_upper_leaky: Dictionary of upper leaky relu causal importances for each layer
+        pnorm: The pnorm to use (same as importance minimality)
+        groups: List of regex patterns defining groups. Each inner list defines modules to sum together.
+        eps: Epsilon to add for numerical stability with pnorm < 1
+
+    Returns:
+        Variance of the average p-norm sums across groups
+    """
+    import re
+
+    # Get device from any CI tensor
+    example_ci = next(iter(ci_upper_leaky.values()))
+    device = example_ci.device
+
+    # Calculate average p-norm sum for each group
+    group_avg_norms = []
+    for group_patterns in groups:
+        group_sum = torch.tensor(0.0, device=device)
+
+        for pattern in group_patterns:
+            # Find all modules matching this pattern
+            pattern_regex = re.compile(pattern.replace("*", ".*"))
+            for module_name, ci in ci_upper_leaky.items():
+                if pattern_regex.match(module_name):
+                    # Add p-norm of this module's CIs (sum over C, mean over batch)
+                    group_sum = group_sum + ((ci + eps) ** pnorm).sum(dim=-1).mean()
+
+        group_avg_norms.append(group_sum)
+
+    if len(group_avg_norms) < 2:
+        return torch.tensor(0.0, device=device)
+
+    # Stack groups and compute variance
+    group_norms_tensor = torch.stack(group_avg_norms)
+    mean_norm = group_norms_tensor.mean()
+    variance = ((group_norms_tensor - mean_norm) ** 2).mean()
+
+    return variance
+
+
 def calc_importance_minimality_loss(
     ci_upper_leaky: dict[str, Float[Tensor, "... C"]], pnorm: float, eps: float = 1e-12
 ) -> Float[Tensor, ""]:
@@ -170,6 +220,110 @@ def calc_masked_recon_loss(
         loss = calc_kl_divergence_lm(pred=out, target=target_out)
 
     return loss
+
+
+def calc_stochastic_recon_subset_loss(
+    model: ComponentModel,
+    batch: Int[Tensor, "..."],
+    causal_importances: dict[str, Float[Tensor, "... C"]],
+    n_subset_samples: int,
+    n_mask_samples: int,
+    sampling: Literal["continuous", "binomial"],
+    target_out: Float[Tensor, "... d_model_out"],
+    loss_type: Literal["mse", "kl"],
+    subset_p: float | list[float],
+    subset_mode: Literal["independent", "truncation", "harmonic"],
+    device: str,
+) -> Float[Tensor, ""]:
+    """Calculate reconstruction loss with randomly selected subset of modules.
+
+    This loss function bridges the gap between stochastic_recon_loss (replaces all modules)
+    and stochastic_recon_layerwise_loss (replaces one at a time) by randomly selecting
+    which modules to replace with SPD components.
+
+    Args:
+        model: The ComponentModel
+        batch: Input batch
+        causal_importances: CI values for all modules
+        n_subset_samples: Number of different subset samples to average over
+        n_mask_samples: Number of stochastic mask samples per subset
+        sampling: Type of stochastic sampling ("continuous" or "binomial")
+        target_out: Target model output to match
+        loss_type: "mse" or "kl" loss
+        subset_p: Probability (0-1) of replacing each module, or list of probabilities to sample from (ignored for harmonic mode)
+        subset_mode: 'independent' (sample each with p), 'truncation' (all up to cutoff), 'harmonic' (module n with prob 1/n)
+        device: Device for computation
+
+    Returns:
+        Average reconstruction loss over sampled subsets
+    """
+    total_loss = torch.tensor(0.0, device=device)
+    module_names = list(causal_importances.keys())
+    n_modules = len(module_names)
+
+    for _ in range(n_subset_samples):
+        # Determine which modules to replace based on mode
+        modules_to_replace = []
+
+        if subset_mode == "harmonic":
+            # Module n is replaced with probability 1/n
+            for idx, module_name in enumerate(module_names):
+                prob = 1.0 / (idx + 1)  # idx+1 because idx is 0-based
+                if random.random() < prob:
+                    modules_to_replace.append(module_name)
+
+        elif subset_mode == "truncation":
+            # Sample p from list if provided
+            current_p = random.choice(subset_p) if isinstance(subset_p, list) else subset_p
+
+            # Sample a cutoff index (0 to n_modules-1)
+            cutoff_idx = random.randint(0, n_modules - 1)
+
+            # The cutoff module itself is always included
+            modules_to_replace.append(module_names[cutoff_idx])
+
+            # Apply probability p to modules before cutoff
+            for idx in range(cutoff_idx):
+                if random.random() < current_p:
+                    modules_to_replace.append(module_names[idx])
+
+        else:  # subset_mode == "independent"
+            # Sample p from list if provided
+            current_p = random.choice(subset_p) if isinstance(subset_p, list) else subset_p
+
+            # Each module independently selected with probability p
+            # Rejection sampling to ensure at least one module
+            while len(modules_to_replace) == 0:
+                modules_to_replace = [m for m in module_names if random.random() < current_p]
+
+        # Step 3: Create CI subset for selected modules
+        ci_subset = {
+            module_name: causal_importances[module_name] for module_name in modules_to_replace
+        }
+
+        # Step 4: Generate stochastic masks for selected modules
+        stoch_masks_list = calc_stochastic_masks(
+            causal_importances=ci_subset, n_mask_samples=n_mask_samples, sampling=sampling
+        )
+
+        # Step 5: Calculate loss for each mask sample
+        subset_loss = torch.tensor(0.0, device=device)
+        for stoch_masks in stoch_masks_list:
+            # Forward pass with subset masks
+            # Only selected modules get masks; others use original weights
+            out = model(batch, mode="components", masks=stoch_masks)
+
+            # Calculate loss
+            if loss_type == "kl":
+                loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            else:
+                loss = ((out - target_out) ** 2).mean()
+
+            subset_loss += loss
+
+        total_loss += subset_loss / n_mask_samples
+
+    return total_loss / n_subset_samples
 
 
 def _calc_tensors_mse(
@@ -316,6 +470,24 @@ def calculate_losses(
         total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
         loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
 
+    # Stochastic reconstruction subset loss
+    if config.stochastic_recon_subset_coeff is not None:
+        stochastic_recon_subset_loss = calc_stochastic_recon_subset_loss(
+            model=model,
+            batch=batch,
+            causal_importances=causal_importances,
+            n_subset_samples=config.stochastic_recon_subset_n_samples,
+            n_mask_samples=config.n_mask_samples,
+            sampling=config.sampling,
+            target_out=target_out,
+            loss_type=config.output_loss_type,
+            subset_p=config.stochastic_recon_subset_p,
+            subset_mode=config.stochastic_recon_subset_mode,
+            device=device,
+        )
+        total_loss += config.stochastic_recon_subset_coeff * stochastic_recon_subset_loss
+        loss_terms["stochastic_recon_subset"] = stochastic_recon_subset_loss.item()
+
     # Importance minimality loss
     pnorm_value = current_p if current_p is not None else config.pnorm
     importance_minimality_loss = calc_importance_minimality_loss(
@@ -323,6 +495,16 @@ def calculate_losses(
     )
     total_loss += config.importance_minimality_coeff * importance_minimality_loss
     loss_terms["importance_minimality"] = importance_minimality_loss.item()
+
+    # L0 balancing loss
+    if config.l0_balancing_coeff is not None and config.l0_balancing_groups is not None:
+        l0_balancing_loss = calc_l0_balancing_loss(
+            ci_upper_leaky=causal_importances_upper_leaky,
+            pnorm=pnorm_value,
+            groups=config.l0_balancing_groups,
+        )
+        total_loss += config.l0_balancing_coeff * l0_balancing_loss
+        loss_terms["l0_balancing"] = l0_balancing_loss.item()
 
     # Schatten loss
     if config.schatten_coeff is not None:
