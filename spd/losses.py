@@ -144,12 +144,14 @@ def calc_l0_balancing_loss(
     if len(group_avg_norms) < 2:
         return torch.tensor(0.0, device=device)
 
-    # Stack groups and compute variance
+    # Stack groups and compute normalized variance (std / mean)
+    # This keeps the loss on the same scale as the p-norm values
     group_norms_tensor = torch.stack(group_avg_norms)
     mean_norm = group_norms_tensor.mean()
-    variance = ((group_norms_tensor - mean_norm) ** 2).mean()
+    std_norm = group_norms_tensor.std()
 
-    return variance
+    # Return coefficient of variation (std/mean) - unitless and scale-invariant
+    return std_norm / (mean_norm + 1e-8)
 
 
 def calc_importance_minimality_loss(

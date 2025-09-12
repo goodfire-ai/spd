@@ -1,0 +1,4 @@
+# Params used for all experiments
+global:
+  n_mask_samples:
+    values: [2,4,8,16]

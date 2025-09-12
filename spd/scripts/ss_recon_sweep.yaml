@@ -1,0 +1,3 @@
+global:
+  recon_coeff:
+    values: [0.1, 1.0, 1.0]
