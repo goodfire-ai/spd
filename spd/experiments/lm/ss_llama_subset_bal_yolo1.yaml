@@ -41,8 +41,8 @@ p_anneal_end_frac: 0.75
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 48
-eval_batch_size: 48
+batch_size: 32
+eval_batch_size: 32
 steps: 300000
 lr: 0.0005
 lr_schedule: cosine

@@ -1,0 +1,4 @@
+# Params used for all experiments
+global:
+  stochastic_activation_recon_layerwise_coeff:
+    values: [10, 3, 1, 0.3, 0.1, 0.03, 0.01, 3e-3, 1e-3, 1e-4]
