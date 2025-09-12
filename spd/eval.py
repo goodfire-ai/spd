@@ -19,6 +19,7 @@ from PIL import Image
 from torch import Tensor
 
 from spd.configs import Config
+from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
 from spd.plotting import (
     get_single_feature_causal_importances,
@@ -142,37 +143,46 @@ class CEandKLLosses(StreamingEval):
 
         # CE When...
         # we use the causal importances as a mask
-        ci_masked_logits = self.model(batch, mode="components", masks=ci)
+        ci_mask_infos = make_mask_infos(ci)
+        ci_masked_logits = self.model(batch, mode="components", mask_infos=ci_mask_infos)
         ci_masked_ce_loss = ce_vs_labels(ci_masked_logits)
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
         # we use the regular stochastic masks
         stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1, sampling=self.config.sampling)[0]
-        stoch_masked_logits = self.model(batch, mode="components", masks=stoch_masks)
+        stoch_masked_logits = self.model(
+            batch, mode="components", mask_infos=make_mask_infos(stoch_masks[0])
+        )
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
 
         # we use all components
         nonmask = {k: torch.ones_like(v) for k, v in ci.items()}
-        unmasked_logits = self.model(batch, mode="components", masks=nonmask)
+        unmasked_logits = self.model(batch, mode="components", mask_infos=make_mask_infos(nonmask))
         unmasked_ce_loss = ce_vs_labels(unmasked_logits)
         unmasked_kl_loss = kl_vs_target(unmasked_logits)
 
         # we use completely random masks
         rand_masks = {layer: torch.rand_like(v) for layer, v in ci.items()}
-        random_masked_logits = self.model(batch, mode="components", masks=rand_masks)
+        random_masked_logits = self.model(
+            batch, mode="components", mask_infos=make_mask_infos(rand_masks)
+        )
         random_masked_ce_loss = ce_vs_labels(random_masked_logits)
         random_masked_kl_loss = kl_vs_target(random_masked_logits)
 
         # we use rounded causal importances as masks
         rounded_ci = {k: (v > self.rounding_threshold).float() for k, v in ci.items()}
-        rounded_masked_logits = self.model(batch, mode="components", masks=rounded_ci)
+        rounded_masked_logits = self.model(
+            batch, mode="components", mask_infos=make_mask_infos(rounded_ci)
+        )
         rounded_masked_ce_loss = ce_vs_labels(rounded_masked_logits)
         rounded_masked_kl_loss = kl_vs_target(rounded_masked_logits)
 
         # we zero all the components
         zero_masks = {k: torch.zeros_like(v) for k, v in ci.items()}
-        zero_masked_logits = self.model(batch, mode="components", masks=zero_masks)
+        zero_masked_logits = self.model(
+            batch, mode="components", mask_infos=make_mask_infos(zero_masks)
+        )
         zero_masked_ce_loss = ce_vs_labels(zero_masked_logits)
         zero_masked_kl_loss = kl_vs_target(zero_masked_logits)
 
@@ -565,7 +575,7 @@ class SubsetReconstructionLoss(StreamingEval):
         # Compute baselines for CE unrecovered
         target_ce = ce_vs_labels(target_out)
         zero_masks = {k: torch.zeros_like(v) for k, v in ci.items()}
-        zero_out = self.model(batch, mode="components", masks=zero_masks)
+        zero_out = self.model(batch, mode="components", mask_infos=make_mask_infos(zero_masks))
         zero_ce = ce_vs_labels(zero_out)
 
         # Generate stochastic masks
@@ -588,7 +598,7 @@ class SubsetReconstructionLoss(StreamingEval):
                     elif self.use_all_ones_for_non_replaced:
                         mask[m] = torch.ones_like(stoch_mask[m])
 
-                out = self.model(batch, mode="components", masks=mask)
+                out = self.model(batch, mode="components", mask_infos=make_mask_infos(mask))
                 kl_losses.append(kl_vs_target(out))
                 ce_losses.append(ce_vs_labels(out))
 
@@ -615,7 +625,7 @@ class SubsetReconstructionLoss(StreamingEval):
                     elif self.use_all_ones_for_non_replaced:
                         mask[m] = torch.ones_like(stoch_mask[m])
 
-                out = self.model(batch, mode="components", masks=mask)
+                out = self.model(batch, mode="components", mask_infos=make_mask_infos(mask))
                 kl_losses.append(kl_vs_target(out))
                 ce_losses.append(ce_vs_labels(out))
 

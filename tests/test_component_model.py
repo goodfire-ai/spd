@@ -11,6 +11,7 @@ from transformers.modeling_utils import Conv1D as RadfordConv1D
 from spd.configs import Config
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.interfaces import LoadableModule, RunInfo
+from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import ComponentsOrModule, EmbeddingComponents, LinearComponents
 from spd.spd_types import ModelPath
@@ -79,7 +80,7 @@ def test_no_replacement_masks_means_original_mode(component_model: ComponentMode
     for comp in cm.components_or_modules.values():
         comp.assert_pristine()
     # No masks supplied: everything should stay in "original" mode
-    with cm._replaced_modules({}, None, None):
+    with cm._replaced_modules({}):
         assert all(comp.forward_mode == "original" for comp in cm.components_or_modules.values())
         assert all(comp.mask is None for comp in cm.components_or_modules.values())
     # After the context the state must be fully reset
@@ -108,7 +109,7 @@ def test_replaced_modules_sets_and_restores_masks(component_model: ComponentMode
     full_masks = {
         name: torch.randn(1, cm.C, dtype=torch.float32) for name in cm.components_or_modules
     }
-    with cm._replaced_modules(full_masks, None, None):
+    with cm._replaced_modules(make_mask_infos(full_masks)):
         # All components should now be in replacement‑mode with the given masks
         for name, comp in cm.components_or_modules.items():
             assert comp.forward_mode == "components"
@@ -124,7 +125,7 @@ def test_replaced_modules_sets_and_restores_masks_partial(
     cm = component_model
     # Partial masking
     partial_masks = {"linear1": torch.ones(1, cm.C)}
-    with cm._replaced_modules(partial_masks, None, None):
+    with cm._replaced_modules(make_mask_infos(partial_masks)):
         assert cm.components_or_modules["linear1"].forward_mode == "components"
         assert torch.equal(cm.components_or_modules["linear1"].mask, partial_masks["linear1"])  # pyright: ignore [reportArgumentType]
         # Others fall back to original‑only mode with no masks
@@ -141,7 +142,7 @@ def test_replaced_modules_sets_and_restores_identity_masks_only(
 ) -> None:
     cm = component_model_with_identity
     identity_masks = {"identity_linear1": torch.ones(1, cm.C)}
-    with cm._replaced_modules(identity_masks, None, None):
+    with cm._replaced_modules(make_mask_infos(identity_masks)):
         for name, comp in cm.components_or_modules.items():
             if name == "linear1":
                 assert comp.forward_mode == "components"
@@ -166,7 +167,7 @@ def test_replaced_modules_sets_and_restores_combined_masks(
         "identity_conv1d1": torch.ones(1, cm.C),
     }
 
-    with cm._replaced_modules(masks, None, None):
+    with cm._replaced_modules(make_mask_infos(masks)):
         for name, comp in cm.components_or_modules.items():
             if name == "linear1":
                 assert comp.forward_mode == "components"
@@ -540,7 +541,9 @@ def test_component_model_identity_conv_masks_match_original_single_pos() -> None
         "identity_conv1": torch.ones(3, 1, cm.C),
         "identity_conv2": torch.ones(3, 1, cm.C),
     }
-    y_identity = cm.forward(x, mode="components", masks=masks)
+    from spd.mask_info import make_mask_infos
+
+    y_identity = cm.forward(x, mode="components", mask_infos=make_mask_infos(masks))
     torch.testing.assert_close(y_identity, y_target, rtol=1e-4, atol=1e-5)
 
 
