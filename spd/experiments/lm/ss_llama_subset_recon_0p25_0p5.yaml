@@ -16,20 +16,14 @@ sampling: "binomial"
 # --- Loss Coefficients ---
 faithfulness_coeff: 10000000.0
 recon_coeff: null
-stochastic_recon_coeff: null
+stochastic_recon_coeff: null  # Keep at 0 to not train on it, but still log
 recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: null
+stochastic_recon_layerwise_coeff: null  # Keep at 0 to not train on it, but still log
 stochastic_recon_subset_coeff: 2.0  # New loss - actively train on this
-stochastic_recon_subset_p: 1  # With truncation=true, this applies to modules before cutoff
+stochastic_recon_subset_p: [0.25,0.5]  # With truncation=true, this applies to modules before cutoff
 stochastic_recon_subset_mode: "independent"  # Enable truncation mode
 stochastic_recon_subset_n_samples: 5  # Number of subset samples to average
 importance_minimality_coeff: 0.0003
-l0_balancing_coeff: 1  # Encourage uniform sparsity across layers
-l0_balancing_groups:  # Define groups for balancing (one per layer)
-  - ["model.layers.0.*"]
-  - ["model.layers.1.*"]
-  - ["model.layers.2.*"]
-  - ["model.layers.3.*"]
 schatten_coeff: null
 out_recon_coeff: null
 embedding_recon_coeff: null
@@ -41,14 +35,14 @@ p_anneal_end_frac: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 12
-eval_batch_size: 12
-steps: 200000
+batch_size: 24
+eval_batch_size: 24
+steps: 300000
 lr: 0.0005
 lr_schedule: cosine
 lr_warmup_pct: 0.0
 lr_exponential_halflife: null
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 2
 
 # --- Logging & Saving ---
 train_log_freq: 100
@@ -94,6 +88,7 @@ eval_metrics:
         all_but_layer_1: ["model.layers.1.*"]
         all_but_layer_2: ["model.layers.2.*"]
         all_but_layer_3: ["model.layers.3.*"]
+
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM
 pretrained_model_name: SimpleStories/SimpleStories-1.25M

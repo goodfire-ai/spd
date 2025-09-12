@@ -144,10 +144,15 @@ def calc_l0_balancing_loss(
     if len(group_avg_norms) < 2:
         return torch.tensor(0.0, device=device)
 
-    # Stack groups and compute variance
+    # Stack groups and normalize so they sum to 1
     group_norms_tensor = torch.stack(group_avg_norms)
-    mean_norm = group_norms_tensor.mean()
-    variance = ((group_norms_tensor - mean_norm) ** 2).mean()
+    normalized_groups = group_norms_tensor / (group_norms_tensor.sum() + 1e-8)
+
+    # Compute variance of the normalized distribution
+    # Perfect balance: each group = 1/n_groups, variance = 0
+    # Maximum imbalance: one group = 1, others = 0, variance ≈ 1/n_groups
+    mean_norm = normalized_groups.mean()
+    variance = ((normalized_groups - mean_norm) ** 2).mean()
 
     return variance
 
