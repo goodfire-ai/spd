@@ -98,6 +98,18 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/lm/ss_llama_subset_recon.yaml"),
         expected_runtime=60 * 16,  # Similar to ss_llama_all since it's a full model run
     ),
+    "ss_llama_subset_recon_0p25": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_subset_recon_0p25.yaml"),
+        expected_runtime=60 * 32,  # ~32 hours with data parallelism over 4 GPUs
+    ),
+    "ss_llama_subset_recon_0p25_0p5": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_subset_recon_0p25_0p5.yaml"),
+        expected_runtime=60 * 32,  # ~32 hours with data parallelism over 4 GPUs
+    ),
     "ss_llama_subset_recon_harmonic": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
