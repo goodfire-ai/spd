@@ -79,7 +79,7 @@ def test_no_replacement_masks_means_original_mode(component_model: ComponentMode
     for comp in cm.components_or_modules.values():
         comp.assert_pristine()
     # No masks supplied: everything should stay in "original" mode
-    with cm._replaced_modules({}):
+    with cm._replaced_modules({}, None, None):
         assert all(comp.forward_mode == "original" for comp in cm.components_or_modules.values())
         assert all(comp.mask is None for comp in cm.components_or_modules.values())
     # After the context the state must be fully reset
@@ -108,7 +108,7 @@ def test_replaced_modules_sets_and_restores_masks(component_model: ComponentMode
     full_masks = {
         name: torch.randn(1, cm.C, dtype=torch.float32) for name in cm.components_or_modules
     }
-    with cm._replaced_modules(full_masks):
+    with cm._replaced_modules(full_masks, None, None):
         # All components should now be in replacement‑mode with the given masks
         for name, comp in cm.components_or_modules.items():
             assert comp.forward_mode == "components"
@@ -124,7 +124,7 @@ def test_replaced_modules_sets_and_restores_masks_partial(
     cm = component_model
     # Partial masking
     partial_masks = {"linear1": torch.ones(1, cm.C)}
-    with cm._replaced_modules(partial_masks):
+    with cm._replaced_modules(partial_masks, None, None):
         assert cm.components_or_modules["linear1"].forward_mode == "components"
         assert torch.equal(cm.components_or_modules["linear1"].mask, partial_masks["linear1"])  # pyright: ignore [reportArgumentType]
         # Others fall back to original‑only mode with no masks
@@ -141,7 +141,7 @@ def test_replaced_modules_sets_and_restores_identity_masks_only(
 ) -> None:
     cm = component_model_with_identity
     identity_masks = {"identity_linear1": torch.ones(1, cm.C)}
-    with cm._replaced_modules(identity_masks):
+    with cm._replaced_modules(identity_masks, None, None):
         for name, comp in cm.components_or_modules.items():
             if name == "linear1":
                 assert comp.forward_mode == "components"
@@ -166,7 +166,7 @@ def test_replaced_modules_sets_and_restores_combined_masks(
         "identity_conv1d1": torch.ones(1, cm.C),
     }
 
-    with cm._replaced_modules(masks):
+    with cm._replaced_modules(masks, None, None):
         for name, comp in cm.components_or_modules.items():
             if name == "linear1":
                 assert comp.forward_mode == "components"

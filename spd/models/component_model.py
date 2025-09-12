@@ -362,6 +362,8 @@ class ComponentModel(LoadableModule):
         *args: Any,
         mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
         masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        weight_deltas: dict[str, Float[Tensor, "d_in d_out"]] | None = None,
+        weight_delta_masks: dict[str, Float[Tensor, "..."]] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
     ) -> Any:
@@ -376,14 +378,24 @@ class ComponentModel(LoadableModule):
                 - 'components': Forward with component replacements (requires masks)
                 - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
             masks: Dictionary mapping component names to masks (required for mode='components')
+            weight_deltas: Dictionary mapping component names to weight differences between the
+                target model and component weights (required for mode='components')
+            weight_delta_masks: Dictionary mapping component names to weight delta masks (required
+                for mode='components')
             module_names: List of module names to cache inputs for
                 (required for mode='pre_forward_cache')
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
         if mode == "components":
-            assert masks is not None, "masks parameter is required for mode='components'"
-            return self._forward_with_components(*args, masks=masks, **kwargs)
+            assert masks is not None, "masks are required for mode='components'"
+            return self._forward_with_components(
+                *args,
+                masks=masks,
+                weight_deltas=weight_deltas,
+                weight_delta_masks=weight_delta_masks,
+                **kwargs,
+            )
         elif mode == "pre_forward_cache":
             assert module_names is not None, (
                 "module_names parameter is required for mode='pre_forward_cache'"
@@ -395,7 +407,12 @@ class ComponentModel(LoadableModule):
             return self._forward_target(*args, **kwargs)
 
     @contextmanager
-    def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
+    def _replaced_modules(
+        self,
+        masks: dict[str, Float[Tensor, "... C"]],
+        weight_deltas: dict[str, Float[Tensor, "d_in d_out"]] | None,
+        weight_delta_masks: dict[str, Float[Tensor, "..."]] | None,
+    ):
         """Set the forward_mode of ComponentOrModule objects and apply masks.
 
         A module's forward_mode is set to "components" if the module name is a key in masks
@@ -404,6 +421,9 @@ class ComponentModel(LoadableModule):
         Args:
             masks: Dictionary mapping module names to masks. Module names may be prefixed with
                 "identity_" to indicate that the identity components should be used.
+            weight_deltas: Dictionary mapping module names to weight differences between the
+                target model and component weights
+            weight_delta_masks: Dictionary mapping module names to weight delta masks.
         """
         for module_name, component in self.components_or_modules.items():
             component.assert_pristine()
@@ -413,9 +433,19 @@ class ComponentModel(LoadableModule):
                 if module_name in masks:
                     assert component.components is not None
                     component.mask = masks[module_name]
+                    if weight_deltas is not None:
+                        component.weight_delta = weight_deltas[module_name]
+                        assert weight_delta_masks is not None
+                        component.weight_delta_mask = weight_delta_masks[module_name]
                 if f"identity_{module_name}" in masks:
                     assert component.identity_components is not None
                     component.identity_mask = masks[f"identity_{module_name}"]
+                    if weight_deltas is not None:
+                        component.identity_weight_delta = weight_deltas[f"identity_{module_name}"]
+                        assert weight_delta_masks is not None
+                        component.identity_weight_delta_mask = weight_delta_masks[
+                            f"identity_{module_name}"
+                        ]
             else:
                 component.forward_mode = "original"
         try:
@@ -443,6 +473,8 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         masks: dict[str, Float[Tensor, "... C"]],
+        weight_deltas: dict[str, Float[Tensor, "d_in d_out"]] | None,
+        weight_delta_masks: dict[str, Float[Tensor, "..."]] | None,
         **kwargs: Any,
     ) -> Any:
         """Forward pass with temporary component replacements. `masks` is a dictionary mapping
@@ -450,9 +482,14 @@ class ComponentModel(LoadableModule):
         with components, and the value of the mask will be used as the mask for the components.
 
         Args:
-            masks: Optional dictionary mapping component names to masks
+            masks: Dictionary mapping component names to masks
+            weight_deltas: Dictionary mapping component names to weight differences between the
+                target model and component weights
+            weight_delta_masks: Dictionary mapping component names to weight delta masks
         """
-        with self._replaced_modules(masks):
+        with self._replaced_modules(
+            masks=masks, weight_deltas=weight_deltas, weight_delta_masks=weight_delta_masks
+        ):
             raw_out = self.patched_model(*args, **kwargs)
             out = self._extract_output(raw_out)
             return out
@@ -471,7 +508,7 @@ class ComponentModel(LoadableModule):
         cache = {}
         handles: list[RemovableHandle] = []
 
-        def cache_hook(_: nn.Module, input: tuple[Tensor, ...], param_name: str) -> None:
+        def cache_hook(_: nn.Module, input: tuple[Tensor, "..."], param_name: str) -> None:
             cache[param_name] = input[0]
 
         # Register hooks
