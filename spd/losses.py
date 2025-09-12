@@ -133,6 +133,7 @@ def calc_masked_recon_layerwise_loss(
     masks: list[dict[str, Float[Tensor, "... C"]]],
     target_out: Float[Tensor, "... d_model_out"],
     loss_type: Literal["mse", "kl"] = "kl",
+    r: dict[str, Tensor] | None = None,
 ) -> Float[Tensor, ""]:
     """Calculate the recon loss when augmenting the model one (masked) component at a time."""
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
@@ -141,7 +142,7 @@ def calc_masked_recon_layerwise_loss(
         for comp_name, mask in mask_info.items():
             # TODO: Write a test showing that passing a mask for a ComponentOrModule which has
             # both components and identity components works as expected.
-            modified_out = model(batch, mode="components", masks={comp_name: mask})
+            modified_out = model(batch, mode="components", masks={comp_name: mask}, r=r)
             if loss_type == "mse":
                 loss = ((modified_out - target_out) ** 2).mean()
             else:
@@ -157,10 +158,11 @@ def calc_masked_recon_loss(
     masks: dict[str, Float[Tensor, "... C"]],
     target_out: Float[Tensor, "... d_mdoel_out"],
     loss_type: Literal["mse", "kl"] = "mse",
+    r: dict[str, Tensor] | None = None,
 ) -> Float[Tensor, ""]:
     """Calculate the MSE over all masks."""
     # Do a forward pass with all components
-    out = model(batch, mode="components", masks=masks)
+    out = model(batch, mode="components", masks=masks, r=r)
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
     if loss_type == "mse":
         loss = ((out - target_out) ** 2).mean()
@@ -269,7 +271,7 @@ def calculate_losses(
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
-        stochastic_masks = calc_stochastic_masks(
+        stochastic_masks, r = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
@@ -282,6 +284,7 @@ def calculate_losses(
                 masks=stochastic_masks[i],
                 target_out=target_out,
                 loss_type=config.output_loss_type,
+                r=r,
             )
         stochastic_recon_loss = stochastic_recon_loss / len(stochastic_masks)
         total_loss += config.stochastic_recon_coeff * stochastic_recon_loss
@@ -302,7 +305,7 @@ def calculate_losses(
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
-        layerwise_stochastic_masks = calc_stochastic_masks(
+        layerwise_stochastic_masks, r_layerwise = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
@@ -314,6 +317,7 @@ def calculate_losses(
             masks=layerwise_stochastic_masks,
             target_out=target_out,
             loss_type=config.output_loss_type,
+            r=r_layerwise,
         )
         total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
         loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
@@ -352,7 +356,7 @@ def calculate_losses(
 
     # Embedding reconstruction loss
     if config.embedding_recon_coeff is not None:
-        stochastic_masks = calc_stochastic_masks(
+        stochastic_masks, _ = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
