@@ -1,0 +1,3 @@
+global:
+  stochastic_recon_layerwise_coeff:
+    values: [3, 10, 25]
