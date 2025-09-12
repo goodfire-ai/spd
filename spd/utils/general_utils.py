@@ -207,13 +207,13 @@ def resolve_class(path: str) -> type[nn.Module]:
 
 
 def extract_batch_data(
-    batch_item: dict[str, Any] | tuple[Tensor, ...] | Tensor,
+    batch_item: dict[str, Any] | tuple[Tensor, "..."] | Tensor,
     input_key: str = "input_ids",
 ) -> Tensor:
     """Extract input data from various batch formats.
 
     This utility function handles different batch formats commonly used across the codebase:
-    1. Dictionary format: {"input_ids": tensor, ...} - common in LM tasks
+    1. Dictionary format: {"input_ids": Tensor, "..."} - common in LM tasks
     2. Tuple format: (input_tensor, labels) - common in SPD optimization
     3. Direct tensor: when batch is already the input tensor
 
