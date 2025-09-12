@@ -28,6 +28,22 @@ class ParallelLinear(nn.Module):
         return einops.einsum(x, self.W, "... C d_in, C d_in d_out -> ... C d_out") + self.b
 
 
+class Linear(nn.Module):
+    """Linear layer with biases initialized to 0 and weights initialized using fan_val."""
+
+    def __init__(self, input_dim: int, output_dim: int, nonlinearity: _NonlinearityType):
+        super().__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.W = nn.Parameter(torch.empty(input_dim, output_dim))
+        self.b = nn.Parameter(torch.zeros(output_dim))
+        init_param_(self.W, fan_val=input_dim, nonlinearity=nonlinearity)
+
+    @override
+    def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
+        return einops.einsum(x, self.W, "... d_in, d_in d_out -> ... d_out") + self.b
+
+
 class GateMLPs(nn.Module):
     """MLP-based gates that map component 'inner acts' to a scalar output for each component."""
 
@@ -86,9 +102,10 @@ class LayerwiseGlobalGateMLP(nn.Module):
         for i in range(len(hidden_dims)):
             input_dim = input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
-            self.layers.append(nn.Linear(input_dim, output_dim))
+            self.layers.append(Linear(input_dim, output_dim, nonlinearity="relu"))
             self.layers.append(nn.GELU())
-        self.layers.append(nn.Linear(hidden_dims[-1], C))
+        final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else input_dim
+        self.layers.append(Linear(final_dim, C, nonlinearity="linear"))
 
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
