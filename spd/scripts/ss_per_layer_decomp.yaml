@@ -1,0 +1,12 @@
+global:
+  importance_minimality_coeff:
+    values: [0.0005, 0.0003, 0.0001]
+
+  target_module_patterns:
+    values: [
+      ["model.layers.0.*_proj"],
+      ["model.layers.1.*_proj"],
+      ["model.layers.2.*_proj"],
+      ["model.layers.3.*_proj"],
+    ]
+    

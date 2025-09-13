@@ -134,6 +134,18 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/lm/ss_llama_subset_bal_yolo2.yaml"),
         expected_runtime=60 * 24,  # Similar to ss_llama_all since it's a full model run
     ),
+    "ss_llama_nh_yolo3": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_subset_bal_yolo3.yaml"),
+        expected_runtime=60 * 30,  # Similar to ss_llama_all since it's a full model run
+    ),
+    "ss_llama_nh_yolo4": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_subset_bal_yolo4.yaml"),
+        expected_runtime=60 * 30,  # Similar to ss_llama_all since it's a full model run
+    ),
     "ss_gpt2": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
