@@ -578,7 +578,6 @@ class SubsetReconstructionLoss(StreamingEval):
         config: Config,
         include_patterns: dict[str, list[str]] | None = None,
         exclude_patterns: dict[str, list[str]] | None = None,
-        use_all_ones_for_non_replaced: bool = False,
         n_mask_samples: int = 5,
     ):
         """Initialize SubsetReconstructionLoss.
@@ -588,12 +587,10 @@ class SubsetReconstructionLoss(StreamingEval):
                             e.g., {"layer_0_only": ["model.layers.0.*"]}
             exclude_patterns: Dict mapping subset names to patterns for modules to EXCLUDE from replacement
                             e.g., {"all_but_layer_0": ["model.layers.0.*"]}
-            use_all_ones_for_non_replaced: If True, use all-ones mask for non-replaced modules
             n_mask_samples: Number of stochastic mask samples to average over
         """
         self.model = model
         self.config = config
-        self.use_all_ones_for_non_replaced = use_all_ones_for_non_replaced
         self.n_mask_samples = n_mask_samples
         self.include_patterns = include_patterns or {}
         self.exclude_patterns = exclude_patterns or {}
@@ -638,15 +635,25 @@ class SubsetReconstructionLoss(StreamingEval):
         def kl_vs_target(logits: Tensor) -> float:
             return calc_kl_divergence_lm(pred=logits, target=target_out).item()
 
+        # Import calc_weight_deltas
+        from spd.losses import calc_weight_deltas
+        
+        # Calculate weight deltas for sans-faithfulness mode
+        device = next(self.model.parameters()).device
+        weight_deltas = calc_weight_deltas(self.model, str(device))
+        
         # Compute baselines for CE unrecovered
         target_ce = ce_vs_labels(target_out)
         zero_masks = {k: torch.zeros_like(v) for k, v in ci.items()}
-        zero_out = self.model(batch, mode="components", mask_infos=make_mask_infos(zero_masks))
+        # For baseline, create zero weight delta masks with proper batch shape
+        batch_size = batch.shape[0]
+        seq_len = batch.shape[1] if batch.ndim > 1 else 1
+        zero_weight_delta_masks = {k: torch.zeros(batch_size, seq_len, device=device) for k in ci.keys()}
+        zero_out = self.model(batch, mode="components", mask_infos=make_mask_infos(zero_masks, weight_deltas, zero_weight_delta_masks))
         zero_ce = ce_vs_labels(zero_out)
 
-        # Generate stochastic masks
-        stoch_masks, _ = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
-        # TODO: Add weight delta masks to this function
+        # Generate stochastic masks (now returns both masks and weight_delta_masks)
+        stoch_masks, stoch_weight_delta_masks = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
 
         results = {}
         all_modules = list(ci.keys())
@@ -656,15 +663,15 @@ class SubsetReconstructionLoss(StreamingEval):
             active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
 
             kl_losses, ce_losses = [], []
-            for stoch_mask in stoch_masks:
-                mask = {}
-                for m in all_modules:
-                    if m in active:
-                        mask[m] = stoch_mask[m]
-                    elif self.use_all_ones_for_non_replaced:
-                        mask[m] = torch.ones_like(stoch_mask[m])
-
-                out = self.model(batch, mode="components", mask_infos=make_mask_infos(mask))
+            for i, stoch_mask in enumerate(stoch_masks):
+                # Only include masks for active modules
+                mask = {m: stoch_mask[m] for m in active}
+                weight_delta_mask = {m: stoch_weight_delta_masks[i][m] for m in active}
+                
+                # Only pass weight_deltas for active modules
+                active_weight_deltas = {m: weight_deltas[m] for m in active}
+                
+                out = self.model(batch, mode="components", mask_infos=make_mask_infos(mask, active_weight_deltas, weight_delta_mask))
                 kl_losses.append(kl_vs_target(out))
                 ce_losses.append(ce_vs_labels(out))
 
@@ -672,10 +679,9 @@ class SubsetReconstructionLoss(StreamingEval):
             mean_ce = sum(ce_losses) / len(ce_losses)
             ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
 
-            suffix = "_all_ones" if self.use_all_ones_for_non_replaced else ""
-            results[f"subset/{name}/kl{suffix}"] = mean_kl
-            results[f"subset/{name}/ce{suffix}"] = mean_ce
-            results[f"subset/{name}/ce_unrec{suffix}"] = ce_unrec
+            results[f"subset/{name}/kl"] = mean_kl
+            results[f"subset/{name}/ce"] = mean_ce
+            results[f"subset/{name}/ce_unrec"] = ce_unrec
 
         # Process exclude patterns
         for name, patterns in self.exclude_patterns.items():
@@ -683,15 +689,15 @@ class SubsetReconstructionLoss(StreamingEval):
             active = [m for m in all_modules if m not in excluded]
 
             kl_losses, ce_losses = [], []
-            for stoch_mask in stoch_masks:
-                mask = {}
-                for m in all_modules:
-                    if m in active:
-                        mask[m] = stoch_mask[m]
-                    elif self.use_all_ones_for_non_replaced:
-                        mask[m] = torch.ones_like(stoch_mask[m])
-
-                out = self.model(batch, mode="components", mask_infos=make_mask_infos(mask))
+            for i, stoch_mask in enumerate(stoch_masks):
+                # Only include masks for active modules
+                mask = {m: stoch_mask[m] for m in active}
+                weight_delta_mask = {m: stoch_weight_delta_masks[i][m] for m in active}
+                
+                # Only pass weight_deltas for active modules
+                active_weight_deltas = {m: weight_deltas[m] for m in active}
+                
+                out = self.model(batch, mode="components", mask_infos=make_mask_infos(mask, active_weight_deltas, weight_delta_mask))
                 kl_losses.append(kl_vs_target(out))
                 ce_losses.append(ce_vs_labels(out))
 
@@ -699,10 +705,9 @@ class SubsetReconstructionLoss(StreamingEval):
             mean_ce = sum(ce_losses) / len(ce_losses)
             ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
 
-            suffix = "_all_ones" if self.use_all_ones_for_non_replaced else ""
-            results[f"subset/{name}/kl{suffix}"] = mean_kl
-            results[f"subset/{name}/ce{suffix}"] = mean_ce
-            results[f"subset/{name}/ce_unrec{suffix}"] = ce_unrec
+            results[f"subset/{name}/kl"] = mean_kl
+            results[f"subset/{name}/ce"] = mean_ce
+            results[f"subset/{name}/ce_unrec"] = ce_unrec
 
         return results
 
