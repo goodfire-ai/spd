@@ -520,21 +520,39 @@ class StochasticReconLayerwiseLoss(StreamingEval):
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None:
-        from spd.losses import calc_masked_recon_layerwise_loss, calc_stochastic_masks
+        from spd.losses import (
+            calc_masked_recon_layerwise_loss,
+            calc_stochastic_masks,
+            calc_weight_deltas,
+            make_mask_infos,
+        )
 
-        # Calculate stochastic masks
-        stochastic_masks = calc_stochastic_masks(
+        # Calculate weight deltas for sans-faithfulness mode
+        weight_deltas = calc_weight_deltas(self.model, str(self.device))
+
+        # Calculate stochastic masks (returns masks and weight_delta_masks)
+        layerwise_stochastic_masks, layerwise_weight_delta_masks = calc_stochastic_masks(
             causal_importances=ci,
             n_mask_samples=self.config.n_mask_samples,
             sampling=self.config.sampling,
         )
+        
+        # Create mask infos list exactly as done in training
+        layerwise_mask_infos_list = [
+            make_mask_infos(
+                masks=layerwise_stochastic_masks[i],
+                weight_deltas=weight_deltas,
+                weight_delta_masks=layerwise_weight_delta_masks[i],
+            )
+            for i in range(len(layerwise_stochastic_masks))
+        ]
 
         # Calculate loss
         loss = calc_masked_recon_layerwise_loss(
             model=self.model,
             batch=batch,
             device=str(self.device),
-            masks=stochastic_masks,
+            mask_infos_list=layerwise_mask_infos_list,
             target_out=target_out,
             loss_type=self.config.output_loss_type,
         )
