@@ -501,6 +501,54 @@ class CIMeanPerComponent(StreamingEval):
         return {"figures/ci_mean_per_component": img}
 
 
+class StochasticReconLayerwiseLoss(StreamingEval):
+    """Compute stochastic reconstruction layerwise loss for evaluation."""
+
+    SLOW = False
+
+    def __init__(self, model: ComponentModel, config: Config):
+        self.model = model
+        self.config = config
+        self.device = next(model.parameters()).device
+        self.loss_sum = 0.0
+        self.n_batches = 0
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        from spd.losses import calc_masked_recon_layerwise_loss, calc_stochastic_masks
+
+        # Calculate stochastic masks
+        stochastic_masks = calc_stochastic_masks(
+            causal_importances=ci,
+            n_mask_samples=self.config.n_mask_samples,
+            sampling=self.config.sampling,
+        )
+
+        # Calculate loss
+        loss = calc_masked_recon_layerwise_loss(
+            model=self.model,
+            batch=batch,
+            device=str(self.device),
+            masks=stochastic_masks,
+            target_out=target_out,
+            loss_type=self.config.output_loss_type,
+        )
+
+        self.loss_sum += loss.item()
+        self.n_batches += 1
+
+    @override
+    def compute(self) -> Mapping[str, float]:
+        if self.n_batches == 0:
+            return {"loss/stochastic_recon_layerwise_eval": 0.0}
+        return {"loss/stochastic_recon_layerwise_eval": self.loss_sum / self.n_batches}
+
+
 class SubsetReconstructionLoss(StreamingEval):
     """Compute reconstruction loss for specific subsets of components."""
 
@@ -693,6 +741,7 @@ EVAL_CLASSES = {
         UVPlots,
         IdentityCIError,
         CIMeanPerComponent,
+        StochasticReconLayerwiseLoss,
         SubsetReconstructionLoss,
     ]
 }
