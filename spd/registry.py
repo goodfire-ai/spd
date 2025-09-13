@@ -134,6 +134,12 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/lm/ss_llama_subset_bal_sans.yaml"),
         expected_runtime=60 * 40,  # ~40 hours on single GPU
     ),
+    "ss_llama_sans_base": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_sans_base.yaml"),
+        expected_runtime=60 * 40,  # ~40 hours on single GPU
+    ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",
     #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
