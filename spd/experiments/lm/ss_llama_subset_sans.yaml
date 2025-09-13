@@ -81,7 +81,6 @@ eval_metrics:
   - classname: "SubsetReconstructionLoss"
     extra_init_kwargs:
       n_mask_samples: 1
-      use_all_ones_for_non_replaced: false
       include_patterns:
         all: ["*"]
         layer_0_only: ["model.layers.0.*"]
