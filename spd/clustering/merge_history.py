@@ -68,8 +68,8 @@ class MergeHistory:
             config=config,
             wandb_url=wandb_url,
         )
-    
-    def summary(self) -> dict[str, str|int|None|dict[str, int|str|None]]:
+
+    def summary(self) -> dict[str, str | int | None | dict[str, int | str | None]]:
         return dict(
             c_components=self.c_components,
             n_iters_current=self.n_iters_current,
@@ -79,16 +79,13 @@ class MergeHistory:
             config=self.config.model_dump(mode="json"),
             merges_summary=self.merges.summary(),
         )
-    
+
     def __str__(self) -> str:
-        out: list[str] = [
-            f"  {key} = {value}" for key, value in self.summary().items()
-        ]
+        out: list[str] = [f"  {key} = {value}" for key, value in self.summary().items()]
         return "MergeHistory(\n" + "\n".join(out) + "\n)"
-    
+
     def __repr__(self) -> str:
         return self.__str__()
-
 
     def add_iteration(
         self,

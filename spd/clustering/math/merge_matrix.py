@@ -3,9 +3,9 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from jaxtyping import Bool, Int
+from muutils.tensor_info import array_summary
 from torch import Tensor
 
-from muutils.tensor_info import array_summary
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming
 
 if TYPE_CHECKING:
@@ -24,11 +24,13 @@ class GroupMerge:
     k_groups: int
     old_to_new_idx: dict[int | None, int | None] | None = None
 
-    def summary(self) -> dict[str, int|str|None]:
+    def summary(self) -> dict[str, int | str | None]:
         return dict(
             group_idxs=array_summary(self.group_idxs, as_list=False),
             k_groups=self.k_groups,
-            old_to_new_idx=f"len={len(self.old_to_new_idx)}" if self.old_to_new_idx is not None else None,
+            old_to_new_idx=f"len={len(self.old_to_new_idx)}"
+            if self.old_to_new_idx is not None
+            else None,
         )
 
     @property
@@ -248,7 +250,7 @@ class BatchedGroupMerge:
     k_groups: Int[Tensor, " batch"]
     meta: list[dict[str, Any] | None] | None = None
 
-    def summary(self) -> dict[str, int|str|None]:
+    def summary(self) -> dict[str, int | str | None]:
         return dict(
             group_idxs=array_summary(self.group_idxs, as_list=False),
             k_groups=array_summary(self.k_groups, as_list=False),

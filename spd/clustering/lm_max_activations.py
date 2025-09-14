@@ -11,7 +11,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformers import PreTrainedTokenizer, AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from spd.clustering.activations import (
     ProcessedActivations,
@@ -21,9 +21,10 @@ from spd.clustering.activations import (
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
 from spd.data import DatasetConfig, create_data_loader
+from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.general_utils import extract_batch_data, get_module_device
-from spd.log import logger
+
 
 @dataclass
 class TextSample:
@@ -148,7 +149,7 @@ def compute_max_activations(
                         tokens: Int[Tensor, " n_ctx"] = batch[batch_idx_i].cpu()
                         tokens_list: list[int] = tokens.tolist()
                         text: str = tokenizer.decode(tokens)
-                        
+
                         # Convert token IDs to token strings
                         token_strings: list[str] = [tokenizer.decode([tid]) for tid in tokens_list]
 
@@ -262,7 +263,7 @@ def main() -> None:
 
     # TODO: read this from batches_config.json
     dataset_config: DatasetConfig = DatasetConfig(
-        name="SimpleStories/SimpleStories" ,
+        name="SimpleStories/SimpleStories",
         hf_tokenizer_path=tokenizer_name,
         split="train",
         n_ctx=args.context_length,
