@@ -36,14 +36,33 @@ function displayCluster() {
     // Update title
     document.getElementById('clusterTitle').textContent = `Cluster ${currentClusterId}`;
     
-    // Display components
-    const componentsList = document.getElementById('componentsList');
-    componentsList.innerHTML = '';
+    // Display components in dropdown
+    const componentsSelect = document.getElementById('componentsSelect');
+    const componentCount = document.getElementById('componentCount');
     
-    clusterData.components.forEach(comp => {
-        const li = document.createElement('li');
-        li.textContent = `${comp.module}:${comp.index}`;
-        componentsList.appendChild(li);
+    componentCount.textContent = clusterData.components.length;
+    componentsSelect.innerHTML = '<option value="">Select a component...</option>';
+    
+    clusterData.components.forEach((comp, index) => {
+        const option = document.createElement('option');
+        option.value = index;
+        option.textContent = `${comp.module}:${comp.index}`;
+        componentsSelect.appendChild(option);
+    });
+    
+    componentsSelect.addEventListener('change', (e) => {
+        if (e.target.value !== '') {
+            const comp = clusterData.components[parseInt(e.target.value)];
+            document.getElementById('componentDetails').innerHTML = `
+                <div style="margin-top: 10px; padding: 10px; background: #f0f0f0;">
+                    <strong>Module:</strong> ${comp.module}<br>
+                    <strong>Index:</strong> ${comp.index}<br>
+                    <strong>Label:</strong> ${comp.label}
+                </div>
+            `;
+        } else {
+            document.getElementById('componentDetails').innerHTML = '';
+        }
     });
     
     // Display samples (up to 32)
