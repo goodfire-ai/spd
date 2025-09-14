@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cluster Details</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div>
+        <a href="index.html">← Back to cluster list</a>
+        <h1 id="clusterTitle">Cluster Details</h1>
+    </div>
+    
+    <div id="components">
+        <h2>Components</h2>
+        <ul id="componentsList"></ul>
+    </div>
+    
+    <div id="samples">
+        <h2>Text Samples (up to 32)</h2>
+        <table id="samplesTable">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Dataset Index</th>
+                    <th>Max Act</th>
+                    <th>Max Pos</th>
+                    <th>Mean Act</th>
+                    <th>Text Visualization</th>
+                </tr>
+            </thead>
+            <tbody id="samplesTableBody">
+            </tbody>
+        </table>
+    </div>
+    
+    <div id="loading">Loading cluster data...</div>
+    
+    <script src="cluster-detail.js"></script>
+</body>
+</html>
