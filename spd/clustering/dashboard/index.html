@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cluster Activation Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        
+        .controls {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        select {
+            width: 100%;
+            max-width: 300px;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+        
+        select:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.1);
+        }
+        
+        .info-section {
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .components-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .component-card {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .component-module {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        
+        .component-index {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .sample-container {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #fafafa;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .sample-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .sample-title {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+        }
+        
+        .sample-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .stat-label {
+            font-weight: 500;
+        }
+        
+        .stat-value {
+            font-weight: 700;
+            color: #333;
+        }
+        
+        .tokens-display {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+            padding: 15px;
+            background: white;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        
+        .token {
+            display: inline;
+            padding: 3px 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            border: 2px solid transparent;
+            border-radius: 3px;
+            margin: 0 1px;
+        }
+        
+        .token:hover {
+            border: 2px solid #333;
+            transform: scale(1.05);
+        }
+        
+        .tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            white-space: nowrap;
+            display: none;
+            z-index: 1000;
+            margin-bottom: 8px;
+            font-size: 12px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .token:hover .tooltip {
+            display: block;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .error {
+            padding: 20px;
+            background: #fee;
+            color: #c00;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        
+        .sample-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .sample-btn {
+            padding: 8px 16px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .sample-btn:hover {
+            background: #e0e0e0;
+        }
+        
+        .sample-btn.active {
+            background: #4CAF50;
+            color: white;
+            border-color: #4CAF50;
+        }
+        
+        .max-position-marker {
+            background: gold !important;
+            border: 2px solid orange !important;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 Cluster Activation Dashboard</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="clusterSelect">Select Cluster:</label>
+                <select id="clusterSelect">
+                    <option value="">Loading clusters...</option>
+                </select>
+            </div>
+        </div>
+        
+        <div id="clusterInfo" style="display: none;">
+            <div class="info-section">
+                <div class="section-title">Components in Cluster</div>
+                <div id="componentsGrid" class="components-grid"></div>
+            </div>
+            
+            <div class="info-section">
+                <div class="section-title">Sample Texts</div>
+                <div id="sampleSelector" class="sample-selector"></div>
+                <div id="samplesContainer"></div>
+            </div>
+        </div>
+        
+        <div id="loading" class="loading">Loading data...</div>
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+    
+    <script>
+        let clusterData = {};
+        let currentCluster = null;
+        let currentSampleIndex = 0;
+        
+        async function loadData() {
+            try {
+                const response = await fetch('max_activations_iter-1_n4.json');
+                if (!response.ok) throw new Error('Failed to load data');
+                clusterData = await response.json();
+                initializeControls();
+                document.getElementById('loading').style.display = 'none';
+            } catch (error) {
+                showError('Failed to load data: ' + error.message);
+            }
+        }
+        
+        function initializeControls() {
+            const select = document.getElementById('clusterSelect');
+            select.innerHTML = '<option value="">Select a cluster...</option>';
+            
+            const clusterIds = Object.keys(clusterData).sort((a, b) => parseInt(a) - parseInt(b));
+            
+            clusterIds.forEach(id => {
+                const option = document.createElement('option');
+                option.value = id;
+                const componentCount = clusterData[id].components.length;
+                const sampleCount = clusterData[id].samples.length;
+                option.textContent = `Cluster ${id} (${componentCount} components, ${sampleCount} samples)`;
+                select.appendChild(option);
+            });
+            
+            select.addEventListener('change', (e) => {
+                if (e.target.value) {
+                    displayCluster(e.target.value);
+                } else {
+                    document.getElementById('clusterInfo').style.display = 'none';
+                }
+            });
+        }
+        
+        function displayCluster(clusterId) {
+            currentCluster = clusterId;
+            currentSampleIndex = 0;
+            const cluster = clusterData[clusterId];
+            
+            // Display components
+            const componentsGrid = document.getElementById('componentsGrid');
+            componentsGrid.innerHTML = '';
+            
+            cluster.components.forEach(comp => {
+                const card = document.createElement('div');
+                card.className = 'component-card';
+                card.innerHTML = `
+                    <div class="component-module">${comp.module}</div>
+                    <div class="component-index">Component #${comp.index}</div>
+                `;
+                componentsGrid.appendChild(card);
+            });
+            
+            // Create sample selector buttons
+            const sampleSelector = document.getElementById('sampleSelector');
+            sampleSelector.innerHTML = '';
+            
+            cluster.samples.forEach((sample, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'sample-btn';
+                btn.textContent = `Sample ${index + 1}`;
+                btn.onclick = () => {
+                    currentSampleIndex = index;
+                    displaySample(clusterId, index);
+                    updateSampleButtons();
+                };
+                if (index === 0) btn.classList.add('active');
+                sampleSelector.appendChild(btn);
+            });
+            
+            // Display first sample
+            displaySample(clusterId, 0);
+            
+            document.getElementById('clusterInfo').style.display = 'block';
+        }
+        
+        function updateSampleButtons() {
+            const buttons = document.querySelectorAll('.sample-btn');
+            buttons.forEach((btn, index) => {
+                if (index === currentSampleIndex) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+        
+        function displaySample(clusterId, sampleIndex) {
+            const cluster = clusterData[clusterId];
+            const sample = cluster.samples[sampleIndex];
+            
+            const container = document.getElementById('samplesContainer');
+            container.innerHTML = '';
+            
+            const sampleDiv = document.createElement('div');
+            sampleDiv.className = 'sample-container';
+            
+            // Sample header with stats
+            const header = document.createElement('div');
+            header.className = 'sample-header';
+            header.innerHTML = `
+                <div class="sample-title">Sample ${sampleIndex + 1} (Dataset Index: ${sample.dataset_index})</div>
+                <div class="sample-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Max:</span>
+                        <span class="stat-value">${sample.max_activation.toFixed(4)}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Mean:</span>
+                        <span class="stat-value">${sample.mean_activation.toFixed(4)}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Median:</span>
+                        <span class="stat-value">${sample.median_activation.toFixed(4)}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Max Position:</span>
+                        <span class="stat-value">${sample.max_position}</span>
+                    </div>
+                </div>
+            `;
+            sampleDiv.appendChild(header);
+            
+            // Tokens display
+            const tokensDisplay = document.createElement('div');
+            tokensDisplay.className = 'tokens-display';
+            
+            sample.tokens.forEach((token, i) => {
+                const activation = sample.activations[i];
+                
+                // Create token span
+                const span = document.createElement('span');
+                span.className = 'token';
+                
+                // Special marking for max activation position
+                if (i === sample.max_position) {
+                    span.classList.add('max-position-marker');
+                }
+                
+                // Handle special tokens
+                if (token.startsWith('##')) {
+                    span.textContent = token.substring(2);
+                } else if (token === '[EOS]') {
+                    span.textContent = ' [EOS] ';
+                } else {
+                    span.textContent = token;
+                }
+                
+                // Calculate color based on activation (red gradient)
+                const normalizedActivation = Math.min(Math.max(activation, 0), 1);
+                const intensity = Math.floor((1 - normalizedActivation) * 255);
+                span.style.backgroundColor = `rgb(255, ${intensity}, ${intensity})`;
+                
+                // Add tooltip
+                const tooltip = document.createElement('div');
+                tooltip.className = 'tooltip';
+                tooltip.textContent = `"${token}": ${activation.toFixed(6)}`;
+                span.appendChild(tooltip);
+                
+                tokensDisplay.appendChild(span);
+                
+                // Add space after token (unless it's a subword token)
+                if (!sample.tokens[i + 1]?.startsWith('##') && token !== '"') {
+                    tokensDisplay.appendChild(document.createTextNode(' '));
+                }
+            });
+            
+            sampleDiv.appendChild(tokensDisplay);
+            container.appendChild(sampleDiv);
+        }
+        
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+        
+        // Load data on page load
+        loadData();
+    </script>
+</body>
+</html>
