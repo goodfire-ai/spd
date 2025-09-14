@@ -84,7 +84,7 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_llama_config.yaml"),
-        expected_runtime=60 * 37,  # ~37 hours with data parallelism over 8 GPUs
+        expected_runtime=600,  # ~37 hours with data parallelism over 8 GPUs
     ),
     "ss_llama_single": ExperimentConfig(
         task_name="lm",
@@ -114,7 +114,7 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_gpt2_simple_noln_config.yaml"),
-        expected_runtime=330,
+        expected_runtime=300,
     ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",
