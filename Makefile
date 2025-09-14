@@ -77,3 +77,8 @@ clustering-resid_mlp1:
 .PHONY: clustering-test
 clustering-test:
 	pytest tests/clustering/test_clustering_experiments.py --runslow -vvv --durations 10 --numprocesses $(NUM_PROCESSES)
+
+
+.PHONY: clustering-dashboard
+clustering-dashboard:
+	python spd/clustering/lm_max_activations.py wandb:goodfire/spd/runs/okd93sk2 data/clustering/task_lm-w_okd93sk2-a1-i5.0K-b4-n1-h_8295a2/merge_history/task_lm-w_okd93sk2-a1-i5.0K-b4-n1-h_8295a2-data_batch_00/merge_history.zip

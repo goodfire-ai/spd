@@ -5,6 +5,7 @@ import torch
 from jaxtyping import Bool, Int
 from torch import Tensor
 
+from muutils.tensor_info import array_summary
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming
 
 if TYPE_CHECKING:
@@ -22,6 +23,13 @@ class GroupMerge:
     group_idxs: Int[Tensor, " n_components"]
     k_groups: int
     old_to_new_idx: dict[int | None, int | None] | None = None
+
+    def summary(self) -> dict[str, int|str|None]:
+        return dict(
+            group_idxs=array_summary(self.group_idxs, as_list=False),
+            k_groups=self.k_groups,
+            old_to_new_idx=f"len={len(self.old_to_new_idx)}" if self.old_to_new_idx is not None else None,
+        )
 
     @property
     def n_components(self) -> int:
@@ -239,6 +247,13 @@ class BatchedGroupMerge:
     group_idxs: Int[Tensor, " batch n_components"]
     k_groups: Int[Tensor, " batch"]
     meta: list[dict[str, Any] | None] | None = None
+
+    def summary(self) -> dict[str, int|str|None]:
+        return dict(
+            group_idxs=array_summary(self.group_idxs, as_list=False),
+            k_groups=array_summary(self.k_groups, as_list=False),
+            meta=f"len={len(self.meta)}" if self.meta is not None else None,
+        )
 
     @classmethod
     def init_empty(cls, batch_size: int, n_components: int) -> "BatchedGroupMerge":
