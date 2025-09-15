@@ -71,18 +71,3 @@ task_config:
   column_name: "story"
   train_data_split: "train"
   eval_data_split: "test"
-
-
-# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
-  # "1.25M": LlamaConfig(
-  #     block_size=512,
-  #     vocab_size=4096,
-  #     n_layer=4,
-  #     n_head=4,
-  #     n_embd=128,
-  #     n_intermediate=128 * 4 * 2 // 3 = 341,
-  #     rotary_dim=128 // 4 = 32,
-  #     n_ctx=512,
-  #     n_key_value_heads=2,
-  #     flash_attention=True,
-  # ),
