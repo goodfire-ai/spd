@@ -262,10 +262,12 @@ def calculate_losses(
         )
         stochastic_recon_loss = torch.tensor(0.0, device=target_out.device)
         for i in range(len(stochastic_masks)):
+            deltas = weight_deltas if config.use_delta_component else None
+            delta_masks = weight_delta_masks[i] if config.use_delta_component else None
             stoch_mask_infos = make_mask_infos(
                 masks=stochastic_masks[i],
-                weight_deltas=weight_deltas,
-                weight_delta_masks=weight_delta_masks[i],
+                weight_deltas=deltas,
+                weight_delta_masks=delta_masks,
             )
             stochastic_recon_loss += calc_masked_recon_loss(
                 model=model,
@@ -298,19 +300,22 @@ def calculate_losses(
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
         )
-        layerwise_mask_infos_list = [
-            make_mask_infos(
-                masks=layerwise_stochastic_masks[i],
-                weight_deltas=weight_deltas,
-                weight_delta_masks=layerwise_weight_delta_masks[i],
+        layerwise_mask_infos = []
+        for i in range(len(layerwise_stochastic_masks)):
+            deltas = weight_deltas if config.use_delta_component else None
+            delta_masks = layerwise_weight_delta_masks[i] if config.use_delta_component else None
+            layerwise_mask_infos.append(
+                make_mask_infos(
+                    masks=layerwise_stochastic_masks[i],
+                    weight_deltas=deltas,
+                    weight_delta_masks=delta_masks,
+                )
             )
-            for i in range(len(layerwise_stochastic_masks))
-        ]
         stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
             device=device,
-            mask_infos_list=layerwise_mask_infos_list,
+            mask_infos_list=layerwise_mask_infos,
             target_out=target_out,
             loss_type=config.output_loss_type,
         )

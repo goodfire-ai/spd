@@ -601,13 +601,15 @@ class SubsetReconstructionLoss(StreamingEval):
                     elif self.use_all_ones_for_non_replaced:
                         mask[m] = torch.ones_like(stoch_mask[m])
 
+                deltas = weight_deltas if self.config.use_delta_component else None
+                delta_masks = weight_delta_masks[i] if self.config.use_delta_component else None
                 out = self.model(
                     batch,
                     mode="components",
                     mask_infos=make_mask_infos(
                         mask,
-                        weight_deltas=weight_deltas,
-                        weight_delta_masks=weight_delta_masks[i],
+                        weight_deltas=deltas,
+                        weight_delta_masks=delta_masks,
                     ),
                 )
                 kl_losses.append(kl_vs_target(out))
@@ -636,11 +638,15 @@ class SubsetReconstructionLoss(StreamingEval):
                     elif self.use_all_ones_for_non_replaced:
                         mask[m] = torch.ones_like(stoch_mask[m])
 
+                deltas = weight_deltas if self.config.use_delta_component else None
+                delta_masks = weight_delta_masks[i] if self.config.use_delta_component else None
                 out = self.model(
                     batch,
                     mode="components",
                     mask_infos=make_mask_infos(
-                        mask, weight_deltas=weight_deltas, weight_delta_masks=weight_delta_masks[i]
+                        mask,
+                        weight_deltas=deltas,
+                        weight_delta_masks=delta_masks,
                     ),
                 )
                 kl_losses.append(kl_vs_target(out))

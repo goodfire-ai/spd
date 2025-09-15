@@ -12,6 +12,7 @@ gate_type: "mlp"
 gate_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["linear1", "linear2", "hidden_layers.0"]
+use_delta_component: true
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1.0
