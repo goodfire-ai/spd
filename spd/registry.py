@@ -168,7 +168,7 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_llama_sans_base.yaml"),
-        expected_runtime=60 * 40,  # ~40 hours on single GPU
+        expected_runtime=60 * 20,  # ~40 hours on single GPU
     ),
     "ss_llama_sans_base_lucius": ExperimentConfig(
         task_name="lm",
