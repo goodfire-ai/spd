@@ -1,0 +1,21 @@
+
+ss_llama_sans_base:
+  importance_minimality_coeff:
+    values: [.00003, .0001, .0003, .001]
+
+
+ss_llama_subset_bal_sans:
+  importance_minimality_coeff:
+    values: [.0001, .0003, .001, .003]
+
+ss_llama_subset_sans:
+  importance_minimality_coeff:
+    values: [.0003, .001]
+
+ss_llama_subset_sans_bal_simple:
+  importance_minimality_coeff:
+    values: [.0003, .001]
+
+ss_llama_sans_bal:
+  importance_minimality_coeff:
+    values: [.0001, .0003]
