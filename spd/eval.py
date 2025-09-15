@@ -595,14 +595,20 @@ class SubsetReconstructionLoss(StreamingEval):
             kl_losses, ce_losses = [], []
             for i, stoch_mask in enumerate(stoch_masks):
                 mask = {}
+                raw_deltas = {}
+                raw_delta_masks = {}
                 for m in all_modules:
                     if m in active:
+                        raw_deltas[m] = weight_deltas[m]
+                        raw_delta_masks[m] = weight_delta_masks[i][m]
                         mask[m] = stoch_mask[m]
                     elif self.use_all_ones_for_non_replaced:
                         mask[m] = torch.ones_like(stoch_mask[m])
 
-                deltas = weight_deltas if self.config.use_delta_component else None
-                delta_masks = weight_delta_masks[i] if self.config.use_delta_component else None
+                deltas = raw_deltas if self.config.use_delta_component and raw_deltas else None
+                delta_masks = (
+                    raw_delta_masks if self.config.use_delta_component and raw_delta_masks else None
+                )
                 out = self.model(
                     batch,
                     mode="components",
@@ -632,14 +638,20 @@ class SubsetReconstructionLoss(StreamingEval):
             kl_losses, ce_losses = [], []
             for i, stoch_mask in enumerate(stoch_masks):
                 mask = {}
+                raw_deltas = {}
+                raw_delta_masks = {}
                 for m in all_modules:
                     if m in active:
+                        raw_deltas[m] = weight_deltas[m]
+                        raw_delta_masks[m] = weight_delta_masks[i][m]
                         mask[m] = stoch_mask[m]
                     elif self.use_all_ones_for_non_replaced:
                         mask[m] = torch.ones_like(stoch_mask[m])
 
-                deltas = weight_deltas if self.config.use_delta_component else None
-                delta_masks = weight_delta_masks[i] if self.config.use_delta_component else None
+                deltas = raw_deltas if self.config.use_delta_component and raw_deltas else None
+                delta_masks = (
+                    raw_delta_masks if self.config.use_delta_component and raw_delta_masks else None
+                )
                 out = self.model(
                     batch,
                     mode="components",
