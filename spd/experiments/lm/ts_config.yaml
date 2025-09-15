@@ -14,7 +14,7 @@ gate_type: "vector_mlp"
 gate_hidden_dims: [8]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["transformer.h.3.mlp.c_fc"]
-sampling: "binomial"
+sampling: "continuous"
 use_delta_component: true
 
 # --- Loss Coefficients ---

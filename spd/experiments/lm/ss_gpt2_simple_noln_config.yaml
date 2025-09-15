@@ -12,7 +12,7 @@ gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["h.*.mlp.c_proj", "h.*.attn.k_proj", "h.*.attn.v_proj", "h.*.attn.c_proj"]
 identity_module_patterns: null
-sampling: "binomial"
+sampling: "continuous"
 use_delta_component: true
 
 # --- Loss Coefficients ---
