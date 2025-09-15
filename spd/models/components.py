@@ -234,9 +234,7 @@ class EmbeddingComponents(Components):
 
         if weight_delta is not None:
             assert weight_delta_mask is not None
-            unmasked_delta_out = einops.einsum(
-                x, weight_delta, "..., ... embedding_dim -> ... embedding_dim"
-            )
+            unmasked_delta_out = weight_delta[x]
             assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape
             out += einops.einsum(
                 weight_delta_mask, unmasked_delta_out, "..., ... embedding_dim -> ... embedding_dim"

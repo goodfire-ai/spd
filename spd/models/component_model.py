@@ -21,6 +21,7 @@ from spd.mask_info import ComponentsMaskInfo
 from spd.models.components import (
     Components,
     ComponentsOrModule,
+    EmbeddingComponents,
     GateMLPs,
     GateType,
     LinearComponents,
@@ -259,12 +260,11 @@ class ComponentModel(LoadableModule):
                         bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
                     )
                 elif isinstance(module, nn.Embedding):
-                    raise ValueError("Embedding modules currently broken")
-                    # components = EmbeddingComponents(
-                    #     C=C,
-                    #     vocab_size=module.num_embeddings,
-                    #     embedding_dim=module.embedding_dim,
-                    # )
+                    components = EmbeddingComponents(
+                        C=C,
+                        vocab_size=module.num_embeddings,
+                        embedding_dim=module.embedding_dim,
+                    )
                 elif isinstance(module, RadfordConv1D):
                     d_in, d_out = module.weight.shape
                     components = LinearComponents(
@@ -326,7 +326,7 @@ class ComponentModel(LoadableModule):
                 input_dim = original_module.weight.shape[0]
             else:
                 assert isinstance(original_module, nn.Embedding)
-                input_dim = original_module.num_embeddings
+                raise ValueError("Embedding modules only supported for gate_type='vector_mlp'")
             return VectorGateMLPs(C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
 
     @staticmethod
