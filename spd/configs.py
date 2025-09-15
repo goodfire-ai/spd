@@ -147,9 +147,33 @@ class Config(BaseModel):
         default=None,
         description="Coefficient for per-layer recon loss with stochastically sampled masks",
     )
+    stochastic_recon_subset_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for stochastic subset reconstruction loss",
+    )
+    stochastic_recon_subset_p: Probability | list[Probability] = Field(
+        default=1.0,
+        description="Probability of replacing each module with SPD components. Can be a single value (0-1) or a list of values to sample from. Ignored when mode='harmonic'.",
+    )
+    stochastic_recon_subset_mode: Literal["independent", "truncation", "harmonic"] = Field(
+        default="independent",
+        description="Sampling mode: 'independent' (each module sampled with p), 'truncation' (all modules up to cutoff with prob p), 'harmonic' (module n replaced with probability 1/n)",
+    )
+    stochastic_recon_subset_n_samples: PositiveInt = Field(
+        default=1,
+        description="Number of subset samples to average over for stochastic subset reconstruction loss",
+    )
     importance_minimality_coeff: NonNegativeFloat = Field(
         ...,
         description="Coefficient for importance minimality loss",
+    )
+    l0_balancing_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for L0 balancing loss that encourages uniform sparsity across groups",
+    )
+    l0_balancing_groups: list[list[str]] | None = Field(
+        default=None,
+        description="List of regex patterns defining groups for L0 balancing. Each inner list defines modules to sum together.",
     )
     schatten_coeff: NonNegativeFloat | None = Field(
         default=None,
