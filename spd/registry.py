@@ -70,14 +70,14 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
         config_path=Path("spd/experiments/resid_mlp/resid_mlp2_config.yaml"),
-        expected_runtime=11,
+        expected_runtime=5,
         canonical_run="wandb:goodfire/spd/runs/84yirdkb",
     ),
     "resid_mlp3": ExperimentConfig(
         task_name="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
         config_path=Path("spd/experiments/resid_mlp/resid_mlp3_config.yaml"),
-        expected_runtime=60,
+        expected_runtime=30,
         canonical_run="wandb:goodfire/spd/runs/xawvyhq3",  # A few imperfections in layers 0 and 1
     ),
     "ss_llama": ExperimentConfig(
