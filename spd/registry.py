@@ -116,6 +116,24 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/lm/ss_gpt2_simple_noln_config.yaml"),
         expected_runtime=330,
     ),
+    "ss_llama_sans_base": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_sans_base.yaml"),
+        expected_runtime=60 * 24,  # ~24 hours estimate
+    ),
+    "ss_llama_subset_sans": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_subset_sans.yaml"),
+        expected_runtime=60 * 24,  # ~24 hours estimate
+    ),
+    "ss_llama_subset_bal_sans": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_subset_bal_sans.yaml"),
+        expected_runtime=60 * 24,  # ~24 hours estimate
+    ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",
     #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
