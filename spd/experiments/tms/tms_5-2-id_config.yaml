@@ -15,7 +15,7 @@ target_module_patterns: ["linear1", "linear2", "hidden_layers.0"]
 use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1.0
+faithfulness_coeff: null
 recon_coeff: null
 stochastic_recon_coeff: 1
 recon_layerwise_coeff: null
@@ -65,6 +65,7 @@ eval_metrics:
           k: 2
   - classname: "CI_L0"
   - classname: "CIMeanPerComponent"
+  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"

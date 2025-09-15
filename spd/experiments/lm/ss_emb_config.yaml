@@ -16,7 +16,7 @@ sampling: "continuous"
 use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1.0
+faithfulness_coeff: null
 recon_coeff: null
 stochastic_recon_coeff: null
 recon_layerwise_coeff: null
@@ -53,6 +53,8 @@ eval_metrics:
     extra_init_kwargs:
       rounding_threshold: 0.1
   - classname: "CIMeanPerComponent"
+  - classname: "FaithfulnessLoss"
+
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM
 pretrained_model_name: SimpleStories/SimpleStories-1.25M

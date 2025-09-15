@@ -19,7 +19,7 @@ from PIL import Image
 from torch import Tensor
 
 from spd.configs import Config
-from spd.losses import calc_weight_deltas
+from spd.losses import calc_faithfulness_loss, calc_weight_deltas
 from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
 from spd.plotting import (
@@ -705,6 +705,30 @@ class SubsetReconstructionLoss(StreamingEval):
         return results
 
 
+class FaithfulnessLoss(StreamingEval):
+    SLOW = False
+
+    def __init__(self, model: ComponentModel, config: Config):
+        self.model = model
+        self.config = config
+        self.device = next(iter(model.parameters())).device
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        pass
+
+    @override
+    def compute(self) -> Mapping[str, float]:
+        weight_deltas = calc_weight_deltas(self.model, device=self.device)
+        loss = calc_faithfulness_loss(weight_deltas, device=self.device)
+        return {"faithfulness_loss": loss.item()}
+
+
 EVAL_CLASSES = {
     cls.__name__: cls
     for cls in [
@@ -717,6 +741,7 @@ EVAL_CLASSES = {
         IdentityCIError,
         CIMeanPerComponent,
         SubsetReconstructionLoss,
+        FaithfulnessLoss,
     ]
 }
 

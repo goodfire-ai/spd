@@ -15,7 +15,7 @@ sampling: "continuous"
 use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 0.0
+faithfulness_coeff: null
 recon_coeff: null
 stochastic_recon_coeff: 0.2
 recon_layerwise_coeff: null
@@ -84,6 +84,7 @@ eval_metrics:
         all_but_layer_1: ["model.layers.1.*"]
         all_but_layer_2: ["model.layers.2.*"]
         all_but_layer_3: ["model.layers.3.*"]
+  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM
