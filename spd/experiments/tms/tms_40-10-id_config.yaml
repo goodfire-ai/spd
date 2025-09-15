@@ -15,7 +15,7 @@ target_module_patterns: ["linear1", "linear2", "hidden_layers.0"]
 use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1.0
+faithfulness_coeff: null
 pnorm: 2.0
 importance_minimality_coeff: 1e-4
 recon_coeff: null
@@ -65,6 +65,7 @@ eval_metrics:
           k: 10
   - classname: "CI_L0"
   - classname: "CIMeanPerComponent"
+  - classname: "FaithfulnessLoss"
 
 
 # --- Pretrained model info ---

@@ -17,7 +17,7 @@ target_module_patterns:
 use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1.0
+faithfulness_coeff: null
 out_recon_coeff: 0.0
 recon_coeff: null
 stochastic_recon_coeff: 1.0
@@ -67,6 +67,7 @@ eval_metrics:
           k: 17
   - classname: "CI_L0"
   - classname: "CIMeanPerComponent"
+  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"

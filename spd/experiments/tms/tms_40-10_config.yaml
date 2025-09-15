@@ -16,7 +16,7 @@ identity_module_patterns: null
 use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1.0
+faithfulness_coeff: null
 pnorm: 2.0
 importance_minimality_coeff: 1e-4
 recon_coeff: null
@@ -61,6 +61,7 @@ eval_metrics:
           n_features: 40
   - classname: "CI_L0"
   - classname: "CIMeanPerComponent"
+  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"

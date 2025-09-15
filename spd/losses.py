@@ -192,7 +192,7 @@ def calc_weight_deltas(
 
 def calc_faithfulness_loss(
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
-    device: str,
+    device: str | torch.device,
 ) -> Float[Tensor, ""]:
     """Calculate the MSE loss between component parameters (V@U) and target parameters."""
 
