@@ -147,7 +147,7 @@ class LinearComponents(Components):
         x: Float[Tensor, "... d_in"],
         mask: Float[Tensor, "... C"] | None = None,
         weight_delta: Float[Tensor, "... d_out d_in"] | None = None,
-        weight_delta_mask: Float[Tensor, "... d_out d_in"] | None = None,
+        weight_delta_mask: Float[Tensor, "..."] | None = None,
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
 
@@ -171,7 +171,9 @@ class LinearComponents(Components):
             assert weight_delta_mask is not None
             unmasked_delta_out = einops.einsum(x, weight_delta, "... d_in, d_out d_in -> ... d_out")
             assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape
-            out += weight_delta_mask.unsqueeze(-1) * unmasked_delta_out
+            out += einops.einsum(
+                weight_delta_mask, unmasked_delta_out, "..., ... d_out -> ... d_out"
+            )
 
         if self.bias is not None:
             out += self.bias
