@@ -12,6 +12,7 @@ gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj", "model.layers.*.self_attn.q_proj", "model.layers.*.self_attn.k_proj", "model.layers.*.self_attn.v_proj", "model.layers.*.self_attn.o_proj"]
 sampling: "continuous"
+use_delta_component: true
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 0.0
@@ -31,8 +32,8 @@ p_anneal_end_frac: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 48
-eval_batch_size: 48
+batch_size: 6
+eval_batch_size: 6
 steps: 50000
 lr: 0.0005
 lr_schedule: cosine

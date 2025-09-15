@@ -13,6 +13,7 @@ gate_hidden_dims: [1]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.embed_tokens"]
 sampling: "binomial"
+use_delta_component: true
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1.0
