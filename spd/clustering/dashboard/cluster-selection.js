@@ -112,20 +112,21 @@ function renderTable() {
     tableData.forEach(row => {
         const tr = document.createElement('tr');
         
-        // Format modules list - show shortened module names
-        const modulesList = row.modules.map(m => {
-            // Extract last two parts of module path for brevity
-            const parts = m.split('.');
-            if (parts.length > 2) {
-                return parts.slice(-2).join('.');
-            }
-            return m;
-        }).join(', ');
+        // Format modules display
+        let modulesDisplay;
+        if (row.modules.length === 1) {
+            // Show the single module name (shortened)
+            const parts = row.modules[0].split('.');
+            modulesDisplay = parts.length > 2 ? parts.slice(-2).join('.') : row.modules[0];
+        } else {
+            // Show count for multiple modules
+            modulesDisplay = `${row.modules.length} modules`;
+        }
         
         tr.innerHTML = `
             <td>${row.id}</td>
             <td>${row.componentCount}</td>
-            <td title="${row.modules.join('\n')}">${modulesList}</td>
+            <td title="${row.modules.join('\n')}">${modulesDisplay}</td>
             <td>${row.sampleCount}</td>
             <td>${row.maxActivation.toFixed(4)}</td>
             <td>${row.meanActivation.toFixed(4)}</td>

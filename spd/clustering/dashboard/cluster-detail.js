@@ -36,11 +36,48 @@ function displayCluster() {
     // Update title
     document.getElementById('clusterTitle').textContent = `Cluster ${currentClusterId}`;
     
-    // Display components in dropdown
-    const componentsSelect = document.getElementById('componentsSelect');
+    // Display component count
     const componentCount = document.getElementById('componentCount');
-    
     componentCount.textContent = clusterData.components.length;
+    
+    // Setup components display
+    setupComponentsDisplay();
+    
+    // Setup toggle button
+    const toggleButton = document.getElementById('toggleComponents');
+    const componentTable = document.getElementById('componentTable');
+    const componentDropdown = document.getElementById('componentDropdown');
+    
+    // Show dropdown by default, but table if more than 5 components
+    if (clusterData.components.length > 5) {
+        toggleButton.textContent = 'Show Table';
+        componentTable.style.display = 'none';
+        componentDropdown.style.display = 'block';
+    } else {
+        toggleButton.textContent = 'Hide Table';
+        componentTable.style.display = 'block';
+        componentDropdown.style.display = 'none';
+    }
+    
+    toggleButton.onclick = () => {
+        if (componentTable.style.display === 'none') {
+            componentTable.style.display = 'block';
+            componentDropdown.style.display = 'none';
+            toggleButton.textContent = 'Hide Table';
+        } else {
+            componentTable.style.display = 'none';
+            componentDropdown.style.display = 'block';
+            toggleButton.textContent = 'Show Table';
+        }
+    };
+    
+    // Display samples (up to 32)
+    displaySamples();
+}
+
+function setupComponentsDisplay() {
+    // Setup dropdown
+    const componentsSelect = document.getElementById('componentsSelect');
     componentsSelect.innerHTML = '<option value="">Select a component...</option>';
     
     clusterData.components.forEach((comp, index) => {
@@ -65,7 +102,31 @@ function displayCluster() {
         }
     });
     
-    // Display samples (up to 32)
+    // Setup table
+    const columns = [
+        { name: 'Module', sortable: true },
+        { name: 'Index', sortable: true },
+        { name: 'Label', sortable: true }
+    ];
+    
+    const tableData = clusterData.components.map(comp => [
+        comp.module,
+        comp.index,
+        comp.label
+    ]);
+    
+    createSortableTable('componentsTable', columns, tableData, (row) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${row[0]}</td>
+            <td>${row[1]}</td>
+            <td>${row[2]}</td>
+        `;
+        return tr;
+    });
+}
+
+function displaySamples() {
     const tbody = document.getElementById('samplesTableBody');
     tbody.innerHTML = '';
     
@@ -75,43 +136,12 @@ function displayCluster() {
         const sample = clusterData.samples[i];
         const tr = document.createElement('tr');
         
-        // Create token visualization
-        const tokenViz = document.createElement('div');
-        tokenViz.className = 'token-container';
-        
-        sample.tokens.forEach((token, idx) => {
-            const span = document.createElement('span');
-            span.className = 'token';
-            
-            // Handle subword tokens
-            if (token.startsWith('##')) {
-                span.textContent = token.substring(2);
-            } else {
-                span.textContent = token;
-            }
-            
-            // Color based on activation
-            const activation = sample.activations[idx];
-            const normalizedAct = Math.min(Math.max(activation, 0), 1);
-            const intensity = Math.floor((1 - normalizedAct) * 255);
-            span.style.backgroundColor = `rgb(255, ${intensity}, ${intensity})`;
-            
-            // Mark max position
-            if (idx === sample.max_position) {
-                span.style.border = '2px solid blue';
-                span.style.fontWeight = 'bold';
-            }
-            
-            // Add tooltip
-            span.title = `${token}: ${activation.toFixed(6)}`;
-            
-            tokenViz.appendChild(span);
-            
-            // Add space after token (unless it's a subword)
-            if (!sample.tokens[idx + 1]?.startsWith('##')) {
-                tokenViz.appendChild(document.createTextNode(' '));
-            }
-        });
+        // Create token visualization with proper tooltips
+        const tokenViz = createTokenVisualizationWithTooltip(
+            sample.tokens, 
+            sample.activations, 
+            sample.max_position
+        );
         
         tr.innerHTML = `
             <td>${i + 1}</td>
