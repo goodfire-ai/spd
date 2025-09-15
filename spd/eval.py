@@ -19,6 +19,7 @@ from PIL import Image
 from torch import Tensor
 
 from spd.configs import Config
+from spd.losses import calc_weight_deltas
 from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
 from spd.plotting import (
@@ -578,9 +579,11 @@ class SubsetReconstructionLoss(StreamingEval):
         zero_out = self.model(batch, mode="components", mask_infos=make_mask_infos(zero_masks))
         zero_ce = ce_vs_labels(zero_out)
 
+        weight_deltas = calc_weight_deltas(self.model, device=target_out.device)
         # Generate stochastic masks
-        stoch_masks, _ = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
-        # TODO: Add weight delta masks to this function
+        stoch_masks, weight_delta_masks = calc_stochastic_masks(
+            ci, self.n_mask_samples, self.config.sampling
+        )
 
         results = {}
         all_modules = list(ci.keys())
@@ -590,7 +593,7 @@ class SubsetReconstructionLoss(StreamingEval):
             active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
 
             kl_losses, ce_losses = [], []
-            for stoch_mask in stoch_masks:
+            for i, stoch_mask in enumerate(stoch_masks):
                 mask = {}
                 for m in all_modules:
                     if m in active:
@@ -598,7 +601,15 @@ class SubsetReconstructionLoss(StreamingEval):
                     elif self.use_all_ones_for_non_replaced:
                         mask[m] = torch.ones_like(stoch_mask[m])
 
-                out = self.model(batch, mode="components", mask_infos=make_mask_infos(mask))
+                out = self.model(
+                    batch,
+                    mode="components",
+                    mask_infos=make_mask_infos(
+                        mask,
+                        weight_deltas=weight_deltas,
+                        weight_delta_masks=weight_delta_masks[i],
+                    ),
+                )
                 kl_losses.append(kl_vs_target(out))
                 ce_losses.append(ce_vs_labels(out))
 
@@ -617,7 +628,7 @@ class SubsetReconstructionLoss(StreamingEval):
             active = [m for m in all_modules if m not in excluded]
 
             kl_losses, ce_losses = [], []
-            for stoch_mask in stoch_masks:
+            for i, stoch_mask in enumerate(stoch_masks):
                 mask = {}
                 for m in all_modules:
                     if m in active:
@@ -625,7 +636,13 @@ class SubsetReconstructionLoss(StreamingEval):
                     elif self.use_all_ones_for_non_replaced:
                         mask[m] = torch.ones_like(stoch_mask[m])
 
-                out = self.model(batch, mode="components", mask_infos=make_mask_infos(mask))
+                out = self.model(
+                    batch,
+                    mode="components",
+                    mask_infos=make_mask_infos(
+                        mask, weight_deltas=weight_deltas, weight_delta_masks=weight_delta_masks[i]
+                    ),
+                )
                 kl_losses.append(kl_vs_target(out))
                 ce_losses.append(ce_vs_labels(out))
 

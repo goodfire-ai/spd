@@ -171,7 +171,7 @@ def calc_masked_recon_loss(
 
 
 def calc_weight_deltas(
-    model: ComponentModel, device: str
+    model: ComponentModel, device: str | torch.device
 ) -> dict[str, Float[Tensor, " d_out d_in"]]:
     """Calculate the weight differences between the target model and component weights (V@U)."""
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
