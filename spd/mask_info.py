@@ -24,6 +24,7 @@ def make_mask_infos(
     if weight_deltas is not None:
         assert set(weight_deltas) == set(masks)
     if weight_delta_masks is not None:
+        assert weight_deltas is not None
         assert set(weight_delta_masks) == set(masks)
 
     result: dict[str, ComponentsMaskInfo] = {}

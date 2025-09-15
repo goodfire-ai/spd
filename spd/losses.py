@@ -139,14 +139,16 @@ def calc_masked_recon_layerwise_loss(
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
     total_loss = torch.tensor(0.0, device=device)
     for mask_infos in mask_infos_list:
-        modified_out = model(batch, mode="components", mask_infos=mask_infos)
-        if loss_type == "mse":
-            loss = ((modified_out - target_out) ** 2).mean()
-        else:
-            loss = calc_kl_divergence_lm(pred=modified_out, target=target_out)
-        total_loss += loss
+        for module_name, mask_info in mask_infos.items():
+            modified_out = model(batch, mode="components", mask_infos={module_name: mask_info})
+            if loss_type == "mse":
+                loss = ((modified_out - target_out) ** 2).mean()
+            else:
+                loss = calc_kl_divergence_lm(pred=modified_out, target=target_out)
+            total_loss += loss
     n_modified_components = len(mask_infos_list[0])
-    return total_loss / (n_modified_components * len(mask_infos_list))
+    n_stochastic_sources = len(mask_infos_list)
+    return total_loss / (n_modified_components * n_stochastic_sources)
 
 
 def calc_masked_recon_loss(
