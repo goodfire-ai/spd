@@ -3,7 +3,7 @@ from typing import Literal, override
 
 import einops
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Float, Int
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
@@ -147,7 +147,7 @@ class LinearComponents(Components):
         x: Float[Tensor, "... d_in"],
         mask: Float[Tensor, "... C"] | None = None,
         weight_delta: Float[Tensor, "... d_out d_in"] | None = None,
-        weight_delta_mask: Float[Tensor, "... d_out d_in"] | None = None,
+        weight_delta_mask: Float[Tensor, "..."] | None = None,
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
 
@@ -171,7 +171,9 @@ class LinearComponents(Components):
             assert weight_delta_mask is not None
             unmasked_delta_out = einops.einsum(x, weight_delta, "... d_in, d_out d_in -> ... d_out")
             assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape
-            out += weight_delta_mask.unsqueeze(-1) * unmasked_delta_out
+            out += einops.einsum(
+                weight_delta_mask, unmasked_delta_out, "..., ... d_out -> ... d_out"
+            )
 
         if self.bias is not None:
             out += self.bias
@@ -208,13 +210,18 @@ class EmbeddingComponents(Components):
     def forward(
         self,
         x: Int[Tensor, "..."],
-        mask: Float[Tensor, "... C"] | Bool[Tensor, "... C"] | None,
+        mask: Float[Tensor, "... C"] | None,
+        weight_delta: Float[Tensor, "... embedding_dim"] | None = None,
+        weight_delta_mask: Float[Tensor, "..."] | None = None,
     ) -> Float[Tensor, "... embedding_dim"]:
         """Forward through the embedding component using indexing instead of one-hot matmul.
 
         Args:
             x: Input tensor of token indices
             mask: Tensor which masks parameter components. May be boolean or float.
+            weight_delta: Tensor which contains the weight differences between the target model and
+                component weights.
+            weight_delta_mask: Tensor which masks weight delta components.
         """
         assert x.dtype == torch.long, "x must be an integer tensor"
 
@@ -224,6 +231,15 @@ class EmbeddingComponents(Components):
             component_acts *= mask
 
         out = einops.einsum(component_acts, self.U, "... C, C embedding_dim -> ... embedding_dim")
+
+        if weight_delta is not None:
+            assert weight_delta_mask is not None
+            unmasked_delta_out = weight_delta[x]
+            assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape
+            out += einops.einsum(
+                weight_delta_mask, unmasked_delta_out, "..., ... embedding_dim -> ... embedding_dim"
+            )
+
         return out
 
 

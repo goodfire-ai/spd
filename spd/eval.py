@@ -19,6 +19,7 @@ from PIL import Image
 from torch import Tensor
 
 from spd.configs import Config
+from spd.losses import calc_faithfulness_loss, calc_weight_deltas
 from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
 from spd.plotting import (
@@ -501,72 +502,6 @@ class CIMeanPerComponent(StreamingEval):
         return {"figures/ci_mean_per_component": img}
 
 
-class StochasticReconLayerwiseLoss(StreamingEval):
-    """Compute stochastic reconstruction layerwise loss for evaluation."""
-
-    SLOW = False
-
-    def __init__(self, model: ComponentModel, config: Config):
-        self.model = model
-        self.config = config
-        self.device = next(model.parameters()).device
-        self.loss_sum = 0.0
-        self.n_batches = 0
-
-    @override
-    def watch_batch(
-        self,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
-    ) -> None:
-        from spd.losses import (
-            calc_masked_recon_layerwise_loss,
-            calc_stochastic_masks,
-            calc_weight_deltas,
-            make_mask_infos,
-        )
-
-        # Calculate weight deltas for sans-faithfulness mode
-        weight_deltas = calc_weight_deltas(self.model, str(self.device))
-
-        # Calculate stochastic masks (returns masks and weight_delta_masks)
-        layerwise_stochastic_masks, layerwise_weight_delta_masks = calc_stochastic_masks(
-            causal_importances=ci,
-            n_mask_samples=self.config.n_mask_samples,
-            sampling=self.config.sampling,
-        )
-        
-        # Create mask infos list exactly as done in training
-        layerwise_mask_infos_list = [
-            make_mask_infos(
-                masks=layerwise_stochastic_masks[i],
-                weight_deltas=weight_deltas,
-                weight_delta_masks=layerwise_weight_delta_masks[i],
-            )
-            for i in range(len(layerwise_stochastic_masks))
-        ]
-
-        # Calculate loss
-        loss = calc_masked_recon_layerwise_loss(
-            model=self.model,
-            batch=batch,
-            device=str(self.device),
-            mask_infos_list=layerwise_mask_infos_list,
-            target_out=target_out,
-            loss_type=self.config.output_loss_type,
-        )
-
-        self.loss_sum += loss.item()
-        self.n_batches += 1
-
-    @override
-    def compute(self) -> Mapping[str, float]:
-        if self.n_batches == 0:
-            return {"loss/stochastic_recon_layerwise_eval": 0.0}
-        return {"loss/stochastic_recon_layerwise_eval": self.loss_sum / self.n_batches}
-
-
 class SubsetReconstructionLoss(StreamingEval):
     """Compute reconstruction loss for specific subsets of components."""
 
@@ -578,6 +513,7 @@ class SubsetReconstructionLoss(StreamingEval):
         config: Config,
         include_patterns: dict[str, list[str]] | None = None,
         exclude_patterns: dict[str, list[str]] | None = None,
+        use_all_ones_for_non_replaced: bool = False,
         n_mask_samples: int = 5,
     ):
         """Initialize SubsetReconstructionLoss.
@@ -587,10 +523,12 @@ class SubsetReconstructionLoss(StreamingEval):
                             e.g., {"layer_0_only": ["model.layers.0.*"]}
             exclude_patterns: Dict mapping subset names to patterns for modules to EXCLUDE from replacement
                             e.g., {"all_but_layer_0": ["model.layers.0.*"]}
+            use_all_ones_for_non_replaced: If True, use all-ones mask for non-replaced modules
             n_mask_samples: Number of stochastic mask samples to average over
         """
         self.model = model
         self.config = config
+        self.use_all_ones_for_non_replaced = use_all_ones_for_non_replaced
         self.n_mask_samples = n_mask_samples
         self.include_patterns = include_patterns or {}
         self.exclude_patterns = exclude_patterns or {}
@@ -635,25 +573,17 @@ class SubsetReconstructionLoss(StreamingEval):
         def kl_vs_target(logits: Tensor) -> float:
             return calc_kl_divergence_lm(pred=logits, target=target_out).item()
 
-        # Import calc_weight_deltas
-        from spd.losses import calc_weight_deltas
-        
-        # Calculate weight deltas for sans-faithfulness mode
-        device = next(self.model.parameters()).device
-        weight_deltas = calc_weight_deltas(self.model, str(device))
-        
         # Compute baselines for CE unrecovered
         target_ce = ce_vs_labels(target_out)
         zero_masks = {k: torch.zeros_like(v) for k, v in ci.items()}
-        # For baseline, create zero weight delta masks with proper batch shape
-        batch_size = batch.shape[0]
-        seq_len = batch.shape[1] if batch.ndim > 1 else 1
-        zero_weight_delta_masks = {k: torch.zeros(batch_size, seq_len, device=device) for k in ci.keys()}
-        zero_out = self.model(batch, mode="components", mask_infos=make_mask_infos(zero_masks, weight_deltas, zero_weight_delta_masks))
+        zero_out = self.model(batch, mode="components", mask_infos=make_mask_infos(zero_masks))
         zero_ce = ce_vs_labels(zero_out)
 
-        # Generate stochastic masks (now returns both masks and weight_delta_masks)
-        stoch_masks, stoch_weight_delta_masks = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
+        weight_deltas = calc_weight_deltas(self.model, device=target_out.device)
+        # Generate stochastic masks
+        stoch_masks, weight_delta_masks = calc_stochastic_masks(
+            ci, self.n_mask_samples, self.config.sampling
+        )
 
         results = {}
         all_modules = list(ci.keys())
@@ -664,14 +594,30 @@ class SubsetReconstructionLoss(StreamingEval):
 
             kl_losses, ce_losses = [], []
             for i, stoch_mask in enumerate(stoch_masks):
-                # Only include masks for active modules
-                mask = {m: stoch_mask[m] for m in active}
-                weight_delta_mask = {m: stoch_weight_delta_masks[i][m] for m in active}
-                
-                # Only pass weight_deltas for active modules
-                active_weight_deltas = {m: weight_deltas[m] for m in active}
-                
-                out = self.model(batch, mode="components", mask_infos=make_mask_infos(mask, active_weight_deltas, weight_delta_mask))
+                mask = {}
+                raw_deltas = {}
+                raw_delta_masks = {}
+                for m in all_modules:
+                    if m in active:
+                        raw_deltas[m] = weight_deltas[m]
+                        raw_delta_masks[m] = weight_delta_masks[i][m]
+                        mask[m] = stoch_mask[m]
+                    elif self.use_all_ones_for_non_replaced:
+                        mask[m] = torch.ones_like(stoch_mask[m])
+
+                deltas = raw_deltas if self.config.use_delta_component and raw_deltas else None
+                delta_masks = (
+                    raw_delta_masks if self.config.use_delta_component and raw_delta_masks else None
+                )
+                out = self.model(
+                    batch,
+                    mode="components",
+                    mask_infos=make_mask_infos(
+                        mask,
+                        weight_deltas=deltas,
+                        weight_delta_masks=delta_masks,
+                    ),
+                )
                 kl_losses.append(kl_vs_target(out))
                 ce_losses.append(ce_vs_labels(out))
 
@@ -679,9 +625,10 @@ class SubsetReconstructionLoss(StreamingEval):
             mean_ce = sum(ce_losses) / len(ce_losses)
             ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
 
-            results[f"subset/{name}/kl"] = mean_kl
-            results[f"subset/{name}/ce"] = mean_ce
-            results[f"subset/{name}/ce_unrec"] = ce_unrec
+            suffix = "_all_ones" if self.use_all_ones_for_non_replaced else ""
+            results[f"subset/{name}/kl{suffix}"] = mean_kl
+            results[f"subset/{name}/ce{suffix}"] = mean_ce
+            results[f"subset/{name}/ce_unrec{suffix}"] = ce_unrec
 
         # Process exclude patterns
         for name, patterns in self.exclude_patterns.items():
@@ -690,14 +637,30 @@ class SubsetReconstructionLoss(StreamingEval):
 
             kl_losses, ce_losses = [], []
             for i, stoch_mask in enumerate(stoch_masks):
-                # Only include masks for active modules
-                mask = {m: stoch_mask[m] for m in active}
-                weight_delta_mask = {m: stoch_weight_delta_masks[i][m] for m in active}
-                
-                # Only pass weight_deltas for active modules
-                active_weight_deltas = {m: weight_deltas[m] for m in active}
-                
-                out = self.model(batch, mode="components", mask_infos=make_mask_infos(mask, active_weight_deltas, weight_delta_mask))
+                mask = {}
+                raw_deltas = {}
+                raw_delta_masks = {}
+                for m in all_modules:
+                    if m in active:
+                        raw_deltas[m] = weight_deltas[m]
+                        raw_delta_masks[m] = weight_delta_masks[i][m]
+                        mask[m] = stoch_mask[m]
+                    elif self.use_all_ones_for_non_replaced:
+                        mask[m] = torch.ones_like(stoch_mask[m])
+
+                deltas = raw_deltas if self.config.use_delta_component and raw_deltas else None
+                delta_masks = (
+                    raw_delta_masks if self.config.use_delta_component and raw_delta_masks else None
+                )
+                out = self.model(
+                    batch,
+                    mode="components",
+                    mask_infos=make_mask_infos(
+                        mask,
+                        weight_deltas=deltas,
+                        weight_delta_masks=delta_masks,
+                    ),
+                )
                 kl_losses.append(kl_vs_target(out))
                 ce_losses.append(ce_vs_labels(out))
 
@@ -705,9 +668,10 @@ class SubsetReconstructionLoss(StreamingEval):
             mean_ce = sum(ce_losses) / len(ce_losses)
             ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
 
-            results[f"subset/{name}/kl"] = mean_kl
-            results[f"subset/{name}/ce"] = mean_ce
-            results[f"subset/{name}/ce_unrec"] = ce_unrec
+            suffix = "_all_ones" if self.use_all_ones_for_non_replaced else ""
+            results[f"subset/{name}/kl{suffix}"] = mean_kl
+            results[f"subset/{name}/ce{suffix}"] = mean_ce
+            results[f"subset/{name}/ce_unrec{suffix}"] = ce_unrec
 
         return results
 
@@ -753,6 +717,30 @@ class SubsetReconstructionLoss(StreamingEval):
         return results
 
 
+class FaithfulnessLoss(StreamingEval):
+    SLOW = False
+
+    def __init__(self, model: ComponentModel, config: Config):
+        self.model = model
+        self.config = config
+        self.device = next(iter(model.parameters())).device
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        pass
+
+    @override
+    def compute(self) -> Mapping[str, float]:
+        weight_deltas = calc_weight_deltas(self.model, device=self.device)
+        loss = calc_faithfulness_loss(weight_deltas, device=self.device)
+        return {"loss/faithfulness": loss.item()}
+
+
 EVAL_CLASSES = {
     cls.__name__: cls
     for cls in [
@@ -764,8 +752,8 @@ EVAL_CLASSES = {
         UVPlots,
         IdentityCIError,
         CIMeanPerComponent,
-        StochasticReconLayerwiseLoss,
         SubsetReconstructionLoss,
+        FaithfulnessLoss,
     ]
 }
 

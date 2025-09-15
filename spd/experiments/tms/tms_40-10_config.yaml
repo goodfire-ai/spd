@@ -13,9 +13,10 @@ gate_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["linear1", "linear2"]
 identity_module_patterns: null
+use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1.0
+faithfulness_coeff: null
 pnorm: 2.0
 importance_minimality_coeff: 1e-4
 recon_coeff: null
@@ -27,7 +28,7 @@ output_loss_type: "mse"
 # --- Training ---
 batch_size: 4096
 eval_batch_size: 4096
-steps: 40_000
+steps: 10_000
 lr: 1e-3
 lr_schedule: cosine
 lr_warmup_pct: 0.0
@@ -60,6 +61,7 @@ eval_metrics:
           n_features: 40
   - classname: "CI_L0"
   - classname: "CIMeanPerComponent"
+  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"
