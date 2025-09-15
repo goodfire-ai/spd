@@ -726,7 +726,7 @@ class FaithfulnessLoss(StreamingEval):
     def compute(self) -> Mapping[str, float]:
         weight_deltas = calc_weight_deltas(self.model, device=self.device)
         loss = calc_faithfulness_loss(weight_deltas, device=self.device)
-        return {"faithfulness_loss": loss.item()}
+        return {"loss/faithfulness": loss.item()}
 
 
 EVAL_CLASSES = {
