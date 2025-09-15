@@ -28,7 +28,7 @@ output_loss_type: "mse"
 # --- Training ---
 batch_size: 4096
 eval_batch_size: 4096
-steps: 40_000
+steps: 10_000
 lr: 1e-3
 lr_schedule: cosine
 lr_warmup_pct: 0.0
