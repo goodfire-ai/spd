@@ -83,6 +83,17 @@ def create_slurm_array_script(
         # Checkout the snapshot branch to ensure consistent code
         git checkout {snapshot_branch}
 
+        # Install MPI if needed for multi-GPU jobs (distributed training)
+        if [ {n_gpus_per_job} -gt 1 ]; then
+            echo "Multi-GPU job detected, ensuring MPI is available..."
+            if ! command -v mpirun &> /dev/null; then
+                echo "MPI not found, installing via init_compute.sh..."
+                sudo bash /mnt/polished-lake/scripts/init_compute.sh
+            else
+                echo "MPI already available: $(which mpirun)"
+            fi
+        fi
+
         # Execute the appropriate command based on array task ID
         case $SLURM_ARRAY_TASK_ID in
         {case_block}
