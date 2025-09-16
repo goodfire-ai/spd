@@ -107,7 +107,7 @@ class Components(ABC, nn.Module):
         self,
         x: Tensor,
         mask: Tensor | None = None,
-        weight_delta_and_mask: tuple[Tensor, Tensor] | None = None,
+        weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Tensor:
         """Forward pass through the component."""
         raise NotImplementedError()
@@ -221,10 +221,7 @@ class EmbeddingComponents(Components):
         self,
         x: Int[Tensor, "..."],
         mask: Float[Tensor, "... C"] | None = None,
-        weight_delta_and_mask: tuple[
-            Float[Tensor, "vocab_size embedding_dim"], Float[Tensor, "..."]
-        ]
-        | None = None,
+        weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Float[Tensor, "... embedding_dim"]:
         """Forward through the embedding component using indexing instead of one-hot matmul.
 
