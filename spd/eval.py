@@ -19,6 +19,7 @@ from PIL import Image
 from torch import Tensor
 
 from spd.configs import Config
+from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.plotting import (
     get_single_feature_causal_importances,
@@ -671,6 +672,163 @@ class SubsetReconstructionLoss(StreamingEval):
         return results
 
 
+class GeometricSimilarityComparison(StreamingEval):
+    SLOW = True  # This involves loading another model, so it's slow
+
+    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any):
+        self.model = model
+        self.config = config
+        self.reference_run_path = kwargs.get("reference_run_path")
+        if self.reference_run_path is None:
+            raise ValueError("reference_run_path is required for GeometricSimilarityComparison")
+        self.kwargs = kwargs
+        self.reference_model: ComponentModel | None = None
+        self._computed_this_eval = False
+        self.device = next(iter(model.parameters())).device
+        self.n_tokens = 0
+        self.component_activation_counts: dict[str, Float[Tensor, " C"]] = {
+            module_name: torch.zeros(model.C, device=self.device)
+            for module_name in model.components
+        }
+
+    def _load_reference_model(self) -> ComponentModel:
+        """Load the reference model from wandb or local path"""
+        if self.reference_model is None:
+            from spd.models.component_model import ComponentModel
+
+            assert self.reference_run_path is not None, (
+                "reference_run_path should not be None at this point"
+            )
+            self.reference_model = ComponentModel.from_pretrained(self.reference_run_path)
+
+            if torch.cuda.is_available():
+                self.reference_model.to("cuda")
+                self.reference_model.eval()
+                self.reference_model.requires_grad_(False)
+
+        return self.reference_model
+
+    def _compute_subcomponent_geometric_similarities(
+        self, activation_densities: dict[str, Float[Tensor, " C"]]
+    ) -> dict[str, float]:
+        """Compute mean max cosine similarity between subcomponent rank-one matrices"""
+        reference_model = self._load_reference_model()
+        similarities = {}
+
+        # Iterate through all component layers in both models
+        for layer_name in self.model.components:
+            if layer_name not in reference_model.components:
+                logger.warning(f"Layer {layer_name} not found in reference model, skipping")
+                continue
+
+            current_components = self.model.components[layer_name]
+            reference_components = reference_model.components[layer_name]
+
+            # Verify component counts match
+            if current_components.C != reference_components.C:
+                logger.warning(
+                    f"Component count mismatch for {layer_name}: {current_components.C} vs {reference_components.C}"
+                )
+                continue
+
+            # Extract U and V matrices
+            C = current_components.C
+            current_U = current_components.U  # Shape: [C, d_out]
+            current_V = current_components.V  # Shape: [d_in, C]
+            ref_U = reference_components.U
+            ref_V = reference_components.V
+
+            # Throw away components that are not active enough in the current model
+            density_threshold = self.kwargs.get("density_threshold", 0.0)
+            C_alive = sum(activation_densities[layer_name] > density_threshold)
+            if C_alive == 0:
+                logger.warning(
+                    f"\n WARNING:No components are active enough in {layer_name} for density threshold {density_threshold}. Geometric similarity comparison failed to run. \n"
+                )
+                continue
+            current_V = current_V[:, activation_densities[layer_name] > density_threshold]
+            current_U = current_U[activation_densities[layer_name] > density_threshold]
+
+            # Compute rank-one matrices: V @ U for each component
+            # Each component c produces a rank-one matrix of shape [d_in, d_out]
+            current_rank_one = einops.einsum(
+                current_V, current_U, "d_in C_alive, C_alive d_out -> C_alive d_in d_out"
+            )
+            ref_rank_one = einops.einsum(ref_V, ref_U, "d_in C, C d_out -> C d_in d_out")
+
+            # Flatten to vectors for cosine similarity computation
+            current_flat = current_rank_one.reshape(C_alive, -1)
+            ref_flat = ref_rank_one.reshape(C, -1)
+
+            # Compute cosine similarities between all pairs
+            current_norm = F.normalize(current_flat, p=2, dim=1)
+            ref_norm = F.normalize(ref_flat, p=2, dim=1)
+
+            cosine_sim_matrix = einops.einsum(
+                current_norm, ref_norm, "C_alive d_in_d_out, C_ref d_in_d_out -> C_alive C_ref"
+            )
+
+            # Find max cosine similarity for each current component
+            max_similarities = cosine_sim_matrix.max(dim=1).values
+            similarities[f"mean_max_cosine_sim/{layer_name}"] = max_similarities.mean().item()
+            similarities[f"max_cosine_sim_std/{layer_name}"] = max_similarities.std().item()
+            similarities[f"max_cosine_sim_min/{layer_name}"] = max_similarities.min().item()
+            similarities[f"max_cosine_sim_max/{layer_name}"] = max_similarities.max().item()
+
+        # Compute a metrics across all model components for each type of metric
+        # First get the metric names by stripping away the layer name
+        metric_names = [
+            "mean_max_cosine_sim",
+            "max_cosine_sim_std",
+            "max_cosine_sim_min",
+            "max_cosine_sim_max",
+        ]
+
+        for metric_name in metric_names:
+            # Go through all layers and get the average of the metric
+            values = [
+                similarities[f"{metric_name}/{layer_name}"] for layer_name in self.model.components
+            ]
+            similarities[f"{metric_name}/all_layers"] = sum(values) / len(values)
+
+        return similarities
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        n_tokens = next(iter(ci.values())).shape[:-1].numel()
+        self.n_tokens += n_tokens
+
+        for module_name, ci_vals in ci.items():
+            active_components = ci_vals > self.config.ci_alive_threshold
+            n_activations_per_component = reduce(active_components, "... C -> C", "sum")
+            self.component_activation_counts[module_name] += n_activations_per_component
+
+    @override
+    def compute(self) -> Mapping[str, float]:
+        """Compute the geometric similarity metrics"""
+
+        activation_densities = {
+            module_name: self.component_activation_counts[module_name] / self.n_tokens
+            for module_name in self.model.components
+        }
+
+        if self._computed_this_eval:
+            return {}
+
+        try:
+            similarities = self._compute_subcomponent_geometric_similarities(activation_densities)
+            self._computed_this_eval = True
+            return similarities
+        except Exception as e:
+            logger.warning(f"Failed to compute geometric similarity comparison: {e}")
+            return {}
+
+
 EVAL_CLASSES = {
     cls.__name__: cls
     for cls in [
@@ -683,6 +841,7 @@ EVAL_CLASSES = {
         IdentityCIError,
         CIMeanPerComponent,
         SubsetReconstructionLoss,
+        GeometricSimilarityComparison,
     ]
 }
 
