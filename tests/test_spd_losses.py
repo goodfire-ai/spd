@@ -98,7 +98,8 @@ class TestCalcWeightDeltas:
         assert set(deltas.keys()) == {"fc"}
 
         cm = model.components_or_modules["fc"]
-        expected_fc = cm.original_weight - cm.components_weight
+        assert cm.components is not None
+        expected_fc = cm.original_weight - cm.components.weight
         assert torch.allclose(deltas["fc"], expected_fc)
 
 
