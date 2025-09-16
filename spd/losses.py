@@ -184,11 +184,11 @@ def calc_weight_deltas(
         assert isinstance(components_or_module, ComponentsOrModule)
         if components_or_module.components is not None:
             weight_deltas[comp_name] = (
-                components_or_module.original_weight - components_or_module.components_weight
+                components_or_module.original_weight - components_or_module.components.weight
             )
         if components_or_module.identity_components is not None:
             id_name = f"identity_{comp_name}"
-            id_mat = components_or_module.identity_weight
+            id_mat = components_or_module.identity_components.weight
             weight_deltas[id_name] = (
                 torch.eye(id_mat.shape[0], device=device, dtype=id_mat.dtype) - id_mat
             )

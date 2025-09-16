@@ -277,16 +277,6 @@ class ComponentsOrModule(nn.Module):
         self.identity_weight_delta_and_mask: WeightDeltaAndMask | None = None
 
     @property
-    def components_weight(self) -> Float[Tensor, "rows cols"]:
-        assert self.components is not None
-        return self.components.weight
-
-    @property
-    def identity_weight(self) -> Float[Tensor, "d d"]:
-        assert self.identity_components is not None
-        return self.identity_components.weight
-
-    @property
     def original_weight(self) -> Float[Tensor, "rows cols"]:
         if isinstance(self.original, RadfordConv1D):
             return self.original.weight.T
