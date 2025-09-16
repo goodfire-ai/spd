@@ -5,13 +5,13 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 4000
+C: 2000
 n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj", "model.layers.*.self_attn.q_proj", "model.layers.*.self_attn.k_proj", "model.layers.*.self_attn.v_proj", "model.layers.*.self_attn.o_proj"]
-sampling: "binomial"
+sampling: "continuous"
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 0
@@ -36,14 +36,14 @@ embedding_recon_coeff: null
 is_embed_unembed_recon: false
 pnorm: 2.0
 p_anneal_start_frac: 0.0
-p_anneal_final_p: 0.2
-p_anneal_end_frac: 0.75
+p_anneal_final_p: 0.3
+p_anneal_end_frac: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 16
-eval_batch_size: 16
-steps: 300000
+batch_size: 24
+eval_batch_size: 24
+steps: 100000
 lr: 0.0005
 lr_schedule: cosine
 lr_warmup_pct: 0.0
