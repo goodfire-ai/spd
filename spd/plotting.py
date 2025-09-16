@@ -111,11 +111,10 @@ def plot_mean_component_cis(mean_component_cis: dict[str, Float[Tensor, " C"]]) 
     fig_height = 3 * n_rows  # Reduced height per subplot for better readability
 
     fig, axs = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height), dpi=200)
+    axs = np.array(axs)
 
     # Ensure axs is always 2D array for consistent indexing
-    if not isinstance(axs, np.ndarray):
-        axs = np.array([[axs]])
-    elif axs.ndim == 1:
+    if axs.ndim == 1:
         axs = axs.reshape(n_rows, n_cols)
 
     # Hide unused subplots
@@ -339,27 +338,52 @@ def plot_component_activation_density(
     component_activation_density: dict[str, Float[Tensor, " C"]],
     bins: int = 100,
 ) -> Image.Image:
-    """Plot the activation density of each component as a histogram, stacked vertically."""
+    """Plot the activation density of each component as a histogram in a grid layout."""
 
     n_modules = len(component_activation_density)
+    max_rows = 6
+
+    # Calculate grid dimensions
+    n_cols = (n_modules + max_rows - 1) // max_rows  # Ceiling division
+    n_rows = min(n_modules, max_rows)
+
+    # Adjust figure size based on grid dimensions
+    fig_width = 5 * n_cols
+    fig_height = 5 * n_rows
 
     fig, axs = plt.subplots(
-        n_modules,
-        1,
-        figsize=(5, 5 * n_modules),
+        n_rows,
+        n_cols,
+        figsize=(fig_width, fig_height),
         squeeze=False,
     )
+    axs = np.array(axs)
 
-    axs = axs.flatten()  # Flatten the axes array for easy iteration
+    # Ensure axs is always 2D array for consistent indexing
+    if axs.ndim == 1:
+        axs = axs.reshape(n_rows, n_cols)
+
+    # Hide unused subplots
+    for i in range(n_modules, n_rows * n_cols):
+        row = i % n_rows
+        col = i // n_rows
+        axs[row, col].set_visible(False)
 
     # Iterate through modules and plot each histogram on its corresponding axis
     for i, (module_name, density) in enumerate(component_activation_density.items()):
-        ax = axs[i]
+        # Calculate position in grid (fill column by column)
+        row = i % n_rows
+        col = i // n_rows
+        ax = axs[row, col]
+
         data = density.detach().cpu().numpy()
         ax.hist(data, bins=bins)
         ax.set_yscale("log")  # Beware, memory leak unless gc.collect() is called after eval loop
         ax.set_title(module_name)  # Add module name as title to each subplot
-        ax.set_xlabel("Activation density")
+
+        # Only add x-label to bottom row of each column
+        if row == n_rows - 1 or i == n_modules - 1:
+            ax.set_xlabel("Activation density")
         ax.set_ylabel("Frequency")
 
     fig.tight_layout()
@@ -374,7 +398,7 @@ def plot_ci_values_histograms(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     bins: int = 100,
 ) -> Image.Image:
-    """Plot histograms of mask values for all layers in a single figure.
+    """Plot histograms of mask values for all layers in a grid layout.
 
     Args:
         causal_importances: Dictionary of causal importances for each component.
@@ -384,25 +408,50 @@ def plot_ci_values_histograms(
         Single figure with subplots for each layer.
     """
     n_layers = len(causal_importances)
+    max_rows = 6
+
+    # Calculate grid dimensions
+    n_cols = (n_layers + max_rows - 1) // max_rows  # Ceiling division
+    n_rows = min(n_layers, max_rows)
+
+    # Adjust figure size based on grid dimensions
+    fig_width = 6 * n_cols
+    fig_height = 5 * n_rows
 
     fig, axs = plt.subplots(
-        n_layers,
-        1,
-        figsize=(6, 5 * n_layers),
+        n_rows,
+        n_cols,
+        figsize=(fig_width, fig_height),
         squeeze=False,
     )
+    axs = np.array(axs)
 
-    axs = axs.flatten()  # Flatten the axes array for easy iteration
+    # Ensure axs is always 2D array for consistent indexing
+    if axs.ndim == 1:
+        axs = axs.reshape(n_rows, n_cols)
+
+    # Hide unused subplots
+    for i in range(n_layers, n_rows * n_cols):
+        row = i % n_rows
+        col = i // n_rows
+        axs[row, col].set_visible(False)
 
     for i, (layer_name_raw, layer_ci) in enumerate(causal_importances.items()):
         layer_name = layer_name_raw.replace(".", "_")
-        ax = axs[i]
+
+        # Calculate position in grid (fill column by column)
+        row = i % n_rows
+        col = i // n_rows
+        ax = axs[row, col]
 
         data = layer_ci.flatten().cpu().numpy()
         ax.hist(data, bins=bins)
         ax.set_yscale("log")  # Beware, memory leak unless gc.collect() is called after eval loop
         ax.set_title(f"Causal importances for {layer_name}")
-        ax.set_xlabel("Causal importance value")
+
+        # Only add x-label to bottom row of each column
+        if row == n_rows - 1 or i == n_layers - 1:
+            ax.set_xlabel("Causal importance value")
         ax.set_ylabel("Frequency")
 
     fig.tight_layout()
