@@ -97,50 +97,82 @@ def _plot_causal_importances_figure(
     return img
 
 
-def plot_mean_component_cis(mean_component_cis: dict[str, Float[Tensor, " C"]]) -> Image.Image:
-    """Scatter plot of the mean CI per component across modules."""
+def plot_mean_component_cis_both_scales(
+    mean_component_cis: dict[str, Float[Tensor, " C"]],
+) -> tuple[Image.Image, Image.Image]:
+    """
+    Efficiently plot mean CI per component with both linear and log scales.
+
+    This function optimizes the plotting by pre-processing data once and
+    reusing it for both plots.
+
+    Args:
+        mean_component_cis: Dictionary mapping module names to mean CI tensors
+
+    Returns:
+        Tuple of (linear_scale_image, log_scale_image)
+    """
     n_modules = len(mean_component_cis)
     max_rows = 6
 
-    # Calculate grid dimensions
+    # Calculate grid dimensions once
     n_cols = (n_modules + max_rows - 1) // max_rows  # Ceiling division
     n_rows = min(n_modules, max_rows)
 
     # Adjust figure size based on grid dimensions
     fig_width = 8 * n_cols
-    fig_height = 3 * n_rows  # Reduced height per subplot for better readability
+    fig_height = 3 * n_rows
 
-    fig, axs = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height), dpi=200)
-    axs = np.array(axs)
-
-    # Ensure axs is always 2D array for consistent indexing
-    if axs.ndim == 1:
-        axs = axs.reshape(n_rows, n_cols)
-
-    # Hide unused subplots
-    for i in range(n_modules, n_rows * n_cols):
-        row = i % n_rows
-        col = i // n_rows
-        axs[row, col].set_visible(False)
-
-    for i, (module_name, mean_component_ci) in enumerate(mean_component_cis.items()):
+    # Pre-process data once
+    processed_data = []
+    for module_name, mean_component_ci in mean_component_cis.items():
         sorted_components = torch.sort(mean_component_ci, descending=True)[0]
-        ax = axs[i]
-        ax.scatter(
-            range(sorted_components.numel()),
-            sorted_components.detach().cpu().numpy(),
-            marker="x",
-            s=10,
-        )
-        if i == len(mean_component_cis) - 1:
-            ax.set_xlabel("Component")
-        ax.set_ylabel("mean CI")
-        ax.set_title(module_name)
+        processed_data.append((module_name, sorted_components.detach().cpu().numpy()))
 
-    fig.tight_layout()
-    img = _render_figure(fig)
-    plt.close(fig)
-    return img
+    # Create both figures
+    images = []
+    for log_y in [False, True]:
+        fig, axs = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height), dpi=200)
+        axs = np.array(axs)
+
+        # Ensure axs is always 2D array for consistent indexing
+        if axs.ndim == 1:
+            axs = axs.reshape(n_rows, n_cols)
+
+        # Hide unused subplots
+        for i in range(n_modules, n_rows * n_cols):
+            row = i % n_rows
+            col = i // n_rows
+            axs[row, col].set_visible(False)
+
+        for i, (module_name, sorted_components_np) in enumerate(processed_data):
+            # Calculate position in grid (fill column by column)
+            row = i % n_rows
+            col = i // n_rows
+            ax = axs[row, col]
+
+            if log_y:
+                ax.set_yscale("log")
+
+            ax.scatter(
+                range(len(sorted_components_np)),
+                sorted_components_np,
+                marker="x",
+                s=10,
+            )
+
+            # Only add x-label to bottom row of each column
+            if row == n_rows - 1 or i == n_modules - 1:
+                ax.set_xlabel("Component")
+            ax.set_ylabel("mean CI")
+            ax.set_title(module_name, fontsize=10)
+
+        fig.tight_layout()
+        img = _render_figure(fig)
+        plt.close(fig)
+        images.append(img)
+
+    return images[0], images[1]
 
 
 def get_single_feature_causal_importances(

@@ -27,7 +27,7 @@ from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_values_histograms,
     plot_component_activation_density,
-    plot_mean_component_cis,
+    plot_mean_component_cis_both_scales,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import StochasticMasks, calc_ci_l_zero, calc_stochastic_masks
@@ -464,7 +464,7 @@ class IdentityCIError(StreamingEval):
 
 
 class CIMeanPerComponent(StreamingEval):
-    SLOW = False
+    SLOW = True
 
     def __init__(self, model: ComponentModel, config: Config) -> None:
         self.model = model
@@ -500,9 +500,12 @@ class CIMeanPerComponent(StreamingEval):
             for module_name, component_sums in self.component_ci_sums.items()
         }
 
-        img = plot_mean_component_cis(mean_component_cis)
+        img_linear, img_log = plot_mean_component_cis_both_scales(mean_component_cis)
 
-        return {"figures/ci_mean_per_component": img}
+        return {
+            "figures/ci_mean_per_component": img_linear,
+            "figures/ci_mean_per_component_log": img_log,
+        }
 
 
 class SubsetReconstructionLoss(StreamingEval):
