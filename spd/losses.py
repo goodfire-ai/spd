@@ -150,26 +150,31 @@ def calc_masked_recon_layerwise_loss(
             total_loss += loss
     n_modified_components = len(mask_infos_list[0])
     n_stochastic_sources = len(mask_infos_list)
-    return total_loss / (n_modified_components * n_stochastic_sources)
+    return total_loss / (n_modified_components * n_stochastic_sources) # HERE
 
 
 def calc_masked_recon_loss(
     model: ComponentModel,
     batch: Float[Tensor, "... d_in"],
-    mask_infos: dict[str, ComponentsMaskInfo],
+    mask_infos_list: list[dict[str, ComponentsMaskInfo]],
     target_out: Float[Tensor, "... d_model_out"],
-    loss_type: Literal["mse", "kl"] = "mse",
+    loss_type: Literal["mse", "kl"],
+    device: str,
 ) -> Float[Tensor, ""]:
     """Calculate the MSE over all masks."""
     # Do a forward pass with all components
-    out = model(batch, mode="components", mask_infos=mask_infos)
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
-    if loss_type == "mse":
-        loss = ((out - target_out) ** 2).mean()
-    else:
-        loss = calc_kl_divergence_lm(pred=out, target=target_out)
 
-    return loss
+    total_loss = torch.tensor(0.0, device=device)
+    for mask_infos in mask_infos_list:
+        out = model(batch, mode="components", mask_infos=mask_infos)
+        if loss_type == "mse":
+            loss = ((out - target_out) ** 2).mean()
+        else:
+            loss = calc_kl_divergence_lm(pred=out, target=target_out)
+        total_loss += loss
+
+    return total_loss / len(mask_infos_list)
 
 
 def calc_weight_deltas(
@@ -248,9 +253,10 @@ def calculate_losses(
         recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
-            mask_infos=recon_mask_infos,
+            mask_infos_list=[recon_mask_infos],
             target_out=target_out,
             loss_type=config.output_loss_type,
+            device=device,
         )
         total_loss += config.recon_coeff * recon_loss
         loss_terms["recon"] = recon_loss.item()
@@ -262,7 +268,8 @@ def calculate_losses(
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
         )
-        stochastic_recon_loss = torch.tensor(0.0, device=target_out.device)
+
+        stoch_mask_infos_list = []
         for i in range(len(stochastic_masks_list)):
             deltas_and_masks = (
                 {
@@ -276,14 +283,17 @@ def calculate_losses(
                 masks=stochastic_masks_list[i],
                 weight_deltas_and_masks=deltas_and_masks,
             )
-            stochastic_recon_loss += calc_masked_recon_loss(
-                model=model,
-                batch=batch,
-                mask_infos=stoch_mask_infos,
-                target_out=target_out,
-                loss_type=config.output_loss_type,
-            )
-        stochastic_recon_loss = stochastic_recon_loss / len(stochastic_masks_list)
+            stoch_mask_infos_list.append(stoch_mask_infos)
+
+        stochastic_recon_loss = calc_masked_recon_loss(
+            model=model,
+            batch=batch,
+            mask_infos_list=stoch_mask_infos_list,
+            target_out=target_out,
+            loss_type=config.output_loss_type,
+            device=device,
+        )
+
         total_loss += config.stochastic_recon_coeff * stochastic_recon_loss
         loss_terms["stochastic_recon"] = stochastic_recon_loss.item()
 
