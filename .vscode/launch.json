@@ -4,6 +4,7 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        
         {
             "name": "Python Debugger: Current File with Arguments",
             "type": "debugpy",
@@ -230,6 +231,19 @@
                 "--model_path",
                 "wandb:goodfire/spd/runs/ioprgffh"
             ]
+        },
+        {
+            "name": "ss_llama_single_with_comparison",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_llama_single_with_comparison_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
         }
     ]
 }

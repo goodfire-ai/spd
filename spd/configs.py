@@ -74,6 +74,8 @@ class EvalMetricConfig(BaseModel):
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
+
+
 class Config(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     # --- WandB
@@ -296,6 +298,7 @@ class Config(BaseModel):
         default=None,
         description="Name or path of the tokenizer to use when loading an LM",
     )
+
 
     # --- Task Specific ---
     task_config: TaskConfig = Field(
