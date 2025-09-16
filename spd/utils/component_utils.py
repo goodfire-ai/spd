@@ -21,12 +21,12 @@ def calc_stochastic_masks(
     """
 
     stochastic_masks: list[dict[str, Float[Tensor, "... C"]]] = []
-    # weight_delta_mask have the same leading dims as causal_importances but no final dim
-    weight_delta_masks: list[dict[str, Float[Tensor, ...]]] = []
+    # weight_delta_mask have the same leading dims as causal_importances but no final C dim
+    weight_delta_masks: list[dict[str, Float[Tensor, " ..."]]] = []
 
     for _ in range(n_mask_samples):
         stochastic_mask: dict[str, Float[Tensor, "... C"]] = {}
-        weight_delta_mask: dict[str, Float[Tensor, ...]] = {}
+        weight_delta_mask: dict[str, Float[Tensor, " ..."]] = {}
         for layer, ci in causal_importances.items():
             if sampling == "binomial":
                 rand_tensor = torch.randint(0, 2, ci.shape, device=ci.device).float()

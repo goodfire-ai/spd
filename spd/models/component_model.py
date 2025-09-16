@@ -419,14 +419,14 @@ class ComponentModel(LoadableModule):
                     assert component.components is not None
                     mask_info = mask_infos[module_name]
                     component.mask = mask_info.mask
-                    component.weight_delta = mask_info.weight_delta
-                    component.weight_delta_mask = mask_info.weight_delta_mask
+                    component.weight_delta_and_mask = mask_info.weight_delta_and_mask
                 if replace_identity:
                     assert component.identity_components is not None
                     identity_mask_info = mask_infos[f"identity_{module_name}"]
                     component.identity_mask = identity_mask_info.mask
-                    component.identity_weight_delta = identity_mask_info.weight_delta
-                    component.identity_weight_delta_mask = identity_mask_info.weight_delta_mask
+                    component.identity_weight_delta_and_mask = (
+                        identity_mask_info.weight_delta_and_mask
+                    )
             else:
                 component.forward_mode = "original"
         try:

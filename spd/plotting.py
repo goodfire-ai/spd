@@ -125,24 +125,17 @@ def plot_mean_component_cis(mean_component_cis: dict[str, Float[Tensor, " C"]]) 
 
     for i, (module_name, mean_component_ci) in enumerate(mean_component_cis.items()):
         sorted_components = torch.sort(mean_component_ci, descending=True)[0]
-
-        # Calculate position in grid (fill column by column)
-        row = i % n_rows
-        col = i // n_rows
-        ax = axs[row, col]
-
+        ax = axs[i]
         ax.scatter(
             range(sorted_components.numel()),
             sorted_components.detach().cpu().numpy(),
             marker="x",
             s=10,
         )
-
-        # Only add x-label to bottom row of each column
-        if row == n_rows - 1 or i == n_modules - 1:
+        if i == len(mean_component_cis) - 1:
             ax.set_xlabel("Component")
         ax.set_ylabel("mean CI")
-        ax.set_title(module_name, fontsize=10)  # Slightly smaller title for space
+        ax.set_title(module_name)
 
     fig.tight_layout()
     img = _render_figure(fig)
