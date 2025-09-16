@@ -128,6 +128,8 @@ def load_sweep_params(experiment_name: str, sweep_params_path: Path) -> dict[str
     with open(sweep_params_path) as f:
         all_params = yaml.safe_load(f)
 
+    print(all_params)
+
     # Start with global parameters if they exist
     params = copy.deepcopy(all_params["global"]) if "global" in all_params else {}
 
@@ -139,6 +141,8 @@ def load_sweep_params(experiment_name: str, sweep_params_path: Path) -> dict[str
     if not params:
         raise ValueError(f"No sweep parameters found for experiment '{experiment_name}'")
 
+    print(params)
+    exit()
     return params
 
 
