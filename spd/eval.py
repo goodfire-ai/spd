@@ -30,7 +30,7 @@ from spd.plotting import (
     plot_mean_component_cis,
     plot_UV_matrices,
 )
-from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_masks
+from spd.utils.component_utils import StochasticMasks, calc_ci_l_zero, calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
@@ -150,7 +150,10 @@ class CEandKLLosses(StreamingEval):
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
         # we use the regular stochastic masks
-        stoch_masks = calc_stochastic_masks(ci, n_mask_samples=1, sampling=self.config.sampling)[0]
+        stoch_masks = [
+            m.component_masks
+            for m in calc_stochastic_masks(ci, n_mask_samples=1, sampling=self.config.sampling)
+        ]
         stoch_masked_logits = self.model(
             batch, mode="components", mask_infos=make_mask_infos(stoch_masks[0])
         )
@@ -551,27 +554,25 @@ class SubsetReconstructionLoss(StreamingEval):
         for key, value in losses.items():
             self.losses[key].append(value)
 
-    def _get_masked_model__outputs(
+    def _get_masked_model_outputs(
         self,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        stoch_masks_list: list[dict[str, Tensor]],
+        masks_list: list[StochasticMasks],
         weight_deltas: dict[str, Tensor],
-        weight_delta_masks_list: list[dict[str, Tensor]],
         active: list[str],
         all_modules: list[str],
     ) -> list[Float[Tensor, "... vocab"]]:
         outputs: list[Float[Tensor, "... vocab"]] = []
 
-        for i in range(len(stoch_masks_list)):
-            stoch_mask = stoch_masks_list[i]
-            weight_delta_masks = weight_delta_masks_list[i]
-
+        for masks in masks_list:
+            stoch_masks = masks.component_masks
+            weight_delta_masks = masks.weight_delta_masks
             masks = {}
             for m in all_modules:
                 if m in active:
-                    masks[m] = stoch_mask[m]
+                    masks[m] = stoch_masks[m]
                 elif self.use_all_ones_for_non_replaced:
-                    masks[m] = torch.ones_like(stoch_mask[m])
+                    masks[m] = torch.ones_like(stoch_masks[m])
 
             if self.config.use_delta_component:
                 weight_deltas_and_masks = {}
@@ -621,9 +622,7 @@ class SubsetReconstructionLoss(StreamingEval):
 
         weight_deltas = calc_weight_deltas(self.model, device=target_out.device)
         # Generate stochastic masks
-        stoch_masks_list, weight_delta_masks_list = calc_stochastic_masks(
-            ci, self.n_mask_samples, self.config.sampling
-        )
+        masks_list = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
 
         results = {}
         all_modules = list(ci.keys())
@@ -632,11 +631,10 @@ class SubsetReconstructionLoss(StreamingEval):
         for name, patterns in self.include_patterns.items():
             active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
 
-            outputs = self._get_masked_model__outputs(
+            outputs = self._get_masked_model_outputs(
                 batch,
-                stoch_masks_list,
+                masks_list,
                 weight_deltas,
-                weight_delta_masks_list,
                 active,
                 all_modules,
             )
@@ -656,11 +654,10 @@ class SubsetReconstructionLoss(StreamingEval):
         for name, exclude_patterns in self.exclude_patterns.items():
             active = [m for m in all_modules if not any(fnmatch(m, p) for p in exclude_patterns)]
 
-            outputs = self._get_masked_model__outputs(
+            outputs = self._get_masked_model_outputs(
                 batch,
-                stoch_masks_list,
+                masks_list,
                 weight_deltas,
-                weight_delta_masks_list,
                 active,
                 all_modules,
             )

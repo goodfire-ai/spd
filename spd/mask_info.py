@@ -11,7 +11,7 @@ class ComponentsMaskInfo:
     """Specifies the mask information that will be applied to a ComponentOrModule object."""
 
     module_name: str
-    mask: Float[Tensor, "... C"]
+    component_mask: Float[Tensor, "... C"]
     weight_delta_and_mask: WeightDeltaAndMask | None
 
 
@@ -36,7 +36,7 @@ def make_mask_infos(
     for name in masks:
         result[name] = ComponentsMaskInfo(
             module_name=name,
-            mask=masks[name],
+            component_mask=masks[name],
             weight_delta_and_mask=None
             if weight_deltas_and_masks is None
             else weight_deltas_and_masks[name],

@@ -272,10 +272,12 @@ class ComponentsOrModule(nn.Module):
         self.identity_components = identity_components
 
         self.forward_mode: Literal["original"] | Literal["components"] | None = None
-        self.mask: Tensor | None = None
+
+        self.component_mask: Tensor | None = None
+        self.component_weight_delta_and_mask: WeightDeltaAndMask | None = None
+
         self.identity_mask: Tensor | None = None
         self.identity_weight_delta_and_mask: WeightDeltaAndMask | None = None
-        self.weight_delta_and_mask: WeightDeltaAndMask | None = None
 
     @property
     def components_weight(self) -> Float[Tensor, "rows cols"]:
@@ -301,7 +303,7 @@ class ComponentsOrModule(nn.Module):
     @override
     def forward(self, x: Tensor) -> Tensor:
         if self.forward_mode == "original":
-            assert self.mask is None and self.identity_mask is None
+            assert self.component_mask is None and self.identity_mask is None
             x = self.original(x)
         elif self.forward_mode == "components":
             if self.identity_mask is not None:
@@ -312,12 +314,12 @@ class ComponentsOrModule(nn.Module):
                     weight_delta_and_mask=self.identity_weight_delta_and_mask,
                 )
 
-            if self.mask is not None:
+            if self.component_mask is not None:
                 assert self.components is not None
                 x = self.components(
                     x,
-                    mask=self.mask,
-                    weight_delta_and_mask=self.weight_delta_and_mask,
+                    mask=self.component_mask,
+                    weight_delta_and_mask=self.component_weight_delta_and_mask,
                 )
             else:
                 x = self.original(x)
@@ -328,18 +330,18 @@ class ComponentsOrModule(nn.Module):
     def make_pristine(self) -> None:
         """Set forward_mode, mask, and identity_mask to None."""
         self.forward_mode = None
-        self.mask = None
+        self.component_mask = None
         self.identity_mask = None
-        self.weight_delta_and_mask = None
+        self.component_weight_delta_and_mask = None
         self.identity_weight_delta_and_mask = None
 
     def assert_pristine(self) -> None:
         """Assert that forward_mode, mask, and identity_mask are None."""
         assert self.forward_mode is None, f"forward_mode should be None, got {self.forward_mode}"
-        assert self.mask is None, f"mask should be None, got {self.mask}"
+        assert self.component_mask is None, f"mask should be None, got {self.component_mask}"
         assert self.identity_mask is None, f"identity_mask should be None, got {self.identity_mask}"
-        assert self.weight_delta_and_mask is None, (
-            f"weight_delta should be None, got {self.weight_delta_and_mask}"
+        assert self.component_weight_delta_and_mask is None, (
+            f"weight_delta should be None, got {self.component_weight_delta_and_mask}"
         )
         assert self.identity_weight_delta_and_mask is None, (
             f"identity_weight_delta should be None, got {self.identity_weight_delta_and_mask}"

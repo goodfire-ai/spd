@@ -127,8 +127,6 @@ def calc_importance_minimality_loss(
     return total_loss.sum(dim=-1).mean()
 
 
-# TODO(oli): would be nice to standardize this and calc_masked_recon_loss on whether or not the loop
-# over S is inside or outside the function
 def calc_masked_recon_layerwise_loss(
     model: ComponentModel,
     batch: Int[Tensor, "..."],
@@ -150,7 +148,7 @@ def calc_masked_recon_layerwise_loss(
             total_loss += loss
     n_modified_components = len(mask_infos_list[0])
     n_stochastic_sources = len(mask_infos_list)
-    return total_loss / (n_modified_components * n_stochastic_sources) # HERE
+    return total_loss / (n_modified_components * n_stochastic_sources)
 
 
 def calc_masked_recon_loss(
@@ -263,24 +261,24 @@ def calculate_losses(
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
-        stochastic_masks_list, weight_delta_masks_list = calc_stochastic_masks(
+        stochastic_masks_list = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
         )
 
         stoch_mask_infos_list = []
-        for i in range(len(stochastic_masks_list)):
+        for stochastic_masks in stochastic_masks_list:
             deltas_and_masks = (
                 {
-                    key: (weight_deltas[key], weight_delta_masks_list[i][key])
+                    key: (weight_deltas[key], stochastic_masks.weight_delta_masks[key])
                     for key in weight_deltas
                 }
                 if config.use_delta_component
                 else None
             )
             stoch_mask_infos = make_mask_infos(
-                masks=stochastic_masks_list[i],
+                masks=stochastic_masks.component_masks,
                 weight_deltas_and_masks=deltas_and_masks,
             )
             stoch_mask_infos_list.append(stoch_mask_infos)
@@ -312,27 +310,27 @@ def calculate_losses(
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
-        stochastic_masks_list, weight_delta_masks_list = calc_stochastic_masks(
+        stochastic_masks_list = calc_stochastic_masks(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
         )
         mask_infos_list = []
-        for i in range(len(stochastic_masks_list)):
-            deltas_and_masks = (
+        for stochastic_masks in stochastic_masks_list:
+            weight_deltas_and_masks = (
                 {
-                    key: (weight_deltas[key], weight_delta_masks_list[i][key])
+                    key: (weight_deltas[key], stochastic_masks.weight_delta_masks[key])
                     for key in weight_deltas
                 }
                 if config.use_delta_component
                 else None
             )
-            mask_infos_list.append(
-                make_mask_infos(
-                    masks=stochastic_masks_list[i],
-                    weight_deltas_and_masks=deltas_and_masks,
-                )
+            mask_infos = make_mask_infos(
+                masks=stochastic_masks.component_masks,
+                weight_deltas_and_masks=weight_deltas_and_masks,
             )
+            mask_infos_list.append(mask_infos)
+
         stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
@@ -369,9 +367,10 @@ def calculate_losses(
         out_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
-            mask_infos=make_mask_infos(masks_all_ones),
+            mask_infos_list=[make_mask_infos(masks_all_ones)],
             target_out=target_out,
             loss_type=config.output_loss_type,
+            device=device,
         )
         total_loss += config.out_recon_coeff * out_recon_loss
         loss_terms["output_recon"] = out_recon_loss.item()
@@ -382,11 +381,11 @@ def calculate_losses(
             causal_importances=causal_importances,
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
-        )[0]
+        )
         embedding_recon_loss = calc_embedding_recon_loss(
             model=model,
             batch=batch,
-            masks=stochastic_masks_list,
+            masks=[stochastic_masks.component_masks for stochastic_masks in stochastic_masks_list],
             unembed=config.is_embed_unembed_recon,
             device=device,
         )

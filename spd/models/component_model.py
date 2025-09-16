@@ -407,33 +407,31 @@ class ComponentModel(LoadableModule):
             mask_infos: Dictionary mapping module names to ComponentMaskInfo. Use `identity_` prefix
                 for identity components where applicable.
         """
-        for module_name, component in self.components_or_modules.items():
-            component.assert_pristine()
+        for module_name, c_or_m in self.components_or_modules.items():
+            c_or_m.assert_pristine()
 
             replace_module = module_name in mask_infos
             replace_identity = f"identity_{module_name}" in mask_infos
 
             if replace_module or replace_identity:
-                component.forward_mode = "components"
+                c_or_m.forward_mode = "components"
                 if replace_module:
-                    assert component.components is not None
+                    assert c_or_m.components is not None
                     mask_info = mask_infos[module_name]
-                    component.mask = mask_info.mask
-                    component.weight_delta_and_mask = mask_info.weight_delta_and_mask
+                    c_or_m.component_mask = mask_info.component_mask
+                    c_or_m.component_weight_delta_and_mask = mask_info.weight_delta_and_mask
                 if replace_identity:
-                    assert component.identity_components is not None
+                    assert c_or_m.identity_components is not None
                     identity_mask_info = mask_infos[f"identity_{module_name}"]
-                    component.identity_mask = identity_mask_info.mask
-                    component.identity_weight_delta_and_mask = (
-                        identity_mask_info.weight_delta_and_mask
-                    )
+                    c_or_m.identity_mask = identity_mask_info.component_mask
+                    c_or_m.identity_weight_delta_and_mask = identity_mask_info.weight_delta_and_mask
             else:
-                component.forward_mode = "original"
+                c_or_m.forward_mode = "original"
         try:
             yield
         finally:
-            for component in self.components_or_modules.values():
-                component.make_pristine()
+            for c_or_m in self.components_or_modules.values():
+                c_or_m.make_pristine()
 
     def _forward_target(self, *args: Any, **kwargs: Any) -> Any:
         """Forward pass of the target model."""
