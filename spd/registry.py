@@ -70,7 +70,7 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
         config_path=Path("spd/experiments/resid_mlp/resid_mlp2_config.yaml"),
-        expected_runtime=11,
+        expected_runtime=5,
         canonical_run="wandb:goodfire/spd/runs/84yirdkb",
     ),
     "resid_mlp3": ExperimentConfig(

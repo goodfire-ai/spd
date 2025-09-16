@@ -17,6 +17,7 @@ from wandb.apis.public import Run
 
 from spd.configs import Config
 from spd.interfaces import LoadableModule, RunInfo
+from spd.mask_info import ComponentsMaskInfo
 from spd.models.components import (
     Components,
     ComponentsOrModule,
@@ -323,6 +324,9 @@ class ComponentModel(LoadableModule):
             assert gate_type in ["vector_mlp", "layerwise_global_mlp"], (
                 f"Unknown gate type: {gate_type}"
             )
+            assert not isinstance(original_module, nn.Embedding), (
+                "Embedding modules only supported for gate_type='mlp'"
+            )
             if isinstance(original_module, nn.Linear):
                 input_dim = original_module.weight.shape[1]
             elif isinstance(original_module, RadfordConv1D):
@@ -375,7 +379,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
-        masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
     ) -> Any:
@@ -389,15 +393,16 @@ class ComponentModel(LoadableModule):
                 - 'target': Standard forward pass of the target model
                 - 'components': Forward with component replacements (requires masks)
                 - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
-            masks: Dictionary mapping component names to masks (required for mode='components')
+            mask_infos: Dictionary mapping module names to ComponentMaskInfo
+                (required for mode='components'). Use `identity_` prefix for identity modules.
             module_names: List of module names to cache inputs for
                 (required for mode='pre_forward_cache')
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
         if mode == "components":
-            assert masks is not None, "masks parameter is required for mode='components'"
-            return self._forward_with_components(*args, masks=masks, **kwargs)
+            assert mask_infos is not None, "mask_infos are required for mode='components'"
+            return self._forward_with_components(*args, mask_infos=mask_infos, **kwargs)
         elif mode == "pre_forward_cache":
             assert module_names is not None, (
                 "module_names parameter is required for mode='pre_forward_cache'"
@@ -409,27 +414,36 @@ class ComponentModel(LoadableModule):
             return self._forward_target(*args, **kwargs)
 
     @contextmanager
-    def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
+    def _replaced_modules(self, mask_infos: dict[str, ComponentsMaskInfo]):
         """Set the forward_mode of ComponentOrModule objects and apply masks.
 
-        A module's forward_mode is set to "components" if the module name is a key in masks
-        (including if "identity_" is prefixed to the module name).
+        A module's forward_mode is set to "components" if there is an entry in mask_infos for
+        either the module name or its `identity_`-prefixed variant.
 
         Args:
-            masks: Dictionary mapping module names to masks. Module names may be prefixed with
-                "identity_" to indicate that the identity components should be used.
+            mask_infos: Dictionary mapping module names to ComponentMaskInfo. Use `identity_` prefix
+                for identity components where applicable.
         """
         for module_name, component in self.components_or_modules.items():
             component.assert_pristine()
 
-            if module_name in masks or f"identity_{module_name}" in masks:
+            replace_module = module_name in mask_infos
+            replace_identity = f"identity_{module_name}" in mask_infos
+
+            if replace_module or replace_identity:
                 component.forward_mode = "components"
-                if module_name in masks:
+                if replace_module:
                     assert component.components is not None
-                    component.mask = masks[module_name]
-                if f"identity_{module_name}" in masks:
+                    mask_info = mask_infos[module_name]
+                    component.mask = mask_info.mask
+                    component.weight_delta = mask_info.weight_delta
+                    component.weight_delta_mask = mask_info.weight_delta_mask
+                if replace_identity:
                     assert component.identity_components is not None
-                    component.identity_mask = masks[f"identity_{module_name}"]
+                    identity_mask_info = mask_infos[f"identity_{module_name}"]
+                    component.identity_mask = identity_mask_info.mask
+                    component.identity_weight_delta = identity_mask_info.weight_delta
+                    component.identity_weight_delta_mask = identity_mask_info.weight_delta_mask
             else:
                 component.forward_mode = "original"
         try:
@@ -454,19 +468,16 @@ class ComponentModel(LoadableModule):
         return out
 
     def _forward_with_components(
-        self,
-        *args: Any,
-        masks: dict[str, Float[Tensor, "... C"]],
-        **kwargs: Any,
+        self, *args: Any, mask_infos: dict[str, ComponentsMaskInfo], **kwargs: Any
     ) -> Any:
         """Forward pass with temporary component replacements. `masks` is a dictionary mapping
         component paths to masks. A mask being present means that the module will be replaced
         with components, and the value of the mask will be used as the mask for the components.
 
         Args:
-            masks: Optional dictionary mapping component names to masks
+            mask_infos: Dictionary mapping module names to ComponentMaskInfo
         """
-        with self._replaced_modules(masks):
+        with self._replaced_modules(mask_infos=mask_infos):
             raw_out = self.patched_model(*args, **kwargs)
             out = self._extract_output(raw_out)
             return out
@@ -485,7 +496,7 @@ class ComponentModel(LoadableModule):
         cache = {}
         handles: list[RemovableHandle] = []
 
-        def cache_hook(_: nn.Module, input: tuple[Tensor, ...], param_name: str) -> None:
+        def cache_hook(_: nn.Module, input: tuple[Tensor, "..."], param_name: str) -> None:
             cache[param_name] = input[0]
 
         # Register hooks
