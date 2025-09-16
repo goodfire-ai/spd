@@ -99,21 +99,51 @@ def _plot_causal_importances_figure(
 
 def plot_mean_component_cis(mean_component_cis: dict[str, Float[Tensor, " C"]]) -> Image.Image:
     """Scatter plot of the mean CI per component across modules."""
-    fig, axs = plt.subplots(len(mean_component_cis), 1, figsize=(8, 4), dpi=200)
-    axs = np.array(axs)
+    n_modules = len(mean_component_cis)
+    max_rows = 6
+
+    # Calculate grid dimensions
+    n_cols = (n_modules + max_rows - 1) // max_rows  # Ceiling division
+    n_rows = min(n_modules, max_rows)
+
+    # Adjust figure size based on grid dimensions
+    fig_width = 8 * n_cols
+    fig_height = 3 * n_rows  # Reduced height per subplot for better readability
+
+    fig, axs = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height), dpi=200)
+
+    # Ensure axs is always 2D array for consistent indexing
+    if not isinstance(axs, np.ndarray):
+        axs = np.array([[axs]])
+    elif axs.ndim == 1:
+        axs = axs.reshape(n_rows, n_cols)
+
+    # Hide unused subplots
+    for i in range(n_modules, n_rows * n_cols):
+        row = i % n_rows
+        col = i // n_rows
+        axs[row, col].set_visible(False)
+
     for i, (module_name, mean_component_ci) in enumerate(mean_component_cis.items()):
         sorted_components = torch.sort(mean_component_ci, descending=True)[0]
-        ax = axs[i]
+
+        # Calculate position in grid (fill column by column)
+        row = i % n_rows
+        col = i // n_rows
+        ax = axs[row, col]
+
         ax.scatter(
             range(sorted_components.numel()),
             sorted_components.detach().cpu().numpy(),
             marker="x",
             s=10,
         )
-        if i == len(mean_component_cis) - 1:
+
+        # Only add x-label to bottom row of each column
+        if row == n_rows - 1 or i == n_modules - 1:
             ax.set_xlabel("Component")
         ax.set_ylabel("mean CI")
-        ax.set_title(module_name)
+        ax.set_title(module_name, fontsize=10)  # Slightly smaller title for space
 
     fig.tight_layout()
     img = _render_figure(fig)
