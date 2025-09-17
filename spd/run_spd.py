@@ -44,7 +44,9 @@ from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
 
-def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path) -> None:
+def local_log(
+    data: Mapping[str, float | Image.Image | wandb.plot.CustomChart], step: int, out_dir: Path
+) -> None:
     metrics_file = out_dir / "metrics.jsonl"
     metrics_file.touch(exist_ok=True)
 
@@ -57,6 +59,12 @@ def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path)
             filename = f"{k.replace('/', '_')}_{step}.png"
             v.save(fig_dir / filename)
             tqdm.write(f"Saved figure {k} to {fig_dir / filename}")
+        elif isinstance(v, wandb.plot.CustomChart):
+            json_path = fig_dir / f"{k.replace('/', '_')}_{step}.json"
+            payload = {"columns": list(v.table.columns), "data": list(v.table.data), "step": step}
+            with open(json_path, "w") as f:
+                json.dump(payload, f, default=str)
+            tqdm.write(f"Saved custom chart data {k} to {json_path}")
         else:
             metrics_without_images[k] = v
 
