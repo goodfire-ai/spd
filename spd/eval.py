@@ -767,21 +767,23 @@ class GeometricSimilarityComparison(StreamingEval):
             cosine_sim_matrix = einops.einsum(
                 current_norm, ref_norm, "C_alive d_in_d_out, C_ref d_in_d_out -> C_alive C_ref"
             )
+            # Take the abs of the cosine similarity matrix
+            cosine_sim_matrix = cosine_sim_matrix.abs()
 
-            # Find max cosine similarity for each current component
+            # Find max abs cosine similarity for each current component
             max_similarities = cosine_sim_matrix.max(dim=1).values
-            similarities[f"mean_max_cosine_sim/{layer_name}"] = max_similarities.mean().item()
-            similarities[f"max_cosine_sim_std/{layer_name}"] = max_similarities.std().item()
-            similarities[f"max_cosine_sim_min/{layer_name}"] = max_similarities.min().item()
-            similarities[f"max_cosine_sim_max/{layer_name}"] = max_similarities.max().item()
+            similarities[f"mean_max_abs_cosine_sim/{layer_name}"] = max_similarities.mean().item()
+            similarities[f"max_abs_cosine_sim_std/{layer_name}"] = max_similarities.std().item()
+            similarities[f"max_abs_cosine_sim_min/{layer_name}"] = max_similarities.min().item()
+            similarities[f"max_abs_cosine_sim_max/{layer_name}"] = max_similarities.max().item()
 
         # Compute a metrics across all model components for each type of metric
         # First get the metric names by stripping away the layer name
         metric_names = [
-            "mean_max_cosine_sim",
-            "max_cosine_sim_std",
-            "max_cosine_sim_min",
-            "max_cosine_sim_max",
+            "mean_max_abs_cosine_sim",
+            "max_abs_cosine_sim_std",
+            "max_abs_cosine_sim_min",
+            "max_abs_cosine_sim_max",
         ]
 
         for metric_name in metric_names:
