@@ -202,7 +202,7 @@ def create_wandb_report(
         loss_plots_height = 6
         loss_plots = [
             ["train/loss/stochastic_recon_layerwise", "train/loss/stochastic_recon"],
-            ["train/loss/faithfulness"],
+            ["eval/loss/faithfulness"],
             ["train/loss/importance_minimality"],
         ]
         for i, y_keys in enumerate(loss_plots):
