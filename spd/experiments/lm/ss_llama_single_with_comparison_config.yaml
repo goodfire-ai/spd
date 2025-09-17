@@ -4,7 +4,7 @@ wandb_run_name: null
 wandb_run_name_prefix: ""
 
 # --- General ---
-seed: 0
+seed: 1
 C: 4000
 n_mask_samples: 1
 gate_type: "vector_mlp"
@@ -42,8 +42,8 @@ gradient_accumulation_steps: 4
 
 # --- Logging & Saving ---
 train_log_freq: 100
-eval_freq: 1000
-slow_eval_freq: 5000
+eval_freq: 100
+slow_eval_freq: 100
 slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: 100
@@ -82,6 +82,11 @@ eval_metrics:
         all_but_layer_1: ["model.layers.1.*"]
         all_but_layer_2: ["model.layers.2.*"]
         all_but_layer_3: ["model.layers.3.*"]
+  - classname: "GeometricSimilarityComparison"
+    extra_init_kwargs:
+      reference_run_path: "wandb:goodfire/spd/runs/2js1ccon"
+      density_threshold: 0.001
+
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM
