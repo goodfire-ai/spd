@@ -92,6 +92,7 @@ class ComponentModel(LoadableModule):
                 f"Found {param.requires_grad} for {name}"
             )
 
+        breakpoint()
         target_module_paths = ComponentModel._get_target_module_paths(
             target_model, target_module_patterns
         )

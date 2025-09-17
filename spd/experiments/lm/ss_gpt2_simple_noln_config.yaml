@@ -10,9 +10,26 @@ n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["h.2.mlp.c_proj", "h.1.attn.q_proj"]
+target_module_patterns: [
+  "h.0.mlp.c_fc",
+  "h.0.mlp.c_proj",
+  "h.0.attn.c_attn",
+  "h.0.attn.c_proj",
+  "h.1.mlp.c_fc",
+  "h.1.mlp.c_proj",
+  "h.1.attn.c_attn",
+  "h.1.attn.c_proj",
+  "h.2.mlp.c_fc",
+  "h.2.mlp.c_proj",
+  "h.2.attn.c_attn",
+  "h.2.attn.c_proj",
+  "h.3.mlp.c_fc",
+  "h.3.mlp.c_proj",
+  "h.3.attn.c_attn",
+  "h.3.attn.c_proj",
+]
 identity_module_patterns: null
-sampling: "binomial"
+sampling: "continuous"
 
 # --- Loss Coefficients ---
 faithfulness_coeff: 1e7
