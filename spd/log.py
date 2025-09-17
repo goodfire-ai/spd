@@ -44,19 +44,17 @@ class _SPDLogger(logging.Logger):
         msg: str | None = None,
     ) -> None:
         """log a dict of metrics"""
-        output: str
         if isinstance(data, list):
-            output = "\n  ".join(str(v) for v in data)
+            lines = [str(v) for v in data]
         else:
             # otherwise, assume it's a dict
             longest_key: int = max(len(k) for k in data)
             lines: list[str] = [f"  {k:<{longest_key + 1}}: {v}" for k, v in data.items()]
-            output = "\n".join(lines)
 
         if msg:
-            self.info(f"{msg}:\n{output}")
-        else:
-            self.info("\n" + output)
+            self.info(f"{msg}:")
+        for line in lines:
+            self.info(line)
 
     def section(
         self,
