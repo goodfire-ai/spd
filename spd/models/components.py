@@ -3,10 +3,11 @@ from typing import Literal, override
 
 import einops
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Float, Int
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
+from spd.mask_info import WeightDeltaAndMask
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
 GateType = Literal["mlp", "vector_mlp"]
@@ -29,7 +30,7 @@ class ParallelLinear(nn.Module):
 
 
 class GateMLPs(nn.Module):
-    """MLP based gates that map a scalar input to a scalar output."""
+    """MLP based gates that map component 'inner acts' to a scalar output for each component."""
 
     def __init__(self, C: int, hidden_dims: list[int]):
         super().__init__()
@@ -53,7 +54,7 @@ class GateMLPs(nn.Module):
 
 
 class VectorGateMLPs(nn.Module):
-    """MLP based gates that map a vector valued input to a single output."""
+    """MLP based gates that map a module's input vector to a scalar output for each component."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
@@ -92,44 +93,22 @@ class Components(ABC, nn.Module):
         self.C = C
         self.V = nn.Parameter(torch.empty(v_dim, C))
         self.U = nn.Parameter(torch.empty(C, u_dim))
+        init_param_(self.V, fan_val=v_dim, nonlinearity="linear")
+        init_param_(self.U, fan_val=C, nonlinearity="linear")
 
     @property
     @abstractmethod
     def weight(self) -> Float[Tensor, "rows cols"]:
         raise NotImplementedError()
 
-    def init_from_target_weight(self, target_weight: Tensor) -> None:
-        """Initialize the V and U matrices.
-        1. Normalize every component to 1.
-        2. Take inner product with original model
-        3. This gives you roughly how much overlap there is with the target model.
-        4. Scale the Us by this value (we can choose either matrix)
-
-        args:
-            target_weight: The weight matrix of the original model. In the orientation of V @ U.
-            Note that this is the transpose of the orientation of the weight matrix in the original code.
-        """
-        target_weight = target_weight.to(self.U.device)
-
-        V = self.V
-        U = self.U
-
-        # Make V and U have unit norm in the d_in and d_out dimensions
-        V.data[:] = torch.randn_like(V.data)
-        U.data[:] = torch.randn_like(U.data)
-        V.data[:] = V.data / V.data.norm(dim=-2, keepdim=True)
-        U.data[:] = U.data / U.data.norm(dim=-1, keepdim=True)
-
-        # Calculate inner products
-        inner = einops.einsum(U, target_weight, "C cols, rows cols -> C rows")
-        C_norms = einops.einsum(inner, V, "C rows, rows C -> C")
-
-        # Scale U by the inner product.
-        U.data[:] = U.data * C_norms.unsqueeze(-1)
-
     @override
     @abstractmethod
-    def forward(self, x: Tensor, mask: Tensor | None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        mask: Tensor | None = None,
+        weight_delta_and_mask: WeightDeltaAndMask | None = None,
+    ) -> Tensor:
         """Forward pass through the component."""
         raise NotImplementedError()
 
@@ -170,13 +149,19 @@ class LinearComponents(Components):
 
     @override
     def forward(
-        self, x: Float[Tensor, "... d_in"], mask: Tensor | None = None
+        self,
+        x: Float[Tensor, "... d_in"],
+        mask: Float[Tensor, "... C"] | None = None,
+        weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
 
         Args:
             x: Input tensor
-            mask: Tensor which masks parameter components. May be boolean or float.
+            mask: Tensor which masks parameter components.
+            weight_delta_and_mask: Optional tuple of tensors containing:
+                0: the weight differences between the target model and summed component weights
+                1: mask over the weight delta component for each sample
         Returns:
             output: The summed output across all components
         """
@@ -187,6 +172,14 @@ class LinearComponents(Components):
 
         # V is (d_out, C). Multiply this way because we use (out, in) as in nn.Linear
         out = einops.einsum(component_acts, self.U, "... C, C d_out -> ... d_out")
+
+        if weight_delta_and_mask is not None:
+            weight_delta, weight_delta_mask = weight_delta_and_mask
+            unmasked_delta_out = einops.einsum(x, weight_delta, "... d_in, d_out d_in -> ... d_out")
+            assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape
+            out += einops.einsum(
+                weight_delta_mask, unmasked_delta_out, "..., ... d_out -> ... d_out"
+            )
 
         if self.bias is not None:
             out += self.bias
@@ -223,13 +216,17 @@ class EmbeddingComponents(Components):
     def forward(
         self,
         x: Int[Tensor, "..."],
-        mask: Float[Tensor, "... C"] | Bool[Tensor, "... C"] | None,
+        mask: Float[Tensor, "... C"] | None = None,
+        weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Float[Tensor, "... embedding_dim"]:
         """Forward through the embedding component using indexing instead of one-hot matmul.
 
         Args:
             x: Input tensor of token indices
             mask: Tensor which masks parameter components. May be boolean or float.
+            weight_delta_and_mask: Optional tuple of tensors containing:
+                0: the weight differences between the target model and summed component weights
+                1: mask over the weight delta component for each sample
         """
         assert x.dtype == torch.long, "x must be an integer tensor"
 
@@ -239,39 +236,96 @@ class EmbeddingComponents(Components):
             component_acts *= mask
 
         out = einops.einsum(component_acts, self.U, "... C, C embedding_dim -> ... embedding_dim")
+
+        if weight_delta_and_mask is not None:
+            weight_delta, weight_delta_mask = weight_delta_and_mask
+            unmasked_delta_out = weight_delta[x]
+            assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape
+            out += einops.einsum(
+                weight_delta_mask, unmasked_delta_out, "..., ... embedding_dim -> ... embedding_dim"
+            )
+
         return out
 
 
 class ComponentsOrModule(nn.Module):
     def __init__(
         self,
-        original: nn.Linear | nn.Embedding | RadfordConv1D,
-        components: Components,
+        original: nn.Module,
+        components: Components | None = None,
+        identity_components: Components | None = None,
     ):
         super().__init__()
+        assert components is not None or identity_components is not None, (
+            "At least one of components or identity_components must be provided"
+        )
+
         self.original = original
         self.components = components
+        self.identity_components = identity_components
 
         self.forward_mode: Literal["original"] | Literal["components"] | None = None
-        self.mask: Tensor | None = None
 
-    @property
-    def components_weight(self) -> Float[Tensor, "rows cols"]:
-        """Get the component weight matrix."""
-        return self.components.weight
+        self.component_mask: Tensor | None = None
+        self.component_weight_delta_and_mask: WeightDeltaAndMask | None = None
+
+        self.identity_mask: Tensor | None = None
+        self.identity_weight_delta_and_mask: WeightDeltaAndMask | None = None
 
     @property
     def original_weight(self) -> Float[Tensor, "rows cols"]:
         if isinstance(self.original, RadfordConv1D):
             return self.original.weight.T
-        return self.original.weight
+        elif isinstance(self.original, nn.Linear | nn.Embedding):
+            return self.original.weight
+        else:
+            raise AttributeError(
+                f"Module {type(self.original)} not one of nn.Linear, nn.Embedding, or RadfordConv1D"
+            )
 
     @override
     def forward(self, x: Tensor) -> Tensor:
         if self.forward_mode == "original":
-            assert self.mask is None, "Mask should not be present in original mode"
-            return self.original(x)
+            assert self.component_mask is None and self.identity_mask is None
+            x = self.original(x)
         elif self.forward_mode == "components":
-            # mask *can* but doesn't *need to* be present here
-            return self.components(x, self.mask)
-        raise ValueError(f"Invalid forward mode: {self.forward_mode}")
+            if self.identity_mask is not None:
+                assert self.identity_components is not None
+                x = self.identity_components(
+                    x,
+                    mask=self.identity_mask,
+                    weight_delta_and_mask=self.identity_weight_delta_and_mask,
+                )
+
+            if self.component_mask is not None:
+                assert self.components is not None
+                x = self.components(
+                    x,
+                    mask=self.component_mask,
+                    weight_delta_and_mask=self.component_weight_delta_and_mask,
+                )
+            else:
+                x = self.original(x)
+        else:
+            raise ValueError(f"Invalid forward mode: {self.forward_mode}")
+        return x
+
+    def make_pristine(self) -> None:
+        """Set forward_mode, mask, and identity_mask to None."""
+        self.forward_mode = None
+        self.component_mask = None
+        self.identity_mask = None
+        self.component_weight_delta_and_mask = None
+        self.identity_weight_delta_and_mask = None
+
+    def assert_pristine(self) -> None:
+        """Assert that forward_mode, mask, and identity_mask are None."""
+        assert self.forward_mode is None, f"forward_mode should be None, got {self.forward_mode}"
+        assert self.component_mask is None, f"mask should be None, got {self.component_mask}"
+        assert self.identity_mask is None, f"identity_mask should be None, got {self.identity_mask}"
+        assert self.component_weight_delta_and_mask is None, (
+            f"weight_delta should be None, got {self.component_weight_delta_and_mask}"
+        )
+        assert self.identity_weight_delta_and_mask is None, (
+            f"identity_weight_delta should be None, got {self.identity_weight_delta_and_mask}"
+        )

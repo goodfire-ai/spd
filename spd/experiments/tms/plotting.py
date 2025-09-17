@@ -89,7 +89,7 @@ class TMSAnalyzer:
         subnets = self.extract_subnets()
         target_weights = cast(
             ComponentsOrModule, self.patched_model.linear1
-        ).original.weight.T  # (n_features, n_hidden)  # pyright: ignore[reportInvalidCast]
+        ).original_weight.T  # (n_features, n_hidden)  # pyright: ignore[reportInvalidCast]
 
         # Normalize weights
         subnets_norm = subnets / (torch.norm(subnets, dim=-1, keepdim=True) + eps)
@@ -471,7 +471,7 @@ class FullNetworkDiagramPlotter:
                 "linear1_weights": patched_model.linear1.weight.T.detach().cpu().numpy(),
                 "hidden_weights": [
                     cast(ComponentsOrModule, patched_model.hidden_layers[i])
-                    .original.weight.T.detach()
+                    .original_weight.T.detach()
                     .cpu()
                     .numpy()
                     for i in range(config.n_hidden_layers)
@@ -777,7 +777,7 @@ class HiddenLayerPlotter:
         # Get target weights
         target_weights = (
             cast(ComponentsOrModule, patched_model.hidden_layers[0])
-            .original.weight.T.unsqueeze(0)
+            .original_weight.T.unsqueeze(0)
             .detach()
             .cpu()
         )
@@ -860,7 +860,7 @@ class TMSPlotter:
         subnets = self.analyzer.extract_subnets()
         target_weights = (
             cast(ComponentsOrModule, self.analyzer.patched_model.linear1)  # pyright: ignore[reportInvalidCast]
-            .original.weight.T.detach()
+            .original_weight.T.detach()
             .cpu()
         )
 
@@ -900,7 +900,7 @@ class TMSPlotter:
         subnets = self.analyzer.extract_subnets()
         target_weights = (
             cast(ComponentsOrModule, self.analyzer.patched_model.linear1)  # pyright: ignore[reportInvalidCast]
-            .original.weight.T.detach()
+            .original_weight.T.detach()
             .cpu()
         )
 
@@ -968,7 +968,7 @@ class TMSPlotter:
         # L2 ratio analysis
         target_weights = cast(
             ComponentsOrModule, self.analyzer.patched_model.linear1
-        ).original.weight.T  # pyright: ignore[reportInvalidCast]
+        ).original_weight.T  # pyright: ignore[reportInvalidCast]
         target_norm = torch.norm(target_weights, dim=-1, keepdim=True)
         subnet_norm = torch.norm(subnet_weights_at_max, dim=-1, keepdim=True)
         l2_ratio = subnet_norm / target_norm

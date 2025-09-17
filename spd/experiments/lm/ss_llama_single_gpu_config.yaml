@@ -11,16 +11,15 @@ gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj", "model.layers.*.self_attn.q_proj", "model.layers.*.self_attn.k_proj", "model.layers.*.self_attn.v_proj", "model.layers.*.self_attn.o_proj"]
-identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
 
 # --- Loss Coefficients ---
 faithfulness_coeff: null
 recon_coeff: null
-stochastic_recon_coeff: 0.2
+stochastic_recon_coeff: 1.0
 recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 2.0
+stochastic_recon_layerwise_coeff: 1.0
 importance_minimality_coeff: 0.0003
 schatten_coeff: null
 out_recon_coeff: null
@@ -28,19 +27,19 @@ embedding_recon_coeff: null
 is_embed_unembed_recon: false
 pnorm: 2.0
 p_anneal_start_frac: 0.0
-p_anneal_final_p: 0.3
+p_anneal_final_p: 0.1
 p_anneal_end_frac: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 48
-eval_batch_size: 48
-steps: 50000
+batch_size: 12
+eval_batch_size: 12
+steps: 300000
 lr: 0.0005
 lr_schedule: cosine
 lr_warmup_pct: 0.0
 lr_exponential_halflife: null
-gradient_accumulation_steps: 1
+gradient_accumulation_steps: 4
 
 # --- Logging & Saving ---
 train_log_freq: 100
@@ -68,7 +67,6 @@ eval_metrics:
   - classname: "CEandKLLosses"
     extra_init_kwargs:
       rounding_threshold: 0.0
-  - classname: "CIMeanPerComponent"
   - classname: "SubsetReconstructionLoss"
     extra_init_kwargs:
       n_mask_samples: 1

@@ -55,6 +55,7 @@ def extract_ci_val_figures(
         input_magnitude=input_magnitude,
         plot_raw_cis=False,
         sigmoid_type=config.sigmoid_type,
+        sampling=config.sampling,
     )
 
     return {
@@ -174,21 +175,16 @@ def compute_patched_weight_neuron_contributions(
     W_E: Float[Tensor, "n_features d_embed"] = patched_model.W_E
     assert torch.equal(W_E, patched_model.W_U.T)
 
+    W_in_weights = []
+    W_out_weights = []
+    for layer in patched_model.layers:
+        W_in_weights.append(runtime_cast(ComponentsOrModule, layer.mlp_in).original_weight)
+        W_out_weights.append(runtime_cast(ComponentsOrModule, layer.mlp_out).original_weight)
+    assert all(W_in_weights), "All W_in_weights must be non-None"
+    assert all(W_out_weights), "All W_out_weights must be non-None"
     # Stack mlp_in / mlp_out weights across layers so that einsums can broadcast
-    W_in: Float[Tensor, "n_layers d_mlp d_embed"] = torch.stack(
-        [
-            runtime_cast(ComponentsOrModule, layer.mlp_in).original.weight
-            for layer in patched_model.layers
-        ],
-        dim=0,
-    )
-    W_out: Float[Tensor, "n_layers d_embed d_mlp"] = torch.stack(
-        [
-            runtime_cast(ComponentsOrModule, layer.mlp_out).original.weight
-            for layer in patched_model.layers
-        ],
-        dim=0,
-    )
+    W_in: Float[Tensor, "n_layers d_mlp d_embed"] = torch.stack(W_in_weights, dim=0)
+    W_out: Float[Tensor, "n_layers d_embed d_mlp"] = torch.stack(W_out_weights, dim=0)
 
     # Compute connection strengths
     in_conns: Float[Tensor, "n_layers n_features d_mlp"] = einops.einsum(
@@ -535,6 +531,7 @@ def main(out_dir: Path, device: str):
             batch_shape=batch_shape,
             device=device,
             input_magnitude=0.75,
+            sampling=config.sampling,
             plot_raw_cis=False,
             title_formatter=format_resid_mlp_title,
             sigmoid_type=config.sigmoid_type,

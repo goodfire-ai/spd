@@ -22,7 +22,7 @@ from spd.configs import Config
 from spd.data import loop_dataloader
 from spd.eval import evaluate
 from spd.log import logger
-from spd.losses import calculate_losses
+from spd.losses import calc_weight_deltas, calculate_losses
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
@@ -44,7 +44,9 @@ from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
 
-def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path) -> None:
+def local_log(
+    data: Mapping[str, float | Image.Image | wandb.plot.CustomChart], step: int, out_dir: Path
+) -> None:
     metrics_file = out_dir / "metrics.jsonl"
     metrics_file.touch(exist_ok=True)
 
@@ -54,7 +56,15 @@ def local_log(data: Mapping[str, float | Image.Image], step: int, out_dir: Path)
     metrics_without_images = {}
     for k, v in data.items():
         if isinstance(v, Image.Image):
-            v.save(fig_dir / f"{k.replace('/', '_')}_{step}.png")
+            filename = f"{k.replace('/', '_')}_{step}.png"
+            v.save(fig_dir / filename)
+            tqdm.write(f"Saved figure {k} to {fig_dir / filename}")
+        elif isinstance(v, wandb.plot.CustomChart):
+            json_path = fig_dir / f"{k.replace('/', '_')}_{step}.json"
+            payload = {"columns": list(v.table.columns), "data": list(v.table.data), "step": step}
+            with open(json_path, "w") as f:
+                json.dump(payload, f, default=str)
+            tqdm.write(f"Saved custom chart data {k} to {json_path}")
         else:
             metrics_without_images[k] = v
 
@@ -91,6 +101,7 @@ def optimize(
         gate_type=config.gate_type,
         gate_hidden_dims=config.gate_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
+        identity_module_patterns=config.identity_module_patterns,
     )
 
     if ln_stds is not None:
@@ -124,6 +135,9 @@ def optimize(
         for src_name, tgt_name in tied_weights:
             tgt = component_model.components_or_modules[tgt_name].components
             src = component_model.components_or_modules[src_name].components
+            assert tgt is not None and src is not None, (
+                f"Cannot tie weights between {src_name} and {tgt_name} - one or both are None"
+            )
             tgt.U.data = src.V.data.T
             tgt.V.data = src.U.data.T
 
@@ -140,14 +154,9 @@ def optimize(
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
-    n_params = sum(
-        component.original.weight.numel()
-        for component in component_model.components_or_modules.values()
-    )
-
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
-        module_names=component_model.target_module_paths,
+        module_names=list(component_model.components.keys()),
         C=config.C,
         n_examples_until_dead=config.n_examples_until_dead,
         device=device,
@@ -170,13 +179,15 @@ def optimize(
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
         current_p = config.pnorm  # Initialize with default value
+
         for _ in range(config.gradient_accumulation_steps):
+            weight_deltas = calc_weight_deltas(component_model, device)
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(
                 batch,
                 mode="pre_forward_cache",
-                module_names=component_model.target_module_paths,
+                module_names=list(component_model.components.keys()),
             )
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
             # through the parameters in calc_causal_importances below, the DDP hook will get called
@@ -186,6 +197,7 @@ def optimize(
                     pre_weight_acts=pre_weight_acts,
                     sigmoid_type=config.sigmoid_type,
                     detach_inputs=False,
+                    sampling=config.sampling,
                 )
             )
 
@@ -208,8 +220,8 @@ def optimize(
                 causal_importances=causal_importances,
                 causal_importances_upper_leaky=causal_importances_upper_leaky,
                 target_out=target_out,
+                weight_deltas=weight_deltas,
                 device=device,
-                n_params=n_params,
                 current_p=current_p,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
