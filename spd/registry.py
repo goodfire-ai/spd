@@ -120,61 +120,31 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_llama_subset_sans.yaml"),
-        expected_runtime=60 * 40,  # ~40 hours on single GPU
+        expected_runtime=60 * 10,  # ~10 hours on 4 GPU
     ),
-    "ss_llama_subset_sans_simple": ExperimentConfig(
+    "ss_llama_subset_sans_bal_simple": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_subset_sans_simple.yaml"),
-        expected_runtime=60 * 40,  # ~40 hours on single GPU
+        config_path=Path("spd/experiments/lm/ss_llama_subset_sans_bal_simple.yaml"),
+        expected_runtime=60 * 10,  # ~10 hours on 4 GPU
     ),
     "ss_llama_subset_bal_sans": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_llama_subset_bal_sans.yaml"),
-        expected_runtime=60 * 40,  # ~40 hours on single GPU
-    ),
-     "ss_llama_subset_bal_sans1": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_subset_bal_sans1.yaml"),
-        expected_runtime=60 * 32,  # ~40 hours on single GPU
-    ),
-    "ss_llama_subset_bal_sans2": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_subset_bal_sans2.yaml"),
-        expected_runtime=60 * 32,  # ~40 hours on single GPU
-    ),
-    "ss_llama_subset_bal_sans3": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_subset_bal_sans3.yaml"),
-        expected_runtime=60 * 32,  # ~40 hours on single GPU
-    ),
-    "ss_llama_subset_bal_sans4": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_subset_bal_sans4.yaml"),
-        expected_runtime=60 * 32,  # ~40 hours on single GPU
-    ),
-    "ss_llama_subset_bal_sans5": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_subset_bal_sans5.yaml"),
-        expected_runtime=60 * 32,  # ~40 hours on single GPU
+        expected_runtime=60 * 10,  # ~10 hours on 4 GPU
     ),
     "ss_llama_sans_base": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_llama_sans_base.yaml"),
-        expected_runtime=60 * 40,  # ~40 hours on single GPU
+        expected_runtime=60 * 10,  # ~10 hours on 4 GPU
     ),
-    "ss_llama_sans_base_lucius": ExperimentConfig(
+    "ss_llama_sans_bal": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_sans_base_lucius.yaml"),
-        expected_runtime=60 * 40,  # ~40 hours on single GPU
+        config_path=Path("spd/experiments/lm/ss_llama_sans_bal.yaml"),
+        expected_runtime=60 * 10,  # ~10 hours on 4 GPU
     ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",

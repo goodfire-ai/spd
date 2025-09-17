@@ -20,11 +20,11 @@ stochastic_recon_coeff: null
 recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: null 
 stochastic_recon_subset_coeff: 2.0  # New loss - actively train on this
-stochastic_recon_subset_p: [0.1, 0.25, 0.5, 0.75, 0.9] 
+stochastic_recon_subset_p: 0.5
 stochastic_recon_subset_mode: "independent" 
 stochastic_recon_subset_n_samples: 8  # Number of subset samples to average
 importance_minimality_coeff: 0.0003
-l0_balancing_coeff: 0  # Encourage uniform sparsity across layers
+l0_balancing_coeff: 10  # Encourage uniform sparsity across layers
 l0_balancing_groups:  # Define groups for balancing (one per layer)
   - ["model.layers.0.*"]
   - ["model.layers.1.*"]

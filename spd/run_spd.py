@@ -175,7 +175,7 @@ def optimize(
         for _ in range(config.gradient_accumulation_steps):
             # Calculate weight_deltas inside the loop to avoid graph reuse issues
             weight_deltas = calc_weight_deltas(component_model, device)
-            
+
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(

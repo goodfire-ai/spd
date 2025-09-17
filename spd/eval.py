@@ -717,6 +717,74 @@ class SubsetReconstructionLoss(StreamingEval):
         return results
 
 
+class StochasticReconLayerwiseLoss(StreamingEval):
+    """Compute stochastic reconstruction layerwise loss for evaluation."""
+
+    SLOW = False
+
+    def __init__(self, model: ComponentModel, config: Config):
+        self.model = model
+        self.config = config
+        self.device = next(model.parameters()).device
+        self.loss_sum = 0.0
+        self.n_batches = 0
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        from spd.losses import calc_masked_recon_layerwise_loss, calc_weight_deltas
+        from spd.mask_info import make_mask_infos
+        from spd.utils.component_utils import calc_stochastic_masks
+
+        # Calculate stochastic masks (returns masks and weight_delta_masks)
+        layerwise_stochastic_masks, weight_delta_masks = calc_stochastic_masks(
+            causal_importances=ci,
+            n_mask_samples=self.config.n_mask_samples,
+            sampling=self.config.sampling,
+        )
+
+        # Get weight deltas if using delta component
+        weight_deltas = None
+        if self.config.use_delta_component:
+            weight_deltas = calc_weight_deltas(self.model, device=self.device)
+
+        # Create mask_infos list
+        layerwise_mask_infos = []
+        for i in range(len(layerwise_stochastic_masks)):
+            deltas = weight_deltas if self.config.use_delta_component else None
+            delta_masks = weight_delta_masks[i] if self.config.use_delta_component else None
+            layerwise_mask_infos.append(
+                make_mask_infos(
+                    masks=layerwise_stochastic_masks[i],
+                    weight_deltas=deltas,
+                    weight_delta_masks=delta_masks,
+                )
+            )
+
+        # Calculate loss using mask_infos approach
+        loss = calc_masked_recon_layerwise_loss(
+            model=self.model,
+            batch=batch,
+            device=str(self.device),
+            mask_infos_list=layerwise_mask_infos,
+            target_out=target_out,
+            loss_type=self.config.output_loss_type,
+        )
+
+        self.loss_sum += loss.item()
+        self.n_batches += 1
+
+    @override
+    def compute(self) -> Mapping[str, float]:
+        if self.n_batches == 0:
+            return {"loss/stochastic_recon_layerwise_eval": 0.0}
+        return {"loss/stochastic_recon_layerwise_eval": self.loss_sum / self.n_batches}
+
+
 class FaithfulnessLoss(StreamingEval):
     SLOW = False
 
@@ -753,6 +821,7 @@ EVAL_CLASSES = {
         IdentityCIError,
         CIMeanPerComponent,
         SubsetReconstructionLoss,
+        StochasticReconLayerwiseLoss,
         FaithfulnessLoss,
     ]
 }
