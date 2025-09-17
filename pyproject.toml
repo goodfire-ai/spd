@@ -26,6 +26,9 @@ dependencies = [
     "streamlit-antd-components",
     "datasets",
     "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
+    "tensorboard>=2.20.0",
+    "tensorboard-data-server>=0.7.2",
+    "torch-tb-profiler>=0.4.3",
 ]
 
 [dependency-groups]

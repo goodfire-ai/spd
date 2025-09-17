@@ -155,6 +155,23 @@ def optimize(
         ci_alive_threshold=config.ci_alive_threshold,
     )
 
+    from datetime import datetime
+    dt = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    tb_dir = f'/mnt/polished-lake/home/oli/spd/tb_log/{dt}'
+    prof = torch.profiler.profile(
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA, # Only include if CUDA is available
+        ],
+        schedule=torch.profiler.schedule(wait=1, warmup=1, active=2, repeat=3),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler(tb_dir),
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True
+    )
+
+    prof.__enter__()
+
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
 
@@ -205,8 +222,8 @@ def optimize(
 
             microbatch_total_loss, microbatch_loss_terms = calculate_losses(
                 model=component_model,
-                batch=batch,
                 config=config,
+                batch=batch,
                 causal_importances=causal_importances,
                 causal_importances_upper_leaky=causal_importances_upper_leaky,
                 target_out=target_out,
@@ -311,6 +328,11 @@ def optimize(
         if step != config.steps:
             sync_across_processes()
             optimizer.step()
+
+        prof.step() # Notify the profiler that a step is complete
+
+    prof.__exit__(None, None, None)
+    prof.export_chrome_trace(f'{tb_dir}/trace.json')
 
     if is_main_process():
         logger.info("Finished training loop.")
