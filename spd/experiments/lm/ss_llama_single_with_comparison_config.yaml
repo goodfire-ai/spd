@@ -4,7 +4,7 @@ wandb_run_name: null
 wandb_run_name_prefix: ""
 
 # --- General ---
-seed: 1
+seed: 0
 C: 4000
 n_mask_samples: 1
 gate_type: "vector_mlp"
