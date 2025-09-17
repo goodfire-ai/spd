@@ -46,7 +46,7 @@ eval_freq: 100
 slow_eval_freq: 100
 slow_eval_on_first_step: true
 n_eval_steps: 5
-save_freq: 100
+save_freq: null
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
 eval_metrics:

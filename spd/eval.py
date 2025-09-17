@@ -746,7 +746,7 @@ class FaithfulnessLoss(StreamingEval):
 
 
 class GeometricSimilarityComparison(StreamingEval):
-    SLOW = True  # This involves loading another model, so it's slow
+    SLOW = True
 
     def __init__(self, model: ComponentModel, config: Config, **kwargs: Any):
         self.model = model

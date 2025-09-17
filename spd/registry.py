@@ -122,6 +122,24 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/lm/ss_llama_single_with_comparison_config.yaml"),
         expected_runtime=60 * 94,  # Same as ss_llama_single
     ),
+    "tms_5-2_geom_comparison": ExperimentConfig(
+        task_name="tms",
+        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+        config_path=Path("spd/experiments/tms/tms_5-2_geom_comparison_config.yaml"),
+        expected_runtime=4,  # Same as tms_5-2
+    ),
+    "tms_5-2-id_geom_comparison": ExperimentConfig(
+        task_name="tms",
+        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
+        config_path=Path("spd/experiments/tms/tms_5-2-id_geom_comparison_config.yaml"),
+        expected_runtime=4,  # Same as tms_5-2-id
+    ),
+    "resid_mlp2_geom_comparison": ExperimentConfig(
+        task_name="resid_mlp",
+        decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
+        config_path=Path("spd/experiments/resid_mlp/resid_mlp2_geom_comparison_config.yaml"),
+        expected_runtime=5,  # Same as resid_mlp2
+    ),
     # "ss_emb": ExperimentConfig(
     #     task_name="lm",
     #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
