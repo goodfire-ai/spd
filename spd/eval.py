@@ -153,9 +153,9 @@ class CEandKLLosses(StreamingEval):
         stoch_masks = [
             m.component_masks
             for m in calc_stochastic_masks(ci, n_mask_samples=1, sampling=self.config.sampling)
-        ]
+        ][0]
         stoch_masked_logits = self.model(
-            batch, mode="components", mask_infos=make_mask_infos(stoch_masks[0])
+            batch, mode="components", mask_infos=make_mask_infos(stoch_masks)
         )
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)

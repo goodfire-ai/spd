@@ -326,7 +326,7 @@ class ComponentModel(LoadableModule):
                 input_dim = original_module.weight.shape[0]
             else:
                 assert isinstance(original_module, nn.Embedding)
-                raise ValueError("Embedding modules only supported for gate_type='vector_mlp'")
+                raise ValueError("Embedding modules only supported for gate_type='mlp'")
             return VectorGateMLPs(C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
 
     @staticmethod
