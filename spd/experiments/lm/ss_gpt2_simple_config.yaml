@@ -10,12 +10,13 @@ n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["h.2.mlp.c_proj", "h.1.attn.q_proj"]
+target_module_patterns: ["h.*.mlp.c_fc", "h.*.mlp.c_proj", "h.*.attn.k_proj", "h.*.attn.v_proj", "h.*.attn.c_proj"]
 identity_module_patterns: null
-sampling: "binomial"
+sampling: "continuous"
+use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 1e7
+faithfulness_coeff: null
 recon_coeff: null
 stochastic_recon_coeff: 1
 recon_layerwise_coeff: null
@@ -55,6 +56,7 @@ eval_metrics:
     extra_init_kwargs:
       rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
+  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
@@ -70,18 +72,3 @@ task_config:
   column_name: "story"
   train_data_split: "train"
   eval_data_split: "test"
-
-
-# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
-  # "1.25M": LlamaConfig(
-  #     block_size=512,
-  #     vocab_size=4096,
-  #     n_layer=4,
-  #     n_head=4,
-  #     n_embd=128,
-  #     n_intermediate=128 * 4 * 2 // 3 = 341,
-  #     rotary_dim=128 // 4 = 32,
-  #     n_ctx=512,
-  #     n_key_value_heads=2,
-  #     flash_attention=True,
-  # ),

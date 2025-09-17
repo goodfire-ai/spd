@@ -11,10 +11,11 @@ gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj", "model.layers.*.self_attn.q_proj", "model.layers.*.self_attn.k_proj", "model.layers.*.self_attn.v_proj", "model.layers.*.self_attn.o_proj"]
-sampling: "binomial"
+sampling: "continuous"
+use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: 10000000.0
+faithfulness_coeff: null
 recon_coeff: null
 stochastic_recon_coeff: 1.0
 recon_layerwise_coeff: null
@@ -82,6 +83,7 @@ eval_metrics:
         all_but_layer_1: ["model.layers.1.*"]
         all_but_layer_2: ["model.layers.2.*"]
         all_but_layer_3: ["model.layers.3.*"]
+  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM

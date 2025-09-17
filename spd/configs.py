@@ -125,6 +125,11 @@ class Config(BaseModel):
         description="List of fnmatch-style patterns that select modules in which an identity "
         "matrix should be inserted and decomposed beforehand",
     )
+    use_delta_component: bool = Field(
+        default=True,
+        description="If True, use an extra component containing the difference between the target "
+        "model and component weights. This allows for removing the faithfulness loss.",
+    )
 
     # --- Loss Coefficients
     faithfulness_coeff: NonNegativeFloat | None = Field(
