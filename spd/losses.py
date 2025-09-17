@@ -7,7 +7,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import Config
-from spd.mask_info import ComponentsMaskInfo, make_mask_infos
+from spd.mask_info import ComponentsMaskInfo, WeightDeltaAndMask, make_mask_infos
 from spd.models.component_model import ComponentModel
 from spd.models.components import Components, ComponentsOrModule, EmbeddingComponents
 from spd.utils.component_utils import calc_stochastic_masks
@@ -130,12 +130,27 @@ def calc_importance_minimality_loss(
 def calc_masked_recon_layerwise_loss(
     model: ComponentModel,
     batch: Int[Tensor, "..."],
-    device: str,
     mask_infos_list: list[dict[str, ComponentsMaskInfo]],
     target_out: Float[Tensor, "... d_model_out"],
-    loss_type: Literal["mse", "kl"] = "kl",
+    loss_type: Literal["mse", "kl"],
+    device: str,
 ) -> Float[Tensor, ""]:
-    """Calculate the recon loss when augmenting the model one (masked) component at a time."""
+    """Calculate the recon loss when augmenting the model one (masked) component layer at a time.
+
+    This function takes the mean loss over all masks in mask_infos_list.
+
+    Args:
+        model: The component model
+        batch: Input batch
+        mask_infos_list: Mask infos for each stochastic source (there are config.n_mask_samples
+            stochastic sources).
+        target_out: Target model output
+        loss_type: Type of loss to calculate
+        device: Device to run computations on
+
+    Returns:
+        The recon loss
+    """
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
     total_loss = torch.tensor(0.0, device=device)
     for mask_infos in mask_infos_list:
@@ -159,7 +174,22 @@ def calc_masked_recon_loss(
     loss_type: Literal["mse", "kl"],
     device: str,
 ) -> Float[Tensor, ""]:
-    """Calculate the MSE over all masks."""
+    """Calculate the recon loss when applying all (masked) component layers at once.
+
+    This function takes the mean loss over all masks in mask_infos_list.
+
+    Args:
+        model: The component model
+        batch: Input batch
+        mask_infos_list: Mask infos for each stochastic source (there are config.n_mask_samples
+            stochastic sources).
+        target_out: Target model output
+        loss_type: Type of loss to calculate
+        device: Device to run computations on
+
+    Returns:
+        The recon loss
+    """
     # Do a forward pass with all components
     assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
 
@@ -178,7 +208,8 @@ def calc_masked_recon_loss(
 def calc_weight_deltas(
     model: ComponentModel, device: str | torch.device
 ) -> dict[str, Float[Tensor, " d_out d_in"]]:
-    """Calculate the weight differences between the target model and component weights (V@U)."""
+    """Calculate the weight differences between the target model and component weights (V@U) for
+    each layer."""
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
     for comp_name, components_or_module in model.components_or_modules.items():
         assert isinstance(components_or_module, ComponentsOrModule)
@@ -199,7 +230,11 @@ def calc_faithfulness_loss(
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
     device: str | torch.device,
 ) -> Float[Tensor, ""]:
-    """Calculate the MSE loss between component parameters (V@U) and target parameters."""
+    """Calculate the MSE loss between component weights (V@U) and target weights.
+
+    We sum over all layers and normalize by the number of parameters in the model (this includes any
+    inserted identity matrices).
+    """
 
     n_params = sum(param.numel() for param in weight_deltas.values())
     mse = torch.tensor(0.0, device=device)
@@ -300,10 +335,10 @@ def calculate_losses(
         recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
-            device=device,
             mask_infos_list=[make_mask_infos(causal_importances)],
             target_out=target_out,
             loss_type=config.output_loss_type,
+            device=device,
         )
         total_loss += config.recon_layerwise_coeff * recon_layerwise_loss
         loss_terms["recon_layerwise"] = recon_layerwise_loss.item()
@@ -315,9 +350,9 @@ def calculate_losses(
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
         )
-        mask_infos_list = []
+        mask_infos_list: list[dict[str, ComponentsMaskInfo]] = []
         for stochastic_masks in stochastic_masks_list:
-            weight_deltas_and_masks = (
+            weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = (
                 {
                     key: (weight_deltas[key], stochastic_masks.weight_delta_masks[key])
                     for key in weight_deltas
@@ -334,10 +369,10 @@ def calculate_losses(
         stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
-            device=device,
             mask_infos_list=mask_infos_list,
             target_out=target_out,
             loss_type=config.output_loss_type,
+            device=device,
         )
         total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
         loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
