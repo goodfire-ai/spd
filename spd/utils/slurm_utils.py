@@ -83,6 +83,8 @@ def create_slurm_array_script(
         # Checkout the snapshot branch to ensure consistent code
         git checkout {snapshot_branch}
 
+        export CUDA_LAUNCH_BLOCKING=1
+
         # Execute the appropriate command based on array task ID
         case $SLURM_ARRAY_TASK_ID in
         {case_block}
