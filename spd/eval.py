@@ -635,11 +635,11 @@ class SubsetReconstructionLoss(StreamingEval):
             active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
 
             outputs = self._get_masked_model_outputs(
-                batch,
-                masks_list,
-                weight_deltas,
-                active,
-                all_modules,
+                batch=batch,
+                masks_list=masks_list,
+                weight_deltas=weight_deltas,
+                active=active,
+                all_modules=all_modules,
             )
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
@@ -658,11 +658,11 @@ class SubsetReconstructionLoss(StreamingEval):
             active = [m for m in all_modules if not any(fnmatch(m, p) for p in exclude_patterns)]
 
             outputs = self._get_masked_model_outputs(
-                batch,
-                masks_list,
-                weight_deltas,
-                active,
-                all_modules,
+                batch=batch,
+                masks_list=masks_list,
+                weight_deltas=weight_deltas,
+                active=active,
+                all_modules=all_modules,
             )
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]

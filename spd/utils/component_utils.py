@@ -8,6 +8,8 @@ from torch import Tensor
 
 @dataclass
 class StochasticMasks:
+    """Stochastic mask information for each layer."""
+
     component_masks: dict[str, Float[Tensor, "... C"]]
     # weight_delta_masks have the same leading dims as component_masks but no final C dim
     weight_delta_masks: dict[str, Float[Tensor, "..."]]
@@ -22,10 +24,11 @@ def calc_stochastic_masks(
 
     Args:
         causal_importances: The causal importances to use for the stochastic masks.
-        n_mask_samples: The number of stochastic masks to calculate.
+        n_mask_samples: The number of stochastic sources to calculate. I.e. the number of times
+            we sample a mask for each layer.
+
     Return:
-        - List of stochastic masks for each layer.
-        - List of weight delta masks for each layer.
+        StochasticMasks object for each stochastic source.
     """
 
     stochastic_masks: list[StochasticMasks] = []
