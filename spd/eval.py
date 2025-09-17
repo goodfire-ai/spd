@@ -13,6 +13,7 @@ from typing import Any, ClassVar, override
 import einops
 import torch
 import torch.nn.functional as F
+import wandb
 from einops import reduce
 from jaxtyping import Float, Int
 from PIL import Image
@@ -94,9 +95,19 @@ class CI_L0(StreamingEval):
     @override
     def compute(self) -> Mapping[str, float]:
         out = {}
+        table_data = []
         for name, l0s in self.l0s.items():
             avg_l0 = sum(l0s) / len(l0s)
             out[f"l0_{self.l0_threshold}/{name}"] = avg_l0
+            table_data.append((name, avg_l0))
+
+        bar_chart = wandb.plot.bar(
+            table=wandb.Table(columns=["layer", "l0"], data=table_data),
+            label="layer",
+            value="l0",
+            title=f"L0_{self.l0_threshold}",
+        )
+        out["l0_bar_chart"] = bar_chart
         return out
 
 
