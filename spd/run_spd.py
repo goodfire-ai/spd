@@ -155,6 +155,20 @@ def optimize(
         ci_alive_threshold=config.ci_alive_threshold,
     )
 
+    prof = torch.profiler.profile(
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA, # Only include if CUDA is available
+        ],
+        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler('./log/transformer'),
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True
+    )
+
+    prof.__enter__()
+
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
 
@@ -311,6 +325,10 @@ def optimize(
         if step != config.steps:
             sync_across_processes()
             optimizer.step()
+
+        prof.step() # Notify the profiler that a step is complete
+
+    prof.__exit__(None, None, None)
 
     if is_main_process():
         logger.info("Finished training loop.")
