@@ -4,6 +4,9 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
+    
+        
         {
             "name": "Python Debugger: Current File with Arguments",
             "type": "debugpy",
@@ -61,11 +64,50 @@
             }
         },
         {
+            "name": "tms_5-2-with-hidden-act-recon",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/tms/tms_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/tms/tms_5-2_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
             "name": "tms_5-2-id",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/spd/experiments/tms/tms_decomposition.py",
             "args": "${workspaceFolder}/spd/experiments/tms/tms_5-2-id_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "tms_5-2-geom-comparison",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/tms/tms_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/tms/tms_5-2_geom_comparison_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "tms_5-2-id-geom-comparison",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/tms/tms_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/tms/tms_5-2-id_geom_comparison_config.yaml",
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -131,6 +173,19 @@
             "request": "launch",
             "program": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp_decomposition.py",
             "args": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp3_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "resid_mlp2-geom-comparison",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/resid_mlp/resid_mlp2_geom_comparison_config.yaml",
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -230,6 +285,19 @@
                 "--model_path",
                 "wandb:goodfire/spd/runs/ioprgffh"
             ]
-        }
+        },
+        {
+            "name": "ss_llama_single_with_comparison",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_llama_single_with_comparison_config.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
     ]
 }
