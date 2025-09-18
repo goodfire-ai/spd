@@ -27,6 +27,7 @@ embedding_recon_coeff: null
 is_embed_unembed_recon: false
 pnorm: 2.0
 output_recon_loss_type: kl
+hidden_act_recon_coeff: 0.0
 
 # --- Training ---
 batch_size: 4
