@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import fire
+import torch
 import wandb
 from simple_stories_train.run_info import RunInfo as SSRunInfo
 
@@ -38,6 +39,11 @@ def main(
     sweep_params_json: str | None = None,
 ) -> None:
     config = load_config(config_path_or_obj, config_model=Config)
+
+    assert isinstance(config.task_config, LMTaskConfig)
+    if config.task_config.disable_enable_mem_efficient_sdp:
+        # Avoids NaNs in gpt2 with no layer norm
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
 
     dist_state = init_distributed(backend=config.dist_backend)
 

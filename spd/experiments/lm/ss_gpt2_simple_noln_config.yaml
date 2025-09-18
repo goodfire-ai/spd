@@ -72,3 +72,4 @@ task_config:
   column_name: "story"
   train_data_split: "train"
   eval_data_split: "test"
+  disable_enable_mem_efficient_sdp: true

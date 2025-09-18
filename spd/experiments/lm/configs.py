@@ -46,3 +46,8 @@ class LMTaskConfig(BaseModel):
         default=False,
         description="Whether to use a streaming dataset",
     )
+    disable_enable_mem_efficient_sdp: bool = Field(
+        default=False,
+        description="If True, disable enabling mem efficient SDP. Used to prevent NaNs in gpt2 "
+        "with no layer norm.",
+    )
