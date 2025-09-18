@@ -80,6 +80,16 @@ subdirectories, along with a corresponding config file. E.g.
 python spd/experiments/tms/tms_decomposition.py spd/experiments/tms/tms_5-2_config.yaml
 ```
 
+### Model Comparison
+
+For post-hoc analysis of completed runs, use the model comparison script to compute geometric similarities between subcomponents:
+
+```bash
+python spd/scripts/compare_models.py --config spd/scripts/compare_models_config.yaml
+```
+
+The comparison script supports both wandb and local model paths, and calculates mean max absolute cosine similarity metrics (among others) between learned subcomponents in different runs. See `spd/scripts/compare_models_config.yaml` for configuration options.
+
 ## Development
 
 Suggested extensions and settings for VSCode/Cursor are provided in `.vscode/`. To use the suggested
