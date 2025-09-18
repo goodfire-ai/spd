@@ -10,7 +10,7 @@ from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import (
     Components,
-    ComponentsMaskInfo,
+    ComponentMaskInfo,
     ComponentsOrModule,
     EmbeddingComponents,
 )
@@ -134,7 +134,7 @@ def calc_importance_minimality_loss(
 def calc_masked_recon_layerwise_loss(
     model: ComponentModel,
     batch: Int[Tensor, "..."],
-    mask_infos_list: list[dict[str, ComponentsMaskInfo]],
+    mask_infos_list: list[dict[str, ComponentMaskInfo]],
     target_out: Float[Tensor, "... d_model_out"],
     loss_type: Literal["mse", "kl"],
     device: str,
@@ -173,7 +173,7 @@ def calc_masked_recon_layerwise_loss(
 def calc_masked_recon_loss(
     model: ComponentModel,
     batch: Float[Tensor, "... d_in"],
-    mask_infos_list: list[dict[str, ComponentsMaskInfo]],
+    mask_infos_list: list[dict[str, ComponentMaskInfo]],
     target_out: Float[Tensor, "... d_model_out"],
     loss_type: Literal["mse", "kl"],
     device: str,
@@ -277,9 +277,9 @@ def calculate_losses(
 
     # Reconstruction loss
     if config.recon_coeff is not None:
-        recon_mask_infos: dict[str, ComponentsMaskInfo] = {}
+        recon_mask_infos: dict[str, ComponentMaskInfo] = {}
         for layer, ci in causal_importances.items():
-            recon_mask_infos[layer] = ComponentsMaskInfo(
+            recon_mask_infos[layer] = ComponentMaskInfo(
                 routing_mask=True,  # use all components
                 component_mask=ci,  # use causal importance for the mask
                 weight_delta_and_mask=None,  # no weight delta mask
@@ -303,11 +303,11 @@ def calculate_losses(
             sampling=config.sampling,
         )
 
-        stoch_mask_infos_list: list[dict[str, ComponentsMaskInfo]] = []
+        stoch_mask_infos_list: list[dict[str, ComponentMaskInfo]] = []
         for stochastic_masks in stochastic_masks_list:
-            stoch_mask_infos: dict[str, ComponentsMaskInfo] = {}
+            stoch_mask_infos: dict[str, ComponentMaskInfo] = {}
             for layer, layer_masks in stochastic_masks.items():
-                stoch_mask_infos[layer] = ComponentsMaskInfo(
+                stoch_mask_infos[layer] = ComponentMaskInfo(
                     routing_mask=layer_masks.routing_mask,
                     component_mask=layer_masks.component_mask,
                     weight_delta_and_mask=(
@@ -333,7 +333,7 @@ def calculate_losses(
     # Reconstruction layerwise loss
     if config.recon_layerwise_coeff is not None:
         mask_infos = {
-            k: ComponentsMaskInfo(
+            k: ComponentMaskInfo(
                 routing_mask=True, # use all components
                 component_mask=ci, # use causal importance for the mask
                 weight_delta_and_mask=None, # no weight delta mask
@@ -360,11 +360,11 @@ def calculate_losses(
             sampling=config.sampling,
         )
 
-        stoch_mask_infos_list: list[dict[str, ComponentsMaskInfo]] = []
+        stoch_mask_infos_list: list[dict[str, ComponentMaskInfo]] = []
         for stochastic_masks in stochastic_masks_list:
-            stoch_mask_infos: dict[str, ComponentsMaskInfo] = {}
+            stoch_mask_infos: dict[str, ComponentMaskInfo] = {}
             for layer, layer_masks in stochastic_masks.items():
-                stoch_mask_infos[layer] = ComponentsMaskInfo(
+                stoch_mask_infos[layer] = ComponentMaskInfo(
                     routing_mask=layer_masks.routing_mask,
                     component_mask=layer_masks.component_mask,
                     weight_delta_and_mask=(

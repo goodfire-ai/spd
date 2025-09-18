@@ -19,7 +19,7 @@ from spd.configs import Config
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
     Components,
-    ComponentsMaskInfo,
+    ComponentMaskInfo,
     ComponentsOrModule,
     EmbeddingComponents,
     GateMLPs,
@@ -310,7 +310,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
-        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
+        mask_infos: dict[str, ComponentMaskInfo] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
     ) -> Any:
@@ -345,7 +345,7 @@ class ComponentModel(LoadableModule):
             return self._forward_target(*args, **kwargs)
 
     @contextmanager
-    def _replaced_modules(self, mask_infos: dict[str, ComponentsMaskInfo]):
+    def _replaced_modules(self, mask_infos: dict[str, ComponentMaskInfo]):
         """Set the forward_mode of ComponentOrModule objects and apply masks.
 
         A module's forward_mode is set to "components" if there is an entry in mask_infos for
@@ -383,7 +383,7 @@ class ComponentModel(LoadableModule):
         return out
 
     def _forward_with_components(
-        self, *args: Any, mask_infos: dict[str, ComponentsMaskInfo], **kwargs: Any
+        self, *args: Any, mask_infos: dict[str, ComponentMaskInfo], **kwargs: Any
     ) -> Any:
         """Forward pass with temporary component replacements. `masks` is a dictionary mapping
         component paths to masks. A mask being present means that the module will be replaced

@@ -13,7 +13,7 @@ from spd.experiments.tms.configs import TMSTaskConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import (
-    ComponentsMaskInfo,
+    ComponentMaskInfo,
     ComponentsOrModule,
     EmbeddingComponents,
     LinearComponents,
@@ -110,7 +110,7 @@ def test_no_replacement_masks_means_original_mode(component_model: ComponentMode
 def test_replaced_modules_sets_and_restores_masks(component_model: ComponentModel):
     cm = component_model
     full_mask_infos = {
-        name: ComponentsMaskInfo(
+        name: ComponentMaskInfo(
             routing_mask=True,
             component_mask=torch.randn(1, cm.C, dtype=torch.float32),
             weight_delta_and_mask=None,
@@ -133,7 +133,7 @@ def test_replaced_modules_sets_and_restores_masks_partial(
     cm = component_model
     # Partial masking
     partial_masks = {
-        "linear1": ComponentsMaskInfo(
+        "linear1": ComponentMaskInfo(
             routing_mask=True,
             component_mask=torch.ones(1, cm.C),
             weight_delta_and_mask=None,

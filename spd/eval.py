@@ -22,7 +22,7 @@ from torch import Tensor
 from spd.configs import Config
 from spd.losses import calc_faithfulness_loss, calc_weight_deltas
 from spd.models.component_model import ComponentModel
-from spd.models.components import ComponentsMaskInfo
+from spd.models.components import ComponentMaskInfo
 from spd.plotting import (
     get_single_feature_causal_importances,
     plot_causal_importance_vals,
@@ -157,9 +157,9 @@ class CEandKLLosses(StreamingEval):
         # we use the causal importances as a mask
         # ci_mask_infos = make_mask_infos(ci)
         ci_mask_infos = {
-            k: ComponentsMaskInfo(
-                routing_mask=True,
-                component_mask=v,
+            k: ComponentMaskInfo(
+                =True,
+                componrouting_maskent_mask=v,
                 weight_delta_and_mask=None,
             )
             for k, v in ci.items()
@@ -170,7 +170,7 @@ class CEandKLLosses(StreamingEval):
 
         layer_masks = calc_stochastic_masks(ci, n_mask_samples=1, sampling=self.config.sampling)[0]
         mask_infos = {
-            k: ComponentsMaskInfo(
+            k: ComponentMaskInfo(
                 routing_mask=True,
                 component_mask=masks.component_mask,
                 weight_delta_and_mask=None,
@@ -186,7 +186,7 @@ class CEandKLLosses(StreamingEval):
         # nonmask = {k: torch.ones_like(v) for k, v in ci.items()}
 
         nonmask_infos = {
-            k: ComponentsMaskInfo(
+            k: ComponentMaskInfo(
                 routing_mask=True,  # use components for all positions
                 component_mask=True,  # use all components
                 weight_delta_and_mask=None,
@@ -200,7 +200,7 @@ class CEandKLLosses(StreamingEval):
 
         # we use completely random masks
         rand_mask_infos = {
-            k: ComponentsMaskInfo(
+            k: ComponentMaskInfo(
                 routing_mask=True,
                 component_mask=torch.rand_like(v),
                 weight_delta_and_mask=None,
@@ -216,7 +216,7 @@ class CEandKLLosses(StreamingEval):
         # we use rounded causal importances as masks
 
         rounded_mask_infos = {
-            k: ComponentsMaskInfo(
+            k: ComponentMaskInfo(
                 routing_mask=True,
                 component_mask=(v > self.rounding_threshold).float(),
                 weight_delta_and_mask=None,
@@ -231,7 +231,7 @@ class CEandKLLosses(StreamingEval):
 
         # we zero all the components
         zero_mask_infos = {
-            k: ComponentsMaskInfo(
+            k: ComponentMaskInfo(
                 routing_mask=True,
                 component_mask=torch.zeros_like(v),
                 weight_delta_and_mask=None,
@@ -573,7 +573,6 @@ class SubsetReconstructionLoss(StreamingEval):
         config: Config,
         include_patterns: dict[str, list[str]] | None = None,
         exclude_patterns: dict[str, list[str]] | None = None,
-        use_all_ones_for_non_replaced: bool = False,
         n_mask_samples: int = 5,
     ):
         """Initialize SubsetReconstructionLoss.
@@ -583,12 +582,10 @@ class SubsetReconstructionLoss(StreamingEval):
                             e.g., {"layer_0_only": ["model.layers.0.*"]}
             exclude_patterns: Dict mapping subset names to patterns for modules to EXCLUDE from replacement
                             e.g., {"all_but_layer_0": ["model.layers.0.*"]}
-            use_all_ones_for_non_replaced: If True, use all-ones mask for non-replaced modules
             n_mask_samples: Number of stochastic mask samples to average over
         """
         self.model = model
         self.config = config
-        self.use_all_ones_for_non_replaced = use_all_ones_for_non_replaced
         self.n_mask_samples = n_mask_samples
         self.include_patterns = include_patterns or {}
         self.exclude_patterns = exclude_patterns or {}
@@ -617,39 +614,21 @@ class SubsetReconstructionLoss(StreamingEval):
         masks_list: list[dict[str, LayerMasks]],
         weight_deltas: dict[str, Tensor],
         active: list[str],
-        all_modules: list[str],
     ) -> list[Float[Tensor, "... vocab"]]:
         outputs: list[Float[Tensor, "... vocab"]] = []
-
-        for masks in masks_list:
-            stoch_masks = {k: v.component_mask for k, v in masks.items()}
-            weight_delta_masks = {k: v.weight_delta_mask for k, v in masks.items()}
-
-            masks = {}
-            for m in all_modules:
-                if m in active:
-                    masks[m] = stoch_masks[m]
-                elif self.use_all_ones_for_non_replaced:
-                    masks[m] = torch.ones_like(stoch_masks[m])
-
-            if self.config.use_delta_component:
-                weight_deltas_and_masks = {}
-                for m in all_modules:
-                    if m in active:
-                        weight_deltas_and_masks[m] = (weight_deltas[m], weight_delta_masks[m])
-            else:
-                weight_deltas_and_masks = None
-
-            mask_infos = {
-                k: ComponentsMaskInfo(
-                    routing_mask=True,
-                    component_mask=masks[k],
-                    weight_delta_and_mask=weight_deltas_and_masks[k]
-                    if weight_deltas_and_masks is not None
-                    else None,
+        for layers_masks in masks_list:
+            mask_infos = {}
+            for module in active:
+                weight_delta_and_mask = (
+                    (weight_deltas[module], layers_masks[module].weight_delta_mask)
+                    if self.config.use_delta_component
+                    else None
                 )
-                for k in all_modules
-            }
+                mask_infos[module] = ComponentMaskInfo(
+                    routing_mask=True,
+                    component_mask=layers_masks[module].component_mask,
+                    weight_delta_and_mask=weight_delta_and_mask,
+                )
             outputs.append(self.model.forward(batch, mode="components", mask_infos=mask_infos))
 
         return outputs
@@ -680,7 +659,7 @@ class SubsetReconstructionLoss(StreamingEval):
         target_ce = ce_vs_labels(target_out)
 
         zero_mask_infos = {
-            k: ComponentsMaskInfo(
+            k: ComponentMaskInfo(
                 routing_mask=True,
                 component_mask=torch.zeros_like(v),
                 weight_delta_and_mask=None,
@@ -706,7 +685,6 @@ class SubsetReconstructionLoss(StreamingEval):
                 masks_list=masks_list,
                 weight_deltas=weight_deltas,
                 active=active,
-                all_modules=all_modules,
             )
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
@@ -715,10 +693,9 @@ class SubsetReconstructionLoss(StreamingEval):
             mean_ce = sum(ce_losses) / len(ce_losses)
             ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
 
-            suffix = "_all_ones" if self.use_all_ones_for_non_replaced else ""
-            results[f"subset/{name}/kl{suffix}"] = mean_kl
-            results[f"subset/{name}/ce{suffix}"] = mean_ce
-            results[f"subset/{name}/ce_unrec{suffix}"] = ce_unrec
+            results[f"subset/{name}/kl"] = mean_kl
+            results[f"subset/{name}/ce"] = mean_ce
+            results[f"subset/{name}/ce_unrec"] = ce_unrec
 
         # Process exclude patterns
         for name, exclude_patterns in self.exclude_patterns.items():
@@ -729,7 +706,6 @@ class SubsetReconstructionLoss(StreamingEval):
                 masks_list=masks_list,
                 weight_deltas=weight_deltas,
                 active=active,
-                all_modules=all_modules,
             )
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
@@ -738,10 +714,9 @@ class SubsetReconstructionLoss(StreamingEval):
             mean_ce = sum(ce_losses) / len(ce_losses)
             ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
 
-            suffix = "_all_ones" if self.use_all_ones_for_non_replaced else ""
-            results[f"subset/{name}/kl{suffix}"] = mean_kl
-            results[f"subset/{name}/ce{suffix}"] = mean_ce
-            results[f"subset/{name}/ce_unrec{suffix}"] = ce_unrec
+            results[f"subset/{name}/kl"] = mean_kl
+            results[f"subset/{name}/ce"] = mean_ce
+            results[f"subset/{name}/ce_unrec"] = ce_unrec
 
         return results
 

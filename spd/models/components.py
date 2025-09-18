@@ -109,7 +109,7 @@ class Components(ABC, nn.Module):
     def forward(
         self,
         x: Tensor,
-        mask: Tensor | None = None,
+        mask: Tensor | bool | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Tensor:
         """Forward pass through the component."""
@@ -154,7 +154,7 @@ class LinearComponents(Components):
     def forward(
         self,
         x: Float[Tensor, "... d_in"],
-        mask: Float[Tensor, "... C"] | None = None,
+        mask: Float[Tensor, "... C"] | bool | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
@@ -219,7 +219,7 @@ class EmbeddingComponents(Components):
     def forward(
         self,
         x: Int[Tensor, "..."],
-        mask: Float[Tensor, "... C"] | None = None,
+        mask: Float[Tensor, "... C"] | bool | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Float[Tensor, "... embedding_dim"]:
         """Forward through the embedding component using indexing instead of one-hot matmul.
@@ -252,7 +252,7 @@ class EmbeddingComponents(Components):
 
 
 @dataclass
-class ComponentsMaskInfo:
+class ComponentMaskInfo:
     """Specifies the mask information that will be applied to a ComponentOrModule object."""
 
     routing_mask: Float[Tensor, " ..."] | bool
@@ -271,7 +271,7 @@ class ComponentsOrModule(nn.Module):
         self.components = components
 
         self.forward_mode: (
-            None | Literal["target"] | tuple[Literal["mixed"], ComponentsMaskInfo]
+            None | Literal["target"] | tuple[Literal["mixed"], ComponentMaskInfo]
         ) = None
 
     @property
@@ -299,9 +299,14 @@ class ComponentsOrModule(nn.Module):
                     context.component_mask,
                     context.weight_delta_and_mask,
                 )
-                return torch.where(
-                    context.routing_mask, target_out, components_out
-                )  # TODO decide which one maps how
+                # TODO: just only allow tensor. make easy via constructor fn
+                routing_mask = (
+                    context.routing_mask[..., None]
+                    if isinstance(context.routing_mask, Tensor)
+                    else torch.tensor(context.routing_mask)
+                )
+                return torch.where(routing_mask, components_out, target_out)
+                # TODO decide which one maps how
 
     def make_pristine(self) -> None:
         self.forward_mode = None
