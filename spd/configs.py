@@ -329,6 +329,7 @@ class Config(BaseModel):
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
         "pretrained_model_name_hf": "pretrained_model_name",
+        "output_loss_type": "output_recon_loss_type",
     }
 
     @model_validator(mode="before")
