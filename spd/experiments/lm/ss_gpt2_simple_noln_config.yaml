@@ -1,11 +1,11 @@
 # --- WandB ---
-wandb_project: spd
+# wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 4000
+C: 2000
 n_mask_samples: 1
 # gate_type: "vector_mlp"
 gate_type: "layerwise_global_mlp"
