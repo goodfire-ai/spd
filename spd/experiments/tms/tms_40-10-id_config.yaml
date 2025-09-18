@@ -16,10 +16,7 @@ use_delta_component: true
 
 # --- Loss Coefficients ---
 faithfulness_coeff: null
-pnorm: 2
-p_anneal_start_frac: 0.0
-p_anneal_final_p: 0.3
-p_anneal_end_frac: 1.0
+pnorm: 2.0
 importance_minimality_coeff: 1e-4
 recon_coeff: null
 stochastic_recon_coeff: 1
@@ -30,7 +27,7 @@ output_loss_type: "mse"
 # --- Training ---
 batch_size: 4096
 eval_batch_size: 4096
-steps: 10_000
+steps: 20_000
 lr: 1e-3
 lr_schedule: cosine
 lr_warmup_pct: 0.0

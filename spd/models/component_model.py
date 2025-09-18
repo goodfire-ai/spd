@@ -332,8 +332,7 @@ class ComponentModel(LoadableModule):
             elif isinstance(original_module, RadfordConv1D):
                 input_dim = original_module.weight.shape[0]
             else:
-                assert isinstance(original_module, nn.Embedding)
-                input_dim = original_module.num_embeddings
+                raise ValueError(f"Module {type(original_module)} not supported for {gate_type=}")
 
             if gate_type == "vector_mlp":
                 gate = VectorGateMLPs(
