@@ -13,6 +13,24 @@ from spd.utils.module_utils import _NonlinearityType, init_param_
 GateType = Literal["mlp", "vector_mlp", "layerwise_global_mlp"]
 
 
+class RMSNorm(nn.Module):
+    def __init__(self, hidden_size: int, eps: float = 1e-5):
+        """
+        LlamaRMSNorm is equivalent to T5LayerNorm
+        """
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.variance_epsilon = eps
+
+    @override
+    def forward(self, hidden_states: Float[Tensor, "... dim"]) -> Float[Tensor, "... dim"]:
+        input_dtype = hidden_states.dtype
+        hidden_states = hidden_states.to(torch.float32)
+        variance = hidden_states.pow(2).mean(-1, keepdim=True)
+        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+        return self.weight * hidden_states.to(input_dtype)
+
+
 class ParallelLinear(nn.Module):
     """C parallel linear layers"""
 
@@ -100,6 +118,7 @@ class LayerwiseGlobalGateMLP(nn.Module):
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
         self.layers = nn.Sequential()
+        # self.layers.append(nn.RMSNorm(input_dim))
         for i in range(len(hidden_dims)):
             input_dim = input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
@@ -128,8 +147,8 @@ class Components(ABC, nn.Module):
         self.C = C
         self.V = nn.Parameter(torch.empty(v_dim, C))
         self.U = nn.Parameter(torch.empty(C, u_dim))
-        init_param_(self.V, fan_val=v_dim, nonlinearity="linear")
-        init_param_(self.U, fan_val=C, nonlinearity="linear")
+        init_param_(self.V, fan_val=v_dim * 10, nonlinearity="linear")
+        init_param_(self.U, fan_val=C * 10, nonlinearity="linear")
 
     @property
     @abstractmethod
@@ -200,10 +219,6 @@ class LinearComponents(Components):
         Returns:
             output: The summed output across all components
         """
-        if weight_delta_and_mask is not None:
-            assert weight_delta_and_mask[0].ndim == 2, (
-                "OLI sanity check, I'm pretty sure there's no leading dims needed here ..."
-            )
         component_acts = self.get_inner_acts(x)
 
         if mask is not None:
