@@ -1,16 +1,22 @@
 """Language Model decomposition script."""
 
 import json
+from functools import partial
 from pathlib import Path
+from typing import cast
 
 import fire
+import torch
 import wandb
+from jaxtyping import Int
 from simple_stories_train.run_info import RunInfo as SSRunInfo
+from torch.utils.hooks import RemovableHandle
 
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
+from spd.models.component_model import ComponentModel
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
     call_on_rank0_then_broadcast,
@@ -171,6 +177,45 @@ def main(
 
     if is_main_process():
         logger.info("Starting optimization...")
+
+    import torch.nn as nn
+
+    if (id_patterns := config.identity_module_patterns) is not None:
+        dummy_input: Int[torch.Tensor, "batch seq"] = torch.tensor([[0]])
+
+        cache: dict[str, torch.Tensor] = {}
+        handles: list[RemovableHandle] = []
+
+        def cache_hook(_: nn.Module, input: tuple[torch.Tensor, "..."], param_name: str) -> None:
+            cache[param_name] = input[0]
+
+        identity_module_paths = ComponentModel._get_target_module_paths(target_model, id_patterns)
+
+        for module_name in identity_module_paths:
+            module = cast(nn.Module, target_model).get_submodule(module_name)
+            handle = module.register_forward_pre_hook(partial(cache_hook, param_name=module_name))
+            handles.append(handle)
+
+        target_model(dummy_input)
+
+        for handle in handles:
+            handle.remove()
+
+        for module_path in identity_module_paths:
+            module = cast(nn.Module, target_model).get_submodule(module_path)
+
+            cached_input = cache[module_path]
+            assert cached_input.ndim == 3  # (batch, seq, d_in)
+            d_in = cached_input.shape[2]
+            module.pre_identity = nn.Linear(d_in, d_in, bias=False)
+
+            def pre_id_hook(mod, args, kwargs):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
+                assert len(args) == 1
+                assert not kwargs
+                return (mod.pre_identity(args[0]), {})
+
+            module.register_forward_pre_hook(pre_id_hook, with_kwargs=True)
+
     optimize(
         target_model=target_model,
         config=config,

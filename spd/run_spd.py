@@ -94,6 +94,7 @@ def optimize(
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
     target_model.requires_grad_(False)
+
     model = ComponentModel(
         target_model=target_model,
         target_module_patterns=config.target_module_patterns,
@@ -101,7 +102,6 @@ def optimize(
         gate_type=config.gate_type,
         gate_hidden_dims=config.gate_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
-        identity_module_patterns=config.identity_module_patterns,
     )
 
     if ln_stds is not None:
@@ -181,7 +181,7 @@ def optimize(
         current_p = config.pnorm  # Initialize with default value
 
         for _ in range(config.gradient_accumulation_steps):
-            weight_deltas = calc_weight_deltas(component_model, device)
+            weight_deltas = calc_weight_deltas(component_model)
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(

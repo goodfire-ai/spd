@@ -178,8 +178,8 @@ def compute_patched_weight_neuron_contributions(
     W_in_weights = []
     W_out_weights = []
     for layer in patched_model.layers:
-        W_in_weights.append(runtime_cast(ComponentsOrModule, layer.mlp_in).original_weight)
-        W_out_weights.append(runtime_cast(ComponentsOrModule, layer.mlp_out).original_weight)
+        W_in_weights.append(runtime_cast(ComponentsOrModule, layer.mlp_in).target_weight)
+        W_out_weights.append(runtime_cast(ComponentsOrModule, layer.mlp_out).target_weight)
     assert all(W_in_weights), "All W_in_weights must be non-None"
     assert all(W_out_weights), "All W_out_weights must be non-None"
     # Stack mlp_in / mlp_out weights across layers so that einsums can broadcast

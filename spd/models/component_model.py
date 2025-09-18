@@ -17,9 +17,9 @@ from wandb.apis.public import Run
 
 from spd.configs import Config
 from spd.interfaces import LoadableModule, RunInfo
-from spd.mask_info import ComponentsMaskInfo
 from spd.models.components import (
     Components,
+    ComponentsMaskInfo,
     ComponentsOrModule,
     EmbeddingComponents,
     GateMLPs,
@@ -83,7 +83,6 @@ class ComponentModel(LoadableModule):
         gate_type: GateType,
         gate_hidden_dims: list[int],
         pretrained_model_output_attr: str | None,
-        identity_module_patterns: list[str] | None = None,
     ):
         super().__init__()
 
@@ -96,16 +95,10 @@ class ComponentModel(LoadableModule):
         target_module_paths = ComponentModel._get_target_module_paths(
             target_model, target_module_patterns
         )
-        identity_module_paths = []
-        if identity_module_patterns is not None:
-            identity_module_paths = ComponentModel._get_target_module_paths(
-                target_model, identity_module_patterns
-            )
 
         patched_model, components_or_modules = ComponentModel._patch_modules(
             model=target_model,
             module_paths=target_module_paths,
-            identity_module_paths=identity_module_paths,
             C=C,
         )
 
@@ -130,13 +123,7 @@ class ComponentModel(LoadableModule):
 
     @property
     def components(self) -> dict[str, Components]:
-        result = {}
-        for name, cm in self.components_or_modules.items():
-            if cm.components is not None:
-                result[name] = cm.components
-            if cm.identity_components is not None:
-                result[f"identity_{name}"] = cm.identity_components
-        return result
+        return {name: cm.components for name, cm in self.components_or_modules.items()}
 
     def _extract_output(self, raw_output: Any) -> Any:
         """Extract the desired output from the model's raw output.
@@ -194,7 +181,6 @@ class ComponentModel(LoadableModule):
     def _patch_modules(
         model: nn.Module,
         module_paths: list[str],
-        identity_module_paths: list[str],
         C: int,
     ) -> tuple[nn.Module, dict[str, ComponentsOrModule]]:
         """Replace nn.Modules with ComponentsOrModule objects based on target_module_paths.
@@ -202,14 +188,11 @@ class ComponentModel(LoadableModule):
         This method mutates and returns `model`, and returns a dictionary of references
         to the newly inserted ComponentsOrModule objects.
 
-        A module is modified in the target model if that module exists in either module_paths or
-        identity_module_patterns. If it exists in both, we just have the single ComponentsOrModule
-        object with non-None values for components and identity_components.
+        A module is modified in the target model if that module exists in module_paths.
 
         Args:
             model: The model to replace modules in.
             module_paths: The paths to the modules to replace.
-            identity_module_paths: The paths to the modules to replace for identity components.
             C: The number of components to use.
 
         Returns:
@@ -226,83 +209,57 @@ class ComponentModel(LoadableModule):
             >>> components_or_modules = _patch_modules(
             ...     model,
             ...     module_paths,
-            ...     identity_module_paths,
             ...     C=2,
             ... )
             >>> print(model)
             MyModel(
                 (linear): ComponentsOrModule(
-                    (original): Linear(in_features=10, out_features=20, bias=True),
+                    (target): Linear(in_features=10, out_features=20, bias=True),
                     (components): LinearComponents(C=2, d_in=10, d_out=20, bias=True),
-                    (identity_components): LinearComponents(C=2, d_in=10, d_out=10, bias=None),
                 )
             )
         """
         components_or_modules: dict[str, ComponentsOrModule] = {}
-        identity_paths_set = set(identity_module_paths)
 
-        # Deterministic, order-preserving union (critical for DDP param order)
-        all_paths = list(dict.fromkeys(list(module_paths) + list(identity_module_paths)))
+        # Deterministic, order-preserving deduplicated list (critical for DDP param order)
+        all_paths = list(dict.fromkeys(list(module_paths)))
 
         for module_path in all_paths:
             module = model.get_submodule(module_path)
-            needs_components = module_path in module_paths
-            needs_identity = module_path in identity_paths_set
-            components: Components | None = None
 
-            if needs_components:
-                if isinstance(module, nn.Linear):
-                    d_out, d_in = module.weight.shape
-                    components = LinearComponents(
-                        C=C,
-                        d_in=d_in,
-                        d_out=d_out,
-                        bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
-                    )
-                elif isinstance(module, nn.Embedding):
-                    components = EmbeddingComponents(
-                        C=C,
-                        vocab_size=module.num_embeddings,
-                        embedding_dim=module.embedding_dim,
-                    )
-                elif isinstance(module, RadfordConv1D):
-                    d_in, d_out = module.weight.shape
-                    components = LinearComponents(
-                        C=C,
-                        d_in=d_in,
-                        d_out=d_out,
-                        bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
-                    )
-                else:
-                    raise ValueError(
-                        f"Module '{module_path}' matched pattern is not nn.Linear, nn.Embedding,"
-                        f"or Huggingface Conv1D. Found type: {type(module)}"
-                    )
-
-            identity_components: Components | None = None
-            if needs_identity:
-                if isinstance(module, nn.Linear):
-                    d_identity = module.weight.shape[1]
-                elif isinstance(module, RadfordConv1D):
-                    d_identity = module.weight.shape[0]
-                elif isinstance(module, nn.Embedding):
-                    raise ValueError("Identity components not supported for Embedding modules")
-                else:
-                    raise ValueError(
-                        f"Cannot determine input dimension for module type {type(module)} "
-                        f"at path '{module_path}' for identity components"
-                    )
-
-                identity_components = LinearComponents(
-                    C=C, d_in=d_identity, d_out=d_identity, bias=None
+            if isinstance(module, nn.Linear):
+                d_out, d_in = module.weight.shape
+                components = LinearComponents(
+                    C=C,
+                    d_in=d_in,
+                    d_out=d_out,
+                    bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                )
+            elif isinstance(module, nn.Embedding):
+                components = EmbeddingComponents(
+                    C=C,
+                    vocab_size=module.num_embeddings,
+                    embedding_dim=module.embedding_dim,
+                )
+            elif isinstance(module, RadfordConv1D):
+                d_in, d_out = module.weight.shape
+                components = LinearComponents(
+                    C=C,
+                    d_in=d_in,
+                    d_out=d_out,
+                    bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                )
+            # TODO
+            # elif isinstance(module, nn.Identity):
+            #     d =
+            #     components = LinearComponents(C=C, d_in=d_in, d_out=d_out, bias=None)
+            else:
+                raise ValueError(
+                    f"Module '{module_path}' matched pattern is not nn.Linear, nn.Embedding,"
+                    f"or Huggingface Conv1D. Found type: {type(module)}"
                 )
 
-            assert components is not None or identity_components is not None
-            replacement = ComponentsOrModule(
-                original=module,
-                components=components,
-                identity_components=identity_components,
-            )
+            replacement = ComponentsOrModule(target=module, components=components)
 
             model.set_submodule(module_path, replacement)
             components_or_modules[module_path] = replacement
@@ -311,7 +268,7 @@ class ComponentModel(LoadableModule):
 
     @staticmethod
     def _create_gate(
-        original_module: nn.Module,
+        target_module: nn.Module,
         component_C: int,
         gate_type: GateType,
         gate_hidden_dims: list[int],
@@ -320,12 +277,12 @@ class ComponentModel(LoadableModule):
         if gate_type == "mlp":
             return GateMLPs(C=component_C, hidden_dims=gate_hidden_dims)
         else:
-            if isinstance(original_module, nn.Linear):
-                input_dim = original_module.weight.shape[1]
-            elif isinstance(original_module, RadfordConv1D):
-                input_dim = original_module.weight.shape[0]
+            if isinstance(target_module, nn.Linear):
+                input_dim = target_module.weight.shape[1]
+            elif isinstance(target_module, RadfordConv1D):
+                input_dim = target_module.weight.shape[0]
             else:
-                assert isinstance(original_module, nn.Embedding)
+                assert isinstance(target_module, nn.Embedding)
                 raise ValueError("Embedding modules only supported for gate_type='mlp'")
             return VectorGateMLPs(C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
 
@@ -339,21 +296,12 @@ class ComponentModel(LoadableModule):
 
         for module_path in sorted(components_or_modules):
             component_or_module = components_or_modules[module_path]
-            if component_or_module.components is not None:
-                gates[module_path] = ComponentModel._create_gate(
-                    component_or_module.original,
-                    component_or_module.components.C,
-                    gate_type,
-                    gate_hidden_dims,
-                )
-
-            if component_or_module.identity_components is not None:
-                gates[f"identity_{module_path}"] = ComponentModel._create_gate(
-                    component_or_module.original,
-                    component_or_module.identity_components.C,
-                    gate_type,
-                    gate_hidden_dims,
-                )
+            gates[module_path] = ComponentModel._create_gate(
+                component_or_module.target,
+                component_or_module.components.C,
+                gate_type,
+                gate_hidden_dims,
+            )
 
         return gates
 
@@ -376,8 +324,8 @@ class ComponentModel(LoadableModule):
                 - 'target': Standard forward pass of the target model
                 - 'components': Forward with component replacements (requires masks)
                 - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
-            mask_infos: Dictionary mapping module names to ComponentMaskInfo
-                (required for mode='components'). Use `identity_` prefix for identity modules.
+            mask_infos: Dictionary mapping module names to ComponentsMaskInfo
+                (required for mode='components').
             module_names: List of module names to cache inputs for
                 (required for mode='pre_forward_cache')
 
@@ -401,32 +349,18 @@ class ComponentModel(LoadableModule):
         """Set the forward_mode of ComponentOrModule objects and apply masks.
 
         A module's forward_mode is set to "components" if there is an entry in mask_infos for
-        either the module name or its `identity_`-prefixed variant.
+        the module name.
 
         Args:
-            mask_infos: Dictionary mapping module names to ComponentMaskInfo. Use `identity_` prefix
-                for identity components where applicable.
+            mask_infos: Dictionary mapping module names to ComponentsMaskInfo.
         """
         for module_name, c_or_m in self.components_or_modules.items():
             c_or_m.assert_pristine()
 
-            replace_module = module_name in mask_infos
-            replace_identity = f"identity_{module_name}" in mask_infos
-
-            if replace_module or replace_identity:
-                c_or_m.forward_mode = "components"
-                if replace_module:
-                    assert c_or_m.components is not None
-                    mask_info = mask_infos[module_name]
-                    c_or_m.component_mask = mask_info.component_mask
-                    c_or_m.component_weight_delta_and_mask = mask_info.weight_delta_and_mask
-                if replace_identity:
-                    assert c_or_m.identity_components is not None
-                    identity_mask_info = mask_infos[f"identity_{module_name}"]
-                    c_or_m.identity_mask = identity_mask_info.component_mask
-                    c_or_m.identity_weight_delta_and_mask = identity_mask_info.weight_delta_and_mask
+            if (mask_info := mask_infos.get(module_name)) is not None:
+                c_or_m.forward_mode = ("mixed", mask_info)
             else:
-                c_or_m.forward_mode = "original"
+                c_or_m.forward_mode = "target"
         try:
             yield
         finally:
@@ -437,7 +371,7 @@ class ComponentModel(LoadableModule):
         """Forward pass of the target model."""
         for module in self.components_or_modules.values():
             module.assert_pristine()
-            module.forward_mode = "original"
+            module.forward_mode = "target"
         try:
             out = self.patched_model(*args, **kwargs)
         finally:
@@ -456,7 +390,7 @@ class ComponentModel(LoadableModule):
         with components, and the value of the mask will be used as the mask for the components.
 
         Args:
-            mask_infos: Dictionary mapping module names to ComponentMaskInfo
+            mask_infos: Dictionary mapping module names to ComponentsMaskInfo
         """
         with self._replaced_modules(mask_infos=mask_infos):
             raw_out = self.patched_model(*args, **kwargs)
@@ -481,23 +415,14 @@ class ComponentModel(LoadableModule):
             cache[param_name] = input[0]
 
         # Register hooks
-        for raw_module_name in module_names:
-            # NOTE: Currently this might create two hooks on the same module if there is both an
-            # identity and a non-identity module with the same name. If memory is an issue for this
-            # (which would be surprising), we could cache the non-identity module only.
-            is_identity = raw_module_name.startswith("identity_")
-            module_name = (
-                raw_module_name.removeprefix("identity_") if is_identity else raw_module_name
-            )
+        for module_name in module_names:
             module = self.patched_model.get_submodule(module_name)
-            assert module is not None, f"Module {module_name} not found"
-            handles.append(
-                module.register_forward_pre_hook(partial(cache_hook, param_name=raw_module_name))
-            )
+            handle = module.register_forward_pre_hook(partial(cache_hook, param_name=module_name))
+            handles.append(handle)
 
         for module in self.components_or_modules.values():
             module.assert_pristine()
-            module.forward_mode = "original"
+            module.forward_mode = "target"
 
         try:
             raw_out = self.patched_model(*args, **kwargs)
@@ -562,7 +487,6 @@ class ComponentModel(LoadableModule):
             gate_hidden_dims=config.gate_hidden_dims,
             gate_type=config.gate_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
-            identity_module_patterns=config.identity_module_patterns,
         )
 
         comp_model_weights = torch.load(

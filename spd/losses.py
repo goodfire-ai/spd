@@ -7,10 +7,14 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import Config
-from spd.mask_info import ComponentsMaskInfo, WeightDeltaAndMask, make_mask_infos
 from spd.models.component_model import ComponentModel
-from spd.models.components import Components, ComponentsOrModule, EmbeddingComponents
-from spd.utils.component_utils import calc_stochastic_masks
+from spd.models.components import (
+    Components,
+    ComponentsMaskInfo,
+    ComponentsOrModule,
+    EmbeddingComponents,
+)
+from spd.utils.component_utils import LayerMasks, calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -35,7 +39,7 @@ def calc_embedding_recon_loss(
     assert len(model.components_or_modules) == 1, "Only one embedding component is supported"
     components_or_module = next(iter(model.components_or_modules.values()))
     components = components_or_module.components
-    original = components_or_module.original
+    original = components_or_module.target
     assert isinstance(components, EmbeddingComponents)
 
     # --- original embedding output --------------------------------------------------------- #
@@ -205,24 +209,15 @@ def calc_masked_recon_loss(
     return total_loss / len(mask_infos_list)
 
 
-def calc_weight_deltas(
-    model: ComponentModel, device: str | torch.device
-) -> dict[str, Float[Tensor, " d_out d_in"]]:
+def calc_weight_deltas(model: ComponentModel) -> dict[str, Float[Tensor, " d_out d_in"]]:
     """Calculate the weight differences between the target model and component weights (V@U) for
     each layer."""
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
     for comp_name, components_or_module in model.components_or_modules.items():
         assert isinstance(components_or_module, ComponentsOrModule)
-        if components_or_module.components is not None:
-            weight_deltas[comp_name] = (
-                components_or_module.original_weight - components_or_module.components.weight
-            )
-        if components_or_module.identity_components is not None:
-            id_name = f"identity_{comp_name}"
-            id_mat = components_or_module.identity_components.weight
-            weight_deltas[id_name] = (
-                torch.eye(id_mat.shape[0], device=device, dtype=id_mat.dtype) - id_mat
-            )
+        weight_deltas[comp_name] = (
+            components_or_module.target_weight - components_or_module.components.weight
+        )
     return weight_deltas
 
 
@@ -282,7 +277,13 @@ def calculate_losses(
 
     # Reconstruction loss
     if config.recon_coeff is not None:
-        recon_mask_infos = make_mask_infos(causal_importances, None)
+        recon_mask_infos: dict[str, ComponentsMaskInfo] = {}
+        for layer, ci in causal_importances.items():
+            recon_mask_infos[layer] = ComponentsMaskInfo(
+                routing_mask=True,  # use all components
+                component_mask=ci,  # use causal importance for the mask
+                weight_delta_and_mask=None,  # no weight delta mask
+            )
         recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
@@ -302,20 +303,19 @@ def calculate_losses(
             sampling=config.sampling,
         )
 
-        stoch_mask_infos_list = []
+        stoch_mask_infos_list: list[dict[str, ComponentsMaskInfo]] = []
         for stochastic_masks in stochastic_masks_list:
-            deltas_and_masks = (
-                {
-                    key: (weight_deltas[key], stochastic_masks.weight_delta_masks[key])
-                    for key in weight_deltas
-                }
-                if config.use_delta_component
-                else None
-            )
-            stoch_mask_infos = make_mask_infos(
-                masks=stochastic_masks.component_masks,
-                weight_deltas_and_masks=deltas_and_masks,
-            )
+            stoch_mask_infos: dict[str, ComponentsMaskInfo] = {}
+            for layer, layer_masks in stochastic_masks.items():
+                stoch_mask_infos[layer] = ComponentsMaskInfo(
+                    routing_mask=layer_masks.routing_mask,
+                    component_mask=layer_masks.component_mask,
+                    weight_delta_and_mask=(
+                        (weight_deltas[layer], layer_masks.weight_delta_mask)
+                        if config.use_delta_component
+                        else None
+                    ),
+                )
             stoch_mask_infos_list.append(stoch_mask_infos)
 
         stochastic_recon_loss = calc_masked_recon_loss(
@@ -332,10 +332,19 @@ def calculate_losses(
 
     # Reconstruction layerwise loss
     if config.recon_layerwise_coeff is not None:
+        mask_infos = {
+            k: ComponentsMaskInfo(
+                routing_mask=True, # use all components
+                component_mask=ci, # use causal importance for the mask
+                weight_delta_and_mask=None, # no weight delta mask
+            )
+            for k, ci in causal_importances.items()
+        }
+
         recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
-            mask_infos_list=[make_mask_infos(causal_importances)],
+            mask_infos_list=[mask_infos],
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,
@@ -350,26 +359,26 @@ def calculate_losses(
             n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
         )
-        mask_infos_list: list[dict[str, ComponentsMaskInfo]] = []
+
+        stoch_mask_infos_list: list[dict[str, ComponentsMaskInfo]] = []
         for stochastic_masks in stochastic_masks_list:
-            weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = (
-                {
-                    key: (weight_deltas[key], stochastic_masks.weight_delta_masks[key])
-                    for key in weight_deltas
-                }
-                if config.use_delta_component
-                else None
-            )
-            mask_infos = make_mask_infos(
-                masks=stochastic_masks.component_masks,
-                weight_deltas_and_masks=weight_deltas_and_masks,
-            )
-            mask_infos_list.append(mask_infos)
+            stoch_mask_infos: dict[str, ComponentsMaskInfo] = {}
+            for layer, layer_masks in stochastic_masks.items():
+                stoch_mask_infos[layer] = ComponentsMaskInfo(
+                    routing_mask=layer_masks.routing_mask,
+                    component_mask=layer_masks.component_mask,
+                    weight_delta_and_mask=(
+                        (weight_deltas[layer], layer_masks.weight_delta_mask)
+                        if config.use_delta_component
+                        else None
+                    ),
+                )
+            stoch_mask_infos_list.append(stoch_mask_infos)
 
         stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
-            mask_infos_list=mask_infos_list,
+            mask_infos_list=stoch_mask_infos_list,
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,
@@ -396,20 +405,6 @@ def calculate_losses(
         total_loss += config.schatten_coeff * schatten_loss
         loss_terms["schatten"] = schatten_loss.item()
 
-    # Output reconstruction loss
-    if config.out_recon_coeff is not None:
-        masks_all_ones = {k: torch.ones_like(v) for k, v in causal_importances.items()}
-        out_recon_loss = calc_masked_recon_loss(
-            model=model,
-            batch=batch,
-            mask_infos_list=[make_mask_infos(masks_all_ones)],
-            target_out=target_out,
-            loss_type=config.output_loss_type,
-            device=device,
-        )
-        total_loss += config.out_recon_coeff * out_recon_loss
-        loss_terms["output_recon"] = out_recon_loss.item()
-
     # Embedding reconstruction loss
     if config.embedding_recon_coeff is not None:
         stochastic_masks_list = calc_stochastic_masks(
@@ -420,7 +415,10 @@ def calculate_losses(
         embedding_recon_loss = calc_embedding_recon_loss(
             model=model,
             batch=batch,
-            masks=[stochastic_masks.component_masks for stochastic_masks in stochastic_masks_list],
+            masks=[  # FUUUUUUUUCK this is so ugly
+                {k: stochastic_masks[k].component_mask for k in stochastic_masks}
+                for stochastic_masks in stochastic_masks_list
+            ],
             unembed=config.is_embed_unembed_recon,
             device=device,
         )
