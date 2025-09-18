@@ -1,13 +1,15 @@
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, override
 
 import einops
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
+from spd.utils.component_utils import LayerMasks
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
 GateType = Literal["mlp", "vector_mlp"]
@@ -260,6 +262,40 @@ class ComponentMaskInfo:
     weight_delta_and_mask: WeightDeltaAndMask | None
 
 
+def make_mask_infos(
+    component_masks: Mapping[str, Float[Tensor, "... C"] | bool],
+    routing_masks: Mapping[str, Bool[Tensor, "..."] | bool] | None = None,
+    weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
+) -> dict[str, ComponentMaskInfo]:
+    """Create ComponentMaskInfo dict from dicts of component masks, routing masks, and weight deltas and weight delta masks.
+    Keys of all dicts must be the same.
+
+    Args:
+        component_masks: Dict of component masks.
+        routing_masks: Dict of routing masks. Defaults to True (enable components) for all outputs if not provided.
+        weight_deltas_and_masks: Dict of weight deltas and masks for each module to be decomposed. Defaults to None (disable weight delta component) if not provided.
+    turns:
+        Dict mapping module names to ComponentMaskInfo objects.
+    """
+    if routing_masks is not None:
+        assert set(routing_masks) == set(component_masks)
+
+    if weight_deltas_and_masks is not None:
+        assert set(weight_deltas_and_masks) == set(component_masks)
+
+    result: dict[str, ComponentMaskInfo] = {}
+    for name in component_masks:
+        result[name] = ComponentMaskInfo(
+            routing_mask=routing_masks[name] if routing_masks is not None else True,
+            component_mask=component_masks[name],
+            weight_delta_and_mask=None
+            if weight_deltas_and_masks is None
+            else weight_deltas_and_masks[name],
+        )
+
+    return result
+
+
 class ComponentsOrModule(nn.Module):
     def __init__(
         self,
@@ -270,9 +306,9 @@ class ComponentsOrModule(nn.Module):
         self.target = target
         self.components = components
 
-        self.forward_mode: (
-            None | Literal["target"] | tuple[Literal["mixed"], ComponentMaskInfo]
-        ) = None
+        self.forward_mode: None | Literal["target"] | tuple[Literal["mixed"], ComponentMaskInfo] = (
+            None
+        )
 
     @property
     def target_weight(self) -> Float[Tensor, "rows cols"]:

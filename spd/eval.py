@@ -22,7 +22,7 @@ from torch import Tensor
 from spd.configs import Config
 from spd.losses import calc_faithfulness_loss, calc_weight_deltas
 from spd.models.component_model import ComponentModel
-from spd.models.components import ComponentMaskInfo
+from spd.models.components import ComponentMaskInfo, make_mask_infos
 from spd.plotting import (
     get_single_feature_causal_importances,
     plot_causal_importance_vals,
@@ -155,58 +155,30 @@ class CEandKLLosses(StreamingEval):
 
         # CE When...
         # we use the causal importances as a mask
-        # ci_mask_infos = make_mask_infos(ci)
-        ci_mask_infos = {
-            k: ComponentMaskInfo(
-                =True,
-                componrouting_maskent_mask=v,
-                weight_delta_and_mask=None,
-            )
-            for k, v in ci.items()
-        }
+        ci_mask_infos = make_mask_infos(ci)
         ci_masked_logits = self.model.forward(batch, mode="components", mask_infos=ci_mask_infos)
         ci_masked_ce_loss = ce_vs_labels(ci_masked_logits)
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
+        # we sample stochastic masks from the causal importances
         layer_masks = calc_stochastic_masks(ci, n_mask_samples=1, sampling=self.config.sampling)[0]
-        mask_infos = {
-            k: ComponentMaskInfo(
-                routing_mask=True,
-                component_mask=masks.component_mask,
-                weight_delta_and_mask=None,
-            )
-            for k, masks in layer_masks.items()
-        }
-
-        stoch_masked_logits = self.model.forward(batch, mode="components", mask_infos=mask_infos)
+        stoch_mask_infos = make_mask_infos(
+            {k: masks.component_mask for k, masks in layer_masks.items()}
+        )
+        stoch_masked_logits = self.model.forward(
+            batch, mode="components", mask_infos=stoch_mask_infos
+        )
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
 
         # # we use all components
-        # nonmask = {k: torch.ones_like(v) for k, v in ci.items()}
-
-        nonmask_infos = {
-            k: ComponentMaskInfo(
-                routing_mask=True,  # use components for all positions
-                component_mask=True,  # use all components
-                weight_delta_and_mask=None,
-            )
-            for k in ci
-        }
-
+        nonmask_infos = make_mask_infos({k: True for k in ci})
         unmasked_logits = self.model.forward(batch, mode="components", mask_infos=nonmask_infos)
         unmasked_ce_loss = ce_vs_labels(unmasked_logits)
         unmasked_kl_loss = kl_vs_target(unmasked_logits)
 
         # we use completely random masks
-        rand_mask_infos = {
-            k: ComponentMaskInfo(
-                routing_mask=True,
-                component_mask=torch.rand_like(v),
-                weight_delta_and_mask=None,
-            )
-            for k, v in ci.items()
-        }
+        rand_mask_infos = make_mask_infos({k: torch.rand_like(v) for k, v in ci.items()})
         random_masked_logits = self.model.forward(
             batch, mode="components", mask_infos=rand_mask_infos
         )
@@ -215,14 +187,9 @@ class CEandKLLosses(StreamingEval):
 
         # we use rounded causal importances as masks
 
-        rounded_mask_infos = {
-            k: ComponentMaskInfo(
-                routing_mask=True,
-                component_mask=(v > self.rounding_threshold).float(),
-                weight_delta_and_mask=None,
-            )
-            for k, v in ci.items()
-        }
+        rounded_mask_infos = make_mask_infos(
+            {k: (v > self.rounding_threshold).float() for k, v in ci.items()}
+        )
         rounded_masked_logits = self.model.forward(
             batch, mode="components", mask_infos=rounded_mask_infos
         )
@@ -230,14 +197,7 @@ class CEandKLLosses(StreamingEval):
         rounded_masked_kl_loss = kl_vs_target(rounded_masked_logits)
 
         # we zero all the components
-        zero_mask_infos = {
-            k: ComponentMaskInfo(
-                routing_mask=True,
-                component_mask=torch.zeros_like(v),
-                weight_delta_and_mask=None,
-            )
-            for k, v in ci.items()
-        }
+        zero_mask_infos = make_mask_infos({k: False for k in ci})
         zero_masked_logits = self.model.forward(
             batch, mode="components", mask_infos=zero_mask_infos
         )
@@ -625,7 +585,7 @@ class SubsetReconstructionLoss(StreamingEval):
                     else None
                 )
                 mask_infos[module] = ComponentMaskInfo(
-                    routing_mask=True,
+                    routing_mask=layers_masks[module].routing_mask,
                     component_mask=layers_masks[module].component_mask,
                     weight_delta_and_mask=weight_delta_and_mask,
                 )
@@ -658,20 +618,18 @@ class SubsetReconstructionLoss(StreamingEval):
         # Compute baselines for CE unrecovered
         target_ce = ce_vs_labels(target_out)
 
-        zero_mask_infos = {
-            k: ComponentMaskInfo(
-                routing_mask=True,
-                component_mask=torch.zeros_like(v),
-                weight_delta_and_mask=None,
-            )
-            for k, v in ci.items()
-        }
+        zero_mask_infos = make_mask_infos({k: False for k in ci})
         zero_out = self.model.forward(batch, mode="components", mask_infos=zero_mask_infos)
         zero_ce = ce_vs_labels(zero_out)
 
         weight_deltas = calc_weight_deltas(self.model)
         # Generate stochastic masks
-        masks_list = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
+        masks_list = calc_stochastic_masks(
+            ci,
+            self.n_mask_samples,
+            self.config.sampling,
+            routing="all",
+        )
 
         results = {}
         all_modules = list(ci.keys())

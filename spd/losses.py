@@ -13,6 +13,7 @@ from spd.models.components import (
     ComponentMaskInfo,
     ComponentsOrModule,
     EmbeddingComponents,
+    make_mask_infos,
 )
 from spd.utils.component_utils import LayerMasks, calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm
@@ -277,13 +278,7 @@ def calculate_losses(
 
     # Reconstruction loss
     if config.recon_coeff is not None:
-        recon_mask_infos: dict[str, ComponentMaskInfo] = {}
-        for layer, ci in causal_importances.items():
-            recon_mask_infos[layer] = ComponentMaskInfo(
-                routing_mask=True,  # use all components
-                component_mask=ci,  # use causal importance for the mask
-                weight_delta_and_mask=None,  # no weight delta mask
-            )
+        recon_mask_infos = make_mask_infos(causal_importances)
         recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
@@ -332,19 +327,10 @@ def calculate_losses(
 
     # Reconstruction layerwise loss
     if config.recon_layerwise_coeff is not None:
-        mask_infos = {
-            k: ComponentMaskInfo(
-                routing_mask=True, # use all components
-                component_mask=ci, # use causal importance for the mask
-                weight_delta_and_mask=None, # no weight delta mask
-            )
-            for k, ci in causal_importances.items()
-        }
-
         recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
-            mask_infos_list=[mask_infos],
+            mask_infos_list=[make_mask_infos(causal_importances)],
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,

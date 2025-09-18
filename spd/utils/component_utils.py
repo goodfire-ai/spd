@@ -19,10 +19,12 @@ class LayerMasks:
     scalar for each example."""
 
 
+#TODO potentially just get weight_delta BEFORE this and roll it all into one
 def calc_stochastic_masks(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     n_mask_samples: int,
     sampling: Literal["continuous", "binomial"],
+    routing: Literal["variable-p", "all"] = "all",
 ) -> list[dict[str, LayerMasks]]:
     """Calculate n_mask_samples stochastic masks with the formula `ci + (1 - ci) * rand_unif(0,1)`.
 
@@ -46,7 +48,7 @@ def calc_stochastic_masks(
         p_vals = torch.rand(ci_sample.shape[:-1], device=ci_sample.device, dtype=ci_sample.dtype)
 
         for layer, ci in causal_importances.items():
-            routing_mask = torch.rand_like(p_vals) > p_vals
+            routing_mask = torch.rand_like(p_vals) > p_vals if routing == "variable-p" else True
 
             if sampling == "binomial":
                 rand_tensor = torch.randint(0, 2, ci.shape, device=ci.device).float()
