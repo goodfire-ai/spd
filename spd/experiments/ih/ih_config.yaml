@@ -29,7 +29,7 @@ recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1
 importance_minimality_coeff: 1e-2
 pnorm: 0.1
-output_loss_type: kl
+output_recon_loss_type: kl
 gate_type: "vector_mlp"
 gate_hidden_dims: [128]
 

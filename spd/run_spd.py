@@ -223,6 +223,7 @@ def optimize(
                 weight_deltas=weight_deltas,
                 device=device,
                 current_p=current_p,
+                target_hidden=pre_weight_acts,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 

@@ -25,7 +25,7 @@ recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1.0
 importance_minimality_coeff: 1e-5
 pnorm: 2
-output_loss_type: mse
+output_recon_loss_type: mse
 
 # --- Training ---
 batch_size: 2048

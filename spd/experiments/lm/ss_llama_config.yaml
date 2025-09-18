@@ -4,8 +4,9 @@ wandb_run_name: null
 wandb_run_name_prefix: ""
 
 # --- General ---
+dist_backend: null
 seed: 0
-C: 4000
+C: 2000
 n_mask_samples: 1
 gate_type: "vector_mlp"
 gate_hidden_dims: [12]
@@ -30,7 +31,8 @@ pnorm: 2.0
 p_anneal_start_frac: 0.0
 p_anneal_final_p: 0.3
 p_anneal_end_frac: 1.0
-output_loss_type: kl
+output_recon_loss_type: kl
+hidden_act_recon_coeff: 0.0
 
 # --- Training ---
 batch_size: 48
@@ -43,7 +45,7 @@ lr_exponential_halflife: null
 gradient_accumulation_steps: 1
 
 # --- Logging & Saving ---
-train_log_freq: 100
+train_log_freq: 200
 eval_freq: 1000
 slow_eval_freq: 5000
 slow_eval_on_first_step: true

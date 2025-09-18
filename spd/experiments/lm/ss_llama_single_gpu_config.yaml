@@ -29,7 +29,8 @@ pnorm: 2.0
 p_anneal_start_frac: 0.0
 p_anneal_final_p: 0.1
 p_anneal_end_frac: 1.0
-output_loss_type: kl
+output_recon_loss_type: kl
+hidden_act_recon_coeff: 0.1
 
 # --- Training ---
 batch_size: 12

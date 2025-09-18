@@ -361,7 +361,8 @@ class ComponentModel(LoadableModule):
     def forward(
         self,
         *args: Any,
-        mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
+        mode: Literal["target", "components", "pre_forward_cache", "pre_forward_cache_components"]
+        | None = "target",
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
@@ -376,10 +377,11 @@ class ComponentModel(LoadableModule):
                 - 'target': Standard forward pass of the target model
                 - 'components': Forward with component replacements (requires masks)
                 - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
+                - 'pre_forward_cache_components': Forward with component replacements and pre-forward caching
             mask_infos: Dictionary mapping module names to ComponentMaskInfo
-                (required for mode='components'). Use `identity_` prefix for identity modules.
+                (required for mode='components' or 'pre_forward_cache_components'). Use `identity_` prefix for identity modules.
             module_names: List of module names to cache inputs for
-                (required for mode='pre_forward_cache')
+                (required for mode='pre_forward_cache' or 'pre_forward_cache_components')
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
@@ -392,6 +394,16 @@ class ComponentModel(LoadableModule):
             )
             return self._forward_with_pre_forward_cache_hooks(
                 *args, module_names=module_names, **kwargs
+            )
+        elif mode == "pre_forward_cache_components":
+            assert mask_infos is not None, (
+                "mask_infos are required for mode='pre_forward_cache_components'"
+            )
+            assert module_names is not None, (
+                "module_names parameter is required for mode='pre_forward_cache_components'"
+            )
+            return self._forward_with_pre_forward_cache_components_hooks(
+                *args, mask_infos=mask_infos, module_names=module_names, **kwargs
             )
         else:
             return self._forward_target(*args, **kwargs)
@@ -509,6 +521,50 @@ class ComponentModel(LoadableModule):
 
             for module in self.components_or_modules.values():
                 module.make_pristine()
+
+    def _forward_with_pre_forward_cache_components_hooks(
+        self,
+        *args: Any,
+        mask_infos: dict[str, ComponentsMaskInfo],
+        module_names: list[str],
+        **kwargs: Any,
+    ) -> tuple[Any, dict[str, Tensor]]:
+        """Forward pass with component replacements and caching at the input to the modules given by `module_names`.
+
+        Args:
+            mask_infos: Dictionary mapping module names to ComponentMaskInfo
+            module_names: List of module names to cache the inputs to.
+
+        Returns:
+            Tuple of (model output, cache dictionary)
+        """
+        cache = {}
+        handles: list[RemovableHandle] = []
+
+        def cache_hook(_: nn.Module, input: tuple[Tensor, "..."], param_name: str) -> None:
+            cache[param_name] = input[0]
+
+        # Register hooks
+        for raw_module_name in module_names:
+            is_identity = raw_module_name.startswith("identity_")
+            module_name = (
+                raw_module_name.removeprefix("identity_") if is_identity else raw_module_name
+            )
+            module = self.patched_model.get_submodule(module_name)
+            assert module is not None, f"Module {module_name} not found"
+            handles.append(
+                module.register_forward_pre_hook(partial(cache_hook, param_name=raw_module_name))
+            )
+
+        # Set up component replacements
+        with self._replaced_modules(mask_infos=mask_infos):
+            try:
+                raw_out = self.patched_model(*args, **kwargs)
+                out = self._extract_output(raw_out)
+                return out, cache
+            finally:
+                for handle in handles:
+                    handle.remove()
 
     @staticmethod
     def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:

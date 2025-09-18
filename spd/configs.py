@@ -189,9 +189,13 @@ class Config(BaseModel):
         description="Fraction of training when annealing ends. We stay at the final p value from "
         "this point onward (default 1.0 = anneal until end)",
     )
-    output_loss_type: Literal["mse", "kl"] = Field(
+    output_recon_loss_type: Literal["mse", "kl"] = Field(
         ...,
         description="Metric used to measure recon error between model outputs and targets",
+    )
+    hidden_act_recon_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for hidden activation reconstruction loss",
     )
 
     # --- Training ---
