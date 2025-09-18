@@ -200,10 +200,6 @@ class LinearComponents(Components):
         Returns:
             output: The summed output across all components
         """
-        if weight_delta_and_mask is not None:
-            assert weight_delta_and_mask[0].ndim == 2, (
-                "OLI sanity check, I'm pretty sure there's no leading dims needed here ..."
-            )
         component_acts = self.get_inner_acts(x)
 
         if mask is not None:

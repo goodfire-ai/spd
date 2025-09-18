@@ -26,6 +26,9 @@ recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1.0
 importance_minimality_coeff: 1e-5
 pnorm: 2
+p_anneal_start_frac: 0.0
+p_anneal_final_p: 0.3
+p_anneal_end_frac: 1.0
 output_loss_type: mse
 
 # --- Training ---
