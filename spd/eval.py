@@ -33,7 +33,7 @@ from spd.plotting import (
     plot_UV_matrices,
 )
 from spd.utils.component_utils import StochasticMasks, calc_ci_l_zero, calc_stochastic_masks
-from spd.utils.distributed_utils import all_reduce, sum_metrics_across_ranks
+from spd.utils.distributed_utils import all_reduce, is_distributed, sum_metrics_across_ranks
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
@@ -509,11 +509,17 @@ class CIMeanPerComponent(StreamingEval):
     @override
     def compute(self) -> Mapping[str, Image.Image]:
         """Calculate the mean CI per component across all ranks."""
-        all_samples_seen = sum_metrics_across_ranks(self.samples_seen, device=self.device)
-        mean_component_cis = {}
-        for module_name in self.model.components:
-            all_component_cis = all_reduce(self.component_ci_sums[module_name], op=ReduceOp.SUM)
-            mean_component_cis[module_name] = all_component_cis / all_samples_seen[module_name]
+        all_samples_seen = (
+            sum_metrics_across_ranks(self.samples_seen, device=self.device)
+            if is_distributed()
+            else self.samples_seen
+        )
+
+        mean_component_cis = {
+            module_name: all_reduce(self.component_ci_sums[module_name], op=ReduceOp.SUM)
+            / all_samples_seen[module_name]
+            for module_name in self.model.components
+        }
 
         img_linear, img_log = plot_mean_component_cis_both_scales(mean_component_cis)
 

@@ -228,6 +228,8 @@ def sum_metrics_across_ranks(
 def avg_metrics_across_ranks(
     metrics: Mapping[str, int | float], device: str | torch.device
 ) -> Mapping[str, float]:
+    if not is_distributed():
+        return metrics
     world_size = get_world_size()
     assert world_size > 0, "World size must be greater than 0"
     sum_metrics = sum_metrics_across_ranks(metrics, device)
