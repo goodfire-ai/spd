@@ -18,6 +18,7 @@ from einops import reduce
 from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
+from torch.distributed import ReduceOp
 
 from spd.configs import Config
 from spd.losses import calc_faithfulness_loss, calc_weight_deltas
@@ -32,6 +33,7 @@ from spd.plotting import (
     plot_UV_matrices,
 )
 from spd.utils.component_utils import StochasticMasks, calc_ci_l_zero, calc_stochastic_masks
+from spd.utils.distributed_utils import all_reduce, sum_metrics_across_ranks
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
@@ -506,10 +508,12 @@ class CIMeanPerComponent(StreamingEval):
 
     @override
     def compute(self) -> Mapping[str, Image.Image]:
-        mean_component_cis = {
-            module_name: (component_sums / self.samples_seen[module_name])
-            for module_name, component_sums in self.component_ci_sums.items()
-        }
+        """Calculate the mean CI per component across all ranks."""
+        all_samples_seen = sum_metrics_across_ranks(self.samples_seen, device=self.device)
+        mean_component_cis = {}
+        for module_name in self.model.components:
+            all_component_cis = all_reduce(self.component_ci_sums[module_name], op=ReduceOp.SUM)
+            mean_component_cis[module_name] = all_component_cis / all_samples_seen[module_name]
 
         img_linear, img_log = plot_mean_component_cis_both_scales(mean_component_cis)
 
