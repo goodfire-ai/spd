@@ -9,7 +9,6 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
-from spd.utils.component_utils import LayerMasks
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
 GateType = Literal["mlp", "vector_mlp"]

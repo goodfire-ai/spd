@@ -9,13 +9,13 @@ from torch import Tensor
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import (
-    Components,
     ComponentMaskInfo,
+    Components,
     ComponentsOrModule,
     EmbeddingComponents,
     make_mask_infos,
 )
-from spd.utils.component_utils import LayerMasks, calc_stochastic_masks
+from spd.utils.component_utils import calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -298,9 +298,9 @@ def calculate_losses(
             sampling=config.sampling,
         )
 
-        stoch_mask_infos_list: list[dict[str, ComponentMaskInfo]] = []
+        stoch_mask_infos_list: list[dict[str, ComponentMaskInfo]] = []  # pyright: ignore[reportRedeclaration] same name as above
         for stochastic_masks in stochastic_masks_list:
-            stoch_mask_infos: dict[str, ComponentMaskInfo] = {}
+            stoch_mask_infos: dict[str, ComponentMaskInfo] = {}  # pyright: ignore[reportRedeclaration] same name as above
             for layer, layer_masks in stochastic_masks.items():
                 stoch_mask_infos[layer] = ComponentMaskInfo(
                     routing_mask=layer_masks.routing_mask,

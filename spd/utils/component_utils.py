@@ -19,7 +19,7 @@ class LayerMasks:
     scalar for each example."""
 
 
-#TODO potentially just get weight_delta BEFORE this and roll it all into one
+# TODO potentially just get weight_delta BEFORE this and roll it all into one
 def calc_stochastic_masks(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     n_mask_samples: int,

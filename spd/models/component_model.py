@@ -18,8 +18,8 @@ from wandb.apis.public import Run
 from spd.configs import Config
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
-    Components,
     ComponentMaskInfo,
+    Components,
     ComponentsOrModule,
     EmbeddingComponents,
     GateMLPs,

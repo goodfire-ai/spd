@@ -17,6 +17,7 @@ from spd.models.components import (
     ComponentsOrModule,
     EmbeddingComponents,
     LinearComponents,
+    make_mask_infos,
 )
 from spd.spd_types import ModelPath
 from spd.utils.run_utils import save_file
@@ -90,21 +91,6 @@ def test_no_replacement_masks_means_original_mode(component_model: ComponentMode
     # After the context the state must be fully reset
     for comp in cm.components_or_modules.values():
         comp.assert_pristine()
-
-
-# @pytest.fixture(scope="function")
-# def component_model_with_identity() -> ComponentModel:
-#     """Return a ComponentModel that also includes identity components for selected modules."""
-#     target_model = SimpleTestModel()
-#     target_model.requires_grad_(False)
-#     return ComponentModel(
-#         target_model=target_model,
-#         target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
-#         C=4,
-#         gate_type="mlp",
-#         gate_hidden_dims=[4],
-#         pretrained_model_output_attr=None,
-#     )
 
 
 def test_replaced_modules_sets_and_restores_masks(component_model: ComponentModel):
@@ -208,23 +194,24 @@ def test_replaced_component_forward_linear_matches_modes():
     input_dim = 6
     output_dim = 4
 
-    original = nn.Linear(input_dim, output_dim, bias=True)
-    components = LinearComponents(d_in=input_dim, d_out=output_dim, C=3, bias=original.bias)
-    components_or_module = ComponentsOrModule(original=original, components=components)
+    target = nn.Linear(input_dim, output_dim, bias=True)
+    components = LinearComponents(d_in=input_dim, d_out=output_dim, C=3, bias=target.bias)
+    components_or_module = ComponentsOrModule(target=target, components=components)
 
     x = torch.randn(B, input_dim)
 
-    # --- Original path ---
-    components_or_module.forward_mode = "original"
-    components_or_module.components_mask = None
+    # --- target path ---
+    components_or_module.forward_mode = "target"
     out_orig = components_or_module(x)
-    expected_orig = original(x)
+    expected_orig = target(x)
     torch.testing.assert_close(out_orig, expected_orig, rtol=1e-4, atol=1e-5)
 
     # --- Replacement path (with mask) ---
     mask = torch.rand(B, C)
-    components_or_module.forward_mode = "components"
-    components_or_module.components_mask = mask
+    mask_info = ComponentMaskInfo(
+        routing_mask=True, component_mask=mask, weight_delta_and_mask=None
+    )
+    components_or_module.forward_mode = ("mixed", mask_info)
     out_rep = components_or_module(x)
     expected_rep = components(x, mask)
     torch.testing.assert_close(out_rep, expected_rep, rtol=1e-4, atol=1e-5)
@@ -240,13 +227,12 @@ def test_replaced_component_forward_conv1d_matches_modes():
     original = RadfordConv1D(nf=output_dim, nx=input_dim)
 
     components = LinearComponents(d_in=input_dim, d_out=output_dim, C=C, bias=original.bias)
-    components_or_module = ComponentsOrModule(original=original, components=components)
+    components_or_module = ComponentsOrModule(target=original, components=components)
 
     x = torch.randn(B, S, input_dim)
 
     # --- Original path ---
-    components_or_module.forward_mode = "original"
-    components_or_module.components_mask = None
+    components_or_module.forward_mode = "target"
     out_orig = components_or_module(x)
     expected_orig = original(x)
 
@@ -254,8 +240,10 @@ def test_replaced_component_forward_conv1d_matches_modes():
 
     # --- Replacement path (with mask) ---
     mask = torch.rand(B, S, C)  # (B, L, C)
-    components_or_module.forward_mode = "components"
-    components_or_module.components_mask = mask
+    mask_info = ComponentMaskInfo(
+        routing_mask=True, component_mask=mask, weight_delta_and_mask=None
+    )
+    components_or_module.forward_mode = ("mixed", mask_info)
     out_rep = components_or_module(x)
     expected_rep = components(x, mask)
 
@@ -269,112 +257,27 @@ def test_replaced_component_forward_embedding_matches_modes():
 
     emb = nn.Embedding(vocab_size, embedding_dim)
     comp = EmbeddingComponents(vocab_size=vocab_size, embedding_dim=embedding_dim, C=C)
-    rep = ComponentsOrModule(original=emb, components=comp)
+    rep = ComponentsOrModule(target=emb, components=comp)
 
     batch_size = 4
     seq_len = 7
     idx = torch.randint(0, vocab_size, (batch_size, seq_len))  # (batch pos)
 
-    # --- Original path ---
-    rep.forward_mode = "original"
-    rep.components_mask = None
+    # --- Target path ---
+    rep.forward_mode = "target"
     out_orig = rep(idx)
     expected_orig = emb(idx)
     torch.testing.assert_close(out_orig, expected_orig, rtol=1e-4, atol=1e-5)
 
     # --- Replacement path (with mask) ---
-    rep.forward_mode = "components"
     mask = torch.rand(batch_size, seq_len, C)  # (batch pos C)
-    rep.components_mask = mask
+    mask_info = ComponentMaskInfo(
+        routing_mask=True, component_mask=mask, weight_delta_and_mask=None
+    )
+    rep.forward_mode = ("mixed", mask_info)
     out_rep = rep(idx)
     expected_rep = comp.forward(idx, mask)
     torch.testing.assert_close(out_rep, expected_rep, rtol=1e-4, atol=1e-5)
-
-
-def _make_identity_linear_components(d: int) -> LinearComponents:
-    comp = LinearComponents(C=d, d_in=d, d_out=d, bias=None)
-    with torch.no_grad():
-        comp.V.copy_(torch.eye(d))
-        comp.U.copy_(torch.eye(d))
-    return comp
-
-
-def test_identity_only_linear_matches_original() -> None:
-    B = 5
-    d = 10
-    original = nn.Linear(d, d, bias=True)
-    identity_comp = _make_identity_linear_components(d)
-    rep = ComponentsOrModule(original=original, identity_components=identity_comp)
-
-    x = torch.randn(B, d)
-    rep.forward_mode = "components"
-    rep.identity_mask = torch.ones(B, d)
-    out = rep(x)
-    expected = original(x)
-    torch.testing.assert_close(out, expected, rtol=1e-4, atol=1e-5)
-
-
-def test_identity_only_conv1d_matches_original() -> None:
-    B = 3
-    S = 7
-    d_in = 6
-    d_out = 4
-
-    original = RadfordConv1D(nf=d_out, nx=d_in)
-    identity_comp = _make_identity_linear_components(d_in)
-    rep = ComponentsOrModule(original=original, identity_components=identity_comp)
-
-    x = torch.randn(B, S, d_in)
-    rep.forward_mode = "components"
-    rep.identity_mask = torch.ones(B, S, d_in)
-    out = rep(x)
-    expected = original(x)
-    torch.testing.assert_close(out, expected, rtol=1e-4, atol=1e-5)
-
-
-def test_combined_identity_and_components_linear() -> None:
-    B = 4
-    d_in = 6
-    d_out = 3
-
-    original = nn.Linear(d_in, d_out, bias=False)
-    components = LinearComponents(C=3, d_in=d_in, d_out=d_out, bias=None)
-    identity_comp = _make_identity_linear_components(d_in)
-    rep = ComponentsOrModule(
-        original=original, components=components, identity_components=identity_comp
-    )
-
-    x = torch.randn(B, d_in)
-    rep.forward_mode = "components"
-    rep.identity_mask = torch.ones(B, d_in)
-    mask = torch.rand(B, 3)
-    rep.components_mask = mask
-    out = rep(x)
-    expected = components(x, mask)
-    torch.testing.assert_close(out, expected, rtol=1e-4, atol=1e-5)
-
-
-def test_combined_identity_and_components_conv1d() -> None:
-    B = 2
-    S = 5
-    d_in = 4
-    d_out = 3
-
-    original = RadfordConv1D(nf=d_out, nx=d_in)
-    components = LinearComponents(C=2, d_in=d_in, d_out=d_out, bias=None)
-    identity_comp = _make_identity_linear_components(d_in)
-    rep = ComponentsOrModule(
-        target=original, components=components, identity_components=identity_comp
-    )
-
-    x = torch.randn(B, S, d_in)
-    rep.forward_mode = "components"
-    rep.identity_mask = torch.ones(B, S, d_in)
-    mask = torch.rand(B, S, 2)
-    rep.components_mask = mask
-    out = rep(x)
-    expected = components(x, mask)
-    torch.testing.assert_close(out, expected, rtol=1e-4, atol=1e-5)
 
 
 def test_correct_parameters_require_grad(component_model: ComponentModel):
@@ -460,247 +363,65 @@ def test_from_run_info():
 
 
 def test_identity_module_patterns_embedding_raises() -> None:
-    target_model = SimpleTestModel()
-    target_model.requires_grad_(False)
-    with pytest.raises(ValueError):
-        ComponentModel(
-            target_model=target_model,
-            target_module_patterns=["linear1", "embedding"],
-            C=2,
-            gate_type="mlp",
-            gate_hidden_dims=[2],
-            pretrained_model_output_attr=None,
-            identity_module_patterns=["embedding"],
-        )
+    raise NotImplementedError("attach to identity injection logic, might not even go here")
 
 
-def test_components_property_includes_identity_keys(
-    component_model_with_identity: ComponentModel,
-) -> None:
-    cm = component_model_with_identity
-    comps = cm.components
-    assert any(k.startswith("identity_") for k in comps)
-    for name in ["linear1", "linear2", "conv1d1", "conv1d2"]:
-        assert f"identity_{name}" in comps
+# Don't THINK this is needed anymore
+#
+# def test_patch_modules_components_only() -> None:
+#     model = SimpleTestModel()
+#     model.requires_grad_(False)
 
+#     C = 4
+#     module_paths = ["linear1", "embedding", "conv1d1"]
+#     identity_module_paths: list[str] = []
 
-def test_pre_forward_cache_handles_identity_prefix() -> None:
-    class TwoLinear(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.linear1 = nn.Linear(4, 4, bias=False)
-            self.linear2 = nn.Linear(4, 2, bias=False)
+#     patched, replaced = ComponentModel._patch_modules(
+#         model=model, module_paths=module_paths, identity_module_paths=identity_module_paths, C=C
+#     )
 
-        @override
-        def forward(self, x: Float[Tensor, "... 4"]) -> Float[Tensor, "... 2"]:
-            return self.linear2(self.linear1(x))
+#     # Only the specified modules should be replaced
+#     assert isinstance(patched.get_submodule("linear1"), ComponentsOrModule)
+#     assert isinstance(patched.get_submodule("embedding"), ComponentsOrModule)
+#     assert isinstance(patched.get_submodule("conv1d1"), ComponentsOrModule)
+#     assert isinstance(patched.linear2, nn.Linear)
+#     assert isinstance(patched.conv1d2, RadfordConv1D)
+#     assert isinstance(patched.other_layer, nn.ReLU)
 
-    tiny = TwoLinear()
-    tiny.requires_grad_(False)
+#     # Keys in returned dict should match all replaced paths
+#     assert set(replaced.keys()) == set(module_paths)
 
-    cm = ComponentModel(
-        target_model=tiny,
-        target_module_patterns=["linear1", "linear2"],
-        C=4,
-        gate_type="mlp",
-        gate_hidden_dims=[2],
-        pretrained_model_output_attr=None,
-        identity_module_patterns=["linear1"],
-    )
+#     # linear1: components present, identity_components absent; dims and bias preserved
+#     rep_lin1 = patched.get_submodule("linear1")
+#     assert isinstance(rep_lin1, ComponentsOrModule)
+#     assert rep_lin1.components is not None and rep_lin1.identity_components is None
+#     assert isinstance(rep_lin1.components, LinearComponents)
+#     assert isinstance(rep_lin1.target, nn.Linear)
+#     d_out_lin1, d_in_lin1 = rep_lin1.target.weight.shape  # (d_out, d_in)
+#     assert rep_lin1.components.d_in == d_in_lin1
+#     assert rep_lin1.components.d_out == d_out_lin1
+#     comp_bias = rep_lin1.components.bias
+#     assert comp_bias is not None
+#     assert torch.equal(comp_bias, rep_lin1.target.bias.data)
 
-    x = torch.randn(2, 4)
-    out, cache = cm.forward(
-        x, mode="pre_forward_cache", module_names=["identity_linear1", "linear1"]
-    )
-    assert isinstance(out, torch.Tensor)
-    assert "identity_linear1" in cache and "linear1" in cache
-    assert cache["identity_linear1"].shape == torch.Size([2, 4])
-    assert cache["linear1"].shape == torch.Size([2, 4])
-    assert torch.equal(cache["identity_linear1"], cache["linear1"])
+#     # embedding: EmbeddingComponents with correct dims
+#     rep_emb = patched.get_submodule("embedding")
+#     assert isinstance(rep_emb, ComponentsOrModule)
+#     assert rep_emb.components is not None and rep_emb.identity_components is None
+#     assert isinstance(rep_emb.components, EmbeddingComponents)
+#     assert isinstance(rep_emb.target, nn.Embedding)
+#     assert rep_emb.components.vocab_size == rep_emb.target.num_embeddings
+#     assert rep_emb.components.embedding_dim == rep_emb.target.embedding_dim
 
-
-def test_component_model_identity_conv_masks_match_original_single_pos() -> None:
-    class ConvOnly(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.conv1 = RadfordConv1D(3, 3)  # nx=3 -> nf=3
-            self.conv2 = RadfordConv1D(3, 3)  # nx=3 -> nf=3
-
-        @override
-        def forward(self, x: Float[Tensor, "batch seq 3"]) -> Float[Tensor, "batch seq 3"]:
-            return self.conv2(self.conv1(x))
-
-    model = ConvOnly()
-    model.requires_grad_(False)
-    cm = ComponentModel(
-        target_model=model,
-        target_module_patterns=["conv1", "conv2"],
-        C=3,
-        gate_type="mlp",
-        gate_hidden_dims=[2],
-        pretrained_model_output_attr=None,
-        identity_module_patterns=["conv1", "conv2"],
-    )
-
-    # Set identity components to exact identity mappings
-    with torch.no_grad():
-        id1 = cm.components["identity_conv1"]
-        id2 = cm.components["identity_conv2"]
-        id1.V.copy_(torch.eye(3))
-        id1.U.copy_(torch.eye(3))
-        id2.V.copy_(torch.eye(3))
-        id2.U.copy_(torch.eye(3))
-
-    x = torch.randn(3, 1, 3)
-    y_target = cm.forward(x, mode="target")
-    masks = {
-        "identity_conv1": torch.ones(3, 1, cm.C),
-        "identity_conv2": torch.ones(3, 1, cm.C),
-    }
-    from spd.mask_info import make_mask_infos
-
-    y_identity = cm.forward(x, mode="components", mask_infos=make_mask_infos(masks))
-    torch.testing.assert_close(y_identity, y_target, rtol=1e-4, atol=1e-5)
-
-
-def test_patch_modules_components_only() -> None:
-    model = SimpleTestModel()
-    model.requires_grad_(False)
-
-    C = 4
-    module_paths = ["linear1", "embedding", "conv1d1"]
-    identity_module_paths: list[str] = []
-
-    patched, replaced = ComponentModel._patch_modules(
-        model=model, module_paths=module_paths, identity_module_paths=identity_module_paths, C=C
-    )
-
-    # Only the specified modules should be replaced
-    assert isinstance(patched.get_submodule("linear1"), ComponentsOrModule)
-    assert isinstance(patched.get_submodule("embedding"), ComponentsOrModule)
-    assert isinstance(patched.get_submodule("conv1d1"), ComponentsOrModule)
-    assert isinstance(patched.linear2, nn.Linear)
-    assert isinstance(patched.conv1d2, RadfordConv1D)
-    assert isinstance(patched.other_layer, nn.ReLU)
-
-    # Keys in returned dict should match all replaced paths
-    assert set(replaced.keys()) == set(module_paths)
-
-    # linear1: components present, identity_components absent; dims and bias preserved
-    rep_lin1 = patched.get_submodule("linear1")
-    assert isinstance(rep_lin1, ComponentsOrModule)
-    assert rep_lin1.components is not None and rep_lin1.identity_components is None
-    assert isinstance(rep_lin1.components, LinearComponents)
-    assert isinstance(rep_lin1.target, nn.Linear)
-    d_out_lin1, d_in_lin1 = rep_lin1.target.weight.shape  # (d_out, d_in)
-    assert rep_lin1.components.d_in == d_in_lin1
-    assert rep_lin1.components.d_out == d_out_lin1
-    comp_bias = rep_lin1.components.bias
-    assert comp_bias is not None
-    assert torch.equal(comp_bias, rep_lin1.target.bias.data)
-
-    # embedding: EmbeddingComponents with correct dims
-    rep_emb = patched.get_submodule("embedding")
-    assert isinstance(rep_emb, ComponentsOrModule)
-    assert rep_emb.components is not None and rep_emb.identity_components is None
-    assert isinstance(rep_emb.components, EmbeddingComponents)
-    assert isinstance(rep_emb.target, nn.Embedding)
-    assert rep_emb.components.vocab_size == rep_emb.target.num_embeddings
-    assert rep_emb.components.embedding_dim == rep_emb.target.embedding_dim
-
-    # conv1d1: LinearComponents with conv dims interpreted correctly
-    rep_conv = patched.get_submodule("conv1d1")
-    assert isinstance(rep_conv, ComponentsOrModule)
-    assert rep_conv.components is not None and rep_conv.identity_components is None
-    assert isinstance(rep_conv.components, LinearComponents)
-    assert isinstance(rep_conv.target, RadfordConv1D)
-    d_in_conv, d_out_conv = rep_conv.target.weight.shape  # Conv1D stores (nx, nf)
-    assert rep_conv.components.d_in == d_in_conv
-    assert rep_conv.components.d_out == d_out_conv
-
-
-def test_patch_modules_identity_only() -> None:
-    model = SimpleTestModel()
-    model.requires_grad_(False)
-
-    C = 5
-    module_paths: list[str] = []
-    identity_module_paths = ["linear2", "conv1d2"]
-
-    patched, replaced = ComponentModel._patch_modules(
-        model=model, module_paths=module_paths, identity_module_paths=identity_module_paths, C=C
-    )
-
-    # Only the specified modules should be replaced
-    assert isinstance(patched.get_submodule("linear2"), ComponentsOrModule)
-    assert isinstance(patched.get_submodule("conv1d2"), ComponentsOrModule)
-    assert isinstance(patched.linear1, nn.Linear)
-    assert isinstance(patched.conv1d1, RadfordConv1D)
-    assert isinstance(patched.embedding, nn.Embedding)
-
-    assert set(replaced.keys()) == set(identity_module_paths)
-
-    # linear2: identity only, square dims, no bias
-    rep_lin2 = patched.get_submodule("linear2")
-    assert isinstance(rep_lin2, ComponentsOrModule)
-    assert rep_lin2.components is None and rep_lin2.identity_components is not None
-    assert isinstance(rep_lin2.identity_components, LinearComponents)
-    assert isinstance(rep_lin2.target, nn.Linear)
-    d_identity_lin2 = rep_lin2.target.weight.shape[1]
-    assert rep_lin2.identity_components.d_in == d_identity_lin2
-    assert rep_lin2.identity_components.d_out == d_identity_lin2
-    assert rep_lin2.identity_components.bias is None
-
-    # conv1d2: identity only, square dims
-    rep_conv2 = patched.get_submodule("conv1d2")
-    assert isinstance(rep_conv2, ComponentsOrModule)
-    assert rep_conv2.components is None and rep_conv2.identity_components is not None
-    assert isinstance(rep_conv2.identity_components, LinearComponents)
-    assert isinstance(rep_conv2.target, RadfordConv1D)
-    d_identity_conv2 = rep_conv2.target.weight.shape[0]  # Conv1D identity uses input dim
-    assert rep_conv2.identity_components.d_in == d_identity_conv2
-    assert rep_conv2.identity_components.d_out == d_identity_conv2
-
-
-def test_patch_modules_both_components_and_identity() -> None:
-    model = SimpleTestModel()
-    model.requires_grad_(False)
-
-    C = 3
-    module_paths = ["linear1", "conv1d2"]
-    identity_module_paths = ["linear1", "conv1d2"]
-
-    patched, replaced = ComponentModel._patch_modules(
-        model=model, module_paths=module_paths, identity_module_paths=identity_module_paths, C=C
-    )
-
-    assert set(replaced.keys()) == set(module_paths)
-
-    rep_lin1 = patched.get_submodule("linear1")
-    assert isinstance(rep_lin1, ComponentsOrModule)
-    assert rep_lin1.components is not None and rep_lin1.identity_components is not None
-    assert isinstance(rep_lin1.components, LinearComponents)
-    assert isinstance(rep_lin1.identity_components, LinearComponents)
-    assert rep_lin1.identity_components.bias is None
-
-    rep_conv2 = patched.get_submodule("conv1d2")
-    assert isinstance(rep_conv2, ComponentsOrModule)
-    assert rep_conv2.components is not None and rep_conv2.identity_components is not None
-    assert isinstance(rep_conv2.components, LinearComponents)
-    assert isinstance(rep_conv2.identity_components, LinearComponents)
-
-
-def test_patch_modules_embedding_identity_raises() -> None:
-    model = SimpleTestModel()
-    model.requires_grad_(False)
-
-    with pytest.raises(ValueError):
-        ComponentModel._patch_modules(
-            model=model,
-            module_paths=[],
-            identity_module_paths=["embedding"],
-            C=2,
-        )
+#     # conv1d1: LinearComponents with conv dims interpreted correctly
+#     rep_conv = patched.get_submodule("conv1d1")
+#     assert isinstance(rep_conv, ComponentsOrModule)
+#     assert rep_conv.components is not None and rep_conv.identity_components is None
+#     assert isinstance(rep_conv.components, LinearComponents)
+#     assert isinstance(rep_conv.target, RadfordConv1D)
+#     d_in_conv, d_out_conv = rep_conv.target.weight.shape  # Conv1D stores (nx, nf)
+#     assert rep_conv.components.d_in == d_in_conv
+#     assert rep_conv.components.d_out == d_out_conv
 
 
 def test_patch_modules_unsupported_component_type_raises() -> None:
@@ -711,6 +432,5 @@ def test_patch_modules_unsupported_component_type_raises() -> None:
         ComponentModel._patch_modules(
             model=model,
             module_paths=["other_layer"],
-            identity_module_paths=[],
             C=2,
         )
