@@ -4,7 +4,6 @@ wandb_run_name: null
 wandb_run_name_prefix: ""
 
 # --- General ---
-dist_backend: null
 seed: 0
 C: 2000
 n_mask_samples: 1
