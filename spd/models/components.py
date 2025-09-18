@@ -70,7 +70,7 @@ class GateMLPs(nn.Module):
 
 
 class VectorGateMLPs(nn.Module):
-    """MLP-based gates that map a module's input vector to a scalar output for each component."""
+    """Contains a separate network for each component and takes a module's input vector as input."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
@@ -95,15 +95,15 @@ class VectorGateMLPs(nn.Module):
 
 
 class LayerwiseGlobalGateMLP(nn.Module):
-    """MLP-based gate that maps a module's input vector to a scalar output for each component."""
+    """Maps a module's input vector to a scalar output for each component with a 'pure' MLP."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
         self.layers = nn.Sequential()
         for i in range(len(hidden_dims)):
-            input_dim = input_dim if i == 0 else hidden_dims[i - 1]
+            in_dim = input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
-            self.layers.append(Linear(input_dim, output_dim, nonlinearity="relu"))
+            self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
             self.layers.append(nn.GELU())
         final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else input_dim
         self.layers.append(Linear(final_dim, C, nonlinearity="linear"))
