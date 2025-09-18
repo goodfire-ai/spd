@@ -93,6 +93,10 @@ def optimize(
     if is_main_process():
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
+    # Force slow but numerically stable SDPA
+    # torch.backends.cuda.enable_flash_sdp(False)
+    torch.backends.cuda.enable_mem_efficient_sdp(False)
+    # torch.backends.cuda.enable_math_sdp(True)
     target_model.requires_grad_(False)
     model = ComponentModel(
         target_model=target_model,
@@ -149,6 +153,7 @@ def optimize(
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
+    # TODO: Don't apply weight decay to 1D parameters
     optimizer = optim.AdamW(component_params + gate_params, lr=config.lr, weight_decay=0)
 
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
