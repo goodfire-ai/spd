@@ -325,6 +325,7 @@ class Config(BaseModel):
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
         "pretrained_model_name_hf": "pretrained_model_name",
+        "output_recon_loss_type": "output_loss_type",
     }
 
     @model_validator(mode="before")
@@ -346,6 +347,19 @@ class Config(BaseModel):
             config_dict["train_log_freq"] = 50
         if "slow_eval_freq" not in config_dict:
             config_dict["slow_eval_freq"] = config_dict["eval_freq"]
+
+        # Add backward compatibility for older model checkpoints
+        if "output_loss_type" not in config_dict:
+            config_dict["output_loss_type"] = "kl"  # Default value
+            logger.info("Added missing output_loss_type field with default value 'kl'")
+
+        # Remove forbidden fields from older configs (fields that are not part of current Config schema)
+        forbidden_fields = ["hidden_act_recon_coeff"]
+        for field in forbidden_fields:
+            if field in config_dict:
+                logger.info(f"Removing forbidden field: {field}")
+                del config_dict[field]
+
         return config_dict
 
     @model_validator(mode="after")
