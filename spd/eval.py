@@ -767,7 +767,6 @@ class GeometricSimilarityComparison(StreamingEval):
             raise ValueError("reference_run_path is required for GeometricSimilarityComparison")
         self.kwargs = kwargs
         self.reference_model: ComponentModel | None = None
-        self._computed_this_eval = False
         self.device = next(iter(model.parameters())).device
         self.n_tokens = 0
         self.component_activation_counts: dict[str, Float[Tensor, " C"]] = {
@@ -903,12 +902,8 @@ class GeometricSimilarityComparison(StreamingEval):
             for module_name in self.model.components
         }
 
-        if self._computed_this_eval:
-            return {}
-
         try:
             similarities = self._compute_subcomponent_geometric_similarities(activation_densities)
-            self._computed_this_eval = True
             return similarities
         except Exception as e:
             logger.warning(f"Failed to compute geometric similarity comparison: {e}")
