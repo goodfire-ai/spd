@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch.testing import assert_close
 
-from spd.utils.identity_insertion import insert_identity_operations
+from spd.utils.identity_insertion import insert_identity_operations_
 
 
 class SimpleModel(nn.Module):
@@ -32,7 +32,7 @@ def test_identity_insertion_inserts_identity_layers():
     model = SimpleModel(d_model=32).to("cpu")
     model.eval()
 
-    insert_identity_operations(
+    insert_identity_operations_(
         target_model=model,
         identity_patterns=["layer1", "layer2"],
         device="cpu",
@@ -62,7 +62,7 @@ def test_identity_insertion_preserves_output():
     with torch.no_grad():
         original_output = model(input_ids)
 
-    insert_identity_operations(model, identity_patterns=["layer1"], device=device)
+    insert_identity_operations_(model, identity_patterns=["layer1"], device=device)
 
     with torch.no_grad():
         new_output = model(input_ids)
@@ -95,7 +95,7 @@ def test_identity_insertion_uses_correct_dims():
     model.eval()
 
     # Insert identity only before layer1 (which takes 64-dim input)
-    insert_identity_operations(
+    insert_identity_operations_(
         target_model=model,
         identity_patterns=["layer1"],
         device=device,
@@ -115,7 +115,7 @@ def test_identity_insertion_empty_patterns():
     model = SimpleModel().to("cpu")
 
     # No patterns should result in no modifications
-    insert_identity_operations(
+    insert_identity_operations_(
         target_model=model,
         identity_patterns=[],
         device="cpu",

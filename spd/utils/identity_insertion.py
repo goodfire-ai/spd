@@ -7,24 +7,25 @@ This allows downstream functionality to act as if the identity matrix is just a 
 """
 
 from functools import partial
-from typing import Any
+from typing import Any, Literal
 
 import torch
 import torch.nn as nn
-from jaxtyping import Int
+from jaxtyping import Float, Int
+from torch import Tensor
 from torch.utils.hooks import RemovableHandle
 
+from spd.configs import Config, TaskConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.utils.distributed_utils import is_main_process
 
 
 def _get_input_sizes(
-    target_model: nn.Module, identity_module_paths: list[str], device: torch.device | str
+    target_model: nn.Module,
+    identity_module_paths: list[str],
+    dummy_input: torch.Tensor,
 ) -> dict[str, int]:
-    # Create dummy input to capture shapes
-    dummy_input: Int[torch.Tensor, "batch seq"] = torch.tensor([[0]], device=device)
-
     cache: dict[str, torch.Tensor] = {}
     handles: list[RemovableHandle] = []
 
@@ -68,9 +69,14 @@ def pre_id_hook(
     return (mod.pre_identity(args[0]),), {}
 
 
-def insert_identity_operations(
+InputType = Literal["lm"] | tuple[Literal["vector"], int]
+"""'lm' implied (batch, seq) of integer tokens. ('vector', d_in) implied (batch, d_in) of floats."""
+
+
+def insert_identity_operations_(
     target_model: nn.Module,
     identity_patterns: list[str],
+    input_type: InputType,
     device: torch.device | str,
 ) -> None:
     """Insert identity linear layers before specified modules.
@@ -86,7 +92,13 @@ def insert_identity_operations(
 
     identity_module_paths = ComponentModel._get_target_module_paths(target_model, identity_patterns)
 
-    layer_input_sizes = _get_input_sizes(target_model, identity_module_paths, device)
+    match input_type:
+        case "lm":
+            dummy_input = torch.zeros(1, 1, device=device, dtype=torch.long)
+        case ("vector", d_in):
+            dummy_input = torch.randn(1, d_in, device=device)
+
+    layer_input_sizes = _get_input_sizes(target_model, identity_module_paths, dummy_input)
 
     # Add identity layers and hooks
     for module_path, d_in in layer_input_sizes.items():

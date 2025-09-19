@@ -40,7 +40,6 @@ from spd.utils.general_utils import (
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
-from spd.utils.identity_insertion import insert_identity_operations
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
@@ -93,14 +92,6 @@ def optimize(
 
     if is_main_process():
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
-
-    # Insert identity operations if configured
-    if config.identity_module_patterns is not None:
-        insert_identity_operations(
-            target_model=target_model,
-            identity_patterns=config.identity_module_patterns,
-            device=device,
-        )
 
     target_model.requires_grad_(False)
 

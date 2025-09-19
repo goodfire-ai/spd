@@ -22,6 +22,7 @@ from spd.utils.general_utils import (
     save_pre_run_info,
     set_seed,
 )
+from spd.utils.identity_insertion import insert_identity_operations_
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
 
@@ -98,6 +99,14 @@ def main(
     eval_loader = DatasetGeneratedDataLoader(
         dataset, batch_size=config.eval_batch_size, shuffle=False
     )
+
+    if (identity_patterns := config.identity_module_patterns) is not None:
+        insert_identity_operations_(
+            target_model,
+            identity_patterns=identity_patterns,
+            input_type=("vector", target_model.config.n_features),
+            device=device,
+        )
 
     # TODO: Below not needed when TMS supports config.n_eval_steps
     assert config.n_eval_steps is not None, "n_eval_steps must be set"
