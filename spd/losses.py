@@ -6,11 +6,7 @@ from torch import Tensor
 
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
-from spd.models.components import (
-    ComponentsMaskInfo,
-    ComponentsOrModule,
-    make_mask_infos,
-)
+from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_infos
 from spd.utils.general_utils import calc_kl_divergence_lm
 
@@ -121,11 +117,8 @@ def calc_weight_deltas(model: ComponentModel) -> dict[str, Float[Tensor, " d_out
     """Calculate the weight differences between the target model and component weights (V@U) for
     each layer."""
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
-    for comp_name, components_or_module in model.components_or_modules.items():
-        assert isinstance(components_or_module, ComponentsOrModule)
-        weight_deltas[comp_name] = (
-            components_or_module.target_weight - components_or_module.components.weight
-        )
+    for comp_name, components in model.components.items():
+        weight_deltas[comp_name] = model.target_weight(comp_name) - components.weight
     return weight_deltas
 
 

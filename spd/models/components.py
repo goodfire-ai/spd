@@ -334,54 +334,54 @@ def make_mask_infos(
     return result
 
 
-class ComponentsOrModule(nn.Module):
-    def __init__(
-        self,
-        target: nn.Module,
-        components: Components,
-    ):
-        super().__init__()
-        self.target = target
-        self.components = components
+# class ComponentsOrModule(nn.Module):
+#     def __init__(
+#         self,
+#         target: nn.Module,
+#         components: Components,
+#     ):
+#         super().__init__()
+#         self.target = target
+#         self.components = components
 
-        self.forward_mode: (
-            None | Literal["target"] | tuple[Literal["mixed"], ComponentsMaskInfo]
-        ) = None
+#         self.forward_mode: (
+#             None | Literal["target"] | tuple[Literal["mixed"], ComponentsMaskInfo]
+#         ) = None
 
-    @property
-    def target_weight(self) -> Float[Tensor, "rows cols"]:
-        if isinstance(self.target, RadfordConv1D):
-            return self.target.weight.T
-        elif isinstance(self.target, nn.Linear | nn.Embedding):
-            return self.target.weight
-        else:
-            raise AttributeError(
-                f"Module {type(self.target)} not one of nn.Linear, nn.Embedding, or RadfordConv1D"
-            )
+#     @property
+#     def target_weight(self) -> Float[Tensor, "rows cols"]:
+#         if isinstance(self.target, RadfordConv1D):
+#             return self.target.weight.T
+#         elif isinstance(self.target, nn.Linear | nn.Embedding):
+#             return self.target.weight
+#         else:
+#             raise AttributeError(
+#                 f"Module {type(self.target)} not one of nn.Linear, nn.Embedding, or RadfordConv1D"
+#             )
 
-    @override
-    def forward(self, x: Tensor) -> Tensor:
-        assert self.forward_mode is not None
+#     @override
+#     def forward(self, x: Tensor) -> Tensor:
+#         assert self.forward_mode is not None
 
-        match self.forward_mode:
-            case "target":
-                return self.target(x)
-            case ("mixed", mask_info):
-                target_out = self.target(x)
-                mask = mask_info.component_mask
-                weight_delta_and_mask = mask_info.weight_delta_and_mask
-                components_out = self.components.forward(x, mask, weight_delta_and_mask)
+#         match self.forward_mode:
+#             case "target":
+#                 return self.target(x)
+#             case ("mixed", mask_info):
+#                 target_out = self.target(x)
+#                 mask = mask_info.component_mask
+#                 weight_delta_and_mask = mask_info.weight_delta_and_mask
+#                 components_out = self.components.forward(x, mask, weight_delta_and_mask)
 
-                # this allows passing in bools to mean all or none, instead of requiring a cumbersome torch.ones_like(...) or torch.zeros_like(...)
-                routing_mask = (
-                    mask_info.routing_mask[..., None]
-                    if isinstance(mask_info.routing_mask, Tensor)
-                    else torch.tensor(mask_info.routing_mask)
-                )
-                return torch.where(routing_mask, components_out, target_out)
+#                 # this allows passing in bools to mean all or none, instead of requiring a cumbersome torch.ones_like(...) or torch.zeros_like(...)
+#                 routing_mask = (
+#                     mask_info.routing_mask[..., None]
+#                     if isinstance(mask_info.routing_mask, Tensor)
+#                     else torch.tensor(mask_info.routing_mask)
+#                 )
+#                 return torch.where(routing_mask, components_out, target_out)
 
-    def make_pristine(self) -> None:
-        self.forward_mode = None
+#     def make_pristine(self) -> None:
+#         self.forward_mode = None
 
-    def assert_pristine(self) -> None:
-        assert self.forward_mode is None, f"forward_mode should be None, got {self.forward_mode}"
+#     def assert_pristine(self) -> None:
+#         assert self.forward_mode is None, f"forward_mode should be None, got {self.forward_mode}"

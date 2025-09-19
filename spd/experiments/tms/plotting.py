@@ -1004,7 +1004,7 @@ def main():
 
         # Load models
         model = ComponentModel.from_pretrained(run_id)
-        patched_model = model.patched_model
+        patched_model = model.target_model
         assert isinstance(patched_model, TMSModel)
 
         # Get custom config and name for this run

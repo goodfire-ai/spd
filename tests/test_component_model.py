@@ -14,7 +14,6 @@ from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import (
     ComponentsMaskInfo,
-    ComponentsOrModule,
     EmbeddingComponents,
     LinearComponents,
 )
@@ -77,80 +76,80 @@ def component_model() -> ComponentModel:
     )
 
 
-def test_replaced_modules_sets_and_restores_masks(component_model: ComponentModel):
-    cm = component_model
-    full_mask_infos = {
-        name: ComponentsMaskInfo(
-            routing_mask=True,
-            component_mask=torch.randn(1, cm.C, dtype=torch.float32),
-            weight_delta_and_mask=None,
-        )
-        for name in cm.components_or_modules
-    }
-    with cm._replaced_modules(full_mask_infos):
-        # All components should now be in replacement‑mode with the given masks
-        for name, comp in cm.components_or_modules.items():
-            assert isinstance(comp.forward_mode, tuple)
-            assert comp.forward_mode[0] == "mixed"
-            assert comp.forward_mode[1] is full_mask_infos[name]  # is for identity check
+# def test_replaced_modules_sets_and_restores_masks(component_model: ComponentModel):
+#     cm = component_model
+#     full_mask_infos = {
+#         name: ComponentsMaskInfo(
+#             routing_mask=True,
+#             component_mask=torch.randn(1, cm.C, dtype=torch.float32),
+#             weight_delta_and_mask=None,
+#         )
+#         for name in cm.components_or_modules
+#     }
+#     with cm._replaced_modules(full_mask_infos):
+#         # All components should now be in replacement‑mode with the given masks
+#         for name, comp in cm.components_or_modules.items():
+#             assert isinstance(comp.forward_mode, tuple)
+#             assert comp.forward_mode[0] == "mixed"
+#             assert comp.forward_mode[1] is full_mask_infos[name]  # is for identity check
 
-    for comp in cm.components_or_modules.values():
-        comp.assert_pristine()
-
-
-def test_replaced_modules_sets_and_restores_masks_partial(
-    component_model: ComponentModel,
-):
-    cm = component_model
-    # Partial masking
-    partial_masks = {
-        "linear1": ComponentsMaskInfo(
-            routing_mask=True,
-            component_mask=torch.ones(1, cm.C),
-            weight_delta_and_mask=None,
-        )
-    }
-    with cm._replaced_modules(partial_masks):
-        assert isinstance((fw := cm.components_or_modules["linear1"].forward_mode), tuple)
-        mode, mask_info = fw
-        assert mode == "mixed"
-        assert torch.equal(mask_info.component_mask, partial_masks["linear1"].component_mask)  # pyright: ignore[reportArgumentType]
-
-        # Others fall back to target‑only mode with no masks
-        assert cm.components_or_modules["linear2"].forward_mode == "target"
-        assert cm.components_or_modules["embedding"].forward_mode == "target"
-
-    for comp in cm.components_or_modules.values():
-        comp.assert_pristine()
+#     for comp in cm.components_or_modules.values():
+#         comp.assert_pristine()
 
 
-def test_replaced_component_forward_linear_matches_modes():
-    B = 5
-    C = 3
-    input_dim = 6
-    output_dim = 4
+# def test_replaced_modules_sets_and_restores_masks_partial(
+#     component_model: ComponentModel,
+# ):
+#     cm = component_model
+#     # Partial masking
+#     partial_masks = {
+#         "linear1": ComponentsMaskInfo(
+#             routing_mask=True,
+#             component_mask=torch.ones(1, cm.C),
+#             weight_delta_and_mask=None,
+#         )
+#     }
+#     with cm._replaced_modules(partial_masks):
+#         assert isinstance((fw := cm.components_or_modules["linear1"].forward_mode), tuple)
+#         mode, mask_info = fw
+#         assert mode == "mixed"
+#         assert torch.equal(mask_info.component_mask, partial_masks["linear1"].component_mask)  # pyright: ignore[reportArgumentType]
 
-    target = nn.Linear(input_dim, output_dim, bias=True)
-    components = LinearComponents(d_in=input_dim, d_out=output_dim, C=3, bias=target.bias)
-    components_or_module = ComponentsOrModule(target=target, components=components)
+#         # Others fall back to target‑only mode with no masks
+#         assert cm.components_or_modules["linear2"].forward_mode == "target"
+#         assert cm.components_or_modules["embedding"].forward_mode == "target"
 
-    x = torch.randn(B, input_dim)
+#     for comp in cm.components_or_modules.values():
+#         comp.assert_pristine()
 
-    # --- target path ---
-    components_or_module.forward_mode = "target"
-    out_orig = components_or_module(x)
-    expected_orig = target(x)
-    torch.testing.assert_close(out_orig, expected_orig, rtol=1e-4, atol=1e-5)
 
-    # --- Replacement path (with mask) ---
-    mask = torch.rand(B, C)
-    mask_info = ComponentsMaskInfo(
-        routing_mask=True, component_mask=mask, weight_delta_and_mask=None
-    )
-    components_or_module.forward_mode = ("mixed", mask_info)
-    out_rep = components_or_module(x)
-    expected_rep = components(x, mask)
-    torch.testing.assert_close(out_rep, expected_rep, rtol=1e-4, atol=1e-5)
+# def test_replaced_component_forward_linear_matches_modes():
+#     B = 5
+#     C = 3
+#     input_dim = 6
+#     output_dim = 4
+
+#     target = nn.Linear(input_dim, output_dim, bias=True)
+#     components = LinearComponents(d_in=input_dim, d_out=output_dim, C=3, bias=target.bias)
+#     components_or_module = ComponentsOrModule(target=target, components=components)
+
+#     x = torch.randn(B, input_dim)
+
+#     # --- target path ---
+#     components_or_module.forward_mode = "target"
+#     out_orig = components_or_module(x)
+#     expected_orig = target(x)
+#     torch.testing.assert_close(out_orig, expected_orig, rtol=1e-4, atol=1e-5)
+
+#     # --- Replacement path (with mask) ---
+#     mask = torch.rand(B, C)
+#     mask_info = ComponentsMaskInfo(
+#         routing_mask=True, component_mask=mask, weight_delta_and_mask=None
+#     )
+#     components_or_module.forward_mode = ("mixed", mask_info)
+#     out_rep = components_or_module(x)
+#     expected_rep = components(x, mask)
+#     torch.testing.assert_close(out_rep, expected_rep, rtol=1e-4, atol=1e-5)
 
 
 def test_replaced_component_forward_conv1d_matches_modes():
@@ -303,7 +302,7 @@ def test_patch_modules_unsupported_component_type_raises() -> None:
     model.requires_grad_(False)
 
     with pytest.raises(ValueError):
-        ComponentModel._patch_modules(
+        ComponentModel._create_components(
             model=model,
             module_paths=["other_layer"],
             C=2,
