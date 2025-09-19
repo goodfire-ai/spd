@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Literal
 
 import einops
@@ -12,6 +14,60 @@ from spd.models.component_model import ComponentModel
 from spd.models.components import Components, ComponentsOrModule, EmbeddingComponents
 from spd.utils.component_utils import calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm
+
+
+@dataclass(frozen=True)
+class MaskedForwardCache:
+    outputs: list[Float[Tensor, "... d_model_out"]]
+    hidden_acts_by_layer: dict[str, list[Float[Tensor, "..."]]]
+
+
+def run_masked_forward(
+    model: ComponentModel,
+    batch: Float[Tensor, "... d_in"],
+    mask_infos_list: list[dict[str, ComponentsMaskInfo]],
+    hidden_module_names: Iterable[str] | None = None,
+) -> MaskedForwardCache:
+    output_cache: list[Tensor] = []
+    hidden_acts_cache: dict[str, list[Tensor]] = {m: [] for m in (hidden_module_names or [])}
+    for mask_infos in mask_infos_list:
+        if hidden_module_names:
+            output, hidden_acts = model(
+                batch,
+                mode="pre_forward_cache_components",
+                mask_infos=mask_infos,
+                module_names=list(hidden_module_names),
+            )
+            for name in hidden_acts_cache:
+                hidden_acts_cache[name].append(hidden_acts[name])
+        else:
+            output = model(batch, mode="components", mask_infos=mask_infos)
+        output_cache.append(output)
+    return MaskedForwardCache(outputs=output_cache, hidden_acts_by_layer=hidden_acts_cache)
+
+
+def output_recon_loss_from_cache(
+    cache: MaskedForwardCache,
+    target_out: Float[Tensor, "... d_model_out"],
+    loss_type: Literal["mse", "kl"],
+) -> Float[Tensor, ""]:
+    if loss_type == "mse":
+        return torch.stack([((o - target_out) ** 2).mean() for o in cache.outputs]).mean()
+    return torch.stack(
+        [calc_kl_divergence_lm(pred=o, target=target_out) for o in cache.outputs]
+    ).mean()
+
+
+def hidden_recon_losses_from_cache(
+    cache: MaskedForwardCache,
+    target_hidden: dict[str, Tensor],
+) -> dict[str, Float[Tensor, ""]]:
+    return {
+        layer_name: torch.stack(
+            [((a - target_hidden[layer_name]) ** 2).mean() for a in layer_acts]
+        ).mean()
+        for layer_name, layer_acts in cache.hidden_acts_by_layer.items()
+    }
 
 
 def calc_embedding_recon_loss(
@@ -172,10 +228,7 @@ def calc_masked_recon_loss(
     mask_infos_list: list[dict[str, ComponentsMaskInfo]],
     target_out: Float[Tensor, "... d_model_out"],
     output_recon_loss_type: Literal["mse", "kl"],
-    device: str,
-    return_hidden_act_recon_losses: bool = False,
-    target_hidden: dict[str, Tensor] | None = None,
-) -> Float[Tensor, ""] | tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
+) -> Float[Tensor, ""]:
     """Calculate the recon loss when applying all (masked) component layers at once.
 
     This function takes the mean loss over all masks in mask_infos_list.
@@ -188,61 +241,45 @@ def calc_masked_recon_loss(
         target_out: Target model output
         output_recon_loss_type: Type of loss to calculate for output reconstruction
         device: Device to run computations on
-        return_hidden_act_recon_losses: Whether to also compute hidden activation reconstruction losses
+
+    Returns:
+        The recon loss
+    """
+    cache = run_masked_forward(model, batch, mask_infos_list)
+    return output_recon_loss_from_cache(cache, target_out, output_recon_loss_type)
+
+
+def calc_masked_recon_loss_with_hidden(
+    model: ComponentModel,
+    batch: Float[Tensor, "... d_in"],
+    mask_infos_list: list[dict[str, ComponentsMaskInfo]],
+    target_out: Float[Tensor, "... d_model_out"],
+    output_recon_loss_type: Literal["mse", "kl"],
+    target_hidden: dict[str, Tensor],
+) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
+    """Calculate the recon loss when applying all (masked) component layers at once, including hidden losses.
+
+    This function takes the mean loss over all masks in mask_infos_list.
+
+    Args:
+        model: The component model
+        batch: Input batch
+        mask_infos_list: Mask infos for each stochastic source (there are config.n_mask_samples
+            stochastic sources).
+        target_out: Target model output
+        output_recon_loss_type: Type of loss to calculate for output reconstruction
+        device: Device to run computations on
         target_hidden: Dictionary of target hidden activations for each layer
 
     Returns:
-        The recon loss, or tuple of (recon_loss, hidden_losses_dict) if return_hidden_act_recon_losses=True
+        Tuple of (recon_loss, hidden_losses_dict)
     """
-    # Do a forward pass with all components
-    assert output_recon_loss_type in ["mse", "kl"], (
-        f"Invalid output loss type: {output_recon_loss_type}"
+    cache = run_masked_forward(
+        model, batch, mask_infos_list, hidden_module_names=target_hidden.keys()
     )
-
-    total_out_recon_loss = torch.tensor(0.0, device=device)
-    hidden_losses = {}
-    component_input_acts = {}  # Initialize to avoid unbound variable error
-
-    if return_hidden_act_recon_losses and target_hidden is not None:
-        for layer_name in target_hidden:
-            hidden_losses[layer_name] = torch.tensor(0.0, device=device)
-
-    for mask_infos in mask_infos_list:
-        if return_hidden_act_recon_losses and target_hidden is not None:
-            out, component_input_acts = model(
-                batch,
-                mode="pre_forward_cache_components",
-                mask_infos=mask_infos,
-                module_names=list(target_hidden.keys()),
-            )
-        else:
-            out = model(batch, mode="components", mask_infos=mask_infos)
-
-        if output_recon_loss_type == "mse":
-            out_loss = ((out - target_out) ** 2).mean()
-        else:
-            out_loss = calc_kl_divergence_lm(pred=out, target=target_out)
-        total_out_recon_loss += out_loss
-
-        if return_hidden_act_recon_losses and target_hidden is not None:
-            for layer_name, target_activation in target_hidden.items():
-                assert layer_name in component_input_acts, (
-                    f"Layer {layer_name} not found in component_input_acts"
-                )
-                component_input_activation = component_input_acts[layer_name]
-
-                hidden_loss = ((component_input_activation - target_activation) ** 2).mean()
-                hidden_losses[layer_name] += hidden_loss
-
-    output_loss = total_out_recon_loss / len(mask_infos_list)
-    if return_hidden_act_recon_losses and target_hidden is not None:
-        for layer_name in hidden_losses:
-            hidden_losses[layer_name] = hidden_losses[layer_name] / len(mask_infos_list)
-
-    if return_hidden_act_recon_losses:
-        return output_loss, hidden_losses
-    else:
-        return output_loss
+    output_loss = output_recon_loss_from_cache(cache, target_out, output_recon_loss_type)
+    hidden_losses = hidden_recon_losses_from_cache(cache, target_hidden)
+    return output_loss, hidden_losses
 
 
 def calc_weight_deltas(
@@ -331,9 +368,7 @@ def calculate_losses(
             mask_infos_list=[recon_mask_infos],
             target_out=target_out,
             output_recon_loss_type=config.output_recon_loss_type,
-            device=device,
         )
-        assert isinstance(recon_loss, torch.Tensor), "Expected tensor return type"
         total_loss += config.recon_coeff * recon_loss
         loss_terms["recon"] = recon_loss.item()
 
@@ -361,26 +396,22 @@ def calculate_losses(
             )
             stoch_mask_infos_list.append(stoch_mask_infos)
 
-        # Check if we also need to compute hidden activation losses
         compute_hidden_losses = (
             config.hidden_act_recon_coeff is not None and target_hidden is not None
         )
 
-        # Call calc_masked_recon_loss with appropriate parameters
-        result = calc_masked_recon_loss(
-            model=model,
-            batch=batch,
-            mask_infos_list=stoch_mask_infos_list,
-            target_out=target_out,
-            output_recon_loss_type=config.output_recon_loss_type,
-            device=device,
-            return_hidden_act_recon_losses=compute_hidden_losses,
-            target_hidden=target_hidden if compute_hidden_losses else None,
-        )
-
         if compute_hidden_losses:
-            stochastic_recon_loss, hidden_losses = result
-            assert isinstance(hidden_losses, dict), "Expected dict return type for hidden_losses"
+            assert target_hidden is not None, (
+                "target_hidden should not be None when compute_hidden_losses is True"
+            )
+            stochastic_recon_loss, hidden_losses = calc_masked_recon_loss_with_hidden(
+                model=model,
+                batch=batch,
+                mask_infos_list=stoch_mask_infos_list,
+                target_out=target_out,
+                output_recon_loss_type=config.output_recon_loss_type,
+                target_hidden=target_hidden,
+            )
             assert config.hidden_act_recon_coeff is not None, (
                 "hidden_act_recon_coeff should not be None when computing hidden losses"
             )
@@ -388,8 +419,13 @@ def calculate_losses(
                 total_loss += config.hidden_act_recon_coeff * layer_loss
                 loss_terms[f"hidden_act_recon/{layer_name}"] = layer_loss.item()
         else:
-            stochastic_recon_loss = result
-            assert isinstance(stochastic_recon_loss, torch.Tensor), "Expected tensor return type"
+            stochastic_recon_loss = calc_masked_recon_loss(
+                model=model,
+                batch=batch,
+                mask_infos_list=stoch_mask_infos_list,
+                target_out=target_out,
+                output_recon_loss_type=config.output_recon_loss_type,
+            )
 
         total_loss += config.stochastic_recon_coeff * stochastic_recon_loss
         loss_terms["stochastic_recon"] = stochastic_recon_loss.item()
@@ -469,9 +505,7 @@ def calculate_losses(
             mask_infos_list=[make_mask_infos(masks_all_ones)],
             target_out=target_out,
             output_recon_loss_type=config.output_recon_loss_type,
-            device=device,
         )
-        assert isinstance(out_recon_loss, torch.Tensor), "Expected tensor return type"
         total_loss += config.out_recon_coeff * out_recon_loss
         loss_terms["output_recon"] = out_recon_loss.item()
 

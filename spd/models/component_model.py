@@ -402,8 +402,8 @@ class ComponentModel(LoadableModule):
             assert module_names is not None, (
                 "module_names parameter is required for mode='pre_forward_cache_components'"
             )
-            return self._forward_with_pre_forward_cache_components_hooks(
-                *args, mask_infos=mask_infos, module_names=module_names, **kwargs
+            return self._forward_with_pre_forward_cache_hooks(
+                *args, module_names=module_names, mask_infos=mask_infos, **kwargs
             )
         else:
             return self._forward_target(*args, **kwargs)
@@ -476,12 +476,17 @@ class ComponentModel(LoadableModule):
             return out
 
     def _forward_with_pre_forward_cache_hooks(
-        self, *args: Any, module_names: list[str], **kwargs: Any
+        self,
+        *args: Any,
+        module_names: list[str],
+        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
+        **kwargs: Any,
     ) -> tuple[Any, dict[str, Tensor]]:
         """Forward pass with caching at the input to the modules given by `module_names`.
 
         Args:
             module_names: List of module names to cache the inputs to.
+            mask_infos: Dictionary mapping module names to ComponentMaskInfo (optional)
 
         Returns:
             Tuple of (model output, cache dictionary)
@@ -507,57 +512,8 @@ class ComponentModel(LoadableModule):
                 module.register_forward_pre_hook(partial(cache_hook, param_name=raw_module_name))
             )
 
-        for module in self.components_or_modules.values():
-            module.assert_pristine()
-            module.forward_mode = "original"
-
-        try:
-            raw_out = self.patched_model(*args, **kwargs)
-            out = self._extract_output(raw_out)
-            return out, cache
-        finally:
-            for handle in handles:
-                handle.remove()
-
-            for module in self.components_or_modules.values():
-                module.make_pristine()
-
-    def _forward_with_pre_forward_cache_components_hooks(
-        self,
-        *args: Any,
-        mask_infos: dict[str, ComponentsMaskInfo],
-        module_names: list[str],
-        **kwargs: Any,
-    ) -> tuple[Any, dict[str, Tensor]]:
-        """Forward pass with component replacements and caching at the input to the modules given by `module_names`.
-
-        Args:
-            mask_infos: Dictionary mapping module names to ComponentMaskInfo
-            module_names: List of module names to cache the inputs to.
-
-        Returns:
-            Tuple of (model output, cache dictionary)
-        """
-        cache = {}
-        handles: list[RemovableHandle] = []
-
-        def cache_hook(_: nn.Module, input: tuple[Tensor, "..."], param_name: str) -> None:
-            cache[param_name] = input[0]
-
-        # Register hooks
-        for raw_module_name in module_names:
-            is_identity = raw_module_name.startswith("identity_")
-            module_name = (
-                raw_module_name.removeprefix("identity_") if is_identity else raw_module_name
-            )
-            module = self.patched_model.get_submodule(module_name)
-            assert module is not None, f"Module {module_name} not found"
-            handles.append(
-                module.register_forward_pre_hook(partial(cache_hook, param_name=raw_module_name))
-            )
-
-        # Set up component replacements
-        with self._replaced_modules(mask_infos=mask_infos):
+        # Set up component replacements if mask_infos is provided
+        with self._replaced_modules(mask_infos=mask_infos or {}):
             try:
                 raw_out = self.patched_model(*args, **kwargs)
                 out = self._extract_output(raw_out)
