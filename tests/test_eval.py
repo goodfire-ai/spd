@@ -7,7 +7,7 @@ import torch
 from PIL import Image
 
 from spd.configs import Config
-from spd.eval import CIHistograms
+from spd.metrics import CIHistograms
 from spd.models.component_model import ComponentModel
 
 
@@ -81,7 +81,7 @@ class TestCIHistograms:
         """Test compute() when no batches have been watched."""
         ci_hist = CIHistograms(mock_model, mock_config)
 
-        with patch("spd.eval.plot_ci_values_histograms") as mock_plot:
+        with patch("spd.metrics.plot_ci_values_histograms") as mock_plot:
             mock_plot.return_value = Image.new("RGB", (100, 100))
 
             # When no batches watched, causal_importances dict has empty lists

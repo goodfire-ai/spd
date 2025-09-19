@@ -37,7 +37,7 @@ class EvalMetricConfig(BaseModel):
     )
 
     def _get_metric_class(self) -> type | None:
-        available_classes = importlib.import_module("spd.eval").EVAL_CLASSES
+        available_classes = importlib.import_module("spd.metrics").EVAL_CLASSES
         cls = available_classes.get(self.classname)
         if cls is None:
             logger.warning(

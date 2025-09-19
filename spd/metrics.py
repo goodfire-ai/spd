@@ -38,16 +38,16 @@ from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
 
-class StreamingEval(ABC):
+class Metric(ABC):
     SLOW: ClassVar[bool]
 
     @abstractmethod
-    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any): ...
+    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None: ...
 
     @abstractmethod
     def watch_batch(
         self,
-        batch: Tensor,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None: ...
@@ -55,13 +55,22 @@ class StreamingEval(ABC):
     @abstractmethod
     def compute(self) -> Mapping[str, float | Image.Image]: ...
 
+    def forward(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> Mapping[str, float | Image.Image]:
+        self.watch_batch(batch=batch, target_out=target_out, ci=ci)
+        return self.compute()
 
-class CI_L0(StreamingEval):
+
+class CI_L0(Metric):
     SLOW = False
 
     def __init__(
         self, model: ComponentModel, config: Config, groups: dict[str, list[str]] | None = None
-    ):
+    ) -> None:
         self.l0_threshold = config.ci_alive_threshold
         self.l0s = defaultdict[str, list[float]](list)
         self.groups = groups  # Optional: {"layer_0": ["model.layers.0.*"], ...}
@@ -113,10 +122,10 @@ class CI_L0(StreamingEval):
         return out
 
 
-class CEandKLLosses(StreamingEval):
+class CEandKLLosses(Metric):
     SLOW = False
 
-    def __init__(self, model: ComponentModel, config: Config, rounding_threshold: float):
+    def __init__(self, model: ComponentModel, config: Config, rounding_threshold: float) -> None:
         self.model = model
         self.config = config
         self.rounding_threshold = rounding_threshold
@@ -245,7 +254,7 @@ class CEandKLLosses(StreamingEval):
         return {k: sum(v) / len(v) for k, v in self.ce_losses.items()}
 
 
-class CIHistograms(StreamingEval):
+class CIHistograms(Metric):
     SLOW = True
 
     def __init__(self, model: ComponentModel, config: Config, n_batches_accum: int | None = None):
@@ -273,10 +282,10 @@ class CIHistograms(StreamingEval):
         return {"figures/causal_importance_values": fig}
 
 
-class ComponentActivationDensity(StreamingEval):
+class ComponentActivationDensity(Metric):
     SLOW = True
 
-    def __init__(self, model: ComponentModel, config: Config):
+    def __init__(self, model: ComponentModel, config: Config) -> None:
         self.model = model
         self.config = config
         self.device = next(iter(model.parameters())).device
@@ -312,7 +321,7 @@ class ComponentActivationDensity(StreamingEval):
         return {"figures/component_activation_density": fig}
 
 
-class PermutedCIPlots(StreamingEval):
+class PermutedCIPlots(Metric):
     SLOW = True
 
     def __init__(
@@ -321,7 +330,7 @@ class PermutedCIPlots(StreamingEval):
         config: Config,
         identity_patterns: list[str] | None = None,
         dense_patterns: list[str] | None = None,
-    ):
+    ) -> None:
         self.model = model
         self.config = config
         self.device = next(iter(model.parameters())).device
@@ -361,7 +370,7 @@ class PermutedCIPlots(StreamingEval):
         return {f"figures/{k}": v for k, v in figures.items()}
 
 
-class UVPlots(StreamingEval):
+class UVPlots(Metric):
     SLOW = True
 
     def __init__(
@@ -370,7 +379,7 @@ class UVPlots(StreamingEval):
         config: Config,
         identity_patterns: list[str] | None = None,
         dense_patterns: list[str] | None = None,
-    ):
+    ) -> None:
         self.model = model
         self.config = config
         self.device = next(iter(model.parameters())).device
@@ -414,7 +423,7 @@ class UVPlots(StreamingEval):
         return {"figures/uv_matrices": uv_matrices}
 
 
-class IdentityCIError(StreamingEval):
+class IdentityCIError(Metric):
     SLOW = True
 
     def __init__(
@@ -423,7 +432,7 @@ class IdentityCIError(StreamingEval):
         config: Config,
         identity_ci: list[dict[str, str | int]] | None = None,
         dense_ci: list[dict[str, str | int]] | None = None,
-    ):
+    ) -> None:
         self.model = model
         self.config = config
         self.device = next(iter(model.parameters())).device
@@ -476,7 +485,7 @@ class IdentityCIError(StreamingEval):
         return target_metrics
 
 
-class CIMeanPerComponent(StreamingEval):
+class CIMeanPerComponent(Metric):
     SLOW = True
 
     def __init__(self, model: ComponentModel, config: Config) -> None:
@@ -529,7 +538,7 @@ class CIMeanPerComponent(StreamingEval):
         }
 
 
-class SubsetReconstructionLoss(StreamingEval):
+class SubsetReconstructionLoss(Metric):
     """Compute reconstruction loss for specific subsets of components."""
 
     SLOW = False
@@ -542,7 +551,7 @@ class SubsetReconstructionLoss(StreamingEval):
         exclude_patterns: dict[str, list[str]] | None = None,
         use_all_ones_for_non_replaced: bool = False,
         n_mask_samples: int = 5,
-    ):
+    ) -> None:
         """Initialize SubsetReconstructionLoss.
 
         Args:
@@ -741,10 +750,10 @@ class SubsetReconstructionLoss(StreamingEval):
         return results
 
 
-class FaithfulnessLoss(StreamingEval):
+class FaithfulnessLoss(Metric):
     SLOW = False
 
-    def __init__(self, model: ComponentModel, config: Config):
+    def __init__(self, model: ComponentModel, config: Config) -> None:
         self.model = model
         self.config = config
         self.device = next(iter(model.parameters())).device
@@ -765,7 +774,7 @@ class FaithfulnessLoss(StreamingEval):
         return {"loss/faithfulness": loss.item()}
 
 
-EVAL_CLASSES = {
+METRICS = {
     cls.__name__: cls
     for cls in [
         CI_L0,
@@ -791,12 +800,12 @@ def evaluate(
     run_slow: bool,
     n_steps: int,
 ) -> dict[str, float | Image.Image]:
-    evals: list[StreamingEval] = []
+    evals: list[Metric] = []
     for eval_config in config.eval_metrics:
-        eval_cls = EVAL_CLASSES[eval_config.classname]
-        if not run_slow and eval_cls.SLOW:
+        metric_cls = METRICS[eval_config.classname]
+        if not run_slow and metric_cls.SLOW:
             continue
-        evals.append(eval_cls(model, config, **eval_config.extra_init_kwargs))
+        evals.append(metric_cls(model, config, **eval_config.extra_init_kwargs))
 
     for _ in range(n_steps):
         # Do the common work:
