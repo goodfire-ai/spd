@@ -1,24 +1,16 @@
 """Language Model decomposition script."""
 
 import json
-from functools import partial
 from pathlib import Path
-from collections.abc import Callable
-from typing import Any
 
 import fire
-import torch
-import torch.nn as nn
 import wandb
-from jaxtyping import Int
 from simple_stories_train.run_info import RunInfo as SSRunInfo
-from torch.utils.hooks import RemovableHandle
 
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
-from spd.models.component_model import ComponentModel
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
     call_on_rank0_then_broadcast,
@@ -36,78 +28,6 @@ from spd.utils.general_utils import (
 )
 from spd.utils.run_utils import get_output_dir
 from spd.utils.wandb_utils import init_wandb
-
-
-def insert_identity_operations(
-    target_model: nn.Module,
-    identity_patterns: list[str],
-    device: torch.device | str,
-) -> None:
-    """Insert identity linear layers before specified modules.
-
-    Args:
-        target_model: The model to modify
-        identity_patterns: Patterns matching modules to prepend identity ops to
-        device: Device to place tensors on
-    """
-    # Create dummy input to capture shapes
-    dummy_input: Int[torch.Tensor, "batch seq"] = torch.tensor([[0]], device=device)
-
-    cache: dict[str, torch.Tensor] = {}
-    handles: list[RemovableHandle] = []
-
-    def cache_hook(_: nn.Module, input: tuple[torch.Tensor, ...], param_name: str) -> None:
-        cache[param_name] = input[0]
-
-    # Get modules matching the patterns
-    identity_module_paths = ComponentModel._get_target_module_paths(target_model, identity_patterns)
-
-    if is_main_process():
-        logger.info(f"Inserting identity operations before {len(identity_module_paths)} modules")
-
-    # Register hooks to capture inputs
-    for module_name in identity_module_paths:
-        module = target_model.get_submodule(module_name)
-        handle = module.register_forward_pre_hook(partial(cache_hook, param_name=module_name))
-        handles.append(handle)
-
-    # Run forward pass to collect input shapes
-    with torch.no_grad():
-        target_model(dummy_input)
-
-    # Remove the cache hooks
-    for handle in handles:
-        handle.remove()
-
-    # Add identity layers and hooks
-    for module_path in identity_module_paths:
-        module = target_model.get_submodule(module_path)
-
-        cached_input = cache[module_path]
-        assert cached_input.ndim == 3, f"Expected 3D input (batch, seq, d_in), got {cached_input.ndim}D"
-        d_in = cached_input.shape[2]
-
-        # Create identity linear layer
-        pre_identity = nn.Linear(d_in, d_in, bias=False, device=device)
-        nn.init.eye_(pre_identity.weight)  # Initialize as identity matrix
-        module.pre_identity = pre_identity  # type: ignore
-
-        # Create hook function with proper closure
-        def make_pre_id_hook(identity_layer: nn.Linear) -> Callable[..., tuple[tuple[Any, ...], dict[Any, Any]]]:
-            def pre_id_hook(
-                _mod: nn.Module,
-                args: tuple[Any, ...],
-                kwargs: dict[Any, Any]
-            ) -> tuple[tuple[Any, ...], dict[Any, Any]]:
-                assert len(args) == 1, f"Expected 1 positional arg, got {len(args)}"
-                assert not kwargs, f"Expected no kwargs, got {kwargs.keys()}"
-                return (identity_layer(args[0]),), {}
-            return pre_id_hook
-
-        module.register_forward_pre_hook(make_pre_id_hook(pre_identity), with_kwargs=True)
-
-        if is_main_process():
-            logger.info(f"  Added identity layer to {module_path} with dimension {d_in}")
 
 
 @with_distributed_cleanup
@@ -251,14 +171,6 @@ def main(
 
     if is_main_process():
         logger.info("Starting optimization...")
-
-    # Insert identity operations if configured
-    if config.identity_module_patterns is not None:
-        insert_identity_operations(
-            target_model=target_model,
-            identity_patterns=config.identity_module_patterns,
-            device=device,
-        )
 
     optimize(
         target_model=target_model,

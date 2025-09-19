@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch.testing import assert_close
 
-from spd.experiments.lm.lm_decomposition import insert_identity_operations
+from spd.utils.identity_insertion import insert_identity_operations
 
 
 class SimpleModel(nn.Module):

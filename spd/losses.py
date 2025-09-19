@@ -1,6 +1,5 @@
 from typing import Literal
 
-import einops
 import torch
 import torch.nn as nn
 from jaxtyping import Float, Int
@@ -9,7 +8,6 @@ from torch import Tensor
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import (
-    Components,
     ComponentsMaskInfo,
     ComponentsOrModule,
     EmbeddingComponents,
