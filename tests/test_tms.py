@@ -51,7 +51,7 @@ def test_tms_decomposition_happy_path() -> None:
         embedding_recon_coeff=None,
         is_embed_unembed_recon=False,
         pnorm=2.0,
-        output_loss_type="mse",
+        output_recon_loss_type="mse",
         # Training
         lr=1e-3,
         batch_size=4,

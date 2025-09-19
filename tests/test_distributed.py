@@ -40,7 +40,7 @@ TEST_CONFIG = {
     "embedding_recon_coeff": None,
     "is_embed_unembed_recon": False,
     "pnorm": 2.0,
-    "output_loss_type": "kl",
+    "output_recon_loss_type": "kl",
     # --- Training ---
     "batch_size": 2,
     "steps": 20,

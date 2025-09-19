@@ -416,7 +416,7 @@ def test_from_run_info():
             importance_minimality_coeff=1.0,
             pnorm=1.0,
             n_examples_until_dead=1,
-            output_loss_type="mse",
+            output_recon_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
             task_config=TMSTaskConfig(
