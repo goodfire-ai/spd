@@ -24,6 +24,7 @@ from spd.models.components import (
     EmbeddingComponents,
     GateMLPs,
     GateType,
+    LayerwiseGlobalGateMLP,
     LinearComponents,
     VectorGateMLPs,
 )
@@ -318,16 +319,31 @@ class ComponentModel(LoadableModule):
     ) -> nn.Module:
         """Helper to create a gate based on gate_type and module type."""
         if gate_type == "mlp":
-            return GateMLPs(C=component_C, hidden_dims=gate_hidden_dims)
+            gate = GateMLPs(C=component_C, hidden_dims=gate_hidden_dims)
         else:
+            assert gate_type in ["vector_mlp", "layerwise_global_mlp"], (
+                f"Unknown gate type: {gate_type}"
+            )
+            assert not isinstance(original_module, nn.Embedding), (
+                "Embedding modules only supported for gate_type='mlp'"
+            )
             if isinstance(original_module, nn.Linear):
                 input_dim = original_module.weight.shape[1]
             elif isinstance(original_module, RadfordConv1D):
                 input_dim = original_module.weight.shape[0]
             else:
-                assert isinstance(original_module, nn.Embedding)
-                raise ValueError("Embedding modules only supported for gate_type='mlp'")
-            return VectorGateMLPs(C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
+                raise ValueError(f"Module {type(original_module)} not supported for {gate_type=}")
+
+            if gate_type == "vector_mlp":
+                gate = VectorGateMLPs(
+                    C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+                )
+            else:
+                assert gate_type == "layerwise_global_mlp"
+                gate = LayerwiseGlobalGateMLP(
+                    C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+                )
+        return gate
 
     @staticmethod
     def _make_gates(
@@ -617,7 +633,7 @@ class ComponentModel(LoadableModule):
 
             if isinstance(gates, GateMLPs):
                 gate_input = self.components[param_name].get_inner_acts(acts)
-            elif isinstance(gates, VectorGateMLPs):
+            elif isinstance(gates, VectorGateMLPs | LayerwiseGlobalGateMLP):
                 gate_input = acts
             else:
                 raise ValueError(f"Unknown gate type: {type(gates)}")

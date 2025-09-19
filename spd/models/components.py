@@ -10,7 +10,7 @@ from transformers.modeling_utils import Conv1D as RadfordConv1D
 from spd.mask_info import WeightDeltaAndMask
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
-GateType = Literal["mlp", "vector_mlp"]
+GateType = Literal["mlp", "vector_mlp", "layerwise_global_mlp"]
 
 
 class ParallelLinear(nn.Module):
@@ -29,8 +29,24 @@ class ParallelLinear(nn.Module):
         return einops.einsum(x, self.W, "... C d_in, C d_in d_out -> ... C d_out") + self.b
 
 
+class Linear(nn.Module):
+    """Linear layer with biases initialized to 0 and weights initialized using fan_val."""
+
+    def __init__(self, input_dim: int, output_dim: int, nonlinearity: _NonlinearityType):
+        super().__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.W = nn.Parameter(torch.empty(input_dim, output_dim))
+        self.b = nn.Parameter(torch.zeros(output_dim))
+        init_param_(self.W, fan_val=input_dim, nonlinearity=nonlinearity)
+
+    @override
+    def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
+        return einops.einsum(x, self.W, "... d_in, d_in d_out -> ... d_out") + self.b
+
+
 class GateMLPs(nn.Module):
-    """MLP based gates that map component 'inner acts' to a scalar output for each component."""
+    """MLP-based gates that map component 'inner acts' to a scalar output for each component."""
 
     def __init__(self, C: int, hidden_dims: list[int]):
         super().__init__()
@@ -54,7 +70,7 @@ class GateMLPs(nn.Module):
 
 
 class VectorGateMLPs(nn.Module):
-    """MLP based gates that map a module's input vector to a scalar output for each component."""
+    """Contains a separate network for each component and takes a module's input vector as input."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
@@ -76,6 +92,25 @@ class VectorGateMLPs(nn.Module):
         x = self.layers(einops.rearrange(x, "... d_in -> ... 1 d_in"))
         assert x.shape[-1] == 1, "Last dimension should be 1 after the final layer"
         return x[..., 0]
+
+
+class LayerwiseGlobalGateMLP(nn.Module):
+    """Maps a module's input vector to a scalar output for each component with a 'pure' MLP."""
+
+    def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
+        super().__init__()
+        self.layers = nn.Sequential()
+        for i in range(len(hidden_dims)):
+            in_dim = input_dim if i == 0 else hidden_dims[i - 1]
+            output_dim = hidden_dims[i]
+            self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
+            self.layers.append(nn.GELU())
+        final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else input_dim
+        self.layers.append(Linear(final_dim, C, nonlinearity="linear"))
+
+    @override
+    def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
+        return self.layers(x)
 
 
 class Components(ABC, nn.Module):
