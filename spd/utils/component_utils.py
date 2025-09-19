@@ -4,7 +4,7 @@ import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
 
-from spd.models.components import ComponentMaskInfo, WeightDeltaAndMask, make_mask_infos
+from spd.models.components import ComponentsMaskInfo, WeightDeltaAndMask, make_mask_infos
 
 
 def sample_stochastic_mask(
@@ -25,7 +25,7 @@ def calc_stochastic_component_mask_info(
     sampling: Literal["continuous", "binomial"],
     weight_deltas: dict[str, Tensor] | None,
     routing: Literal["variable-p", "all"],
-) -> dict[str, ComponentMaskInfo]:
+) -> dict[str, ComponentsMaskInfo]:
     routing_masks: dict[str, Bool[Tensor, " ..."] | bool] = {}
     # static Ps across layers
     ci_sample: Float[Tensor, "... C"] = next(iter(causal_importances.values()))
@@ -54,7 +54,7 @@ def calc_stochastic_component_mask_infos(
     weight_deltas: dict[str, Tensor] | None,
     routing: Literal["variable-p", "all"],
     n_mask_samples: int,
-) -> list[dict[str, ComponentMaskInfo]]:
+) -> list[dict[str, ComponentsMaskInfo]]:
     return [
         calc_stochastic_component_mask_info(causal_importances, sampling, weight_deltas, routing)
         for _ in range(n_mask_samples)

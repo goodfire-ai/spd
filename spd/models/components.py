@@ -97,6 +97,7 @@ class VectorGateMLPs(nn.Module):
 
 WeightDeltaAndMask = tuple[Float[Tensor, " d_out d_in"], Float[Tensor, "..."]]
 
+
 class LayerwiseGlobalGateMLP(nn.Module):
     """Maps a module's input vector to a scalar output for each component with a 'pure' MLP."""
 
@@ -287,11 +288,15 @@ class EmbeddingComponents(Components):
 
 
 @dataclass
-class ComponentMaskInfo:
+class ComponentsMaskInfo:
     """Specifies the mask information that will be applied to a ComponentOrModule object."""
 
     routing_mask: Float[Tensor, " ..."] | bool
+    """specifies which positions (usually batch, seq) to route to components vs target"""
+
     component_mask: Float[Tensor, "... C"] | bool
+    """when components are active, this specifies which subcomponents to use"""
+
     weight_delta_and_mask: WeightDeltaAndMask | None
 
 
@@ -299,8 +304,8 @@ def make_mask_infos(
     component_masks: Mapping[str, Float[Tensor, "... C"] | bool],
     routing_masks: Mapping[str, Bool[Tensor, "..."] | bool] | None = None,
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
-) -> dict[str, ComponentMaskInfo]:
-    """Create ComponentMaskInfo dict from dicts of component masks, routing masks, and weight deltas and weight delta masks.
+) -> dict[str, ComponentsMaskInfo]:
+    """Create ComponentsMaskInfo dict from dicts of component masks, routing masks, and weight deltas and weight delta masks.
     Keys of all dicts must be the same.
 
     Args:
@@ -308,7 +313,7 @@ def make_mask_infos(
         routing_masks: Dict of routing masks. Defaults to True (enable components) for all outputs if not provided.
         weight_deltas_and_masks: Dict of weight deltas and masks for each module to be decomposed. Defaults to None (disable weight delta component) if not provided.
     turns:
-        Dict mapping module names to ComponentMaskInfo objects.
+        Dict mapping module names to ComponentsMaskInfo objects.
     """
     if routing_masks is not None:
         assert set(routing_masks) == set(component_masks)
@@ -316,9 +321,9 @@ def make_mask_infos(
     if weight_deltas_and_masks is not None:
         assert set(weight_deltas_and_masks) == set(component_masks)
 
-    result: dict[str, ComponentMaskInfo] = {}
+    result: dict[str, ComponentsMaskInfo] = {}
     for name in component_masks:
-        result[name] = ComponentMaskInfo(
+        result[name] = ComponentsMaskInfo(
             routing_mask=routing_masks[name] if routing_masks is not None else True,
             component_mask=component_masks[name],
             weight_delta_and_mask=None
@@ -339,9 +344,9 @@ class ComponentsOrModule(nn.Module):
         self.target = target
         self.components = components
 
-        self.forward_mode: None | Literal["target"] | tuple[Literal["mixed"], ComponentMaskInfo] = (
-            None
-        )
+        self.forward_mode: (
+            None | Literal["target"] | tuple[Literal["mixed"], ComponentsMaskInfo]
+        ) = None
 
     @property
     def target_weight(self) -> Float[Tensor, "rows cols"]:
@@ -361,21 +366,19 @@ class ComponentsOrModule(nn.Module):
         match self.forward_mode:
             case "target":
                 return self.target(x)
-            case ("mixed", context):
+            case ("mixed", mask_info):
                 target_out = self.target(x)
-                components_out = self.components.forward(
-                    x,
-                    context.component_mask,
-                    context.weight_delta_and_mask,
-                )
-                # TODO: just only allow tensor. make easy via constructor fn
+                mask = mask_info.component_mask
+                weight_delta_and_mask = mask_info.weight_delta_and_mask
+                components_out = self.components.forward(x, mask, weight_delta_and_mask)
+
+                # this allows passing in bools to mean all or none, instead of requiring a cumbersome torch.ones_like(...) or torch.zeros_like(...)
                 routing_mask = (
-                    context.routing_mask[..., None]
-                    if isinstance(context.routing_mask, Tensor)
-                    else torch.tensor(context.routing_mask)
+                    mask_info.routing_mask[..., None]
+                    if isinstance(mask_info.routing_mask, Tensor)
+                    else torch.tensor(mask_info.routing_mask)
                 )
                 return torch.where(routing_mask, components_out, target_out)
-                # TODO decide which one maps how
 
     def make_pristine(self) -> None:
         self.forward_mode = None

@@ -9,8 +9,8 @@ from torch import Tensor
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import (
-    ComponentMaskInfo,
     Components,
+    ComponentsMaskInfo,
     ComponentsOrModule,
     EmbeddingComponents,
     make_mask_infos,
@@ -135,7 +135,7 @@ def calc_importance_minimality_loss(
 def calc_masked_recon_layerwise_loss(
     model: ComponentModel,
     batch: Int[Tensor, "..."],
-    mask_infos_list: list[dict[str, ComponentMaskInfo]],
+    mask_infos_list: list[dict[str, ComponentsMaskInfo]],
     target_out: Float[Tensor, "... d_model_out"],
     loss_type: Literal["mse", "kl"],
     device: str,
@@ -174,7 +174,7 @@ def calc_masked_recon_layerwise_loss(
 def calc_masked_recon_loss(
     model: ComponentModel,
     batch: Float[Tensor, "... d_in"],
-    mask_infos_list: list[dict[str, ComponentMaskInfo]],
+    mask_infos_list: list[dict[str, ComponentsMaskInfo]],
     target_out: Float[Tensor, "... d_model_out"],
     loss_type: Literal["mse", "kl"],
     device: str,
@@ -345,7 +345,7 @@ def calculate_losses(
         )
         total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
         loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
-    
+
     # Stochastic subset reconstruction loss
     if config.stochastic_routed_recon_coeff is not None:
         stoch_mask_infos_list = calc_stochastic_component_mask_infos(
