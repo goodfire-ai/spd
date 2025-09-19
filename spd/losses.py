@@ -28,7 +28,7 @@ def calc_embedding_recon_loss(
 ) -> Float[Tensor, ""]:
     """
     recon loss that directly compares the outputs of the (optionally masked)
-    ``EmbeddingComponents``(s) to the outputs of the original ``nn.Embedding`` modules.
+    ``EmbeddingComponents``(s) to the outputs of the target ``nn.Embedding`` modules.
 
     If ``unembed`` is ``True``, both the masked embedding output and the target embedding
     output are unembedded using the ``lm_head`` module, and the KL divergence is used as the loss.
@@ -40,11 +40,11 @@ def calc_embedding_recon_loss(
     assert len(model.components_or_modules) == 1, "Only one embedding component is supported"
     components_or_module = next(iter(model.components_or_modules.values()))
     components = components_or_module.components
-    original = components_or_module.target
+    target = components_or_module.target
     assert isinstance(components, EmbeddingComponents)
 
-    # --- original embedding output --------------------------------------------------------- #
-    target_out: Float[Tensor, "... d_emb"] = original(batch)
+    # --- target embedding output --------------------------------------------------------- #
+    target_out: Float[Tensor, "... d_emb"] = target(batch)
 
     # --- masked embedding output ----------------------------------------------------------- #
     loss = torch.tensor(0.0, device=device)

@@ -157,8 +157,8 @@ def compute_patched_weight_neuron_contributions(
 ) -> Float[Tensor, "n_layers n_features d_mlp"]:
     """Compute per-neuron contribution strengths for a *trained* ResidMLP.
 
-    The returned tensor has shape ``(n_layers, n_features, d_mlp)`` recording – for
-    every hidden layer and every input feature – the *virtual* weight connecting
+    The returned tensor has shape ``(n_layers, n_features, d_mlp)`` recording - for
+    every hidden layer and every input feature - the *virtual* weight connecting
     that feature to each neuron after the ReLU (i.e. the product ``W_in * W_out``)
     as described in the original script.
 
