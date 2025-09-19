@@ -47,7 +47,6 @@ def test_tms_decomposition_happy_path() -> None:
         recon_layerwise_coeff=1e-1,
         stochastic_recon_layerwise_coeff=1.0,
         importance_minimality_coeff=3e-3,
-        schatten_coeff=None,
         embedding_recon_coeff=None,
         is_embed_unembed_recon=False,
         pnorm=2.0,

@@ -17,7 +17,6 @@ from spd.models.components import (
     ComponentsOrModule,
     EmbeddingComponents,
     LinearComponents,
-    make_mask_infos,
 )
 from spd.spd_types import ModelPath
 from spd.utils.run_utils import save_file
@@ -78,21 +77,6 @@ def component_model() -> ComponentModel:
     )
 
 
-def test_no_replacement_masks_means_original_mode(component_model: ComponentModel):
-    cm = component_model
-
-    # Initial state: nothing should be active
-    for comp in cm.components_or_modules.values():
-        comp.assert_pristine()
-    # No masks supplied: everything should stay in "original" mode
-    with cm._replaced_modules({}):
-        assert all(comp.forward_mode == "original" for comp in cm.components_or_modules.values())
-        assert all(comp.components_mask is None for comp in cm.components_or_modules.values())
-    # After the context the state must be fully reset
-    for comp in cm.components_or_modules.values():
-        comp.assert_pristine()
-
-
 def test_replaced_modules_sets_and_restores_masks(component_model: ComponentModel):
     cm = component_model
     full_mask_infos = {
@@ -106,8 +90,9 @@ def test_replaced_modules_sets_and_restores_masks(component_model: ComponentMode
     with cm._replaced_modules(full_mask_infos):
         # All components should now be in replacement‑mode with the given masks
         for name, comp in cm.components_or_modules.items():
-            assert comp.forward_mode == "components"
-            assert torch.equal(comp.components_mask, full_mask_infos[name].component_mask)  # pyright: ignore [reportArgumentType]
+            assert isinstance(comp.forward_mode, tuple)
+            assert comp.forward_mode[0] == "mixed"
+            assert comp.forward_mode[1] is full_mask_infos[name]  # is for identity check
 
     for comp in cm.components_or_modules.values():
         comp.assert_pristine()
@@ -134,55 +119,6 @@ def test_replaced_modules_sets_and_restores_masks_partial(
         # Others fall back to target‑only mode with no masks
         assert cm.components_or_modules["linear2"].forward_mode == "target"
         assert cm.components_or_modules["embedding"].forward_mode == "target"
-
-    for comp in cm.components_or_modules.values():
-        comp.assert_pristine()
-
-
-def test_replaced_modules_sets_and_restores_identity_masks_only(
-    component_model_with_identity: ComponentModel,
-) -> None:
-    cm = component_model_with_identity
-    identity_masks = {"identity_linear1": torch.ones(1, cm.C)}
-    with cm._replaced_modules(make_mask_infos(identity_masks)):
-        for name, comp in cm.components_or_modules.items():
-            if name == "linear1":
-                assert comp.forward_mode == "components"
-                assert comp.components_mask is None
-                assert torch.equal(comp.identity_mask, identity_masks["identity_linear1"])  # pyright: ignore [reportArgumentType]
-            else:
-                assert comp.forward_mode == "original"
-                assert comp.components_mask is None
-                assert comp.identity_mask is None
-
-    for comp in cm.components_or_modules.values():
-        comp.assert_pristine()
-
-
-def test_replaced_modules_sets_and_restores_combined_masks(
-    component_model_with_identity: ComponentModel,
-) -> None:
-    cm = component_model_with_identity
-    masks = {
-        "linear1": torch.randn(1, cm.C),
-        "identity_linear1": torch.ones(1, cm.C),
-        "identity_conv1d1": torch.ones(1, cm.C),
-    }
-
-    with cm._replaced_modules(make_mask_infos(masks)):
-        for name, comp in cm.components_or_modules.items():
-            if name == "linear1":
-                assert comp.forward_mode == "components"
-                assert torch.equal(comp.components_mask, masks["linear1"])  # pyright: ignore [reportArgumentType]
-                assert torch.equal(comp.identity_mask, masks["identity_linear1"])  # pyright: ignore [reportArgumentType]
-            elif name == "conv1d1":
-                assert comp.forward_mode == "components"
-                assert comp.components_mask is None
-                assert torch.equal(comp.identity_mask, masks["identity_conv1d1"])  # pyright: ignore [reportArgumentType]
-            else:
-                assert comp.forward_mode == "original"
-                assert comp.components_mask is None
-                assert comp.identity_mask is None
 
     for comp in cm.components_or_modules.values():
         comp.assert_pristine()
@@ -360,68 +296,6 @@ def test_from_run_info():
         assert config == cm_run_info.config
         for k, v in cm_loaded.state_dict().items():
             torch.testing.assert_close(v, cm.state_dict()[k])
-
-
-def test_identity_module_patterns_embedding_raises() -> None:
-    raise NotImplementedError("attach to identity injection logic, might not even go here")
-
-
-# Don't THINK this is needed anymore
-#
-# def test_patch_modules_components_only() -> None:
-#     model = SimpleTestModel()
-#     model.requires_grad_(False)
-
-#     C = 4
-#     module_paths = ["linear1", "embedding", "conv1d1"]
-#     identity_module_paths: list[str] = []
-
-#     patched, replaced = ComponentModel._patch_modules(
-#         model=model, module_paths=module_paths, identity_module_paths=identity_module_paths, C=C
-#     )
-
-#     # Only the specified modules should be replaced
-#     assert isinstance(patched.get_submodule("linear1"), ComponentsOrModule)
-#     assert isinstance(patched.get_submodule("embedding"), ComponentsOrModule)
-#     assert isinstance(patched.get_submodule("conv1d1"), ComponentsOrModule)
-#     assert isinstance(patched.linear2, nn.Linear)
-#     assert isinstance(patched.conv1d2, RadfordConv1D)
-#     assert isinstance(patched.other_layer, nn.ReLU)
-
-#     # Keys in returned dict should match all replaced paths
-#     assert set(replaced.keys()) == set(module_paths)
-
-#     # linear1: components present, identity_components absent; dims and bias preserved
-#     rep_lin1 = patched.get_submodule("linear1")
-#     assert isinstance(rep_lin1, ComponentsOrModule)
-#     assert rep_lin1.components is not None and rep_lin1.identity_components is None
-#     assert isinstance(rep_lin1.components, LinearComponents)
-#     assert isinstance(rep_lin1.target, nn.Linear)
-#     d_out_lin1, d_in_lin1 = rep_lin1.target.weight.shape  # (d_out, d_in)
-#     assert rep_lin1.components.d_in == d_in_lin1
-#     assert rep_lin1.components.d_out == d_out_lin1
-#     comp_bias = rep_lin1.components.bias
-#     assert comp_bias is not None
-#     assert torch.equal(comp_bias, rep_lin1.target.bias.data)
-
-#     # embedding: EmbeddingComponents with correct dims
-#     rep_emb = patched.get_submodule("embedding")
-#     assert isinstance(rep_emb, ComponentsOrModule)
-#     assert rep_emb.components is not None and rep_emb.identity_components is None
-#     assert isinstance(rep_emb.components, EmbeddingComponents)
-#     assert isinstance(rep_emb.target, nn.Embedding)
-#     assert rep_emb.components.vocab_size == rep_emb.target.num_embeddings
-#     assert rep_emb.components.embedding_dim == rep_emb.target.embedding_dim
-
-#     # conv1d1: LinearComponents with conv dims interpreted correctly
-#     rep_conv = patched.get_submodule("conv1d1")
-#     assert isinstance(rep_conv, ComponentsOrModule)
-#     assert rep_conv.components is not None and rep_conv.identity_components is None
-#     assert isinstance(rep_conv.components, LinearComponents)
-#     assert isinstance(rep_conv.target, RadfordConv1D)
-#     d_in_conv, d_out_conv = rep_conv.target.weight.shape  # Conv1D stores (nx, nf)
-#     assert rep_conv.components.d_in == d_in_conv
-#     assert rep_conv.components.d_out == d_out_conv
 
 
 def test_patch_modules_unsupported_component_type_raises() -> None:

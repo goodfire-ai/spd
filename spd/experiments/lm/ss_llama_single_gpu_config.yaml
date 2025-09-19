@@ -21,8 +21,6 @@ stochastic_recon_coeff: 1.0
 recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1.0
 importance_minimality_coeff: 0.0003
-schatten_coeff: null
-out_recon_coeff: null
 embedding_recon_coeff: null
 is_embed_unembed_recon: false
 pnorm: 2.0

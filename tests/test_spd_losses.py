@@ -13,11 +13,7 @@ class TinyLinearModel(nn.Module):
         self.fc = nn.Linear(d_in, d_out, bias=False)
 
 
-def _make_component_model(
-    weight: Float[Tensor, " d_out d_in"],
-    *,
-    include_components: bool,
-) -> ComponentModel:
+def _make_component_model(weight: Float[Tensor, " d_out d_in"]) -> ComponentModel:
     d_out, d_in = weight.shape
     target = TinyLinearModel(d_in=d_in, d_out=d_out)
     with torch.no_grad():
@@ -26,7 +22,7 @@ def _make_component_model(
 
     comp_model = ComponentModel(
         target_model=target,
-        target_module_patterns=["fc"] if include_components else [],
+        target_module_patterns=["fc"],
         C=1,
         gate_hidden_dims=[2],
         gate_type="mlp",
@@ -47,7 +43,7 @@ class TestCalcWeightDeltas:
     def test_components_and_identity(self: object) -> None:
         # fc weight 2x3 with known values
         fc_weight = torch.tensor([[1.0, 0.0, -1.0], [2.0, 3.0, -4.0]], dtype=torch.float32)
-        model = _make_component_model(weight=fc_weight, include_components=True)
+        model = _make_component_model(weight=fc_weight)
         _zero_components_for_test(model)
 
         deltas = calc_weight_deltas(model)
@@ -61,7 +57,7 @@ class TestCalcWeightDeltas:
     def test_components_nonzero(self: object) -> None:
         # TODO WRITE DESCRIPTION
         fc_weight = torch.tensor([[1.0, -2.0, 0.5], [0.0, 3.0, -1.0]], dtype=torch.float32)
-        model = _make_component_model(weight=fc_weight, include_components=True)
+        model = _make_component_model(weight=fc_weight)
 
         deltas = calc_weight_deltas(model)
         assert set(deltas.keys()) == {"fc"}
@@ -85,15 +81,12 @@ class TestCalcFaithfulnessLoss:
 
     def test_with_model_weight_deltas(self: object) -> None:
         fc_weight = torch.tensor([[1.0, 0.0, -1.0], [2.0, 3.0, -4.0]], dtype=torch.float32)
-        model = _make_component_model(weight=fc_weight, include_components=True)
+        model = _make_component_model(weight=fc_weight)
         _zero_components_for_test(model)
         deltas = calc_weight_deltas(model)
 
         # Expected: mean of squared entries across both matrices
-        d_in = fc_weight.shape[1]
-        total_sq = fc_weight.square().sum() + torch.eye(d_in, dtype=fc_weight.dtype).square().sum()
-        total_params = fc_weight.numel() + d_in * d_in
-        expected = total_sq / total_params
+        expected = fc_weight.square().sum() / fc_weight.numel()
 
         result = calc_faithfulness_loss(weight_deltas=deltas, device="cpu")
         assert torch.allclose(result, expected)

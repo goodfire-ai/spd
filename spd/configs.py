@@ -160,10 +160,6 @@ class Config(BaseModel):
         ...,
         description="Coefficient for importance minimality loss",
     )
-    schatten_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for Schatten-norm regularisation (LM only)",
-    )
     embedding_recon_coeff: float | None = Field(
         default=None,
         description="Coefficient for additional embedding recon loss (LM only)",

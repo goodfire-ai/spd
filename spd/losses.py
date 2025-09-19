@@ -69,45 +69,6 @@ def calc_embedding_recon_loss(
     return loss
 
 
-def calc_schatten_loss(
-    ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-    pnorm: float,
-    components: dict[str, Components],
-    device: str,
-) -> Float[Tensor, ""]:
-    """Calculate the Schatten loss on the active components.
-
-    The Schatten loss is calculated as:
-        L = Σ_{components} mean(ci_upper_leaky^pnorm · (||V||_2^2 + ||U||_2^2))
-
-    where:
-        - ci_upper_leaky are the upper leaky relu causal importances for each component
-        - pnorm is the power to raise the mask to
-        - V and U are the component matrices
-        - ||·||_2 is the L2 norm
-
-    Args:
-        ci_upper_leaky: Dictionary of upper leaky relu causal importances for each layer.
-        pnorm: The pnorm to use for the importance minimality loss. Must be positive.
-        components: Dictionary of components for each layer.
-        device: The device to compute the loss on.
-
-    Returns:
-        The Schatten loss as a scalar tensor.
-    """
-
-    total_loss = torch.tensor(0.0, device=device)
-    for component_name, component in components.items():
-        V_norms = component.V.square().sum(dim=-2)
-        U_norms = component.U.square().sum(dim=-1)
-        schatten_norms = V_norms + U_norms
-        loss = einops.einsum(
-            ci_upper_leaky[component_name] ** pnorm, schatten_norms, "... C, C -> ..."
-        )
-        total_loss += loss.mean()
-    return total_loss
-
-
 def calc_importance_minimality_loss(
     ci_upper_leaky: dict[str, Float[Tensor, "... C"]], pnorm: float, eps: float = 1e-12
 ) -> Float[Tensor, ""]:
@@ -373,17 +334,6 @@ def calculate_losses(
     )
     total_loss += config.importance_minimality_coeff * importance_minimality_loss
     loss_terms["importance_minimality"] = importance_minimality_loss.item()
-
-    # Schatten loss
-    if config.schatten_coeff is not None:
-        schatten_loss = calc_schatten_loss(
-            ci_upper_leaky=causal_importances_upper_leaky,
-            pnorm=pnorm_value,
-            components=model.components,
-            device=device,
-        )
-        total_loss += config.schatten_coeff * schatten_loss
-        loss_terms["schatten"] = schatten_loss.item()
 
     # Embedding reconstruction loss
     if config.embedding_recon_coeff is not None:
