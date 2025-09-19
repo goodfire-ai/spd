@@ -1,72 +1,64 @@
-from dataclasses import dataclass
 from typing import Literal
 
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
 
-
-@dataclass
-class LayerMasks:
-    """Mask information for a given layer."""
-
-    routing_mask: Bool[Tensor, " ..."] | bool
-    """whether to use the target or component layer for a given example (either (b,) or (b, s))"""
-    component_mask: Float[Tensor, "... C"]
-    """The sub-component mask to use when using the component layer."""
-    weight_delta_mask: Float[Tensor, "..."]
-    """The mask to use if using the weight delta component. This doesn't have a final C dim: it's
-    scalar for each example."""
+from spd.models.components import ComponentMaskInfo, WeightDeltaAndMask, make_mask_infos
 
 
-# TODO potentially just get weight_delta BEFORE this and roll it all into one
-def calc_stochastic_masks(
-    causal_importances: dict[str, Float[Tensor, "... C"]],
-    n_mask_samples: int,
+def sample_stochastic_mask(
+    causal_importances: Float[Tensor, "... C"],
     sampling: Literal["continuous", "binomial"],
-    routing: Literal["variable-p", "all"] = "all",
-) -> list[dict[str, LayerMasks]]:
-    """Calculate n_mask_samples stochastic masks with the formula `ci + (1 - ci) * rand_unif(0,1)`.
+) -> Float[Tensor, "... C"]:
+    if sampling == "binomial":
+        rand_tensor = torch.randint(
+            0, 2, causal_importances.shape, device=causal_importances.device
+        ).float()
+    else:
+        rand_tensor = torch.rand_like(causal_importances)
+    return causal_importances + (1 - causal_importances) * rand_tensor
 
-    Args:
-        causal_importances: The causal importances to use for the stochastic masks.
-        n_mask_samples: The number of stochastic sources to calculate. I.e. the number of times
-            we sample a mask for each layer.
-        sampling: The sampling method to use.
 
-    Return:
-        StochasticMasks object for each stochastic source.
-    """
+def calc_stochastic_component_mask_info(
+    causal_importances: dict[str, Float[Tensor, "... C"]],
+    sampling: Literal["continuous", "binomial"],
+    weight_deltas: dict[str, Tensor] | None,
+    routing: Literal["variable-p", "all"],
+) -> dict[str, ComponentMaskInfo]:
+    routing_masks: dict[str, Bool[Tensor, " ..."] | bool] = {}
+    # static Ps across layers
+    ci_sample: Float[Tensor, "... C"] = next(iter(causal_importances.values()))
+    p_vals = torch.rand(ci_sample.shape[:-1], device=ci_sample.device, dtype=ci_sample.dtype)
+    for layer in causal_importances:
+        routing_masks[layer] = torch.rand_like(p_vals) > p_vals if routing == "variable-p" else True
 
-    stochastic_masks_list: list[dict[str, LayerMasks]] = []
+    component_masks: dict[str, Float[Tensor, "... C"] | bool] = {}
+    for layer, ci in causal_importances.items():
+        component_masks[layer] = sample_stochastic_mask(ci, sampling)
 
-    for _ in range(n_mask_samples):
-        stochastic_masks: dict[str, LayerMasks] = {}
-
-        # static Ps across layers
-        ci_sample: Float[Tensor, "... C"] = next(iter(causal_importances.values()))
-        p_vals = torch.rand(ci_sample.shape[:-1], device=ci_sample.device, dtype=ci_sample.dtype)
-
+    if weight_deltas is not None:
+        weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = {}
         for layer, ci in causal_importances.items():
-            routing_mask = torch.rand_like(p_vals) > p_vals if routing == "variable-p" else True
+            mask = torch.rand(ci.shape[:-1], device=ci.device, dtype=ci.dtype)
+            weight_deltas_and_masks[layer] = (weight_deltas[layer], mask)
+    else:
+        weight_deltas_and_masks = None
 
-            if sampling == "binomial":
-                rand_tensor = torch.randint(0, 2, ci.shape, device=ci.device).float()
-            else:
-                rand_tensor = torch.rand_like(ci)
-            component_mask = ci + (1 - ci) * rand_tensor
+    return make_mask_infos(component_masks, routing_masks, weight_deltas_and_masks)
 
-            weight_delta_mask = torch.rand(ci.shape[:-1], device=ci.device, dtype=ci.dtype)
 
-            stochastic_masks[layer] = LayerMasks(
-                routing_mask,
-                component_mask,
-                weight_delta_mask,
-            )
-
-        stochastic_masks_list.append(stochastic_masks)
-
-    return stochastic_masks_list
+def calc_stochastic_component_mask_infos(
+    causal_importances: dict[str, Float[Tensor, "... C"]],
+    sampling: Literal["continuous", "binomial"],
+    weight_deltas: dict[str, Tensor] | None,
+    routing: Literal["variable-p", "all"],
+    n_mask_samples: int,
+) -> list[dict[str, ComponentMaskInfo]]:
+    return [
+        calc_stochastic_component_mask_info(causal_importances, sampling, weight_deltas, routing)
+        for _ in range(n_mask_samples)
+    ]
 
 
 def calc_ci_l_zero(ci: Float[Tensor, "... C"], threshold: float) -> float:

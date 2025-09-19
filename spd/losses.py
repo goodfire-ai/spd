@@ -15,7 +15,7 @@ from spd.models.components import (
     EmbeddingComponents,
     make_mask_infos,
 )
-from spd.utils.component_utils import calc_stochastic_masks
+from spd.utils.component_utils import calc_stochastic_component_mask_infos, sample_stochastic_mask
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -292,26 +292,13 @@ def calculate_losses(
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
-        stochastic_masks_list = calc_stochastic_masks(
+        stoch_mask_infos_list = calc_stochastic_component_mask_infos(
             causal_importances=causal_importances,
-            n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
+            weight_deltas=weight_deltas if config.use_delta_component else None,
+            routing="all",
+            n_mask_samples=config.n_mask_samples,
         )
-
-        stoch_mask_infos_list: list[dict[str, ComponentMaskInfo]] = []  # pyright: ignore[reportRedeclaration] same name as above
-        for stochastic_masks in stochastic_masks_list:
-            stoch_mask_infos: dict[str, ComponentMaskInfo] = {}  # pyright: ignore[reportRedeclaration] same name as above
-            for layer, layer_masks in stochastic_masks.items():
-                stoch_mask_infos[layer] = ComponentMaskInfo(
-                    routing_mask=layer_masks.routing_mask,
-                    component_mask=layer_masks.component_mask,
-                    weight_delta_and_mask=(
-                        (weight_deltas[layer], layer_masks.weight_delta_mask)
-                        if config.use_delta_component
-                        else None
-                    ),
-                )
-            stoch_mask_infos_list.append(stoch_mask_infos)
 
         stochastic_recon_loss = calc_masked_recon_loss(
             model=model,
@@ -340,26 +327,13 @@ def calculate_losses(
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
-        stochastic_masks_list = calc_stochastic_masks(
+        stoch_mask_infos_list = calc_stochastic_component_mask_infos(
             causal_importances=causal_importances,
-            n_mask_samples=config.n_mask_samples,
             sampling=config.sampling,
+            weight_deltas=weight_deltas if config.use_delta_component else None,
+            routing="all",
+            n_mask_samples=config.n_mask_samples,
         )
-
-        stoch_mask_infos_list: list[dict[str, ComponentMaskInfo]] = []
-        for stochastic_masks in stochastic_masks_list:
-            stoch_mask_infos: dict[str, ComponentMaskInfo] = {}
-            for layer, layer_masks in stochastic_masks.items():
-                stoch_mask_infos[layer] = ComponentMaskInfo(
-                    routing_mask=layer_masks.routing_mask,
-                    component_mask=layer_masks.component_mask,
-                    weight_delta_and_mask=(
-                        (weight_deltas[layer], layer_masks.weight_delta_mask)
-                        if config.use_delta_component
-                        else None
-                    ),
-                )
-            stoch_mask_infos_list.append(stoch_mask_infos)
 
         stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
@@ -393,18 +367,17 @@ def calculate_losses(
 
     # Embedding reconstruction loss
     if config.embedding_recon_coeff is not None:
-        stochastic_masks_list = calc_stochastic_masks(
-            causal_importances=causal_importances,
-            n_mask_samples=config.n_mask_samples,
-            sampling=config.sampling,
-        )
+        masks = [
+            {
+                layer: sample_stochastic_mask(ci, config.sampling)
+                for layer, ci in causal_importances.items()
+            }
+            for _ in range(config.n_mask_samples)
+        ]
         embedding_recon_loss = calc_embedding_recon_loss(
             model=model,
             batch=batch,
-            masks=[  # FUUUUUUUUCK this is so ugly
-                {k: stochastic_masks[k].component_mask for k in stochastic_masks}
-                for stochastic_masks in stochastic_masks_list
-            ],
+            masks=masks,
             unembed=config.is_embed_unembed_recon,
             device=device,
         )

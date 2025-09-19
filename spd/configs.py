@@ -144,6 +144,10 @@ class Config(BaseModel):
         default=None,
         description="Coefficient for recon loss with stochastically sampled masks",
     )
+    stochastic_routed_recon_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for recon loss with stochastically sampled masks and routed components",
+    )
     recon_layerwise_coeff: NonNegativeFloat | None = Field(
         default=None,
         description="Coefficient for per-layer recon loss with a causal importance mask",
@@ -159,10 +163,6 @@ class Config(BaseModel):
     schatten_coeff: NonNegativeFloat | None = Field(
         default=None,
         description="Coefficient for Schatten-norm regularisation (LM only)",
-    )
-    out_recon_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for output recon loss",
     )
     embedding_recon_coeff: float | None = Field(
         default=None,

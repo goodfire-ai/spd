@@ -22,7 +22,7 @@ from torch import Tensor
 from spd.configs import Config
 from spd.losses import calc_faithfulness_loss, calc_weight_deltas
 from spd.models.component_model import ComponentModel
-from spd.models.components import ComponentMaskInfo, make_mask_infos
+from spd.models.components import make_mask_infos
 from spd.plotting import (
     get_single_feature_causal_importances,
     plot_causal_importance_vals,
@@ -31,7 +31,11 @@ from spd.plotting import (
     plot_mean_component_cis_both_scales,
     plot_UV_matrices,
 )
-from spd.utils.component_utils import LayerMasks, calc_ci_l_zero, calc_stochastic_masks
+from spd.utils.component_utils import (
+    calc_ci_l_zero,
+    calc_stochastic_component_mask_info,
+    calc_stochastic_component_mask_infos,
+)
 from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
@@ -161,13 +165,13 @@ class CEandKLLosses(StreamingEval):
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
         # we sample stochastic masks from the causal importances
-        layer_masks = calc_stochastic_masks(ci, n_mask_samples=1, sampling=self.config.sampling)[0]
-        stoch_mask_infos = make_mask_infos(
-            {k: masks.component_mask for k, masks in layer_masks.items()}
+        mask_infos = calc_stochastic_component_mask_info(
+            causal_importances=ci,
+            sampling=self.config.sampling,
+            weight_deltas=None,
+            routing="all",
         )
-        stoch_masked_logits = self.model.forward(
-            batch, mode="components", mask_infos=stoch_mask_infos
-        )
+        stoch_masked_logits = self.model.forward(batch, mode="components", mask_infos=mask_infos)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
 
@@ -568,31 +572,6 @@ class SubsetReconstructionLoss(StreamingEval):
         for key, value in losses.items():
             self.losses[key].append(value)
 
-    def _get_masked_model_outputs(
-        self,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        masks_list: list[dict[str, LayerMasks]],
-        weight_deltas: dict[str, Tensor],
-        active: list[str],
-    ) -> list[Float[Tensor, "... vocab"]]:
-        outputs: list[Float[Tensor, "... vocab"]] = []
-        for layers_masks in masks_list:
-            mask_infos = {}
-            for module in active:
-                weight_delta_and_mask = (
-                    (weight_deltas[module], layers_masks[module].weight_delta_mask)
-                    if self.config.use_delta_component
-                    else None
-                )
-                mask_infos[module] = ComponentMaskInfo(
-                    routing_mask=layers_masks[module].routing_mask,
-                    component_mask=layers_masks[module].component_mask,
-                    weight_delta_and_mask=weight_delta_and_mask,
-                )
-            outputs.append(self.model.forward(batch, mode="components", mask_infos=mask_infos))
-
-        return outputs
-
     def _calc_subset_losses(
         self,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
@@ -622,13 +601,15 @@ class SubsetReconstructionLoss(StreamingEval):
         zero_out = self.model.forward(batch, mode="components", mask_infos=zero_mask_infos)
         zero_ce = ce_vs_labels(zero_out)
 
-        weight_deltas = calc_weight_deltas(self.model)
         # Generate stochastic masks
-        masks_list = calc_stochastic_masks(
-            ci,
-            self.n_mask_samples,
-            self.config.sampling,
+        masks_list = calc_stochastic_component_mask_infos(
+            causal_importances=ci,
+            sampling=self.config.sampling,
+            weight_deltas=calc_weight_deltas(self.model)
+            if self.config.use_delta_component
+            else None,
             routing="all",
+            n_mask_samples=self.n_mask_samples,
         )
 
         results = {}
@@ -638,12 +619,11 @@ class SubsetReconstructionLoss(StreamingEval):
         for name, patterns in self.include_patterns.items():
             active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
 
-            outputs = self._get_masked_model_outputs(
-                batch=batch,
-                masks_list=masks_list,
-                weight_deltas=weight_deltas,
-                active=active,
-            )
+            outputs: list[Float[Tensor, "... vocab"]] = []  # pyright: ignore[reportRedeclaration]
+            for layers_masks in masks_list:
+                mask_infos = {module: layers_masks[module] for module in active}
+                outputs.append(self.model.forward(batch, mode="components", mask_infos=mask_infos))
+
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
 
@@ -659,12 +639,11 @@ class SubsetReconstructionLoss(StreamingEval):
         for name, exclude_patterns in self.exclude_patterns.items():
             active = [m for m in all_modules if not any(fnmatch(m, p) for p in exclude_patterns)]
 
-            outputs = self._get_masked_model_outputs(
-                batch=batch,
-                masks_list=masks_list,
-                weight_deltas=weight_deltas,
-                active=active,
-            )
+            outputs: list[Float[Tensor, "... vocab"]] = []
+            for layers_masks in masks_list:
+                mask_infos = {module: layers_masks[module] for module in active}
+                outputs.append(self.model.forward(batch, mode="components", mask_infos=mask_infos))
+
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
 
