@@ -266,6 +266,15 @@ class Config(BaseModel):
         description="List of metrics to use for evaluation",
     )
 
+    # --- Eval Loss Metrics ---
+    include_loss_metrics_in_eval: bool = Field(
+        default=True,
+        description=(
+            "If True, include default loss metrics during eval (aggregated per-term means and"
+            " total weighted loss) in addition to configured metrics."
+        ),
+    )
+
     # --- Component Tracking ---
     ci_alive_threshold: Probability = Field(
         default=0.0,
