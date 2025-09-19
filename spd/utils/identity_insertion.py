@@ -40,15 +40,7 @@ def _get_input_sizes(
     for handle in handles:
         handle.remove()
 
-    out = {}
-    for module_name in identity_module_paths:
-        assert module_name in cache, f"Module {module_name} not in cache"
-        assert cache[module_name].ndim == 3, (
-            f"Expected 3D input (batch, seq, d_in), got {cache[module_name].ndim}D"
-        )
-        out[module_name] = cache[module_name].shape[2]
-
-    return out
+    return {module_name: cache[module_name].shape[-1] for module_name in identity_module_paths}
 
 
 # Create hook function with proper closure
