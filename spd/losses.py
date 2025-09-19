@@ -404,6 +404,9 @@ def calculate_losses(
             assert target_hidden is not None, (
                 "target_hidden should not be None when compute_hidden_losses is True"
             )
+            assert config.hidden_act_recon_coeff is not None, (
+                "hidden_act_recon_coeff should not be None when computing hidden losses"
+            )
             stochastic_recon_loss, hidden_losses = calc_masked_recon_loss_with_hidden(
                 model=model,
                 batch=batch,
@@ -411,9 +414,6 @@ def calculate_losses(
                 target_out=target_out,
                 output_recon_loss_type=config.output_recon_loss_type,
                 target_hidden=target_hidden,
-            )
-            assert config.hidden_act_recon_coeff is not None, (
-                "hidden_act_recon_coeff should not be None when computing hidden losses"
             )
             for layer_name, layer_loss in hidden_losses.items():
                 total_loss += config.hidden_act_recon_coeff * layer_loss
