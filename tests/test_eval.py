@@ -51,7 +51,9 @@ class TestCIHistograms:
 
         # Watch more batches than n_batches_accum
         for _ in range(n_batches_accum + 2):
-            ci_hist.watch_batch(batch, target_out, sample_ci)
+            ci_hist.watch_batch(
+                batch=batch, target_out=target_out, ci=sample_ci, ci_upper_leaky=sample_ci
+            )
 
         # Check that only n_batches_accum were accumulated
         assert ci_hist.batches_seen == n_batches_accum + 2  # Total batches seen
@@ -70,7 +72,9 @@ class TestCIHistograms:
         # Watch many batches
         num_batches = 10
         for _ in range(num_batches):
-            ci_hist.watch_batch(batch, target_out, sample_ci)
+            ci_hist.watch_batch(
+                batch=batch, target_out=target_out, ci=sample_ci, ci_upper_leaky=sample_ci
+            )
 
         # All batches should be accumulated
         assert ci_hist.batches_seen == num_batches

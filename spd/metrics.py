@@ -21,7 +21,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.configs import Config
-from spd.losses import calc_faithfulness_loss, calc_weight_deltas
+from spd.losses import calc_weight_deltas, calculate_losses
 from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
 from spd.plotting import (
@@ -50,6 +50,7 @@ class Metric(ABC):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None: ...
 
     @abstractmethod
@@ -60,8 +61,9 @@ class Metric(ABC):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> Mapping[str, float | Image.Image]:
-        self.watch_batch(batch=batch, target_out=target_out, ci=ci)
+        self.watch_batch(batch=batch, target_out=target_out, ci=ci, ci_upper_leaky=ci_upper_leaky)
         return self.compute()
 
 
@@ -81,6 +83,7 @@ class CI_L0(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         import re
 
@@ -137,6 +140,7 @@ class CEandKLLosses(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         ce_losses = self._calc_ce_and_kl_losses(batch, target_out, ci)
         for key, value in ce_losses.items():
@@ -268,6 +272,7 @@ class CIHistograms(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         self.batches_seen += 1
         if self.n_batches_accum is not None and self.batches_seen > self.n_batches_accum:
@@ -302,6 +307,7 @@ class ComponentActivationDensity(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         n_tokens = next(iter(ci.values())).shape[:-1].numel()
         self.n_tokens += n_tokens
@@ -348,6 +354,7 @@ class PermutedCIPlots(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         if self.batch_shape is None:
             self.batch_shape = batch.shape
@@ -397,6 +404,7 @@ class UVPlots(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         if self.batch_shape is None:
             self.batch_shape = batch.shape
@@ -450,6 +458,7 @@ class IdentityCIError(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         if self.batch_shape is None:
             self.batch_shape = batch.shape
@@ -506,6 +515,7 @@ class CIMeanPerComponent(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         for module_name, ci_vals in ci.items():
             n_batch_dims = ci_vals.ndim - 1
@@ -582,6 +592,7 @@ class SubsetReconstructionLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         losses = self._calc_subset_losses(batch, target_out, ci)
         for key, value in losses.items():
@@ -750,13 +761,23 @@ class SubsetReconstructionLoss(Metric):
         return results
 
 
-class FaithfulnessLoss(Metric):
+# --- Default loss terms metric --------------------------------------------------------------- #
+class LossTermsMetric(Metric):
     SLOW = False
 
-    def __init__(self, model: ComponentModel, config: Config) -> None:
+    def __init__(
+        self,
+        model: ComponentModel,
+        config: Config,
+        *,
+        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+        device: str | torch.device,
+    ) -> None:
         self.model = model
         self.config = config
-        self.device = next(iter(model.parameters())).device
+        self.weight_deltas = weight_deltas
+        self.device = device
+        self.loss_terms: defaultdict[str, list[float]] = defaultdict(list)
 
     @override
     def watch_batch(
@@ -764,14 +785,25 @@ class FaithfulnessLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
-        pass
+        _total, terms = calculate_losses(
+            model=self.model,
+            batch=batch,
+            config=self.config,
+            causal_importances=ci,
+            causal_importances_upper_leaky=ci_upper_leaky,
+            target_out=target_out,
+            weight_deltas=self.weight_deltas,
+            device=str(self.device) if not isinstance(self.device, str) else self.device,
+            current_p=None,
+        )
+        for name, value in terms.items():
+            self.loss_terms[name].append(value)
 
     @override
     def compute(self) -> Mapping[str, float]:
-        weight_deltas = calc_weight_deltas(self.model, device=self.device)
-        loss = calc_faithfulness_loss(weight_deltas, device=self.device)
-        return {"loss/faithfulness": loss.item()}
+        return {f"loss/{k}": sum(v) / len(v) for k, v in self.loss_terms.items() if len(v) > 0}
 
 
 METRICS = {
@@ -786,7 +818,7 @@ METRICS = {
         IdentityCIError,
         CIMeanPerComponent,
         SubsetReconstructionLoss,
-        FaithfulnessLoss,
+        LossTermsMetric,
     ]
 }
 
@@ -801,11 +833,19 @@ def evaluate(
     n_steps: int,
 ) -> dict[str, float | Image.Image]:
     evals: list[Metric] = []
+    # Precompute weight deltas once per eval window
+    weight_deltas = calc_weight_deltas(model, device=device)
     for eval_config in config.eval_metrics:
         metric_cls = METRICS[eval_config.classname]
         if not run_slow and metric_cls.SLOW:
             continue
         evals.append(metric_cls(model, config, **eval_config.extra_init_kwargs))
+
+    # Include default loss metrics by default
+    if config.include_loss_metrics_in_eval and not any(
+        isinstance(m, LossTermsMetric) for m in evals
+    ):
+        evals.append(LossTermsMetric(model, config, weight_deltas=weight_deltas, device=device))
 
     for _ in range(n_steps):
         # Do the common work:
@@ -814,14 +854,16 @@ def evaluate(
         target_out, pre_weight_acts = model(
             batch, mode="pre_forward_cache", module_names=list(model.components.keys())
         )
-        ci, _ci_upper_leaky = model.calc_causal_importances(
+        ci, ci_upper_leaky = model.calc_causal_importances(
             pre_weight_acts,
             sigmoid_type=config.sigmoid_type,
             sampling=config.sampling,
         )
 
         for eval in evals:
-            eval.watch_batch(batch=batch, target_out=target_out, ci=ci)
+            eval.watch_batch(
+                batch=batch, target_out=target_out, ci=ci, ci_upper_leaky=ci_upper_leaky
+            )
 
     out: dict[str, float | Image.Image] = {}
     all_dicts = [eval.compute() for eval in evals]

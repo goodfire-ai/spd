@@ -56,7 +56,6 @@ eval_metrics:
     extra_init_kwargs:
       rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
-  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple

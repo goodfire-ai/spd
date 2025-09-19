@@ -61,7 +61,6 @@ eval_metrics:
           n_features: 40
   - classname: "CI_L0"
   - classname: "CIMeanPerComponent"
-  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"

@@ -67,7 +67,6 @@ eval_metrics:
           k: 25
   - classname: "CI_L0"
   - classname: "CIMeanPerComponent"
-  - classname: "FaithfulnessLoss"
 
 
 # --- Pretrained model info ---

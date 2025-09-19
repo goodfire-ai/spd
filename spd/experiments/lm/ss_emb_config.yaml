@@ -53,7 +53,6 @@ eval_metrics:
     extra_init_kwargs:
       rounding_threshold: 0.1
   - classname: "CIMeanPerComponent"
-  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM

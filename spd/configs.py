@@ -37,7 +37,7 @@ class EvalMetricConfig(BaseModel):
     )
 
     def _get_metric_class(self) -> type | None:
-        available_classes = importlib.import_module("spd.metrics").EVAL_CLASSES
+        available_classes = importlib.import_module("spd.metrics").METRICS
         cls = available_classes.get(self.classname)
         if cls is None:
             logger.warning(
@@ -264,6 +264,10 @@ class Config(BaseModel):
     eval_metrics: list[EvalMetricConfig] = Field(
         default=[],
         description="List of metrics to use for evaluation",
+    )
+    include_loss_metrics_in_eval: bool = Field(
+        default=True,
+        description="If True, always include default loss metrics during evaluation",
     )
 
     # --- Component Tracking ---
