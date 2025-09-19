@@ -91,8 +91,7 @@ Please read our [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to
 
 ### Custom Metrics and Figures
 
-Metrics and figures are defined in `spd/metrics.py` and `spd/figures.py`.
-These files expose dictionaries of functions that can be selected and parameterized in the config of a given experiment.
+Metrics and figures are defined in `spd/eval.py` as classes implementing the `Metric` interface (constructor, `watch_batch`, `compute`, and convenience `forward`). These can be selected and parameterized in the config of a given experiment via `eval_metrics`. During eval, a default `LossTermsMetric` aggregates loss terms unless disabled via `include_loss_metrics_in_eval=false` in the config.
 
 ### Development Commands
 

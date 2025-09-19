@@ -21,7 +21,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.configs import Config
-from spd.losses import calc_faithfulness_loss, calc_weight_deltas
+from spd.losses import calculate_losses, calc_faithfulness_loss, calc_weight_deltas
 from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
 from spd.plotting import (
@@ -38,16 +38,16 @@ from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
 
-class StreamingEval(ABC):
+class Metric(ABC):
     SLOW: ClassVar[bool]
 
     @abstractmethod
-    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any): ...
+    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None: ...
 
     @abstractmethod
     def watch_batch(
         self,
-        batch: Tensor,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
     ) -> None: ...
@@ -55,8 +55,17 @@ class StreamingEval(ABC):
     @abstractmethod
     def compute(self) -> Mapping[str, float | Image.Image]: ...
 
+    def forward(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> Mapping[str, float | Image.Image]:
+        self.watch_batch(batch=batch, target_out=target_out, ci=ci)
+        return self.compute()
 
-class CI_L0(StreamingEval):
+
+class CI_L0(Metric):
     SLOW = False
 
     def __init__(
@@ -113,7 +122,7 @@ class CI_L0(StreamingEval):
         return out
 
 
-class CEandKLLosses(StreamingEval):
+class CEandKLLosses(Metric):
     SLOW = False
 
     def __init__(self, model: ComponentModel, config: Config, rounding_threshold: float):
@@ -245,7 +254,7 @@ class CEandKLLosses(StreamingEval):
         return {k: sum(v) / len(v) for k, v in self.ce_losses.items()}
 
 
-class CIHistograms(StreamingEval):
+class CIHistograms(Metric):
     SLOW = True
 
     def __init__(self, model: ComponentModel, config: Config, n_batches_accum: int | None = None):
@@ -273,7 +282,7 @@ class CIHistograms(StreamingEval):
         return {"figures/causal_importance_values": fig}
 
 
-class ComponentActivationDensity(StreamingEval):
+class ComponentActivationDensity(Metric):
     SLOW = True
 
     def __init__(self, model: ComponentModel, config: Config):
@@ -312,7 +321,7 @@ class ComponentActivationDensity(StreamingEval):
         return {"figures/component_activation_density": fig}
 
 
-class PermutedCIPlots(StreamingEval):
+class PermutedCIPlots(Metric):
     SLOW = True
 
     def __init__(
@@ -361,7 +370,7 @@ class PermutedCIPlots(StreamingEval):
         return {f"figures/{k}": v for k, v in figures.items()}
 
 
-class UVPlots(StreamingEval):
+class UVPlots(Metric):
     SLOW = True
 
     def __init__(
@@ -414,7 +423,7 @@ class UVPlots(StreamingEval):
         return {"figures/uv_matrices": uv_matrices}
 
 
-class IdentityCIError(StreamingEval):
+class IdentityCIError(Metric):
     SLOW = True
 
     def __init__(
@@ -476,7 +485,7 @@ class IdentityCIError(StreamingEval):
         return target_metrics
 
 
-class CIMeanPerComponent(StreamingEval):
+class CIMeanPerComponent(Metric):
     SLOW = True
 
     def __init__(self, model: ComponentModel, config: Config) -> None:
@@ -529,7 +538,7 @@ class CIMeanPerComponent(StreamingEval):
         }
 
 
-class SubsetReconstructionLoss(StreamingEval):
+class SubsetReconstructionLoss(Metric):
     """Compute reconstruction loss for specific subsets of components."""
 
     SLOW = False
@@ -741,7 +750,7 @@ class SubsetReconstructionLoss(StreamingEval):
         return results
 
 
-class FaithfulnessLoss(StreamingEval):
+class FaithfulnessLoss(Metric):
     SLOW = False
 
     def __init__(self, model: ComponentModel, config: Config):
@@ -791,12 +800,20 @@ def evaluate(
     run_slow: bool,
     n_steps: int,
 ) -> dict[str, float | Image.Image]:
-    evals: list[StreamingEval] = []
+    evals: list[Metric] = []
+    # Add configured metrics first (skipping FaithfulnessLoss if loss metrics are enabled to avoid key collisions)
     for eval_config in config.eval_metrics:
         eval_cls = EVAL_CLASSES[eval_config.classname]
         if not run_slow and eval_cls.SLOW:
             continue
+        if getattr(config, "include_loss_metrics_in_eval", True) and eval_cls is FaithfulnessLoss:
+            # Skip legacy per-loss metric when default loss aggregation is enabled
+            continue
         evals.append(eval_cls(model, config, **eval_config.extra_init_kwargs))
+
+    # Optionally include default loss metrics aggregator
+    if getattr(config, "include_loss_metrics_in_eval", True):
+        evals.append(LossTermsMetric(model, config))
 
     for _ in range(n_steps):
         # Do the common work:
@@ -812,6 +829,8 @@ def evaluate(
         )
 
         for eval in evals:
+            if isinstance(eval, LossTermsMetric):
+                eval.update_ci_upper_leaky_cache(_ci_upper_leaky)
             eval.watch_batch(batch=batch, target_out=target_out, ci=ci)
 
     out: dict[str, float | Image.Image] = {}
@@ -822,3 +841,98 @@ def evaluate(
         out.update(d)
 
     return out
+
+
+class LossTermsMetric(Metric):
+    """Aggregate per-batch loss terms into means over the eval window.
+
+    Returns keys like:
+    - loss/faithfulness, loss/recon, ... (raw per-term values)
+    - loss/total_weighted (weighted sum using config coefficients)
+    """
+
+    SLOW = False
+
+    def __init__(self, model: ComponentModel, config: Config) -> None:
+        self.model = model
+        self.config = config
+        self.term_sums: dict[str, float] = defaultdict(float)
+        self.num_batches: int = 0
+        self._weight_deltas: dict[str, Tensor] | None = None
+        self._ci_upper_leaky_cache: dict[str, Float[Tensor, "... C"]] | None = None
+
+    def _ensure_weight_deltas(self, device: str | torch.device) -> None:
+        if self._weight_deltas is None:
+            self._weight_deltas = calc_weight_deltas(self.model, device=device)
+
+    def _get_causal_importances_upper_leaky(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+    ) -> dict[str, Float[Tensor, "... C"]]:
+        # Recompute per-batch cached activations to derive upper-leaky importances
+        _, pre_weight_acts = self.model(
+            batch,
+            mode="pre_forward_cache",
+            module_names=list(self.model.components.keys()),
+        )
+        _ci, ci_upper_leaky = self.model.calc_causal_importances(
+            pre_weight_acts,
+            sigmoid_type=self.config.sigmoid_type,
+            sampling=self.config.sampling,
+        )
+        return ci_upper_leaky
+
+    def update_ci_upper_leaky_cache(
+        self, ci_upper_leaky: dict[str, Float[Tensor, "... C"]]
+    ) -> None:
+        self._ci_upper_leaky_cache = ci_upper_leaky
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        # Compute or use cached upper-leaky importances for regularization terms
+        if self._ci_upper_leaky_cache is not None:
+            ci_upper_leaky = self._ci_upper_leaky_cache
+        else:
+            ci_upper_leaky = self._get_causal_importances_upper_leaky(batch)
+
+        # Ensure weight deltas are computed once per eval window
+        self._ensure_weight_deltas(device=target_out.device)
+        assert self._weight_deltas is not None
+
+        # Calculate raw loss terms and weighted total
+        total_loss, loss_terms = calculate_losses(
+            model=self.model,
+            batch=batch,  # type: ignore[arg-type]
+            config=self.config,
+            causal_importances=ci,
+            causal_importances_upper_leaky=ci_upper_leaky,
+            target_out=target_out,
+            weight_deltas=self._weight_deltas,
+            device=target_out.device,  # type: ignore[arg-type]
+            current_p=None,
+        )
+
+        # Inject the weighted total explicitly from the returned tensor to avoid drift
+        loss_terms = dict(loss_terms)
+        loss_terms["total"] = total_loss.item()
+
+        for name, value in loss_terms.items():
+            self.term_sums[name] += float(value)
+        self.num_batches += 1
+
+    @override
+    def compute(self) -> Mapping[str, float]:
+        if self.num_batches == 0:
+            return {}
+        means: dict[str, float] = {}
+        for name, total in self.term_sums.items():
+            if name == "total":
+                means["loss/total_weighted"] = total / self.num_batches
+            else:
+                means[f"loss/{name}"] = total / self.num_batches
+        return means
