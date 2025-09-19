@@ -508,8 +508,15 @@ class ComponentModel(LoadableModule):
             run_info.checkpoint_path, map_location="cpu", weights_only=True
         )
 
+        ComponentModel.handle_deprecated_state_dict_keys_(comp_model_weights)
+
         comp_model.load_state_dict(comp_model_weights)
         return comp_model
+    
+    @staticmethod
+    def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
+        for key in list(state_dict.keys()):
+            state_dict[key.replace('.original.', '.target.')] = state_dict.pop(key)
 
     @classmethod
     @override
