@@ -345,6 +345,26 @@ def calculate_losses(
         )
         total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
         loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
+    
+    # Stochastic subset reconstruction loss
+    if config.stochastic_routed_recon_coeff is not None:
+        stoch_mask_infos_list = calc_stochastic_component_mask_infos(
+            causal_importances=causal_importances,
+            sampling=config.sampling,
+            weight_deltas=weight_deltas if config.use_delta_component else None,
+            routing="variable-p",
+            n_mask_samples=config.n_mask_samples,
+        )
+        stochastic_routed_recon_loss = calc_masked_recon_loss(
+            model=model,
+            batch=batch,
+            mask_infos_list=stoch_mask_infos_list,
+            target_out=target_out,
+            loss_type=config.output_loss_type,
+            device=device,
+        )
+        total_loss += config.stochastic_routed_recon_coeff * stochastic_routed_recon_loss
+        loss_terms["stochastic_routed_recon"] = stochastic_routed_recon_loss.item()
 
     # Importance minimality loss
     pnorm_value = current_p if current_p is not None else config.pnorm
