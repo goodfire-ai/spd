@@ -1,13 +1,14 @@
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Literal, override
 
 import einops
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
-from spd.mask_info import WeightDeltaAndMask
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
 GateType = Literal["mlp", "vector_mlp", "layerwise_global_mlp"]
@@ -94,6 +95,9 @@ class VectorGateMLPs(nn.Module):
         return x[..., 0]
 
 
+WeightDeltaAndMask = tuple[Float[Tensor, " d_out d_in"], Float[Tensor, "..."]]
+
+
 class LayerwiseGlobalGateMLP(nn.Module):
     """Maps a module's input vector to a scalar output for each component with a 'pure' MLP."""
 
@@ -141,7 +145,7 @@ class Components(ABC, nn.Module):
     def forward(
         self,
         x: Tensor,
-        mask: Tensor | None = None,
+        mask: Tensor | bool | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Tensor:
         """Forward pass through the component."""
@@ -186,7 +190,7 @@ class LinearComponents(Components):
     def forward(
         self,
         x: Float[Tensor, "... d_in"],
-        mask: Float[Tensor, "... C"] | None = None,
+        mask: Float[Tensor, "... C"] | bool | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
@@ -251,7 +255,7 @@ class EmbeddingComponents(Components):
     def forward(
         self,
         x: Int[Tensor, "..."],
-        mask: Float[Tensor, "... C"] | None = None,
+        mask: Float[Tensor, "... C"] | bool | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Float[Tensor, "... embedding_dim"]:
         """Forward through the embedding component using indexing instead of one-hot matmul.
@@ -283,84 +287,101 @@ class EmbeddingComponents(Components):
         return out
 
 
+@dataclass
+class ComponentsMaskInfo:
+    """Specifies the mask information that will be applied to a ComponentOrModule object."""
+
+    routing_mask: Float[Tensor, " ..."] | bool
+    """specifies which positions (usually batch, seq) to route to components vs target"""
+
+    component_mask: Float[Tensor, "... C"] | bool
+    """when components are active, this specifies which subcomponents to use"""
+
+    weight_delta_and_mask: WeightDeltaAndMask | None
+
+
+def make_mask_infos(
+    component_masks: Mapping[str, Float[Tensor, "... C"] | bool],
+    routing_masks: Mapping[str, Bool[Tensor, "..."] | bool] | None = None,
+    weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
+) -> dict[str, ComponentsMaskInfo]:
+    """Create ComponentsMaskInfo dict from dicts of component masks, routing masks, and weight deltas and weight delta masks.
+    Keys of all dicts must be the same.
+
+    Args:
+        component_masks: Dict of component masks.
+        routing_masks: Dict of routing masks. Defaults to True (enable components) for all outputs if not provided.
+        weight_deltas_and_masks: Dict of weight deltas and masks for each module to be decomposed. Defaults to None (disable weight delta component) if not provided.
+    turns:
+        Dict mapping module names to ComponentsMaskInfo objects.
+    """
+    if routing_masks is not None:
+        assert set(routing_masks) == set(component_masks)
+
+    if weight_deltas_and_masks is not None:
+        assert set(weight_deltas_and_masks) == set(component_masks)
+
+    result: dict[str, ComponentsMaskInfo] = {}
+    for name in component_masks:
+        result[name] = ComponentsMaskInfo(
+            routing_mask=routing_masks[name] if routing_masks is not None else True,
+            component_mask=component_masks[name],
+            weight_delta_and_mask=None
+            if weight_deltas_and_masks is None
+            else weight_deltas_and_masks[name],
+        )
+
+    return result
+
+
 class ComponentsOrModule(nn.Module):
     def __init__(
         self,
-        original: nn.Module,
-        components: Components | None = None,
-        identity_components: Components | None = None,
+        target: nn.Module,
+        components: Components,
     ):
         super().__init__()
-        assert components is not None or identity_components is not None, (
-            "At least one of components or identity_components must be provided"
-        )
-
-        self.original = original
+        self.target = target
         self.components = components
-        self.identity_components = identity_components
 
-        self.forward_mode: Literal["original"] | Literal["components"] | None = None
-
-        self.component_mask: Tensor | None = None
-        self.component_weight_delta_and_mask: WeightDeltaAndMask | None = None
-
-        self.identity_mask: Tensor | None = None
-        self.identity_weight_delta_and_mask: WeightDeltaAndMask | None = None
+        self.forward_mode: (
+            None | Literal["target"] | tuple[Literal["mixed"], ComponentsMaskInfo]
+        ) = None
 
     @property
-    def original_weight(self) -> Float[Tensor, "rows cols"]:
-        if isinstance(self.original, RadfordConv1D):
-            return self.original.weight.T
-        elif isinstance(self.original, nn.Linear | nn.Embedding):
-            return self.original.weight
+    def target_weight(self) -> Float[Tensor, "rows cols"]:
+        if isinstance(self.target, RadfordConv1D):
+            return self.target.weight.T
+        elif isinstance(self.target, nn.Linear | nn.Embedding):
+            return self.target.weight
         else:
             raise AttributeError(
-                f"Module {type(self.original)} not one of nn.Linear, nn.Embedding, or RadfordConv1D"
+                f"Module {type(self.target)} not one of nn.Linear, nn.Embedding, or RadfordConv1D"
             )
 
     @override
     def forward(self, x: Tensor) -> Tensor:
-        if self.forward_mode == "original":
-            assert self.component_mask is None and self.identity_mask is None
-            x = self.original(x)
-        elif self.forward_mode == "components":
-            if self.identity_mask is not None:
-                assert self.identity_components is not None
-                x = self.identity_components(
-                    x,
-                    mask=self.identity_mask,
-                    weight_delta_and_mask=self.identity_weight_delta_and_mask,
-                )
+        assert self.forward_mode is not None
 
-            if self.component_mask is not None:
-                assert self.components is not None
-                x = self.components(
-                    x,
-                    mask=self.component_mask,
-                    weight_delta_and_mask=self.component_weight_delta_and_mask,
+        match self.forward_mode:
+            case "target":
+                return self.target(x)
+            case ("mixed", mask_info):
+                target_out = self.target(x)
+                mask = mask_info.component_mask
+                weight_delta_and_mask = mask_info.weight_delta_and_mask
+                components_out = self.components.forward(x, mask, weight_delta_and_mask)
+
+                # this allows passing in bools to mean all or none, instead of requiring a cumbersome torch.ones_like(...) or torch.zeros_like(...)
+                routing_mask = (
+                    mask_info.routing_mask[..., None]
+                    if isinstance(mask_info.routing_mask, Tensor)
+                    else torch.tensor(mask_info.routing_mask)
                 )
-            else:
-                x = self.original(x)
-        else:
-            raise ValueError(f"Invalid forward mode: {self.forward_mode}")
-        return x
+                return torch.where(routing_mask, components_out, target_out)
 
     def make_pristine(self) -> None:
-        """Set forward_mode, mask, and identity_mask to None."""
         self.forward_mode = None
-        self.component_mask = None
-        self.identity_mask = None
-        self.component_weight_delta_and_mask = None
-        self.identity_weight_delta_and_mask = None
 
     def assert_pristine(self) -> None:
-        """Assert that forward_mode, mask, and identity_mask are None."""
         assert self.forward_mode is None, f"forward_mode should be None, got {self.forward_mode}"
-        assert self.component_mask is None, f"mask should be None, got {self.component_mask}"
-        assert self.identity_mask is None, f"identity_mask should be None, got {self.identity_mask}"
-        assert self.component_weight_delta_and_mask is None, (
-            f"weight_delta should be None, got {self.component_weight_delta_and_mask}"
-        )
-        assert self.identity_weight_delta_and_mask is None, (
-            f"identity_weight_delta should be None, got {self.identity_weight_delta_and_mask}"
-        )
