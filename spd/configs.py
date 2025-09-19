@@ -317,6 +317,8 @@ class Config(BaseModel):
         "image_freq",
         "metrics_fns",
         "figures_fns",
+        "schatten_coeff",
+        "out_recon_coeff",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
