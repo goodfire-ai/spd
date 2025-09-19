@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 
 import fire
-import torch
 import wandb
 
 from spd.configs import Config

@@ -11,11 +11,8 @@ from typing import Any, Literal
 
 import torch
 import torch.nn as nn
-from jaxtyping import Float, Int
-from torch import Tensor
 from torch.utils.hooks import RemovableHandle
 
-from spd.configs import Config, TaskConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.utils.distributed_utils import is_main_process
@@ -69,8 +66,8 @@ def pre_id_hook(
     return (mod.pre_identity(args[0]),), {}
 
 
-InputType = Literal["lm"] | tuple[Literal["vector"], int]
-"""'lm' implied (batch, seq) of integer tokens. ('vector', d_in) implied (batch, d_in) of floats."""
+InputType = Literal["tokens"] | tuple[Literal["vector"], int]
+"""'tokens' implies (batch, seq) of integer tokens. ('vector', d_in) implies (batch, d_in) of floats."""
 
 
 def insert_identity_operations_(
@@ -93,7 +90,7 @@ def insert_identity_operations_(
     identity_module_paths = ComponentModel._get_target_module_paths(target_model, identity_patterns)
 
     match input_type:
-        case "lm":
+        case "tokens":
             dummy_input = torch.zeros(1, 1, device=device, dtype=torch.long)
         case ("vector", d_in):
             dummy_input = torch.randn(1, d_in, device=device)

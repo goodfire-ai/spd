@@ -512,11 +512,11 @@ class ComponentModel(LoadableModule):
 
         comp_model.load_state_dict(comp_model_weights)
         return comp_model
-    
+
     @staticmethod
     def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
         for key in list(state_dict.keys()):
-            state_dict[key.replace('.original.', '.target.')] = state_dict.pop(key)
+            state_dict[key.replace(".original.", ".target.")] = state_dict.pop(key)
 
     @classmethod
     @override

@@ -35,6 +35,7 @@ def test_identity_insertion_inserts_identity_layers():
     insert_identity_operations_(
         target_model=model,
         identity_patterns=["layer1", "layer2"],
+        input_type="tokens",
         device="cpu",
     )
 
@@ -62,7 +63,9 @@ def test_identity_insertion_preserves_output():
     with torch.no_grad():
         original_output = model(input_ids)
 
-    insert_identity_operations_(model, identity_patterns=["layer1"], device=device)
+    insert_identity_operations_(
+        model, identity_patterns=["layer1"], input_type="tokens", device=device
+    )
 
     with torch.no_grad():
         new_output = model(input_ids)
@@ -98,6 +101,7 @@ def test_identity_insertion_uses_correct_dims():
     insert_identity_operations_(
         target_model=model,
         identity_patterns=["layer1"],
+        input_type="tokens",
         device=device,
     )
 
@@ -118,6 +122,7 @@ def test_identity_insertion_empty_patterns():
     insert_identity_operations_(
         target_model=model,
         identity_patterns=[],
+        input_type="tokens",
         device="cpu",
     )
 

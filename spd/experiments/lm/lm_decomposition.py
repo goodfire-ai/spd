@@ -174,7 +174,7 @@ def main(
         insert_identity_operations_(
             target_model,
             identity_patterns=identity_patterns,
-            input_type="lm",
+            input_type="tokens",
             device=device,
         )
 
