@@ -1,7 +1,6 @@
 from typing import Literal
 
 import torch
-import torch.nn as nn
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -10,61 +9,10 @@ from spd.models.component_model import ComponentModel
 from spd.models.components import (
     ComponentsMaskInfo,
     ComponentsOrModule,
-    EmbeddingComponents,
     make_mask_infos,
 )
-from spd.utils.component_utils import calc_stochastic_component_mask_infos, sample_stochastic_mask
+from spd.utils.component_utils import calc_stochastic_component_mask_infos
 from spd.utils.general_utils import calc_kl_divergence_lm
-
-
-def calc_embedding_recon_loss(
-    model: ComponentModel,
-    batch: Int[Tensor, "..."],
-    masks: list[dict[str, Float[Tensor, "... C"]]],
-    unembed: bool,
-    device: str,
-) -> Float[Tensor, ""]:
-    """
-    recon loss that directly compares the outputs of the (optionally masked)
-    ``EmbeddingComponents``(s) to the outputs of the target ``nn.Embedding`` modules.
-
-    If ``unembed`` is ``True``, both the masked embedding output and the target embedding
-    output are unembedded using the ``lm_head`` module, and the KL divergence is used as the loss.
-
-    If ``unembed`` is ``False``, the loss is the MSE between the masked embedding output
-    and the target embedding output is used as the loss.
-    """
-
-    assert len(model.components_or_modules) == 1, "Only one embedding component is supported"
-    components_or_module = next(iter(model.components_or_modules.values()))
-    components = components_or_module.components
-    target = components_or_module.target
-    assert isinstance(components, EmbeddingComponents)
-
-    # --- target embedding output --------------------------------------------------------- #
-    target_out: Float[Tensor, "... d_emb"] = target(batch)
-
-    # --- masked embedding output ----------------------------------------------------------- #
-    loss = torch.tensor(0.0, device=device)
-    for mask_info in masks:
-        assert len(mask_info) == 1, "Only one embedding component is supported"
-        mask = next(iter(mask_info.values()))
-        masked_out: Float[Tensor, "... d_emb"] = components(batch, mask=mask)
-
-        if unembed:
-            assert hasattr(model.patched_model, "lm_head"), (
-                "Only supports unembedding named lm_head"
-            )
-            assert isinstance(model.patched_model.lm_head, nn.Module)
-            target_out_unembed = model.patched_model.lm_head(target_out)
-            masked_out_unembed = model.patched_model.lm_head(masked_out)
-            loss += calc_kl_divergence_lm(pred=masked_out_unembed, target=target_out_unembed)
-        else:
-            loss += ((masked_out - target_out) ** 2).sum(dim=-1).mean()
-
-    loss /= len(masks)
-
-    return loss
 
 
 def calc_importance_minimality_loss(
@@ -332,25 +280,6 @@ def calculate_losses(
     )
     total_loss += config.importance_minimality_coeff * importance_minimality_loss
     loss_terms["importance_minimality"] = importance_minimality_loss.item()
-
-    # Embedding reconstruction loss
-    if config.embedding_recon_coeff is not None:
-        masks = [
-            {
-                layer: sample_stochastic_mask(ci, config.sampling)
-                for layer, ci in causal_importances.items()
-            }
-            for _ in range(config.n_mask_samples)
-        ]
-        embedding_recon_loss = calc_embedding_recon_loss(
-            model=model,
-            batch=batch,
-            masks=masks,
-            unembed=config.is_embed_unembed_recon,
-            device=device,
-        )
-        total_loss += config.embedding_recon_coeff * embedding_recon_loss
-        loss_terms["embedding_recon"] = embedding_recon_loss.item()
 
     loss_terms["total"] = total_loss.item()
 

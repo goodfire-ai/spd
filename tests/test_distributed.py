@@ -36,8 +36,6 @@ TEST_CONFIG = {
     "recon_layerwise_coeff": 1,
     "stochastic_recon_layerwise_coeff": None,  # Otherwise we're non-deterministic with dp>1
     "importance_minimality_coeff": 0.1,
-    "embedding_recon_coeff": None,
-    "is_embed_unembed_recon": False,
     "pnorm": 2.0,
     "output_loss_type": "kl",
     # --- Training ---

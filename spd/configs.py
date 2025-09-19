@@ -160,14 +160,6 @@ class Config(BaseModel):
         ...,
         description="Coefficient for importance minimality loss",
     )
-    embedding_recon_coeff: float | None = Field(
-        default=None,
-        description="Coefficient for additional embedding recon loss (LM only)",
-    )
-    is_embed_unembed_recon: bool = Field(
-        default=False,
-        description="If True, apply embedding recon jointly to embed & unembed matrices",
-    )
     pnorm: PositiveFloat = Field(
         ...,
         description="The p-value used for the importance minimality loss",
@@ -319,6 +311,8 @@ class Config(BaseModel):
         "figures_fns",
         "schatten_coeff",
         "out_recon_coeff",
+        "embedding_recon_coeff",
+        "is_embed_unembed_recon",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",

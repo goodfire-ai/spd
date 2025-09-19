@@ -7,7 +7,7 @@ from torch import Tensor
 from spd.models.components import ComponentsMaskInfo, WeightDeltaAndMask, make_mask_infos
 
 
-def sample_stochastic_mask(
+def _sample_stochastic_mask(
     causal_importances: Float[Tensor, "... C"],
     sampling: Literal["continuous", "binomial"],
 ) -> Float[Tensor, "... C"]:
@@ -35,7 +35,7 @@ def calc_stochastic_component_mask_info(
 
     component_masks: dict[str, Float[Tensor, "... C"] | bool] = {}
     for layer, ci in causal_importances.items():
-        component_masks[layer] = sample_stochastic_mask(ci, sampling)
+        component_masks[layer] = _sample_stochastic_mask(ci, sampling)
 
     if weight_deltas is not None:
         weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = {}
