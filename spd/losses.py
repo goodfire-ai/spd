@@ -159,7 +159,8 @@ def calc_masked_recon_layerwise_loss(
             if loss_type == "mse":
                 loss = ((modified_out - target_out) ** 2).mean()
             else:
-                loss = calc_kl_divergence_lm(pred=modified_out, target=target_out)
+                # loss = calc_kl_divergence_lm(pred=modified_out, target=target_out)
+                loss = calc_kl_divergence_lm(pred=target_out, target=modified_out)
             total_loss += loss
     n_modified_components = len(mask_infos_list[0])
     n_stochastic_sources = len(mask_infos_list)
@@ -199,7 +200,8 @@ def calc_masked_recon_loss(
         if loss_type == "mse":
             loss = ((out - target_out) ** 2).mean()
         else:
-            loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            # loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            loss = calc_kl_divergence_lm(pred=target_out, target=out)
         total_loss += loss
 
     return total_loss / len(mask_infos_list)
