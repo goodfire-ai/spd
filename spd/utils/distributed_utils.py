@@ -216,13 +216,22 @@ def ensure_cached_and_call[**P, T](fn: Callable[P, T], *args: P.args, **kwargs: 
     return fn(*args, **kwargs)
 
 
-def avg_metrics_across_ranks(metrics: Mapping[str, float], device: str) -> Mapping[str, float]:
-    """Get the average of metrics across ranks."""
-    assert is_distributed(), "Can only average metrics across ranks if running in distributed mode"
+def sum_metrics_across_ranks(
+    metrics: Mapping[str, int | float], device: str | torch.device
+) -> Mapping[str, float]:
+    assert is_distributed(), "Can only sum metrics across ranks if running in distributed mode"
     metric_values = torch.tensor([metrics[k] for k in metrics], device=device)
-    # Use ReduceOp.SUM and then divide since ReduceOp.AVG isn't supported for gloo backend (cpu)
-    metric_values = all_reduce(metric_values, op=ReduceOp.SUM) / get_world_size()
+    metric_values = all_reduce(metric_values, op=ReduceOp.SUM)
     return {k: metric_values[i].item() for i, k in enumerate(metrics)}
+
+
+def avg_metrics_across_ranks(
+    metrics: Mapping[str, int | float], device: str | torch.device
+) -> Mapping[str, float]:
+    world_size = get_world_size()
+    assert world_size > 0, "World size must be greater than 0"
+    sum_metrics = sum_metrics_across_ranks(metrics, device)
+    return {k: v / world_size for k, v in sum_metrics.items()}
 
 
 def avg_eval_metrics_across_ranks(
