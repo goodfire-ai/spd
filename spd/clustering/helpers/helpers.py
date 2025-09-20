@@ -190,3 +190,65 @@ def reconstruct_all_layers(model):
         print("\n[reconstruction] no componentized modules found.")
 
     return results
+
+
+# Minimal per-module SPD reconstruction & validation
+
+def _mods_with_components(keys):
+    pat = re.compile(r"^(layers\.\d+\.(mlp_in|mlp_out))\.components\.(U|V)$")
+    mods = {pat.match(k).group(1) for k in keys if pat.match(k)}
+    return sorted(mods, key=lambda s: (int(s.split('.')[1]), s.split('.')[-1]))
+
+def _get(sd, key):
+    # prefer original weight if present
+    for k in (f"{key}.original.weight", f"{key}.weight"):
+        if k in sd and sd[k].ndim == 2: return sd[k]
+    raise KeyError(f"no weight for {key}")
+
+def _rel_fro(A, B):
+    return (torch.linalg.norm(A - B) / (torch.linalg.norm(B) + 1e-12)).item()
+
+def _best_recon(U, V, W):
+    # try sensible order first (paper form UV and its transpose-equivalent), then fallbacks
+    cands = [
+        ("U@V",      lambda: U @ V,      U.shape,      V.shape),
+        ("U.T@V.T",  lambda: U.T @ V.T,  U.T.shape,    V.T.shape),
+        ("U@V.T",    lambda: U @ V.T,    U.shape,      V.T.shape),
+        ("U.T@V",    lambda: U.T @ V,    U.T.shape,    V.shape),
+        ("V@U",      lambda: V @ U,      V.shape,      U.shape),
+        ("V.T@U.T",  lambda: V.T @ U.T,  V.T.shape,    U.T.shape),
+        ("V@U.T",    lambda: V @ U.T,    V.shape,      U.T.shape),
+        ("V.T@U",    lambda: V.T @ U,    V.T.shape,    U.shape),
+    ]
+    target = W.shape
+    best = None
+    for name, thunk, L, R in cands:
+        if L[-1] != R[-2]: continue                 # inner dims match
+        if (L[-2], R[-1]) != target: continue      # output shape match
+        try:
+            What = thunk()
+            rel  = _rel_fro(What, W)
+            if (best is None) or (rel < best[2]): best = (name, rel)
+        except Exception:
+            pass
+    if best is None:
+        raise RuntimeError(f"No matching U/V product for target {tuple(target)}; "
+                           f"U={tuple(U.shape)}, V={tuple(V.shape)}")
+    return best
+
+def validate_spd_reconstruction(model):
+    patched = getattr(model, "patched_model", model)
+    sd = patched.state_dict()
+    mods = _mods_with_components(sd.keys())
+    print("Module                 W         U         V         formula        rel‖W-Ŵ‖F")
+    print("--------------------------------------------------------------------------------")
+    rels = []
+    for m in mods:
+        U = sd[f"{m}.components.U"]
+        V = sd[f"{m}.components.V"]
+        W = _get(sd, f"{m}.original") if f"{m}.original.weight" in sd else _get(sd, m)
+        name, rel = _best_recon(U, V, W)
+        print(f"{m:<20} {tuple(W.shape)!s:<10} {tuple(U.shape)!s:<10} {tuple(V.shape)!s:<10} {name:<14} {rel:10.6f}")
+        rels.append(rel)
+    if rels:
+        print(f"\nMean relative error across {len(rels)} modules: {sum(rels)/len(rels):.6f}")
