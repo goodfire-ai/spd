@@ -21,7 +21,7 @@ from tqdm import tqdm
 from spd.configs import Config
 from spd.data import loop_dataloader
 from spd.log import logger
-from spd.losses import calc_weight_deltas, calculate_losses
+from spd.losses import calc_weight_deltas, compute_total_loss
 from spd.metrics import evaluate
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
@@ -213,12 +213,12 @@ def optimize(
                 p_anneal_end_frac=config.p_anneal_end_frac,
             )
 
-            microbatch_total_loss, microbatch_loss_terms = calculate_losses(
+            microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
                 model=component_model,
                 batch=batch,
                 config=config,
-                causal_importances=causal_importances,
-                causal_importances_upper_leaky=causal_importances_upper_leaky,
+                ci=causal_importances,
+                ci_upper_leaky=causal_importances_upper_leaky,
                 target_out=target_out,
                 weight_deltas=weight_deltas,
                 device=device,
@@ -229,6 +229,12 @@ def optimize(
             for loss_name, loss_value in microbatch_loss_terms.items():
                 microbatch_log_data[f"train/loss/{loss_name}"] += (
                     loss_value / config.gradient_accumulation_steps
+                )
+
+            # Also log per-term loss metrics for train parity without instantiating classes
+            for k, v in microbatch_loss_terms.items():
+                microbatch_log_data[f"train/loss_terms/{k}"] += (
+                    v / config.gradient_accumulation_steps
                 )
 
             for layer_name, layer_ci in causal_importances.items():

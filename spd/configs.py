@@ -25,7 +25,7 @@ from spd.models.components import GateType
 from spd.spd_types import ModelPath, Probability
 
 
-class EvalMetricConfig(BaseModel):
+class MetricConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: str = Field(
         ...,
@@ -34,6 +34,17 @@ class EvalMetricConfig(BaseModel):
     extra_init_kwargs: dict[str, Any] = Field(
         default={},
         description="Extra keyword arguments to pass to the class constructor besides `model: ComponentModel` and `config: Config`",
+    )
+    coeff: float | None = Field(
+        default=None,
+        description="Optional coefficient used for weighting into loss/total; if None, uses the corresponding *_coeff field on Config.",
+    )
+    slow: bool | None = Field(
+        default=None,
+        description=(
+            "Optional override of the metric's SLOW flag for gating in evaluation. "
+            "If None, uses the class-level SLOW on the metric."
+        ),
     )
 
     def _get_metric_class(self) -> type | None:
@@ -261,9 +272,16 @@ class Config(BaseModel):
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    eval_metrics: list[EvalMetricConfig] = Field(
+    eval_metrics: list[MetricConfig] = Field(
         default=[],
         description="List of metrics to use for evaluation",
+    )
+    loss_metrics: list[MetricConfig] = Field(
+        default=[],
+        description=(
+            "List of loss metrics to compute (used for both training logs and eval); "
+            "coefficients provided here are also used for weighting the training loss and eval loss/total."
+        ),
     )
     include_loss_metrics_in_eval: bool = Field(
         default=True,
@@ -325,6 +343,7 @@ class Config(BaseModel):
         "image_freq",
         "metrics_fns",
         "figures_fns",
+        "include_loss_metrics_in_eval",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
@@ -350,6 +369,42 @@ class Config(BaseModel):
             config_dict["train_log_freq"] = 50
         if "slow_eval_freq" not in config_dict:
             config_dict["slow_eval_freq"] = config_dict["eval_freq"]
+        return config_dict
+
+    @model_validator(mode="before")
+    def populate_loss_coeffs_from_loss_metrics(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
+        """Populate legacy *_coeff fields from `loss_metrics` if provided.
+
+        This keeps one source-of-truth in `loss_metrics` while allowing existing training
+        code that relies on *_coeff fields to continue working without duplication.
+        """
+        loss_metrics_cfg = config_dict.get("loss_metrics") or []
+        if not loss_metrics_cfg:
+            return config_dict
+
+        # Map loss metric classnames to their corresponding *_coeff field names
+        classname_to_coeff_key = {
+            "FaithfulnessLoss": "faithfulness_coeff",
+            "ReconLoss": "recon_coeff",
+            "StochasticReconLoss": "stochastic_recon_coeff",
+            "ReconLayerwiseLoss": "recon_layerwise_coeff",
+            "StochasticReconLayerwiseLoss": "stochastic_recon_layerwise_coeff",
+            "ImportanceMinimalityLoss": "importance_minimality_coeff",
+            "SchattenLoss": "schatten_coeff",
+            "OutputReconLoss": "out_recon_coeff",
+            "EmbeddingReconLoss": "embedding_recon_coeff",
+        }
+
+        for item in loss_metrics_cfg:
+            classname = item.get("classname")
+            coeff = item.get("coeff", None)
+            coeff_key = classname_to_coeff_key.get(classname)
+            if coeff_key is None:
+                continue
+            if coeff is not None:
+                config_dict[coeff_key] = coeff
+            # If coeff is None, leave any existing root-level value as-is
+
         return config_dict
 
     @model_validator(mode="after")
