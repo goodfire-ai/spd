@@ -644,7 +644,7 @@ class SubsetReconstructionLoss(StreamingEval):
         zero_out = self.model(batch, mode="components", mask_infos=make_mask_infos(zero_masks))
         zero_ce = ce_vs_labels(zero_out)
 
-        weight_deltas = calc_weight_deltas(self.model, device=target_out.device)
+        weight_deltas = calc_weight_deltas(self.model)
         # Generate stochastic masks
         masks_list = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
 
@@ -760,7 +760,7 @@ class FaithfulnessLoss(StreamingEval):
 
     @override
     def compute(self) -> Mapping[str, float]:
-        weight_deltas = calc_weight_deltas(self.model, device=self.device)
+        weight_deltas = calc_weight_deltas(self.model)
         loss = calc_faithfulness_loss(weight_deltas, device=self.device)
         return {"loss/faithfulness": loss.item()}
 

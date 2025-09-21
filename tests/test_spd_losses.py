@@ -17,7 +17,6 @@ def _make_component_model(
     weight: Float[Tensor, " d_out d_in"],
     *,
     include_components: bool,
-    include_identity: bool,
 ) -> ComponentModel:
     d_out, d_in = weight.shape
     target = TinyLinearModel(d_in=d_in, d_out=d_out)
@@ -32,74 +31,40 @@ def _make_component_model(
         gate_hidden_dims=[2],
         gate_type="mlp",
         pretrained_model_output_attr=None,
-        identity_module_patterns=["fc"] if include_identity else None,
     )
 
     return comp_model
 
 
-def _zero_components_for_test(
-    model: ComponentModel, *, zero_components: bool, zero_identity: bool
-) -> None:
+def _zero_components_for_test(model: ComponentModel, *, zero_components: bool) -> None:
     with torch.no_grad():
-        for cm in model.components_or_modules.values():
-            if zero_components and cm.components is not None:
-                cm.components.V.zero_()
-                cm.components.U.zero_()
-            if zero_identity and cm.identity_components is not None:
-                cm.identity_components.V.zero_()
-                cm.identity_components.U.zero_()
+        if zero_components:
+            for comp in model.components.values():
+                comp.V.zero_()
+                comp.U.zero_()
 
 
 class TestCalcWeightDeltas:
-    def test_components_and_identity(self: object) -> None:
+    def test_components_zeroed(self: object) -> None:
         # fc weight 2x3 with known values
         fc_weight = torch.tensor([[1.0, 0.0, -1.0], [2.0, 3.0, -4.0]], dtype=torch.float32)
-        model = _make_component_model(
-            weight=fc_weight, include_components=True, include_identity=True
-        )
-        _zero_components_for_test(model, zero_components=True, zero_identity=True)
+        model = _make_component_model(weight=fc_weight, include_components=True)
+        _zero_components_for_test(model, zero_components=True)
 
-        deltas = calc_weight_deltas(model=model, device="cpu")
-
-        assert set(deltas.keys()) == {"fc", "identity_fc"}
-
-        # components were zeroed, so delta equals original weight
+        deltas = calc_weight_deltas(model=model)
+        assert set(deltas.keys()) == {"fc"}
         expected_fc = fc_weight
         assert torch.allclose(deltas["fc"], expected_fc)
-
-        # identity components were zeroed, so delta equals I - 0 = I
-        d_in = fc_weight.shape[1]
-        expected_I = torch.eye(d_in, dtype=fc_weight.dtype)
-        assert torch.allclose(deltas["identity_fc"], expected_I)
-
-    def test_identity_only(self: object) -> None:
-        fc_weight = torch.tensor([[0.5, -1.5], [2.5, 3.5]], dtype=torch.float32)
-        model = _make_component_model(
-            weight=fc_weight, include_components=False, include_identity=True
-        )
-        _zero_components_for_test(model, zero_components=False, zero_identity=True)
-
-        deltas = calc_weight_deltas(model=model, device="cpu")
-
-        assert set(deltas.keys()) == {"identity_fc"}
-        d_in = fc_weight.shape[1]
-        expected_I = torch.eye(d_in, dtype=fc_weight.dtype)
-        assert torch.allclose(deltas["identity_fc"], expected_I)
 
     def test_components_nonzero(self: object) -> None:
         # Non-identity case without zeroing components
         fc_weight = torch.tensor([[1.0, -2.0, 0.5], [0.0, 3.0, -1.0]], dtype=torch.float32)
-        model = _make_component_model(
-            weight=fc_weight, include_components=True, include_identity=False
-        )
+        model = _make_component_model(weight=fc_weight, include_components=True)
 
-        deltas = calc_weight_deltas(model=model, device="cpu")
+        deltas = calc_weight_deltas(model=model)
         assert set(deltas.keys()) == {"fc"}
 
-        cm = model.components_or_modules["fc"]
-        assert cm.components is not None
-        expected_fc = cm.original_weight - cm.components.weight
+        expected_fc = model.get_original_weight("fc") - model.components["fc"].weight
         assert torch.allclose(deltas["fc"], expected_fc)
 
 
@@ -116,16 +81,13 @@ class TestCalcFaithfulnessLoss:
 
     def test_with_model_weight_deltas(self: object) -> None:
         fc_weight = torch.tensor([[1.0, 0.0, -1.0], [2.0, 3.0, -4.0]], dtype=torch.float32)
-        model = _make_component_model(
-            weight=fc_weight, include_components=True, include_identity=True
-        )
-        _zero_components_for_test(model, zero_components=True, zero_identity=True)
-        deltas = calc_weight_deltas(model=model, device="cpu")
+        model = _make_component_model(weight=fc_weight, include_components=True)
+        _zero_components_for_test(model, zero_components=True)
+        deltas = calc_weight_deltas(model=model)
 
-        # Expected: mean of squared entries across both matrices
-        d_in = fc_weight.shape[1]
-        total_sq = fc_weight.square().sum() + torch.eye(d_in, dtype=fc_weight.dtype).square().sum()
-        total_params = fc_weight.numel() + d_in * d_in
+        # Expected: mean of squared entries of the single layer
+        total_sq = fc_weight.square().sum()
+        total_params = fc_weight.numel()
         expected = total_sq / total_params
 
         result = calc_faithfulness_loss(weight_deltas=deltas, device="cpu")

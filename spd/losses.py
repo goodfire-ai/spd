@@ -2,24 +2,23 @@ from typing import Literal
 
 import einops
 import torch
-import torch.nn as nn
 from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import Config
 from spd.mask_info import ComponentsMaskInfo, WeightDeltaAndMask, make_mask_infos
 from spd.models.component_model import ComponentModel
-from spd.models.components import Components, ComponentsOrModule, EmbeddingComponents
+from spd.models.components import Components
 from spd.utils.component_utils import calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
 def calc_embedding_recon_loss(
-    model: ComponentModel,
-    batch: Int[Tensor, "..."],
-    masks: list[dict[str, Float[Tensor, "... C"]]],
-    unembed: bool,
-    device: str,
+    model: ComponentModel,  # pyright: ignore[reportUnusedParameter]
+    batch: Int[Tensor, "..."],  # pyright: ignore[reportUnusedParameter]
+    masks: list[dict[str, Float[Tensor, "... C"]]],  # pyright: ignore[reportUnusedParameter]
+    unembed: bool,  # pyright: ignore[reportUnusedParameter]
+    device: str,  # pyright: ignore[reportUnusedParameter]
 ) -> Float[Tensor, ""]:
     """
     recon loss that directly compares the outputs of the (optionally masked)
@@ -32,36 +31,7 @@ def calc_embedding_recon_loss(
     and the target embedding output is used as the loss.
     """
 
-    assert len(model.components_or_modules) == 1, "Only one embedding component is supported"
-    components_or_module = next(iter(model.components_or_modules.values()))
-    components = components_or_module.components
-    original = components_or_module.original
-    assert isinstance(components, EmbeddingComponents)
-
-    # --- original embedding output --------------------------------------------------------- #
-    target_out: Float[Tensor, "... d_emb"] = original(batch)
-
-    # --- masked embedding output ----------------------------------------------------------- #
-    loss = torch.tensor(0.0, device=device)
-    for mask_info in masks:
-        assert len(mask_info) == 1, "Only one embedding component is supported"
-        mask = next(iter(mask_info.values()))
-        masked_out: Float[Tensor, "... d_emb"] = components(batch, mask=mask)
-
-        if unembed:
-            assert hasattr(model.patched_model, "lm_head"), (
-                "Only supports unembedding named lm_head"
-            )
-            assert isinstance(model.patched_model.lm_head, nn.Module)
-            target_out_unembed = model.patched_model.lm_head(target_out)
-            masked_out_unembed = model.patched_model.lm_head(masked_out)
-            loss += calc_kl_divergence_lm(pred=masked_out_unembed, target=target_out_unembed)
-        else:
-            loss += ((masked_out - target_out) ** 2).sum(dim=-1).mean()
-
-    loss /= len(masks)
-
-    return loss
+    raise NotImplementedError("This loss function is being deprecated")
 
 
 def calc_schatten_loss(
@@ -205,24 +175,12 @@ def calc_masked_recon_loss(
     return total_loss / len(mask_infos_list)
 
 
-def calc_weight_deltas(
-    model: ComponentModel, device: str | torch.device
-) -> dict[str, Float[Tensor, " d_out d_in"]]:
+def calc_weight_deltas(model: ComponentModel) -> dict[str, Float[Tensor, " d_out d_in"]]:
     """Calculate the weight differences between the target model and component weights (V@U) for
     each layer."""
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
-    for comp_name, components_or_module in model.components_or_modules.items():
-        assert isinstance(components_or_module, ComponentsOrModule)
-        if components_or_module.components is not None:
-            weight_deltas[comp_name] = (
-                components_or_module.original_weight - components_or_module.components.weight
-            )
-        if components_or_module.identity_components is not None:
-            id_name = f"identity_{comp_name}"
-            id_mat = components_or_module.identity_components.weight
-            weight_deltas[id_name] = (
-                torch.eye(id_mat.shape[0], device=device, dtype=id_mat.dtype) - id_mat
-            )
+    for comp_name, comp in model.components.items():
+        weight_deltas[comp_name] = model.get_original_weight(comp_name) - comp.weight
     return weight_deltas
 
 

@@ -101,7 +101,6 @@ def optimize(
         gate_type=config.gate_type,
         gate_hidden_dims=config.gate_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
-        identity_module_patterns=config.identity_module_patterns,
     )
 
     if ln_stds is not None:
@@ -133,11 +132,8 @@ def optimize(
         # Tie component weights. Assume that the first element is a transpose of the second element
         # NOTE: Tying weights will make your training nondeterministic
         for src_name, tgt_name in tied_weights:
-            tgt = component_model.components_or_modules[tgt_name].components
-            src = component_model.components_or_modules[src_name].components
-            assert tgt is not None and src is not None, (
-                f"Cannot tie weights between {src_name} and {tgt_name} - one or both are None"
-            )
+            tgt = component_model.components[tgt_name]
+            src = component_model.components[src_name]
             tgt.U.data = src.V.data.T
             tgt.V.data = src.U.data.T
 
@@ -181,7 +177,7 @@ def optimize(
         current_p = config.pnorm  # Initialize with default value
 
         for _ in range(config.gradient_accumulation_steps):
-            weight_deltas = calc_weight_deltas(component_model, device)
+            weight_deltas = calc_weight_deltas(component_model)
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import einops
 import matplotlib.pyplot as plt
@@ -9,15 +9,15 @@ from jaxtyping import Float
 from PIL import Image
 from torch import Tensor
 
-from spd.experiments.resid_mlp.models import ResidMLP
+from spd.experiments.resid_mlp.models import MLP, ResidMLP
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.models.components import Components, ComponentsOrModule
+from spd.models.components import Components
 from spd.plotting import plot_causal_importance_vals
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import runtime_cast, set_seed
+from spd.utils.general_utils import set_seed
 from spd.utils.run_utils import get_output_dir
 
 
@@ -39,10 +39,10 @@ def extract_ci_val_figures(
     model.to(device)
 
     config = run_info.config
-    assert isinstance(model.patched_model, ResidMLP | TMSModel), (
-        "patched model must be a ResidMLP or TMSModel"
+    assert isinstance(model.target_model, ResidMLP | TMSModel), (
+        "target model must be a ResidMLP or TMSModel"
     )
-    n_features = model.patched_model.config.n_features
+    n_features = model.target_model.config.n_features
 
     # Assume no position dimension
     batch_shape = (1, n_features)
@@ -163,7 +163,7 @@ def compute_patched_weight_neuron_contributions(
     as described in the original script.
 
     Args:
-        patched_model: The patched model (i.e. with ComponentsOrModule layers)
+        patched_model: The target ResidMLP model
         n_features: The number of features to keep. If None, all features are kept.
 
     Returns:
@@ -178,8 +178,9 @@ def compute_patched_weight_neuron_contributions(
     W_in_weights = []
     W_out_weights = []
     for layer in patched_model.layers:
-        W_in_weights.append(runtime_cast(ComponentsOrModule, layer.mlp_in).original_weight)
-        W_out_weights.append(runtime_cast(ComponentsOrModule, layer.mlp_out).original_weight)
+        lyr = cast(MLP, layer)
+        W_in_weights.append(lyr.mlp_in.weight)
+        W_out_weights.append(lyr.mlp_out.weight)
     assert all(W_in_weights), "All W_in_weights must be non-None"
     assert all(W_out_weights), "All W_out_weights must be non-None"
     # Stack mlp_in / mlp_out weights across layers so that einsums can broadcast
@@ -481,7 +482,7 @@ def main(out_dir: Path, device: str):
         run_info = SPDRunInfo.from_path(path)
         model = ComponentModel.from_run_info(run_info)
         config = run_info.config
-        patched_model = model.patched_model
+        patched_model = model.target_model
         assert isinstance(patched_model, ResidMLP)
         model.to(device)
 
