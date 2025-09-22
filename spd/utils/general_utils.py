@@ -248,13 +248,18 @@ def extract_batch_data(
 def calc_kl_divergence_lm(
     pred: Float[Tensor, "... vocab"],
     target: Float[Tensor, "... vocab"],
-) -> Float[Tensor, ""]:
+    reduce: bool = True,
+) -> Float[Tensor, ""] | Float[Tensor, "..."]:
     """Calculate the KL divergence between two logits."""
     assert pred.shape == target.shape
     log_q = torch.log_softmax(pred, dim=-1)  # log Q
     p = torch.softmax(target, dim=-1)  # P
-    kl = F.kl_div(log_q, p, reduction="none")  # P · (log P − log Q)
-    return kl.sum(dim=-1).mean()  # Σ_vocab / (batch·seq)
+    kl_raw = F.kl_div(log_q, p, reduction="none")  # P · (log P − log Q)
+    kl = kl_raw.sum(dim=-1)
+    if reduce:
+        return kl.mean()  # Σ_vocab / (batch·seq)
+    else:
+        return kl
 
 
 def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:

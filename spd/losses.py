@@ -174,7 +174,13 @@ def compute_total_loss(
         loss_metric = loss_metric_cls(
             model, config, **loss_metric_config.extra_init_kwargs, sync_on_compute=False
         ).to(device)
-        loss = loss_metric(batch=batch, target_out=target_out, ci=ci, ci_upper_leaky=ci_upper_leaky)
+        loss = loss_metric(
+            batch=batch,
+            target_out=target_out,
+            ci=ci,
+            ci_upper_leaky=ci_upper_leaky,
+            weight_deltas=weight_deltas,
+        )
         total = total + loss_metric_config.coeff * loss
         terms[loss_metric_config.classname] = loss.item()
 

@@ -12,7 +12,10 @@ from torch import Tensor
 from torchmetrics import Metric
 
 from spd.configs import Config
+from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
+from spd.utils.component_utils import calc_stochastic_masks
+from spd.utils.general_utils import calc_kl_divergence_lm
 
 # class CI_L0(Metric):
 #     SLOW = False
@@ -973,44 +976,9 @@ from spd.models.component_model import ComponentModel
 #     def reset(self) -> None:
 #         self.running.reset()
 
-# class ImportanceMinimalityLoss(Metric):
-#     SLOW = False
-
-#     def __init__(self) -> None:
-#         super().__init__()
-#         self.model = model
-#         self.config = config
-#         self.running = _RunningAvg()
-
-#     @override
-#     def watch_batch(
-#         self,
-#         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-#         target_out: Float[Tensor, "... vocab"],
-#         ci: dict[str, Float[Tensor, "... C"]],
-#         ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-#     ) -> None:
-#         pnorm_value = self.config.pnorm
-#         loss = calc_importance_minimality_loss(ci_upper_leaky=ci_upper_leaky, pnorm=pnorm_value)
-#         any_layer = next(iter(ci_upper_leaky.values()))
-#         denom = int(any_layer.shape[:-1].numel())
-#         self.running.add(loss.item(), float(denom))
-
-#     @override
-#     def compute(self) -> Mapping[str, float]:
-#         return (
-#             {"loss/importance_minimality": self.running.mean()}
-#             if self.running.denominator > 0
-#             else {}
-#         )
-
-#     @override
-#     def reset(self) -> None:
-#         self.running.reset()
-
 
 class ImportanceMinimalityLoss(Metric):
-    SLOW = False
+    slow = False
     is_differentiable: bool | None = True
 
     sum_imp_min: Float[Tensor, " C"]
@@ -1018,8 +986,7 @@ class ImportanceMinimalityLoss(Metric):
 
     def __init__(
         self,
-        _model: ComponentModel,
-        _config: Config,
+        *args: Any,
         pnorm: Any,  # Not yet cast to float
         eps: Any,  # Not yet cast to float
         **kwargs: Any,
@@ -1032,15 +999,8 @@ class ImportanceMinimalityLoss(Metric):
         self.add_state("n_examples", torch.tensor(0), dist_reduce_fx="sum")
 
     @override
-    def update(
-        self,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
-        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-        **kwargs: dict[str, Any],
-    ) -> None:
-        """Calculate the importance minimality loss on the upper leaky relu causal importances.
+    def update(self, ci_upper_leaky: dict[str, Float[Tensor, "... C"]], **kwargs: Any) -> None:
+        """Calculate the summed importance minimality values on the upper leaky causal importances.
 
         Args:
             batch: Batch of data.
@@ -1060,6 +1020,65 @@ class ImportanceMinimalityLoss(Metric):
     @override
     def compute(self) -> Float[Tensor, ""]:
         return self.sum_imp_min / self.n_examples
+
+
+class StochasticReconLoss(Metric):
+    slow = False
+    is_differentiable: bool | None = True
+
+    sum_stochastic_recon: Float[Tensor, ""]
+    n_examples: int
+
+    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.model = model
+        self.config = config
+        self.add_state("sum_stochastic_recon", torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("n_examples", torch.tensor(0), dist_reduce_fx="sum")
+
+    @override
+    def update(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
+        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+        **kwargs: dict[str, Any],
+    ) -> None:
+        """Calculate the stochastic recon loss before reduction."""
+        stochastic_masks_list = calc_stochastic_masks(
+            causal_importances=ci,
+            n_mask_samples=self.config.n_mask_samples,
+            sampling=self.config.sampling,
+        )
+        mask_infos_list = []
+        for stochastic_masks in stochastic_masks_list:
+            deltas_and_masks = (
+                {
+                    key: (weight_deltas[key], stochastic_masks.weight_delta_masks[key])
+                    for key in weight_deltas
+                }
+                if self.config.use_delta_component
+                else None
+            )
+            mask_infos_list.append(
+                make_mask_infos(
+                    masks=stochastic_masks.component_masks, weight_deltas_and_masks=deltas_and_masks
+                )
+            )
+        for mask_infos in mask_infos_list:
+            out = self.model(batch, mode="components", mask_infos=mask_infos)
+            if self.config.output_loss_type == "mse":
+                loss = ((out - target_out) ** 2).sum()
+            else:
+                loss = calc_kl_divergence_lm(pred=out, target=target_out, reduce=False).sum()
+            self.n_examples += out.shape[:-1].numel()
+            self.sum_stochastic_recon += loss
+
+    @override
+    def compute(self) -> Float[Tensor, ""]:
+        return self.sum_stochastic_recon / self.n_examples
 
 
 # class StochasticReconLoss(Metric):
@@ -1146,7 +1165,7 @@ METRICS = {
         # SubsetReconstructionLoss,
         # FaithfulnessLoss,
         # CIReconLoss,
-        # StochasticReconLoss,
+        StochasticReconLoss,
         # CIReconLayerwiseLoss,
         # StochasticReconLayerwiseLoss,
         ImportanceMinimalityLoss,
