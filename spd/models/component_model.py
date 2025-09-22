@@ -324,13 +324,13 @@ class ComponentModel(LoadableModule):
             assert gate_type in ["vector_mlp", "layerwise_global_mlp"], (
                 f"Unknown gate type: {gate_type}"
             )
-            assert not isinstance(original_module, nn.Embedding), (
-                "Embedding modules only supported for gate_type='mlp'"
-            )
             if isinstance(original_module, nn.Linear):
                 input_dim = original_module.weight.shape[1]
             elif isinstance(original_module, RadfordConv1D):
                 input_dim = original_module.weight.shape[0]
+            elif isinstance(original_module, nn.Embedding):
+                # For embeddings, use the embedding vector as the gate input
+                input_dim = original_module.embedding_dim
             else:
                 raise ValueError(f"Module {type(original_module)} not supported for {gate_type=}")
 
@@ -622,7 +622,18 @@ class ComponentModel(LoadableModule):
             if isinstance(gates, GateMLPs):
                 gate_input = self.components[param_name].get_inner_acts(acts)
             elif isinstance(gates, VectorGateMLPs | LayerwiseGlobalGateMLP):
-                gate_input = acts
+                # Vector gates expect a float vector input. For embeddings, convert token ids
+                # to their corresponding embedding vectors before passing to the gate.
+                base_name = (
+                    param_name.removeprefix("identity_")
+                    if param_name.startswith("identity_")
+                    else param_name
+                )
+                original_module = self.components_or_modules[base_name].original
+                if isinstance(original_module, nn.Embedding) and not torch.is_floating_point(acts):
+                    gate_input = original_module.weight[acts]
+                else:
+                    gate_input = acts
             else:
                 raise ValueError(f"Unknown gate type: {type(gates)}")
 

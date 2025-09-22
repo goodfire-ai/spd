@@ -3,6 +3,7 @@ from typing import Literal
 import einops
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -159,7 +160,16 @@ def calc_masked_recon_layerwise_loss(
             if loss_type == "mse":
                 loss = ((modified_out - target_out) ** 2).mean()
             else:
-                loss = calc_kl_divergence_lm(pred=modified_out, target=target_out)
+                # loss = calc_kl_divergence_lm(pred=modified_out, target=target_out)
+                masked_batch = batch.clone()
+                masked_batch[:, 0] = -100  # F.cross_entropy ignores -99
+                flat_masked_batch = masked_batch.flatten()
+                flat_modified_out = einops.rearrange(
+                    modified_out, "b seq_len vocab -> (b seq_len) vocab"
+                )
+                loss = F.cross_entropy(
+                    flat_modified_out[:-1], flat_masked_batch[1:], ignore_index=-100
+                )
             total_loss += loss
     n_modified_components = len(mask_infos_list[0])
     n_stochastic_sources = len(mask_infos_list)
@@ -199,7 +209,12 @@ def calc_masked_recon_loss(
         if loss_type == "mse":
             loss = ((out - target_out) ** 2).mean()
         else:
-            loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            # loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            masked_batch = batch.clone()
+            masked_batch[:, 0] = -100  # F.cross_entropy ignores -99
+            flat_masked_batch = masked_batch.flatten()
+            flat_out = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
+            loss = F.cross_entropy(flat_out[:-1], flat_masked_batch[1:], ignore_index=-100)
         total_loss += loss
 
     return total_loss / len(mask_infos_list)
