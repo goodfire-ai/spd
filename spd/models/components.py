@@ -290,9 +290,6 @@ class EmbeddingComponents(Components):
 class ComponentsMaskInfo:
     """Specifies the mask information that will be applied to a ComponentOrModule object."""
 
-    routing_mask: Float[Tensor, " ..."] | Literal[True]
-    """specifies which positions (usually batch, seq) to route to components vs target"""
-
     component_mask: Float[Tensor, "... C"] | bool
     """when components are active, this specifies which subcomponents to use"""
 
@@ -301,29 +298,23 @@ class ComponentsMaskInfo:
 
 def make_mask_infos(
     component_masks: Mapping[str, Float[Tensor, "... C"] | bool],
-    routing_masks: Mapping[str, Bool[Tensor, "..."] | Literal[True]] | None = None,
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
-    """Create ComponentsMaskInfo dict from dicts of component masks, routing masks, and weight deltas and weight delta masks.
+    """Create ComponentsMaskInfo dict from dicts of component masks, and weight deltas and weight delta masks.
     Keys of all dicts must be the same.
 
     Args:
         component_masks: Dict of component masks.
-        routing_masks: Dict of routing masks. Defaults to True (enable components) for all outputs if not provided.
         weight_deltas_and_masks: Dict of weight deltas and masks for each module to be decomposed. Defaults to None (disable weight delta component) if not provided.
     turns:
         Dict mapping module names to ComponentsMaskInfo objects.
     """
-    if routing_masks is not None:
-        assert set(routing_masks) == set(component_masks)
-
     if weight_deltas_and_masks is not None:
         assert set(weight_deltas_and_masks) == set(component_masks)
 
     result: dict[str, ComponentsMaskInfo] = {}
     for name in component_masks:
         result[name] = ComponentsMaskInfo(
-            routing_mask=routing_masks[name] if routing_masks is not None else True,
             component_mask=component_masks[name],
             weight_delta_and_mask=None
             if weight_deltas_and_masks is None

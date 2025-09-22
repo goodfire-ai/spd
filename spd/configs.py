@@ -144,10 +144,6 @@ class Config(BaseModel):
         default=None,
         description="Coefficient for recon loss with stochastically sampled masks",
     )
-    stochastic_routed_recon_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with stochastically sampled masks and routed components",
-    )
     recon_layerwise_coeff: NonNegativeFloat | None = Field(
         default=None,
         description="Coefficient for per-layer recon loss with a causal importance mask",

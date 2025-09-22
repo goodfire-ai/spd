@@ -171,7 +171,6 @@ class CEandKLLosses(StreamingEval):
             causal_importances=ci,
             sampling=self.config.sampling,
             weight_deltas=None,
-            routing="all",
         )
         stoch_masked_logits = self.model.forward(batch, mode="components", mask_infos=mask_infos)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
@@ -618,7 +617,6 @@ class SubsetReconstructionLoss(StreamingEval):
             weight_deltas=calc_weight_deltas(self.model)
             if self.config.use_delta_component
             else None,
-            routing="all",
             n_mask_samples=self.n_mask_samples,
         )
 
