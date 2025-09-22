@@ -160,6 +160,10 @@ class Config(BaseModel):
         default=None,
         description="Coefficient for Schatten-norm regularisation (LM only)",
     )
+    causal_importance_mse_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for MSE between SPD and target causal importances",
+    )
     out_recon_coeff: NonNegativeFloat | None = Field(
         default=None,
         description="Coefficient for output recon loss",
