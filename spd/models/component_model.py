@@ -535,3 +535,10 @@ class ComponentModel(LoadableModule):
             causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs()
 
         return causal_importances, causal_importances_upper_leaky
+
+    def weight_deltas(self) -> dict[str, Float[Tensor, " d_out d_in"]]:
+        """Calculate the weight differences between the target and component weights (V@U) for each layer."""
+        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
+        for comp_name, components in self.components.items():
+            weight_deltas[comp_name] = self.target_weight(comp_name) - components.weight
+        return weight_deltas

@@ -22,7 +22,7 @@ from spd.configs import Config
 from spd.data import loop_dataloader
 from spd.eval import evaluate
 from spd.log import logger
-from spd.losses import calc_weight_deltas, calculate_losses
+from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
@@ -189,7 +189,7 @@ def optimize(
         current_p = config.pnorm  # Initialize with default value
 
         for _ in range(config.gradient_accumulation_steps):
-            weight_deltas = calc_weight_deltas(component_model)
+            weight_deltas = component_model.weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(

@@ -113,15 +113,6 @@ def calc_masked_recon_loss(
     return total_loss / len(mask_infos_list)
 
 
-def calc_weight_deltas(model: ComponentModel) -> dict[str, Float[Tensor, " d_out d_in"]]:
-    """Calculate the weight differences between the target model and component weights (V@U) for
-    each layer."""
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
-    for comp_name, components in model.components.items():
-        weight_deltas[comp_name] = model.target_weight(comp_name) - components.weight
-    return weight_deltas
-
-
 def calc_faithfulness_loss(
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
     device: str | torch.device,
@@ -176,19 +167,18 @@ def calculate_losses(
         total_loss += config.faithfulness_coeff * faithfulness_loss
         loss_terms["faithfulness"] = faithfulness_loss.item()
 
-    # Reconstruction loss
-    if config.recon_coeff is not None:
-        recon_mask_infos = make_mask_infos(causal_importances)
-        recon_loss = calc_masked_recon_loss(
+    # CI reconstruction loss
+    if config.ci_recon_coeff is not None:
+        ci_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
-            mask_infos_list=[recon_mask_infos],
+            mask_infos_list=[make_mask_infos(causal_importances, weight_deltas_and_masks=None)],
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,
         )
-        total_loss += config.recon_coeff * recon_loss
-        loss_terms["recon"] = recon_loss.item()
+        total_loss += config.ci_recon_coeff * ci_recon_loss
+        loss_terms["ci_recon"] = ci_recon_loss.item()
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
@@ -198,7 +188,6 @@ def calculate_losses(
             weight_deltas=weight_deltas if config.use_delta_component else None,
             n_mask_samples=config.n_mask_samples,
         )
-
         stochastic_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
@@ -207,22 +196,21 @@ def calculate_losses(
             loss_type=config.output_loss_type,
             device=device,
         )
-
         total_loss += config.stochastic_recon_coeff * stochastic_recon_loss
         loss_terms["stochastic_recon"] = stochastic_recon_loss.item()
 
-    # Reconstruction layerwise loss
-    if config.recon_layerwise_coeff is not None:
-        recon_layerwise_loss = calc_masked_recon_layerwise_loss(
+    # CI reconstruction layerwise loss
+    if config.ci_recon_layerwise_coeff is not None:
+        ci_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
-            mask_infos_list=[make_mask_infos(causal_importances)],
+            mask_infos_list=[make_mask_infos(causal_importances, weight_deltas_and_masks=None)],
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,
         )
-        total_loss += config.recon_layerwise_coeff * recon_layerwise_loss
-        loss_terms["recon_layerwise"] = recon_layerwise_loss.item()
+        total_loss += config.ci_recon_layerwise_coeff * ci_recon_layerwise_loss
+        loss_terms["ci_recon_layerwise"] = ci_recon_layerwise_loss.item()
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
@@ -232,7 +220,6 @@ def calculate_losses(
             weight_deltas=weight_deltas if config.use_delta_component else None,
             n_mask_samples=config.n_mask_samples,
         )
-
         stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,

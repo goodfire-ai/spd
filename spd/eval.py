@@ -21,7 +21,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.configs import Config
-from spd.losses import calc_faithfulness_loss, calc_weight_deltas
+from spd.losses import calc_faithfulness_loss
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.plotting import (
@@ -147,7 +147,7 @@ class CEandKLLosses(StreamingEval):
 
         # make sure labels don't "wrap around": you **can't** predict the first token.
         masked_batch = batch.clone()
-        masked_batch[:, 0] = -100  # F.cross_entropy ignores -99
+        masked_batch[:, 0] = -100
         flat_masked_batch = masked_batch.flatten()
 
         def ce_vs_labels(logits: Tensor) -> float:
@@ -614,7 +614,7 @@ class SubsetReconstructionLoss(StreamingEval):
         masks_list = calc_stochastic_component_mask_infos(
             causal_importances=ci,
             sampling=self.config.sampling,
-            weight_deltas=calc_weight_deltas(self.model)
+            weight_deltas=self.model.weight_deltas()
             if self.config.use_delta_component
             else None,
             n_mask_samples=self.n_mask_samples,
@@ -726,7 +726,7 @@ class FaithfulnessLoss(StreamingEval):
 
     @override
     def compute(self) -> Mapping[str, float]:
-        weight_deltas = calc_weight_deltas(self.model)
+        weight_deltas = self.model.weight_deltas()
         loss = calc_faithfulness_loss(weight_deltas, device=self.device)
         return {"loss/faithfulness": loss.item()}
 
