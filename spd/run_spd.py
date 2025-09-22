@@ -40,6 +40,7 @@ from spd.utils.general_utils import (
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
+from spd.utils.identity_insertion import insert_identity_operations_
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
@@ -93,6 +94,13 @@ def optimize(
     if is_main_process():
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
+    if (identity_patterns := config.identity_module_patterns) is not None:
+        insert_identity_operations_(
+            target_model,
+            identity_patterns=identity_patterns,
+            device=device,
+        )
+
     target_model.requires_grad_(False)
 
     model = ComponentModel(
@@ -133,8 +141,8 @@ def optimize(
         # Tie component weights. Assume that the first element is a transpose of the second element
         # NOTE: Tying weights will make your training nondeterministic
         for src_name, tgt_name in tied_weights:
-            tgt = component_model.components_or_modules[tgt_name].components
-            src = component_model.components_or_modules[src_name].components
+            tgt = component_model.components[tgt_name]
+            src = component_model.components[src_name]
             assert tgt is not None and src is not None, (
                 f"Cannot tie weights between {src_name} and {tgt_name} - one or both are None"
             )

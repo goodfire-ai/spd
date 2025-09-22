@@ -34,9 +34,9 @@ def _make_component_model(weight: Float[Tensor, " d_out d_in"]) -> ComponentMode
 
 def _zero_components_for_test(model: ComponentModel) -> None:
     with torch.no_grad():
-        for cm in model.components_or_modules.values():
-            cm.components.V.zero_()
-            cm.components.U.zero_()
+        for cm in model.components.values():
+            cm.V.zero_()
+            cm.U.zero_()
 
 
 class TestCalcWeightDeltas:
@@ -62,9 +62,9 @@ class TestCalcWeightDeltas:
         deltas = calc_weight_deltas(model)
         assert set(deltas.keys()) == {"fc"}
 
-        cm = model.components_or_modules["fc"]
-        assert cm.components is not None
-        expected_fc = cm.target_weight - cm.components.weight
+        component = model.components["fc"]
+        assert component is not None
+        expected_fc = model.target_weight("fc") - component.weight
         assert torch.allclose(deltas["fc"], expected_fc)
 
 

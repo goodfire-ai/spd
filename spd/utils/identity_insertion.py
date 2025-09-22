@@ -13,16 +13,7 @@ import torch
 import torch.nn as nn
 from torch.utils.hooks import RemovableHandle
 from transformers.modeling_utils import Conv1D as RadfordConv1D
-from transformers.modeling_utils import Conv1D as RadfordConv1D
 
-from spd.configs import (
-    Config,
-    TaskConfig,
-    LMTaskConfig,
-    TMSTaskConfig,
-    IHTaskConfig,
-    ResidMLPTaskConfig,
-)
 from spd.log import logger
 from spd.models.component_model import SUPPORTED_MODULES, ComponentModel
 from spd.utils.distributed_utils import is_main_process

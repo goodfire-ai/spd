@@ -22,7 +22,6 @@ from spd.utils.general_utils import (
     save_pre_run_info,
     set_seed,
 )
-from spd.utils.identity_insertion import insert_identity_operations_
 from spd.utils.run_utils import get_output_dir
 from spd.utils.wandb_utils import init_wandb
 
@@ -98,14 +97,6 @@ def main(
     tied_weights = None
     if target_model.config.tied_weights:
         tied_weights = [("linear1", "linear2")]
-
-    if (identity_patterns := config.identity_module_patterns) is not None:
-        insert_identity_operations_(
-            target_model,
-            identity_patterns=identity_patterns,
-            input_type=("vector", target_model.config.n_features),
-            device=device,
-        )
 
     optimize(
         target_model=target_model,

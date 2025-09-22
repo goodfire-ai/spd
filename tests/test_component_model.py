@@ -13,7 +13,6 @@ from spd.experiments.tms.configs import TMSTaskConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import (
-    ComponentsMaskInfo,
     EmbeddingComponents,
     LinearComponents,
 )
@@ -165,7 +164,7 @@ def test_patch_modules_unsupported_component_type_raises() -> None:
 
     with pytest.raises(ValueError):
         ComponentModel._create_components(
-            model=model,
+            target_model=model,
             module_paths=["other_layer"],
             C=2,
         )
