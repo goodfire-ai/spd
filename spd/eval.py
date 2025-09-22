@@ -176,7 +176,7 @@ class CEandKLLosses(StreamingEval):
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
 
-        # # we use all components
+        # we use all components
         nonmask_infos = make_mask_infos({k: torch.ones_like(v) for k, v in ci.items()})
         unmasked_logits = self.model.forward(batch, mode="components", mask_infos=nonmask_infos)
         unmasked_ce_loss = ce_vs_labels(unmasked_logits)
@@ -614,9 +614,7 @@ class SubsetReconstructionLoss(StreamingEval):
         masks_list = calc_stochastic_component_mask_infos(
             causal_importances=ci,
             sampling=self.config.sampling,
-            weight_deltas=self.model.weight_deltas()
-            if self.config.use_delta_component
-            else None,
+            weight_deltas=self.model.weight_deltas() if self.config.use_delta_component else None,
             n_mask_samples=self.n_mask_samples,
         )
 

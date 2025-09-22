@@ -144,7 +144,7 @@ class Components(ABC, nn.Module):
     def forward(
         self,
         x: Tensor,
-        mask: Tensor | bool | None = None,
+        mask: Tensor | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Tensor:
         """Forward pass through the component."""
@@ -189,7 +189,7 @@ class LinearComponents(Components):
     def forward(
         self,
         x: Float[Tensor, "... d_in"],
-        mask: Float[Tensor, "... C"] | bool | None = None,
+        mask: Float[Tensor, "... C"] | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
@@ -254,7 +254,7 @@ class EmbeddingComponents(Components):
     def forward(
         self,
         x: Int[Tensor, "..."],
-        mask: Float[Tensor, "... C"] | bool | None = None,
+        mask: Float[Tensor, "... C"] | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
     ) -> Float[Tensor, "... embedding_dim"]:
         """Forward through the embedding component using indexing instead of one-hot matmul.

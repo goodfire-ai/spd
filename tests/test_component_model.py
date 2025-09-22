@@ -1,20 +1,26 @@
+import random
 import tempfile
 from pathlib import Path
 from typing import Any, override
 
 import pytest
 import torch
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.configs import Config
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.interfaces import LoadableModule, RunInfo
-from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.models.component_model import ComponentModel, SPDRunInfo, transform_key
 from spd.models.components import (
     EmbeddingComponents,
+    Linear,
     LinearComponents,
+    MLPGates,
+    ParallelLinear,
+    VectorMLPGates,
+    VectorSharedMLPGate,
 )
 from spd.spd_types import ModelPath
 from spd.utils.run_utils import save_file
@@ -77,6 +83,9 @@ def component_model() -> ComponentModel:
 
 def test_correct_parameters_require_grad(component_model: ComponentModel):
     for module_path, components in component_model.components.items():
+        assert components.U.requires_grad
+        assert components.V.requires_grad
+
         target_module = component_model.target_model.get_submodule(module_path)
 
         if isinstance(target_module, nn.Linear | RadfordConv1D):
@@ -86,14 +95,10 @@ def test_correct_parameters_require_grad(component_model: ComponentModel):
             assert isinstance(components, LinearComponents)
             if components.bias is not None:
                 assert not components.bias.requires_grad
-            assert components.U.requires_grad
-            assert components.V.requires_grad
         else:
             assert isinstance(target_module, nn.Embedding), "sanity check"
-            assert not target_module.weight.requires_grad
             assert isinstance(components, EmbeddingComponents)
-            assert components.U.requires_grad
-            assert components.V.requires_grad
+            assert not target_module.weight.requires_grad
 
 
 def test_from_run_info():
@@ -169,3 +174,121 @@ def test_patch_modules_unsupported_component_type_raises() -> None:
             module_paths=["other_layer"],
             C=2,
         )
+
+
+@pytest.fixture(autouse=True)
+def _set_seed():  # pyright: ignore[reportUnusedFunction]
+    torch.manual_seed(0)
+    random.seed(0)
+
+
+class TinyTarget(nn.Module):
+    """
+    A tiny target network whose submodule names match simple glob patterns
+    so we can exercise ComponentModel's selection & replacement machinery.
+
+    Structure:
+      - embed: nn.Embedding
+      - mlp:   nn.Linear(d_in -> d_mid)
+      - out:   nn.Linear(d_mid -> d_out)
+    """
+
+    def __init__(
+        self,
+        vocab_size: int = 7,
+        d_emb: int = 5,
+        d_mid: int = 4,
+        d_out: int = 3,
+    ):
+        super().__init__()
+        self.embed = nn.Embedding(vocab_size, d_emb)
+        self.mlp = nn.Linear(d_emb, d_mid)
+        self.out = nn.Linear(d_mid, d_out)
+
+    @override
+    def forward(self, token_ids: Int[Tensor, "..."]) -> Float[Tensor, "..."]:
+        x = self.embed(token_ids)  # (..., d_emb)
+        x = self.mlp(x)  # (..., d_mid)
+        x = torch.tanh(x)
+        x = self.out(x)  # (..., d_out)
+        return x
+
+
+@pytest.fixture
+def tiny_target():
+    tt = TinyTarget()
+    tt.eval()
+    tt.requires_grad_(False)
+    return tt
+
+
+BATCH_SIZE = 2
+
+
+def test_parallel_linear_shapes_and_forward():
+    C = 3
+    d_in = 4
+    d_out = 5
+    layer = ParallelLinear(C, d_in, d_out, nonlinearity="relu")
+    x = torch.randn(BATCH_SIZE, C, d_in)
+    y = layer(x)
+    assert y.shape == (BATCH_SIZE, C, d_out)
+
+
+def test_linear_shapes_and_forward():
+    d_in = 6
+    d_out = 3
+    layer = Linear(d_in, d_out, nonlinearity="linear")
+    x = torch.randn(BATCH_SIZE, d_in)
+    y = layer(x)
+    assert y.shape == (BATCH_SIZE, d_out)
+
+
+@pytest.mark.parametrize("hidden_dims", [[8], [4, 3]])
+def test_mlp_gates_scalar_per_component(hidden_dims: list[int]):
+    C = 5
+    gates = MLPGates(C=C, hidden_dims=hidden_dims)
+    x = torch.randn(BATCH_SIZE, C)  # two items, C components
+    y = gates(x)
+    assert y.shape == (BATCH_SIZE, C)
+
+
+@pytest.mark.parametrize("hidden_dims", [[4], [6, 3]])
+def test_vector_mlp_gates(hidden_dims: list[int]):
+    C = 3
+    d_in = 10
+    gates = VectorMLPGates(C=C, input_dim=d_in, hidden_dims=hidden_dims)
+    x = torch.randn(BATCH_SIZE, d_in)
+    y = gates(x)
+    assert y.shape == (BATCH_SIZE, C)
+
+
+@pytest.mark.parametrize("hidden_dims", [[], [7], [8, 5]])
+def test_vector_shared_mlp_gate(hidden_dims: list[int]):
+    C = 3
+    d_in = 10
+    gate = VectorSharedMLPGate(C=C, input_dim=d_in, hidden_dims=hidden_dims)
+    x = torch.randn(BATCH_SIZE, d_in)
+    y = gate(x)
+    assert y.shape == (BATCH_SIZE, C)
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        # components
+        ["target_model.a.b.components.U", "_components.a-b.U"],
+        ["target_model.a.b.components.V", "_components.a-b.V"],
+        ["target_model.a.b.components.bias", "_components.a-b.bias"],
+        # components (old naming)
+        ["patched_model.a.b.components.U", "_components.a-b.U"],
+        ["patched_model.a.b.components.V", "_components.a-b.V"],
+        ["patched_model.a.b.components.bias", "_components.a-b.bias"],
+        # original
+        ["target_model.a.b.original.weight", "target_model.a.b.weight"],
+        # regular state
+        ["target_model.a.b.c.weight", "target_model.a.b.c.weight"],
+    ],
+)
+def test_transform_key(key: str, expected: str):
+    assert transform_key(key) == expected

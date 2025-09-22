@@ -160,7 +160,8 @@ class ComponentModel(LoadableModule):
         target_module: nn.Module,
         C: int,
     ) -> Components:
-        assert isinstance(target_module, SUPPORTED_MODULES), f"Module {target_module} not supported"
+        if not isinstance(target_module, SUPPORTED_MODULES):
+            raise ValueError(f"Module {target_module} not supported")
 
         match target_module:
             case nn.Linear():
@@ -322,7 +323,7 @@ class ComponentModel(LoadableModule):
         handles: list[RemovableHandle] = []
         for module_name, hook in hooks.items():
             target_module = self.target_model.get_submodule(module_name)
-            handle = target_module.register_forward_hook(hook)
+            handle = target_module.register_forward_hook(hook, with_kwargs=True)
             handles.append(handle)
         try:
             yield
@@ -393,9 +394,9 @@ class ComponentModel(LoadableModule):
         ) -> None:
             assert len(args) == 1, "Expected 1 argument"
             assert len(kwargs) == 0, "Expected no keyword arguments"
-            input = args[0]
-            assert isinstance(input, Tensor), "Expected input tensor"
-            cache[param_name] = input[0]
+            x = args[0]
+            assert isinstance(x, Tensor), "Expected x to be a tensor"
+            cache[param_name] = x
 
         hooks = {
             module_name: partial(cache_hook, param_name=module_name) for module_name in module_names
@@ -464,15 +465,10 @@ class ComponentModel(LoadableModule):
             run_info.checkpoint_path, map_location="cpu", weights_only=True
         )
 
-        ComponentModel.handle_deprecated_state_dict_keys_(comp_model_weights)
+        handle_deprecated_state_dict_keys_(comp_model_weights)
 
         comp_model.load_state_dict(comp_model_weights)
         return comp_model
-
-    @staticmethod
-    def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
-        for key in list(state_dict.keys()):
-            state_dict[key.replace(".original.", ".target.")] = state_dict.pop(key)
 
     @classmethod
     @override
@@ -542,3 +538,37 @@ class ComponentModel(LoadableModule):
         for comp_name, components in self.components.items():
             weight_deltas[comp_name] = self.target_weight(comp_name) - components.weight
         return weight_deltas
+
+
+def transform_key(key: str) -> str:
+    key = key[:]  # make a copy
+
+    # do this first to simplify the rest. All following logic assumes "target_model" naming convention
+    key = key.replace("patched_model", "target_model")
+
+    has_components = ".components." in key
+    has_original = ".original." in key
+    if has_components and has_original:
+        raise ValueError(
+            f"Key {key} has both components and original, this is technically possible but unsupported"
+        )
+
+    if has_components:
+        # we need to move the path out of the target model, remove the "components" nesting,
+        # normalize the path, and put it under the "_components" ModuleDict
+        assert key.startswith("target_model.")
+        key = key.removeprefix("target_model.")
+        path, contents = key.split(".components.")
+        normalized_path = path.replace(".", "-")
+        key = f"_components.{normalized_path}.{contents}"
+
+    if has_original:
+        # simpler: just collapse the nesting
+        key = key.replace(".original.", ".")
+
+    return key
+
+
+def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
+    for key in list(state_dict.keys()):
+        state_dict[transform_key(key)] = state_dict.pop(key)
