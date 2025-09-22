@@ -93,13 +93,9 @@ class ComponentModel(LoadableModule):
                 f"Found {param.requires_grad} for {name}"
             )
 
-        target_module_paths = ComponentModel._get_target_module_paths(
-            target_model, target_module_patterns
-        )
-
         patched_model, components_or_modules = ComponentModel._patch_modules(
             model=target_model,
-            module_paths=target_module_paths,
+            module_patterns=target_module_patterns,
             C=C,
         )
 
@@ -107,11 +103,10 @@ class ComponentModel(LoadableModule):
 
         self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
-        self.target_module_paths = target_module_paths
 
-        # We keep components_or_modules around to easily access the nested, inserted components
-        # State_dict will pick the components up because they're attached to the target_model
-        # via set_submodule
+        # We keep components_or_modules around to easily access the nested, inserted components.
+        # `state_dict` will pick the components up because they're attached to the target_model
+        # via `set_submodule`. but this reference is just a plain dict.
         self.components_or_modules = components_or_modules
         # We keep gates as a plain dict so it's properly typed, as ModuleDict isn't generic
         self.gates = gates
@@ -181,7 +176,7 @@ class ComponentModel(LoadableModule):
     @staticmethod
     def _patch_modules(
         model: nn.Module,
-        module_paths: list[str],
+        module_patterns: list[str],
         C: int,
     ) -> tuple[nn.Module, dict[str, ComponentsOrModule]]:
         """Replace nn.Modules with ComponentsOrModule objects based on target_module_paths.
@@ -189,11 +184,11 @@ class ComponentModel(LoadableModule):
         This method mutates and returns `model`, and returns a dictionary of references
         to the newly inserted ComponentsOrModule objects.
 
-        A module is modified in the target model if that module exists in module_paths.
+        A module is modified in the target model if that module matches a pattern in module_patterns.
 
         Args:
             model: The model to replace modules in.
-            module_paths: The paths to the modules to replace.
+            module_patterns: The patterns to match the modules to replace.
             C: The number of components to use.
 
         Returns:
@@ -205,11 +200,10 @@ class ComponentModel(LoadableModule):
             MyModel(
                 (linear): Linear(in_features=10, out_features=20, bias=True)
             )
-            >>> target_module_paths = ["linear"]
-            >>> module_paths = ["linear"]
+            >>> module_patterns = ["linear"]
             >>> components_or_modules = _patch_modules(
             ...     model,
-            ...     module_paths,
+            ...     module_patterns,
             ...     C=2,
             ... )
             >>> print(model)
@@ -222,11 +216,18 @@ class ComponentModel(LoadableModule):
         """
         components_or_modules: dict[str, ComponentsOrModule] = {}
 
+        module_paths = ComponentModel._get_target_module_paths(model, module_patterns)
         # Deterministic, order-preserving deduplicated list (critical for DDP param order)
         all_paths = list(dict.fromkeys(list(module_paths)))
 
         for module_path in all_paths:
             module = model.get_submodule(module_path)
+            if hasattr(module, "pre_identity"):
+                # we have to do some tricky surgery
+                pre_identity = module.__setattr__
+                module._forward_pre_hooks_with_kwargs
+                # module.pre_identity = None
+                # module.register_forward_pre_hook(pre_id_hook, with_kwargs=True)
 
             if isinstance(module, nn.Linear):
                 d_out, d_in = module.weight.shape
@@ -266,6 +267,9 @@ class ComponentModel(LoadableModule):
             components_or_modules[module_path] = replacement
 
         return model, components_or_modules
+
+    # @staticmethod
+    # def _get_module_replacement(model: nn.Module, module_path: str, C: int) -> ComponentsOrModule:
 
     @staticmethod
     def _create_gate(
@@ -497,7 +501,7 @@ class ComponentModel(LoadableModule):
 
         comp_model = ComponentModel(
             target_model=target_model_unpatched,
-            target_module_patterns=config.target_module_patterns,
+            target_module_patterns=config.all_module_patterns(),
             C=config.C,
             gate_hidden_dims=config.gate_hidden_dims,
             gate_type=config.gate_type,
@@ -579,3 +583,33 @@ class ComponentModel(LoadableModule):
             causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs()
 
         return causal_importances, causal_importances_upper_leaky
+
+
+"""
+
+model:
+    linear
+
+
+model:
+    linear(nn.Linear):
+        pre_identity(nn.Linear)
+
+
+model:
+    linear(nn.Linear):
+        pre_identity(ComponentsOrModule)
+            components(LinearComponents)
+            target(nn.Linear)
+
+
+model:
+    linear(ComponentsOrModule):
+        components(LinearComponents)
+
+        target(nn.Linear)
+            pre_identity(ComponentsOrModule)
+                components(LinearComponents)
+                target(nn.Linear)
+
+"""

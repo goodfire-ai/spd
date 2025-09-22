@@ -125,6 +125,15 @@ class Config(BaseModel):
         description="List of fnmatch-style patterns that select modules in which an identity "
         "matrix should be inserted and decomposed beforehand",
     )
+
+    def all_module_patterns(self) -> list[str]:
+        all_target_module_patterns = self.target_module_patterns.copy()
+        if self.identity_module_patterns is not None:
+            all_target_module_patterns += [
+                f"{p}.pre_identity" for p in self.identity_module_patterns
+            ]
+        return all_target_module_patterns
+
     use_delta_component: bool = Field(
         default=True,
         description="If True, use an extra component containing the difference between the target "

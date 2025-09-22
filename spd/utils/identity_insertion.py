@@ -1,3 +1,4 @@
+# %%
 """Insert identity operations into models, before specified modules.
 
 This works by inserting a Linear layer initialized as the identity matrix, as a property on the module, then adding a
@@ -102,3 +103,32 @@ def insert_identity_operations_(
 
         if is_main_process():
             logger.info(f"  Added identity layer to {module_path} with dimension {d_in}")
+
+# %%
+
+class SimpleModel(nn.Module):
+    def __init__(self, d: int, d_hid: int):
+        super().__init__()
+        self.layer1 = nn.Linear(d, d_hid)
+        self.layer2 = nn.Linear(d_hid, d)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.layer1(x)
+        x = self.layer2(x)
+        return x
+
+model = SimpleModel(d=4, d_hid=8).to("cpu")
+model.eval()
+
+# %%
+
+
+
+insert_identity_operations_(
+    target_model=model,
+    identity_patterns=["layer1", "layer2"],
+    input_type="tokens",
+    device="cpu",
+)
+
+# %%

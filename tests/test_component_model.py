@@ -160,17 +160,17 @@ def test_replaced_component_forward_conv1d_matches_modes():
     input_dim = 6
     output_dim = 4
 
-    original = RadfordConv1D(nf=output_dim, nx=input_dim)
+    target = RadfordConv1D(nf=output_dim, nx=input_dim)
 
-    components = LinearComponents(d_in=input_dim, d_out=output_dim, C=C, bias=original.bias)
-    components_or_module = ComponentsOrModule(target=original, components=components)
+    components = LinearComponents(d_in=input_dim, d_out=output_dim, C=C, bias=target.bias)
+    components_or_module = ComponentsOrModule(target=target, components=components)
 
     x = torch.randn(B, S, input_dim)
 
     # --- Original path ---
     components_or_module.forward_mode = "target"
     out_orig = components_or_module(x)
-    expected_orig = original(x)
+    expected_orig = target(x)
 
     torch.testing.assert_close(out_orig, expected_orig, rtol=1e-4, atol=1e-5)
 
