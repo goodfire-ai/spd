@@ -324,13 +324,13 @@ class ComponentModel(LoadableModule):
             assert gate_type in ["vector_mlp", "layerwise_global_mlp"], (
                 f"Unknown gate type: {gate_type}"
             )
-            assert not isinstance(original_module, nn.Embedding), (
-                "Embedding modules only supported for gate_type='mlp'"
-            )
             if isinstance(original_module, nn.Linear):
                 input_dim = original_module.weight.shape[1]
             elif isinstance(original_module, RadfordConv1D):
                 input_dim = original_module.weight.shape[0]
+            elif isinstance(original_module, nn.Embedding):
+                # For embeddings, use the embedding vector as the gate input
+                input_dim = original_module.embedding_dim
             else:
                 raise ValueError(f"Module {type(original_module)} not supported for {gate_type=}")
 
@@ -377,7 +377,13 @@ class ComponentModel(LoadableModule):
     def forward(
         self,
         *args: Any,
-        mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
+        mode: Literal[
+            "target",
+            "components",
+            "pre_forward_cache",
+            "components_pre_forward_cache",
+        ]
+        | None = "target",
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
@@ -408,6 +414,16 @@ class ComponentModel(LoadableModule):
             )
             return self._forward_with_pre_forward_cache_hooks(
                 *args, module_names=module_names, **kwargs
+            )
+        elif mode == "components_pre_forward_cache":
+            assert mask_infos is not None, (
+                "mask_infos are required for mode='components_pre_forward_cache'"
+            )
+            assert module_names is not None, (
+                "module_names parameter is required for mode='components_pre_forward_cache'"
+            )
+            return self._forward_with_components_pre_forward_cache_hooks(
+                *args, mask_infos=mask_infos, module_names=module_names, **kwargs
             )
         else:
             return self._forward_target(*args, **kwargs)
@@ -526,6 +542,56 @@ class ComponentModel(LoadableModule):
             for module in self.components_or_modules.values():
                 module.make_pristine()
 
+    def _forward_with_components_pre_forward_cache_hooks(
+        self,
+        *args: Any,
+        mask_infos: dict[str, ComponentsMaskInfo],
+        module_names: list[str],
+        **kwargs: Any,
+    ) -> tuple[Any, dict[str, Tensor]]:
+        """Forward pass with components active and caching inputs to specified modules.
+
+        This mirrors `_forward_with_pre_forward_cache_hooks`, but runs with component
+        replacements applied according to `mask_infos` while collecting the inputs
+        to each specified module (before weights) during this SPD forward.
+
+        Args:
+            mask_infos: Dictionary mapping module names to `ComponentsMaskInfo` controlling
+                which modules are replaced by components and with which masks.
+            module_names: List of module names to cache inputs for. May include names
+                with the `identity_` prefix; caching still occurs on the underlying
+                (non-identity) module, but entries are stored with their original keys.
+
+        Returns:
+            Tuple of (model output, cache dictionary of pre-weight activations).
+        """
+        cache: dict[str, Tensor] = {}
+        handles: list[RemovableHandle] = []
+
+        def cache_hook(_: nn.Module, input: tuple[Tensor, "..."], param_name: str) -> None:
+            cache[param_name] = input[0]
+
+        # Register hooks on the wrapped modules (ComponentsOrModule) corresponding to names
+        for raw_module_name in module_names:
+            is_identity = raw_module_name.startswith("identity_")
+            module_name = (
+                raw_module_name.removeprefix("identity_") if is_identity else raw_module_name
+            )
+            module = self.patched_model.get_submodule(module_name)
+            assert module is not None, f"Module {module_name} not found"
+            handles.append(
+                module.register_forward_pre_hook(partial(cache_hook, param_name=raw_module_name))
+            )
+
+        try:
+            with self._replaced_modules(mask_infos=mask_infos):
+                raw_out = self.patched_model(*args, **kwargs)
+                out = self._extract_output(raw_out)
+            return out, cache
+        finally:
+            for handle in handles:
+                handle.remove()
+
     @staticmethod
     def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:
         """Download the relevant files from a wandb run.
@@ -622,7 +688,18 @@ class ComponentModel(LoadableModule):
             if isinstance(gates, GateMLPs):
                 gate_input = self.components[param_name].get_inner_acts(acts)
             elif isinstance(gates, VectorGateMLPs | LayerwiseGlobalGateMLP):
-                gate_input = acts
+                # Vector gates expect a float vector input. For embeddings, convert token ids
+                # to their corresponding embedding vectors before passing to the gate.
+                base_name = (
+                    param_name.removeprefix("identity_")
+                    if param_name.startswith("identity_")
+                    else param_name
+                )
+                original_module = self.components_or_modules[base_name].original
+                if isinstance(original_module, nn.Embedding) and not torch.is_floating_point(acts):
+                    gate_input = original_module.weight[acts]
+                else:
+                    gate_input = acts
             else:
                 raise ValueError(f"Unknown gate type: {type(gates)}")
 
