@@ -9,7 +9,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    NonNegativeFloat,
     NonNegativeInt,
     PositiveFloat,
     PositiveInt,
@@ -143,35 +142,35 @@ class Config(BaseModel):
     )
 
     # --- Loss Coefficients
-    faithfulness_coeff: NonNegativeFloat | None = Field(
-        default=1.0,
-        description="Coefficient for matching parameters between components and target weights",
-    )
-    ci_recon_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with a causal importance mask",
-    )
-    stochastic_recon_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with stochastically sampled masks",
-    )
-    ci_recon_layerwise_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with causal importance mask on one layer at a time",
-    )
-    stochastic_recon_layerwise_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with stochastically sampled masks on one layer at "
-        "a time",
-    )
-    importance_minimality_coeff: NonNegativeFloat = Field(
-        ...,
-        description="Coefficient for importance minimality loss",
-    )
-    pnorm: PositiveFloat = Field(
-        ...,
-        description="The p-value used for the importance minimality loss",
-    )
+    # faithfulness_coeff: NonNegativeFloat | None = Field(
+    #     default=1.0,
+    #     description="Coefficient for matching parameters between components and target weights",
+    # )
+    # ci_recon_coeff: NonNegativeFloat | None = Field(
+    #     default=None,
+    #     description="Coefficient for recon loss with a causal importance mask",
+    # )
+    # stochastic_recon_coeff: NonNegativeFloat | None = Field(
+    #     default=None,
+    #     description="Coefficient for recon loss with stochastically sampled masks",
+    # )
+    # ci_recon_layerwise_coeff: NonNegativeFloat | None = Field(
+    #     default=None,
+    #     description="Coefficient for recon loss with causal importance mask on one layer at a time",
+    # )
+    # stochastic_recon_layerwise_coeff: NonNegativeFloat | None = Field(
+    #     default=None,
+    #     description="Coefficient for recon loss with stochastically sampled masks on one layer at "
+    #     "a time",
+    # )
+    # importance_minimality_coeff: NonNegativeFloat = Field(
+    #     ...,
+    #     description="Coefficient for importance minimality loss",
+    # )
+    # pnorm: PositiveFloat = Field(
+    #     ...,
+    #     description="The p-value used for the importance minimality loss",
+    # )
     p_anneal_start_frac: Probability = Field(
         default=1.0,
         description="Fraction of training after which to start annealing p (1.0 = no annealing)",
@@ -257,20 +256,16 @@ class Config(BaseModel):
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    eval_metrics: list[MetricConfig] = Field(
+    eval_metric_configs: list[MetricConfig] = Field(
         default=[],
-        description="List of metrics to use for evaluation",
+        description="List of configs for metrics to use for evaluation",
     )
-    loss_metrics: list[MetricConfig] = Field(
+    loss_metric_configs: list[MetricConfig] = Field(
         default=[],
         description=(
-            "List of loss metrics to compute (used for both training logs and eval); "
+            "List of configs for loss metrics to compute (used for both training logs and eval); "
             "coefficients provided here are also used for weighting the training loss and eval loss/total."
         ),
-    )
-    include_loss_metrics_in_eval: bool = Field(
-        default=True,
-        description="If True, always include default loss metrics during evaluation",
     )
 
     # --- Component Tracking ---
@@ -322,6 +317,17 @@ class Config(BaseModel):
         description="Backend for distributed training (nccl for GPU, gloo for CPU). If None, "
         "uses the default backend for the current device.",
     )
+
+    @property
+    def pnorm(self) -> float:
+        cfg = next(
+            (c for c in self.loss_metric_configs if c.classname == "ImportanceMinimalityLoss"), None
+        )
+        assert cfg is not None, "ImportanceMinimalityLoss must be in loss_metric_configs"
+        if "pnorm" not in cfg.extra_init_kwargs:
+            raise KeyError("Missing 'pnorm' in ImportanceMinimalityLoss.extra_init_kwargs")
+        val = cfg.extra_init_kwargs["pnorm"]
+        return float(val)
 
     DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = [
         "image_on_first_step",
@@ -399,15 +405,17 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
-        # If any of the coeffs are 0, raise a warning
-        msg = "is 0, you may wish to instead set it to null to avoid calculating the loss"
-        if self.ci_recon_coeff == 0:
-            logger.warning(f"recon_coeff {msg}")
-        if self.importance_minimality_coeff == 0:
-            logger.warning(f"importance_minimality_coeff {msg}")
-        if self.faithfulness_coeff == 0:
-            logger.warning(f"faithfulness_coeff {msg}")
-
+        imp_min_loss_cfg = next(
+            (
+                cfg
+                for cfg in self.loss_metric_configs
+                if cfg.classname == "ImportanceMinimalityLoss"
+            ),
+            None,
+        )
+        assert imp_min_loss_cfg is not None, (
+            "ImportanceMinimalityLoss must be in loss_metric_configs"
+        )
         # Check that lr_exponential_halflife is not None if lr_schedule is "exponential"
         if self.lr_schedule == "exponential":
             assert self.lr_exponential_halflife is not None, (

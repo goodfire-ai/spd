@@ -1,6 +1,6 @@
 # TMS 5-2 (Non-identity)
 # --- WandB ---
-wandb_project: spd
+# wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
@@ -15,13 +15,19 @@ target_module_patterns: ["linear1", "linear2"]
 use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: null
-ci_recon_coeff: null
-stochastic_recon_coeff: 1
-ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 1.0
-importance_minimality_coeff: 3e-3
-pnorm: 1.0
+# faithfulness_coeff: null
+# ci_recon_coeff: null
+# stochastic_recon_coeff: 1
+# ci_recon_layerwise_coeff: null
+# stochastic_recon_layerwise_coeff: 1.0
+# importance_minimality_coeff: 3e-3
+# pnorm: 1.0
+loss_metric_configs:
+  - classname: "ImportanceMinimalityLoss"
+    coeff: 3e-3
+    extra_init_kwargs:
+      pnorm: 1.0
+      eps: 1e-12
 output_loss_type: mse
 
 # --- Training ---
@@ -40,7 +46,7 @@ slow_eval_freq: 5_000
 save_freq: null
 ci_alive_threshold: 0.1
 n_examples_until_dead: 4_096_000
-eval_metrics:
+eval_metric_configs:
   - classname: "CIHistograms"
     extra_init_kwargs:
       n_batches_accum: 5

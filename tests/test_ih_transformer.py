@@ -65,7 +65,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        eval_metrics=[
+        eval_metric_configs=[
             MetricConfig(classname="CIHistograms"),
             MetricConfig(classname="ComponentActivationDensity"),
             MetricConfig(classname="CI_L0"),

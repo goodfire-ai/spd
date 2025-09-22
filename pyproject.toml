@@ -26,6 +26,7 @@ dependencies = [
     "streamlit-antd-components",
     "datasets",
     "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
+    "torchmetrics",
 ]
 
 [dependency-groups]

@@ -22,7 +22,6 @@ from spd.configs import Config
 from spd.data import loop_dataloader
 from spd.log import logger
 from spd.losses import calc_weight_deltas, compute_total_loss
-from spd.metrics import evaluate
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
@@ -178,7 +177,7 @@ def optimize(
             group["lr"] = step_lr
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
-        current_p = config.pnorm  # Initialize with default value
+        current_p = config.pnorm
 
         for _ in range(config.gradient_accumulation_steps):
             weight_deltas = calc_weight_deltas(component_model, device)
@@ -214,6 +213,7 @@ def optimize(
             )
 
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
+                loss_metric_configs=config.loss_metric_configs,
                 model=component_model,
                 batch=batch,
                 config=config,
@@ -281,14 +281,15 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
-                metrics = evaluate(
-                    model=component_model,  # No backward passes so DDP wrapped_model not needed
-                    eval_iterator=eval_iterator,
-                    device=device,
-                    config=config,
-                    run_slow=run_slow,
-                    n_steps=n_eval_steps,
-                )
+                metrics = {}
+                # metrics = evaluate(
+                #     model=component_model,  # No backward passes so DDP wrapped_model not needed
+                #     eval_iterator=eval_iterator,
+                #     device=device,
+                #     config=config,
+                #     run_slow=run_slow,
+                #     n_steps=n_eval_steps,
+                # )
 
                 if is_distributed():
                     metrics = avg_eval_metrics_across_ranks(metrics, device=device)
