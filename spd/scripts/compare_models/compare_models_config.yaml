@@ -1,8 +1,10 @@
 # Configuration for compare_models.py
 
 # Model paths (supports both wandb: and local paths)
-current_model_path: "wandb:goodfire/spd/runs/b5qe6t98"
-reference_model_path: "wandb:goodfire/spd/runs/s2b158g1"
+# current_model_path: "wandb:goodfire/spd/runs/b5qe6t98"
+# reference_model_path: "wandb:goodfire/spd/runs/s2b158g1"
+current_model_path: "wandb:goodfire/spd/runs/667z2n1b"
+reference_model_path: "wandb:goodfire/spd/runs/vh4yszsd"
 
 # Analysis parameters
 density_threshold: 0.001  # Minimum activation density for components to be included in comparison
@@ -12,9 +14,6 @@ n_eval_steps: 5  # Number of evaluation steps to compute activation densities
 eval_batch_size: 32  # Batch size for evaluation data loading
 shuffle_data: false  # Whether to shuffle the evaluation data
 ci_alive_threshold: 0.0  # Threshold for considering components as "alive"
-
-# Output settings
-output_dir: "./comparison_results"  # Directory to save results
 
 # Device settings
 device: "auto"  # Options: "auto", "cuda", "cpu"
