@@ -25,7 +25,7 @@ def calc_stochastic_component_mask_info(
     sampling: Literal["continuous", "binomial"],
     weight_deltas: dict[str, Tensor] | None,
 ) -> dict[str, ComponentsMaskInfo]:
-    component_masks: dict[str, Float[Tensor, "... C"] | bool] = {}
+    component_masks: dict[str, Float[Tensor, "... C"]] = {}
     for layer, ci in causal_importances.items():
         component_masks[layer] = _sample_stochastic_mask(ci, sampling)
 

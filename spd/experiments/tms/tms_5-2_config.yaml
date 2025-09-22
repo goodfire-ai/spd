@@ -24,8 +24,6 @@ importance_minimality_coeff: 3e-3
 pnorm: 1.0
 output_loss_type: mse
 
-identity_module_patterns: ['*']
-
 # --- Training ---
 batch_size: 4096
 eval_batch_size: 4096

@@ -482,14 +482,13 @@ def main(out_dir: Path, device: str):
         run_info = SPDRunInfo.from_path(path)
         model = ComponentModel.from_run_info(run_info)
         config = run_info.config
-        model = model.target_model
-        assert isinstance(model, ResidMLP)
-        model.to(device)
+        assert isinstance(model.target_model, ResidMLP)
+        model.target_model.to(device)
 
-        n_layers = model.config.n_layers
+        n_layers = model.target_model.config.n_layers
 
         fig = plot_spd_feature_contributions_truncated(
-            model, model.components, n_features=10
+            model.target_model, model.components, n_features=10
         )
         fname_weights = out_dir / f"resid_mlp_weights_{n_layers}layers_{wandb_id}.png"
         fig.savefig(
@@ -501,7 +500,7 @@ def main(out_dir: Path, device: str):
 
         # Generate and save neuron contribution pairs plot
         fig_pairs = plot_neuron_contribution_pairs(
-            model,
+            model.target_model,
             model.components,
             n_features=None,  # Using same number of features as above
         )
@@ -526,7 +525,7 @@ def main(out_dir: Path, device: str):
                     return f"Layer {layer_idx} - $W_{{out}}$"
             return mask_name  # Fallback to original if pattern doesn't match
 
-        batch_shape = (1, model.config.n_features)
+        batch_shape = (1, model.target_model.config.n_features)
         figs_causal: dict[str, Image.Image] = plot_causal_importance_vals(
             model=model,
             batch_shape=batch_shape,

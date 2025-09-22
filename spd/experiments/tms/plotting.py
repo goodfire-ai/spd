@@ -99,9 +99,7 @@ class TMSAnalyzer:
 
         # Get subnet weights at max cosine similarity
         max_indices = cosine_sims.max(dim=0).indices
-        subnet_weights_at_max = subnets[
-            max_indices, torch.arange(self.model.config.n_features)
-        ]
+        subnet_weights_at_max = subnets[max_indices, torch.arange(self.model.config.n_features)]
 
         return cosine_sims, max_cosine_sim, subnet_weights_at_max
 
@@ -468,10 +466,7 @@ class FullNetworkDiagramPlotter:
                 "title": "Target model",
                 "linear1_weights": model.linear1.weight.T.detach().cpu().numpy(),
                 "hidden_weights": [
-                    cast(torch.nn.Linear, model.hidden_layers[i])
-                    .weight.T.detach()
-                    .cpu()
-                    .numpy()
+                    cast(torch.nn.Linear, model.hidden_layers[i]).weight.T.detach().cpu().numpy()
                     for i in range(config.n_hidden_layers)
                 ]
                 if config.n_hidden_layers > 0 and model.hidden_layers is not None
@@ -774,10 +769,7 @@ class HiddenLayerPlotter:
 
         # Get target weights
         target_weights = (
-            cast(torch.nn.Linear, model.hidden_layers[0])
-            .weight.T.unsqueeze(0)
-            .detach()
-            .cpu()
+            cast(torch.nn.Linear, model.hidden_layers[0]).weight.T.unsqueeze(0).detach().cpu()
         )
 
         return hidden_weights, target_weights, order
@@ -992,8 +984,7 @@ def main():
 
         # Load models
         model = ComponentModel.from_pretrained(run_id)
-        model = model.target_model
-        assert isinstance(model, TMSModel)
+        assert isinstance(model.target_model, TMSModel)
 
         # Get custom config and name for this run
         plot_config = run_info["config"]
@@ -1002,7 +993,7 @@ def main():
 
         # Create plotter with custom config
         plotter = TMSPlotter(
-            model=model, components=model.components, config=plot_config
+            model=model.target_model, components=model.components, config=plot_config
         )
 
         # log analysis
@@ -1010,8 +1001,8 @@ def main():
         logger.values(plotter.get_analysis_summary())
 
         # Generate plots based on model architecture
-        if model.config.n_hidden == 2:
-            if model.config.n_hidden_layers == 0:
+        if model.target_model.config.n_hidden == 2:
+            if model.target_model.config.n_hidden_layers == 0:
                 # Model without hidden layers - use combined plot
                 fig = plotter.plot_combined_diagram()
                 filename = f"tms_combined_diagram_{run_name}.png"
@@ -1036,7 +1027,7 @@ def main():
                 logger.info(f"Saved full network diagram to {out_dir / filename}")
 
         # Hidden layer heatmaps (if applicable)
-        if model.config.n_hidden_layers > 0:
+        if model.target_model.config.n_hidden_layers > 0:
             fig = plotter.plot_hidden_layers()
             if fig:
                 filename = f"tms_hidden_layers_{run_name}.png"

@@ -606,7 +606,7 @@ class SubsetReconstructionLoss(StreamingEval):
         # Compute baselines for CE unrecovered
         target_ce = ce_vs_labels(target_out)
 
-        zero_mask_infos = make_mask_infos({k: False for k in ci})
+        zero_mask_infos = make_mask_infos({k: torch.zeros_like(v) for k, v in ci.items()})
         zero_out = self.model.forward(batch, mode="components", mask_infos=zero_mask_infos)
         zero_ce = ce_vs_labels(zero_out)
 
