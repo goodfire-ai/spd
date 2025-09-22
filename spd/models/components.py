@@ -94,9 +94,6 @@ class VectorMLPGates(nn.Module):
         return x[..., 0]
 
 
-WeightDeltaAndMask = tuple[Float[Tensor, " d_out d_in"], Float[Tensor, "..."]]
-
-
 class VectorSharedMLPGate(nn.Module):
     """Maps a module's input vector to a scalar output for each component with a 'pure' MLP."""
 
@@ -114,6 +111,9 @@ class VectorSharedMLPGate(nn.Module):
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
         return self.layers(x)
+
+
+WeightDeltaAndMask = tuple[Float[Tensor, " d_out d_in"], Float[Tensor, "..."]]
 
 
 class Components(ABC, nn.Module):
@@ -290,14 +290,14 @@ class EmbeddingComponents(Components):
 class ComponentsMaskInfo:
     """Specifies the mask information that will be applied to a ComponentOrModule object."""
 
-    component_mask: Float[Tensor, "... C"] | bool
+    component_mask: Float[Tensor, "... C"]
     """when components are active, this specifies which subcomponents to use"""
 
     weight_delta_and_mask: WeightDeltaAndMask | None
 
 
 def make_mask_infos(
-    component_masks: Mapping[str, Float[Tensor, "... C"] | bool],
+    component_masks: Mapping[str, Float[Tensor, "... C"]],
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
     """Create ComponentsMaskInfo dict from dicts of component masks, and weight deltas and weight delta masks.

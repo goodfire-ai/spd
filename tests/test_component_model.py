@@ -74,6 +74,7 @@ def component_model() -> ComponentModel:
         pretrained_model_output_attr=None,
     )
 
+
 def test_correct_parameters_require_grad(component_model: ComponentModel):
     for module_path, components in component_model.components.items():
         target_module = component_model.target_model.get_submodule(module_path)

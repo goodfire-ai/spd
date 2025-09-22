@@ -177,7 +177,7 @@ class CEandKLLosses(StreamingEval):
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
 
         # # we use all components
-        nonmask_infos = make_mask_infos({k: True for k in ci})
+        nonmask_infos = make_mask_infos({k: torch.ones_like(v) for k, v in ci.items()})
         unmasked_logits = self.model.forward(batch, mode="components", mask_infos=nonmask_infos)
         unmasked_ce_loss = ce_vs_labels(unmasked_logits)
         unmasked_kl_loss = kl_vs_target(unmasked_logits)
@@ -202,7 +202,7 @@ class CEandKLLosses(StreamingEval):
         rounded_masked_kl_loss = kl_vs_target(rounded_masked_logits)
 
         # we zero all the components
-        zero_mask_infos = make_mask_infos({k: False for k in ci})
+        zero_mask_infos = make_mask_infos({k: torch.zeros_like(v) for k, v in ci.items()})
         zero_masked_logits = self.model.forward(
             batch, mode="components", mask_infos=zero_mask_infos
         )
