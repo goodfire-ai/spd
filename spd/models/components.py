@@ -5,13 +5,12 @@ from typing import Literal, override
 
 import einops
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Float, Int
 from torch import Tensor, nn
-from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
-GateType = Literal["mlp", "vector_mlp", "layerwise_global_mlp"]
+GateType = Literal["mlp", "vector_mlp", "shared_mlp"]
 
 
 class ParallelLinear(nn.Module):
@@ -46,7 +45,7 @@ class Linear(nn.Module):
         return einops.einsum(x, self.W, "... d_in, d_in d_out -> ... d_out") + self.b
 
 
-class GateMLPs(nn.Module):
+class MLPGates(nn.Module):
     """MLP-based gates that map component 'inner acts' to a scalar output for each component."""
 
     def __init__(self, C: int, hidden_dims: list[int]):
@@ -70,7 +69,7 @@ class GateMLPs(nn.Module):
         return x[..., 0]
 
 
-class VectorGateMLPs(nn.Module):
+class VectorMLPGates(nn.Module):
     """Contains a separate network for each component and takes a module's input vector as input."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
@@ -98,7 +97,7 @@ class VectorGateMLPs(nn.Module):
 WeightDeltaAndMask = tuple[Float[Tensor, " d_out d_in"], Float[Tensor, "..."]]
 
 
-class LayerwiseGlobalGateMLP(nn.Module):
+class VectorSharedMLPGate(nn.Module):
     """Maps a module's input vector to a scalar output for each component with a 'pure' MLP."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):

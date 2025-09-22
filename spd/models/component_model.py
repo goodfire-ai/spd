@@ -21,11 +21,11 @@ from spd.models.components import (
     Components,
     ComponentsMaskInfo,
     EmbeddingComponents,
-    GateMLPs,
     GateType,
-    LayerwiseGlobalGateMLP,
     LinearComponents,
-    VectorGateMLPs,
+    MLPGates,
+    VectorMLPGates,
+    VectorSharedMLPGate,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
@@ -101,7 +101,7 @@ class ComponentModel(LoadableModule):
         module_paths = ComponentModel._get_target_module_paths(target_model, target_module_patterns)
 
         self.components = ComponentModel._create_components(
-            model=target_model,
+            target_model=target_model,
             module_paths=module_paths,
             C=C,
         )
@@ -110,6 +110,9 @@ class ComponentModel(LoadableModule):
         )
 
         self.gates = ComponentModel._create_gates(
+            target_model=target_model,
+            module_paths=module_paths,
+            C=C,
             gate_type=gate_type,
             gate_hidden_dims=gate_hidden_dims,
         )
@@ -206,11 +209,9 @@ class ComponentModel(LoadableModule):
     ) -> nn.Module:
         """Helper to create a gate based on gate_type and module type."""
         if gate_type == "mlp":
-            return GateMLPs(C=component_C, hidden_dims=gate_hidden_dims)
+            return MLPGates(C=component_C, hidden_dims=gate_hidden_dims)
 
-        assert gate_type in ["vector_mlp", "layerwise_global_mlp"], (
-            f"Unknown gate type: {gate_type}"
-        )
+        assert gate_type in ["vector_mlp", "shared_mlp"], f"Unknown gate type: {gate_type}"
         assert not isinstance(target_module, nn.Embedding), (
             "Embedding modules only supported for gate_type='mlp'"
         )
@@ -222,12 +223,10 @@ class ComponentModel(LoadableModule):
             raise ValueError(f"Module {type(target_module)} not supported for {gate_type=}")
 
         if gate_type == "vector_mlp":
-            return VectorGateMLPs(
-                C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
-            )
+            return VectorMLPGates(C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
         else:
-            assert gate_type == "layerwise_global_mlp"
-            return LayerwiseGlobalGateMLP(
+            assert gate_type == "shared_mlp"
+            return VectorSharedMLPGate(
                 C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
             )
 
@@ -512,9 +511,9 @@ class ComponentModel(LoadableModule):
             acts = pre_weight_acts[param_name]
             gates = self.gates[param_name]
 
-            if isinstance(gates, GateMLPs):
+            if isinstance(gates, MLPGates):
                 gate_input = self.components[param_name].get_inner_acts(acts)
-            elif isinstance(gates, VectorGateMLPs | LayerwiseGlobalGateMLP):
+            elif isinstance(gates, VectorMLPGates | VectorSharedMLPGate):
                 gate_input = acts
             else:
                 raise ValueError(f"Unknown gate type: {type(gates)}")
