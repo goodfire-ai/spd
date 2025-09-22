@@ -21,6 +21,7 @@ faithfulness_coeff: null
 out_recon_coeff: 0.0
 recon_coeff: null
 stochastic_recon_coeff: 1.0
+causal_importance_mse_coeff: null
 recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1.0
 importance_minimality_coeff: 3e-5
