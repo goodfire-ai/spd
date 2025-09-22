@@ -337,7 +337,6 @@ class Config(BaseModel):
             config_dict["train_log_freq"] = 50
         if "slow_eval_freq" not in config_dict:
             config_dict["slow_eval_freq"] = config_dict["eval_freq"]
-
         return config_dict
 
     @model_validator(mode="after")
