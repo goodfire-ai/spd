@@ -143,7 +143,7 @@ class CEandKLLosses(StreamingEval):
 
         # make sure labels don't "wrap around": you **can't** predict the first token.
         masked_batch = batch.clone()
-        masked_batch[:, 0] = -100  # F.cross_entropy ignores -99
+        masked_batch[:, 0] = -100
         flat_masked_batch = masked_batch.flatten()
 
         def ce_vs_labels(logits: Tensor) -> float:
