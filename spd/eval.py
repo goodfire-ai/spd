@@ -771,7 +771,7 @@ def evaluate(
         batch = extract_batch_data(next(eval_iterator))
         batch = batch.to(device)
         target_out, pre_weight_acts = model(
-            batch, mode="pre_forward_cache", module_names=list(model.components.keys())
+            batch, mode="input_cache", module_names=list(model.components.keys())
         )
         ci, _ci_upper_leaky = model.calc_causal_importances(
             pre_weight_acts,

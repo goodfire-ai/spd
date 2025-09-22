@@ -103,7 +103,7 @@ def compute_causal_importances(
     with torch.no_grad():
         _, pre_weight_acts = _model_data.model(
             _input_ids,
-            mode="pre_forward_cache",
+            mode="input_cache",
             module_names=list(_model_data.components.keys()),
         )
         cis, _ = _model_data.model.calc_causal_importances(

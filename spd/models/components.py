@@ -291,7 +291,7 @@ class EmbeddingComponents(Components):
 class ComponentsMaskInfo:
     """Specifies the mask information that will be applied to a ComponentOrModule object."""
 
-    routing_mask: Float[Tensor, " ..."] | bool
+    routing_mask: Float[Tensor, " ..."] | Literal[True]
     """specifies which positions (usually batch, seq) to route to components vs target"""
 
     component_mask: Float[Tensor, "... C"] | bool
@@ -302,7 +302,7 @@ class ComponentsMaskInfo:
 
 def make_mask_infos(
     component_masks: Mapping[str, Float[Tensor, "... C"] | bool],
-    routing_masks: Mapping[str, Bool[Tensor, "..."] | bool] | None = None,
+    routing_masks: Mapping[str, Bool[Tensor, "..."] | Literal[True]] | None = None,
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
     """Create ComponentsMaskInfo dict from dicts of component masks, routing masks, and weight deltas and weight delta masks.

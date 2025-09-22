@@ -12,9 +12,19 @@ from typing import Any, Literal
 import torch
 import torch.nn as nn
 from torch.utils.hooks import RemovableHandle
+from transformers.modeling_utils import Conv1D as RadfordConv1D
+from transformers.modeling_utils import Conv1D as RadfordConv1D
 
+from spd.configs import (
+    Config,
+    TaskConfig,
+    LMTaskConfig,
+    TMSTaskConfig,
+    IHTaskConfig,
+    ResidMLPTaskConfig,
+)
 from spd.log import logger
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import SUPPORTED_MODULES, ComponentModel
 from spd.utils.distributed_utils import is_main_process
 
 
@@ -73,7 +83,6 @@ InputType = Literal["tokens"] | tuple[Literal["vector"], int]
 def insert_identity_operations_(
     target_model: nn.Module,
     identity_patterns: list[str],
-    input_type: InputType,
     device: torch.device | str,
 ) -> None:
     """Insert identity linear layers before specified modules.
@@ -89,17 +98,18 @@ def insert_identity_operations_(
 
     identity_module_paths = ComponentModel._get_target_module_paths(target_model, identity_patterns)
 
-    match input_type:
-        case "tokens":
-            dummy_input = torch.zeros(1, 1, device=device, dtype=torch.long)
-        case ("vector", d_in):
-            dummy_input = torch.randn(1, d_in, device=device)
-
-    layer_input_sizes = _get_input_sizes(target_model, identity_module_paths, dummy_input)
-
     # Add identity layers and hooks
-    for module_path, d_in in layer_input_sizes.items():
+    for module_path in identity_module_paths:
         module = target_model.get_submodule(module_path)
+        assert isinstance(module, SUPPORTED_MODULES), f"Module {module} not supported"
+
+        match module:
+            case nn.Linear():
+                _, d_in = module.weight.shape
+            case RadfordConv1D():
+                d_in, _ = module.weight.shape
+            case nn.Embedding():
+                raise ValueError("Embedding modules not supported for identity insertion")
 
         # Create identity linear layer
         pre_identity = nn.Linear(d_in, d_in, bias=False, device=device)

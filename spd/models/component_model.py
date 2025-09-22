@@ -37,6 +37,8 @@ from spd.utils.wandb_utils import (
     fetch_wandb_run_dir,
 )
 
+SUPPORTED_MODULES = (nn.Linear, nn.Embedding, RadfordConv1D)
+
 
 @dataclass
 class SPDRunInfo(RunInfo[Config]):
@@ -196,37 +198,33 @@ class ComponentModel(LoadableModule):
         for module_path in all_paths:
             target_module = model.get_submodule(module_path)
 
-            if isinstance(target_module, nn.Linear):
-                d_out, d_in = target_module.weight.shape
-                component = LinearComponents(
-                    C=C,
-                    d_in=d_in,
-                    d_out=d_out,
-                    bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
-                )
-            elif isinstance(target_module, nn.Embedding):
-                component = EmbeddingComponents(
-                    C=C,
-                    vocab_size=target_module.num_embeddings,
-                    embedding_dim=target_module.embedding_dim,
-                )
-            elif isinstance(target_module, RadfordConv1D):
-                d_in, d_out = target_module.weight.shape
-                component = LinearComponents(
-                    C=C,
-                    d_in=d_in,
-                    d_out=d_out,
-                    bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
-                )
-            # TODO
-            # elif isinstance(module, nn.Identity):
-            #     d =
-            #     components = LinearComponents(C=C, d_in=d_in, d_out=d_out, bias=None)
-            else:
-                raise ValueError(
-                    f"Module '{module_path}' matched pattern is not nn.Linear, nn.Embedding,"
-                    f"or Huggingface Conv1D. Found type: {type(target_module)}"
-                )
+            assert isinstance(target_module, SUPPORTED_MODULES), (
+                f"Module {target_module} not supported"
+            )
+
+            match target_module:
+                case nn.Linear():
+                    d_out, d_in = target_module.weight.shape
+                    component = LinearComponents(
+                        C=C,
+                        d_in=d_in,
+                        d_out=d_out,
+                        bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                    )
+                case nn.Embedding():
+                    component = EmbeddingComponents(
+                        C=C,
+                        vocab_size=target_module.num_embeddings,
+                        embedding_dim=target_module.embedding_dim,
+                    )
+                case RadfordConv1D():
+                    d_in, d_out = target_module.weight.shape
+                    component = LinearComponents(
+                        C=C,
+                        d_in=d_in,
+                        d_out=d_out,
+                        bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                    )
 
             components[module_path] = component
 
@@ -274,7 +272,7 @@ class ComponentModel(LoadableModule):
     def forward(
         self,
         *args: Any,
-        mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
+        mode: Literal["target", "components", "input_cache"] | None = "target",
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
@@ -288,29 +286,30 @@ class ComponentModel(LoadableModule):
             mode: The type of forward pass to perform:
                 - 'target': Standard forward pass of the target model
                 - 'components': Forward with component replacements (requires masks)
-                - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
+                - 'input_cache': Forward with pre-forward caching (requires module_names)
             mask_infos: Dictionary mapping module names to ComponentsMaskInfo
                 (required for mode='components').
             module_names: List of module names to cache inputs for
-                (required for mode='pre_forward_cache')
+                (required for mode='input_cache')
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
         if mode == "components":
             assert mask_infos is not None, "mask_infos are required for mode='components'"
             return self._forward_with_components(*args, mask_infos=mask_infos, **kwargs)
-        elif mode == "pre_forward_cache":
+        elif mode == "input_cache":
             assert module_names is not None, (
-                "module_names parameter is required for mode='pre_forward_cache'"
+                "module_names parameter is required for mode='input_cache'"
             )
-            return self._forward_with_pre_forward_cache_hooks(
-                *args, module_names=module_names, **kwargs
-            )
+            return self._forward_with_input_cache(*args, module_names=module_names, **kwargs)
         else:
-            return self.target_model(*args, **kwargs)
+            return self._extract_output(self.target_model(*args, **kwargs))
 
     @contextmanager
-    def hooks(self, hooks: dict[str, Callable[..., Any]]) -> Generator[None, None, None]:
+    def _component_forward_hooks(
+        self, hooks: dict[str, Callable[..., Any]]
+    ) -> Generator[None, None, None]:
+        """Temporarily override selected modules with component outputs via forward hooks."""
         handles: list[RemovableHandle] = []
         for module_name, hook in hooks.items():
             target_module = self.target_model.get_submodule(module_name)
@@ -322,58 +321,87 @@ class ComponentModel(LoadableModule):
             for handle in handles:
                 handle.remove()
 
-    @staticmethod
-    def make_fwd_hook(components: Components, mask_info: ComponentsMaskInfo):  # pyright: ignore[reportUnknownParameterType]
-        # could switch on mask_info.routing_mask here to early escape on False
-        def fwd_hook(module, args, kwargs, output) -> None | Any:  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType, reportUnusedParameter] -> None | Any:  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType, reportUnusedParameter]
+    def _forward_with_components(
+        self, *args: Any, mask_infos: dict[str, ComponentsMaskInfo], **kwargs: Any
+    ) -> Any:
+        """Forward pass with temporary component replacements. `masks` is a dictionary mapping
+        component paths to mask infos. A mask info being present means that the module will be replaced
+        with components, and the value of the mask info will be used as the mask for the components.
+
+        Args:
+            mask_infos: Dictionary mapping module names to ComponentsMaskInfo
+        """
+
+        def fwd_hook(
+            _module: nn.Module,
+            args: list[Any],
+            kwargs: dict[Any, Any],
+            output: Any,
+            components: Components,
+            mask_info: ComponentsMaskInfo,
+        ) -> None | Any:
             assert len(args) == 1, "Expected 1 argument"
             assert len(kwargs) == 0, "Expected no keyword arguments"
             x = args[0]
             assert isinstance(x, Tensor), "Expected input tensor"
+            if not mask_info.routing_mask:
+                return output
+
             components_out = components.forward(
                 x,
                 mask=mask_info.component_mask,
                 weight_delta_and_mask=mask_info.weight_delta_and_mask,
             )
+
             match mask_info.routing_mask:
                 case True:
                     return components_out
-                case False:
-                    return output
                 case Tensor():
                     return torch.where(mask_info.routing_mask[..., None], components_out, output)
 
-        return fwd_hook
-
-    def _forward_with_components(
-        self, *args: Any, mask_infos: dict[str, ComponentsMaskInfo], **kwargs: Any
-    ) -> Any:
         hooks: dict[str, Callable[..., Any]] = {}
         for module_name, mask_info in mask_infos.items():
             components = self.components[module_name]
-            hooks[module_name] = self.make_fwd_hook(components, mask_info)
+            hooks[module_name] = partial(fwd_hook, components=components, mask_info=mask_info)
 
-        with self.hooks(hooks):
+        with self._component_forward_hooks(hooks):
             raw_out = self.target_model(*args, **kwargs)
-            out = self._extract_output(raw_out)
-            return out
 
-    def _forward_with_pre_forward_cache_hooks(
+        return self._extract_output(raw_out)
+
+    def _forward_with_input_cache(
         self, *args: Any, module_names: list[str], **kwargs: Any
     ) -> tuple[Any, dict[str, Tensor]]:
+        """Forward pass with caching at the input to the modules given by `module_names`.
+        Args:
+            module_names: List of module names to cache the inputs to.
+        Returns:
+            Tuple of (model output, input cache dictionary)
+        """
+
         cache = {}
 
-        def cache_hook(_: nn.Module, input: tuple[Tensor, "..."], param_name: str) -> None:
-            assert len(input) == 1, "Expected 1 argument"
+        def cache_hook(
+            _module: nn.Module,
+            args: list[Any],
+            kwargs: dict[Any, Any],
+            _output: Any,
+            param_name: str,
+        ) -> None:
+            assert len(args) == 1, "Expected 1 argument"
+            assert len(kwargs) == 0, "Expected no keyword arguments"
+            input = args[0]
+            assert isinstance(input, Tensor), "Expected input tensor"
             cache[param_name] = input[0]
 
         hooks = {
             module_name: partial(cache_hook, param_name=module_name) for module_name in module_names
         }
-        with self.hooks(hooks):
+        with self._component_forward_hooks(hooks):
             raw_out = self.target_model(*args, **kwargs)
-            out = self._extract_output(raw_out)
-            return out, cache
+
+        out = self._extract_output(raw_out)
+        return out, cache
 
     @staticmethod
     def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:

@@ -57,6 +57,7 @@ def main(
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
     target_run_info = ResidMLPTargetRunInfo.from_path(config.pretrained_model_path)
+    target_run_info.config
     target_model = ResidMLP.from_run_info(target_run_info)
     target_model = target_model.to(device)
     target_model.eval()
