@@ -191,17 +191,17 @@ def calculate_losses(
 
     # CI reconstruction loss
     if config.ci_recon_coeff is not None:
-        recon_mask_infos = make_mask_infos(causal_importances, None)
-        recon_loss = calc_masked_recon_loss(
+        ci_recon_mask_infos = make_mask_infos(causal_importances, None)
+        ci_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
-            mask_infos_list=[recon_mask_infos],
+            mask_infos_list=[ci_recon_mask_infos],
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,
         )
-        total_loss += config.ci_recon_coeff * recon_loss
-        loss_terms["recon"] = recon_loss.item()
+        total_loss += config.ci_recon_coeff * ci_recon_loss
+        loss_terms["ci_recon"] = ci_recon_loss.item()
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
@@ -241,7 +241,7 @@ def calculate_losses(
 
     # CI reconstruction layerwise loss
     if config.ci_recon_layerwise_coeff is not None:
-        recon_layerwise_loss = calc_masked_recon_layerwise_loss(
+        ci_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
             mask_infos_list=[make_mask_infos(causal_importances)],
@@ -249,8 +249,8 @@ def calculate_losses(
             loss_type=config.output_loss_type,
             device=device,
         )
-        total_loss += config.ci_recon_layerwise_coeff * recon_layerwise_loss
-        loss_terms["recon_layerwise"] = recon_layerwise_loss.item()
+        total_loss += config.ci_recon_layerwise_coeff * ci_recon_layerwise_loss
+        loss_terms["ci_recon_layerwise"] = ci_recon_layerwise_loss.item()
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
