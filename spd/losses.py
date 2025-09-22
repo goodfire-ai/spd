@@ -1,106 +1,15 @@
 from typing import Literal
 
-import einops
 import torch
-import torch.nn as nn
 from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import Config
 from spd.mask_info import ComponentsMaskInfo, WeightDeltaAndMask, make_mask_infos
 from spd.models.component_model import ComponentModel
-from spd.models.components import Components, ComponentsOrModule, EmbeddingComponents
+from spd.models.components import ComponentsOrModule
 from spd.utils.component_utils import calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm
-
-
-def calc_embedding_recon_loss(
-    model: ComponentModel,
-    batch: Int[Tensor, "..."],
-    masks: list[dict[str, Float[Tensor, "... C"]]],
-    unembed: bool,
-    device: str,
-) -> Float[Tensor, ""]:
-    """
-    recon loss that directly compares the outputs of the (optionally masked)
-    ``EmbeddingComponents``(s) to the outputs of the original ``nn.Embedding`` modules.
-
-    If ``unembed`` is ``True``, both the masked embedding output and the target embedding
-    output are unembedded using the ``lm_head`` module, and the KL divergence is used as the loss.
-
-    If ``unembed`` is ``False``, the loss is the MSE between the masked embedding output
-    and the target embedding output is used as the loss.
-    """
-
-    assert len(model.components_or_modules) == 1, "Only one embedding component is supported"
-    components_or_module = next(iter(model.components_or_modules.values()))
-    components = components_or_module.components
-    original = components_or_module.original
-    assert isinstance(components, EmbeddingComponents)
-
-    # --- original embedding output --------------------------------------------------------- #
-    target_out: Float[Tensor, "... d_emb"] = original(batch)
-
-    # --- masked embedding output ----------------------------------------------------------- #
-    loss = torch.tensor(0.0, device=device)
-    for mask_info in masks:
-        assert len(mask_info) == 1, "Only one embedding component is supported"
-        mask = next(iter(mask_info.values()))
-        masked_out: Float[Tensor, "... d_emb"] = components(batch, mask=mask)
-
-        if unembed:
-            assert hasattr(model.patched_model, "lm_head"), (
-                "Only supports unembedding named lm_head"
-            )
-            assert isinstance(model.patched_model.lm_head, nn.Module)
-            target_out_unembed = model.patched_model.lm_head(target_out)
-            masked_out_unembed = model.patched_model.lm_head(masked_out)
-            loss += calc_kl_divergence_lm(pred=masked_out_unembed, target=target_out_unembed)
-        else:
-            loss += ((masked_out - target_out) ** 2).sum(dim=-1).mean()
-
-    loss /= len(masks)
-
-    return loss
-
-
-def calc_schatten_loss(
-    ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-    pnorm: float,
-    components: dict[str, Components],
-    device: str,
-) -> Float[Tensor, ""]:
-    """Calculate the Schatten loss on the active components.
-
-    The Schatten loss is calculated as:
-        L = Σ_{components} mean(ci_upper_leaky^pnorm · (||V||_2^2 + ||U||_2^2))
-
-    where:
-        - ci_upper_leaky are the upper leaky relu causal importances for each component
-        - pnorm is the power to raise the mask to
-        - V and U are the component matrices
-        - ||·||_2 is the L2 norm
-
-    Args:
-        ci_upper_leaky: Dictionary of upper leaky relu causal importances for each layer.
-        pnorm: The pnorm to use for the importance minimality loss. Must be positive.
-        components: Dictionary of components for each layer.
-        device: The device to compute the loss on.
-
-    Returns:
-        The Schatten loss as a scalar tensor.
-    """
-
-    total_loss = torch.tensor(0.0, device=device)
-    for component_name, component in components.items():
-        V_norms = component.V.square().sum(dim=-2)
-        U_norms = component.U.square().sum(dim=-1)
-        schatten_norms = V_norms + U_norms
-        loss = einops.einsum(
-            ci_upper_leaky[component_name] ** pnorm, schatten_norms, "... C, C -> ..."
-        )
-        total_loss += loss.mean()
-    return total_loss
 
 
 def calc_importance_minimality_loss(
@@ -269,8 +178,8 @@ def compute_total_loss(
         total = total + config.faithfulness_coeff * val
         terms["faithfulness"] = float(val.item())
 
-    if config.recon_coeff is not None:
-        loss = calc_masked_recon_loss(
+    if config.ci_recon_coeff is not None:
+        ci_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
             mask_infos_list=[make_mask_infos(ci)],
@@ -278,8 +187,8 @@ def compute_total_loss(
             loss_type=config.output_loss_type,
             device=device,
         )
-        total = total + config.recon_coeff * loss
-        terms["recon"] = float(loss.item())
+        total = total + config.ci_recon_coeff * ci_recon_loss
+        terms["ci_recon"] = ci_recon_loss.item()
 
     if config.stochastic_recon_coeff is not None:
         stochastic_masks_list = calc_stochastic_masks(
@@ -302,7 +211,8 @@ def compute_total_loss(
                     masks=stochastic_masks.component_masks, weight_deltas_and_masks=deltas_and_masks
                 )
             )
-        loss = calc_masked_recon_loss(
+
+        stochastic_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
             mask_infos_list=mask_infos_list,
@@ -310,11 +220,12 @@ def compute_total_loss(
             loss_type=config.output_loss_type,
             device=device,
         )
-        total = total + config.stochastic_recon_coeff * loss
-        terms["stochastic_recon"] = float(loss.item())
 
-    if config.recon_layerwise_coeff is not None:
-        loss = calc_masked_recon_layerwise_loss(
+        total = total + config.stochastic_recon_coeff * stochastic_recon_loss
+        terms["stochastic_recon"] = stochastic_recon_loss.item()
+
+    if config.ci_recon_layerwise_coeff is not None:
+        ci_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
             mask_infos_list=[make_mask_infos(ci)],
@@ -322,8 +233,8 @@ def compute_total_loss(
             loss_type=config.output_loss_type,
             device=device,
         )
-        total = total + config.recon_layerwise_coeff * loss
-        terms["recon_layerwise"] = float(loss.item())
+        total = total + config.ci_recon_layerwise_coeff * ci_recon_layerwise_loss
+        terms["ci_recon_layerwise"] = ci_recon_layerwise_loss.item()
 
     if config.stochastic_recon_layerwise_coeff is not None:
         stochastic_masks_list = calc_stochastic_masks(
@@ -332,18 +243,23 @@ def compute_total_loss(
             sampling=config.sampling,
         )
         mask_infos_list_2: list[dict[str, ComponentsMaskInfo]] = []
-        for sm in stochastic_masks_list:
-            deltas_and_masks_2: dict[str, WeightDeltaAndMask] | None = (
-                {key: (weight_deltas[key], sm.weight_delta_masks[key]) for key in weight_deltas}
+        for stochastic_masks in stochastic_masks_list:
+            weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = (
+                {
+                    key: (weight_deltas[key], stochastic_masks.weight_delta_masks[key])
+                    for key in weight_deltas
+                }
                 if config.use_delta_component
                 else None
             )
             mask_infos_list_2.append(
                 make_mask_infos(
-                    masks=sm.component_masks, weight_deltas_and_masks=deltas_and_masks_2
+                    masks=stochastic_masks.component_masks,
+                    weight_deltas_and_masks=weight_deltas_and_masks,
                 )
             )
-        loss = calc_masked_recon_layerwise_loss(
+
+        stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
             mask_infos_list=mask_infos_list_2,
@@ -351,52 +267,14 @@ def compute_total_loss(
             loss_type=config.output_loss_type,
             device=device,
         )
-        total = total + config.stochastic_recon_layerwise_coeff * loss
-        terms["stochastic_recon_layerwise"] = float(loss.item())
+        total = total + config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
+        terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
 
     pnorm_value = current_p if current_p is not None else config.pnorm
     val = calc_importance_minimality_loss(ci_upper_leaky=ci_upper_leaky, pnorm=pnorm_value)
     total = total + config.importance_minimality_coeff * val
     terms["importance_minimality"] = float(val.item())
 
-    if config.schatten_coeff is not None:
-        val = calc_schatten_loss(
-            ci_upper_leaky=ci_upper_leaky,
-            pnorm=pnorm_value,
-            components=model.components,
-            device=device,
-        )
-        total = total + config.schatten_coeff * val
-        terms["schatten"] = float(val.item())
+    terms["total"] = total.item()
 
-    if config.out_recon_coeff is not None:
-        masks_all_ones = {k: torch.ones_like(v) for k, v in ci.items()}
-        loss = calc_masked_recon_loss(
-            model=model,
-            batch=batch,
-            mask_infos_list=[make_mask_infos(masks_all_ones)],
-            target_out=target_out,
-            loss_type=config.output_loss_type,
-            device=device,
-        )
-        total = total + config.out_recon_coeff * loss
-        terms["output_recon"] = float(loss.item())
-
-    if config.embedding_recon_coeff is not None:
-        stochastic_masks_list = calc_stochastic_masks(
-            causal_importances=ci,
-            n_mask_samples=config.n_mask_samples,
-            sampling=config.sampling,
-        )
-        loss = calc_embedding_recon_loss(
-            model=model,
-            batch=batch,
-            masks=[sm.component_masks for sm in stochastic_masks_list],
-            unembed=config.is_embed_unembed_recon,
-            device=device,
-        )
-        total = total + config.embedding_recon_coeff * loss
-        terms["embedding_recon"] = float(loss.item())
-
-    terms["total"] = float(total.item())
     return total, terms

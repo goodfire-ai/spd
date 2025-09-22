@@ -22,12 +22,10 @@ from torch.distributed import ReduceOp
 
 from spd.configs import Config
 from spd.losses import (
-    calc_embedding_recon_loss,
     calc_faithfulness_loss,
     calc_importance_minimality_loss,
     calc_masked_recon_layerwise_loss,
     calc_masked_recon_loss,
-    calc_schatten_loss,
     calc_weight_deltas,
     compute_total_loss,
 )
@@ -172,7 +170,7 @@ class CEandKLLosses(Metric):
 
         # make sure labels don't "wrap around": you **can't** predict the first token.
         masked_batch = batch.clone()
-        masked_batch[:, 0] = -100  # F.cross_entropy ignores -99
+        masked_batch[:, 0] = -100
         flat_masked_batch = masked_batch.flatten()
 
         def ce_vs_labels(logits: Tensor) -> float:
@@ -881,7 +879,7 @@ class FaithfulnessLoss(Metric):
         self.running.reset()
 
 
-class ReconLayerwiseLoss(Metric):
+class CIReconLayerwiseLoss(Metric):
     SLOW = False
 
     def __init__(self, model: ComponentModel, config: Config) -> None:
@@ -897,13 +895,12 @@ class ReconLayerwiseLoss(Metric):
         ci: dict[str, Float[Tensor, "... C"]],
         ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
-        if self.config.recon_layerwise_coeff is None:
+        if self.config.ci_recon_layerwise_coeff is None:
             return
-        mask_infos = make_mask_infos(ci)
         loss = calc_masked_recon_layerwise_loss(
             model=self.model,
             batch=batch,
-            mask_infos_list=[mask_infos],
+            mask_infos_list=[make_mask_infos(ci)],
             target_out=target_out,
             loss_type=self.config.output_loss_type,
             device=str(target_out.device),
@@ -917,7 +914,9 @@ class ReconLayerwiseLoss(Metric):
 
     @override
     def compute(self) -> Mapping[str, float]:
-        return {"loss/recon_layerwise": self.running.mean()} if self.running.denominator > 0 else {}
+        return (
+            {"loss/ci_recon_layerwise": self.running.mean()} if self.running.denominator > 0 else {}
+        )
 
     @override
     def reset(self) -> None:
@@ -996,7 +995,7 @@ class StochasticReconLayerwiseLoss(Metric):
         self.running.reset()
 
 
-class ReconLoss(Metric):
+class CIReconLoss(Metric):
     SLOW = False
 
     def __init__(self, model: ComponentModel, config: Config) -> None:
@@ -1012,13 +1011,12 @@ class ReconLoss(Metric):
         ci: dict[str, Float[Tensor, "... C"]],
         ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     ) -> None:
-        if self.config.recon_coeff is None:
+        if self.config.ci_recon_coeff is None:
             return
-        mask_infos = make_mask_infos(ci)
         loss = calc_masked_recon_loss(
             model=self.model,
             batch=batch,
-            mask_infos_list=[mask_infos],
+            mask_infos_list=[make_mask_infos(ci)],
             target_out=target_out,
             loss_type=self.config.output_loss_type,
             device=str(target_out.device),
@@ -1032,7 +1030,7 @@ class ReconLoss(Metric):
 
     @override
     def compute(self) -> Mapping[str, float]:
-        return {"loss/recon": self.running.mean()} if self.running.denominator > 0 else {}
+        return {"loss/ci_recon": self.running.mean()} if self.running.denominator > 0 else {}
 
     @override
     def reset(self) -> None:
@@ -1068,129 +1066,6 @@ class ImportanceMinimalityLoss(Metric):
             if self.running.denominator > 0
             else {}
         )
-
-    @override
-    def reset(self) -> None:
-        self.running.reset()
-
-
-class SchattenLoss(Metric):
-    SLOW = False
-
-    def __init__(self, model: ComponentModel, config: Config) -> None:
-        self.model = model
-        self.config = config
-        self.running = _RunningAvg()
-
-    @override
-    def watch_batch(
-        self,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
-        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-    ) -> None:
-        if self.config.schatten_coeff is None:
-            return
-        loss = calc_schatten_loss(
-            ci_upper_leaky=ci_upper_leaky,
-            pnorm=self.config.pnorm,
-            components=self.model.components,
-            device=str(target_out.device),
-        )
-        any_layer = next(iter(ci_upper_leaky.values()))
-        denom = int(any_layer.shape[:-1].numel())
-        self.running.add(loss.item(), float(denom))
-
-    @override
-    def compute(self) -> Mapping[str, float]:
-        return {"loss/schatten": self.running.mean()} if self.running.denominator > 0 else {}
-
-    @override
-    def reset(self) -> None:
-        self.running.reset()
-
-
-class OutputReconLoss(Metric):
-    SLOW = False
-
-    def __init__(self, model: ComponentModel, config: Config) -> None:
-        self.model = model
-        self.config = config
-        self.running = _RunningAvg()
-
-    @override
-    def watch_batch(
-        self,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
-        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-    ) -> None:
-        if self.config.out_recon_coeff is None:
-            return
-        masks_all_ones = {k: torch.ones_like(v) for k, v in ci.items()}
-        loss = calc_masked_recon_loss(
-            model=self.model,
-            batch=batch,
-            mask_infos_list=[make_mask_infos(masks_all_ones)],
-            target_out=target_out,
-            loss_type=self.config.output_loss_type,
-            device=str(target_out.device),
-        )
-        denom = (
-            target_out.numel()
-            if self.config.output_loss_type == "mse"
-            else _num_tokens_from_logits(target_out)
-        )
-        self.running.add(loss.item(), float(denom))
-
-    @override
-    def compute(self) -> Mapping[str, float]:
-        return {"loss/output_recon": self.running.mean()} if self.running.denominator > 0 else {}
-
-    @override
-    def reset(self) -> None:
-        self.running.reset()
-
-
-class EmbeddingReconLoss(Metric):
-    SLOW = False
-
-    def __init__(self, model: ComponentModel, config: Config) -> None:
-        self.model = model
-        self.config = config
-        self.running = _RunningAvg()
-
-    @override
-    def watch_batch(
-        self,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
-        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-    ) -> None:
-        if self.config.embedding_recon_coeff is None:
-            return
-        stoch_masks_list = calc_stochastic_masks(
-            causal_importances=ci,
-            n_mask_samples=self.config.n_mask_samples,
-            sampling=self.config.sampling,
-        )
-        loss = calc_embedding_recon_loss(
-            model=self.model,
-            batch=batch.to(next(iter(self.model.parameters())).device),
-            masks=[s.component_masks for s in stoch_masks_list],
-            unembed=self.config.is_embed_unembed_recon,
-            device=str(next(iter(self.model.parameters())).device),
-        )
-        assert batch.ndim >= 2
-        denom = int(batch.shape[-2] * batch.shape[-1]) if batch.ndim >= 2 else int(batch.shape[0])
-        self.running.add(loss.item(), float(denom))
-
-    @override
-    def compute(self) -> Mapping[str, float]:
-        return {"loss/embedding_recon": self.running.mean()} if self.running.denominator > 0 else {}
 
     @override
     def reset(self) -> None:
@@ -1327,14 +1202,11 @@ METRICS = {
         CIMeanPerComponent,
         SubsetReconstructionLoss,
         FaithfulnessLoss,
-        ReconLoss,
+        CIReconLoss,
         StochasticReconLoss,
-        ReconLayerwiseLoss,
+        CIReconLayerwiseLoss,
         StochasticReconLayerwiseLoss,
         ImportanceMinimalityLoss,
-        SchattenLoss,
-        OutputReconLoss,
-        EmbeddingReconLoss,
         TotalLoss,
     ]
 }

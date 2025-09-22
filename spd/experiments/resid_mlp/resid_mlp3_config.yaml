@@ -18,10 +18,9 @@ use_delta_component: true
 
 # --- Loss Coefficients ---
 faithfulness_coeff: null
-out_recon_coeff: 0.0
-recon_coeff: null
+ci_recon_coeff: null
 stochastic_recon_coeff: 1.0
-recon_layerwise_coeff: null
+ci_recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1.0
 importance_minimality_coeff: 1e-5
 pnorm: 2
