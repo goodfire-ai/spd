@@ -136,7 +136,7 @@ class Config(BaseModel):
         default=1.0,
         description="Coefficient for matching parameters between components and target weights",
     )
-    recon_coeff: NonNegativeFloat | None = Field(
+    ci_recon_coeff: NonNegativeFloat | None = Field(
         default=None,
         description="Coefficient for recon loss with a causal importance mask",
     )
@@ -144,33 +144,18 @@ class Config(BaseModel):
         default=None,
         description="Coefficient for recon loss with stochastically sampled masks",
     )
-    recon_layerwise_coeff: NonNegativeFloat | None = Field(
+    ci_recon_layerwise_coeff: NonNegativeFloat | None = Field(
         default=None,
-        description="Coefficient for per-layer recon loss with a causal importance mask",
+        description="Coefficient for recon loss with causal importance mask on one layer at a time",
     )
     stochastic_recon_layerwise_coeff: NonNegativeFloat | None = Field(
         default=None,
-        description="Coefficient for per-layer recon loss with stochastically sampled masks",
+        description="Coefficient for recon loss with stochastically sampled masks on one layer at "
+        "a time",
     )
     importance_minimality_coeff: NonNegativeFloat = Field(
         ...,
         description="Coefficient for importance minimality loss",
-    )
-    schatten_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for Schatten-norm regularisation (LM only)",
-    )
-    out_recon_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for output recon loss",
-    )
-    embedding_recon_coeff: float | None = Field(
-        default=None,
-        description="Coefficient for additional embedding recon loss (LM only)",
-    )
-    is_embed_unembed_recon: bool = Field(
-        default=False,
-        description="If True, apply embedding recon jointly to embed & unembed matrices",
     )
     pnorm: PositiveFloat = Field(
         ...,
@@ -321,10 +306,16 @@ class Config(BaseModel):
         "image_freq",
         "metrics_fns",
         "figures_fns",
+        "schatten_coeff",
+        "embedding_recon_coeff",
+        "is_embed_unembed_recon",
+        "out_recon_coeff",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
         "pretrained_model_name_hf": "pretrained_model_name",
+        "recon_coeff": "ci_recon_coeff",
+        "recon_layerwise_coeff": "ci_recon_layerwise_coeff",
     }
 
     @model_validator(mode="before")
@@ -352,7 +343,7 @@ class Config(BaseModel):
     def validate_model(self) -> Self:
         # If any of the coeffs are 0, raise a warning
         msg = "is 0, you may wish to instead set it to null to avoid calculating the loss"
-        if self.recon_coeff == 0:
+        if self.ci_recon_coeff == 0:
             logger.warning(f"recon_coeff {msg}")
         if self.importance_minimality_coeff == 0:
             logger.warning(f"importance_minimality_coeff {msg}")

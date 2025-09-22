@@ -42,14 +42,11 @@ def test_tms_decomposition_happy_path() -> None:
         target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
         # Loss Coefficients
         faithfulness_coeff=1.0,
-        recon_coeff=None,
+        ci_recon_coeff=None,
         stochastic_recon_coeff=1.0,
-        recon_layerwise_coeff=1e-1,
+        ci_recon_layerwise_coeff=1e-1,
         stochastic_recon_layerwise_coeff=1.0,
         importance_minimality_coeff=3e-3,
-        schatten_coeff=None,
-        embedding_recon_coeff=None,
-        is_embed_unembed_recon=False,
         pnorm=2.0,
         output_loss_type="mse",
         # Training
