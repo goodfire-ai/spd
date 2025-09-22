@@ -95,21 +95,23 @@ class ComponentModel(LoadableModule):
             )
 
         self.target_model = target_model
-
-        self.components, self.gates = ComponentModel._create_components_and_gates(
-            model=target_model,
-            module_patterns=target_module_patterns,
-            C=C,
-            gate_type=gate_type,
-            gate_hidden_dims=gate_hidden_dims,
-        )
-
         self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
 
-        # these are the actual registered submodules
+        module_paths = ComponentModel._get_target_module_paths(target_model, target_module_patterns)
+
+        self.components = ComponentModel._create_components(
+            model=target_model,
+            module_paths=module_paths,
+            C=C,
+        )
         self._components = nn.ModuleDict(
             {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
+        )
+
+        self.gates = ComponentModel._create_gates(
+            gate_type=gate_type,
+            gate_hidden_dims=gate_hidden_dims,
         )
         self._gates = nn.ModuleDict(
             {k.replace(".", "-"): self.gates[k] for k in sorted(self.gates)}
@@ -125,6 +127,128 @@ class ComponentModel(LoadableModule):
             raise AttributeError(
                 f"Module {type(target_module)} not one of nn.Linear, nn.Embedding, or RadfordConv1D"
             )
+
+    @staticmethod
+    def _get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
+        """Find the target_module_patterns that match real modules in the target model.
+
+        e.g. `["layers.*.mlp_in"]` ->  `["layers.1.mlp_in", "layers.2.mlp_in"]`.
+        """
+
+        names_out: list[str] = []
+        matched_patterns: set[str] = set()
+        for name, _ in model.named_modules():
+            for pattern in target_module_patterns:
+                if fnmatch.fnmatch(name, pattern):
+                    matched_patterns.add(pattern)
+                    names_out.append(name)
+
+        unmatched_patterns = set(target_module_patterns) - matched_patterns
+        if unmatched_patterns:
+            raise ValueError(
+                f"The following patterns in target_module_patterns did not match any modules: "
+                f"{sorted(unmatched_patterns)}"
+            )
+
+        return names_out
+
+    @staticmethod
+    def _create_component(
+        target_module: nn.Module,
+        C: int,
+    ) -> Components:
+        assert isinstance(target_module, SUPPORTED_MODULES), f"Module {target_module} not supported"
+
+        match target_module:
+            case nn.Linear():
+                d_out, d_in = target_module.weight.shape
+                component = LinearComponents(
+                    C=C,
+                    d_in=d_in,
+                    d_out=d_out,
+                    bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                )
+            case nn.Embedding():
+                component = EmbeddingComponents(
+                    C=C,
+                    vocab_size=target_module.num_embeddings,
+                    embedding_dim=target_module.embedding_dim,
+                )
+            case RadfordConv1D():
+                d_in, d_out = target_module.weight.shape
+                component = LinearComponents(
+                    C=C,
+                    d_in=d_in,
+                    d_out=d_out,
+                    bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                )
+
+        return component
+
+    @staticmethod
+    def _create_components(
+        target_model: nn.Module,
+        module_paths: list[str],
+        C: int,
+    ) -> dict[str, Components]:
+        components: dict[str, Components] = {}
+        for module_path in module_paths:
+            target_module = target_model.get_submodule(module_path)
+            components[module_path] = ComponentModel._create_component(target_module, C)
+        return components
+
+    @staticmethod
+    def _create_gate(
+        target_module: nn.Module,
+        component_C: int,
+        gate_type: GateType,
+        gate_hidden_dims: list[int],
+    ) -> nn.Module:
+        """Helper to create a gate based on gate_type and module type."""
+        if gate_type == "mlp":
+            return GateMLPs(C=component_C, hidden_dims=gate_hidden_dims)
+
+        assert gate_type in ["vector_mlp", "layerwise_global_mlp"], (
+            f"Unknown gate type: {gate_type}"
+        )
+        assert not isinstance(target_module, nn.Embedding), (
+            "Embedding modules only supported for gate_type='mlp'"
+        )
+        if isinstance(target_module, nn.Linear):
+            input_dim = target_module.weight.shape[1]
+        elif isinstance(target_module, RadfordConv1D):
+            input_dim = target_module.weight.shape[0]
+        else:
+            raise ValueError(f"Module {type(target_module)} not supported for {gate_type=}")
+
+        if gate_type == "vector_mlp":
+            return VectorGateMLPs(
+                C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+            )
+        else:
+            assert gate_type == "layerwise_global_mlp"
+            return LayerwiseGlobalGateMLP(
+                C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+            )
+
+    @staticmethod
+    def _create_gates(
+        target_model: nn.Module,
+        module_paths: list[str],
+        C: int,
+        gate_type: GateType,
+        gate_hidden_dims: list[int],
+    ) -> dict[str, nn.Module]:
+        gates: dict[str, nn.Module] = {}
+        for module_path in module_paths:
+            target_module = target_model.get_submodule(module_path)
+            gates[module_path] = ComponentModel._create_gate(
+                target_module,
+                C,
+                gate_type,
+                gate_hidden_dims,
+            )
+        return gates
 
     def _extract_output(self, raw_output: Any) -> Any:
         """Extract the desired output from the model's raw output.
@@ -153,120 +277,6 @@ class ComponentModel(LoadableModule):
             return raw_output[idx_val]
         else:
             return getattr(raw_output, self.pretrained_model_output_attr)
-
-    @staticmethod
-    def _get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
-        """Find the target_module_patterns that match real modules in the target model.
-
-        e.g. `["layers.*.mlp_in"]` ->  `["layers.1.mlp_in", "layers.2.mlp_in"]`.
-        """
-
-        names_out: list[str] = []
-        matched_patterns: set[str] = set()
-        for name, _ in model.named_modules():
-            for pattern in target_module_patterns:
-                if fnmatch.fnmatch(name, pattern):
-                    matched_patterns.add(pattern)
-                    names_out.append(name)
-
-        unmatched_patterns = set(target_module_patterns) - matched_patterns
-        if unmatched_patterns:
-            raise ValueError(
-                f"The following patterns in target_module_patterns did not match any modules: "
-                f"{sorted(unmatched_patterns)}"
-            )
-
-        return names_out
-
-    @staticmethod
-    def _create_components_and_gates(
-        model: nn.Module,
-        module_patterns: list[str],
-        C: int,
-        gate_type: GateType,
-        gate_hidden_dims: list[int],
-    ) -> tuple[dict[str, Components], dict[str, nn.Module]]:
-        components: dict[str, Components] = {}
-
-        gates: dict[str, nn.Module] = {}
-
-        module_paths = ComponentModel._get_target_module_paths(model, module_patterns)
-
-        # Deterministic, order-preserving deduplicated list (critical for DDP param order)
-        all_paths = list(dict.fromkeys(list(module_paths)))
-
-        for module_path in all_paths:
-            target_module = model.get_submodule(module_path)
-
-            assert isinstance(target_module, SUPPORTED_MODULES), (
-                f"Module {target_module} not supported"
-            )
-
-            match target_module:
-                case nn.Linear():
-                    d_out, d_in = target_module.weight.shape
-                    component = LinearComponents(
-                        C=C,
-                        d_in=d_in,
-                        d_out=d_out,
-                        bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
-                    )
-                case nn.Embedding():
-                    component = EmbeddingComponents(
-                        C=C,
-                        vocab_size=target_module.num_embeddings,
-                        embedding_dim=target_module.embedding_dim,
-                    )
-                case RadfordConv1D():
-                    d_in, d_out = target_module.weight.shape
-                    component = LinearComponents(
-                        C=C,
-                        d_in=d_in,
-                        d_out=d_out,
-                        bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
-                    )
-
-            components[module_path] = component
-
-            gates[module_path] = ComponentModel._create_gate(
-                target_module, C, gate_type, gate_hidden_dims
-            )
-
-        return components, gates
-
-    @staticmethod
-    def _create_gate(
-        target_module: nn.Module,
-        component_C: int,
-        gate_type: GateType,
-        gate_hidden_dims: list[int],
-    ) -> nn.Module:
-        """Helper to create a gate based on gate_type and module type."""
-        if gate_type == "mlp":
-            return GateMLPs(C=component_C, hidden_dims=gate_hidden_dims)
-        else:
-            assert gate_type in ["vector_mlp", "layerwise_global_mlp"], (
-                f"Unknown gate type: {gate_type}"
-            )
-            assert not isinstance(target_module, nn.Embedding), (
-                "Embedding modules only supported for gate_type='mlp'"
-            )
-            if isinstance(target_module, nn.Linear):
-                input_dim = target_module.weight.shape[1]
-            elif isinstance(target_module, RadfordConv1D):
-                input_dim = target_module.weight.shape[0]
-            else:
-                raise ValueError(f"Module {type(target_module)} not supported for {gate_type=}")
-
-            if gate_type == "vector_mlp":
-                return VectorGateMLPs(
-                    C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
-                )
-            else:
-                assert gate_type == "layerwise_global_mlp"
-                return LayerwiseGlobalGateMLP(
-                    C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
-                )
 
     @override
     def forward(
