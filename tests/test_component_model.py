@@ -15,12 +15,12 @@ from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import ComponentModel, SPDRunInfo, transform_key
 from spd.models.components import (
     EmbeddingComponents,
-    Linear,
     LinearComponents,
     MLPGates,
     ParallelLinear,
     VectorMLPGates,
     VectorSharedMLPGate,
+    make_mask_infos,
 )
 from spd.spd_types import ModelPath
 from spd.utils.run_utils import save_file
@@ -66,12 +66,11 @@ class SimpleTestModel(LoadableModule):
         return model
 
 
-@pytest.fixture(scope="function")
-def component_model() -> ComponentModel:
-    """Return a fresh ``ComponentModel`` for each test."""
+def test_correct_parameters_require_grad():
     target_model = SimpleTestModel()
     target_model.requires_grad_(False)
-    return ComponentModel(
+
+    component_model = ComponentModel(
         target_model=target_model,
         target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
         C=4,
@@ -80,8 +79,6 @@ def component_model() -> ComponentModel:
         pretrained_model_output_attr=None,
     )
 
-
-def test_correct_parameters_require_grad(component_model: ComponentModel):
     for module_path, components in component_model.components.items():
         assert components.U.requires_grad
         assert components.V.requires_grad
@@ -164,35 +161,7 @@ def test_from_run_info():
             torch.testing.assert_close(v, cm.state_dict()[k])
 
 
-def test_patch_modules_unsupported_component_type_raises() -> None:
-    model = SimpleTestModel()
-    model.requires_grad_(False)
-
-    with pytest.raises(ValueError):
-        ComponentModel._create_components(
-            target_model=model,
-            module_paths=["other_layer"],
-            C=2,
-        )
-
-
-@pytest.fixture(autouse=True)
-def _set_seed():  # pyright: ignore[reportUnusedFunction]
-    torch.manual_seed(0)
-    random.seed(0)
-
-
 class TinyTarget(nn.Module):
-    """
-    A tiny target network whose submodule names match simple glob patterns
-    so we can exercise ComponentModel's selection & replacement machinery.
-
-    Structure:
-      - embed: nn.Embedding
-      - mlp:   nn.Linear(d_in -> d_mid)
-      - out:   nn.Linear(d_mid -> d_out)
-    """
-
     def __init__(
         self,
         vocab_size: int = 7,
@@ -207,14 +176,12 @@ class TinyTarget(nn.Module):
 
     @override
     def forward(self, token_ids: Int[Tensor, "..."]) -> Float[Tensor, "..."]:
-        x = self.embed(token_ids)  # (..., d_emb)
-        x = self.mlp(x)  # (..., d_mid)
-        x = torch.tanh(x)
-        x = self.out(x)  # (..., d_out)
+        x = self.embed(token_ids)
+        x = self.mlp(x)
+        x = self.out(x)
         return x
 
 
-@pytest.fixture
 def tiny_target():
     tt = TinyTarget()
     tt.eval()
@@ -225,6 +192,18 @@ def tiny_target():
 BATCH_SIZE = 2
 
 
+def test_patch_modules_unsupported_component_type_raises() -> None:
+    model = SimpleTestModel()
+    model.requires_grad_(False)
+
+    with pytest.raises(ValueError):
+        ComponentModel._create_components(
+            target_model=model,
+            module_paths=["other_layer"],
+            C=2,
+        )
+
+
 def test_parallel_linear_shapes_and_forward():
     C = 3
     d_in = 4
@@ -233,15 +212,6 @@ def test_parallel_linear_shapes_and_forward():
     x = torch.randn(BATCH_SIZE, C, d_in)
     y = layer(x)
     assert y.shape == (BATCH_SIZE, C, d_out)
-
-
-def test_linear_shapes_and_forward():
-    d_in = 6
-    d_out = 3
-    layer = Linear(d_in, d_out, nonlinearity="linear")
-    x = torch.randn(BATCH_SIZE, d_in)
-    y = layer(x)
-    assert y.shape == (BATCH_SIZE, d_out)
 
 
 @pytest.mark.parametrize("hidden_dims", [[8], [4, 3]])
@@ -292,3 +262,92 @@ def test_vector_shared_mlp_gate(hidden_dims: list[int]):
 )
 def test_transform_key(key: str, expected: str):
     assert transform_key(key) == expected
+
+
+def test_full_weight_delta_matches_target_behaviour():
+    # GIVEN a component model
+    target_model = tiny_target()
+
+    target_module_paths = ["embed", "mlp", "out"]
+    cm = ComponentModel(
+        target_model=target_model,
+        target_module_patterns=target_module_paths,
+        C=4,
+        gate_type="mlp",
+        gate_hidden_dims=[4],
+        pretrained_model_output_attr=None,
+    )
+
+    token_ids = torch.randint(
+        low=0, high=target_model.embed.num_embeddings, size=(BATCH_SIZE,), dtype=torch.long
+    )
+
+    # WHEN we forward the component model with weight deltas and a weight delta mask of all 1s
+    weight_deltas = cm.weight_deltas()
+    component_masks = {name: torch.ones(BATCH_SIZE, cm.C) for name in target_module_paths}
+    weight_deltas_and_masks = {
+        name: (weight_deltas[name], torch.ones(BATCH_SIZE)) for name in target_module_paths
+    }
+    mask_infos = make_mask_infos(component_masks, weight_deltas_and_masks)
+    out = cm(token_ids, mode="components", mask_infos=mask_infos)
+
+    # THEN the output matches the target model's output
+    torch.testing.assert_close(out, target_model(token_ids))
+
+
+def test_input_cache_captures_pre_weight_input():
+    target_model = tiny_target()
+
+    # GIVEN a component model
+    target_module_paths = ["embed", "mlp"]
+
+    cm = ComponentModel(
+        target_model=target_model,
+        target_module_patterns=target_module_paths,
+        C=2,
+        gate_type="mlp",
+        gate_hidden_dims=[2],
+        pretrained_model_output_attr=None,
+    )
+
+    # WHEN we forward the component model with input caching
+    token_ids = torch.randint(
+        low=0,
+        high=target_model.embed.num_embeddings,
+        size=(BATCH_SIZE,),
+        dtype=torch.long,
+    )
+    out, cache = cm(token_ids, mode="input_cache", module_names=target_module_paths)
+
+    # Output isn't altered
+    torch.testing.assert_close(out, target_model(token_ids))
+
+    # Captured inputs match the true pre-weight inputs
+
+    assert cache["embed"].dtype == torch.long
+    assert torch.equal(cache["embed"], token_ids)
+    embed_out = target_model.embed(token_ids)
+
+    assert cache["mlp"].shape == (BATCH_SIZE, target_model.mlp.in_features)
+    torch.testing.assert_close(cache["mlp"], embed_out)
+
+
+def test_weight_deltas():
+    # GIVEN a component model
+    target_model = tiny_target()
+    target_module_paths = ["embed", "mlp", "out"]
+    cm = ComponentModel(
+        target_model=target_model,
+        target_module_patterns=target_module_paths,
+        C=3,
+        gate_type="mlp",
+        gate_hidden_dims=[2],
+        pretrained_model_output_attr=None,
+    )
+
+    # THEN the weight deltas match the target weight
+    deltas = cm.weight_deltas()
+    for name in target_module_paths:
+        target_w = cm.target_weight(name)
+        comp_w = cm.components[name].weight
+        torch.testing.assert_close(target_w, comp_w + deltas[name])
