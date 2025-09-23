@@ -9,7 +9,7 @@ from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import (
     calc_stochastic_component_mask_info,
-    sample_uniform_k_stochastic_routing_masks,
+    sample_uniform_k_subset_routing_masks,
 )
 from spd.utils.general_utils import calc_kl_divergence_lm
 
@@ -240,9 +240,9 @@ def calculate_losses(
         total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
         loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
 
-    # CI reconstruction routed loss
-    if config.ci_recon_routed_coeff is not None:
-        routing_masks = sample_uniform_k_stochastic_routing_masks(
+    # CI subset reconstruction loss
+    if config.ci_recon_subset_coeff is not None:
+        subset_routing_masks = sample_uniform_k_subset_routing_masks(
             mask_shape=next(iter(causal_importances.values())).shape[:-1],
             modules=list(causal_importances.keys()),
             device=device,
@@ -250,11 +250,11 @@ def calculate_losses(
 
         mask_infos = make_mask_infos(
             component_masks=causal_importances,
-            routing_masks=routing_masks,
+            routing_masks=subset_routing_masks,
             weight_deltas_and_masks=None,
         )
 
-        ci_recon_routed_loss = calc_masked_recon_loss(
+        ci_recon_subset_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
             mask_infos_list=[mask_infos],
@@ -262,11 +262,11 @@ def calculate_losses(
             loss_type=config.output_loss_type,
             device=device,
         )
-        total_loss += config.ci_recon_routed_coeff * ci_recon_routed_loss
-        loss_terms["ci_recon_routed"] = ci_recon_routed_loss.item()
+        total_loss += config.ci_recon_subset_coeff * ci_recon_subset_loss
+        loss_terms["ci_recon_subset"] = ci_recon_subset_loss.item()
 
-    # Stochastic reconstruction routed loss
-    if config.stochastic_recon_routed_coeff is not None:
+    # Stochastic reconstruction subset loss
+    if config.stochastic_recon_subset_coeff is not None:
         stoch_mask_infos_list = [
             calc_stochastic_component_mask_info(
                 causal_importances=causal_importances,
@@ -276,7 +276,7 @@ def calculate_losses(
             )
             for _ in range(config.n_mask_samples)
         ]
-        stochastic_recon_routed_loss = calc_masked_recon_loss(
+        stochastic_recon_subset_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
             mask_infos_list=stoch_mask_infos_list,
@@ -284,8 +284,8 @@ def calculate_losses(
             loss_type=config.output_loss_type,
             device=device,
         )
-        total_loss += config.stochastic_recon_routed_coeff * stochastic_recon_routed_loss
-        loss_terms["stochastic_recon_routed"] = stochastic_recon_routed_loss.item()
+        total_loss += config.stochastic_recon_subset_coeff * stochastic_recon_subset_loss
+        loss_terms["stochastic_recon_subset"] = stochastic_recon_subset_loss.item()
 
     # Importance minimality loss
     pnorm_value = current_p if current_p is not None else config.pnorm

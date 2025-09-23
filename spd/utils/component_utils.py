@@ -38,7 +38,7 @@ def rand_perm(shape: tuple[int, ...], dim: int, device: torch.device | str) -> I
     return noise.argsort(dim=dim).argsort(dim=dim)
 
 
-def sample_uniform_k_stochastic_routing_masks(
+def sample_uniform_k_subset_routing_masks(
     mask_shape: tuple[int, ...],
     modules: list[str],
     device: torch.device | str,
@@ -90,7 +90,7 @@ def calc_stochastic_component_mask_info(
 
     match routing:
         case "uniform_k-stochastic":
-            routing_masks = sample_uniform_k_stochastic_routing_masks(
+            routing_masks = sample_uniform_k_subset_routing_masks(
                 leading_dims,
                 list(causal_importances.keys()),
                 device,
