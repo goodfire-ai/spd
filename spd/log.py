@@ -15,7 +15,7 @@ import shutil
 from collections.abc import Mapping
 from logging.config import dictConfig
 from pathlib import Path
-from typing import Literal, override
+from typing import Literal
 
 DEFAULT_LOGFILE: Path = Path(__file__).resolve().parent.parent / "logs" / "logs.log"
 
@@ -86,26 +86,6 @@ class _SPDLogger(logging.Logger):
             )
 
 
-class MainProcessFilter(logging.Filter):
-    """Filter that allows records only from the main process (rank 0).
-
-    By default, WARNING and above are allowed from all ranks to avoid hiding
-    important signals; INFO/DEBUG are emitted only on rank 0.
-    """
-
-    def __init__(self, allow_warnings_errors_all_ranks: bool = True) -> None:
-        super().__init__()
-        self.allow_warnings_errors_all_ranks = allow_warnings_errors_all_ranks
-
-    @override
-    def filter(self, record: logging.LogRecord) -> bool:
-        from spd.utils.distributed_utils import is_main_process
-
-        return is_main_process() or (
-            self.allow_warnings_errors_all_ranks and record.levelno >= logging.WARNING
-        )
-
-
 def setup_logger(logfile: Path = DEFAULT_LOGFILE) -> _SPDLogger:
     """Setup a logger to be used in all modules in the library.
 
@@ -130,25 +110,17 @@ def setup_logger(logfile: Path = DEFAULT_LOGFILE) -> _SPDLogger:
     logging_config = {
         "version": 1,
         "formatters": _FORMATTERS,
-        "filters": {
-            "main_process": {
-                "()": "spd.log.MainProcessFilter",
-                "allow_warnings_errors_all_ranks": True,
-            }
-        },
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",
                 "formatter": "default",
                 "level": "INFO",
-                "filters": ["main_process"],
             },
             "file": {
                 "class": "logging.FileHandler",
                 "filename": str(logfile),
                 "formatter": "default",
                 "level": "WARNING",
-                "filters": ["main_process"],
             },
         },
         "loggers": {

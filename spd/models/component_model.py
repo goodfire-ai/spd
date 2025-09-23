@@ -434,15 +434,15 @@ class ComponentModel(LoadableModule):
                 "defines a `from_pretrained` method"
             )
             assert run_info.config.pretrained_model_path is not None
-            target_model = model_class.from_pretrained(
-                run_info.config.pretrained_model_path
-            )
+            target_model = model_class.from_pretrained(run_info.config.pretrained_model_path)
 
         target_model.eval()
         target_model.requires_grad_(False)
 
         if config.identity_module_patterns is not None:
-            insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+            insert_identity_operations_(
+                target_model, identity_patterns=config.identity_module_patterns
+            )
 
         comp_model = ComponentModel(
             target_model=target_model,

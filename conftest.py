@@ -4,15 +4,12 @@ Taken from https://docs.pytest.org/en/latest/example/simple.html.
 """
 
 import os
-import random
 from collections.abc import Iterable
 from netrc import netrc
 from pathlib import Path
 from urllib.parse import urlparse
 
-import numpy as np
 import pytest
-import torch
 from pytest import Config, Item, Parser
 
 

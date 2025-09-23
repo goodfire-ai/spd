@@ -148,9 +148,10 @@ def test_from_run_info():
             ),
         )
 
-
         if config.identity_module_patterns is not None:
-            insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+            insert_identity_operations_(
+                target_model, identity_patterns=config.identity_module_patterns
+            )
 
         cm = ComponentModel(
             target_model=target_model,
