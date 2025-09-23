@@ -20,8 +20,10 @@ from tqdm import tqdm
 
 from spd.configs import Config
 from spd.data import loop_dataloader
+from spd.eval import evaluate
 from spd.log import logger
-from spd.losses import calc_weight_deltas, compute_total_loss
+from spd.losses import compute_total_loss
+from spd.metrics import calc_weight_deltas
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
@@ -222,7 +224,6 @@ def optimize(
                 target_out=target_out,
                 weight_deltas=weight_deltas,
                 device=device,
-                current_p=current_p,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
@@ -281,15 +282,14 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
-                metrics = {}
-                # metrics = evaluate(
-                #     model=component_model,  # No backward passes so DDP wrapped_model not needed
-                #     eval_iterator=eval_iterator,
-                #     device=device,
-                #     config=config,
-                #     run_slow=run_slow,
-                #     n_steps=n_eval_steps,
-                # )
+                metrics = evaluate(
+                    model=component_model,  # No backward passes so DDP wrapped_model not needed
+                    eval_iterator=eval_iterator,
+                    device=device,
+                    config=config,
+                    run_slow=run_slow,
+                    n_steps=n_eval_steps,
+                )
 
                 if is_distributed():
                     metrics = avg_eval_metrics_across_ranks(metrics, device=device)

@@ -3,7 +3,7 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.losses import calc_faithfulness_loss, calc_weight_deltas
+from spd.metrics import calc_faithfulness_loss, calc_weight_deltas
 from spd.models.component_model import ComponentModel
 
 
