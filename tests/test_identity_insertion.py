@@ -150,36 +150,3 @@ def test_unmatched_pattern_raises_error():
     with pytest.raises(ValueError, match="did not match any modules"):
         insert_identity_operations_(target_model=model, identity_patterns=["does.not.exist*"])
 
-
-# this test is a WIP
-def test_hook_ordering():
-    target_model = SimpleModel(d_model=32).to(DEVICE)
-
-    for param in target_model.parameters():
-        param.requires_grad_(False)
-
-    insert_identity_operations_(target_model, identity_patterns=["layer1"])
-
-    C = 4
-
-    cm: ComponentModel = ComponentModel(
-        target_model,
-        target_module_patterns=["layer1", "layer1.pre_identity"],
-        C=C,
-        gate_type="mlp",
-        gate_hidden_dims=[4],
-        pretrained_model_output_attr=None,
-    )
-
-    x = random_input()
-
-    cm(
-        x,
-        mode="components",
-        mask_infos={
-            "layer1.pre_identity": ComponentsMaskInfo(
-                component_mask=torch.ones(BATCH_SIZE, SEQ_LEN, C, device=DEVICE),
-                weight_delta_and_mask=None,
-            ),
-        },
-    )
