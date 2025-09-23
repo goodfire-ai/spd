@@ -446,7 +446,7 @@ class ComponentModel(LoadableModule):
 
         comp_model = ComponentModel(
             target_model=target_model,
-            target_module_patterns=config.all_module_patterns(),
+            target_module_patterns=config.all_module_patterns,
             C=config.C,
             gate_hidden_dims=config.gate_hidden_dims,
             gate_type=config.gate_type,

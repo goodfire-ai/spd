@@ -155,7 +155,7 @@ def test_from_run_info():
 
         cm = ComponentModel(
             target_model=target_model,
-            target_module_patterns=config.all_module_patterns(),
+            target_module_patterns=config.all_module_patterns,
             C=config.C,
             gate_type=config.gate_type,
             gate_hidden_dims=config.gate_hidden_dims,

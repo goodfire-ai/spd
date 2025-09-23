@@ -126,6 +126,7 @@ class Config(BaseModel):
         "matrix should be inserted and decomposed beforehand",
     )
 
+    @property
     def all_module_patterns(self):
         if self.identity_module_patterns is None:
             return self.target_module_patterns
