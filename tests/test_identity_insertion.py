@@ -150,6 +150,7 @@ def test_unmatched_pattern_raises_error():
         insert_identity_operations_(target_model=model, identity_patterns=["does.not.exist*"])
 
 
+# this test is a WIP
 def test_hook_ordering():
     target_model = SimpleModel(d_model=32).to(DEVICE)
 
@@ -181,36 +182,3 @@ def test_hook_ordering():
             ),
         },
     )
-
-
-# def test_pre_identity_hook_modifies_input_as_expected():
-#     class VecModel(nn.Module):
-#         def __init__(self, d: int = 12):
-#             super().__init__()
-#             self.layer = nn.Linear(d, d, bias=False)
-
-#         @override
-#         def forward(self, x: torch.Tensor) -> torch.Tensor:
-#             return self.layer(x)
-
-#     torch.manual_seed(7)
-#     model = VecModel(d=12).to(DEVICE)
-#     model.eval()
-
-#     x = torch.randn(4, 12, device=DEVICE)
-
-#     with torch.no_grad():
-#         base = model(x)
-
-#     insert_identity_operations_(model, identity_patterns=["layer"])
-
-#     # Now scale pre-identity to 2I and check effect matches manual expectation
-#     with torch.no_grad():
-#         cast(nn.Linear, model.layer.pre_identity).weight.mul_(2.0)
-
-#     with torch.no_grad():
-#         modified = model(x)
-
-#     assert_close(modified, base * 2.0, atol=1e-6, rtol=1e-6)
-
-    print()
