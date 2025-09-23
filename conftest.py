@@ -53,13 +53,6 @@ def _have_wandb_credentials() -> bool:
         return False
 
 
-@pytest.fixture(autouse=True)
-def set_seed():
-    torch.manual_seed(42)
-    random.seed(42)
-    np.random.seed(42)
-
-
 def pytest_collection_modifyitems(config: Config, items: Iterable[Item]) -> None:
     runslow = config.getoption("--runslow")
     have_wandb = _have_wandb_credentials()

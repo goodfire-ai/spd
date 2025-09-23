@@ -15,6 +15,7 @@ from transformers.modeling_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
 from spd.configs import Config
+from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
     Components,
@@ -30,7 +31,6 @@ from spd.models.components import (
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class
-from spd.utils.identity_insertion import insert_identity_operations_
 from spd.utils.module_utils import get_target_module_paths
 from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
@@ -122,9 +122,7 @@ class ComponentModel(LoadableModule):
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
-        assert isinstance(target_module, nn.Linear | nn.Embedding | RadfordConv1D | Identity), (
-            f"Module {target_module} not supported"
-        )
+
         match target_module:
             case RadfordConv1D():
                 return target_module.weight.T
@@ -133,15 +131,14 @@ class ComponentModel(LoadableModule):
             case Identity():
                 p = next(self.parameters())
                 return torch.eye(target_module.d, device=p.device, dtype=p.dtype)
+            case _:
+                raise ValueError(f"Module {target_module} not supported")
 
     @staticmethod
     def _create_component(
         target_module: nn.Module,
         C: int,
     ) -> Components:
-        if not isinstance(target_module, nn.Linear | nn.Embedding | RadfordConv1D | Identity):
-            raise ValueError(f"Module {target_module} not supported")
-
         match target_module:
             case nn.Linear():
                 d_out, d_in = target_module.weight.shape
@@ -150,12 +147,6 @@ class ComponentModel(LoadableModule):
                     d_in=d_in,
                     d_out=d_out,
                     bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
-                )
-            case nn.Embedding():
-                component = EmbeddingComponents(
-                    C=C,
-                    vocab_size=target_module.num_embeddings,
-                    embedding_dim=target_module.embedding_dim,
                 )
             case RadfordConv1D():
                 d_in, d_out = target_module.weight.shape
@@ -172,6 +163,14 @@ class ComponentModel(LoadableModule):
                     d_out=target_module.d,
                     bias=None,
                 )
+            case nn.Embedding():
+                component = EmbeddingComponents(
+                    C=C,
+                    vocab_size=target_module.num_embeddings,
+                    embedding_dim=target_module.embedding_dim,
+                )
+            case _:
+                raise ValueError(f"Module {target_module} not supported")
 
         return component
 
@@ -213,7 +212,9 @@ class ComponentModel(LoadableModule):
 
         match gate_type:
             case "vector_mlp":
-                return VectorMLPGates(C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
+                return VectorMLPGates(
+                    C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+                )
             case "shared_mlp":
                 return VectorSharedMLPGate(
                     C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
@@ -284,7 +285,7 @@ class ComponentModel(LoadableModule):
             mode: The type of forward pass to perform:
                 - 'target': Standard forward pass of the target model
                 - 'components': Forward with component replacements (requires masks)
-                - 'input_cache': Forward with pre-forward caching (requires module_names)
+                - 'input_cache': Forward with input caching (requires module_names)
             mask_infos: Dictionary mapping module names to ComponentsMaskInfo
                 (required for mode='components').
             module_names: List of module names to cache inputs for
@@ -304,10 +305,10 @@ class ComponentModel(LoadableModule):
             return self._extract_output(self.target_model(*args, **kwargs))
 
     @contextmanager
-    def _component_forward_hooks(
+    def _attach_forward_hooks(
         self, hooks: dict[str, Callable[..., Any]]
     ) -> Generator[None, None, None]:
-        """Temporarily override selected modules with component outputs via forward hooks."""
+        """Context manager to temporarily attach forward hooks to the target model."""
         handles: list[RemovableHandle] = []
         for module_name, hook in hooks.items():
             target_module = self.target_model.get_submodule(module_name)
@@ -343,7 +344,7 @@ class ComponentModel(LoadableModule):
             x = args[0]
             assert isinstance(x, Tensor), "Expected input tensor"
 
-            components_out = components.forward(
+            components_out = components(
                 x,
                 mask=mask_info.component_mask,
                 weight_delta_and_mask=mask_info.weight_delta_and_mask,
@@ -356,7 +357,7 @@ class ComponentModel(LoadableModule):
             components = self.components[module_name]
             hooks[module_name] = partial(fwd_hook, components=components, mask_info=mask_info)
 
-        with self._component_forward_hooks(hooks):
+        with self._attach_forward_hooks(hooks):
             raw_out = self.target_model(*args, **kwargs)
 
         return self._extract_output(raw_out)
@@ -389,7 +390,7 @@ class ComponentModel(LoadableModule):
         hooks = {
             module_name: partial(cache_hook, param_name=module_name) for module_name in module_names
         }
-        with self._component_forward_hooks(hooks):
+        with self._attach_forward_hooks(hooks):
             raw_out = self.target_model(*args, **kwargs)
 
         out = self._extract_output(raw_out)
@@ -426,25 +427,25 @@ class ComponentModel(LoadableModule):
             assert hasattr(model_class, "from_pretrained"), (
                 f"Model class {model_class} should have a `from_pretrained` method"
             )
-            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
+            target_model = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
         else:
             assert issubclass(model_class, LoadableModule), (
                 f"Model class {model_class} should be a subclass of LoadableModule which "
                 "defines a `from_pretrained` method"
             )
             assert run_info.config.pretrained_model_path is not None
-            target_model_unpatched = model_class.from_pretrained(
+            target_model = model_class.from_pretrained(
                 run_info.config.pretrained_model_path
             )
 
-        target_model_unpatched.eval()
-        target_model_unpatched.requires_grad_(False)
+        target_model.eval()
+        target_model.requires_grad_(False)
 
-        if (identity_patterns := config.identity_module_patterns) is not None:
-            insert_identity_operations_(target_model_unpatched, identity_patterns=identity_patterns)
+        if config.identity_module_patterns is not None:
+            insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
         comp_model = ComponentModel(
-            target_model=target_model_unpatched,
+            target_model=target_model,
             target_module_patterns=config.all_module_patterns(),
             C=config.C,
             gate_hidden_dims=config.gate_hidden_dims,
@@ -492,12 +493,13 @@ class ComponentModel(LoadableModule):
             acts = pre_weight_acts[param_name]
             gates = self.gates[param_name]
 
-            if isinstance(gates, MLPGates):
-                gate_input = self.components[param_name].get_inner_acts(acts)
-            elif isinstance(gates, VectorMLPGates | VectorSharedMLPGate):
-                gate_input = acts
-            else:
-                raise ValueError(f"Unknown gate type: {type(gates)}")
+            match gates:
+                case MLPGates():
+                    gate_input = self.components[param_name].get_inner_acts(acts)
+                case VectorMLPGates() | VectorSharedMLPGate():
+                    gate_input = acts
+                case _:
+                    raise ValueError(f"Unknown gate type: {type(gates)}")
 
             if detach_inputs:
                 gate_input = gate_input.detach()
@@ -523,7 +525,7 @@ class ComponentModel(LoadableModule):
 
         return causal_importances, causal_importances_upper_leaky
 
-    def weight_deltas(self) -> dict[str, Float[Tensor, " d_out d_in"]]:
+    def calc_weight_deltas(self) -> dict[str, Float[Tensor, " d_out d_in"]]:
         """Calculate the weight differences between the target and component weights (V@U) for each layer."""
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
         for comp_name, components in self.components.items():
@@ -531,7 +533,7 @@ class ComponentModel(LoadableModule):
         return weight_deltas
 
 
-def transform_key(key: str) -> str:
+def _transform_key(key: str) -> str:
     key = key[:]  # make a copy
 
     # do this first to simplify the rest. All following logic assumes "target_model" naming convention
@@ -561,8 +563,12 @@ def transform_key(key: str) -> str:
 
 
 def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
+    """Maps deprecated state dict keys to new state dict keys
+    old: used nested ComponentsOrModule wrappers
+    new: uses a single ModuleDict for all components
+    """
     for key in list(state_dict.keys()):
-        new_key = transform_key(key)
+        new_key = _transform_key(key)
         if new_key == key:
             continue
         assert new_key not in state_dict, f"Renamed key {key} already exists in state_dict"

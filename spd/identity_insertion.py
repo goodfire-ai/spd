@@ -1,12 +1,13 @@
 """Insert identity operations into models, before specified modules.
 
-This works by inserting a Linear layer initialized as the identity matrix, as a property on the module, then adding a
-forward pre-hook to the module that multiplies the input by the identity matrix.
+This works by inserting an Identity layer, as a property on the module, then adding a
+forward pre-hook to the module that calls it before the forward pass.
 
-This allows downstream functionality to act as if the identity matrix is just a regular part of the model.
+This allows downstream functionality to act as if the identity operation is just a regular part of
+the model, namely, allowing us to decompose the identity operation.
 """
 
-from typing import Any, Literal
+from typing import Any
 
 import torch.nn as nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
@@ -33,10 +34,6 @@ def pre_id_hook(
     return (mod.pre_identity(args[0]),), {}
 
 
-InputType = Literal["tokens"] | tuple[Literal["vector"], int]
-"""'tokens' implies (batch, seq) of integer tokens. ('vector', d_in) implies (batch, d_in) of floats."""
-
-
 def insert_identity_operations_(target_model: nn.Module, identity_patterns: list[str]) -> None:
     """Insert identity layers before specified modules.
 
@@ -53,9 +50,6 @@ def insert_identity_operations_(target_model: nn.Module, identity_patterns: list
     # Add identity layers and hooks
     for module_path in identity_module_paths:
         module = target_model.get_submodule(module_path)
-        assert isinstance(module, nn.Linear | nn.Embedding | RadfordConv1D), (
-            f"Module {module} not supported. type: {type(module)}"
-        )
 
         match module:
             case nn.Linear():
@@ -64,9 +58,10 @@ def insert_identity_operations_(target_model: nn.Module, identity_patterns: list
                 d_in, _ = module.weight.shape
             case nn.Embedding():
                 raise ValueError("Embedding modules not supported for identity insertion")
+            case _:
+                raise ValueError(f"Module {module} not supported. type: {type(module)}")
 
         module.pre_identity = Identity(d_in)  # type: ignore
-
         module.register_forward_pre_hook(pre_id_hook, with_kwargs=True)
 
         if is_main_process():

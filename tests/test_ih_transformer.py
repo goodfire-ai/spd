@@ -1,10 +1,10 @@
 from spd.configs import Config, EvalMetricConfig
 from spd.experiments.ih.configs import IHTaskConfig, InductionModelConfig
 from spd.experiments.ih.model import InductionTransformer
+from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import set_seed
-from spd.utils.identity_insertion import insert_identity_operations_
 
 
 def test_ih_transformer_decomposition_happy_path() -> None:
@@ -87,8 +87,8 @@ def test_ih_transformer_decomposition_happy_path() -> None:
     target_model.eval()
     target_model.requires_grad_(False)
 
-    if (identity_patterns := config.identity_module_patterns) is not None:
-        insert_identity_operations_(target_model, identity_patterns=identity_patterns)
+    if config.identity_module_patterns is not None:
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
     dataset = InductionDataset(
         seq_len=ih_transformer_config.seq_len,

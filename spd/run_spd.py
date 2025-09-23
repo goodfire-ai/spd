@@ -21,6 +21,7 @@ from tqdm import tqdm
 from spd.configs import Config
 from spd.data import loop_dataloader
 from spd.eval import evaluate
+from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
@@ -40,7 +41,6 @@ from spd.utils.general_utils import (
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
-from spd.utils.identity_insertion import insert_identity_operations_
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
@@ -94,8 +94,8 @@ def optimize(
     if is_main_process():
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
-    if (identity_patterns := config.identity_module_patterns) is not None:
-        insert_identity_operations_(target_model, identity_patterns=identity_patterns)
+    if config.identity_module_patterns is not None:
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
     target_model.requires_grad_(False)
 
@@ -185,7 +185,7 @@ def optimize(
         current_p = config.pnorm  # Initialize with default value
 
         for _ in range(config.gradient_accumulation_steps):
-            weight_deltas = component_model.weight_deltas()
+            weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(

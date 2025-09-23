@@ -46,7 +46,7 @@ class TestCalcWeightDeltas:
         model = _make_component_model(weight=fc_weight)
         _zero_components_for_test(model)
 
-        deltas = model.weight_deltas()
+        deltas = model.calc_weight_deltas()
 
         assert set(deltas.keys()) == {"fc"}
 
@@ -59,7 +59,7 @@ class TestCalcWeightDeltas:
         fc_weight = torch.tensor([[1.0, -2.0, 0.5], [0.0, 3.0, -1.0]], dtype=torch.float32)
         model = _make_component_model(weight=fc_weight)
 
-        deltas = model.weight_deltas()
+        deltas = model.calc_weight_deltas()
         assert set(deltas.keys()) == {"fc"}
 
         component = model.components["fc"]
@@ -83,7 +83,7 @@ class TestCalcFaithfulnessLoss:
         fc_weight = torch.tensor([[1.0, 0.0, -1.0], [2.0, 3.0, -4.0]], dtype=torch.float32)
         model = _make_component_model(weight=fc_weight)
         _zero_components_for_test(model)
-        deltas = model.weight_deltas()
+        deltas = model.calc_weight_deltas()
 
         # Expected: mean of squared entries across both matrices
         expected = fc_weight.square().sum() / fc_weight.numel()

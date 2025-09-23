@@ -10,8 +10,13 @@ from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.configs import Config
 from spd.experiments.tms.configs import TMSTaskConfig
+from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
-from spd.models.component_model import ComponentModel, SPDRunInfo, transform_key
+from spd.models.component_model import (
+    ComponentModel,
+    SPDRunInfo,
+    handle_deprecated_state_dict_keys_,
+)
 from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
@@ -23,7 +28,6 @@ from spd.models.components import (
     make_mask_infos,
 )
 from spd.spd_types import ModelPath
-from spd.utils.identity_insertion import insert_identity_operations_
 from spd.utils.run_utils import save_file
 
 
@@ -144,8 +148,9 @@ def test_from_run_info():
             ),
         )
 
-        if (identity_patterns := config.identity_module_patterns) is not None:
-            insert_identity_operations_(target_model, identity_patterns=identity_patterns)
+
+        if config.identity_module_patterns is not None:
+            insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
         cm = ComponentModel(
             target_model=target_model,
@@ -266,8 +271,11 @@ def test_vector_shared_mlp_gate(hidden_dims: list[int]):
         ["target_model.a.b.c.weight", "target_model.a.b.c.weight"],
     ],
 )
-def test_transform_key(key: str, expected: str):
-    assert transform_key(key) == expected
+def test_handle_deprecated_state_dict_keys_(key: str, expected: str):
+    input_dict = {key: torch.tensor([])}
+    handle_deprecated_state_dict_keys_(input_dict)
+    expected_dict = {expected: torch.tensor([])}
+    assert input_dict.keys() == expected_dict.keys()
 
 
 def test_full_weight_delta_matches_target_behaviour():
@@ -289,7 +297,7 @@ def test_full_weight_delta_matches_target_behaviour():
     )
 
     # WHEN we forward the component model with weight deltas and a weight delta mask of all 1s
-    weight_deltas = cm.weight_deltas()
+    weight_deltas = cm.calc_weight_deltas()
     component_masks = {name: torch.ones(BATCH_SIZE, cm.C) for name in target_module_paths}
     weight_deltas_and_masks = {
         name: (weight_deltas[name], torch.ones(BATCH_SIZE)) for name in target_module_paths
@@ -352,7 +360,7 @@ def test_weight_deltas():
     )
 
     # THEN the weight deltas match the target weight
-    deltas = cm.weight_deltas()
+    deltas = cm.calc_weight_deltas()
     for name in target_module_paths:
         target_w = cm.target_weight(name)
         comp_w = cm.components[name].weight

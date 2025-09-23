@@ -7,7 +7,7 @@ from torch import Tensor
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
-from spd.utils.component_utils import calc_stochastic_component_mask_infos
+from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -182,12 +182,14 @@ def calculate_losses(
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
-        stoch_mask_infos_list = calc_stochastic_component_mask_infos(
-            causal_importances=causal_importances,
-            sampling=config.sampling,
-            weight_deltas=weight_deltas if config.use_delta_component else None,
-            n_mask_samples=config.n_mask_samples,
-        )
+        stoch_mask_infos_list = [
+            calc_stochastic_component_mask_info(
+                causal_importances=causal_importances,
+                sampling=config.sampling,
+                weight_deltas=weight_deltas if config.use_delta_component else None,
+            )
+            for _ in range(config.n_mask_samples)
+        ]
         stochastic_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
@@ -214,12 +216,14 @@ def calculate_losses(
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
-        stoch_mask_infos_list = calc_stochastic_component_mask_infos(
-            causal_importances=causal_importances,
-            sampling=config.sampling,
-            weight_deltas=weight_deltas if config.use_delta_component else None,
-            n_mask_samples=config.n_mask_samples,
-        )
+        stoch_mask_infos_list = [
+            calc_stochastic_component_mask_info(
+                causal_importances=causal_importances,
+                sampling=config.sampling,
+                weight_deltas=weight_deltas if config.use_delta_component else None,
+            )
+            for _ in range(config.n_mask_samples)
+        ]
         stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,

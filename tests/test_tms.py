@@ -7,10 +7,10 @@ from spd.configs import Config
 from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.experiments.tms.train_tms import get_model_and_dataloader, train
+from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.general_utils import set_seed
-from spd.utils.identity_insertion import insert_identity_operations_
 
 
 def test_tms_decomposition_happy_path() -> None:
@@ -85,8 +85,8 @@ def test_tms_decomposition_happy_path() -> None:
     target_model = TMSModel(config=tms_model_config).to(device)
     target_model.eval()
 
-    if (identity_patterns := config.identity_module_patterns) is not None:
-        insert_identity_operations_(target_model, identity_patterns=identity_patterns)
+    if config.identity_module_patterns is not None:
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
     assert isinstance(config.task_config, TMSTaskConfig)
     # Create dataset

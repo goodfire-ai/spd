@@ -2,10 +2,10 @@ from spd.configs import Config
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
+from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.general_utils import set_seed
-from spd.utils.identity_insertion import insert_identity_operations_
 
 
 def test_resid_mlp_decomposition_happy_path() -> None:
@@ -83,8 +83,8 @@ def test_resid_mlp_decomposition_happy_path() -> None:
     target_model = ResidMLP(config=resid_mlp_model_config).to(device)
     target_model.requires_grad_(False)
 
-    if (identity_patterns := config.identity_module_patterns) is not None:
-        insert_identity_operations_(target_model, identity_patterns=identity_patterns)
+    if config.identity_module_patterns is not None:
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
     assert isinstance(config.task_config, ResidMLPTaskConfig)
     # Create dataset
