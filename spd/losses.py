@@ -10,6 +10,7 @@ from spd.configs import Config
 from spd.mask_info import ComponentsMaskInfo, WeightDeltaAndMask, make_mask_infos
 from spd.models.component_model import ComponentModel
 from spd.models.components import Components, ComponentsOrModule, EmbeddingComponents
+from spd.models.sigmoids import SigmoidTypes
 from spd.utils.component_utils import calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm
 
@@ -159,7 +160,16 @@ def calc_masked_recon_layerwise_loss(
             if loss_type == "mse":
                 loss = ((modified_out - target_out) ** 2).mean()
             else:
-                loss = calc_kl_divergence_lm(pred=modified_out, target=target_out)
+                # loss = calc_kl_divergence_lm(pred=modified_out, target=target_out)
+                masked_batch = batch.clone()
+                masked_batch[:, 0] = -100  # F.cross_entropy ignores -99
+                flat_masked_batch = masked_batch.flatten()
+                flat_modified_out = einops.rearrange(
+                    modified_out, "b seq_len vocab -> (b seq_len) vocab"
+                )
+                loss = F.cross_entropy(
+                    flat_modified_out[:-1], flat_masked_batch[1:], ignore_index=-100
+                )
             total_loss += loss
     n_modified_components = len(mask_infos_list[0])
     n_stochastic_sources = len(mask_infos_list)
@@ -199,8 +209,77 @@ def calc_masked_recon_loss(
         if loss_type == "mse":
             loss = ((out - target_out) ** 2).mean()
         else:
-            loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            # loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            masked_batch = batch.clone()
+            masked_batch[:, 0] = -100  # F.cross_entropy ignores -99
+            flat_masked_batch = masked_batch.flatten()
+            flat_out = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
+            loss = F.cross_entropy(flat_out[:-1], flat_masked_batch[1:], ignore_index=-100)
         total_loss += loss
+
+    return total_loss / len(mask_infos_list)
+
+
+def calc_causal_importance_mse(
+    model: ComponentModel,
+    batch: Int[Tensor, "..."],
+    mask_infos_list: list[dict[str, ComponentsMaskInfo]],
+    target_causal_importances: dict[str, Float[Tensor, "... C"]],
+    sigmoid_type: SigmoidTypes,
+    sampling: Literal["continuous", "binomial"],
+    device: str,
+) -> Float[Tensor, ""]:
+    """Calculate MSE between SPD-forward causal importances and target causal importances.
+
+    For each mask configuration, run a components-masked forward pass while caching the
+    pre-weight activations at each decomposed module. Use these activations to compute the
+    SPD causal importances, then take MSE vs the provided target causal importances, and
+    average across modules and mask samples.
+
+    Args:
+        model: Component model
+        batch: Input batch
+        mask_infos_list: List of mask_infos dicts (one per stochastic sample)
+        target_causal_importances: Target-model causal importances, keyed by module name
+        sigmoid_type: Sigmoid type to use when computing causal importances
+        sampling: Sampling mode for binomial vs continuous
+        device: Device to compute on
+
+    Returns:
+        Scalar MSE averaged across modules and mask samples
+    """
+    total_loss = torch.tensor(0.0, device=device)
+    module_names = list(model.components.keys())
+
+    for mask_infos in mask_infos_list:
+        # Run SPD forward with components active and cache pre-weight activations
+        _, spd_pre_weight_acts = model(
+            batch,
+            mode="components_pre_forward_cache",
+            mask_infos=mask_infos,
+            module_names=module_names,
+        )
+
+        spd_causal_importances, _ = model.calc_causal_importances(
+            pre_weight_acts=spd_pre_weight_acts,
+            sigmoid_type=sigmoid_type,
+            detach_inputs=False,
+            sampling=sampling,
+        )
+
+        per_mask_loss = torch.tensor(0.0, device=device)
+        n_modules = 0
+        for name, target_ci in target_causal_importances.items():
+            if name not in spd_causal_importances:
+                continue
+            diff = spd_causal_importances[name] - target_ci.detach()
+            per_mask_loss = per_mask_loss + (diff.square()).mean()
+            n_modules += 1
+
+        if n_modules > 0:
+            per_mask_loss = per_mask_loss / n_modules
+
+        total_loss = total_loss + per_mask_loss
 
     return total_loss / len(mask_infos_list)
 
@@ -342,6 +421,22 @@ def calculate_losses(
         )
         total_loss += config.recon_layerwise_coeff * recon_layerwise_loss
         loss_terms["recon_layerwise"] = recon_layerwise_loss.item()
+
+    # Causal-importance MSE loss (between SPD and target-model CIs)
+    if getattr(config, "causal_importance_mse_coeff", None) is not None:
+        ci_mask_infos = make_mask_infos(causal_importances, None)
+        ci_mse_loss = calc_causal_importance_mse(
+            model=model,
+            batch=batch,
+            mask_infos_list=[ci_mask_infos],
+            target_causal_importances=causal_importances,
+            sigmoid_type=config.sigmoid_type,
+            sampling=config.sampling,
+            device=device,
+        )
+        assert config.causal_importance_mse_coeff is not None
+        total_loss += config.causal_importance_mse_coeff * ci_mse_loss
+        loss_terms["causal_importance_mse"] = ci_mse_loss.item()
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
