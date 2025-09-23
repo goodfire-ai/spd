@@ -96,17 +96,12 @@ def optimize(
 
     if (identity_patterns := config.identity_module_patterns) is not None:
         insert_identity_operations_(target_model, identity_patterns=identity_patterns)
-    #     target_module_pattern = config.target_module_patterns + [
-    #         f"{p}.pre_identity" for p in identity_patterns
-    #     ]
-    # else:
-    #     target_module_pattern = config.target_module_patterns
 
     target_model.requires_grad_(False)
 
     model = ComponentModel(
         target_model=target_model,
-        target_module_patterns=config.target_module_patterns,
+        target_module_patterns=config.all_module_patterns(),
         C=config.C,
         gate_type=config.gate_type,
         gate_hidden_dims=config.gate_hidden_dims,

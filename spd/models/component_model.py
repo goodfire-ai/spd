@@ -1,4 +1,3 @@
-import fnmatch
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -31,6 +30,8 @@ from spd.models.components import (
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class
+from spd.utils.identity_insertion import insert_identity_operations_
+from spd.utils.module_utils import get_target_module_paths
 from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
     download_wandb_file,
@@ -97,7 +98,7 @@ class ComponentModel(LoadableModule):
         self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
 
-        module_paths = ComponentModel._get_target_module_paths(target_model, target_module_patterns)
+        module_paths = get_target_module_paths(target_model, target_module_patterns)
 
         self.components = ComponentModel._create_components(
             target_model=target_model,
@@ -130,31 +131,8 @@ class ComponentModel(LoadableModule):
             case nn.Linear() | nn.Embedding():
                 return target_module.weight
             case Identity():
-                return torch.eye(target_module.d)
-
-    @staticmethod
-    def _get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
-        """Find the target_module_patterns that match real modules in the target model.
-
-        e.g. `["layers.*.mlp_in"]` ->  `["layers.1.mlp_in", "layers.2.mlp_in"]`.
-        """
-
-        names_out: list[str] = []
-        matched_patterns: set[str] = set()
-        for name, _ in model.named_modules():
-            for pattern in target_module_patterns:
-                if fnmatch.fnmatch(name, pattern):
-                    matched_patterns.add(pattern)
-                    names_out.append(name)
-
-        unmatched_patterns = set(target_module_patterns) - matched_patterns
-        if unmatched_patterns:
-            raise ValueError(
-                f"The following patterns in target_module_patterns did not match any modules: "
-                f"{sorted(unmatched_patterns)}"
-            )
-
-        return names_out
+                p = next(self.parameters())
+                return torch.eye(target_module.d, device=p.device, dtype=p.dtype)
 
     @staticmethod
     def _create_component(
@@ -217,27 +195,29 @@ class ComponentModel(LoadableModule):
         gate_hidden_dims: list[int],
     ) -> nn.Module:
         """Helper to create a gate based on gate_type and module type."""
+        if isinstance(target_module, nn.Embedding):
+            assert gate_type == "mlp", "Embedding modules only supported for gate_type='mlp'"
+
         if gate_type == "mlp":
             return MLPGates(C=component_C, hidden_dims=gate_hidden_dims)
 
-        assert gate_type in ["vector_mlp", "shared_mlp"], f"Unknown gate type: {gate_type}"
-        assert not isinstance(target_module, nn.Embedding), (
-            "Embedding modules only supported for gate_type='mlp'"
-        )
-        if isinstance(target_module, nn.Linear):
-            input_dim = target_module.weight.shape[1]
-        elif isinstance(target_module, RadfordConv1D):
-            input_dim = target_module.weight.shape[0]
-        else:
-            raise ValueError(f"Module {type(target_module)} not supported for {gate_type=}")
+        match target_module:
+            case nn.Linear():
+                input_dim = target_module.weight.shape[1]
+            case RadfordConv1D():
+                input_dim = target_module.weight.shape[0]
+            case Identity():
+                input_dim = target_module.d
+            case _:
+                raise ValueError(f"Module {type(target_module)} not supported for {gate_type=}")
 
-        if gate_type == "vector_mlp":
-            return VectorMLPGates(C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
-        else:
-            assert gate_type == "shared_mlp"
-            return VectorSharedMLPGate(
-                C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
-            )
+        match gate_type:
+            case "vector_mlp":
+                return VectorMLPGates(C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
+            case "shared_mlp":
+                return VectorSharedMLPGate(
+                    C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+                )
 
     @staticmethod
     def _create_gates(
@@ -460,9 +440,12 @@ class ComponentModel(LoadableModule):
         target_model_unpatched.eval()
         target_model_unpatched.requires_grad_(False)
 
+        if (identity_patterns := config.identity_module_patterns) is not None:
+            insert_identity_operations_(target_model_unpatched, identity_patterns=identity_patterns)
+
         comp_model = ComponentModel(
             target_model=target_model_unpatched,
-            target_module_patterns=config.target_module_patterns,
+            target_module_patterns=config.all_module_patterns(),
             C=config.C,
             gate_hidden_dims=config.gate_hidden_dims,
             gate_type=config.gate_type,
@@ -579,4 +562,8 @@ def transform_key(key: str) -> str:
 
 def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
     for key in list(state_dict.keys()):
-        state_dict[transform_key(key)] = state_dict.pop(key)
+        new_key = transform_key(key)
+        if new_key == key:
+            continue
+        assert new_key not in state_dict, f"Renamed key {key} already exists in state_dict"
+        state_dict[new_key] = state_dict.pop(key)

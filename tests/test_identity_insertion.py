@@ -1,6 +1,6 @@
 """Test identity insertion functionality."""
 
-from typing import cast, override
+from typing import override
 
 import pytest
 import torch
@@ -89,6 +89,7 @@ def test_preserves_output():
 
 def test_uses_correct_dims():
     """Test identity insertion with layers of different dimensions."""
+
     class VaryingDimModel(nn.Module):
         def __init__(self):
             super().__init__()

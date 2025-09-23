@@ -12,9 +12,9 @@ import torch.nn as nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.log import logger
-from spd.models.component_model import ComponentModel
 from spd.models.components import Identity
 from spd.utils.distributed_utils import is_main_process
+from spd.utils.module_utils import get_target_module_paths
 
 
 def pre_id_hook(
@@ -48,7 +48,7 @@ def insert_identity_operations_(target_model: nn.Module, identity_patterns: list
     if is_main_process():
         logger.info(f"Inserting identity operations before {len(identity_patterns)} modules")
 
-    identity_module_paths = ComponentModel._get_target_module_paths(target_model, identity_patterns)
+    identity_module_paths = get_target_module_paths(target_model, identity_patterns)
 
     # Add identity layers and hooks
     for module_path in identity_module_paths:

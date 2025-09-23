@@ -182,7 +182,7 @@ class LinearComponents(Components):
         return einops.einsum(self.V, self.U, "d_in C, C d_out -> d_out d_in")
 
     @override
-    def get_inner_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
+    def get_inner_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
         return einops.einsum(x, self.V, "... d_in, d_in C -> ... C")
 
     @override
@@ -208,7 +208,6 @@ class LinearComponents(Components):
         if mask is not None:
             component_acts *= mask
 
-        # V is (d_out, C). Multiply this way because we use (out, in) as in nn.Linear
         out = einops.einsum(component_acts, self.U, "... C, C d_out -> ... d_out")
 
         if weight_delta_and_mask is not None:
@@ -332,3 +331,31 @@ def make_mask_infos(
         )
 
     return result
+
+
+# class ParallelLinear(nn.Module):
+#     """C parallel linear layers"""
+
+#     def __init__(self, C: int, input_dim: int, output_dim: int, nonlinearity: _NonlinearityType):
+#         super().__init__()
+#         self.input_dim = input_dim
+#         self.output_dim = output_dim
+#         self.W = nn.Parameter(torch.empty(C, input_dim, output_dim))
+#         self.b = nn.Parameter(torch.zeros(C, output_dim))
+#         init_param_(self.W, fan_val=input_dim, nonlinearity=nonlinearity)
+
+#     @override
+#     def forward(self, x: Float[Tensor, "... C d_in"]) -> Float[Tensor, "... C d_out"]:
+#         return einops.einsum(x, self.W, "... C d_in, C d_in d_out -> ... C d_out") + self.b
+
+C = 5
+
+x = torch.randn(2, 1, 12, device="cpu")
+
+W = torch.randn(C, 12, 16, device="cpu")
+
+out = einops.einsum(x, W, "... C d_in, C d_in d_out -> ... C d_out")
+
+print(out.shape)
+
+assert out.shape == (2, C, 16)

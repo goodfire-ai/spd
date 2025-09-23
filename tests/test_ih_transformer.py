@@ -4,6 +4,7 @@ from spd.experiments.ih.model import InductionTransformer
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import set_seed
+from spd.utils.identity_insertion import insert_identity_operations_
 
 
 def test_ih_transformer_decomposition_happy_path() -> None:
@@ -36,10 +37,8 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         n_mask_samples=1,
         gate_type="vector_mlp",
         gate_hidden_dims=[128],
-        target_module_patterns=[
-            "blocks.*.attn.q_proj",
-            "blocks.*.attn.k_proj",
-        ],
+        target_module_patterns=["blocks.*.attn.q_proj", "blocks.*.attn.k_proj"],
+        identity_module_patterns=["blocks.*.attn.q_proj"],
         # Loss Coefficients
         faithfulness_coeff=200,
         stochastic_recon_coeff=1.0,
@@ -87,6 +86,9 @@ def test_ih_transformer_decomposition_happy_path() -> None:
     target_model = InductionTransformer(ih_transformer_config).to(device)
     target_model.eval()
     target_model.requires_grad_(False)
+
+    if (identity_patterns := config.identity_module_patterns) is not None:
+        insert_identity_operations_(target_model, identity_patterns=identity_patterns)
 
     dataset = InductionDataset(
         seq_len=ih_transformer_config.seq_len,

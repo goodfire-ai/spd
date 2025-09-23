@@ -13,6 +13,7 @@ from spd.experiments.tms.configs import TMSTaskConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import ComponentModel, SPDRunInfo, transform_key
 from spd.models.components import (
+    ComponentsMaskInfo,
     EmbeddingComponents,
     LinearComponents,
     MLPGates,
@@ -22,6 +23,7 @@ from spd.models.components import (
     make_mask_infos,
 )
 from spd.spd_types import ModelPath
+from spd.utils.identity_insertion import insert_identity_operations_
 from spd.utils.run_utils import save_file
 
 
@@ -99,6 +101,7 @@ def test_correct_parameters_require_grad():
 
 def test_from_run_info():
     target_model = SimpleTestModel()
+
     target_model.eval()
     target_model.requires_grad_(False)
 
@@ -117,6 +120,7 @@ def test_from_run_info():
             pretrained_model_path=base_model_path,
             pretrained_model_name=None,
             target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
+            identity_module_patterns=["linear1"],
             C=4,
             gate_type="mlp",
             gate_hidden_dims=[4],
@@ -140,13 +144,16 @@ def test_from_run_info():
             ),
         )
 
+        if (identity_patterns := config.identity_module_patterns) is not None:
+            insert_identity_operations_(target_model, identity_patterns=identity_patterns)
+
         cm = ComponentModel(
             target_model=target_model,
-            target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
-            C=4,
-            gate_type="mlp",
-            gate_hidden_dims=[4],
-            pretrained_model_output_attr=None,
+            target_module_patterns=config.all_module_patterns(),
+            C=config.C,
+            gate_type=config.gate_type,
+            gate_hidden_dims=config.gate_hidden_dims,
+            pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
 
         save_file(cm.state_dict(), comp_model_dir / "model.pth")
@@ -192,13 +199,13 @@ BATCH_SIZE = 2
 
 
 def test_patch_modules_unsupported_component_type_raises() -> None:
-    model = SimpleTestModel()
-    model.requires_grad_(False)
+    model = tiny_target()
+    wrong_module_path = "other_layer"
 
-    with pytest.raises(ValueError):
+    with pytest.raises(AttributeError):
         ComponentModel._create_components(
             target_model=model,
-            module_paths=["other_layer"],
+            module_paths=[wrong_module_path],
             C=2,
         )
 
@@ -350,3 +357,114 @@ def test_weight_deltas():
         target_w = cm.target_weight(name)
         comp_w = cm.components[name].weight
         torch.testing.assert_close(target_w, comp_w + deltas[name])
+
+
+def test_replacement_effects_fwd_pass():
+    d_in = 10
+    d_out = 20
+    C = 30
+
+    class OneLayerModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = nn.Linear(d_in, d_out, bias=False)
+
+        @override
+        def forward(self, x: Tensor) -> Tensor:
+            return self.linear(x)
+
+    model = OneLayerModel()
+    model.eval()
+    model.requires_grad_(False)
+
+    cm = ComponentModel(
+        target_model=model,
+        target_module_patterns=["linear"],
+        C=C,
+        gate_type="mlp",
+        gate_hidden_dims=[2],
+        pretrained_model_output_attr=None,
+    )
+
+    # WHEN we set the target model weights to be UV
+    model.linear.weight.copy_(cm.components["linear"].weight)
+
+    # AND we use all components
+    input = torch.randn(BATCH_SIZE, d_in)
+    use_all_components = ComponentsMaskInfo(
+        component_mask=torch.ones(BATCH_SIZE, C), weight_delta_and_mask=None
+    )
+
+    # THEN the model output matches the component model output
+    model_out = model(input)
+    cm_out_with_all_components = cm(
+        input, mode="components", mask_infos={"linear": use_all_components}
+    )
+    torch.testing.assert_close(model_out, cm_out_with_all_components)
+
+    # however, WHEN we double the values of the model weights
+    model.linear.weight.mul_(2)
+
+    # THEN the component-only output should be 1/2 the model output
+    new_model_out = model(input)
+    new_cm_out_with_all_components = cm(
+        input, mode="components", mask_infos={"linear": use_all_components}
+    )
+    torch.testing.assert_close(new_model_out, new_cm_out_with_all_components * 2)
+
+
+def test_replacing_identity():
+    d = 10
+    C = 20
+
+    class IDLayerModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = nn.Linear(d, d, bias=False)
+            nn.init.eye_(self.linear.weight)
+
+        @override
+        def forward(self, x: Tensor) -> Tensor:
+            return self.linear(x)
+
+    # GIVEN a simple model that performs identity (so we can isolate the effects below)
+    model = IDLayerModel()
+    model.eval()
+    model.requires_grad_(False)
+
+    # with another prepended identity layer
+    insert_identity_operations_(target_model=model, identity_patterns=["linear"])
+
+    # wrapped in a component model that decomposes the prepended identity layer
+    cm = ComponentModel(
+        target_model=model,
+        target_module_patterns=["linear.pre_identity"],
+        C=C,
+        gate_type="mlp",
+        gate_hidden_dims=[2],
+        pretrained_model_output_attr=None,
+    )
+
+    # and a random input
+    input = torch.randn(BATCH_SIZE, d)
+
+    # WHEN we forward with the model
+    # THEN it should just act as the identity
+    torch.testing.assert_close(model(input), input)
+    torch.testing.assert_close(cm(input, mode="target"), input)
+
+    # WHEN we forward with the identity components
+    use_all_components = ComponentsMaskInfo(
+        component_mask=torch.ones(BATCH_SIZE, C), weight_delta_and_mask=None
+    )
+
+    cm_components_out = cm(
+        input, mode="components", mask_infos={"linear.pre_identity": use_all_components}
+    )
+
+    # THEN it should modify the input
+    assert not torch.allclose(cm_components_out, input)
+
+    # BUT the original model output should be unchanged
+    cm_target_out = cm(input, mode="target")
+    assert torch.allclose(cm_target_out, model(input))
