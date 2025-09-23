@@ -82,17 +82,11 @@ python spd/experiments/tms/tms_decomposition.py spd/experiments/tms/tms_5-2_conf
 
 ### Model Comparison
 
-For post-hoc analysis of completed runs, use the model comparison script to compute geometric similarities between subcomponents:
+Use the model comparison script to analyse (post hoc) the geometric similarities between subcomponents of two different models:
 
 ```bash
-# Using config file
 python spd/scripts/compare_models/compare_models.py spd/scripts/compare_models/compare_models_config.yaml
-
-# Using command line arguments
-python spd/scripts/compare_models/compare_models.py --current_model_path="wandb:..." --reference_model_path="wandb:..."
 ```
-
-The comparison script supports both wandb and local model paths, and calculates mean max absolute cosine similarity metrics between learned subcomponents in different runs.
 
 See `spd/scripts/compare_models/README.md` for detailed usage instructions.
 

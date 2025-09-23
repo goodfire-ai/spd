@@ -8,7 +8,7 @@ Usage:
     python spd/scripts/compare_models/compare_models.py --current_model_path="wandb:..." --reference_model_path="wandb:..."
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -37,17 +37,16 @@ class CompareModelsConfig(BaseModel):
     )
 
     density_threshold: float = Field(
-        default=0.001,
-        description="Minimum activation density for components to be included in comparison",
+        ..., description="Minimum activation density for components to be included in comparison"
     )
     n_eval_steps: int = Field(
-        default=5, description="Number of evaluation steps to compute activation densities"
+        ..., description="Number of evaluation steps to compute activation densities"
     )
 
-    eval_batch_size: int = Field(default=32, description="Batch size for evaluation data loading")
-    shuffle_data: bool = Field(default=False, description="Whether to shuffle the evaluation data")
+    eval_batch_size: int = Field(..., description="Batch size for evaluation data loading")
+    shuffle_data: bool = Field(..., description="Whether to shuffle the evaluation data")
     ci_alive_threshold: float = Field(
-        default=0.0, description="Threshold for considering components as 'alive'"
+        ..., description="Threshold for considering components as 'alive'"
     )
 
     output_dir: str | None = Field(
@@ -55,38 +54,28 @@ class CompareModelsConfig(BaseModel):
         description="Directory to save results (defaults to 'out' directory relative to script location)",
     )
 
-    device: str = Field(
-        default="auto", description="Device to run comparison on (Options: 'auto', 'cuda', 'cpu')"
-    )
-
 
 class ModelComparator:
     """Compare two SPD models for geometric similarity between subcomponents."""
 
-    def __init__(
-        self,
-        config: CompareModelsConfig,
-    ):
+    def __init__(self, config: CompareModelsConfig):
         """Initialize the model comparator.
 
         Args:
             config: CompareModelsConfig instance containing all configuration parameters
         """
         self.config = config
-        self.current_model_path = config.current_model_path
-        self.reference_model_path = config.reference_model_path
         self.density_threshold = config.density_threshold
+        self.device = get_device()
 
-        self.device = get_device() if config.device == "auto" else config.device
-
-        logger.info(f"Loading current model from: {self.current_model_path}")
+        logger.info(f"Loading current model from: {config.current_model_path}")
         self.current_model, self.current_config = self._load_model_and_config(
-            self.current_model_path
+            config.current_model_path
         )
 
-        logger.info(f"Loading reference model from: {self.reference_model_path}")
+        logger.info(f"Loading reference model from: {config.reference_model_path}")
         self.reference_model, self.reference_config = self._load_model_and_config(
-            self.reference_model_path
+            config.reference_model_path
         )
 
     def _load_model_and_config(self, model_path: str) -> tuple[ComponentModel, Config]:
@@ -99,36 +88,38 @@ class ModelComparator:
 
         return model, run_info.config
 
-    def create_eval_data_loader(self, config: Config) -> Iterator[Any]:
+    def create_eval_data_loader(self) -> Iterator[Any]:
         """Create evaluation data loader using exact same patterns as decomposition scripts."""
-        task_config = config.task_config
-        task_name = task_config.task_name
+        task_name = self.current_config.task_config.task_name
 
-        if task_name == "tms":
-            return self._create_tms_data_loader(config)
-        elif task_name == "resid_mlp":
-            return self._create_resid_mlp_data_loader(config)
-        elif task_name == "lm":
-            return self._create_lm_data_loader(config)
-        elif task_name == "induction_head":
-            return self._create_ih_data_loader(config)
-        else:
+        data_loader_fns: dict[str, Callable[[], Iterator[Any]]] = {
+            "tms": self._create_tms_data_loader,
+            "resid_mlp": self._create_resid_mlp_data_loader,
+            "lm": self._create_lm_data_loader,
+            "induction_head": self._create_ih_data_loader,
+        }
+
+        if task_name not in data_loader_fns:
             raise ValueError(
-                f"Unsupported task type: {task_name}. Supported types: tms, lm, resid_mlp, induction_head"
+                f"Unsupported task type: {task_name}. Supported types: {', '.join(data_loader_fns.keys())}"
             )
 
-    def _create_tms_data_loader(self, config: Config) -> Iterator[Any]:
+        return data_loader_fns[task_name]()
+
+    def _create_tms_data_loader(self) -> Iterator[Any]:
         """Create data loader for TMS task."""
         from spd.experiments.tms.configs import TMSTaskConfig
         from spd.experiments.tms.models import TMSTargetRunInfo
         from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 
-        assert isinstance(config.task_config, TMSTaskConfig)
-        task_config = config.task_config
+        assert isinstance(self.current_config.task_config, TMSTaskConfig)
+        task_config = self.current_config.task_config
 
-        assert config.pretrained_model_path, "pretrained_model_path must be set for TMS models"
+        assert self.current_config.pretrained_model_path, (
+            "pretrained_model_path must be set for TMS models"
+        )
 
-        target_run_info = TMSTargetRunInfo.from_path(config.pretrained_model_path)
+        target_run_info = TMSTargetRunInfo.from_path(self.current_config.pretrained_model_path)
 
         dataset = SparseFeatureDataset(
             n_features=target_run_info.config.tms_model_config.n_features,
@@ -146,19 +137,21 @@ class ModelComparator:
             )
         )
 
-    def _create_resid_mlp_data_loader(self, config: Config) -> Iterator[Any]:
+    def _create_resid_mlp_data_loader(self) -> Iterator[Any]:
         """Create data loader for ResidMLP task."""
         from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
         from spd.experiments.resid_mlp.models import ResidMLPTargetRunInfo
         from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
         from spd.utils.data_utils import DatasetGeneratedDataLoader
 
-        assert isinstance(config.task_config, ResidMLPTaskConfig)
-        task_config = config.task_config
+        assert isinstance(self.current_config.task_config, ResidMLPTaskConfig)
+        task_config = self.current_config.task_config
 
-        assert config.pretrained_model_path, "pretrained_model_path must be set for ResidMLP models"
+        assert self.current_config.pretrained_model_path, (
+            "pretrained_model_path must be set for ResidMLP models"
+        )
 
-        target_run_info = ResidMLPTargetRunInfo.from_path(config.pretrained_model_path)
+        target_run_info = ResidMLPTargetRunInfo.from_path(self.current_config.pretrained_model_path)
 
         dataset = ResidMLPDataset(
             n_features=target_run_info.config.resid_mlp_model_config.n_features,
@@ -178,18 +171,18 @@ class ModelComparator:
             )
         )
 
-    def _create_lm_data_loader(self, config: Config) -> Iterator[Any]:
+    def _create_lm_data_loader(self) -> Iterator[Any]:
         """Create data loader for LM task."""
         from spd.data import DatasetConfig, create_data_loader
         from spd.experiments.lm.configs import LMTaskConfig
 
-        assert config.tokenizer_name, "tokenizer_name must be set"
-        assert isinstance(config.task_config, LMTaskConfig)
-        task_config = config.task_config
+        assert self.current_config.tokenizer_name, "tokenizer_name must be set"
+        assert isinstance(self.current_config.task_config, LMTaskConfig)
+        task_config = self.current_config.task_config
 
         dataset_config = DatasetConfig(
             name=task_config.dataset_name,
-            hf_tokenizer_path=config.tokenizer_name,
+            hf_tokenizer_path=self.current_config.tokenizer_name,
             split=task_config.eval_data_split,
             n_ctx=task_config.max_seq_len,
             is_tokenized=task_config.is_tokenized,
@@ -202,26 +195,28 @@ class ModelComparator:
             dataset_config=dataset_config,
             batch_size=self.config.eval_batch_size,
             buffer_size=task_config.buffer_size,
-            global_seed=config.seed + 1,
+            global_seed=self.current_config.seed + 1,
             ddp_rank=0,
             ddp_world_size=1,
         )
         return iter(loader)
 
-    def _create_ih_data_loader(self, config: Config) -> Iterator[Any]:
+    def _create_ih_data_loader(self) -> Iterator[Any]:
         """Create data loader for IH task."""
         from spd.experiments.ih.configs import IHTaskConfig
         from spd.experiments.ih.model import InductionModelTargetRunInfo
         from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 
-        assert isinstance(config.task_config, IHTaskConfig)
-        task_config = config.task_config
+        assert isinstance(self.current_config.task_config, IHTaskConfig)
+        task_config = self.current_config.task_config
 
-        assert config.pretrained_model_path, (
+        assert self.current_config.pretrained_model_path, (
             "pretrained_model_path must be set for Induction Head models"
         )
 
-        target_run_info = InductionModelTargetRunInfo.from_path(config.pretrained_model_path)
+        target_run_info = InductionModelTargetRunInfo.from_path(
+            self.current_config.pretrained_model_path
+        )
 
         dataset = InductionDataset(
             vocab_size=target_run_info.config.ih_model_config.vocab_size,
@@ -260,7 +255,7 @@ class ModelComparator:
                 _, pre_weight_acts = model(
                     batch, mode="pre_forward_cache", module_names=list(model.components.keys())
                 )
-                ci, _ci_upper_leaky = model.calc_causal_importances(
+                ci, _ = model.calc_causal_importances(
                     pre_weight_acts,
                     sigmoid_type=model_config.sigmoid_type,
                     sampling=model_config.sampling,
@@ -305,11 +300,11 @@ class ModelComparator:
             ref_V = reference_components.V
 
             # Filter out components that aren't active enough in the current model
-            alive_mask = activation_densities[layer_name] > self.density_threshold
-            C_curr_alive = sum(alive_mask)
+            alive_mask = activation_densities[layer_name] > self.config.density_threshold
+            C_curr_alive = int(alive_mask.sum().item())
             if C_curr_alive == 0:
                 logger.warning(
-                    f"No components are active enough in {layer_name} for density threshold {self.density_threshold}. Skipping."
+                    f"No components are active enough in {layer_name} for density threshold {self.config.density_threshold}. Skipping."
                 )
                 continue
 
@@ -327,7 +322,7 @@ class ModelComparator:
             )
 
             # Compute cosine similarities between all pairs
-            current_flat = current_rank_one.reshape(int(C_curr_alive.item()), -1)
+            current_flat = current_rank_one.reshape(C_curr_alive, -1)
             ref_flat = ref_rank_one.reshape(C_ref, -1)
 
             current_norm = F.normalize(current_flat, p=2, dim=1)
@@ -400,7 +395,7 @@ def main(config_path_or_obj: Path | str | CompareModelsConfig) -> None:
     comparator = ModelComparator(config)
 
     logger.info("Setting up evaluation data...")
-    eval_iterator = comparator.create_eval_data_loader(comparator.current_config)
+    eval_iterator = comparator.create_eval_data_loader()
 
     logger.info("Starting model comparison...")
     similarities = comparator.run_comparison(eval_iterator)
