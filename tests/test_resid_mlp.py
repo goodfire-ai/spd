@@ -41,14 +41,11 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         ],
         # Loss Coefficients
         faithfulness_coeff=1.0,
-        recon_coeff=2.0,
+        ci_recon_coeff=2.0,
         stochastic_recon_coeff=1.0,
-        recon_layerwise_coeff=None,
+        ci_recon_layerwise_coeff=None,
         stochastic_recon_layerwise_coeff=None,
         importance_minimality_coeff=3e-3,
-        schatten_coeff=None,
-        embedding_recon_coeff=None,
-        is_embed_unembed_recon=False,
         pnorm=0.9,
         output_recon_loss_type="mse",
         # Training

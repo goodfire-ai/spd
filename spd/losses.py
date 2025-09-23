@@ -249,39 +249,6 @@ def calc_masked_recon_loss(
     return output_recon_loss_from_cache(cache, target_out, output_recon_loss_type)
 
 
-def calc_masked_recon_loss_with_hidden(
-    model: ComponentModel,
-    batch: Float[Tensor, "... d_in"],
-    mask_infos_list: list[dict[str, ComponentsMaskInfo]],
-    target_out: Float[Tensor, "... d_model_out"],
-    output_recon_loss_type: Literal["mse", "kl"],
-    target_hidden: dict[str, Tensor],
-) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
-    """Calculate the recon loss when applying all (masked) component layers at once, including hidden losses.
-
-    This function takes the mean loss over all masks in mask_infos_list.
-
-    Args:
-        model: The component model
-        batch: Input batch
-        mask_infos_list: Mask infos for each stochastic source (there are config.n_mask_samples
-            stochastic sources).
-        target_out: Target model output
-        output_recon_loss_type: Type of loss to calculate for output reconstruction
-        device: Device to run computations on
-        target_hidden: Dictionary of target hidden activations for each layer
-
-    Returns:
-        Tuple of (recon_loss, hidden_losses_dict)
-    """
-    cache = run_masked_forward(
-        model, batch, mask_infos_list, hidden_module_names=target_hidden.keys()
-    )
-    output_loss = output_recon_loss_from_cache(cache, target_out, output_recon_loss_type)
-    hidden_losses = hidden_recon_losses_from_cache(cache, target_hidden)
-    return output_loss, hidden_losses
-
-
 def calc_weight_deltas(
     model: ComponentModel, device: str | torch.device
 ) -> dict[str, Float[Tensor, " d_out d_in"]]:
@@ -329,10 +296,10 @@ def calculate_losses(
     causal_importances: dict[str, Float[Tensor, "batch C"]],
     causal_importances_upper_leaky: dict[str, Float[Tensor, "batch C"]],
     target_out: Tensor,
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+    target_hidden: dict[str, Tensor],
     device: str,
+    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
     current_p: float | None = None,
-    target_hidden: dict[str, Tensor] | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Calculate all losses and return total loss and individual loss terms.
 
@@ -343,10 +310,10 @@ def calculate_losses(
         causal_importances: Causal importance masks
         causal_importances_upper_leaky: Upper leaky causal importances for regularization
         target_out: Target model output
+        target_hidden: Dictionary of target hidden activations for each layer
         weight_deltas: Weight deltas between the target model and component weights (V@U)
         device: Device to run computations on
         current_p: Current p value for L_p sparsity loss (if using annealing)
-        target_hidden: Dictionary of target hidden activations for each layer
     Returns:
         Tuple of (total_loss, loss_terms_dict)
     """
@@ -359,18 +326,18 @@ def calculate_losses(
         total_loss += config.faithfulness_coeff * faithfulness_loss
         loss_terms["faithfulness"] = faithfulness_loss.item()
 
-    # Reconstruction loss
-    if config.recon_coeff is not None:
-        recon_mask_infos = make_mask_infos(causal_importances, None)
-        recon_loss = calc_masked_recon_loss(
+    # CI reconstruction loss
+    if config.ci_recon_coeff is not None:
+        ci_recon_mask_infos = make_mask_infos(causal_importances, None)
+        ci_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
-            mask_infos_list=[recon_mask_infos],
+            mask_infos_list=[ci_recon_mask_infos],
             target_out=target_out,
             output_recon_loss_type=config.output_recon_loss_type,
         )
-        total_loss += config.recon_coeff * recon_loss
-        loss_terms["recon"] = recon_loss.item()
+        total_loss += config.ci_recon_coeff * ci_recon_loss
+        loss_terms["ci_recon"] = ci_recon_loss.item()
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
@@ -396,43 +363,29 @@ def calculate_losses(
             )
             stoch_mask_infos_list.append(stoch_mask_infos)
 
-        compute_hidden_losses = (
-            config.hidden_act_recon_coeff is not None and target_hidden is not None
+        cache = run_masked_forward(
+            model=model,
+            batch=batch,
+            mask_infos_list=stoch_mask_infos_list,
+            hidden_module_names=target_hidden.keys()
+            if config.hidden_act_recon_coeff is not None
+            else None,
         )
-
-        if compute_hidden_losses:
-            assert target_hidden is not None, (
-                "target_hidden should not be None when compute_hidden_losses is True"
-            )
-            assert config.hidden_act_recon_coeff is not None, (
-                "hidden_act_recon_coeff should not be None when computing hidden losses"
-            )
-            stochastic_recon_loss, hidden_losses = calc_masked_recon_loss_with_hidden(
-                model=model,
-                batch=batch,
-                mask_infos_list=stoch_mask_infos_list,
-                target_out=target_out,
-                output_recon_loss_type=config.output_recon_loss_type,
-                target_hidden=target_hidden,
-            )
+        stochastic_recon_loss = output_recon_loss_from_cache(
+            cache, target_out, config.output_recon_loss_type
+        )
+        if config.hidden_act_recon_coeff is not None:
+            hidden_losses = hidden_recon_losses_from_cache(cache, target_hidden)
             for layer_name, layer_loss in hidden_losses.items():
                 total_loss += config.hidden_act_recon_coeff * layer_loss
                 loss_terms[f"hidden_act_recon/{layer_name}"] = layer_loss.item()
-        else:
-            stochastic_recon_loss = calc_masked_recon_loss(
-                model=model,
-                batch=batch,
-                mask_infos_list=stoch_mask_infos_list,
-                target_out=target_out,
-                output_recon_loss_type=config.output_recon_loss_type,
-            )
 
         total_loss += config.stochastic_recon_coeff * stochastic_recon_loss
         loss_terms["stochastic_recon"] = stochastic_recon_loss.item()
 
-    # Reconstruction layerwise loss
-    if config.recon_layerwise_coeff is not None:
-        recon_layerwise_loss = calc_masked_recon_layerwise_loss(
+    # CI reconstruction layerwise loss
+    if config.ci_recon_layerwise_coeff is not None:
+        ci_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
             mask_infos_list=[make_mask_infos(causal_importances)],
@@ -440,8 +393,8 @@ def calculate_losses(
             loss_type=config.output_recon_loss_type,
             device=device,
         )
-        total_loss += config.recon_layerwise_coeff * recon_layerwise_loss
-        loss_terms["recon_layerwise"] = recon_layerwise_loss.item()
+        total_loss += config.ci_recon_layerwise_coeff * ci_recon_layerwise_loss
+        loss_terms["ci_recon_layerwise"] = ci_recon_layerwise_loss.item()
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
@@ -484,47 +437,6 @@ def calculate_losses(
     )
     total_loss += config.importance_minimality_coeff * importance_minimality_loss
     loss_terms["importance_minimality"] = importance_minimality_loss.item()
-
-    # Schatten loss
-    if config.schatten_coeff is not None:
-        schatten_loss = calc_schatten_loss(
-            ci_upper_leaky=causal_importances_upper_leaky,
-            pnorm=pnorm_value,
-            components=model.components,
-            device=device,
-        )
-        total_loss += config.schatten_coeff * schatten_loss
-        loss_terms["schatten"] = schatten_loss.item()
-
-    # Output reconstruction loss
-    if config.out_recon_coeff is not None:
-        masks_all_ones = {k: torch.ones_like(v) for k, v in causal_importances.items()}
-        out_recon_loss = calc_masked_recon_loss(
-            model=model,
-            batch=batch,
-            mask_infos_list=[make_mask_infos(masks_all_ones)],
-            target_out=target_out,
-            output_recon_loss_type=config.output_recon_loss_type,
-        )
-        total_loss += config.out_recon_coeff * out_recon_loss
-        loss_terms["output_recon"] = out_recon_loss.item()
-
-    # Embedding reconstruction loss
-    if config.embedding_recon_coeff is not None:
-        stochastic_masks_list = calc_stochastic_masks(
-            causal_importances=causal_importances,
-            n_mask_samples=config.n_mask_samples,
-            sampling=config.sampling,
-        )
-        embedding_recon_loss = calc_embedding_recon_loss(
-            model=model,
-            batch=batch,
-            masks=[stochastic_masks.component_masks for stochastic_masks in stochastic_masks_list],
-            unembed=config.is_embed_unembed_recon,
-            device=device,
-        )
-        total_loss += config.embedding_recon_coeff * embedding_recon_loss
-        loss_terms["embedding_recon"] = embedding_recon_loss.item()
 
     loss_terms["total"] = total_loss.item()
 
