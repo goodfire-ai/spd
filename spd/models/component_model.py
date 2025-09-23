@@ -335,7 +335,7 @@ class ComponentModel(LoadableModule):
             _module: nn.Module,
             args: list[Any],
             kwargs: dict[Any, Any],
-            _output: Any,
+            output: Any,
             components: Components,
             mask_info: ComponentsMaskInfo,
         ) -> None | Any:
@@ -343,12 +343,15 @@ class ComponentModel(LoadableModule):
             assert len(kwargs) == 0, "Expected no keyword arguments"
             x = args[0]
             assert isinstance(x, Tensor), "Expected input tensor"
+            assert isinstance(output, Tensor), "Expected output tensor"
 
             components_out = components(
                 x,
                 mask=mask_info.component_mask,
                 weight_delta_and_mask=mask_info.weight_delta_and_mask,
             )
+            if mask_info.routing_mask is not None:
+                return torch.where(mask_info.routing_mask[..., None], components_out, output)
 
             return components_out
 

@@ -7,7 +7,10 @@ from torch import Tensor
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
-from spd.utils.component_utils import calc_stochastic_component_mask_info
+from spd.utils.component_utils import (
+    calc_stochastic_component_mask_info,
+    sample_uniform_k_stochastic_routing_masks,
+)
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -186,6 +189,7 @@ def calculate_losses(
             calc_stochastic_component_mask_info(
                 causal_importances=causal_importances,
                 sampling=config.sampling,
+                routing="all",
                 weight_deltas=weight_deltas if config.use_delta_component else None,
             )
             for _ in range(config.n_mask_samples)
@@ -220,6 +224,7 @@ def calculate_losses(
             calc_stochastic_component_mask_info(
                 causal_importances=causal_importances,
                 sampling=config.sampling,
+                routing="all",
                 weight_deltas=weight_deltas if config.use_delta_component else None,
             )
             for _ in range(config.n_mask_samples)
@@ -234,6 +239,53 @@ def calculate_losses(
         )
         total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
         loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
+
+    # CI reconstruction routed loss
+    if config.ci_recon_routed_coeff is not None:
+        routing_masks = sample_uniform_k_stochastic_routing_masks(
+            mask_shape=next(iter(causal_importances.values())).shape[:-1],
+            modules=list(causal_importances.keys()),
+            device=device,
+        )
+
+        mask_infos = make_mask_infos(
+            component_masks=causal_importances,
+            routing_masks=routing_masks,
+            weight_deltas_and_masks=None,
+        )
+
+        ci_recon_routed_loss = calc_masked_recon_loss(
+            model=model,
+            batch=batch,
+            mask_infos_list=[mask_infos],
+            target_out=target_out,
+            loss_type=config.output_loss_type,
+            device=device,
+        )
+        total_loss += config.ci_recon_routed_coeff * ci_recon_routed_loss
+        loss_terms["ci_recon_routed"] = ci_recon_routed_loss.item()
+
+    # Stochastic reconstruction routed loss
+    if config.stochastic_recon_routed_coeff is not None:
+        stoch_mask_infos_list = [
+            calc_stochastic_component_mask_info(
+                causal_importances=causal_importances,
+                sampling=config.sampling,
+                weight_deltas=weight_deltas if config.use_delta_component else None,
+                routing="uniform_k-stochastic",
+            )
+            for _ in range(config.n_mask_samples)
+        ]
+        stochastic_recon_routed_loss = calc_masked_recon_loss(
+            model=model,
+            batch=batch,
+            mask_infos_list=stoch_mask_infos_list,
+            target_out=target_out,
+            loss_type=config.output_loss_type,
+            device=device,
+        )
+        total_loss += config.stochastic_recon_routed_coeff * stochastic_recon_routed_loss
+        loss_terms["stochastic_recon_routed"] = stochastic_recon_routed_loss.item()
 
     # Importance minimality loss
     pnorm_value = current_p if current_p is not None else config.pnorm

@@ -5,7 +5,7 @@ from typing import Literal, override
 
 import einops
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 
 from spd.utils.module_utils import _NonlinearityType, init_param_
@@ -300,13 +300,17 @@ class ComponentsMaskInfo:
     """Specifies the mask information that will be applied to a ComponentOrModule object."""
 
     component_mask: Float[Tensor, "... C"]
-    """when components are active, this specifies which subcomponents to use"""
+    """when components are routed to, this specifies which subcomponents to use"""
 
-    weight_delta_and_mask: WeightDeltaAndMask | None
+    routing_mask: Bool[Tensor, "..."] | None = None
+    """Which (batch,) or (batch, seq_len) positions to route to components vs target modules. If None, all positions are routed to components."""
+
+    weight_delta_and_mask: WeightDeltaAndMask | None = None
 
 
 def make_mask_infos(
-    component_masks: Mapping[str, Float[Tensor, "... C"]],
+    component_masks: dict[str, Float[Tensor, "... C"]],
+    routing_masks: dict[str, Bool[Tensor, "..."]] | None = None,
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
     """Create ComponentsMaskInfo dict from dicts of component masks, and weight deltas and weight delta masks.
@@ -318,16 +322,24 @@ def make_mask_infos(
     turns:
         Dict mapping module names to ComponentsMaskInfo objects.
     """
+    if routing_masks is not None:
+        assert set(routing_masks) == set(component_masks)
+
     if weight_deltas_and_masks is not None:
         assert set(weight_deltas_and_masks) == set(component_masks)
 
     result: dict[str, ComponentsMaskInfo] = {}
     for name in component_masks:
+        routing_mask = routing_masks[name] if routing_masks is not None else None
+
+        weight_delta_and_mask = (
+            weight_deltas_and_masks[name] if weight_deltas_and_masks is not None else None
+        )
+
         result[name] = ComponentsMaskInfo(
             component_mask=component_masks[name],
-            weight_delta_and_mask=None
-            if weight_deltas_and_masks is None
-            else weight_deltas_and_masks[name],
+            routing_mask=routing_mask,
+            weight_delta_and_mask=weight_delta_and_mask,
         )
 
     return result
