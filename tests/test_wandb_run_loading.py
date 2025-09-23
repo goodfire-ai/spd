@@ -30,8 +30,8 @@ CANONICAL_EXPS = [
 ]
 
 
-# @pytest.mark.requires_wandb
-# @pytest.mark.slow
+@pytest.mark.requires_wandb
+@pytest.mark.slow
 @pytest.mark.parametrize("exp_name, canonical_run, from_func", CANONICAL_EXPS)
 def test_loading_from_wandb(
     exp_name: str, canonical_run: str, from_func: Callable[[str], ComponentModel]

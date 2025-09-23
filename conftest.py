@@ -4,12 +4,15 @@ Taken from https://docs.pytest.org/en/latest/example/simple.html.
 """
 
 import os
+import random
 from collections.abc import Iterable
 from netrc import netrc
 from pathlib import Path
 from urllib.parse import urlparse
 
+import numpy as np
 import pytest
+import torch
 from pytest import Config, Item, Parser
 
 
@@ -48,6 +51,13 @@ def _have_wandb_credentials() -> bool:
         return n.authenticators(host) is not None
     except Exception:
         return False
+
+
+@pytest.fixture(autouse=True)
+def set_seed():
+    torch.manual_seed(42)
+    random.seed(42)
+    np.random.seed(42)
 
 
 def pytest_collection_modifyitems(config: Config, items: Iterable[Item]) -> None:

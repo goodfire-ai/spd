@@ -22,6 +22,7 @@ from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
     GateType,
+    Identity,
     LinearComponents,
     MLPGates,
     VectorMLPGates,
@@ -36,8 +37,6 @@ from spd.utils.wandb_utils import (
     fetch_latest_wandb_checkpoint,
     fetch_wandb_run_dir,
 )
-
-SUPPORTED_MODULES = (nn.Linear, nn.Embedding, RadfordConv1D)
 
 
 @dataclass
@@ -122,14 +121,16 @@ class ComponentModel(LoadableModule):
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
-        if isinstance(target_module, RadfordConv1D):
-            return target_module.weight.T
-        elif isinstance(target_module, nn.Linear | nn.Embedding):
-            return target_module.weight
-        else:
-            raise AttributeError(
-                f"Module {type(target_module)} not one of nn.Linear, nn.Embedding, or RadfordConv1D"
-            )
+        assert isinstance(target_module, nn.Linear | nn.Embedding | RadfordConv1D | Identity), (
+            f"Module {target_module} not supported"
+        )
+        match target_module:
+            case RadfordConv1D():
+                return target_module.weight.T
+            case nn.Linear() | nn.Embedding():
+                return target_module.weight
+            case Identity():
+                return torch.eye(target_module.d)
 
     @staticmethod
     def _get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
@@ -160,7 +161,7 @@ class ComponentModel(LoadableModule):
         target_module: nn.Module,
         C: int,
     ) -> Components:
-        if not isinstance(target_module, SUPPORTED_MODULES):
+        if not isinstance(target_module, nn.Linear | nn.Embedding | RadfordConv1D | Identity):
             raise ValueError(f"Module {target_module} not supported")
 
         match target_module:
@@ -185,6 +186,13 @@ class ComponentModel(LoadableModule):
                     d_in=d_in,
                     d_out=d_out,
                     bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                )
+            case Identity():
+                component = LinearComponents(
+                    C=C,
+                    d_in=target_module.d,
+                    d_out=target_module.d,
+                    bias=None,
                 )
 
         return component

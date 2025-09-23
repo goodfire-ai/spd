@@ -8,12 +8,12 @@ This allows downstream functionality to act as if the identity matrix is just a 
 
 from typing import Any, Literal
 
-import torch
 import torch.nn as nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.log import logger
-from spd.models.component_model import SUPPORTED_MODULES, ComponentModel
+from spd.models.component_model import ComponentModel
+from spd.models.components import Identity
 from spd.utils.distributed_utils import is_main_process
 
 
@@ -27,8 +27,8 @@ def pre_id_hook(
     # simple for now.
     assert not kwargs, f"Expected no kwargs, got {kwargs.keys()}"
     assert hasattr(mod, "pre_identity"), f"Module {mod} has no pre_identity attribute"
-    assert isinstance(mod.pre_identity, nn.Linear), (
-        f"Module {mod} pre_identity is not a Linear layer"
+    assert isinstance(mod.pre_identity, Identity), (
+        f"Module {mod} pre_identity is not an Identity layer"
     )
     return (mod.pre_identity(args[0]),), {}
 
@@ -37,17 +37,12 @@ InputType = Literal["tokens"] | tuple[Literal["vector"], int]
 """'tokens' implies (batch, seq) of integer tokens. ('vector', d_in) implies (batch, d_in) of floats."""
 
 
-def insert_identity_operations_(
-    target_model: nn.Module,
-    identity_patterns: list[str],
-    device: torch.device | str,
-) -> None:
-    """Insert identity linear layers before specified modules.
+def insert_identity_operations_(target_model: nn.Module, identity_patterns: list[str]) -> None:
+    """Insert identity layers before specified modules.
 
     Args:
         target_model: The model to modify
         identity_patterns: Patterns matching modules to prepend identity ops to
-        device: Device to place tensors on
     """
 
     if is_main_process():
@@ -58,7 +53,9 @@ def insert_identity_operations_(
     # Add identity layers and hooks
     for module_path in identity_module_paths:
         module = target_model.get_submodule(module_path)
-        assert isinstance(module, SUPPORTED_MODULES), f"Module {module} not supported"
+        assert isinstance(module, nn.Linear | nn.Embedding | RadfordConv1D), (
+            f"Module {module} not supported. type: {type(module)}"
+        )
 
         match module:
             case nn.Linear():
@@ -68,10 +65,7 @@ def insert_identity_operations_(
             case nn.Embedding():
                 raise ValueError("Embedding modules not supported for identity insertion")
 
-        # Create identity linear layer
-        pre_identity = nn.Linear(d_in, d_in, bias=False, device=device)
-        nn.init.eye_(pre_identity.weight)  # Initialize as identity matrix
-        module.pre_identity = pre_identity  # type: ignore
+        module.pre_identity = Identity(d_in)  # type: ignore
 
         module.register_forward_pre_hook(pre_id_hook, with_kwargs=True)
 

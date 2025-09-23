@@ -1,11 +1,14 @@
 """Test identity insertion functionality."""
 
-from typing import override
+from typing import cast, override
 
+import pytest
 import torch
 import torch.nn as nn
 from torch.testing import assert_close
 
+from spd.models.component_model import ComponentModel
+from spd.models.components import ComponentsMaskInfo, Identity
 from spd.utils.identity_insertion import insert_identity_operations_
 
 
@@ -28,53 +31,64 @@ class SimpleModel(nn.Module):
         return self.output(x)
 
 
-def test_identity_insertion_inserts_identity_layers():
-    model = SimpleModel(d_model=32).to("cpu")
+DEVICE = "cpu"
+
+BATCH_SIZE = 2
+SEQ_LEN = 10
+
+
+def random_input():
+    return torch.randint(0, 100, (BATCH_SIZE, SEQ_LEN), device=DEVICE)
+
+
+def test_inserts_identity_layers():
+    model = SimpleModel(d_model=32).to(DEVICE)
     model.eval()
 
-    insert_identity_operations_(
-        target_model=model,
-        identity_patterns=["layer1", "layer2"],
-        device="cpu",
-    )
+    insert_identity_operations_(target_model=model, identity_patterns=["layer1", "layer2"])
 
     assert hasattr(model.layer1, "pre_identity")
     assert hasattr(model.layer2, "pre_identity")
-    assert isinstance(model.layer1.pre_identity, nn.Linear)
-    assert isinstance(model.layer2.pre_identity, nn.Linear)
-    assert_close(model.layer1.pre_identity.weight, torch.eye(32, device="cpu"))
-    assert_close(model.layer2.pre_identity.weight, torch.eye(32, device="cpu"))
+    assert isinstance(model.layer1.pre_identity, Identity)
+    assert isinstance(model.layer2.pre_identity, Identity)
+    assert model.layer1.pre_identity.d == 32
+    assert model.layer2.pre_identity.d == 32
 
     assert not hasattr(model.embedding, "pre_identity")
     assert not hasattr(model.output, "pre_identity")
 
 
-def test_identity_insertion_preserves_output():
-    """Test that inserting identity operations doesn't change model output."""
-    torch.manual_seed(42)
-    device = "cpu"
-
-    model = SimpleModel(d_model=32).to(device)
+def test_adds_hooks():
+    model = SimpleModel(d_model=32).to(DEVICE)
     model.eval()
 
-    input_ids = torch.randint(0, 100, (2, 10), device=device)
+    assert len(model.layer1._forward_hooks) == 0
+    assert len(model.layer2._forward_hooks) == 0
 
-    with torch.no_grad():
-        original_output = model(input_ids)
+    insert_identity_operations_(target_model=model, identity_patterns=["layer1", "layer2"])
 
-    insert_identity_operations_(model, identity_patterns=["layer1"], device=device)
+    assert len(model.layer1._forward_pre_hooks) == 1
+    assert len(model.layer2._forward_pre_hooks) == 1
 
-    with torch.no_grad():
-        new_output = model(input_ids)
+
+def test_preserves_output():
+    """Test that inserting identity operations doesn't change model output."""
+    model = SimpleModel(d_model=32).to(DEVICE)
+    model.eval()
+
+    input_ids = random_input()
+
+    original_output = model(input_ids)
+
+    insert_identity_operations_(model, identity_patterns=["layer1"])
+
+    new_output = model(input_ids)
 
     assert_close(original_output, new_output, atol=1e-6, rtol=1e-6)
 
 
-def test_identity_insertion_uses_correct_dims():
+def test_uses_correct_dims():
     """Test identity insertion with layers of different dimensions."""
-    torch.manual_seed(42)
-    device = "cpu"
-
     class VaryingDimModel(nn.Module):
         def __init__(self):
             super().__init__()
@@ -91,38 +105,112 @@ def test_identity_insertion_uses_correct_dims():
             x = self.layer2(x)
             return self.output(x)
 
-    model = VaryingDimModel().to(device)
+    model = VaryingDimModel().to(DEVICE)
     model.eval()
 
     # Insert identity only before layer1 (which takes 64-dim input)
-    insert_identity_operations_(
-        target_model=model,
-        identity_patterns=["layer1"],
-        device=device,
-    )
+    insert_identity_operations_(target_model=model, identity_patterns=["layer1", "layer2"])
 
     # Check that identity has correct dimension
-    assert hasattr(model.layer1, "pre_identity")
-    assert isinstance(model.layer1.pre_identity, nn.Linear)
-    assert model.layer1.pre_identity.weight.shape == (64, 64)
+    assert isinstance(model.layer1.pre_identity, Identity)
+    assert model.layer1.pre_identity.d == 64
 
-    # layer2 should not have identity
-    assert not hasattr(model.layer2, "pre_identity")
+    assert isinstance(model.layer2.pre_identity, Identity)
+    assert model.layer2.pre_identity.d == 128
+
+    assert not hasattr(model.embedding, "pre_identity")
+    assert not hasattr(model.output, "pre_identity")
 
 
-def test_identity_insertion_empty_patterns():
+def test_empty_patterns():
     """Test that empty patterns don't break anything."""
-    model = SimpleModel().to("cpu")
+    model = SimpleModel().to(DEVICE)
 
     # No patterns should result in no modifications
-    insert_identity_operations_(
-        target_model=model,
-        identity_patterns=[],
-        device="cpu",
-    )
+    insert_identity_operations_(target_model=model, identity_patterns=[])
 
     # No identity layers should be added
     assert not hasattr(model.embedding, "pre_identity")
     assert not hasattr(model.layer1, "pre_identity")
     assert not hasattr(model.layer2, "pre_identity")
     assert not hasattr(model.output, "pre_identity")
+
+
+def test_embedding_raises_error():
+    model = SimpleModel(d_model=32).to("cpu")
+
+    with pytest.raises(ValueError, match="Embedding modules not supported"):
+        insert_identity_operations_(target_model=model, identity_patterns=["embedding"])
+
+
+def test_unmatched_pattern_raises_error():
+    model = SimpleModel(d_model=32).to("cpu")
+
+    with pytest.raises(ValueError, match="did not match any modules"):
+        insert_identity_operations_(target_model=model, identity_patterns=["does.not.exist*"])
+
+
+def test_hook_ordering():
+    target_model = SimpleModel(d_model=32).to(DEVICE)
+
+    for param in target_model.parameters():
+        param.requires_grad_(False)
+
+    insert_identity_operations_(target_model, identity_patterns=["layer1"])
+
+    C = 4
+
+    cm: ComponentModel = ComponentModel(
+        target_model,
+        target_module_patterns=["layer1", "layer1.pre_identity"],
+        C=C,
+        gate_type="mlp",
+        gate_hidden_dims=[4],
+        pretrained_model_output_attr=None,
+    )
+
+    x = random_input()
+
+    cm(
+        x,
+        mode="components",
+        mask_infos={
+            "layer1.pre_identity": ComponentsMaskInfo(
+                component_mask=torch.ones(BATCH_SIZE, SEQ_LEN, C, device=DEVICE),
+                weight_delta_and_mask=None,
+            ),
+        },
+    )
+
+
+# def test_pre_identity_hook_modifies_input_as_expected():
+#     class VecModel(nn.Module):
+#         def __init__(self, d: int = 12):
+#             super().__init__()
+#             self.layer = nn.Linear(d, d, bias=False)
+
+#         @override
+#         def forward(self, x: torch.Tensor) -> torch.Tensor:
+#             return self.layer(x)
+
+#     torch.manual_seed(7)
+#     model = VecModel(d=12).to(DEVICE)
+#     model.eval()
+
+#     x = torch.randn(4, 12, device=DEVICE)
+
+#     with torch.no_grad():
+#         base = model(x)
+
+#     insert_identity_operations_(model, identity_patterns=["layer"])
+
+#     # Now scale pre-identity to 2I and check effect matches manual expectation
+#     with torch.no_grad():
+#         cast(nn.Linear, model.layer.pre_identity).weight.mul_(2.0)
+
+#     with torch.no_grad():
+#         modified = model(x)
+
+#     assert_close(modified, base * 2.0, atol=1e-6, rtol=1e-6)
+
+    print()

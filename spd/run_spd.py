@@ -95,11 +95,12 @@ def optimize(
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
     if (identity_patterns := config.identity_module_patterns) is not None:
-        insert_identity_operations_(
-            target_model,
-            identity_patterns=identity_patterns,
-            device=device,
-        )
+        insert_identity_operations_(target_model, identity_patterns=identity_patterns)
+    #     target_module_pattern = config.target_module_patterns + [
+    #         f"{p}.pre_identity" for p in identity_patterns
+    #     ]
+    # else:
+    #     target_module_pattern = config.target_module_patterns
 
     target_model.requires_grad_(False)
 
