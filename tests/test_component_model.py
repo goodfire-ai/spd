@@ -534,6 +534,8 @@ def test_routing():
 
     target_out = model(input)
 
-    assert torch.allclose(cm_routed_out[0], target_out[0])
-    assert not torch.allclose(cm_routed_out[1], target_out[1])
+    # THEN the output should be different for the first example (where it's routed to components)
+    assert not torch.allclose(cm_routed_out[0], target_out[0])
 
+    # but it should be the same for the second example (where it's not routed to components)
+    assert torch.allclose(cm_routed_out[1], target_out[1])

@@ -607,7 +607,9 @@ class SubsetReconstructionLoss(StreamingEval):
                 ci,
                 sampling=self.config.sampling,
                 routing="all",
-                weight_deltas=self.model.calc_weight_deltas() if self.config.use_delta_component else None,
+                weight_deltas=self.model.calc_weight_deltas()
+                if self.config.use_delta_component
+                else None,
             )
             for _ in range(self.n_mask_samples)
         ]
