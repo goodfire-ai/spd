@@ -649,3 +649,24 @@ class ComponentModel(LoadableModule):
             causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs()
 
         return causal_importances, causal_importances_upper_leaky
+
+    def calc_weight_deltas(self) -> dict[str, Float[Tensor, "d_out d_in"]]:
+        """Calculate the weight differences between the target model and component weights (V@U).
+
+        For identity components, the delta is I - W_id.
+        """
+        device = next(iter(self.parameters())).device
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] = {}
+        for comp_name, components_or_module in self.components_or_modules.items():
+            assert isinstance(components_or_module, ComponentsOrModule)
+            if components_or_module.components is not None:
+                weight_deltas[comp_name] = (
+                    components_or_module.original_weight - components_or_module.components.weight
+                )
+            if components_or_module.identity_components is not None:
+                id_name = f"identity_{comp_name}"
+                id_mat = components_or_module.identity_components.weight
+                weight_deltas[id_name] = (
+                    torch.eye(id_mat.shape[0], device=device, dtype=id_mat.dtype) - id_mat
+                )
+        return weight_deltas

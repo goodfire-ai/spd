@@ -3,7 +3,6 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.metrics import calc_faithfulness_loss, calc_weight_deltas
 from spd.models.component_model import ComponentModel
 
 
@@ -60,7 +59,7 @@ class TestCalcWeightDeltas:
         )
         _zero_components_for_test(model, zero_components=True, zero_identity=True)
 
-        deltas = calc_weight_deltas(model=model, device="cpu")
+        deltas = model.calc_weight_deltas()
 
         assert set(deltas.keys()) == {"fc", "identity_fc"}
 
@@ -80,7 +79,7 @@ class TestCalcWeightDeltas:
         )
         _zero_components_for_test(model, zero_components=False, zero_identity=True)
 
-        deltas = calc_weight_deltas(model=model, device="cpu")
+        deltas = model.calc_weight_deltas()
 
         assert set(deltas.keys()) == {"identity_fc"}
         d_in = fc_weight.shape[1]
@@ -94,7 +93,7 @@ class TestCalcWeightDeltas:
             weight=fc_weight, include_components=True, include_identity=False
         )
 
-        deltas = calc_weight_deltas(model=model, device="cpu")
+        deltas = model.calc_weight_deltas()
         assert set(deltas.keys()) == {"fc"}
 
         cm = model.components_or_modules["fc"]
@@ -120,7 +119,7 @@ class TestCalcFaithfulnessLoss:
             weight=fc_weight, include_components=True, include_identity=True
         )
         _zero_components_for_test(model, zero_components=True, zero_identity=True)
-        deltas = calc_weight_deltas(model=model, device="cpu")
+        deltas = model.calc_weight_deltas()
 
         # Expected: mean of squared entries across both matrices
         d_in = fc_weight.shape[1]

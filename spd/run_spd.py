@@ -23,7 +23,6 @@ from spd.data import loop_dataloader
 from spd.eval import evaluate
 from spd.log import logger
 from spd.losses import compute_total_loss
-from spd.metrics import calc_weight_deltas
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
@@ -179,10 +178,10 @@ def optimize(
             group["lr"] = step_lr
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
-        current_p = config.pnorm
+        current_p = config.pnorm()
 
         for _ in range(config.gradient_accumulation_steps):
-            weight_deltas = calc_weight_deltas(component_model, device)
+            weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(
@@ -208,7 +207,7 @@ def optimize(
             current_p = get_linear_annealed_p(
                 step=step,
                 steps=config.steps,
-                initial_p=config.pnorm,
+                initial_p=config.pnorm(),
                 p_anneal_start_frac=config.p_anneal_start_frac,
                 p_anneal_final_p=config.p_anneal_final_p,
                 p_anneal_end_frac=config.p_anneal_end_frac,

@@ -17,14 +17,17 @@ target_module_patterns:
 identity_module_patterns: null
 use_delta_component: true
 
-# --- Loss Coefficients ---
-faithfulness_coeff: null
-ci_recon_coeff: null
-stochastic_recon_coeff: 1.0
-ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 1.0
-importance_minimality_coeff: 1e-5
-pnorm: 2
+# --- Loss config ---
+loss_metric_configs:
+  - classname: "ImportanceMinimalityLoss"
+    coeff: 1e-5
+    extra_init_kwargs:
+      pnorm: 2.0
+      eps: 1e-12
+  - classname: "StochasticReconLayerwiseLoss"
+    coeff: 1.0
+  - classname: "StochasticReconLoss"
+    coeff: 1.0
 output_loss_type: mse
 
 # --- Training ---

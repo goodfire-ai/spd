@@ -22,7 +22,6 @@ from torchmetrics import Metric
 from spd.configs import Config
 from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
-from spd.models.components import ComponentsOrModule
 from spd.plotting import (
     get_single_feature_causal_importances,
     plot_causal_importance_vals,
@@ -38,27 +37,6 @@ from spd.utils.component_utils import (
 )
 from spd.utils.general_utils import calc_kl_divergence_lm
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
-
-
-def calc_weight_deltas(
-    model: ComponentModel, device: str | torch.device
-) -> dict[str, Float[Tensor, " d_out d_in"]]:
-    """Calculate the weight differences between the target model and component weights (V@U) for
-    each layer."""
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
-    for comp_name, components_or_module in model.components_or_modules.items():
-        assert isinstance(components_or_module, ComponentsOrModule)
-        if components_or_module.components is not None:
-            weight_deltas[comp_name] = (
-                components_or_module.original_weight - components_or_module.components.weight
-            )
-        if components_or_module.identity_components is not None:
-            id_name = f"identity_{comp_name}"
-            id_mat = components_or_module.identity_components.weight
-            weight_deltas[id_name] = (
-                torch.eye(id_mat.shape[0], device=device, dtype=id_mat.dtype) - id_mat
-            )
-    return weight_deltas
 
 
 def calc_masked_recon_layerwise_loss(
@@ -166,11 +144,6 @@ class CI_L0(Metric):
         )
         out["l0_bar_chart"] = bar_chart
         return out
-
-    @override
-    def reset(self) -> None:
-        super().reset()
-        self.l0s = defaultdict(list)
 
 
 class CEandKLLosses(Metric):
@@ -304,11 +277,6 @@ class CEandKLLosses(Metric):
     def compute(self) -> Mapping[str, float]:
         return {k: sum(v) / len(v) for k, v in self.ce_losses.items()}
 
-    @override
-    def reset(self) -> None:
-        super().reset()
-        self.ce_losses = defaultdict(list)
-
 
 class CIHistograms(Metric):
     slow = True
@@ -348,12 +316,6 @@ class CIHistograms(Metric):
         combined_causal_importances = {k: torch.cat(v) for k, v in self.causal_importances.items()}
         fig = plot_ci_values_histograms(causal_importances=combined_causal_importances)
         return {"figures/causal_importance_values": fig}
-
-    @override
-    def reset(self) -> None:
-        super().reset()
-        self.causal_importances = defaultdict(list)
-        self.batches_seen = 0
 
 
 class ComponentActivationDensity(Metric):
@@ -402,10 +364,6 @@ class ComponentActivationDensity(Metric):
 
         fig = plot_component_activation_density(activation_densities)
         return {"figures/component_activation_density": fig}
-
-    @override
-    def reset(self) -> None:
-        super().reset()
 
 
 class PermutedCIPlots(Metric):
@@ -461,11 +419,6 @@ class PermutedCIPlots(Metric):
         )[0]
 
         return {f"figures/{k}": v for k, v in figures.items()}
-
-    @override
-    def reset(self) -> None:
-        super().reset()
-        self.batch_shape = None
 
 
 class UVPlots(Metric):
@@ -525,11 +478,6 @@ class UVPlots(Metric):
         )
 
         return {"figures/uv_matrices": uv_matrices}
-
-    @override
-    def reset(self) -> None:
-        super().reset()
-        self.batch_shape = None
 
 
 class IdentityCIError(Metric):
@@ -599,11 +547,6 @@ class IdentityCIError(Metric):
 
         return target_metrics
 
-    @override
-    def reset(self) -> None:
-        super().reset()
-        self.batch_shape = None
-
 
 class CIMeanPerComponent(Metric):
     slow = True
@@ -663,10 +606,6 @@ class CIMeanPerComponent(Metric):
             "figures/ci_mean_per_component_log": img_log,
         }
 
-    @override
-    def reset(self) -> None:
-        super().reset()
-
 
 class SubsetReconstructionLoss(Metric):
     """Compute reconstruction loss for specific subsets of components."""
@@ -720,7 +659,7 @@ class SubsetReconstructionLoss(Metric):
         **kwargs: Any,
     ) -> None:
         if weight_deltas is None and self.config.use_delta_component:
-            weight_deltas = calc_weight_deltas(self.model, device=target_out.device)
+            weight_deltas = self.model.calc_weight_deltas()
         elif not self.config.use_delta_component:
             weight_deltas = {}
         if weight_deltas is None:
@@ -892,11 +831,6 @@ class SubsetReconstructionLoss(Metric):
 
         return results
 
-    @override
-    def reset(self) -> None:
-        super().reset()
-        self.losses = defaultdict(list)
-
 
 # --- Loss metrics (per-term) ----------------------------------------------------------------- #
 
@@ -931,7 +865,7 @@ class FaithfulnessLoss(Metric):
         **kwargs: Any,
     ) -> None:
         if weight_deltas is None:
-            weight_deltas = calc_weight_deltas(self.model, device=target_out.device)
+            weight_deltas = self.model.calc_weight_deltas()
 
         for delta in weight_deltas.values():
             self.sum_faithfulness += (delta**2).sum()
@@ -1023,7 +957,7 @@ class StochasticReconLayerwiseLoss(Metric):
         **kwargs: Any,
     ) -> None:
         if weight_deltas is None and self.config.use_delta_component:
-            weight_deltas = calc_weight_deltas(self.model, device=target_out.device)
+            weight_deltas = self.model.calc_weight_deltas()
 
         stoch_masks_list = calc_stochastic_masks(
             causal_importances=ci,
@@ -1189,7 +1123,7 @@ class StochasticReconLoss(Metric):
     ) -> None:
         """Calculate the stochastic recon loss before reduction."""
         if weight_deltas is None and self.config.use_delta_component:
-            weight_deltas = calc_weight_deltas(self.model, device=target_out.device)
+            weight_deltas = self.model.calc_weight_deltas()
         elif not self.config.use_delta_component:
             weight_deltas = {}
 
@@ -1225,25 +1159,3 @@ class StochasticReconLoss(Metric):
     @override
     def compute(self) -> Float[Tensor, ""]:
         return self.sum_stochastic_recon / self.n_examples
-
-
-METRICS = {
-    cls.__name__: cls
-    for cls in [
-        CI_L0,
-        CEandKLLosses,
-        CIHistograms,
-        ComponentActivationDensity,
-        PermutedCIPlots,
-        UVPlots,
-        IdentityCIError,
-        CIMeanPerComponent,
-        SubsetReconstructionLoss,
-        FaithfulnessLoss,
-        CIReconLoss,
-        StochasticReconLoss,
-        CIReconLayerwiseLoss,
-        StochasticReconLayerwiseLoss,
-        ImportanceMinimalityLoss,
-    ]
-}

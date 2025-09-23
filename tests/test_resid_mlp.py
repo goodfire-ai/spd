@@ -39,14 +39,12 @@ def test_resid_mlp_decomposition_happy_path() -> None:
             "layers.*.mlp_in",
             "layers.*.mlp_out",
         ],
-        # Loss Coefficients
-        faithfulness_coeff=1.0,
-        ci_recon_coeff=2.0,
-        stochastic_recon_coeff=1.0,
-        ci_recon_layerwise_coeff=None,
-        stochastic_recon_layerwise_coeff=None,
-        importance_minimality_coeff=3e-3,
-        pnorm=0.9,
+        # Loss config (metrics-style)
+        loss_metric_configs=[
+            {"classname": "ImportanceMinimalityLoss", "coeff": 3e-3, "extra_init_kwargs": {"pnorm": 0.9, "eps": 1e-12}},
+            {"classname": "StochasticReconLoss", "coeff": 1.0},
+            {"classname": "FaithfulnessLoss", "coeff": 1.0},
+        ],
         output_loss_type="mse",
         # Training
         lr=1e-3,

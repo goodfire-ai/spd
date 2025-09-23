@@ -29,14 +29,13 @@ TEST_CONFIG = {
     "gate_hidden_dims": [2],
     "sigmoid_type": "leaky_hard",
     "target_module_patterns": ["model.layers.0.mlp.gate_proj"],
-    # --- Loss Coefficients ---
-    "faithfulness_coeff": 3000,
-    "recon_coeff": None,
-    "stochastic_recon_coeff": None,  # Otherwise we're non-deterministic with dp>1
-    "recon_layerwise_coeff": 1,
-    "stochastic_recon_layerwise_coeff": None,  # Otherwise we're non-deterministic with dp>1
-    "importance_minimality_coeff": 0.1,
-    "pnorm": 2.0,
+    # --- Loss metrics ---
+    "loss_metric_configs": [
+        {"classname": "ImportanceMinimalityLoss", "coeff": 0.1, "extra_init_kwargs": {"pnorm": 2.0, "eps": 1e-12}},
+        # Disable stochastic terms for deterministic dp test; keep a simple layerwise recon if needed
+        {"classname": "CIReconLayerwiseLoss", "coeff": 1.0},
+        {"classname": "FaithfulnessLoss", "coeff": 3000},
+    ],
     "output_loss_type": "kl",
     # --- Training ---
     "batch_size": 2,

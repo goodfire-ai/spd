@@ -36,7 +36,7 @@ class MetricConfig(BaseModel):
     )
     coeff: float | None = Field(
         default=None,
-        description="Optional coefficient used for weighting into loss/total; if None, uses the corresponding *_coeff field on Config.",
+        description="Optional coefficient used for weighting into loss/total.",
     )
     slow: bool | None = Field(
         default=None,
@@ -141,36 +141,9 @@ class Config(BaseModel):
         "model and component weights. This allows for removing the faithfulness loss.",
     )
 
-    # --- Loss Coefficients
-    # faithfulness_coeff: NonNegativeFloat | None = Field(
-    #     default=1.0,
-    #     description="Coefficient for matching parameters between components and target weights",
-    # )
-    # ci_recon_coeff: NonNegativeFloat | None = Field(
-    #     default=None,
-    #     description="Coefficient for recon loss with a causal importance mask",
-    # )
-    # stochastic_recon_coeff: NonNegativeFloat | None = Field(
-    #     default=None,
-    #     description="Coefficient for recon loss with stochastically sampled masks",
-    # )
-    # ci_recon_layerwise_coeff: NonNegativeFloat | None = Field(
-    #     default=None,
-    #     description="Coefficient for recon loss with causal importance mask on one layer at a time",
-    # )
-    # stochastic_recon_layerwise_coeff: NonNegativeFloat | None = Field(
-    #     default=None,
-    #     description="Coefficient for recon loss with stochastically sampled masks on one layer at "
-    #     "a time",
-    # )
-    # importance_minimality_coeff: NonNegativeFloat = Field(
-    #     ...,
-    #     description="Coefficient for importance minimality loss",
-    # )
-    # pnorm: PositiveFloat = Field(
-    #     ...,
-    #     description="The p-value used for the importance minimality loss",
-    # )
+    # --- Loss configuration ---
+    # Provide all loss terms via `loss_metric_configs` only (no legacy fields).
+    # TODO: Move the p-annealing fields to the ImportanceMinimalityLoss config.
     p_anneal_start_frac: Probability = Field(
         default=1.0,
         description="Fraction of training after which to start annealing p (1.0 = no annealing)",
@@ -318,16 +291,15 @@ class Config(BaseModel):
         "uses the default backend for the current device.",
     )
 
-    @property
     def pnorm(self) -> float:
+        """Return the p-norm value for importance minimality from loss_metric_configs."""
         cfg = next(
             (c for c in self.loss_metric_configs if c.classname == "ImportanceMinimalityLoss"), None
         )
         assert cfg is not None, "ImportanceMinimalityLoss must be in loss_metric_configs"
         if "pnorm" not in cfg.extra_init_kwargs:
             raise KeyError("Missing 'pnorm' in ImportanceMinimalityLoss.extra_init_kwargs")
-        val = cfg.extra_init_kwargs["pnorm"]
-        return float(val)
+        return float(cfg.extra_init_kwargs["pnorm"])
 
     DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = [
         "image_on_first_step",
@@ -365,42 +337,6 @@ class Config(BaseModel):
             config_dict["train_log_freq"] = 50
         if "slow_eval_freq" not in config_dict:
             config_dict["slow_eval_freq"] = config_dict["eval_freq"]
-        return config_dict
-
-    @model_validator(mode="before")
-    def populate_loss_coeffs_from_loss_metrics(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
-        """Populate legacy *_coeff fields from `loss_metrics` if provided.
-
-        This keeps one source-of-truth in `loss_metrics` while allowing existing training
-        code that relies on *_coeff fields to continue working without duplication.
-        """
-        loss_metrics_cfg = config_dict.get("loss_metrics") or []
-        if not loss_metrics_cfg:
-            return config_dict
-
-        # Map loss metric classnames to their corresponding *_coeff field names
-        classname_to_coeff_key = {
-            "FaithfulnessLoss": "faithfulness_coeff",
-            "ReconLoss": "recon_coeff",
-            "StochasticReconLoss": "stochastic_recon_coeff",
-            "ReconLayerwiseLoss": "recon_layerwise_coeff",
-            "StochasticReconLayerwiseLoss": "stochastic_recon_layerwise_coeff",
-            "ImportanceMinimalityLoss": "importance_minimality_coeff",
-            "SchattenLoss": "schatten_coeff",
-            "OutputReconLoss": "out_recon_coeff",
-            "EmbeddingReconLoss": "embedding_recon_coeff",
-        }
-
-        for item in loss_metrics_cfg:
-            classname = item.get("classname")
-            coeff = item.get("coeff", None)
-            coeff_key = classname_to_coeff_key.get(classname)
-            if coeff_key is None:
-                continue
-            if coeff is not None:
-                config_dict[coeff_key] = coeff
-            # If coeff is None, leave any existing root-level value as-is
-
         return config_dict
 
     @model_validator(mode="after")

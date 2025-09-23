@@ -413,8 +413,9 @@ def test_from_run_info():
             eval_batch_size=1,
             eval_freq=1,
             slow_eval_freq=1,
-            importance_minimality_coeff=1.0,
-            pnorm=1.0,
+            loss_metric_configs=[
+                {"classname": "ImportanceMinimalityLoss", "coeff": 1.0, "extra_init_kwargs": {"pnorm": 1.0, "eps": 1e-12}}
+            ],
             n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,

@@ -26,12 +26,12 @@ def test_gpt_2_decomposition_happy_path() -> None:
         gate_hidden_dims=[128],
         target_module_patterns=["transformer.h.*.attn.c_attn", "transformer.h.*.attn.c_proj"],
         # Loss Coefficients
-        faithfulness_coeff=200,
-        stochastic_recon_coeff=1.0,
-        ci_recon_layerwise_coeff=None,
-        stochastic_recon_layerwise_coeff=1.0,
-        importance_minimality_coeff=1e-2,
-        pnorm=0.9,
+        loss_metric_configs=[
+            {"classname": "ImportanceMinimalityLoss", "coeff": 1e-2, "extra_init_kwargs": {"pnorm": 0.9, "eps": 1e-12}},
+            {"classname": "StochasticReconLayerwiseLoss", "coeff": 1.0},
+            {"classname": "StochasticReconLoss", "coeff": 1.0},
+            {"classname": "FaithfulnessLoss", "coeff": 200},
+        ],
         output_loss_type="kl",
         # Training
         lr=1e-3,

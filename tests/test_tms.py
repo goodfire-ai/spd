@@ -40,14 +40,13 @@ def test_tms_decomposition_happy_path() -> None:
         gate_type="mlp",
         gate_hidden_dims=[8],
         target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
-        # Loss Coefficients
-        faithfulness_coeff=1.0,
-        ci_recon_coeff=None,
-        stochastic_recon_coeff=1.0,
-        ci_recon_layerwise_coeff=1e-1,
-        stochastic_recon_layerwise_coeff=1.0,
-        importance_minimality_coeff=3e-3,
-        pnorm=2.0,
+        # Loss config (metrics-style)
+        loss_metric_configs=[
+            {"classname": "ImportanceMinimalityLoss", "coeff": 3e-3, "extra_init_kwargs": {"pnorm": 2.0, "eps": 1e-12}},
+            {"classname": "StochasticReconLayerwiseLoss", "coeff": 1.0},
+            {"classname": "StochasticReconLoss", "coeff": 1.0},
+            {"classname": "FaithfulnessLoss", "coeff": 1.0},
+        ],
         output_loss_type="mse",
         # Training
         lr=1e-3,
