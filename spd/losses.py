@@ -5,10 +5,9 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import Config
-from spd.mask_info import ComponentsMaskInfo, WeightDeltaAndMask, make_mask_infos
 from spd.models.component_model import ComponentModel
-from spd.models.components import ComponentsOrModule
-from spd.utils.component_utils import calc_stochastic_masks
+from spd.models.components import ComponentsMaskInfo, make_mask_infos
+from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -114,27 +113,6 @@ def calc_masked_recon_loss(
     return total_loss / len(mask_infos_list)
 
 
-def calc_weight_deltas(
-    model: ComponentModel, device: str | torch.device
-) -> dict[str, Float[Tensor, " d_out d_in"]]:
-    """Calculate the weight differences between the target model and component weights (V@U) for
-    each layer."""
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
-    for comp_name, components_or_module in model.components_or_modules.items():
-        assert isinstance(components_or_module, ComponentsOrModule)
-        if components_or_module.components is not None:
-            weight_deltas[comp_name] = (
-                components_or_module.original_weight - components_or_module.components.weight
-            )
-        if components_or_module.identity_components is not None:
-            id_name = f"identity_{comp_name}"
-            id_mat = components_or_module.identity_components.weight
-            weight_deltas[id_name] = (
-                torch.eye(id_mat.shape[0], device=device, dtype=id_mat.dtype) - id_mat
-            )
-    return weight_deltas
-
-
 def calc_faithfulness_loss(
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
     device: str | torch.device,
@@ -191,11 +169,10 @@ def calculate_losses(
 
     # CI reconstruction loss
     if config.ci_recon_coeff is not None:
-        ci_recon_mask_infos = make_mask_infos(causal_importances, None)
         ci_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
-            mask_infos_list=[ci_recon_mask_infos],
+            mask_infos_list=[make_mask_infos(causal_importances, weight_deltas_and_masks=None)],
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,
@@ -205,28 +182,14 @@ def calculate_losses(
 
     # Stochastic reconstruction loss
     if config.stochastic_recon_coeff is not None:
-        stochastic_masks_list = calc_stochastic_masks(
-            causal_importances=causal_importances,
-            n_mask_samples=config.n_mask_samples,
-            sampling=config.sampling,
-        )
-
-        stoch_mask_infos_list = []
-        for stochastic_masks in stochastic_masks_list:
-            deltas_and_masks = (
-                {
-                    key: (weight_deltas[key], stochastic_masks.weight_delta_masks[key])
-                    for key in weight_deltas
-                }
-                if config.use_delta_component
-                else None
+        stoch_mask_infos_list = [
+            calc_stochastic_component_mask_info(
+                causal_importances=causal_importances,
+                sampling=config.sampling,
+                weight_deltas=weight_deltas if config.use_delta_component else None,
             )
-            stoch_mask_infos = make_mask_infos(
-                masks=stochastic_masks.component_masks,
-                weight_deltas_and_masks=deltas_and_masks,
-            )
-            stoch_mask_infos_list.append(stoch_mask_infos)
-
+            for _ in range(config.n_mask_samples)
+        ]
         stochastic_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
@@ -235,7 +198,6 @@ def calculate_losses(
             loss_type=config.output_loss_type,
             device=device,
         )
-
         total_loss += config.stochastic_recon_coeff * stochastic_recon_loss
         loss_terms["stochastic_recon"] = stochastic_recon_loss.item()
 
@@ -244,7 +206,7 @@ def calculate_losses(
         ci_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
-            mask_infos_list=[make_mask_infos(causal_importances)],
+            mask_infos_list=[make_mask_infos(causal_importances, weight_deltas_and_masks=None)],
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,
@@ -254,31 +216,18 @@ def calculate_losses(
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
-        stochastic_masks_list = calc_stochastic_masks(
-            causal_importances=causal_importances,
-            n_mask_samples=config.n_mask_samples,
-            sampling=config.sampling,
-        )
-        mask_infos_list: list[dict[str, ComponentsMaskInfo]] = []
-        for stochastic_masks in stochastic_masks_list:
-            weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = (
-                {
-                    key: (weight_deltas[key], stochastic_masks.weight_delta_masks[key])
-                    for key in weight_deltas
-                }
-                if config.use_delta_component
-                else None
+        stoch_mask_infos_list = [
+            calc_stochastic_component_mask_info(
+                causal_importances=causal_importances,
+                sampling=config.sampling,
+                weight_deltas=weight_deltas if config.use_delta_component else None,
             )
-            mask_infos = make_mask_infos(
-                masks=stochastic_masks.component_masks,
-                weight_deltas_and_masks=weight_deltas_and_masks,
-            )
-            mask_infos_list.append(mask_infos)
-
+            for _ in range(config.n_mask_samples)
+        ]
         stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
-            mask_infos_list=mask_infos_list,
+            mask_infos_list=stoch_mask_infos_list,
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,

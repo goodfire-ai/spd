@@ -14,7 +14,7 @@ from transformers import AutoTokenizer, PreTrainedTokenizer
 from spd.configs import Config
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.models.components import EmbeddingComponents, GateMLPs, LinearComponents, VectorGateMLPs
+from spd.models.components import EmbeddingComponents, LinearComponents, MLPGates, VectorMLPGates
 
 DEFAULT_WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "spd")
 
@@ -26,7 +26,7 @@ class ModelData:
     model: ComponentModel
     tokenizer: PreTrainedTokenizer
     config: Config
-    gates: dict[str, GateMLPs | VectorGateMLPs]
+    gates: dict[str, MLPGates | VectorMLPGates]
     components: dict[str, LinearComponents | EmbeddingComponents]
     layer_names: list[str]
 
@@ -74,7 +74,7 @@ def load_model(model_path: str) -> ModelData:
 
     # Extract components and gates
     gates = {
-        k.removeprefix("gates.").replace("-", "."): cast(GateMLPs | VectorGateMLPs, v)
+        k.removeprefix("gates.").replace("-", "."): cast(MLPGates | VectorMLPGates, v)
         for k, v in model.gates.items()
     }
     components = {
