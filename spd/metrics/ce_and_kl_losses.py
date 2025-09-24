@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any, override
 
 import einops
 import torch
 import torch.nn.functional as F
+from jaxtyping import Int
 from torch import Tensor
 from torchmetrics import Metric
 
@@ -17,10 +17,15 @@ from spd.utils.general_utils import calc_kl_divergence_lm
 
 
 class CEandKLLosses(Metric):
+    """CE and KL losses for different masking strategies.
+
+    NOTE: Assumes all batches and sequences are the same size.
+    """
+
     slow = False
     is_differentiable: bool | None = False
 
-    # TODO: Awful that we have to hardcode these here and hope they're the same as the output
+    # TODO: Gross that we have to hardcode these here and hope they're the same as the output
     # of _calc_ce_and_kl_losses
     loss_keys: list[str] = [
         "kl/ci_masked",
@@ -41,6 +46,8 @@ class CEandKLLosses(Metric):
         "ce_unrecovered/rounded_masked",
     ]
 
+    n_positions: Int[Tensor, ""]  # batch_size * seq_len * n_batches_seen
+
     def __init__(
         self, model: ComponentModel, config: Config, rounding_threshold: float, **kwargs: Any
     ) -> None:
@@ -48,12 +55,14 @@ class CEandKLLosses(Metric):
         self.model = model
         self.config = config
         self.rounding_threshold = rounding_threshold
+
         for key in self.loss_keys:
             self.add_state(
-                key,
-                default=[],
-                dist_reduce_fx="cat",
+                f"{key}_sum",
+                default=torch.tensor(0.0),
+                dist_reduce_fx="sum",
             )
+        self.add_state("n_positions", default=torch.tensor(0), dist_reduce_fx="sum")
 
     @override
     def update(
@@ -64,21 +73,26 @@ class CEandKLLosses(Metric):
         **kwargs: Any,
     ) -> None:
         ce_losses = self._calc_ce_and_kl_losses(batch=batch, target_out=target_out, ci=ci)
+
+        assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
+        n_positions_in_batch = batch.shape[0] * batch.shape[1]
+        self.n_positions += n_positions_in_batch
+
         for key in self.loss_keys:
-            getattr(self, key).append(ce_losses[key])
+            key_sum = getattr(self, f"{key}_sum") * n_positions_in_batch
+            key_sum += ce_losses[key]
 
     @override
-    def compute(self) -> Mapping[str, float]:
+    def compute(self) -> dict[str, float]:
         losses = {}
-        # TODO: I think this is very inefficient as it will gather across ranks for each key
         for key in self.loss_keys:
-            loss_values: list[float] = getattr(self, key)
-            losses[key] = sum(loss_values) / len(loss_values)
+            loss_sum = getattr(self, f"{key}_sum")
+            losses[key] = loss_sum / self.n_positions
         return losses
 
     def _calc_ce_and_kl_losses(
         self, batch: Tensor, target_out: Tensor, ci: dict[str, Tensor]
-    ) -> Mapping[str, float]:
+    ) -> dict[str, float]:
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
         masked_batch = batch.clone()
         masked_batch[:, 0] = -100
@@ -142,7 +156,7 @@ class CEandKLLosses(Metric):
         def ce_difference(ce: float) -> float:
             return ce - target_model_ce_loss
 
-        return {
+        out: dict[str, float] = {
             "kl/ci_masked": ci_masked_kl_loss,
             "kl/unmasked": unmasked_kl_loss,
             "kl/stoch_masked": stoch_masked_kl_loss,
@@ -160,3 +174,5 @@ class CEandKLLosses(Metric):
             "ce_unrecovered/random_masked": pct_ce_unrecovered(random_masked_ce_loss),
             "ce_unrecovered/rounded_masked": pct_ce_unrecovered(rounded_masked_ce_loss),
         }
+        assert list(out.keys()) == self.loss_keys
+        return out

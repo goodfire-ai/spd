@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from typing import Any, override
 
 from PIL import Image
@@ -13,6 +12,7 @@ from spd.plotting import plot_causal_importance_vals
 class PermutedCIPlots(Metric):
     slow = True
     is_differentiable: bool | None = False
+    input_magnitude: float = 0.75
 
     def __init__(
         self,
@@ -41,14 +41,13 @@ class PermutedCIPlots(Metric):
             self.batch_shape = tuple(batch.shape)
 
     @override
-    def compute(self) -> Mapping[str, Image.Image]:
+    def compute(self) -> dict[str, Image.Image]:
         assert self.batch_shape is not None, "haven't seen any inputs yet"
 
         figures = plot_causal_importance_vals(
             model=self.model,
             batch_shape=self.batch_shape,
-            device=self.model_device,
-            input_magnitude=0.75,
+            input_magnitude=self.input_magnitude,
             sigmoid_type=self.config.sigmoid_type,
             identity_patterns=self.identity_patterns,
             dense_patterns=self.dense_patterns,

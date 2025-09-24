@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from typing import Any, override
 
 import torch
@@ -32,20 +31,20 @@ class CIMeanPerComponent(Metric):
             )
 
     @override
-    def update(self, ci: dict[str, Tensor], **kwargs: Any) -> None:
+    def update(self, *, ci: dict[str, Tensor], **kwargs: Any) -> None:
         for module_name, ci_vals in ci.items():
-            n_batch_dims = ci_vals.ndim - 1
-            total_batch_size = ci_vals.shape[:n_batch_dims].numel()
+            n_leading_dims = ci_vals.ndim - 1
+            n_examples = ci_vals.shape[:n_leading_dims].numel()
 
             examples_seen = getattr(self, f"examples_seen_{module_name}")
-            examples_seen += total_batch_size
+            examples_seen += n_examples
 
             ci_sums = getattr(self, f"component_ci_sums_{module_name}")
-            batch_indices = tuple(range(n_batch_dims))
-            ci_sums += ci_vals.sum(dim=batch_indices)
+            leading_dim_idxs = tuple(range(n_leading_dims))
+            ci_sums += ci_vals.sum(dim=leading_dim_idxs)
 
     @override
-    def compute(self) -> Mapping[str, Image.Image]:
+    def compute(self) -> dict[str, Image.Image]:
         mean_component_cis = {}
         for module_name in self.components:
             ci_sums = getattr(self, f"component_ci_sums_{module_name}")

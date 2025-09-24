@@ -20,6 +20,8 @@ from spd.utils.general_utils import calc_kl_divergence_lm
 class SubsetReconstructionLoss(Metric):
     """Compute reconstruction loss for specific subsets of components."""
 
+    # TODO: Currently doesn't collect metrics across ranks. Need to do similar to CI_L0 in order to
+    # add all possible keys via add_state.
     slow = False
     is_differentiable: bool | None = False
 
@@ -98,7 +100,7 @@ class SubsetReconstructionLoss(Metric):
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
         weight_deltas: dict[str, Tensor],
-    ) -> Mapping[str, float]:
+    ) -> dict[str, float]:
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
 
         masked_batch = batch.clone()

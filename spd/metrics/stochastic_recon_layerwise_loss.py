@@ -18,7 +18,7 @@ class StochasticReconLayerwiseLoss(Metric):
     is_differentiable: bool | None = True
 
     sum_loss: Float[Tensor, ""]
-    n_examples: int
+    n_examples: Int[Tensor, ""]
 
     def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)

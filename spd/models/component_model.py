@@ -97,12 +97,11 @@ class ComponentModel(LoadableModule):
         self.target_model = target_model
         self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
-
-        module_paths = get_target_module_paths(target_model, target_module_patterns)
+        self.module_paths = get_target_module_paths(target_model, target_module_patterns)
 
         self.components = ComponentModel._create_components(
             target_model=target_model,
-            module_paths=module_paths,
+            module_paths=self.module_paths,
             C=C,
         )
         self._components = nn.ModuleDict(
@@ -111,7 +110,7 @@ class ComponentModel(LoadableModule):
 
         self.gates = ComponentModel._create_gates(
             target_model=target_model,
-            module_paths=module_paths,
+            module_paths=self.module_paths,
             C=C,
             gate_type=gate_type,
             gate_hidden_dims=gate_hidden_dims,

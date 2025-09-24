@@ -1,8 +1,8 @@
-from collections.abc import Mapping
 from typing import Any, override
 
 import torch
 from einops import reduce
+from jaxtyping import Int
 from PIL import Image
 from torch import Tensor
 from torchmetrics import Metric
@@ -13,10 +13,12 @@ from spd.plotting import plot_component_activation_density
 
 
 class ComponentActivationDensity(Metric):
+    """Activation density for each component."""
+
     slow = True
     is_differentiable: bool | None = False
 
-    n_examples: int
+    n_examples: Int[Tensor, ""]
 
     def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -41,10 +43,10 @@ class ComponentActivationDensity(Metric):
             active_components = ci_vals > self.config.ci_alive_threshold
             n_activations_per_component = reduce(active_components, "... C -> C", "sum")
             counts = getattr(self, f"component_activation_counts_{module_name}")
-            counts += n_activations_per_component
+            counts += n_activations_per_component * n_examples_this_batch
 
     @override
-    def compute(self) -> Mapping[str, Image.Image]:
+    def compute(self) -> dict[str, Image.Image]:
         activation_densities = {}
         for module_name in self.model.components:
             counts = getattr(self, f"component_activation_counts_{module_name}")

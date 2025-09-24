@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from typing import Any, override
 
 from torch import Tensor
@@ -11,6 +10,8 @@ from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci
 
 
 class IdentityCIError(Metric):
+    """Error between the CI values and an Identity or Dense CI pattern."""
+
     slow = True
     is_differentiable: bool | None = False
 
@@ -25,7 +26,6 @@ class IdentityCIError(Metric):
         super().__init__(**kwargs)
         self.model = model
         self.config = config
-        self.model_device = next(iter(model.parameters())).device
         self.identity_ci = identity_ci
         self.dense_ci = dense_ci
 
@@ -41,7 +41,7 @@ class IdentityCIError(Metric):
             self.batch_shape = tuple(batch.shape)
 
     @override
-    def compute(self) -> Mapping[str, float]:
+    def compute(self) -> dict[str, float]:
         assert self.batch_shape is not None, "haven't seen any inputs yet"
 
         target_solution = make_target_ci_solution(
@@ -53,7 +53,6 @@ class IdentityCIError(Metric):
         ci_arrays, _ = get_single_feature_causal_importances(
             model=self.model,
             batch_shape=self.batch_shape,
-            device=self.model_device,
             input_magnitude=0.75,
             sampling=self.config.sampling,
             sigmoid_type=self.config.sigmoid_type,

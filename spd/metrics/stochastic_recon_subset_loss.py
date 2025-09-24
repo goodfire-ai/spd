@@ -18,7 +18,7 @@ class StochasticReconSubsetLoss(Metric):
     is_differentiable: bool | None = True
 
     sum_loss: Float[Tensor, ""]
-    n_examples: int
+    n_examples: Int[Tensor, ""]
 
     def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -52,7 +52,11 @@ class StochasticReconSubsetLoss(Metric):
                     loss = ((out - target_out) ** 2).sum()
                 case "kl":
                     loss = calc_kl_divergence_lm(pred=out, target=target_out, reduce=False).sum()
-            self.n_examples += out.shape[:-1].numel()
+            self.n_examples += (
+                out.shape.numel()
+                if self.config.output_loss_type == "mse"
+                else out.shape[:-1].numel()
+            )
             self.sum_loss += loss
 
     @override

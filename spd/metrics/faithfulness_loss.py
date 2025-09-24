@@ -1,7 +1,7 @@
 from typing import Any, override
 
 import torch
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from torch import Tensor
 from torchmetrics import Metric
 
@@ -10,11 +10,13 @@ from spd.models.component_model import ComponentModel
 
 
 class FaithfulnessLoss(Metric):
+    """MSE between the target weights and the sum of the components."""
+
     slow = False
     is_differentiable: bool | None = True
 
     sum_loss: Float[Tensor, ""]
-    total_params: int
+    total_params: Int[Tensor, ""]
 
     def __init__(self, model: ComponentModel, _config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)

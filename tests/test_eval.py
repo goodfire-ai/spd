@@ -56,8 +56,8 @@ class TestCIHistograms:
 
         # Check that only n_batches_accum were accumulated
         assert ci_hist.batches_seen == n_batches_accum
-        assert len(ci_hist.causal_importances["layer1"]) == n_batches_accum
-        assert len(ci_hist.causal_importances["layer2"]) == n_batches_accum
+        assert len(ci_hist.causal_importances_layer1) == n_batches_accum  # pyright: ignore[reportArgumentType]
+        assert len(ci_hist.causal_importances_layer2) == n_batches_accum  # pyright: ignore[reportArgumentType]
 
     def test_none_n_batches_accum(
         self, mock_model: Mock, mock_config: Mock, sample_ci: dict[str, torch.Tensor]
@@ -77,16 +77,21 @@ class TestCIHistograms:
 
         # All batches should be accumulated
         assert ci_hist.batches_seen == num_batches
-        assert len(ci_hist.causal_importances["layer1"]) == num_batches
-        assert len(ci_hist.causal_importances["layer2"]) == num_batches
+        assert len(ci_hist.causal_importances_layer1) == num_batches  # pyright: ignore[reportArgumentType]
+        assert len(ci_hist.causal_importances_layer2) == num_batches  # pyright: ignore[reportArgumentType]
 
     def test_empty_compute(self, mock_model: Mock, mock_config: Mock):
         """Test compute() when no batches have been updated."""
 
-        mock_model.components = {}
         ci_hist = CIHistograms(mock_model, mock_config)
 
-        # When no batches watched, causal_importances dict has empty lists
-        # This should raise an AssertionError from plot_ci_values_histograms
-        with pytest.raises(AssertionError, match="No causal importances to plot"):
+        # When no batches watched, dim_zero_cat will raise a ValueError
+        # We also expect a warning about compute being called before update
+        with (
+            pytest.warns(
+                UserWarning,
+                match=r"The ``compute`` method of metric .* was called before the ``update`` method",
+            ),
+            pytest.raises(ValueError, match="No samples to concatenate"),
+        ):
             ci_hist.compute()

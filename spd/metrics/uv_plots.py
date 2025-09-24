@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from typing import Any, override
 
 from PIL import Image
@@ -40,13 +39,12 @@ class UVPlots(Metric):
             self.batch_shape = tuple(batch.shape)
 
     @override
-    def compute(self) -> Mapping[str, Image.Image]:
+    def compute(self) -> dict[str, Image.Image]:
         assert self.batch_shape is not None, "haven't seen any inputs yet"
 
         all_perm_indices = plot_causal_importance_vals(
             model=self.model,
             batch_shape=self.batch_shape,
-            device=next(iter(self.model.parameters())).device,
             input_magnitude=0.75,
             sigmoid_type=self.config.sigmoid_type,
             identity_patterns=self.identity_patterns,

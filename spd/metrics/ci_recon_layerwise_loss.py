@@ -11,19 +11,19 @@ from spd.models.components import make_mask_infos
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
-class CIReconLayerwiseLoss(Metric):
+class CIMaskedReconLayerwiseLoss(Metric):
     """Recon loss when masking with CI values directly one layer at a time."""
 
     slow = False
     is_differentiable: bool | None = True
 
     sum_loss: Float[Tensor, ""]
-    n_examples: int
+    n_examples: Int[Tensor, ""]
 
     def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model = model
-        self.config = config
+        self.output_loss_type = config.output_loss_type
 
         self.add_state("sum_loss", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_examples", default=torch.tensor(0), dist_reduce_fx="sum")
@@ -34,18 +34,19 @@ class CIReconLayerwiseLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
         **kwargs: Any,
     ) -> None:
         mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
         for module_name, mask_info in mask_infos.items():
             # TODO: Refactor this accumulation, it's used in lots of losses
             out = self.model(batch, mode="components", mask_infos={module_name: mask_info})
-            if self.config.output_loss_type == "mse":
+            if self.output_loss_type == "mse":
                 loss = ((out - target_out) ** 2).sum()
             else:
                 loss = calc_kl_divergence_lm(pred=out, target=target_out, reduce=False).sum()
-            self.n_examples += out.shape[:-1].numel()
+            self.n_examples += (
+                out.shape.numel() if self.output_loss_type == "mse" else out.shape[:-1].numel()
+            )
             self.sum_loss += loss
 
     @override

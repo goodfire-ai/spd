@@ -37,7 +37,7 @@ TEST_CONFIG = {
             "extra_init_kwargs": {"pnorm": 2.0, "eps": 1e-12},
         },
         # Disable stochastic terms for deterministic dp test; keep a simple layerwise recon if needed
-        {"classname": "CIReconLayerwiseLoss", "coeff": 1.0},
+        {"classname": "CIMaskedReconLayerwiseLoss", "coeff": 1.0},
         {"classname": "FaithfulnessLoss", "coeff": 3000},
     ],
     "output_loss_type": "kl",
