@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import einops
 import matplotlib.pyplot as plt
@@ -9,15 +9,15 @@ from jaxtyping import Float
 from PIL import Image
 from torch import Tensor
 
-from spd.experiments.resid_mlp.models import ResidMLP
+from spd.experiments.resid_mlp.models import MLP, ResidMLP
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.models.components import Components, ComponentsOrModule
+from spd.models.components import Components
 from spd.plotting import plot_causal_importance_vals
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import runtime_cast, set_seed
+from spd.utils.general_utils import set_seed
 from spd.utils.run_utils import get_output_dir
 
 
@@ -39,10 +39,10 @@ def extract_ci_val_figures(
     model.to(device)
 
     config = run_info.config
-    assert isinstance(model.patched_model, ResidMLP | TMSModel), (
-        "patched model must be a ResidMLP or TMSModel"
+    assert isinstance(model.target_model, ResidMLP | TMSModel), (
+        "model must be a ResidMLP or TMSModel"
     )
-    n_features = model.patched_model.config.n_features
+    n_features = model.target_model.config.n_features
 
     # Assume no position dimension
     batch_shape = (1, n_features)
@@ -153,33 +153,34 @@ def feature_contribution_plot(
 
 
 def compute_patched_weight_neuron_contributions(
-    patched_model: ResidMLP, n_features: int | None = None
+    model: ResidMLP, n_features: int | None = None
 ) -> Float[Tensor, "n_layers n_features d_mlp"]:
     """Compute per-neuron contribution strengths for a *trained* ResidMLP.
 
-    The returned tensor has shape ``(n_layers, n_features, d_mlp)`` recording – for
-    every hidden layer and every input feature – the *virtual* weight connecting
+    The returned tensor has shape ``(n_layers, n_features, d_mlp)`` recording - for
+    every hidden layer and every input feature - the *virtual* weight connecting
     that feature to each neuron after the ReLU (i.e. the product ``W_in * W_out``)
     as described in the original script.
 
     Args:
-        patched_model: The patched model (i.e. with ComponentsOrModule layers)
+        model: The ResidMLP model
         n_features: The number of features to keep. If None, all features are kept.
 
     Returns:
         A tensor of shape ``(n_layers, n_features, d_mlp)`` recording the neuron contributions.
     """
 
-    n_features = patched_model.config.n_features if n_features is None else n_features
+    n_features = model.config.n_features if n_features is None else n_features
 
-    W_E: Float[Tensor, "n_features d_embed"] = patched_model.W_E
-    assert torch.equal(W_E, patched_model.W_U.T)
+    W_E: Float[Tensor, "n_features d_embed"] = model.W_E
+    assert torch.equal(W_E, model.W_U.T)
 
     W_in_weights = []
     W_out_weights = []
-    for layer in patched_model.layers:
-        W_in_weights.append(runtime_cast(ComponentsOrModule, layer.mlp_in).original_weight)
-        W_out_weights.append(runtime_cast(ComponentsOrModule, layer.mlp_out).original_weight)
+    for layer in model.layers:
+        layer = cast(MLP, layer)
+        W_in_weights.append(layer.mlp_in.weight)
+        W_out_weights.append(layer.mlp_out.weight)
     assert all(W_in_weights), "All W_in_weights must be non-None"
     assert all(W_out_weights), "All W_out_weights must be non-None"
     # Stack mlp_in / mlp_out weights across layers so that einsums can broadcast
@@ -208,7 +209,7 @@ def compute_patched_weight_neuron_contributions(
 
 
 def compute_spd_weight_neuron_contributions(
-    patched_model: ResidMLP,
+    model: ResidMLP,
     components: dict[str, Components],
     n_features: int | None = None,
 ) -> Float[Tensor, "n_layers n_features C d_mlp"]:
@@ -218,10 +219,10 @@ def compute_spd_weight_neuron_contributions(
     the number of sub-components in the SPD decomposition.
     """
 
-    n_layers: int = patched_model.config.n_layers
-    n_features = patched_model.config.n_features if n_features is None else n_features
+    n_layers: int = model.config.n_layers
+    n_features = model.config.n_features if n_features is None else n_features
 
-    W_E: Float[Tensor, "n_features d_embed"] = patched_model.W_E
+    W_E: Float[Tensor, "n_features d_embed"] = model.W_E
 
     # Build the *virtual* input weight matrices (V @ U) for every layer
     W_in_spd: Float[Tensor, "n_layers d_embed C d_mlp"] = torch.stack(
@@ -263,30 +264,30 @@ def compute_spd_weight_neuron_contributions(
 
 
 def plot_spd_feature_contributions_truncated(
-    patched_model: ResidMLP,
+    model: ResidMLP,
     components: dict[str, Components],
     n_features: int | None = 50,
 ):
-    n_layers = patched_model.config.n_layers
-    n_features = patched_model.config.n_features if n_features is None else n_features
-    d_mlp = patched_model.config.d_mlp
+    n_layers = model.config.n_layers
+    n_features = model.config.n_features if n_features is None else n_features
+    d_mlp = model.config.d_mlp
 
     # Assert that there are no biases
-    assert not patched_model.config.in_bias and not patched_model.config.out_bias, (
+    assert not model.config.in_bias and not model.config.out_bias, (
         "Biases are not supported for these plots"
     )
 
     # --- Compute neuron contribution tensors ---
     relu_conns: Float[Tensor, "n_layers n_features d_mlp"] = (
         compute_patched_weight_neuron_contributions(
-            patched_model=patched_model,
+            model=model,
             n_features=n_features,
         )
     )
 
     relu_conns_spd: Float[Tensor, "n_layers n_features C d_mlp"] = (
         compute_spd_weight_neuron_contributions(
-            patched_model=patched_model,
+            model=model,
             components=components,
             n_features=n_features,
         )
@@ -349,7 +350,7 @@ def plot_spd_feature_contributions_truncated(
 
 
 def plot_neuron_contribution_pairs(
-    patched_model: ResidMLP,
+    model: ResidMLP,
     components: dict[str, Components],
     n_features: int | None = 50,
 ) -> plt.Figure:
@@ -359,25 +360,25 @@ def plot_neuron_contribution_pairs(
     X-axis: neuron contribution from the target model
     Y-axis: neuron contribution from the SPD component
     """
-    n_layers = patched_model.config.n_layers
-    n_features = patched_model.config.n_features if n_features is None else n_features
+    n_layers = model.config.n_layers
+    n_features = model.config.n_features if n_features is None else n_features
 
     # Assert that there are no biases
-    assert not patched_model.config.in_bias and not patched_model.config.out_bias, (
+    assert not model.config.in_bias and not model.config.out_bias, (
         "Biases are not supported for these plots"
     )
 
     # Compute neuron contribution tensors
     relu_conns: Float[Tensor, "n_layers n_features d_mlp"] = (
         compute_patched_weight_neuron_contributions(
-            patched_model=patched_model,
+            model=model,
             n_features=n_features,
         )
     )
 
     relu_conns_spd: Float[Tensor, "n_layers n_features C d_mlp"] = (
         compute_spd_weight_neuron_contributions(
-            patched_model=patched_model,
+            model=model,
             components=components,
             n_features=n_features,
         )
@@ -481,14 +482,13 @@ def main(out_dir: Path, device: str):
         run_info = SPDRunInfo.from_path(path)
         model = ComponentModel.from_run_info(run_info)
         config = run_info.config
-        patched_model = model.patched_model
-        assert isinstance(patched_model, ResidMLP)
-        model.to(device)
+        assert isinstance(model.target_model, ResidMLP)
+        model.target_model.to(device)
 
-        n_layers = patched_model.config.n_layers
+        n_layers = model.target_model.config.n_layers
 
         fig = plot_spd_feature_contributions_truncated(
-            patched_model, model.components, n_features=10
+            model.target_model, model.components, n_features=10
         )
         fname_weights = out_dir / f"resid_mlp_weights_{n_layers}layers_{wandb_id}.png"
         fig.savefig(
@@ -500,7 +500,7 @@ def main(out_dir: Path, device: str):
 
         # Generate and save neuron contribution pairs plot
         fig_pairs = plot_neuron_contribution_pairs(
-            patched_model,
+            model.target_model,
             model.components,
             n_features=None,  # Using same number of features as above
         )
@@ -525,7 +525,7 @@ def main(out_dir: Path, device: str):
                     return f"Layer {layer_idx} - $W_{{out}}$"
             return mask_name  # Fallback to original if pattern doesn't match
 
-        batch_shape = (1, patched_model.config.n_features)
+        batch_shape = (1, model.target_model.config.n_features)
         figs_causal: dict[str, Image.Image] = plot_causal_importance_vals(
             model=model,
             batch_shape=batch_shape,

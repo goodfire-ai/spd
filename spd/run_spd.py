@@ -21,8 +21,9 @@ from tqdm import tqdm
 from spd.configs import Config
 from spd.data import loop_dataloader
 from spd.eval import evaluate
+from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
-from spd.losses import calc_weight_deltas, calculate_losses
+from spd.losses import calculate_losses
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
@@ -93,15 +94,18 @@ def optimize(
     if is_main_process():
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
+    if config.identity_module_patterns is not None:
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+
     target_model.requires_grad_(False)
+
     model = ComponentModel(
         target_model=target_model,
-        target_module_patterns=config.target_module_patterns,
+        target_module_patterns=config.all_module_patterns,
         C=config.C,
         gate_type=config.gate_type,
         gate_hidden_dims=config.gate_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
-        identity_module_patterns=config.identity_module_patterns,
     )
 
     if ln_stds is not None:
@@ -133,8 +137,8 @@ def optimize(
         # Tie component weights. Assume that the first element is a transpose of the second element
         # NOTE: Tying weights will make your training nondeterministic
         for src_name, tgt_name in tied_weights:
-            tgt = component_model.components_or_modules[tgt_name].components
-            src = component_model.components_or_modules[src_name].components
+            tgt = component_model.components[tgt_name]
+            src = component_model.components[src_name]
             assert tgt is not None and src is not None, (
                 f"Cannot tie weights between {src_name} and {tgt_name} - one or both are None"
             )
@@ -181,12 +185,12 @@ def optimize(
         current_p = config.pnorm  # Initialize with default value
 
         for _ in range(config.gradient_accumulation_steps):
-            weight_deltas = calc_weight_deltas(component_model, device)
+            weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(
                 batch,
-                mode="pre_forward_cache",
+                mode="input_cache",
                 module_names=list(component_model.components.keys()),
             )
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
