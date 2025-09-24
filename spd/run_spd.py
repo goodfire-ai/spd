@@ -45,6 +45,48 @@ from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
 
+def run_faithfulness_warmup(
+    component_model: ComponentModel,
+    component_params: list[torch.nn.Parameter],
+    config: Config,
+    device: str,
+) -> None:
+    """Run faithfulness warmup phase to improve initialization.
+
+    Args:
+        component_model: The component model to warm up
+        component_params: List of component parameters to optimize
+        config: Configuration object containing warmup settings
+        device: Device to run on
+    """
+
+    logger.info(
+        f"Starting faithfulness warmup phase with {config.faithfulness_warmup_steps} steps at lr={config.faithfulness_warmup_lr}"
+    )
+
+    faithfulness_warmup_optimizer = optim.AdamW(
+        component_params,
+        lr=config.faithfulness_warmup_lr,
+        weight_decay=config.faithfulness_warmup_weight_decay,
+    )
+
+    for faithfulness_warmup_step in range(config.faithfulness_warmup_steps):
+        faithfulness_warmup_optimizer.zero_grad()
+        weight_deltas = component_model.calc_weight_deltas()
+        faithfulness_loss = calc_faithfulness_loss(weight_deltas, device)
+        faithfulness_loss.backward()
+        faithfulness_warmup_optimizer.step()
+        logger.info(
+            f"Faithfulness warmup step {faithfulness_warmup_step + 1}/{config.faithfulness_warmup_steps}; Faithfulness loss: {faithfulness_loss.item():.9f}"
+        )
+
+    del faithfulness_warmup_optimizer
+    torch.cuda.empty_cache()
+    gc.collect()
+
+    logger.info("Faithfulness warmup completed.")
+
+
 def local_log(
     data: Mapping[str, float | Image.Image | wandb.plot.CustomChart], step: int, out_dir: Path
 ) -> None:
@@ -158,33 +200,8 @@ def optimize(
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
-    # Faithfulness warmup phase: optimize faithfulness loss to improve initialization
     if config.faithfulness_warmup_steps > 0:
-        logger.info(
-            f"Starting warmup phase with {config.faithfulness_warmup_steps} steps at lr={config.faithfulness_warmup_lr}"
-        )
-
-        faithfulness_warmup_optimizer = optim.AdamW(
-            component_params,
-            lr=config.faithfulness_warmup_lr,
-            weight_decay=config.faithfulness_warmup_weight_decay,
-        )
-
-        for faithfulness_warmup_step in range(config.faithfulness_warmup_steps):
-            faithfulness_warmup_optimizer.zero_grad()
-            weight_deltas = component_model.calc_weight_deltas()
-            faithfulness_loss = calc_faithfulness_loss(weight_deltas, device)
-            faithfulness_loss.backward()
-            faithfulness_warmup_optimizer.step()
-            logger.info(
-                f"Warmup step {faithfulness_warmup_step + 1}/{config.faithfulness_warmup_steps}, faithfulness loss: {faithfulness_loss.item():.9f}"
-            )
-
-        del faithfulness_warmup_optimizer
-        torch.cuda.empty_cache()
-        gc.collect()
-
-        logger.info("Warmup completed.")
+        run_faithfulness_warmup(component_model, component_params, config, device)
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
