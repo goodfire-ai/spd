@@ -42,6 +42,7 @@ def component_activations(
             pre_weight_acts=pre_weight_acts,
             sigmoid_type=sigmoid_type,
             detach_inputs=False,
+            sampling="continuous", 
         )
 
         return causal_importances
