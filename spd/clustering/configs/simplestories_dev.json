@@ -1,22 +1,22 @@
 {
   "activation_threshold": 0.1,
   "alpha": 1.0,
-  "iters": 5000,
+  "iters": 7000,
   "merge_pair_sampling_method": "range",
-  "merge_pair_sampling_kwargs": {"threshold": 0.05},
+  "merge_pair_sampling_kwargs": {"threshold": 0.001},
   "pop_component_prob": 0,
   "filter_dead_threshold": 0.1,
   "module_name_filter": null,
   "model_path": "wandb:goodfire/spd/runs/rn9klzfs",
   "task_name": "lm",
   "n_batches": 1,
-  "batch_size": 4,
+  "batch_size": 32,
   "wandb_enabled": true,
   "wandb_project": "spd-cluster",
   "intervals": {
     "stat": 1,
-    "tensor": 50,
-    "plot": 1000,
-    "artifact": 1000
+    "tensor": 200,
+    "plot": 2000,
+    "artifact": 2000
   }
 }
