@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any, override
@@ -19,7 +20,7 @@ class CI_L0(Metric):
 
     def __init__(
         self,
-        model: Any,  # unused
+        _model: Any,
         config: Config,
         groups: dict[str, list[str]] | None = None,
         **kwargs: Any,
@@ -27,25 +28,18 @@ class CI_L0(Metric):
         super().__init__(**kwargs)
         self.l0_threshold = config.ci_alive_threshold
         self.groups = groups
+        # TODO: To make this work with distributed, we either need to modify add_state so that
+        # it allows complex types, or add_state for every unique name (including groups). For the
+        # latter, we'll want to get the unique names for all groups and add_state for each.
         self.l0s: dict[str, list[float]] = defaultdict(list)
 
     @override
-    def update(
-        self,
-        batch: Tensor | None = None,
-        target_out: Tensor | None = None,
-        ci: dict[str, Float[Tensor, "... C"]] | None = None,
-        ci_upper_leaky: dict[str, Float[Tensor, "... C"]] | None = None,
-        **kwargs: Any,
-    ) -> None:
-        import re
-
-        if ci is None:
-            return
+    def update(self, ci: dict[str, Float[Tensor, "... C"]], **kwargs: Any) -> None:
         group_sums = defaultdict(float) if self.groups else {}
         for layer_name, layer_ci in ci.items():
             l0_val = calc_ci_l_zero(layer_ci, self.l0_threshold)
             self.l0s[layer_name].append(l0_val)
+
             if self.groups:
                 for group_name, patterns in self.groups.items():
                     for pattern in patterns:

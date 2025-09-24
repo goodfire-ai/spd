@@ -60,14 +60,14 @@ eval_metric_configs:
       n_batches_accum: 5
   - classname: "ComponentActivationDensity"
     extra_init_kwargs: {}
-  # - classname: "CI_L0"
-  #   extra_init_kwargs:
-  #     groups:
-  #       total: ["*"]  # Sum of all L0 values
-  #       layer_0: ["model.layers.0.*"]
-  #       layer_1: ["model.layers.1.*"]
-  #       layer_2: ["model.layers.2.*"]
-  #       layer_3: ["model.layers.3.*"]
+  - classname: "CI_L0"
+    extra_init_kwargs:
+      groups:
+        total: ["*"]  # Sum of all L0 values
+        layer_0: ["model.layers.0.*"]
+        layer_1: ["model.layers.1.*"]
+        layer_2: ["model.layers.2.*"]
+        layer_3: ["model.layers.3.*"]
   - classname: "CEandKLLosses"
     extra_init_kwargs:
       rounding_threshold: 0.0

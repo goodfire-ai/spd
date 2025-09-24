@@ -6,6 +6,7 @@ from PIL import Image
 from torch import Tensor
 from torchmetrics import Metric
 
+from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_mean_component_cis_both_scales
 
@@ -14,7 +15,7 @@ class CIMeanPerComponent(Metric):
     slow = True
     is_differentiable: bool | None = False
 
-    def __init__(self, model: ComponentModel, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, model: ComponentModel, _config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.components = model.components
 

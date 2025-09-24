@@ -1,5 +1,6 @@
 """Evaluation utilities using the new Metric classes."""
 
+import time
 from collections.abc import Iterator, Mapping
 
 import torch
@@ -7,8 +8,10 @@ from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
 from torchmetrics import Metric
+from wandb.plot.custom_chart import CustomChart
 
 from spd.configs import Config, MetricConfig
+from spd.log import logger
 from spd.metrics import METRICS
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
@@ -19,15 +22,16 @@ def _should_run_metric(cfg: MetricConfig, cls: type, run_slow: bool) -> bool:
     return not (is_slow and not run_slow)
 
 
-def clean_metric_outputs(
-    metric_name: str,
-    computed_raw: Mapping[str, int | float | Image.Image | Tensor] | Tensor,
-) -> Mapping[str, int | float | Image.Image]:
-    """Clean metric outputs by converting tensors to floats/ints and ensuring the correct types.
+MetricOutTypeRaw = dict[str, int | float | Image.Image | CustomChart | Tensor] | Tensor
+MetricOutType = dict[str, int | float | Image.Image | CustomChart]
+
+
+def clean_metric_output(metric_name: str, computed_raw: MetricOutTypeRaw) -> MetricOutType:
+    """Clean metric output by converting tensors to floats/ints and ensuring the correct types.
 
     Expects outputs to be either a scalar tensor or a mapping of strings to scalars/images/tensors.
     """
-    computed: dict[str, int | float | Image.Image] = {}
+    computed: MetricOutType = {}
     if isinstance(computed_raw, Tensor):
         # Convert tensor to float/int
         item = computed_raw.item()
@@ -39,7 +43,9 @@ def clean_metric_outputs(
             assert isinstance(k, str)
             if isinstance(v, torch.Tensor):
                 v = v.item()
-            assert isinstance(v, float | int | Image.Image)
+            assert isinstance(v, float | int | Image.Image | CustomChart), (
+                f"Invalid type: {type(v)}"
+            )
             computed[k] = v
     return computed
 
@@ -51,17 +57,14 @@ def evaluate(
     config: Config,
     run_slow: bool,
     n_steps: int,
-) -> Mapping[str, int | float | Image.Image]:
+) -> MetricOutType:
     """Run evaluation and return a flat mapping of metric names to values/images.
 
     Returns keys without the "eval/" prefix. The caller is responsible for namespacing.
     """
 
     eval_metrics: list[Metric] = []
-    combined_cfgs: list[MetricConfig] = [
-        *config.eval_metric_configs,
-        *config.loss_metric_configs,
-    ]
+    combined_cfgs: list[MetricConfig] = [*config.eval_metric_configs, *config.loss_metric_configs]
     for cfg in combined_cfgs:
         metric_cls = METRICS[cfg.classname]
         if not _should_run_metric(cfg, metric_cls, run_slow):
@@ -98,11 +101,15 @@ def evaluate(
                 weight_deltas=weight_deltas,
             )
 
-    outputs: dict[str, float | Image.Image] = {}
+    outputs: MetricOutType = {}
 
     for metric in eval_metrics:
+        start_time = time.time()
         computed_raw = metric.compute()
-        computed = clean_metric_outputs(type(metric).__name__, computed_raw)
+        computed = clean_metric_output(metric_name=type(metric).__name__, computed_raw=computed_raw)
         outputs.update(computed)
+        logger.info(
+            f"Time taken to update {type(metric).__name__}: {time.time() - start_time:.2f}s"
+        )
 
     return outputs
