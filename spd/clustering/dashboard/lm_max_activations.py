@@ -20,6 +20,7 @@ from spd.clustering.activations import (
 )
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
+from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -256,41 +257,50 @@ def main() -> None:
         description="Compute max-activating text samples for language model component clusters."
     )
     parser.add_argument(
-        "model_path",
+        "--model-path",
+        "-m",
         type=str,
         help="Path to model file or wandb:project/entity/run_id format",
+        required=True,
     )
     parser.add_argument(
-        "merge_history_path",
+        "--merge-history-path",
+        "-p",
         type=Path,
         help="Path to merge history file",
+        required=True,
     )
     parser.add_argument(
         "--iteration",
+        "-i",
         type=int,
         default=-1,
         help="Merge iteration to analyze (negative indexes from end, default: -1 for latest)",
     )
     parser.add_argument(
         "--n-samples",
+        "-n",
         type=int,
         default=4,
         help="Number of top-activating samples to collect per cluster (default: 10)",
     )
     parser.add_argument(
         "--n-batches",
+        "-s",
         type=int,
         default=4,
         help="Number of data batches to process (default: 100)",
     )
     parser.add_argument(
         "--batch-size",
+        "-b",
         type=int,
         default=4,
         help="Batch size for data loading (default: 4)",
     )
     parser.add_argument(
         "--context-length",
+        "-c",
         type=int,
         default=64,
         help="Context length for tokenization (default: 64)",
@@ -310,11 +320,10 @@ def main() -> None:
         model: ComponentModel = ComponentModel.from_run_info(spd_run)
         model.to(device)
         model.eval()
-        config: Any = spd_run.config
+        config: Config = spd_run.config
         tokenizer_name = config.tokenizer_name
         wandb_run_path = args.model_path
-        # Convert config to dict for JSON serialization
-        config_dict = vars(config) if hasattr(config, "__dict__") else dict(config)
+        config_dict = config.model_dump(mode="json")
     else:
         model = torch.load(args.model_path)
         model.to(device)
