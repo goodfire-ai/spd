@@ -13,6 +13,7 @@ from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
+from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import REPO_ROOT
 from spd.spd_types import TaskName
@@ -146,6 +147,10 @@ def split_dataset_resid_mlp(
         assert isinstance(cfg.task_config, ResidMLPTaskConfig), (
             f"Expected task_config to be of type ResidMLPTaskConfig since using `split_dataset_resid_mlp`, but got {type(cfg.task_config) = }"
         )
+        assert isinstance(component_model.patched_model, ResidMLP), (
+            f"Expected patched_model to be of type ResidMLP since using `split_dataset_resid_mlp`, but got {type(component_model.patched_model) = }"
+        )
+
         assert isinstance(component_model.patched_model.config, ResidMLPModelConfig), (
             f"Expected patched_model.config to be of type ResidMLPModelConfig since using `split_dataset_resid_mlp`, but got {type(component_model.patched_model.config) = }"
         )
