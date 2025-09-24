@@ -126,6 +126,8 @@ class MergeRunConfig(MergeConfig):
     @property
     def _iters_str(self) -> str:
         """Shortened string representation of iterations for run ID"""
+        if self.iters is None:
+            return "auto"
         return shorten_numerical_to_str(self.iters)
 
     @property

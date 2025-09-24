@@ -56,7 +56,7 @@ class MergeHistory:
         labels: list[str],
         wandb_url: str | None,
     ) -> "MergeHistory":
-        n_iters_target: int = config.iters
+        n_iters_target: int = config.get_num_iters(c_components)
         return MergeHistory(
             c_components=c_components,
             labels=labels,

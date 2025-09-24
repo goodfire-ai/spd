@@ -199,20 +199,23 @@ def merge_iteration(
         "Activation mask must match coactivation matrix shape"
     )
 
+    # determine number of iterations based on config and number of components
+    num_iters: int = merge_config.get_num_iters(c_components)
+
     # for speed, we precompute whether to pop components and which components to pop
     # if we are not popping, we don't need these variables and can also delete other things
     do_pop: bool = merge_config.pop_component_prob > 0.0
     if do_pop:
         # at each iteration, we will pop a component with probability `pop_component_prob`
         iter_pop: Bool[Tensor, " iters"] = (
-            torch.rand(merge_config.iters, device=coact.device) < merge_config.pop_component_prob
+            torch.rand(num_iters, device=coact.device) < merge_config.pop_component_prob
         )
         # we pick a subcomponent at random, and if we decide to pop, we pop that one out of its group
         # if the component is a singleton, nothing happens. this naturally biases towards popping
         # less at the start and more at the end, since the effective probability of popping a component
         # is actually something like `pop_component_prob * (c_components - k_groups) / c_components`
         pop_component_idx: Int[Tensor, " iters"] = torch.randint(
-            0, c_components, (merge_config.iters,), device=coact.device
+            0, c_components, (num_iters,), device=coact.device
         )
 
     # start with an identity merge
@@ -245,11 +248,11 @@ def merge_iteration(
 
     # merge iteration
     # ==================================================
-    # while i < merge_config.iters:
+    # while i < num_iters:
     pbar: tqdm[int] = tqdm(
-        range(merge_config.iters),
+        range(num_iters),
         unit="iter",
-        total=merge_config.iters,
+        total=num_iters,
     )
     for iter_idx in pbar:
         # pop components

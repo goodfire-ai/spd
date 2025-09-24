@@ -54,9 +54,9 @@ class MergeConfig(BaseModel):
         default=1.0,
         description="rank weight factor. Higher values mean a higher penalty on 'sending' the component weights",
     )
-    iters: PositiveInt = Field(
+    iters: PositiveInt | None = Field(
         default=100,
-        description="max number of iterations to run the merge algorithm for.",
+        description="max number of iterations to run the merge algorithm for. If `None`, set to number of components (after filtering) minus one.",
     )
     merge_pair_sampling_method: MergePairSamplerKey = Field(
         default="range",
@@ -100,6 +100,20 @@ class MergeConfig(BaseModel):
     def filter_modules(self) -> ModuleFilterFunc:
         """Get the module filter function based on the provided source."""
         return _to_module_filter(self.module_name_filter)
+
+    def get_num_iters(self, n_components: int) -> PositiveInt:
+        """Get the number of iterations to run the merge algorithm for.
+
+        Args:
+            n_components: Number of components (after filtering)
+
+        Returns:
+            Number of iterations to run
+        """
+        if self.iters is None:
+            return n_components - 1
+        else:
+            return self.iters
 
     @property
     def stable_hash(self) -> str:
