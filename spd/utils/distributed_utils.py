@@ -8,8 +8,10 @@ from typing import Literal, cast
 
 import torch
 import torch.distributed as dist
-from PIL import Image
 from torch.distributed import ReduceOp
+from torch.types import Number
+
+from spd.eval import DistMetricOutType, MetricOutType
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,7 +219,7 @@ def ensure_cached_and_call[**P, T](fn: Callable[P, T], *args: P.args, **kwargs: 
 
 
 def sum_metrics_across_ranks(
-    metrics: Mapping[str, int | float], device: str | torch.device
+    metrics: Mapping[str, Number], device: str | torch.device
 ) -> Mapping[str, float]:
     assert is_distributed(), "Can only sum metrics across ranks if running in distributed mode"
     metric_values = torch.tensor([metrics[k] for k in metrics], device=device)
@@ -226,7 +228,7 @@ def sum_metrics_across_ranks(
 
 
 def avg_metrics_across_ranks(
-    metrics: Mapping[str, int | float], device: str | torch.device
+    metrics: Mapping[str, Number], device: str | torch.device
 ) -> Mapping[str, float]:
     world_size = get_world_size()
     assert world_size > 0, "World size must be greater than 0"
@@ -234,17 +236,15 @@ def avg_metrics_across_ranks(
     return {k: v / world_size for k, v in sum_metrics.items()}
 
 
-def avg_eval_metrics_across_ranks(
-    metrics: Mapping[str, float | Image.Image], device: str
-) -> Mapping[str, float | Image.Image]:
+def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMetricOutType:
     """Get the average of eval metrics across ranks.
 
-    Ignores any metrics that are not floats or ints. Currently, the image metrics do not need to be
+    Ignores any metrics that are not numbers. Currently, the image metrics do not need to be
     averaged. If this changes for future metrics, we will need to do a reduce during calculcation
     of the metric.
     """
     assert is_distributed(), "Can only average metrics across ranks if running in distributed mode"
-    metrics_keys_to_avg = {k: v for k, v in metrics.items() if isinstance(v, float | int)}
+    metrics_keys_to_avg = {k: v for k, v in metrics.items() if isinstance(v, Number)}
     if metrics_keys_to_avg:
         avg_metrics = avg_metrics_across_ranks(metrics_keys_to_avg, device)
     else:

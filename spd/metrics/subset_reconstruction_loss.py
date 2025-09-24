@@ -13,7 +13,7 @@ from torchmetrics import Metric
 from spd.configs import Config
 from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
-from spd.utils.component_utils import StochasticMasks, calc_stochastic_masks
+from spd.utils.component_utils import calc_stochastic_masks
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -64,10 +64,10 @@ class SubsetReconstructionLoss(Metric):
             self.losses[key].append(value)
 
     @override
-    def compute(self) -> Mapping[str, float]:
+    def compute(self) -> Mapping[str, float | str]:
         results = {k: sum(v) / len(v) for k, v in self.losses.items()}
 
-        metrics_by_type: dict[str, dict[str, float]] = {"kl": {}, "ce": {}, "ce_unrec": {}}
+        metrics_by_type = {"kl": {}, "ce": {}, "ce_unrec": {}}
         for key, value in results.items():
             if not key.startswith("subset/"):
                 continue
@@ -94,46 +94,6 @@ class SubsetReconstructionLoss(Metric):
 
         return results
 
-    def _get_masked_model_outputs(
-        self,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        masks_list: list[StochasticMasks],
-        weight_deltas: dict[str, Tensor],
-        active: list[str],
-        all_modules: list[str],
-    ) -> list[Float[Tensor, "... vocab"]]:
-        outputs: list[Float[Tensor, "... vocab"]] = []
-
-        for masks in masks_list:
-            stoch_masks = masks.component_masks
-            weight_delta_masks = masks.weight_delta_masks
-            masks_dict: dict[str, Tensor] = {}
-            for m in all_modules:
-                if m in active:
-                    masks_dict[m] = stoch_masks[m]
-                elif self.use_all_ones_for_non_replaced:
-                    masks_dict[m] = torch.ones_like(stoch_masks[m])
-
-            # Include delta component when configured
-            if getattr(self.config, "use_delta_component", False) and weight_deltas:
-                deltas_and_masks = {
-                    m: (weight_deltas[m], weight_delta_masks[m])
-                    for m in active
-                    if m in weight_deltas
-                }
-            else:
-                deltas_and_masks = None
-
-            outputs.append(
-                self.model(
-                    batch,
-                    mode="components",
-                    mask_infos=make_mask_infos(masks_dict, deltas_and_masks),
-                )
-            )
-
-        return outputs
-
     def _calc_subset_losses(
         self,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
@@ -156,57 +116,83 @@ class SubsetReconstructionLoss(Metric):
         def kl_vs_target(logits: Tensor) -> float:
             return calc_kl_divergence_lm(pred=logits, target=target_out).item()
 
+        # Compute baselines for CE unrecovered
         target_ce = ce_vs_labels(target_out)
-        zero_masks = {k: torch.zeros_like(v) for k, v in ci.items()}
-        zero_out = self.model(batch, mode="components", mask_infos=make_mask_infos(zero_masks))
+
+        zero_mask_infos = make_mask_infos({k: torch.zeros_like(v) for k, v in ci.items()})
+        zero_out = self.model(batch, mode="components", mask_infos=zero_mask_infos)
         zero_ce = ce_vs_labels(zero_out)
 
-        masks_list = calc_stochastic_masks(ci, self.n_mask_samples, self.config.sampling)
-
-        results: dict[str, float] = {}
+        # Generate stochastic masks
+        masks_list = calc_stochastic_masks(
+            causal_importances=ci,
+            n_mask_samples=self.n_mask_samples,
+            sampling=self.config.sampling,
+        )
+        results = {}
         all_modules = list(ci.keys())
 
+        # Process include patterns
         for name, patterns in self.include_patterns.items():
             active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
-            outputs = self._get_masked_model_outputs(
-                batch=batch,
-                masks_list=masks_list,
-                weight_deltas=weight_deltas,
-                active=active,
-                all_modules=all_modules,
-            )
+
+            outputs: list[Float[Tensor, "... vocab"]] = []  # pyright: ignore[reportRedeclaration]
+            for stoch_masks in masks_list:
+                weight_deltas_and_masks = {}
+                component_masks = {}
+                for k in active:
+                    component_masks[k] = stoch_masks.component_masks[k]
+                    if self.config.use_delta_component:
+                        weight_deltas_and_masks[k] = (
+                            weight_deltas[k],
+                            stoch_masks.weight_delta_masks[k],
+                        )
+                mask_infos = make_mask_infos(
+                    masks=component_masks, weight_deltas_and_masks=weight_deltas_and_masks
+                )
+                outputs.append(self.model(batch, mode="components", mask_infos=mask_infos))
+
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
+
             mean_kl = sum(kl_losses) / len(kl_losses)
             mean_ce = sum(ce_losses) / len(ce_losses)
-            ce_unrec = (
-                (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0.0
-            )
-            suffix = "_all_ones" if self.use_all_ones_for_non_replaced else ""
-            results[f"subset/{name}/kl{suffix}"] = mean_kl
-            results[f"subset/{name}/ce{suffix}"] = mean_ce
-            results[f"subset/{name}/ce_unrec{suffix}"] = ce_unrec
+            ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
 
+            results[f"subset/{name}/kl"] = mean_kl
+            results[f"subset/{name}/ce"] = mean_ce
+            results[f"subset/{name}/ce_unrec"] = ce_unrec
+
+        # Process exclude patterns
         for name, exclude_patterns in self.exclude_patterns.items():
             active = [m for m in all_modules if not any(fnmatch(m, p) for p in exclude_patterns)]
-            outputs = self._get_masked_model_outputs(
-                batch=batch,
-                masks_list=masks_list,
-                weight_deltas=weight_deltas,
-                active=active,
-                all_modules=all_modules,
-            )
+
+            outputs: list[Float[Tensor, "... vocab"]] = []
+            for stoch_masks in masks_list:
+                weight_deltas_and_masks = {}
+                component_masks = {}
+                for k in active:
+                    component_masks[k] = stoch_masks.component_masks[k]
+                    if self.config.use_delta_component:
+                        weight_deltas_and_masks[k] = (
+                            weight_deltas[k],
+                            stoch_masks.weight_delta_masks[k],
+                        )
+                mask_infos = make_mask_infos(
+                    masks=component_masks, weight_deltas_and_masks=weight_deltas_and_masks
+                )
+                outputs.append(self.model(batch, mode="components", mask_infos=mask_infos))
+
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
+
             mean_kl = sum(kl_losses) / len(kl_losses)
             mean_ce = sum(ce_losses) / len(ce_losses)
-            ce_unrec = (
-                (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0.0
-            )
-            suffix = "_all_ones" if self.use_all_ones_for_non_replaced else ""
-            results[f"subset/{name}/kl{suffix}"] = mean_kl
-            results[f"subset/{name}/ce{suffix}"] = mean_ce
-            results[f"subset/{name}/ce_unrec{suffix}"] = ce_unrec
+            ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
+
+            results[f"subset/{name}/kl"] = mean_kl
+            results[f"subset/{name}/ce"] = mean_ce
+            results[f"subset/{name}/ce_unrec"] = ce_unrec
 
         # Worst subset metrics can be computed by the caller or here in compute if needed
         return results

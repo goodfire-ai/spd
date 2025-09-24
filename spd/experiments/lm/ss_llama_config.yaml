@@ -72,22 +72,22 @@ eval_metric_configs:
     extra_init_kwargs:
       rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
-  # - classname: "SubsetReconstructionLoss"
-  #   extra_init_kwargs:
-  #     n_mask_samples: 1
-  #     use_all_ones_for_non_replaced: false
-  #     include_patterns:
-  #       layer_0_only: ["model.layers.0.*"]
-  #       layer_1_only: ["model.layers.1.*"]
-  #       layer_2_only: ["model.layers.2.*"]
-  #       layer_3_only: ["model.layers.3.*"]
-  #       mlp_only: ["*.mlp.*"]
-  #       attention_only: ["*.self_attn.*"]
-  #     exclude_patterns:
-  #       all_but_layer_0: ["model.layers.0.*"]
-  #       all_but_layer_1: ["model.layers.1.*"]
-  #       all_but_layer_2: ["model.layers.2.*"]
-  #       all_but_layer_3: ["model.layers.3.*"]
+  - classname: "SubsetReconstructionLoss"
+    extra_init_kwargs:
+      n_mask_samples: 1
+      use_all_ones_for_non_replaced: false
+      include_patterns:
+        layer_0_only: ["model.layers.0.*"]
+        layer_1_only: ["model.layers.1.*"]
+        layer_2_only: ["model.layers.2.*"]
+        layer_3_only: ["model.layers.3.*"]
+        mlp_only: ["*.mlp.*"]
+        attention_only: ["*.self_attn.*"]
+      exclude_patterns:
+        all_but_layer_0: ["model.layers.0.*"]
+        all_but_layer_1: ["model.layers.1.*"]
+        all_but_layer_2: ["model.layers.2.*"]
+        all_but_layer_3: ["model.layers.3.*"]
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM

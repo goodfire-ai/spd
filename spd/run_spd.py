@@ -3,9 +3,8 @@
 import gc
 import json
 from collections import defaultdict
-from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -44,9 +43,7 @@ from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
 
-def local_log(
-    data: Mapping[str, float | Image.Image | wandb.plot.CustomChart], step: int, out_dir: Path
-) -> None:
+def local_log(data: dict[str, Any], step: int, out_dir: Path) -> None:
     metrics_file = out_dir / "metrics.jsonl"
     metrics_file.touch(exist_ok=True)
 
@@ -299,7 +296,7 @@ def optimize(
                     if out_dir is not None:
                         local_log(metrics, step, out_dir)
                     if config.wandb_project:
-                        wandb_logs: dict[str, int | float | str | wandb.Image] = {
+                        wandb_logs = {
                             f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
                             for k, v in metrics.items()
                         }

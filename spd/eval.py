@@ -1,17 +1,16 @@
 """Evaluation utilities using the new Metric classes."""
 
-import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
+from typing import Any
 
-import torch
 from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
+from torch.types import Number
 from torchmetrics import Metric
 from wandb.plot.custom_chart import CustomChart
 
 from spd.configs import Config, MetricConfig
-from spd.log import logger
 from spd.metrics import METRICS
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
@@ -22,30 +21,32 @@ def _should_run_metric(cfg: MetricConfig, cls: type, run_slow: bool) -> bool:
     return not (is_slow and not run_slow)
 
 
-MetricOutTypeRaw = dict[str, int | float | Image.Image | CustomChart | Tensor] | Tensor
-MetricOutType = dict[str, int | float | Image.Image | CustomChart]
+MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
+DistMetricOutType = dict[str, str | float | Image.Image | CustomChart]
 
 
-def clean_metric_output(metric_name: str, computed_raw: MetricOutTypeRaw) -> MetricOutType:
+def clean_metric_output(metric_name: str, computed_raw: Any) -> MetricOutType:
     """Clean metric output by converting tensors to floats/ints and ensuring the correct types.
 
     Expects outputs to be either a scalar tensor or a mapping of strings to scalars/images/tensors.
     """
     computed: MetricOutType = {}
+    assert isinstance(computed_raw, dict | Tensor), f"{type(computed_raw)} not supported"
     if isinstance(computed_raw, Tensor):
-        # Convert tensor to float/int
+        assert computed_raw.numel() == 1, (
+            f"Only scalar tensors supported, got shape {computed_raw.shape}"
+        )
         item = computed_raw.item()
-        assert isinstance(item, float | int)
         computed[metric_name] = item
     else:
-        assert isinstance(computed_raw, Mapping)
         for k, v in computed_raw.items():
-            assert isinstance(k, str)
-            if isinstance(v, torch.Tensor):
-                v = v.item()
-            assert isinstance(v, float | int | Image.Image | CustomChart), (
-                f"Invalid type: {type(v)}"
+            assert isinstance(k, str), f"Only supports string keys, got {type(k)}"
+            assert isinstance(v, str | Number | Image.Image | CustomChart | Tensor), (
+                f"{type(v)} not supported"
             )
+            if isinstance(v, Tensor):
+                v = v.item()
+
             computed[k] = v
     return computed
 
@@ -104,12 +105,8 @@ def evaluate(
     outputs: MetricOutType = {}
 
     for metric in eval_metrics:
-        start_time = time.time()
-        computed_raw = metric.compute()
+        computed_raw: Any = metric.compute()
         computed = clean_metric_output(metric_name=type(metric).__name__, computed_raw=computed_raw)
         outputs.update(computed)
-        logger.info(
-            f"Time taken to update {type(metric).__name__}: {time.time() - start_time:.2f}s"
-        )
 
     return outputs
