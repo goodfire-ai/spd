@@ -4,7 +4,7 @@ import sys
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 import numpy as np
 import torch
@@ -80,10 +80,12 @@ class MergeHistory:
             merges_summary=self.merges.summary(),
         )
 
+    @override
     def __str__(self) -> str:
         out: list[str] = [f"  {key} = {value}" for key, value in self.summary().items()]
         return "MergeHistory(\n" + "\n".join(out) + "\n)"
 
+    @override
     def __repr__(self) -> str:
         return self.__str__()
 
