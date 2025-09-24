@@ -302,7 +302,8 @@ class ComponentsMaskInfo:
     """when components are routed to, this specifies which subcomponents to use"""
 
     routing_mask: Bool[Tensor, "..."] | None = None
-    """Which (batch,) or (batch, seq_len) positions to route to components vs target modules. If None, all positions are routed to components."""
+    """Which (batch,) or (batch, seq_len) positions to route to components vs target modules.
+    If None, all positions are routed to components."""
 
     weight_delta_and_mask: WeightDeltaAndMask | None = None
 
@@ -312,13 +313,15 @@ def make_mask_infos(
     routing_masks: dict[str, Bool[Tensor, "..."]] | None = None,
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
-    """Create ComponentsMaskInfo dict from dicts of component masks, and optionally routing masks, weight deltas, and weight delta masks.
+    """Create ComponentsMaskInfo dict from dicts of component masks, and optionally routing masks,
+    weight deltas, and weight delta masks.
     Keys of all dicts must be the same.
 
     Args:
-        component_masks: Dict mapping module names to component masks.
-        routing_masks: Dict mapping module names to routing masks.
-        weight_deltas_and_masks: Dict mapping module names to tuples of weight deltas and masks for each module to be decomposed. Defaults to None (disable weight delta component) if not provided.
+        component_masks: Dict mapping module names to component masks. routing_masks: Dict mapping
+        module names to routing masks. weight_deltas_and_masks: Dict mapping module names to tuples
+        of weight deltas and masks for each module to be decomposed. Defaults to None (disable
+        weight delta component) if not provided.
     Returns:
         Dict mapping module names to ComponentsMaskInfo objects.
     """

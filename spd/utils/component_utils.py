@@ -26,14 +26,20 @@ RoutingType = Literal["uniform_k-stochastic", "all"]
 """How to choose which (batch,) or (batch, seq_len) positions to route to components or target.
 
 uniform_k-stochastic:
-    for each position, sample k from [1, n_modules], then route to components for k out of `n_modules` modules
+    for each position, sample k from [1, n_modules], then route to components for k out of
+    `n_modules` modules
 all:
     use components for all positions
 """
 
 
-def rand_perm(shape: tuple[int, ...], dim: int, device: torch.device | str) -> Int[Tensor, "... k"]:
-    noise = torch.rand(shape, device=device)
+def rand_perm(
+    shape: tuple[int, ...],
+    dim: int,
+    device: torch.device | str = "cpu",
+    generator: torch.Generator | None = None,
+) -> Int[Tensor, "... k"]:
+    noise = torch.rand(shape, device=device, generator=generator)
     # turn values into ranks via double argsort trick. (for example: [0.8, 0.2, 0.3] -> [2, 0, 1])
     return noise.argsort(dim=dim).argsort(dim=dim)
 
@@ -41,9 +47,11 @@ def rand_perm(shape: tuple[int, ...], dim: int, device: torch.device | str) -> I
 def sample_uniform_k_subset_routing_masks(
     mask_shape: tuple[int, ...],
     modules: list[str],
-    device: torch.device | str,
+    device: torch.device | str = "cpu",
+    generator: torch.Generator | None = None,
 ) -> dict[str, Bool[Tensor, "..."]]:
-    """Creates routing masks for each module such that the number of modules routed to for each position is independent and uniformly sampled from [1, len(modules)]
+    """Creates routing masks for each module such that the number of modules routed to for each
+    position is independent and uniformly sampled from [1, len(modules)]
 
     Achieves this by:
     - for each position, k is independent and uniformly sampled from [1, len(modules)]
@@ -53,12 +61,19 @@ def sample_uniform_k_subset_routing_masks(
         mask_shape: Shape of the routing masks, likely (batch,) or (batch, seq_len)
         modules: List of modules to route to
     """
-    k_modules_to_route: Int[Tensor, " ..."] = torch.randint(1, len(modules) + 1, size=mask_shape)
+    k_modules_to_route: Int[Tensor, " ..."] = torch.randint(
+        low=1,
+        high=len(modules) + 1,
+        size=mask_shape,
+        device=device,
+        generator=generator,
+    )
 
     perms: Int[Tensor, "k_modules ..."] = rand_perm(
         shape=(len(modules), *mask_shape),
         dim=0,
         device=device,
+        generator=generator,
     )
 
     return {mod: perms[i] < k_modules_to_route for i, mod in enumerate(modules)}

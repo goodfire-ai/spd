@@ -343,7 +343,9 @@ class ComponentModel(LoadableModule):
             assert len(kwargs) == 0, "Expected no keyword arguments"
             x = args[0]
             assert isinstance(x, Tensor), "Expected input tensor"
-            assert isinstance(output, Tensor), "Only supports single-tensor outputs, got type(output)"
+            assert isinstance(output, Tensor), (
+                "Only supports single-tensor outputs, got type(output)"
+            )
 
             components_out = components(
                 x,
