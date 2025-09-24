@@ -247,13 +247,11 @@ def calculate_losses(
             modules=list(causal_importances.keys()),
             device=device,
         )
-
         mask_infos = make_mask_infos(
             component_masks=causal_importances,
             routing_masks=subset_routing_masks,
             weight_deltas_and_masks=None,
         )
-
         ci_recon_subset_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
