@@ -147,15 +147,15 @@ def split_dataset_resid_mlp(
         assert isinstance(cfg.task_config, ResidMLPTaskConfig), (
             f"Expected task_config to be of type ResidMLPTaskConfig since using `split_dataset_resid_mlp`, but got {type(cfg.task_config) = }"
         )
-        assert isinstance(component_model.patched_model, ResidMLP), (
+        assert isinstance(component_model.target_model, ResidMLP), (
             f"Expected patched_model to be of type ResidMLP since using `split_dataset_resid_mlp`, but got {type(component_model.patched_model) = }"
         )
 
-        assert isinstance(component_model.patched_model.config, ResidMLPModelConfig), (
-            f"Expected patched_model.config to be of type ResidMLPModelConfig since using `split_dataset_resid_mlp`, but got {type(component_model.patched_model.config) = }"
+        assert isinstance(component_model.target_model.config, ResidMLPModelConfig), (
+            f"Expected patched_model.config to be of type ResidMLPModelConfig since using `split_dataset_resid_mlp`, but got {type(component_model.target_model.config) = }"
         )
         resid_mlp_dataset_kwargs: dict[str, Any] = dict(
-            n_features=component_model.patched_model.config.n_features,
+            n_features=component_model.target_model.config.n_features,
             feature_probability=cfg.task_config.feature_probability,
             device="cpu",
             calc_labels=False,
