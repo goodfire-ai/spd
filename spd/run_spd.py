@@ -158,27 +158,29 @@ def optimize(
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
-    # Warmup phase: optimize faithfulness loss to improve initialization
-    if config.warmup_steps > 0:
+    # Faithfulness warmup phase: optimize faithfulness loss to improve initialization
+    if config.faithfulness_warmup_steps > 0:
         logger.info(
-            f"Starting warmup phase with {config.warmup_steps} steps at lr={config.warmup_lr}"
+            f"Starting warmup phase with {config.faithfulness_warmup_steps} steps at lr={config.faithfulness_warmup_lr}"
         )
 
-        warmup_optimizer = optim.AdamW(
-            component_params, lr=config.warmup_lr, weight_decay=config.warmup_weight_decay
+        faithfulness_warmup_optimizer = optim.AdamW(
+            component_params,
+            lr=config.faithfulness_warmup_lr,
+            weight_decay=config.faithfulness_warmup_weight_decay,
         )
 
-        for warmup_step in range(config.warmup_steps):
-            warmup_optimizer.zero_grad()
+        for faithfulness_warmup_step in range(config.faithfulness_warmup_steps):
+            faithfulness_warmup_optimizer.zero_grad()
             weight_deltas = component_model.calc_weight_deltas()
             faithfulness_loss = calc_faithfulness_loss(weight_deltas, device)
             faithfulness_loss.backward()
-            warmup_optimizer.step()
+            faithfulness_warmup_optimizer.step()
             logger.info(
-                f"Warmup step {warmup_step + 1}/{config.warmup_steps}, faithfulness loss: {faithfulness_loss.item():.6f}"
+                f"Warmup step {faithfulness_warmup_step + 1}/{config.faithfulness_warmup_steps}, faithfulness loss: {faithfulness_loss.item():.9f}"
             )
 
-        del warmup_optimizer
+        del faithfulness_warmup_optimizer
         torch.cuda.empty_cache()
         gc.collect()
 

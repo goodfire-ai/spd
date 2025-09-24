@@ -38,9 +38,9 @@ lr_exponential_halflife: null
 gradient_accumulation_steps: 4
 
 # --- Warmup ---
-warmup_steps: 100
-warmup_lr: 0.005
-warmup_weight_decay: 0.01
+warmup_steps: 300
+warmup_lr: 0.03
+warmup_weight_decay: 0.1
 
 # --- Logging & Saving ---
 train_log_freq: 100

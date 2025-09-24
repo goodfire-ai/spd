@@ -198,20 +198,6 @@ class Config(BaseModel):
     # --- Training ---
     lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
-
-    # --- Warmup ---
-    warmup_steps: NonNegativeInt = Field(
-        ...,
-        description="Number of warmup steps to optimize faithfulness loss before main training",
-    )
-    warmup_lr: PositiveFloat = Field(
-        ...,
-        description="Learning rate for warmup phase (optimizing faithfulness loss only)",
-    )
-    warmup_weight_decay: NonNegativeFloat = Field(
-        ...,
-        description="Weight decay for warmup phase optimizer",
-    )
     batch_size: PositiveInt = Field(
         ...,
         description=(
@@ -222,6 +208,20 @@ class Config(BaseModel):
     gradient_accumulation_steps: PositiveInt = Field(
         default=1,
         description="Number of steps to accumulate gradients over before updating parameters",
+    )
+
+    # --- Faithfulness Warmup ---
+    faithfulness_warmup_steps: NonNegativeInt = Field(
+        ...,
+        description="Number of warmup steps to optimize faithfulness loss before main training",
+    )
+    faithfulness_warmup_lr: PositiveFloat = Field(
+        ...,
+        description="Learning rate for warmup phase (optimizing faithfulness loss only)",
+    )
+    faithfulness_warmup_weight_decay: NonNegativeFloat = Field(
+        ...,
+        description="Weight decay for warmup phase optimizer",
     )
 
     @property

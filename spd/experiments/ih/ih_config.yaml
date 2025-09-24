@@ -35,6 +35,10 @@ gate_hidden_dims: [128]
 
 n_examples_until_dead: 10000
 
+# --- Faithfulness Warmup ---
+faithfulness_warmup_steps: 1000
+faithfulness_warmup_lr: 0.01
+faithfulness_warmup_weight_decay: 3.0
 
 # --- Logging & Saving ---
 image_freq: 500
