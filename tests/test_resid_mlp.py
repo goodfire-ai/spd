@@ -2,6 +2,7 @@ from spd.configs import Config, MetricConfig
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
+from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.general_utils import set_seed
@@ -35,11 +36,6 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         n_mask_samples=1,
         gate_type="mlp",
         gate_hidden_dims=[8],
-        target_module_patterns=[
-            "layers.*.mlp_in",
-            "layers.*.mlp_out",
-        ],
-        # Loss config (metrics-style)
         loss_metric_configs=[
             MetricConfig(
                 classname="ImportanceMinimalityLoss",
@@ -49,6 +45,8 @@ def test_resid_mlp_decomposition_happy_path() -> None:
             MetricConfig(classname="StochasticReconLoss", coeff=1.0),
             MetricConfig(classname="FaithfulnessLoss", coeff=1.0),
         ],
+        target_module_patterns=["layers.*.mlp_in", "layers.*.mlp_out"],
+        identity_module_patterns=["layers.*.mlp_in"],
         output_loss_type="mse",
         # Training
         lr=1e-3,
@@ -85,6 +83,9 @@ def test_resid_mlp_decomposition_happy_path() -> None:
 
     target_model = ResidMLP(config=resid_mlp_model_config).to(device)
     target_model.requires_grad_(False)
+
+    if config.identity_module_patterns is not None:
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
     assert isinstance(config.task_config, ResidMLPTaskConfig)
     # Create dataset

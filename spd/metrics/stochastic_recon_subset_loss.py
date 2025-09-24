@@ -11,8 +11,8 @@ from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
-class StochasticReconLoss(Metric):
-    """Recon loss when sampling with stochastic masks on all component layers."""
+class StochasticReconSubsetLoss(Metric):
+    """Recon loss when sampling with stochastic masks and routing to subsets of component layers."""
 
     slow = False
     is_differentiable: bool | None = True
@@ -40,8 +40,8 @@ class StochasticReconLoss(Metric):
             calc_stochastic_component_mask_info(
                 causal_importances=ci,
                 sampling=self.config.sampling,
-                routing="all",
                 weight_deltas=weight_deltas if self.config.use_delta_component else None,
+                routing="uniform_k-stochastic",
             )
             for _ in range(self.config.n_mask_samples)
         ]

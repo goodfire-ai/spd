@@ -13,6 +13,7 @@ from wandb.plot.custom_chart import CustomChart
 from spd.configs import Config, MetricConfig
 from spd.metrics import METRICS
 from spd.models.component_model import ComponentModel
+from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -51,6 +52,22 @@ def clean_metric_output(metric_name: str, computed_raw: Any) -> MetricOutType:
     return computed
 
 
+def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMetricOutType:
+    """Get the average of eval metrics across ranks.
+
+    Ignores any metrics that are not numbers. Currently, the image metrics do not need to be
+    averaged. If this changes for future metrics, we will need to do a reduce during calculcation
+    of the metric.
+    """
+    assert is_distributed(), "Can only average metrics across ranks if running in distributed mode"
+    metrics_keys_to_avg = {k: v for k, v in metrics.items() if isinstance(v, Number)}
+    if metrics_keys_to_avg:
+        avg_metrics = avg_metrics_across_ranks(metrics_keys_to_avg, device)
+    else:
+        avg_metrics = {}
+    return {**metrics, **avg_metrics}
+
+
 def evaluate(
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."] | tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
@@ -82,9 +99,7 @@ def evaluate(
         batch = extract_batch_data(batch_raw).to(device)
 
         target_out, pre_weight_acts = model(
-            batch,
-            mode="pre_forward_cache",
-            module_names=list(model.components.keys()),
+            batch, mode="input_cache", module_names=list(model.components.keys())
         )
         ci, ci_upper_leaky = model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,

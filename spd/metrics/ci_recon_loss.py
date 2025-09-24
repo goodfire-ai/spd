@@ -6,18 +6,18 @@ from torch import Tensor
 from torchmetrics import Metric
 
 from spd.configs import Config
-from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
+from spd.models.components import make_mask_infos
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
 class CIReconLoss(Metric):
-    """Calculate the recon loss when masking with CI values directly."""
+    """Recon loss when masking with CI values directly on all component layers."""
 
     slow = False
     is_differentiable: bool | None = True
 
-    sum_ci_recon: Float[Tensor, ""]
+    sum_loss: Float[Tensor, ""]
     n_examples: int
 
     def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
@@ -25,7 +25,7 @@ class CIReconLoss(Metric):
         self.model = model
         self.config = config
 
-        self.add_state("sum_ci_recon", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("sum_loss", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_examples", default=torch.tensor(0), dist_reduce_fx="sum")
 
     @override
@@ -43,8 +43,8 @@ class CIReconLoss(Metric):
         else:
             loss = calc_kl_divergence_lm(pred=out, target=target_out, reduce=False).sum()
         self.n_examples += out.shape[:-1].numel()
-        self.sum_ci_recon += loss
+        self.sum_loss += loss
 
     @override
     def compute(self) -> Float[Tensor, ""]:
-        return self.sum_ci_recon / self.n_examples
+        return self.sum_loss / self.n_examples

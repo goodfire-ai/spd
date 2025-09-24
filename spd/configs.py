@@ -135,14 +135,27 @@ class Config(BaseModel):
         description="List of fnmatch-style patterns that select modules in which an identity "
         "matrix should be inserted and decomposed beforehand",
     )
+
+    @property
+    def all_module_patterns(self):
+        if self.identity_module_patterns is None:
+            return self.target_module_patterns
+        identity_final_patterns = [f"{p}.pre_identity" for p in self.identity_module_patterns]
+        return self.target_module_patterns + identity_final_patterns
+
     use_delta_component: bool = Field(
         default=True,
         description="If True, use an extra component containing the difference between the target "
         "model and component weights. This allows for removing the faithfulness loss.",
     )
 
-    # --- Loss configuration ---
-    # Provide all loss terms via `loss_metric_configs` only (no legacy fields).
+    loss_metric_configs: list[MetricConfig] = Field(
+        default=[],
+        description=(
+            "List of configs for loss metrics to compute (used for both training logs and eval); "
+            "coefficients provided here are also used for weighting the training loss and eval loss/total."
+        ),
+    )
     # TODO: Move the p-annealing fields to the ImportanceMinimalityLoss config.
     p_anneal_start_frac: Probability = Field(
         default=1.0,
@@ -232,13 +245,6 @@ class Config(BaseModel):
     eval_metric_configs: list[MetricConfig] = Field(
         default=[],
         description="List of configs for metrics to use for evaluation",
-    )
-    loss_metric_configs: list[MetricConfig] = Field(
-        default=[],
-        description=(
-            "List of configs for loss metrics to compute (used for both training logs and eval); "
-            "coefficients provided here are also used for weighting the training loss and eval loss/total."
-        ),
     )
 
     # --- Component Tracking ---

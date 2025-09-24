@@ -13,13 +13,13 @@ class FaithfulnessLoss(Metric):
     slow = False
     is_differentiable: bool | None = True
 
-    sum_faithfulness: Float[Tensor, ""]
+    sum_loss: Float[Tensor, ""]
     total_params: int
 
     def __init__(self, model: ComponentModel, _config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model = model
-        self.add_state("sum_faithfulness", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("sum_loss", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total_params", default=torch.tensor(0), dist_reduce_fx="sum")
 
     @override
@@ -29,9 +29,9 @@ class FaithfulnessLoss(Metric):
         **kwargs: Any,
     ) -> None:
         for delta in weight_deltas.values():
-            self.sum_faithfulness += (delta**2).sum()
+            self.sum_loss += (delta**2).sum()
             self.total_params += delta.numel()
 
     @override
     def compute(self) -> Float[Tensor, ""]:
-        return self.sum_faithfulness / self.total_params
+        return self.sum_loss / self.total_params

@@ -3,6 +3,7 @@ from transformers import PreTrainedModel
 from spd.configs import Config, MetricConfig
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
+from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
 from spd.utils.general_utils import resolve_class, set_seed
 
@@ -25,6 +26,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
         gate_type="vector_mlp",
         gate_hidden_dims=[128],
         target_module_patterns=["transformer.h.*.attn.c_attn", "transformer.h.*.attn.c_proj"],
+        identity_module_patterns=["transformer.h.*.attn.c_attn"],
         loss_metric_configs=[
             MetricConfig(
                 classname="ImportanceMinimalityLoss",
@@ -88,6 +90,9 @@ def test_gpt_2_decomposition_happy_path() -> None:
     assert config.pretrained_model_name is not None
     target_model = hf_model_class.from_pretrained(config.pretrained_model_name)
     target_model.eval()
+
+    if config.identity_module_patterns is not None:
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
     train_data_config = DatasetConfig(
         name=config.task_config.dataset_name,

@@ -11,9 +11,9 @@ from torch import Tensor
 from torchmetrics import Metric
 
 from spd.configs import Config
-from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
-from spd.utils.component_utils import calc_stochastic_masks
+from spd.models.components import ComponentsMaskInfo, make_mask_infos
+from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -29,14 +29,12 @@ class SubsetReconstructionLoss(Metric):
         config: Config,
         include_patterns: dict[str, list[str]] | None = None,
         exclude_patterns: dict[str, list[str]] | None = None,
-        use_all_ones_for_non_replaced: bool = False,
         n_mask_samples: int = 5,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.model = model
         self.config = config
-        self.use_all_ones_for_non_replaced = use_all_ones_for_non_replaced
         self.n_mask_samples = n_mask_samples
         self.include_patterns = include_patterns or {}
         self.exclude_patterns = exclude_patterns or {}
@@ -124,11 +122,15 @@ class SubsetReconstructionLoss(Metric):
         zero_ce = ce_vs_labels(zero_out)
 
         # Generate stochastic masks
-        masks_list = calc_stochastic_masks(
-            causal_importances=ci,
-            n_mask_samples=self.n_mask_samples,
-            sampling=self.config.sampling,
-        )
+        masks_list: list[dict[str, ComponentsMaskInfo]] = [
+            calc_stochastic_component_mask_info(
+                ci,
+                sampling=self.config.sampling,
+                routing="all",
+                weight_deltas=weight_deltas if self.config.use_delta_component else None,
+            )
+            for _ in range(self.n_mask_samples)
+        ]
         results = {}
         all_modules = list(ci.keys())
 
@@ -137,20 +139,9 @@ class SubsetReconstructionLoss(Metric):
             active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
 
             outputs: list[Float[Tensor, "... vocab"]] = []  # pyright: ignore[reportRedeclaration]
-            for stoch_masks in masks_list:
-                weight_deltas_and_masks = {}
-                component_masks = {}
-                for k in active:
-                    component_masks[k] = stoch_masks.component_masks[k]
-                    if self.config.use_delta_component:
-                        weight_deltas_and_masks[k] = (
-                            weight_deltas[k],
-                            stoch_masks.weight_delta_masks[k],
-                        )
-                mask_infos = make_mask_infos(
-                    masks=component_masks, weight_deltas_and_masks=weight_deltas_and_masks
-                )
-                outputs.append(self.model(batch, mode="components", mask_infos=mask_infos))
+            for layers_masks in masks_list:
+                inc_mask_infos: dict[str, ComponentsMaskInfo] = {m: layers_masks[m] for m in active}
+                outputs.append(self.model(batch, mode="components", mask_infos=inc_mask_infos))
 
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
@@ -168,20 +159,9 @@ class SubsetReconstructionLoss(Metric):
             active = [m for m in all_modules if not any(fnmatch(m, p) for p in exclude_patterns)]
 
             outputs: list[Float[Tensor, "... vocab"]] = []
-            for stoch_masks in masks_list:
-                weight_deltas_and_masks = {}
-                component_masks = {}
-                for k in active:
-                    component_masks[k] = stoch_masks.component_masks[k]
-                    if self.config.use_delta_component:
-                        weight_deltas_and_masks[k] = (
-                            weight_deltas[k],
-                            stoch_masks.weight_delta_masks[k],
-                        )
-                mask_infos = make_mask_infos(
-                    masks=component_masks, weight_deltas_and_masks=weight_deltas_and_masks
-                )
-                outputs.append(self.model(batch, mode="components", mask_infos=mask_infos))
+            for layers_masks in masks_list:
+                exc_mask_infos: dict[str, ComponentsMaskInfo] = {m: layers_masks[m] for m in active}
+                outputs.append(self.model(batch, mode="components", mask_infos=exc_mask_infos))
 
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
@@ -194,5 +174,4 @@ class SubsetReconstructionLoss(Metric):
             results[f"subset/{name}/ce"] = mean_ce
             results[f"subset/{name}/ce_unrec"] = ce_unrec
 
-        # Worst subset metrics can be computed by the caller or here in compute if needed
         return results

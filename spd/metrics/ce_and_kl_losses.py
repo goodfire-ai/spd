@@ -10,9 +10,9 @@ from torch import Tensor
 from torchmetrics import Metric
 
 from spd.configs import Config
-from spd.mask_info import make_mask_infos
 from spd.models.component_model import ComponentModel
-from spd.utils.component_utils import calc_stochastic_masks
+from spd.models.components import make_mask_infos
+from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -98,39 +98,39 @@ class CEandKLLosses(Metric):
         ci_masked_ce_loss = ce_vs_labels(ci_masked_logits)
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
-        stoch_masks = [
-            m.component_masks
-            for m in calc_stochastic_masks(ci, n_mask_samples=1, sampling=self.config.sampling)
-        ][0]
-        stoch_masked_logits = self.model(
-            batch, mode="components", mask_infos=make_mask_infos(stoch_masks)
+        # Sample stochastic masks based on the causal importances
+        mask_infos = calc_stochastic_component_mask_info(
+            causal_importances=ci,
+            sampling=self.config.sampling,
+            routing="all",
+            weight_deltas=None,
         )
+        stoch_masked_logits = self.model(batch, mode="components", mask_infos=mask_infos)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
 
-        nonmask = {k: torch.ones_like(v) for k, v in ci.items()}
-        unmasked_logits = self.model(batch, mode="components", mask_infos=make_mask_infos(nonmask))
+        nonmask_infos = make_mask_infos({k: torch.ones_like(v) for k, v in ci.items()})
+        unmasked_logits = self.model(batch, mode="components", mask_infos=nonmask_infos)
         unmasked_ce_loss = ce_vs_labels(unmasked_logits)
         unmasked_kl_loss = kl_vs_target(unmasked_logits)
 
-        rand_masks = {layer: torch.rand_like(v) for layer, v in ci.items()}
-        random_masked_logits = self.model(
-            batch, mode="components", mask_infos=make_mask_infos(rand_masks)
-        )
+        # Completely random masks
+        rand_mask_infos = make_mask_infos({k: torch.rand_like(v) for k, v in ci.items()})
+        random_masked_logits = self.model(batch, mode="components", mask_infos=rand_mask_infos)
         random_masked_ce_loss = ce_vs_labels(random_masked_logits)
         random_masked_kl_loss = kl_vs_target(random_masked_logits)
 
-        rounded_ci = {k: (v > self.rounding_threshold).float() for k, v in ci.items()}
-        rounded_masked_logits = self.model(
-            batch, mode="components", mask_infos=make_mask_infos(rounded_ci)
+        # Rounded causal importances as masks
+        rounded_mask_infos = make_mask_infos(
+            {k: (v > self.rounding_threshold).float() for k, v in ci.items()}
         )
+        rounded_masked_logits = self.model(batch, mode="components", mask_infos=rounded_mask_infos)
         rounded_masked_ce_loss = ce_vs_labels(rounded_masked_logits)
         rounded_masked_kl_loss = kl_vs_target(rounded_masked_logits)
 
-        zero_masks = {k: torch.zeros_like(v) for k, v in ci.items()}
-        zero_masked_logits = self.model(
-            batch, mode="components", mask_infos=make_mask_infos(zero_masks)
-        )
+        # Zero all the components
+        zero_mask_infos = make_mask_infos({k: torch.zeros_like(v) for k, v in ci.items()})
+        zero_masked_logits = self.model(batch, mode="components", mask_infos=zero_mask_infos)
         zero_masked_ce_loss = ce_vs_labels(zero_masked_logits)
         zero_masked_kl_loss = kl_vs_target(zero_masked_logits)
 

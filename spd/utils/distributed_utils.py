@@ -11,8 +11,6 @@ import torch.distributed as dist
 from torch.distributed import ReduceOp
 from torch.types import Number
 
-from spd.eval import DistMetricOutType, MetricOutType
-
 
 @dataclass(frozen=True, slots=True)
 class DistributedState:
@@ -234,19 +232,3 @@ def avg_metrics_across_ranks(
     assert world_size > 0, "World size must be greater than 0"
     sum_metrics = sum_metrics_across_ranks(metrics, device)
     return {k: v / world_size for k, v in sum_metrics.items()}
-
-
-def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMetricOutType:
-    """Get the average of eval metrics across ranks.
-
-    Ignores any metrics that are not numbers. Currently, the image metrics do not need to be
-    averaged. If this changes for future metrics, we will need to do a reduce during calculcation
-    of the metric.
-    """
-    assert is_distributed(), "Can only average metrics across ranks if running in distributed mode"
-    metrics_keys_to_avg = {k: v for k, v in metrics.items() if isinstance(v, Number)}
-    if metrics_keys_to_avg:
-        avg_metrics = avg_metrics_across_ranks(metrics_keys_to_avg, device)
-    else:
-        avg_metrics = {}
-    return {**metrics, **avg_metrics}

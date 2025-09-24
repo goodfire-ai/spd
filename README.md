@@ -80,6 +80,16 @@ subdirectories, along with a corresponding config file. E.g.
 python spd/experiments/tms/tms_decomposition.py spd/experiments/tms/tms_5-2_config.yaml
 ```
 
+### Model Comparison
+
+Use the model comparison script to analyse (post hoc) the geometric similarities between subcomponents of two different models:
+
+```bash
+python spd/scripts/compare_models/compare_models.py spd/scripts/compare_models/compare_models_config.yaml
+```
+
+See `spd/scripts/compare_models/README.md` for detailed usage instructions.
+
 ## Development
 
 Suggested extensions and settings for VSCode/Cursor are provided in `.vscode/`. To use the suggested
