@@ -312,7 +312,7 @@ def make_mask_infos(
     routing_masks: dict[str, Bool[Tensor, "..."]] | None = None,
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
-    """Create ComponentsMaskInfo dict from dicts of component masks, and optionally routing masks, and weight deltas and weight delta masks.
+    """Create ComponentsMaskInfo dict from dicts of component masks, and optionally routing masks, weight deltas, and weight delta masks.
     Keys of all dicts must be the same.
 
     Args:
