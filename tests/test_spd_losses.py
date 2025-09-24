@@ -1,54 +1,92 @@
 import torch
+import torch.nn as nn
+from jaxtyping import Float
+from torch import Tensor
 
-from spd.losses import _calc_tensors_mse
+from spd.losses import calc_faithfulness_loss
+from spd.models.component_model import ComponentModel
 
 
-class TestCalcParamMatchLoss:
-    # Actually testing _calc_tensors_mse. calc_faithfulness_loss should fail hard in most cases, and
-    # testing it would require lots of mocking the way it is currently written.
-    def test_calc_faithfulness_loss_single_instance_single_param(self):
-        V = torch.ones(2, 3)
-        U = torch.ones(3, 2)
-        n_params = 2 * 3 * 2
-        spd_params = {"layer1": U.T @ V.T}
-        target_params = {"layer1": torch.tensor([[1.0, 1.0], [1.0, 1.0]])}
+class TinyLinearModel(nn.Module):
+    def __init__(self, d_in: int, d_out: int) -> None:
+        super().__init__()
+        self.fc = nn.Linear(d_in, d_out, bias=False)
 
-        result = _calc_tensors_mse(
-            params1=target_params,
-            params2=spd_params,
-            n_params=n_params,
-            device="cpu",
-        )
 
-        # V: [2, 3], U: [3, 2], both filled with ones
-        # U^TV^T: [[3, 3], [3, 3]]
-        # (U^TV^T - pretrained_weights)^2: [[4, 4], [4, 4]]
-        # Sum and divide by n_params: 16 / 12 = 4/3
-        expected = torch.tensor(4.0 / 3.0)
-        assert torch.allclose(result, expected), f"Expected {expected}, but got {result}"
+def _make_component_model(weight: Float[Tensor, " d_out d_in"]) -> ComponentModel:
+    d_out, d_in = weight.shape
+    target = TinyLinearModel(d_in=d_in, d_out=d_out)
+    with torch.no_grad():
+        target.fc.weight.copy_(weight)
+    target.requires_grad_(False)
 
-    def test_calc_faithfulness_loss_single_instance_multiple_params(self):
-        Vs = [torch.ones(3, 3), torch.ones(2, 3)]
-        Us = [torch.ones(3, 2), torch.ones(3, 3)]
-        n_params = 2 * 3 * 3 + 3 * 3 * 2
-        target_params = {
-            "layer1": torch.tensor([[2.0, 2.0, 2.0], [2.0, 2.0, 2.0]]),
-            "layer2": torch.tensor([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]]),
+    comp_model = ComponentModel(
+        target_model=target,
+        target_module_patterns=["fc"],
+        C=1,
+        gate_hidden_dims=[2],
+        gate_type="mlp",
+        pretrained_model_output_attr=None,
+    )
+
+    return comp_model
+
+
+def _zero_components_for_test(model: ComponentModel) -> None:
+    with torch.no_grad():
+        for cm in model.components.values():
+            cm.V.zero_()
+            cm.U.zero_()
+
+
+class TestCalcWeightDeltas:
+    def test_components_and_identity(self: object) -> None:
+        # fc weight 2x3 with known values
+        fc_weight = torch.tensor([[1.0, 0.0, -1.0], [2.0, 3.0, -4.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+        _zero_components_for_test(model)
+
+        deltas = model.calc_weight_deltas()
+
+        assert set(deltas.keys()) == {"fc"}
+
+        # components were zeroed, so delta equals original weight
+        expected_fc = fc_weight
+        assert torch.allclose(deltas["fc"], expected_fc)
+
+    def test_components_nonzero(self: object) -> None:
+        # TODO WRITE DESCRIPTION
+        fc_weight = torch.tensor([[1.0, -2.0, 0.5], [0.0, 3.0, -1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        deltas = model.calc_weight_deltas()
+        assert set(deltas.keys()) == {"fc"}
+
+        component = model.components["fc"]
+        assert component is not None
+        expected_fc = model.target_weight("fc") - component.weight
+        assert torch.allclose(deltas["fc"], expected_fc)
+
+
+class TestCalcFaithfulnessLoss:
+    def test_manual_weight_deltas_normalization(self: object) -> None:
+        weight_deltas = {
+            "a": torch.tensor([[1.0, -1.0], [2.0, 0.0]], dtype=torch.float32),  # sum sq = 6
+            "b": torch.tensor([[2.0, -2.0, 1.0]], dtype=torch.float32),  # sum sq = 9
         }
-        spd_params = {
-            "layer1": Us[0].T @ Vs[0].T,
-            "layer2": Us[1].T @ Vs[1].T,
-        }
-        result = _calc_tensors_mse(
-            params1=target_params,
-            params2=spd_params,
-            n_params=n_params,
-            device="cpu",
-        )
+        # total sum sq = 15, total params = 4 + 3 = 7
+        expected = torch.tensor(15.0 / 7.0)
+        result = calc_faithfulness_loss(weight_deltas=weight_deltas, device="cpu")
+        assert torch.allclose(result, expected)
 
-        # First layer: UV1: [[3, 3, 3], [3, 3, 3]], diff^2: [[1, 1, 1], [1, 1, 1]]
-        # Second layer: UV2: [[3, 3], [3, 3], [3, 3]], diff^2: [[4, 4], [4, 4], [4, 4]]
-        # Add together 24 + 6 = 30
-        # Divide by n_params: 30 / (18+18) = 5/6
-        expected = torch.tensor(5.0 / 6.0)
-        assert torch.allclose(result, expected), f"Expected {expected}, but got {result}"
+    def test_with_model_weight_deltas(self: object) -> None:
+        fc_weight = torch.tensor([[1.0, 0.0, -1.0], [2.0, 3.0, -4.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+        _zero_components_for_test(model)
+        deltas = model.calc_weight_deltas()
+
+        # Expected: mean of squared entries across both matrices
+        expected = fc_weight.square().sum() / fc_weight.numel()
+
+        result = calc_faithfulness_loss(weight_deltas=deltas, device="cpu")
+        assert torch.allclose(result, expected)

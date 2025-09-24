@@ -1,5 +1,4 @@
-import fnmatch
-from collections.abc import Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -12,24 +11,27 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
-from transformers import PreTrainedModel
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
 from spd.configs import Config
+from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
     Components,
-    ComponentsOrModule,
+    ComponentsMaskInfo,
     EmbeddingComponents,
-    GateMLPs,
     GateType,
+    Identity,
     LinearComponents,
-    VectorGateMLPs,
+    MLPGates,
+    VectorMLPGates,
+    VectorSharedMLPGate,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class
+from spd.utils.module_utils import get_target_module_paths
 from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
     download_wandb_file,
@@ -92,36 +94,151 @@ class ComponentModel(LoadableModule):
                 f"Found {param.requires_grad} for {name}"
             )
 
-        target_module_paths = ComponentModel._get_target_module_paths(
-            target_model, target_module_patterns
-        )
-
-        patched_model, components_or_modules = ComponentModel._patch_modules(
-            model=target_model,
-            module_paths=target_module_paths,
-            C=C,
-        )
-
-        gates = ComponentModel._make_gates(gate_type, C, gate_hidden_dims, components_or_modules)
-
+        self.target_model = target_model
         self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
-        self.target_module_paths = target_module_paths
 
-        # We keep components_or_modules around to easily access the nested, inserted components
-        # State_dict will pick the components up because they're attached to the target_model
-        # via set_submodule
-        self.components_or_modules = components_or_modules
-        # We keep gates as a plain dict so it's properly typed, as ModuleDict isn't generic
-        self.gates = gates
+        # this is useful for calling forward with input_cache
+        self.module_paths: list[str] = get_target_module_paths(target_model, target_module_patterns)
 
-        # these are the actual registered submodules
-        self.patched_model = patched_model
-        self._gates = nn.ModuleDict({k.replace(".", "-"): v for k, v in self.gates.items()})
+        self.components = ComponentModel._create_components(
+            target_model=target_model,
+            module_paths=self.module_paths,
+            C=C,
+        )
+        self._components = nn.ModuleDict(
+            {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
+        )
 
-    @property
-    def components(self) -> dict[str, Components]:
-        return {name: cm.components for name, cm in self.components_or_modules.items()}
+        self.gates = ComponentModel._create_gates(
+            target_model=target_model,
+            module_paths=self.module_paths,
+            C=C,
+            gate_type=gate_type,
+            gate_hidden_dims=gate_hidden_dims,
+        )
+        self._gates = nn.ModuleDict(
+            {k.replace(".", "-"): self.gates[k] for k in sorted(self.gates)}
+        )
+
+    def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
+        target_module = self.target_model.get_submodule(module_name)
+
+        match target_module:
+            case RadfordConv1D():
+                return target_module.weight.T
+            case nn.Linear() | nn.Embedding():
+                return target_module.weight
+            case Identity():
+                p = next(self.parameters())
+                return torch.eye(target_module.d, device=p.device, dtype=p.dtype)
+            case _:
+                raise ValueError(f"Module {target_module} not supported")
+
+    @staticmethod
+    def _create_component(
+        target_module: nn.Module,
+        C: int,
+    ) -> Components:
+        match target_module:
+            case nn.Linear():
+                d_out, d_in = target_module.weight.shape
+                component = LinearComponents(
+                    C=C,
+                    d_in=d_in,
+                    d_out=d_out,
+                    bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                )
+            case RadfordConv1D():
+                d_in, d_out = target_module.weight.shape
+                component = LinearComponents(
+                    C=C,
+                    d_in=d_in,
+                    d_out=d_out,
+                    bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
+                )
+            case Identity():
+                component = LinearComponents(
+                    C=C,
+                    d_in=target_module.d,
+                    d_out=target_module.d,
+                    bias=None,
+                )
+            case nn.Embedding():
+                component = EmbeddingComponents(
+                    C=C,
+                    vocab_size=target_module.num_embeddings,
+                    embedding_dim=target_module.embedding_dim,
+                )
+            case _:
+                raise ValueError(f"Module {target_module} not supported")
+
+        return component
+
+    @staticmethod
+    def _create_components(
+        target_model: nn.Module,
+        module_paths: list[str],
+        C: int,
+    ) -> dict[str, Components]:
+        components: dict[str, Components] = {}
+        for module_path in module_paths:
+            target_module = target_model.get_submodule(module_path)
+            components[module_path] = ComponentModel._create_component(target_module, C)
+        return components
+
+    @staticmethod
+    def _create_gate(
+        target_module: nn.Module,
+        component_C: int,
+        gate_type: GateType,
+        gate_hidden_dims: list[int],
+    ) -> nn.Module:
+        """Helper to create a gate based on gate_type and module type."""
+        if isinstance(target_module, nn.Embedding):
+            assert gate_type == "mlp", "Embedding modules only supported for gate_type='mlp'"
+
+        if gate_type == "mlp":
+            return MLPGates(C=component_C, hidden_dims=gate_hidden_dims)
+
+        match target_module:
+            case nn.Linear():
+                input_dim = target_module.weight.shape[1]
+            case RadfordConv1D():
+                input_dim = target_module.weight.shape[0]
+            case Identity():
+                input_dim = target_module.d
+            case _:
+                raise ValueError(f"Module {type(target_module)} not supported for {gate_type=}")
+
+        match gate_type:
+            case "vector_mlp":
+                return VectorMLPGates(
+                    C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+                )
+            case "shared_mlp":
+                return VectorSharedMLPGate(
+                    C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+                )
+
+    @staticmethod
+    def _create_gates(
+        target_model: nn.Module,
+        module_paths: list[str],
+        C: int,
+        gate_type: GateType,
+        gate_hidden_dims: list[int],
+    ) -> dict[str, nn.Module]:
+        gates: dict[str, nn.Module] = {}
+        for module_path in module_paths:
+            target_module = target_model.get_submodule(module_path)
+            gates[module_path] = ComponentModel._create_gate(
+                target_module,
+                C,
+                gate_type,
+                gate_hidden_dims,
+            )
+        return gates
 
     def _extract_output(self, raw_output: Any) -> Any:
         """Extract the desired output from the model's raw output.
@@ -151,146 +268,12 @@ class ComponentModel(LoadableModule):
         else:
             return getattr(raw_output, self.pretrained_model_output_attr)
 
-    @staticmethod
-    def _get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
-        """Find the target_module_patterns that match real modules in the target model.
-
-        e.g. `["layers.*.mlp_in"]` ->  `["layers.1.mlp_in", "layers.2.mlp_in"]`.
-        """
-
-        names_out: list[str] = []
-        matched_patterns: set[str] = set()
-        for name, _ in model.named_modules():
-            for pattern in target_module_patterns:
-                if fnmatch.fnmatch(name, pattern):
-                    matched_patterns.add(pattern)
-                    names_out.append(name)
-
-        unmatched_patterns = set(target_module_patterns) - matched_patterns
-        if unmatched_patterns:
-            raise ValueError(
-                f"The following patterns in target_module_patterns did not match any modules: "
-                f"{sorted(unmatched_patterns)}"
-            )
-
-        return names_out
-
-    @staticmethod
-    def _patch_modules(
-        model: nn.Module,
-        module_paths: list[str],
-        C: int,
-    ) -> tuple[nn.Module, dict[str, ComponentsOrModule]]:
-        """Replace nn.Modules with ComponentsOrModule objects based on target_module_paths.
-
-        NOTE: This method mutates and returns `model`, and returns a dictionary of references
-        to the newly inserted ComponentsOrModule objects.
-
-        Example:
-            >>> model
-            MyModel(
-                (linear): Linear(in_features=10, out_features=10, bias=True)
-            )
-            >>> target_module_paths = ["linear"]
-            >>> components_or_modules = create_components_or_modules(
-            ...     model,
-            ...     target_module_paths,
-            ...     C=2,
-            ... )
-            >>> print(model)
-            MyModel(
-                (linear): ComponentsOrModule(
-                    (original): Linear(in_features=10, out_features=10, bias=True),
-                    (components): LinearComponents(C=2, d_in=10, d_out=10, bias=True),
-                )
-            )
-            >>> print(components_or_modules)
-            {
-                "linear": ComponentsOrModule(
-                    (original): Linear(in_features=10, out_features=10, bias=True),
-                    (components): LinearComponents(C=2, d_in=10, d_out=10, bias=True),
-                ),
-            }
-
-        Args:
-            model: The model to replace modules in.
-            module_paths: The paths to the modules to replace.
-            C: The number of components to use.
-
-        Returns:
-            A dictionary mapping module paths to the newly inserted ComponentsOrModule objects
-            within `model`.
-        """
-        components_or_modules: dict[str, ComponentsOrModule] = {}
-
-        for module_path in module_paths:
-            module = model.get_submodule(module_path)
-
-            if isinstance(module, nn.Linear):
-                d_out, d_in = module.weight.shape
-                component = LinearComponents(
-                    C=C,
-                    d_in=d_in,
-                    d_out=d_out,
-                    bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
-                )
-            elif isinstance(module, nn.Embedding):
-                component = EmbeddingComponents(
-                    C=C,
-                    vocab_size=module.num_embeddings,
-                    embedding_dim=module.embedding_dim,
-                )
-            elif isinstance(module, RadfordConv1D):
-                d_in, d_out = module.weight.shape
-                component = LinearComponents(
-                    C=C,
-                    d_in=d_in,
-                    d_out=d_out,
-                    bias=module.bias.data if module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
-                )
-            else:
-                raise ValueError(
-                    f"Module '{module_path}' matched pattern is not nn.Linear, nn.Embedding,"
-                    f"or Huggingface Conv1D. Found type: {type(module)}"
-                )
-
-            replacement = ComponentsOrModule(original=module, components=component)
-
-            model.set_submodule(module_path, replacement)
-
-            components_or_modules[module_path] = replacement
-
-        return model, components_or_modules
-
-    @staticmethod
-    def _make_gates(
-        gate_type: GateType,
-        C: int,
-        gate_hidden_dims: list[int],
-        components_or_modules: dict[str, ComponentsOrModule],
-    ) -> dict[str, nn.Module]:
-        gates: dict[str, nn.Module] = {}
-        for module_path, component in components_or_modules.items():
-            if gate_type == "mlp":
-                gate = GateMLPs(C=C, hidden_dims=gate_hidden_dims)
-            else:
-                if isinstance(component.original, nn.Linear):
-                    input_dim = component.original.weight.shape[1]
-                elif isinstance(component.original, RadfordConv1D):
-                    input_dim = component.original.weight.shape[0]
-                else:
-                    assert isinstance(component.original, nn.Embedding)
-                    input_dim = component.original.num_embeddings
-                gate = VectorGateMLPs(C=C, input_dim=input_dim, hidden_dims=gate_hidden_dims)
-            gates[module_path] = gate
-        return gates
-
     @override
     def forward(
         self,
         *args: Any,
-        mode: Literal["target", "components", "pre_forward_cache"] | None = "target",
-        masks: dict[str, Float[Tensor, "... C"]] | None = None,
+        mode: Literal["target", "components", "input_cache"] | None = "target",
+        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
     ) -> Any:
@@ -303,126 +286,121 @@ class ComponentModel(LoadableModule):
             mode: The type of forward pass to perform:
                 - 'target': Standard forward pass of the target model
                 - 'components': Forward with component replacements (requires masks)
-                - 'pre_forward_cache': Forward with pre-forward caching (requires module_names)
-            masks: Dictionary mapping component names to masks (required for mode='components')
-            module_names: List of module names to cache inputs for (required for mode='pre_forward_cache')
+                - 'input_cache': Forward with input caching (requires module_names)
+            mask_infos: Dictionary mapping module names to ComponentsMaskInfo
+                (required for mode='components').
+            module_names: List of module names to cache inputs for
+                (required for mode='input_cache')
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
         if mode == "components":
-            assert masks is not None, "masks parameter is required for mode='components'"
-            return self._forward_with_components(*args, masks=masks, **kwargs)
-        elif mode == "pre_forward_cache":
+            assert mask_infos is not None, "mask_infos are required for mode='components'"
+            return self._forward_with_components(*args, mask_infos=mask_infos, **kwargs)
+        elif mode == "input_cache":
             assert module_names is not None, (
-                "module_names parameter is required for mode='pre_forward_cache'"
+                "module_names parameter is required for mode='input_cache'"
             )
-            return self._forward_with_pre_forward_cache_hooks(
-                *args, module_names=module_names, **kwargs
-            )
+            return self._forward_with_input_cache(*args, module_names=module_names, **kwargs)
         else:
-            return self._forward_target(*args, **kwargs)
+            return self._extract_output(self.target_model(*args, **kwargs))
 
     @contextmanager
-    def _replaced_modules(self, masks: dict[str, Float[Tensor, "... C"]]):
-        """Context manager for temporarily replacing modules with components.
-
-        Args:
-            masks: Optional dictionary mapping component names to masks
-        """
-        for module_name, component in self.components_or_modules.items():
-            assert component.forward_mode is None, (
-                f"Component must be in pristine state, but forward_mode is {component.forward_mode}"
-            )
-            assert component.mask is None, (
-                "Component must be in pristine state, but mask is not None"
-            )
-
-            if module_name in masks:
-                component.forward_mode = "components"
-                component.mask = masks[module_name]
-            else:
-                component.forward_mode = "original"
-                component.mask = None
+    def _attach_forward_hooks(
+        self, hooks: dict[str, Callable[..., Any]]
+    ) -> Generator[None, None, None]:
+        """Context manager to temporarily attach forward hooks to the target model."""
+        handles: list[RemovableHandle] = []
+        for module_name, hook in hooks.items():
+            target_module = self.target_model.get_submodule(module_name)
+            handle = target_module.register_forward_hook(hook, with_kwargs=True)
+            handles.append(handle)
         try:
             yield
-        finally:
-            for component in self.components_or_modules.values():
-                component.forward_mode = None
-                component.mask = None
-
-    def _forward_target(self, *args: Any, **kwargs: Any) -> Any:
-        """Forward pass of the target model."""
-        for module in self.components_or_modules.values():
-            assert module.forward_mode is None, (
-                f"Component should be in pristine state, but forward_mode is {module.forward_mode}"
-            )
-            module.forward_mode = "original"
-        try:
-            out = self.patched_model(*args, **kwargs)
-        finally:
-            for module in self.components_or_modules.values():
-                module.forward_mode = None
-
-        out = self._extract_output(out)
-
-        return out
-
-    def _forward_with_components(
-        self,
-        *args: Any,
-        masks: dict[str, Float[Tensor, "... C"]],
-        **kwargs: Any,
-    ) -> Any:
-        """Forward pass with temporary component replacements. `masks` is a dictionary mapping
-        component paths to masks. A mask being present means that the module will be replaced
-        with components, and the value of the mask will be used as the mask for the components.
-
-        Args:
-            masks: Optional dictionary mapping component names to masks
-        """
-        with self._replaced_modules(masks):
-            raw_out = self.patched_model(*args, **kwargs)
-            out = self._extract_output(raw_out)
-            return out
-
-    def _forward_with_pre_forward_cache_hooks(
-        self, *args: Any, module_names: list[str], **kwargs: Any
-    ) -> tuple[Any, dict[str, Tensor]]:
-        """Forward pass with caching at the input to the modules given by `module_names`.
-
-        Args:
-            module_names: List of module names to cache the inputs to.
-
-        Returns:
-            Tuple of (model output, cache dictionary)
-        """
-        cache = {}
-        handles: list[RemovableHandle] = []
-
-        def cache_hook(_: nn.Module, input: tuple[Tensor, ...], param_name: str) -> None:
-            cache[param_name] = input[0]
-
-        # Register hooks
-        for module_name in module_names:
-            module = self.patched_model.get_submodule(module_name)
-            assert module is not None, f"Module {module_name} not found"
-            handles.append(
-                module.register_forward_pre_hook(partial(cache_hook, param_name=module_name))
-            )
-
-        for module in self.components_or_modules.values():
-            module.forward_mode = "original"
-
-        try:
-            raw_out = self.patched_model(*args, **kwargs)
-            out = self._extract_output(raw_out)
-            return out, cache
         finally:
             for handle in handles:
                 handle.remove()
 
-            for module in self.components_or_modules.values():
-                module.forward_mode = None
+    def _forward_with_components(
+        self, *args: Any, mask_infos: dict[str, ComponentsMaskInfo], **kwargs: Any
+    ) -> Any:
+        """Forward pass with temporary component replacements. `masks` is a dictionary mapping
+        component paths to mask infos. A mask info being present means that the module will be replaced
+        with components, and the value of the mask info will be used as the mask for the components.
+
+        Args:
+            mask_infos: Dictionary mapping module names to ComponentsMaskInfo
+        """
+
+        def fwd_hook(
+            _module: nn.Module,
+            args: list[Any],
+            kwargs: dict[Any, Any],
+            output: Any,
+            components: Components,
+            mask_info: ComponentsMaskInfo,
+        ) -> None | Any:
+            assert len(args) == 1, "Expected 1 argument"
+            assert len(kwargs) == 0, "Expected no keyword arguments"
+            x = args[0]
+            assert isinstance(x, Tensor), "Expected input tensor"
+            assert isinstance(output, Tensor), (
+                "Only supports single-tensor outputs, got type(output)"
+            )
+
+            components_out = components(
+                x,
+                mask=mask_info.component_mask,
+                weight_delta_and_mask=mask_info.weight_delta_and_mask,
+            )
+            if mask_info.routing_mask is not None:
+                return torch.where(mask_info.routing_mask[..., None], components_out, output)
+
+            return components_out
+
+        hooks: dict[str, Callable[..., Any]] = {}
+        for module_name, mask_info in mask_infos.items():
+            components = self.components[module_name]
+            hooks[module_name] = partial(fwd_hook, components=components, mask_info=mask_info)
+
+        with self._attach_forward_hooks(hooks):
+            raw_out = self.target_model(*args, **kwargs)
+
+        return self._extract_output(raw_out)
+
+    def _forward_with_input_cache(
+        self, *args: Any, module_names: list[str], **kwargs: Any
+    ) -> tuple[Any, dict[str, Tensor]]:
+        """Forward pass with caching at the input to the modules given by `module_names`.
+        Args:
+            module_names: List of module names to cache the inputs to.
+        Returns:
+            Tuple of (model output, input cache dictionary)
+        """
+
+        cache = {}
+
+        def cache_hook(
+            _module: nn.Module,
+            args: list[Any],
+            kwargs: dict[Any, Any],
+            _output: Any,
+            param_name: str,
+        ) -> None:
+            assert len(args) == 1, "Expected 1 argument"
+            assert len(kwargs) == 0, "Expected no keyword arguments"
+            x = args[0]
+            assert isinstance(x, Tensor), "Expected x to be a tensor"
+            cache[param_name] = x
+
+        hooks = {
+            module_name: partial(cache_hook, param_name=module_name) for module_name in module_names
+        }
+        with self._attach_forward_hooks(hooks):
+            raw_out = self.target_model(*args, **kwargs)
+
+        out = self._extract_output(raw_out)
+        return out, cache
 
     @staticmethod
     def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:
@@ -452,27 +430,29 @@ class ComponentModel(LoadableModule):
         # Load the target model
         model_class = resolve_class(config.pretrained_model_class)
         if config.pretrained_model_name is not None:
-            assert issubclass(model_class, PreTrainedModel), (
-                f"Model class {model_class} should be a subclass of PreTrainedModel which "
-                "defines a `from_pretrained` method"
+            assert hasattr(model_class, "from_pretrained"), (
+                f"Model class {model_class} should have a `from_pretrained` method"
             )
-            target_model_unpatched = model_class.from_pretrained(config.pretrained_model_name)
+            target_model = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
         else:
             assert issubclass(model_class, LoadableModule), (
                 f"Model class {model_class} should be a subclass of LoadableModule which "
                 "defines a `from_pretrained` method"
             )
             assert run_info.config.pretrained_model_path is not None
-            target_model_unpatched = model_class.from_pretrained(
-                run_info.config.pretrained_model_path
+            target_model = model_class.from_pretrained(run_info.config.pretrained_model_path)
+
+        target_model.eval()
+        target_model.requires_grad_(False)
+
+        if config.identity_module_patterns is not None:
+            insert_identity_operations_(
+                target_model, identity_patterns=config.identity_module_patterns
             )
 
-        target_model_unpatched.eval()
-        target_model_unpatched.requires_grad_(False)
-
         comp_model = ComponentModel(
-            target_model=target_model_unpatched,
-            target_module_patterns=config.target_module_patterns,
+            target_model=target_model,
+            target_module_patterns=config.all_module_patterns,
             C=config.C,
             gate_hidden_dims=config.gate_hidden_dims,
             gate_type=config.gate_type,
@@ -482,6 +462,8 @@ class ComponentModel(LoadableModule):
         comp_model_weights = torch.load(
             run_info.checkpoint_path, map_location="cpu", weights_only=True
         )
+
+        handle_deprecated_state_dict_keys_(comp_model_weights)
 
         comp_model.load_state_dict(comp_model_weights)
         return comp_model
@@ -517,13 +499,13 @@ class ComponentModel(LoadableModule):
             acts = pre_weight_acts[param_name]
             gates = self.gates[param_name]
 
-            if isinstance(gates, GateMLPs):
-                # need to get the inner activation for GateMLP
-                gate_input = self.components[param_name].get_inner_acts(acts)
-            elif isinstance(gates, VectorGateMLPs):
-                gate_input = acts
-            else:
-                raise ValueError(f"Unknown gate type: {type(gates)}")
+            match gates:
+                case MLPGates():
+                    gate_input = self.components[param_name].get_inner_acts(acts)
+                case VectorMLPGates() | VectorSharedMLPGate():
+                    gate_input = acts
+                case _:
+                    raise ValueError(f"Unknown gate type: {type(gates)}")
 
             if detach_inputs:
                 gate_input = gate_input.detach()
@@ -548,3 +530,52 @@ class ComponentModel(LoadableModule):
             causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs()
 
         return causal_importances, causal_importances_upper_leaky
+
+    def calc_weight_deltas(self) -> dict[str, Float[Tensor, " d_out d_in"]]:
+        """Calculate the weight differences between the target and component weights (V@U) for each layer."""
+        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
+        for comp_name, components in self.components.items():
+            weight_deltas[comp_name] = self.target_weight(comp_name) - components.weight
+        return weight_deltas
+
+
+def _transform_key(key: str) -> str:
+    key = key[:]  # make a copy
+
+    # do this first to simplify the rest. All following logic assumes "target_model" naming convention
+    key = key.replace("patched_model", "target_model")
+
+    has_components = ".components." in key
+    has_original = ".original." in key
+    if has_components and has_original:
+        raise ValueError(
+            f"Key {key} has both components and original, this is technically possible but unsupported"
+        )
+
+    if has_components:
+        # we need to move the path out of the target model, remove the "components" nesting,
+        # normalize the path, and put it under the "_components" ModuleDict
+        assert key.startswith("target_model.")
+        key = key.removeprefix("target_model.")
+        path, contents = key.split(".components.")
+        normalized_path = path.replace(".", "-")
+        key = f"_components.{normalized_path}.{contents}"
+
+    if has_original:
+        # simpler: just collapse the nesting
+        key = key.replace(".original.", ".")
+
+    return key
+
+
+def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
+    """Maps deprecated state dict keys to new state dict keys
+    old: used nested ComponentsOrModule wrappers
+    new: uses a single ModuleDict for all components
+    """
+    for key in list(state_dict.keys()):
+        new_key = _transform_key(key)
+        if new_key == key:
+            continue
+        assert new_key not in state_dict, f"Renamed key {key} already exists in state_dict"
+        state_dict[new_key] = state_dict.pop(key)

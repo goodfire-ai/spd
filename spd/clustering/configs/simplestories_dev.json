@@ -7,7 +7,7 @@
   "pop_component_prob": 0,
   "filter_dead_threshold": 0.1,
   "module_name_filter": null,
-  "model_path": "wandb:goodfire/spd/runs/okd93sk2",
+  "model_path": "wandb:goodfire/spd/runs/rn9klzfs",
   "task_name": "lm",
   "n_batches": 1,
   "batch_size": 4,

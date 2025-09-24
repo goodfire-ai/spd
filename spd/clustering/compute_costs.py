@@ -43,11 +43,11 @@ def compute_merge_costs(
 
     $$
         F(P_i, P_j)
-        = \alpha |s_i| r(P_j) + \alpha |s_j| r(P_i)
-        - s_i s_j ( \alpha r(P_i) + \alpha r(P_j) + c )
+        = \alpha |s_i| r(P_i) + \alpha |s_j| r(P_j)
+            - s_i s_j ( \alpha r(P_i) + \alpha r(P_j) + c )
         = \alpha (
-            |s_i| r(P_j)
-            + |s_j| r(P_i)
+            |s_i| r(P_i)
+            + |s_j| r(P_j)
             - s_i s_j ( r(P_i) + r(P_j) + c/\alpha )
         )
     $$
@@ -93,7 +93,7 @@ def compute_merge_costs(
 
     # (s_\Sigma - s_i - s_j) log((c-1)/c)
     # + s_{i,j} log(c-1) - s_i log(c) - s_j log(c)
-    # + alpha ( s_{i,j} r(P_{i,j} - s_i r(P_i) - s_j r(P_j) )
+    # + alpha ( s_{i,j} r(P_{i,j}) - s_i r(P_i) - s_j r(P_j)
 
     s_other: Float[Tensor, "k_groups k_groups"] = (
         s_diag.sum() - s_diag.view(-1, 1) - s_diag.view(1, -1)
