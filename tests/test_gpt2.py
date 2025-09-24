@@ -43,6 +43,10 @@ def test_gpt_2_decomposition_happy_path() -> None:
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
         n_eval_steps=1,
+        # Warmup
+        warmup_steps=2,  # Use 2 warmup steps for testing
+        warmup_lr=0.001,
+        warmup_weight_decay=0.0,
         # Logging & Saving
         train_log_freq=50,  # Print at step 0, 50, and 100
         eval_freq=500,

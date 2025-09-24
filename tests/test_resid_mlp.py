@@ -54,6 +54,10 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         lr_schedule="cosine",
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
+        # Warmup
+        warmup_steps=2,  # Use 2 warmup steps for testing
+        warmup_lr=0.001,
+        warmup_weight_decay=0.0,
         n_eval_steps=1,
         eval_freq=10,
         eval_batch_size=4,

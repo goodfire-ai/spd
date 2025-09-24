@@ -59,6 +59,10 @@ def test_tms_decomposition_happy_path() -> None:
         lr_exponential_halflife=None,
         lr_warmup_pct=0.0,
         n_eval_steps=1,
+        # Warmup
+        warmup_steps=0,  # Disable warmup for testing
+        warmup_lr=0.001,
+        warmup_weight_decay=0.0,
         # Logging & Saving
         train_log_freq=2,
         save_freq=None,

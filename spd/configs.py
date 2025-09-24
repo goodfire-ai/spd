@@ -201,15 +201,15 @@ class Config(BaseModel):
 
     # --- Warmup ---
     warmup_steps: NonNegativeInt = Field(
-        default=0,
+        ...,
         description="Number of warmup steps to optimize faithfulness loss before main training",
     )
     warmup_lr: PositiveFloat = Field(
-        default=0.001,
+        ...,
         description="Learning rate for warmup phase (optimizing faithfulness loss only)",
     )
     warmup_weight_decay: NonNegativeFloat = Field(
-        default=0.0,
+        ...,
         description="Weight decay for warmup phase optimizer",
     )
     batch_size: PositiveInt = Field(

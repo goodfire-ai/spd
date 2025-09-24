@@ -132,6 +132,10 @@ def test_from_run_info():
             steps=1,
             lr=1e-3,
             n_eval_steps=1,
+            # Warmup
+            warmup_steps=2,  # Use 2 warmup steps for testing
+            warmup_lr=0.001,
+            warmup_weight_decay=0.0,
             eval_batch_size=1,
             eval_freq=1,
             slow_eval_freq=1,
