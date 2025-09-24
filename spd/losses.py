@@ -241,7 +241,7 @@ def calculate_losses(
         loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
 
     # CI subset reconstruction loss
-    if config.ci_recon_subset_coeff is not None:
+    if config.ci_masked_recon_subset_coeff is not None:
         subset_routing_masks = sample_uniform_k_subset_routing_masks(
             mask_shape=next(iter(causal_importances.values())).shape[:-1],
             modules=list(causal_importances.keys()),
@@ -260,7 +260,7 @@ def calculate_losses(
             loss_type=config.output_loss_type,
             device=device,
         )
-        total_loss += config.ci_recon_subset_coeff * ci_recon_subset_loss
+        total_loss += config.ci_masked_recon_subset_coeff * ci_recon_subset_loss
         loss_terms["ci_recon_subset"] = ci_recon_subset_loss.item()
 
     # Stochastic reconstruction subset loss
