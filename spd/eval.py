@@ -166,6 +166,7 @@ class CEandKLLosses(StreamingEval):
         mask_infos = calc_stochastic_component_mask_info(
             causal_importances=ci,
             sampling=self.config.sampling,
+            routing="all",
             weight_deltas=None,
         )
         stoch_masked_logits = self.model(batch, mode="components", mask_infos=mask_infos)
@@ -604,8 +605,11 @@ class SubsetReconstructionLoss(StreamingEval):
         masks_list = [
             calc_stochastic_component_mask_info(
                 ci,
-                self.config.sampling,
-                self.model.calc_weight_deltas() if self.config.use_delta_component else None,
+                sampling=self.config.sampling,
+                routing="all",
+                weight_deltas=self.model.calc_weight_deltas()
+                if self.config.use_delta_component
+                else None,
             )
             for _ in range(self.n_mask_samples)
         ]
