@@ -1,4 +1,4 @@
-from spd.configs import Config
+from spd.configs import Config, MetricConfig
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
@@ -41,9 +41,13 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         ],
         # Loss config (metrics-style)
         loss_metric_configs=[
-            {"classname": "ImportanceMinimalityLoss", "coeff": 3e-3, "extra_init_kwargs": {"pnorm": 0.9, "eps": 1e-12}},
-            {"classname": "StochasticReconLoss", "coeff": 1.0},
-            {"classname": "FaithfulnessLoss", "coeff": 1.0},
+            MetricConfig(
+                classname="ImportanceMinimalityLoss",
+                coeff=3e-3,
+                extra_init_kwargs={"pnorm": 0.9, "eps": 1e-12},
+            ),
+            MetricConfig(classname="StochasticReconLoss", coeff=1.0),
+            MetricConfig(classname="FaithfulnessLoss", coeff=1.0),
         ],
         output_loss_type="mse",
         # Training

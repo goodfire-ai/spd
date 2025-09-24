@@ -31,7 +31,11 @@ TEST_CONFIG = {
     "target_module_patterns": ["model.layers.0.mlp.gate_proj"],
     # --- Loss metrics ---
     "loss_metric_configs": [
-        {"classname": "ImportanceMinimalityLoss", "coeff": 0.1, "extra_init_kwargs": {"pnorm": 2.0, "eps": 1e-12}},
+        {
+            "classname": "ImportanceMinimalityLoss",
+            "coeff": 0.1,
+            "extra_init_kwargs": {"pnorm": 2.0, "eps": 1e-12},
+        },
         # Disable stochastic terms for deterministic dp test; keep a simple layerwise recon if needed
         {"classname": "CIReconLayerwiseLoss", "coeff": 1.0},
         {"classname": "FaithfulnessLoss", "coeff": 3000},

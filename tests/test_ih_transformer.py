@@ -42,10 +42,14 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         ],
         # Loss Coefficients
         loss_metric_configs=[
-            {"classname": "ImportanceMinimalityLoss", "coeff": 1e-2, "extra_init_kwargs": {"pnorm": 0.9, "eps": 1e-12}},
-            {"classname": "StochasticReconLayerwiseLoss", "coeff": 1.0},
-            {"classname": "StochasticReconLoss", "coeff": 1.0},
-            {"classname": "FaithfulnessLoss", "coeff": 200},
+            MetricConfig(
+                classname="ImportanceMinimalityLoss",
+                coeff=1e-2,
+                extra_init_kwargs={"pnorm": 0.9, "eps": 1e-12},
+            ),
+            MetricConfig(classname="StochasticReconLayerwiseLoss", coeff=1.0),
+            MetricConfig(classname="StochasticReconLoss", coeff=1.0),
+            MetricConfig(classname="FaithfulnessLoss", coeff=200),
         ],
         output_loss_type="kl",
         # Training

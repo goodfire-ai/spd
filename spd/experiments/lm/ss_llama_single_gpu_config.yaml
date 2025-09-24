@@ -46,7 +46,7 @@ n_eval_steps: 5
 save_freq: null
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
-eval_metrics:
+eval_metric_configs:
   - classname: "CIHistograms"
     extra_init_kwargs:
       n_batches_accum: 5

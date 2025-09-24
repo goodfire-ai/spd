@@ -432,6 +432,7 @@ def plot_ci_values_histograms(
     Returns:
         Single figure with subplots for each layer.
     """
+    assert len(causal_importances) > 0, "No causal importances to plot"
     n_layers = len(causal_importances)
     max_rows = 6
 

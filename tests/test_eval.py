@@ -1,10 +1,9 @@
 """Tests for evaluation metrics and figures, particularly CIHistograms."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 import torch
-from PIL import Image
 
 from spd.configs import Config
 from spd.metrics import CIHistograms
@@ -51,12 +50,12 @@ class TestCIHistograms:
 
         # Watch more batches than n_batches_accum
         for _ in range(n_batches_accum + 2):
-            ci_hist.watch_batch(
+            ci_hist.update(
                 batch=batch, target_out=target_out, ci=sample_ci, ci_upper_leaky=sample_ci
             )
 
         # Check that only n_batches_accum were accumulated
-        assert ci_hist.batches_seen == n_batches_accum + 2  # Total batches seen
+        assert ci_hist.batches_seen == n_batches_accum
         assert len(ci_hist.causal_importances["layer1"]) == n_batches_accum
         assert len(ci_hist.causal_importances["layer2"]) == n_batches_accum
 
@@ -72,7 +71,7 @@ class TestCIHistograms:
         # Watch many batches
         num_batches = 10
         for _ in range(num_batches):
-            ci_hist.watch_batch(
+            ci_hist.update(
                 batch=batch, target_out=target_out, ci=sample_ci, ci_upper_leaky=sample_ci
             )
 
@@ -82,20 +81,12 @@ class TestCIHistograms:
         assert len(ci_hist.causal_importances["layer2"]) == num_batches
 
     def test_empty_compute(self, mock_model: Mock, mock_config: Mock):
-        """Test compute() when no batches have been watched."""
+        """Test compute() when no batches have been updated."""
+
+        mock_model.components = {}
         ci_hist = CIHistograms(mock_model, mock_config)
 
-        with patch("spd.metrics.plot_ci_values_histograms") as mock_plot:
-            mock_plot.return_value = Image.new("RGB", (100, 100))
-
-            # When no batches watched, causal_importances dict has empty lists
-            # But we still need to mock the model.components to match the compute() logic
-            result = ci_hist.compute()
-
-            # Should still call plot with empty dict
-            mock_plot.assert_called_once()
-            combined_ci = mock_plot.call_args[1]["causal_importances"]
-
-            # Dict will be empty since no batches were watched
-            assert len(combined_ci) == 0
-            assert "figures/causal_importance_values" in result
+        # When no batches watched, causal_importances dict has empty lists
+        # This should raise an AssertionError from plot_ci_values_histograms
+        with pytest.raises(AssertionError, match="No causal importances to plot"):
+            ci_hist.compute()

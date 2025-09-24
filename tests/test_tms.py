@@ -3,7 +3,7 @@ from typing import cast
 import torch
 from torch import nn
 
-from spd.configs import Config
+from spd.configs import Config, MetricConfig
 from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.experiments.tms.train_tms import get_model_and_dataloader, train
@@ -42,10 +42,14 @@ def test_tms_decomposition_happy_path() -> None:
         target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
         # Loss config (metrics-style)
         loss_metric_configs=[
-            {"classname": "ImportanceMinimalityLoss", "coeff": 3e-3, "extra_init_kwargs": {"pnorm": 2.0, "eps": 1e-12}},
-            {"classname": "StochasticReconLayerwiseLoss", "coeff": 1.0},
-            {"classname": "StochasticReconLoss", "coeff": 1.0},
-            {"classname": "FaithfulnessLoss", "coeff": 1.0},
+            MetricConfig(
+                classname="ImportanceMinimalityLoss",
+                coeff=3e-3,
+                extra_init_kwargs={"pnorm": 2.0, "eps": 1e-12},
+            ),
+            MetricConfig(classname="StochasticReconLayerwiseLoss", coeff=1.0),
+            MetricConfig(classname="StochasticReconLoss", coeff=1.0),
+            MetricConfig(classname="FaithfulnessLoss", coeff=1.0),
         ],
         output_loss_type="mse",
         # Training

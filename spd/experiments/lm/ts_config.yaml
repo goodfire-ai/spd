@@ -44,7 +44,7 @@ slow_eval_freq: 2000
 slow_eval_on_first_step: true
 save_freq: null
 n_examples_until_dead: 8_192_000
-eval_metrics:
+eval_metric_configs:
   - classname: "CIHistograms"
   - classname: "ComponentActivationDensity"
   - classname: "CI_L0"

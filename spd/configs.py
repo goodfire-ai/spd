@@ -310,22 +310,55 @@ class Config(BaseModel):
         "embedding_recon_coeff",
         "is_embed_unembed_recon",
         "out_recon_coeff",
+        # Ignoring the below entries means that our new config won't have loss coefficients
+        "faithfulness_coeff",
+        "stochastic_recon_coeff",
+        "stochastic_recon_layerwise_coeff",
+        "recon_coeff",
+        "recon_layerwise_coeff",
+        "ci_recon_coeff",
+        "ci_recon_layerwise_coeff",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
         "pretrained_model_name_hf": "pretrained_model_name",
-        "recon_coeff": "ci_recon_coeff",
-        "recon_layerwise_coeff": "ci_recon_layerwise_coeff",
+        "eval_metrics": "eval_metric_configs",
     }
 
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
-        """Remove deprecated config keys and change names of any keys that have been renamed."""
+        """Remove deprecated config keys and change names of any keys that have been renamed.
+
+        We delete loss information that exists as top-level keys rather than inside
+        loss_metric_configs. This is done by DEPRECATED_CONFIG_KEYS. This means that old runs which
+        have these keys will not be able to be used for e.g. finetuning, but the raw model will be
+        the same.
+
+        However, we convert importance minimality loss to a proper MetricConfig because we
+        require this loss.
+        """
+
+        if "importance_minimality_coeff" in config_dict:
+            pnorm = config_dict["pnorm"]
+            if "loss_metric_configs" not in config_dict:
+                config_dict["loss_metric_configs"] = []
+
+            config_dict["loss_metric_configs"].append(
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": config_dict["importance_minimality_coeff"],
+                    "extra_init_kwargs": {"pnorm": pnorm},
+                }
+            )
+            del config_dict["importance_minimality_coeff"]
+            del config_dict["pnorm"]
+
         for key in list(config_dict.keys()):
             val = config_dict[key]
             if key in cls.DEPRECATED_CONFIG_KEYS:
                 logger.warning(f"{key} is deprecated, but has value: {val}. Removing from config.")
                 del config_dict[key]
+
             elif key in cls.RENAMED_CONFIG_KEYS:
                 logger.info(f"Renaming {key} to {cls.RENAMED_CONFIG_KEYS[key]}")
                 config_dict[cls.RENAMED_CONFIG_KEYS[key]] = val

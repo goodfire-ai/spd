@@ -74,7 +74,7 @@ eval_metric_configs:
           n_features: 5
         - layer_pattern: "linear2"
           n_features: 5
-#   - classname: "CI_L0"
+  - classname: "CI_L0"
   - classname: "CIMeanPerComponent"
 
 # --- Pretrained model info ---
