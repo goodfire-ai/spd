@@ -198,6 +198,16 @@ class Config(BaseModel):
     # --- Training ---
     lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
+
+    # --- Warmup ---
+    warmup_steps: NonNegativeInt = Field(
+        default=0,
+        description="Number of warmup steps to optimize faithfulness loss before main training",
+    )
+    warmup_lr: PositiveFloat = Field(
+        default=0.001,
+        description="Learning rate for warmup phase (optimizing faithfulness loss only)",
+    )
     batch_size: PositiveInt = Field(
         ...,
         description=(

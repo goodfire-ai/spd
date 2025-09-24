@@ -23,7 +23,7 @@ from spd.data import loop_dataloader
 from spd.eval import evaluate
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
-from spd.losses import calculate_losses
+from spd.losses import calc_faithfulness_loss, calculate_losses
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
@@ -157,6 +157,60 @@ def optimize(
 
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
+
+    # Warmup phase: optimize faithfulness loss to improve initialization
+    if config.warmup_steps > 0:
+        logger.info(
+            f"Starting warmup phase with {config.warmup_steps} steps at lr={config.warmup_lr}"
+        )
+
+        # Create warmup optimizer for component parameters only (no gates)
+        warmup_optimizer = optim.AdamW(component_params, lr=config.warmup_lr, weight_decay=0)
+
+        # Calculate initial faithfulness loss
+        initial_weight_deltas = component_model.calc_weight_deltas()
+        initial_faithfulness = calc_faithfulness_loss(initial_weight_deltas, device)
+        logger.info(f"Initial faithfulness loss: {initial_faithfulness.item():.6f}")
+
+        # Warmup training loop
+        for warmup_step in range(config.warmup_steps):
+            warmup_optimizer.zero_grad()
+
+            # Calculate faithfulness loss
+            weight_deltas = component_model.calc_weight_deltas()
+            faithfulness_loss = calc_faithfulness_loss(weight_deltas, device)
+
+            # Backward pass
+            faithfulness_loss.backward()
+            warmup_optimizer.step()
+
+            # Log progress every 10% of warmup steps
+            if (warmup_step + 1) % max(1, config.warmup_steps // 10) == 0:
+                logger.info(
+                    f"Warmup step {warmup_step + 1}/{config.warmup_steps}, "
+                    f"faithfulness loss: {faithfulness_loss.item():.6f}"
+                )
+
+        # Calculate final faithfulness loss
+        final_weight_deltas = component_model.calc_weight_deltas()
+        final_faithfulness = calc_faithfulness_loss(final_weight_deltas, device)
+        improvement = initial_faithfulness.item() - final_faithfulness.item()
+
+        logger.info(f"Warmup completed. Final faithfulness loss: {final_faithfulness.item():.6f}")
+        logger.info(
+            f"Faithfulness improvement: {improvement:.6f} "
+            f"({improvement / initial_faithfulness.item() * 100:.1f}% reduction)"
+        )
+
+        # Validate that warmup actually improved faithfulness
+        if improvement < 0:
+            logger.warning(
+                "Warmup did not improve faithfulness loss. Consider adjusting warmup_lr or warmup_steps."
+            )
+        elif improvement < initial_faithfulness.item() * 0.01:  # Less than 1% improvement
+            logger.warning(
+                "Warmup provided minimal improvement. Consider adjusting warmup parameters."
+            )
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
