@@ -1,6 +1,7 @@
 from spd.configs import Config, EvalMetricConfig
 from spd.experiments.ih.configs import IHTaskConfig, InductionModelConfig
 from spd.experiments.ih.model import InductionTransformer
+from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import set_seed
@@ -36,19 +37,14 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         n_mask_samples=1,
         gate_type="vector_mlp",
         gate_hidden_dims=[128],
-        target_module_patterns=[
-            "blocks.*.attn.q_proj",
-            "blocks.*.attn.k_proj",
-        ],
+        target_module_patterns=["blocks.*.attn.q_proj", "blocks.*.attn.k_proj"],
+        identity_module_patterns=["blocks.*.attn.q_proj"],
         # Loss Coefficients
         faithfulness_coeff=200,
         stochastic_recon_coeff=1.0,
-        recon_layerwise_coeff=None,
+        ci_recon_layerwise_coeff=None,
         stochastic_recon_layerwise_coeff=1.0,
         importance_minimality_coeff=1e-2,
-        schatten_coeff=None,
-        embedding_recon_coeff=None,
-        is_embed_unembed_recon=False,
         pnorm=0.9,
         output_loss_type="kl",
         # Training
@@ -90,6 +86,9 @@ def test_ih_transformer_decomposition_happy_path() -> None:
     target_model = InductionTransformer(ih_transformer_config).to(device)
     target_model.eval()
     target_model.requires_grad_(False)
+
+    if config.identity_module_patterns is not None:
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
     dataset = InductionDataset(
         seq_len=ih_transformer_config.seq_len,
