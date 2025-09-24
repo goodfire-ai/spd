@@ -36,9 +36,9 @@ lr_schedule: constant
 lr_warmup_pct: 0.0
 
 # --- Faithfulness Warmup ---
-faithfulness_warmup_steps: 1000
+faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.01
-faithfulness_warmup_weight_decay: 3.0
+faithfulness_warmup_weight_decay: 0.1
 
 # --- Logging & Saving ---
 train_log_freq: 100
