@@ -42,7 +42,7 @@ async function loadData() {
     try {
         // Load cluster data and model info in parallel
         const [clusterResponse] = await Promise.all([
-            fetch('max_activations_iter-1_n4.json'),
+            fetch('max_activations_iter7375_n4.json'),
             loadModelInfo()
         ]);
 
