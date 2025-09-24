@@ -208,6 +208,10 @@ class Config(BaseModel):
         default=0.001,
         description="Learning rate for warmup phase (optimizing faithfulness loss only)",
     )
+    warmup_weight_decay: NonNegativeFloat = Field(
+        default=0.0,
+        description="Weight decay for warmup phase optimizer",
+    )
     batch_size: PositiveInt = Field(
         ...,
         description=(

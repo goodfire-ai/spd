@@ -164,53 +164,25 @@ def optimize(
             f"Starting warmup phase with {config.warmup_steps} steps at lr={config.warmup_lr}"
         )
 
-        # Create warmup optimizer for component parameters only (no gates)
-        warmup_optimizer = optim.AdamW(component_params, lr=config.warmup_lr, weight_decay=0)
-
-        # Calculate initial faithfulness loss
-        initial_weight_deltas = component_model.calc_weight_deltas()
-        initial_faithfulness = calc_faithfulness_loss(initial_weight_deltas, device)
-        logger.info(f"Initial faithfulness loss: {initial_faithfulness.item():.6f}")
-
-        # Warmup training loop
-        for warmup_step in range(config.warmup_steps):
-            warmup_optimizer.zero_grad()
-
-            # Calculate faithfulness loss
-            weight_deltas = component_model.calc_weight_deltas()
-            faithfulness_loss = calc_faithfulness_loss(weight_deltas, device)
-
-            # Backward pass
-            faithfulness_loss.backward()
-            warmup_optimizer.step()
-
-            # Log progress every 10% of warmup steps
-            if (warmup_step + 1) % max(1, config.warmup_steps // 10) == 0:
-                logger.info(
-                    f"Warmup step {warmup_step + 1}/{config.warmup_steps}, "
-                    f"faithfulness loss: {faithfulness_loss.item():.6f}"
-                )
-
-        # Calculate final faithfulness loss
-        final_weight_deltas = component_model.calc_weight_deltas()
-        final_faithfulness = calc_faithfulness_loss(final_weight_deltas, device)
-        improvement = initial_faithfulness.item() - final_faithfulness.item()
-
-        logger.info(f"Warmup completed. Final faithfulness loss: {final_faithfulness.item():.6f}")
-        logger.info(
-            f"Faithfulness improvement: {improvement:.6f} "
-            f"({improvement / initial_faithfulness.item() * 100:.1f}% reduction)"
+        warmup_optimizer = optim.AdamW(
+            component_params, lr=config.warmup_lr, weight_decay=config.warmup_weight_decay
         )
 
-        # Validate that warmup actually improved faithfulness
-        if improvement < 0:
-            logger.warning(
-                "Warmup did not improve faithfulness loss. Consider adjusting warmup_lr or warmup_steps."
+        for warmup_step in range(config.warmup_steps):
+            warmup_optimizer.zero_grad()
+            weight_deltas = component_model.calc_weight_deltas()
+            faithfulness_loss = calc_faithfulness_loss(weight_deltas, device)
+            faithfulness_loss.backward()
+            warmup_optimizer.step()
+            logger.info(
+                f"Warmup step {warmup_step + 1}/{config.warmup_steps}, faithfulness loss: {faithfulness_loss.item():.6f}"
             )
-        elif improvement < initial_faithfulness.item() * 0.01:  # Less than 1% improvement
-            logger.warning(
-                "Warmup provided minimal improvement. Consider adjusting warmup parameters."
-            )
+
+        del warmup_optimizer
+        torch.cuda.empty_cache()
+        gc.collect()
+
+        logger.info("Warmup completed.")
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
