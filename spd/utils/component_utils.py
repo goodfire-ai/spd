@@ -39,6 +39,20 @@ def rand_perm(
     device: torch.device | str = "cpu",
     generator: torch.Generator | None = None,
 ) -> Int[Tensor, "... k"]:
+    """Create a LongTensor of shape `shape` containing random permutations along dimension `dim`.
+    For example, if shape is (2, 3) and dim is 1, the returned tensor will be a 2x3 tensor with
+    each row having a random permutation of [0, 1, 2].
+
+    Args:
+        shape: Shape of the tensor to create
+        dim: Dimension along which to make the permutations
+        device: Device to create the tensor on
+        generator: Generator to use for the random values
+
+    Returns:
+        LongTensor of shape `shape` with randomly ordered permutation along dimension `dim`.
+    """
+
     noise = torch.rand(shape, device=device, generator=generator)
     # turn values into ranks via double argsort trick. (for example: [0.8, 0.2, 0.3] -> [2, 0, 1])
     return noise.argsort(dim=dim).argsort(dim=dim)
@@ -60,6 +74,9 @@ def sample_uniform_k_subset_routing_masks(
     Args:
         mask_shape: Shape of the routing masks, likely (batch,) or (batch, seq_len)
         modules: List of modules to route to
+
+    Returns:
+        Dict mapping module names to routing masks of shape `mask_shape`.
     """
     k_modules_to_route: Int[Tensor, " ..."] = torch.randint(
         low=1,
