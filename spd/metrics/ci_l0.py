@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import re
 from collections import defaultdict
 from collections.abc import Mapping
@@ -28,9 +26,6 @@ class CI_L0(Metric):
         super().__init__(**kwargs)
         self.l0_threshold = config.ci_alive_threshold
         self.groups = groups
-        # TODO: To make this work with distributed, we either need to modify add_state so that
-        # it allows complex types, or add_state for every unique name (including groups). For the
-        # latter, we'll want to get the unique names for all groups and add_state for each.
         self.l0s: dict[str, list[float]] = defaultdict(list)
 
     @override
