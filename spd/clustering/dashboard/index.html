@@ -6,7 +6,25 @@
 </head>
 <body>
     <h1>Cluster Selection</h1>
-    
+
+    <div id="modelInfo" style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px; display: none;">
+        <h2 style="margin-top: 0;">Model Information</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div>
+                <strong>Total Modules:</strong> <span id="totalModules">-</span>
+            </div>
+            <div>
+                <strong>Total Components:</strong> <span id="totalComponents">-</span>
+            </div>
+            <div>
+                <strong>Total Clusters:</strong> <span id="totalClusters">-</span>
+            </div>
+            <div>
+                <strong>Model Parameters:</strong> <span id="totalParameters">-</span>
+            </div>
+        </div>
+    </div>
+
     <table id="clusterTable">
         <thead>
             <tr>

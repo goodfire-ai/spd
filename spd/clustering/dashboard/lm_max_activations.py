@@ -188,6 +188,68 @@ def compute_max_activations(
     return result
 
 
+def generate_model_info(
+    model: ComponentModel,
+    merge_history: MergeHistory,
+    merge: GroupMerge,
+    iteration: int,
+    model_path: str,
+    tokenizer_name: str,
+    config_dict: dict[str, Any] | None = None,
+    wandb_run_path: str | None = None,
+) -> dict[str, Any]:
+    """Generate model information dictionary.
+
+    Args:
+        model: The ComponentModel instance
+        merge_history: MergeHistory containing component labels
+        merge: GroupMerge for the current iteration
+        iteration: Current iteration number
+        model_path: Path to the model
+        tokenizer_name: Name of the tokenizer
+        config_dict: Optional config dictionary
+        wandb_run_path: Optional wandb run path
+
+    Returns:
+        Dictionary containing model information
+    """
+    # Count unique modules from all components in the merge history
+    unique_modules: set[str] = set()
+    total_components: int = len(merge_history.labels)
+
+    for label in merge_history.labels:
+        module, _ = label.rsplit(":", 1)
+        unique_modules.add(module)
+
+    # Count parameters in the model
+    total_params: int = sum(p.numel() for p in model.parameters())
+    trainable_params: int = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    # Create model info dictionary
+    model_info: dict[str, Any] = {
+        "total_modules": len(unique_modules),
+        "total_components": total_components,
+        "total_clusters": len(torch.unique(merge.group_idxs)),
+        "iteration": iteration,
+        "model_path": model_path,
+        "tokenizer_name": tokenizer_name,
+        "total_parameters": total_params,
+        "trainable_parameters": trainable_params,
+        "component_size": getattr(model, "C", None),
+        "module_list": sorted(list(unique_modules)),
+    }
+
+    # Add config information if available
+    if config_dict is not None:
+        model_info["config"] = config_dict
+
+    # Add wandb run information if available
+    if wandb_run_path is not None:
+        model_info["wandb_run"] = wandb_run_path
+
+    return model_info
+
+
 def main() -> None:
     logger.info("parsing args")
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -240,6 +302,9 @@ def main() -> None:
 
     logger.info("getting tokenizer and model")
     tokenizer_name: str
+    wandb_run_path: str | None = None
+    config_dict: dict[str, Any] | None = None
+
     if args.model_path.startswith("wandb:"):
         spd_run: SPDRunInfo = SPDRunInfo.from_path(args.model_path)
         model: ComponentModel = ComponentModel.from_run_info(spd_run)
@@ -247,6 +312,9 @@ def main() -> None:
         model.eval()
         config: Any = spd_run.config
         tokenizer_name = config.tokenizer_name
+        wandb_run_path = args.model_path
+        # Convert config to dict for JSON serialization
+        config_dict = vars(config) if hasattr(config, "__dict__") else dict(config)
     else:
         model = torch.load(args.model_path)
         model.to(device)
@@ -257,6 +325,13 @@ def main() -> None:
 
     merge_history: MergeHistory = MergeHistory.read(args.merge_history_path)
     logger.info(f"Loaded: {merge_history = }")
+
+    # Get the merge at specified iteration for component counts
+    if args.iteration < 0:
+        iteration = merge_history.n_iters_current + args.iteration
+    else:
+        iteration = args.iteration
+    merge: GroupMerge = merge_history.merges[iteration]
 
     tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     logger.info(f"Loaded: {tokenizer = }")
@@ -296,10 +371,28 @@ def main() -> None:
     )
     logger.info(f"computed max activations: {len(result) = }")
 
+    # Generate model information
+    model_info: dict[str, Any] = generate_model_info(
+        model=model,
+        merge_history=merge_history,
+        merge=merge,
+        iteration=iteration,
+        model_path=args.model_path,
+        tokenizer_name=tokenizer_name,
+        config_dict=config_dict,
+        wandb_run_path=wandb_run_path,
+    )
+
     # Save to output directory with reasonable name
     output_dir: Path = args.merge_history_path.parent
     output_filename: str = f"max_activations_iter{args.iteration}_n{args.n_samples}.json"
     output_path: Path = output_dir / output_filename
+
+    # Save model info
+    model_info_path: Path = output_dir / "model_info.json"
+    with open(model_info_path, "w") as f:
+        json.dump(model_info, f, indent=2)
+    logger.info(f"Model info saved to: {model_info_path}")
 
     with open(output_path, "w") as f:
         json.dump(result, f, indent=2)

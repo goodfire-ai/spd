@@ -9,6 +9,7 @@ function createTokenVisualization(tokens, activations, maxPosition) {
         span.className = 'token';
         
         // Handle subword tokens
+        // TODO: this is a hack for only some tokenizers
         if (token.startsWith('##')) {
             span.textContent = token.substring(2);
         } else {

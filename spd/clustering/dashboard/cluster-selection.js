@@ -1,11 +1,52 @@
 let clusterData = {};
 let tableData = [];
+let modelInfo = {};
 let currentSort = { column: 1, ascending: false }; // Default sort by components descending
+
+async function loadModelInfo() {
+    try {
+        const response = await fetch('model_info.json');
+        modelInfo = await response.json();
+        displayModelInfo();
+    } catch (error) {
+        console.warn('Could not load model info:', error.message);
+        // Don't show error to user, model info is optional
+    }
+}
+
+function displayModelInfo() {
+    const modelInfoDiv = document.getElementById('modelInfo');
+    if (Object.keys(modelInfo).length > 0) {
+        document.getElementById('totalModules').textContent = modelInfo.total_modules || '-';
+        document.getElementById('totalComponents').textContent = modelInfo.total_components || '-';
+        document.getElementById('totalClusters').textContent = modelInfo.total_clusters || '-';
+
+        // Format parameter count
+        const totalParams = modelInfo.total_parameters;
+        if (totalParams) {
+            const formatted = totalParams >= 1000000
+                ? (totalParams / 1000000).toFixed(1) + 'M'
+                : totalParams >= 1000
+                ? (totalParams / 1000).toFixed(1) + 'K'
+                : totalParams.toString();
+            document.getElementById('totalParameters').textContent = formatted;
+        } else {
+            document.getElementById('totalParameters').textContent = '-';
+        }
+
+        modelInfoDiv.style.display = 'block';
+    }
+}
 
 async function loadData() {
     try {
-        const response = await fetch('max_activations_iter-1_n4.json');
-        clusterData = await response.json();
+        // Load cluster data and model info in parallel
+        const [clusterResponse] = await Promise.all([
+            fetch('max_activations_iter-1_n4.json'),
+            loadModelInfo()
+        ]);
+
+        clusterData = await clusterResponse.json();
         processTableData();
         renderTable();
         document.getElementById('loading').style.display = 'none';
