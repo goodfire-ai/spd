@@ -652,7 +652,7 @@ def _process_batch_for_contexts(
     # Get activations before each component
     with torch.no_grad():
         _, pre_weight_acts = model_data.model(
-            batch, mode="pre_forward_cache", module_names=list(model_data.components.keys())
+            batch, mode="input_cache", module_names=list(model_data.components.keys())
         )
 
         causal_importances, _ = model_data.model.calc_causal_importances(

@@ -1,11 +1,9 @@
+import fnmatch
 import math
-from functools import reduce
-from typing import Any, Literal
+from typing import Literal
 
-import einops
 import torch
 import torch.nn as nn
-from jaxtyping import Float
 from simple_stories_train.models.gpt2_simple import LayerNorm as SSLayerNorm
 from torch import Tensor
 from torch.nn.init import calculate_gain
@@ -26,38 +24,6 @@ _NonlinearityType = Literal[
     "leaky_relu",
     "selu",
 ]
-
-
-def get_nested_module_attr(module: nn.Module, access_string: str) -> Any:
-    """Access a specific attribute by its full, path-like name.
-
-    Taken from https://discuss.pytorch.org/t/how-to-access-to-a-layer-by-module-name/83797/8
-
-    Args:
-        module: The module to search through.
-        access_string: The full name of the nested attribute to access, with each object separated
-            by periods (e.g. "linear1.V").
-    """
-    names = access_string.split(".")
-    try:
-        mod = reduce(getattr, names, module)
-    except AttributeError as err:
-        raise AttributeError(f"{module} does not have nested attribute {access_string}") from err
-    return mod
-
-
-@torch.inference_mode()
-def remove_grad_parallel_to_subnetwork_vecs(
-    V: Float[Tensor, "d_in C"], V_grad: Float[Tensor, "d_in C"]
-) -> None:
-    """Modify the gradient by subtracting it's component parallel to the activation.
-
-    This is used to prevent any gradient updates from changing the norm of V. This prevents
-    Adam from changing the norm due to Adam's (v/(sqrt(v) + eps)) term not preserving the norm
-    of vectors.
-    """
-    parallel_component = einops.einsum(V_grad, V, "d_in C, d_in C -> C")
-    V_grad -= einops.einsum(parallel_component, V, "C, d_in C -> d_in C")
 
 
 def init_param_(
@@ -91,3 +57,27 @@ def replace_std_values_in_layernorm(
             f"Expected {name} to be a simple_stories_train LayerNorm instance, got {type(module)}"
         )
         module.std = std
+
+
+def get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
+    """Find the target_module_patterns that match real modules in the target model.
+
+    e.g. `["layers.*.mlp_in"]` ->  `["layers.1.mlp_in", "layers.2.mlp_in"]`.
+    """
+
+    names_out: list[str] = []
+    matched_patterns: set[str] = set()
+    for name, _ in model.named_modules():
+        for pattern in target_module_patterns:
+            if fnmatch.fnmatch(name, pattern):
+                matched_patterns.add(pattern)
+                names_out.append(name)
+
+    unmatched_patterns = set(target_module_patterns) - matched_patterns
+    if unmatched_patterns:
+        raise ValueError(
+            f"The following patterns in target_module_patterns did not match any modules: "
+            f"{sorted(unmatched_patterns)}"
+        )
+
+    return names_out
