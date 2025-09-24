@@ -208,8 +208,7 @@ def run_clustering(
         batch=data_batch,
         device=device,
         # threshold=0.1,
-        # TODO: where can we find this in the model itself???
-        sigmoid_type="hard",
+        sigmoid_type=spd_run.config.sigmoid_type,
     )
 
     if wandb_run is not None:
