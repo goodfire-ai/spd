@@ -57,7 +57,7 @@ def compute_merge_costs(
     $$
         (s_\Sigma - s_i - s_j) log((c-1)/c)
         + s_{i,j} log(c-1) - s_i log(c) - s_j log(c)
-        + alpha ( s_{i,j} r(P_{i,j} - s_i r(P_i) - s_j r(P_j) )
+        + alpha ( s_{i,j} r(P_{i,j}) - s_i r(P_i) - s_j r(P_j) )
     $$
     where:
      - $s_\Sigma$ average activation of all components
@@ -91,8 +91,11 @@ def compute_merge_costs(
 
     coact_OR: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) + s_diag.view(1, -1) - coact
 
+    # reduce penalty for sending dictionary by 1
     # (s_\Sigma - s_i - s_j) log((c-1)/c)
+    # delta of cost for sending index, in expectation
     # + s_{i,j} log(c-1) - s_i log(c) - s_j log(c)
+    # delta of cost for sending ranks, in expectation
     # + alpha ( s_{i,j} r(P_{i,j}) - s_i r(P_i) - s_j r(P_j)
 
     s_other: Float[Tensor, "k_groups k_groups"] = (
