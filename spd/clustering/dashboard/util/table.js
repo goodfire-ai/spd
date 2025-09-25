@@ -67,9 +67,6 @@ class DataTable {
             th.style.position = 'relative';
             if (col.width) {
                 th.style.width = col.width;
-                th.style.minWidth = col.width;
-            } else {
-                th.style.minWidth = '10px';
             }
 
             // Apply column alignment
@@ -135,6 +132,9 @@ class DataTable {
                 input.type = 'text';
                 input.placeholder = col.type === 'number' ? 'e.g. >50' : 'Filter...';
                 input.style.flex = '1';
+                input.style.minWidth = '0';
+                input.style.width = '100%';
+                input.style.boxSizing = 'border-box';
 
                 const clearBtn = document.createElement('button');
                 clearBtn.textContent = '×';

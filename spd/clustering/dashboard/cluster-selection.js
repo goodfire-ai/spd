@@ -309,7 +309,7 @@ async function loadData() {
                     key: 'maxActivation',
                     label: 'Max',
                     type: 'number',
-                    width: '60px',
+                    width: '20px',
                     align: 'right',
                     renderer: (value) => value.toFixed(3)
                 },
@@ -317,7 +317,7 @@ async function loadData() {
                     key: 'meanActivation',
                     label: 'Mean',
                     type: 'number',
-                    width: '60px',
+                    width: '20px',
                     align: 'right',
                     renderer: (value) => value.toFixed(3)
                 },
@@ -325,7 +325,7 @@ async function loadData() {
                     key: 'medianActivation',
                     label: 'Med',
                     type: 'number',
-                    width: '60px',
+                    width: '20px',
                     align: 'right',
                     renderer: (value) => value.toFixed(3)
                 },
@@ -333,7 +333,7 @@ async function loadData() {
                     key: 'minActivation',
                     label: 'Min',
                     type: 'number',
-                    width: '60px',
+                    width: '20px',
                     align: 'right',
                     renderer: (value) => value.toFixed(4)
                 },
@@ -341,7 +341,7 @@ async function loadData() {
                     key: 'id',
                     label: 'Actions',
                     type: 'string',
-                    width: '50px',
+                    width: '20px',
                     align: 'center',
                     renderer: columnRenderers.clusterLink
                 }
