@@ -16,7 +16,7 @@ async function init() {
 
 async function loadData() {
     try {
-        const response = await fetch('max_activations_iter7375_n4.json');
+        const response = await fetch('max_activations_iter7375_n16.json');
         const allData = await response.json();
         
         if (!allData[currentClusterId]) {

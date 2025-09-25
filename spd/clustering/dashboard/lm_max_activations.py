@@ -74,6 +74,8 @@ def compute_max_activations(
     max_texts: dict[int, list[TextSample | None]] = {
         cid: [None] * n_samples for cid in unique_clusters
     }
+    # Track used dataset indices to prevent duplicates
+    used_dataset_indices: dict[int, set[int]] = {cid: set() for cid in unique_clusters}
     dataset_idx_counter: int = 0
 
     # Map clusters to component labels as dicts
@@ -136,6 +138,13 @@ def compute_max_activations(
                 batch_idx_i: int = int(idx // seq_len)
                 pos_idx: int = int(idx % seq_len)
 
+                # Calculate dataset index for this sample
+                current_dataset_idx: int = dataset_idx_counter + batch_idx_i
+
+                # Skip if we've already used this dataset index for this cluster
+                if current_dataset_idx in used_dataset_indices[cluster_id]:
+                    continue
+
                 # Insert in sorted order
                 for j in range(n_samples):
                     if val > max_acts[cluster_id][j]:
@@ -165,7 +174,7 @@ def compute_max_activations(
 
                         max_texts[cluster_id][j] = TextSample(
                             full_text=text,
-                            dataset_index=dataset_idx_counter + batch_idx_i,
+                            dataset_index=current_dataset_idx,
                             tokens=token_strings,
                             activations=activations_list,
                             mean_activation=mean_act,
@@ -173,6 +182,9 @@ def compute_max_activations(
                             max_activation=max_act,
                             max_position=pos_idx,
                         )
+
+                        # Mark this dataset index as used for this cluster
+                        used_dataset_indices[cluster_id].add(current_dataset_idx)
                         break
 
         dataset_idx_counter += batch_size
@@ -281,22 +293,22 @@ def main() -> None:
         "--n-samples",
         "-n",
         type=int,
-        default=4,
-        help="Number of top-activating samples to collect per cluster (default: 10)",
+        default=16,
+        help="Number of top-activating samples to collect per cluster",
     )
     parser.add_argument(
         "--n-batches",
         "-s",
         type=int,
         default=4,
-        help="Number of data batches to process (default: 100)",
+        help="Number of data batches to process",
     )
     parser.add_argument(
         "--batch-size",
         "-b",
         type=int,
-        default=4,
-        help="Batch size for data loading (default: 4)",
+        default=64,
+        help="Batch size for data loading",
     )
     parser.add_argument(
         "--context-length",
