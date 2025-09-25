@@ -116,17 +116,12 @@ class AblationService:
         assert isinstance(prompt_tokens[0], str)
 
         base_model_logits = run.cm.target_model(inputs).logits
-        base_model_ce_loss = F.cross_entropy(base_model_logits[0, :-1], inputs[0][1:])
-        print(f"base model CE loss: {base_model_ce_loss.item()}")
 
         target_logits_out, pre_weight_acts = run.cm.forward(
             inputs,
             mode="input_cache",
             module_names=list(run.cm.components.keys()),
         )
-
-        cm_target_ce_loss = F.cross_entropy(target_logits_out[0, :-1], inputs[0][1:])
-        print(f"cm target CE loss: {cm_target_ce_loss.item()}")
 
         causal_importances, _ = run.cm.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
@@ -145,18 +140,6 @@ class AblationService:
             mode="components",
             mask_infos=make_mask_infos(causal_importances),
         )
-
-        ci_masked_ce_loss = F.cross_entropy(ci_masked_logits[0, :-1], inputs[0][1:])
-        # avg_correct_tok_prob = torch.softmax(ci_masked_logits[0, :-1], dim=-1).gather(dim=-1, index=inputs[0][1:][:, None]).mean().item()
-        print(f"CI masked CE loss: {ci_masked_ce_loss.item()}")
-
-        def kl_pq(p_logits: torch.Tensor, q_logits: torch.Tensor) -> torch.Tensor:
-            log_q = F.log_softmax(q_logits, dim=-1)
-            p = F.softmax(p_logits, dim=-1)
-            return F.kl_div(log_q, p)  # KL(p || q)
-
-        print("Target || CI masked:", kl_pq(target_logits_out[0], ci_masked_logits[0]).item())
-        print("CI masked || Target:", kl_pq(ci_masked_logits[0], target_logits_out[0]).item())
 
         layer_causal_importances = [
             LayerCIsDTO(

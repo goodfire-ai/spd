@@ -20,9 +20,7 @@ service = AblationService()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global service
-    print("🟡 loading initial service")
     service.load_run_from_wandb_id("ry05f67a")
-    print("✅ intiial service loaded")
     try:
         yield
     finally:
@@ -71,29 +69,21 @@ def run_prompt(request: RunRequest) -> RunResponse:
 
 @app.post("/run_random")
 def run_random_prompt() -> RunResponse:
-    try:
-        prompt = service.get_random_prompt()
+    prompt = service.get_random_prompt()
 
-        (
-            prompt_tokens,
-            layer_causal_importances,
-            full_run_token_logits,
-            ci_masked_token_logits,
-        ) = service.run_prompt(prompt)
+    (
+        prompt_tokens,
+        layer_causal_importances,
+        full_run_token_logits,
+        ci_masked_token_logits,
+    ) = service.run_prompt(prompt)
 
-        return RunResponse(
-            prompt_tokens=prompt_tokens,
-            layer_cis=layer_causal_importances,
-            full_run_token_logits=full_run_token_logits,
-            ci_masked_token_logits=ci_masked_token_logits,
-        )
-    except Exception as e:
-        import traceback
-
-        traceback.print_exc()
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    return RunResponse(
+        prompt_tokens=prompt_tokens,
+        layer_cis=layer_causal_importances,
+        full_run_token_logits=full_run_token_logits,
+        ci_masked_token_logits=ci_masked_token_logits,
+    )
 
 
 class AblationRequest(BaseModel):
@@ -106,17 +96,9 @@ class AblationResponse(BaseModel):
 
 @app.post("/ablate")
 def ablate_components(request: AblationRequest) -> AblationResponse:
-    try:
-        tokens_logits = service.ablate_components(
-            request.component_mask,
-        )
-    except Exception as e:
-        import traceback
-
-        traceback.print_exc()
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    tokens_logits = service.ablate_components(
+        request.component_mask,
+    )
     return AblationResponse(token_logits=tokens_logits)
 
 
@@ -127,59 +109,17 @@ class LoadRequest(BaseModel):
 @app.post("/load")
 def load_run(request: LoadRequest):
     global service
-
-    print("🟡 loading service")
     service.load_run_from_wandb_id(request.wandb_run_id)
-    print("✅ service loaded")
 
 @app.get("/status")
 def get_status() -> StatusDTO:
     return service.get_status()
 
 
-
-# TS:
-# export type CosineSimilarityData = {
-#     input_singular_vectors: number[][]; // 2D array for pairwise cosine similarities
-#     output_singular_vectors: number[][]; // 2D array for pairwise cosine similarities
-#     component_indices: number[]; // indices corresponding to rows/cols
-# };
-
 @app.get("/cosine_similarities")
 def get_cosine_similarities(layer: str, token_idx: int) -> TokenLayerCosineSimilarityDataDTO:
-    try:
-        return service.get_cosine_similarities(layer, token_idx)
-    except Exception as e:
-        import traceback
+    return service.get_cosine_similarities(layer, token_idx)
 
-        traceback.print_exc()
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=500, detail=str(e)) from e
-# %%
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-# # %%
-
-# DEMO_RUN = "wandb:goodfire/spd/runs/ry05f67a"
-# service.load_run_from_wandb_id(DEMO_RUN)
-
-# # %%
-# # def simple_kl(logits1: torch.Tensor, logits2: torch.Tensor) -> float: # from-scratch kl divergence, assuming both inputs are unnormalized logits
-
-
-# (
-#     _,
-#     _,
-#     full_run_token_logits, ci_masked_token_logits,
-# ) = service.run_prompt(service.get_random_prompt())
-
-
-# for target, ci_masked in zip(full_run_token_logits[:5], ci_masked_token_logits[:5]):
-#     print("-" * 10)
-#     for t, c in zip(target, ci_masked):
-#         print(f"{t.token}: {t.probability:.4f} | {c.token}: {c.probability:.4f}")
-# print(ci_masked_token_logits)
-# # %%
