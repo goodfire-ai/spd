@@ -299,9 +299,11 @@ class Config(BaseModel):
         "recon_layerwise_coeff",
         "ci_recon_coeff",
         "ci_recon_layerwise_coeff",
+        "pnorm",
         "p_anneal_start_frac",
         "p_anneal_final_p",
         "p_anneal_end_frac",
+        "importance_minimality_coeff",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
