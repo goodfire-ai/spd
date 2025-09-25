@@ -28,15 +28,15 @@ from .uv_plots import UVPlots as UVPlots
 METRICS = {
     cls.__name__: cls
     for cls in [
-        CI_L0,  # TODO: Verify distributed
-        CEandKLLosses,  # TODO: Verify distributed
-        CIHistograms,  # TODO: Get distributed working
-        ComponentActivationDensity,  # TODO: Get distributed working
+        CI_L0,
+        CEandKLLosses,
+        CIHistograms,
+        ComponentActivationDensity,
         PermutedCIPlots,
         UVPlots,
         IdentityCIError,
-        CIMeanPerComponent,  # TODO: Get distributed working
-        SubsetReconstructionLoss,  # TODO: Get distributed working
+        CIMeanPerComponent,
+        SubsetReconstructionLoss,
         FaithfulnessLoss,
         CIMaskedReconLoss,
         StochasticReconLoss,

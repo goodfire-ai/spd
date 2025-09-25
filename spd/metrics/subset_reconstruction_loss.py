@@ -1,4 +1,3 @@
-from collections import defaultdict
 from collections.abc import Mapping
 from fnmatch import fnmatch
 from typing import Any, override
@@ -18,10 +17,11 @@ from spd.utils.general_utils import calc_kl_divergence_lm
 
 
 class SubsetReconstructionLoss(Metric):
-    """Compute reconstruction loss for specific subsets of components."""
+    """Compute reconstruction loss for specific subsets of components.
 
-    # TODO: Currently doesn't collect metrics across ranks. Need to do similar to CI_L0 in order to
-    # add all possible keys via add_state.
+    NOTE: Assumes all batches and sequences are the same size.
+    """
+
     slow = False
     is_differentiable: bool | None = False
 
@@ -46,7 +46,27 @@ class SubsetReconstructionLoss(Metric):
                 "At least one of include_patterns or exclude_patterns must be provided"
             )
 
-        self.losses: dict[str, list[float]] = defaultdict(list)
+        # Avoid using e.g. "layers.*.mlp_in" as an attribute
+        self.key_to_sanitized: dict[str, str] = {}
+        self.sanitized_to_key: dict[str, str] = {}
+
+        all_keys: list[str] = []
+        if self.include_patterns:
+            all_keys += list(self.include_patterns.keys())
+        if self.exclude_patterns:
+            all_keys += list(self.exclude_patterns.keys())
+
+        for key in all_keys:
+            sanitized_key_raw = key.replace(".", "-").replace("*", "all")
+            sanitized_keys = [
+                f"{sanitized_key_raw}_kl",
+                f"{sanitized_key_raw}_ce",
+                f"{sanitized_key_raw}_ce_unrec",
+            ]
+            for sanitized_key in sanitized_keys:
+                self.key_to_sanitized[key] = sanitized_key
+                self.sanitized_to_key[sanitized_key] = key
+                self.add_state(sanitized_key, default=[], dist_reduce_fx="cat")
 
     @override
     def update(
@@ -61,36 +81,24 @@ class SubsetReconstructionLoss(Metric):
             batch=batch, target_out=target_out, ci=ci, weight_deltas=weight_deltas
         )
         for key, value in losses.items():
-            self.losses[key].append(value)
+            sanitized_key = self.key_to_sanitized[key]
+            getattr(self, sanitized_key).append(value)
 
     @override
     def compute(self) -> Mapping[str, float | str]:
-        results = {k: sum(v) / len(v) for k, v in self.losses.items()}
+        results: dict[str, float | str] = {}
+        for sanitized_key, key in self.sanitized_to_key.items():
+            vals: list[float] = getattr(self, sanitized_key)
+            mean_val = sum(vals) / len(vals)  # Assume all batches are the same size
+            results[key] = mean_val
 
-        metrics_by_type = {"kl": {}, "ce": {}, "ce_unrec": {}}
-        for key, value in results.items():
-            if not key.startswith("subset/"):
-                continue
-            parts = key.split("/")
-            if len(parts) != 3:
-                continue
-            subset_name = parts[1]
-            metric_type = parts[2]
-            if metric_type.endswith("_all_ones"):
-                continue
-            if metric_type == "kl":
-                metrics_by_type["kl"][subset_name] = value
-            elif metric_type == "ce":
-                metrics_by_type["ce"][subset_name] = value
-            elif metric_type == "ce_unrec":
-                metrics_by_type["ce_unrec"][subset_name] = value
-
-        for metric_type, subset_values in metrics_by_type.items():
-            if subset_values:
-                worst_subset = max(subset_values, key=lambda k: subset_values[k])
-                worst_value = subset_values[worst_subset]
-                results[f"subset_worst/{metric_type}"] = worst_value
-                results[f"subset_worst/{metric_type}_subset"] = worst_subset
+        # Get the worst subset for each metric type
+        for metric_type in ["kl", "ce", "ce_unrec"]:
+            results_by_type = {k: v for k, v in results.items() if k.endswith(metric_type)}
+            worst_subset = max(results_by_type, key=lambda k: results_by_type[k])
+            worst_value = results_by_type[worst_subset]
+            results[f"subset_worst/{metric_type}"] = worst_value
+            results[f"subset_worst/{metric_type}_subset"] = worst_subset
 
         return results
 
@@ -136,6 +144,7 @@ class SubsetReconstructionLoss(Metric):
         results = {}
         all_modules = list(ci.keys())
 
+        # TODO: Reduce duplication
         # Process include patterns
         for name, patterns in self.include_patterns.items():
             active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
@@ -152,9 +161,9 @@ class SubsetReconstructionLoss(Metric):
             mean_ce = sum(ce_losses) / len(ce_losses)
             ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
 
-            results[f"subset/{name}/kl"] = mean_kl
-            results[f"subset/{name}/ce"] = mean_ce
-            results[f"subset/{name}/ce_unrec"] = ce_unrec
+            results[f"{name}_kl"] = mean_kl
+            results[f"{name}_ce"] = mean_ce
+            results[f"{name}_ce_unrec"] = ce_unrec
 
         # Process exclude patterns
         for name, exclude_patterns in self.exclude_patterns.items():
@@ -172,8 +181,8 @@ class SubsetReconstructionLoss(Metric):
             mean_ce = sum(ce_losses) / len(ce_losses)
             ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
 
-            results[f"subset/{name}/kl"] = mean_kl
-            results[f"subset/{name}/ce"] = mean_ce
-            results[f"subset/{name}/ce_unrec"] = ce_unrec
+            results[f"{name}_kl"] = mean_kl
+            results[f"{name}_ce"] = mean_ce
+            results[f"{name}_ce_unrec"] = ce_unrec
 
         return results
