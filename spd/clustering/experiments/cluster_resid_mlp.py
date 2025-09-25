@@ -48,7 +48,7 @@ SPD_CONFIG: Config = SPD_RUN.config
 N_SAMPLES: int = 128
 
 DATASET: ResidMLPDataset = ResidMLPDataset(
-    n_features=MODEL.patched_model.config.n_features,  # pyright: ignore[reportAttributeAccessIssue, reportArgumentType],
+    n_features=MODEL.target_model.config.n_features,  # pyright: ignore[reportAttributeAccessIssue, reportArgumentType],
     feature_probability=SPD_CONFIG.task_config.feature_probability,  # pyright: ignore[reportAttributeAccessIssue]
     device=DEVICE,
     calc_labels=False,
