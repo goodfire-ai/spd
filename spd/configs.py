@@ -360,18 +360,22 @@ class Config(BaseModel):
             del config_dict["pnorm"]
 
         # Remove SubsetReconstructionLoss if it appears
-        if "loss_metric_configs" in config_dict and any(
-            cfg.classname == "SubsetReconstructionLoss"
-            for cfg in config_dict["loss_metric_configs"]
-        ):
-            logger.warning(
-                "SubsetReconstructionLoss is deprecated, replacing with SubsetReconCEAndKL"
-            )
-            config_dict["loss_metric_configs"] = [
-                cfg
-                for cfg in config_dict["loss_metric_configs"]
-                if cfg.classname != "SubsetReconstructionLoss"
-            ]
+        if "loss_metric_configs" in config_dict:
+            filtered_configs = []
+            found_deprecated = False
+            for cfg in config_dict["loss_metric_configs"]:
+                assert isinstance(cfg, dict | MetricConfig)
+                classname = cfg["classname"] if isinstance(cfg, dict) else cfg.classname
+                if classname == "SubsetReconstructionLoss":
+                    found_deprecated = True
+                    logger.warning(
+                        "SubsetReconstructionLoss is deprecated, replacing with SubsetReconCEAndKL"
+                    )
+                else:
+                    filtered_configs.append(cfg)
+
+            if found_deprecated:
+                config_dict["loss_metric_configs"] = filtered_configs
 
         for key in list(config_dict.keys()):
             val = config_dict[key]
