@@ -1,8 +1,12 @@
+
+// TODO: no global vars in this file, move it to html. pass in modelData and clusterData to relevant functions
 let clusterData = {};
 let modelInfo = {};
 let currentClusterId = null;
 let currentColormap = 'blues';
 
+
+// TODO: load data in html
 async function loadData(filename = 'max_activations_iter7375_n16.json') {
     try {
         const [clusterResponse, modelResponse] = await Promise.all([
@@ -49,6 +53,7 @@ function getClusterModuleStats(clusterId) {
     return moduleStats;
 }
 
+// TODO: move self contained color utilities to ColorUtil.js and have the colormaps in a global var `_COLORMAPS` there
 function getColorForValue(value, maxValue, colormap = 'blues') {
     if (maxValue === 0) return '#f5f5f5';
     const intensity = Math.min(value / maxValue, 1);
@@ -104,6 +109,7 @@ function getModuleOrder(moduleName) {
 }
 
 function renderModelArchitecture(clusterId, totalWidth = 800, totalHeight = 400, colormap = 'blues') {
+    // TODO: just error here!
     if (!modelInfo.module_list) {
         return '<div>Model info not loaded</div>';
     }
@@ -172,6 +178,8 @@ function renderModelArchitecture(clusterId, totalWidth = 800, totalHeight = 400,
 
         html += `<div class="layer-block">`;
 
+        // TODO: try to make this less repetitive, define and partially populate a template ahead of time
+
         // Attention row (above MLP)
         if (layer.attention.length > 0) {
             html += `<div class="module-group">`;
@@ -209,8 +217,6 @@ function renderModelArchitecture(clusterId, totalWidth = 800, totalHeight = 400,
 }
 
 function renderModelView() {
-    if (currentClusterId === null) return;
-
     const container = document.getElementById('modelContainer');
     const html = renderModelArchitecture(currentClusterId, 800, 400, currentColormap);
     container.innerHTML = html;
@@ -222,6 +228,7 @@ function renderModelView() {
     const moduleStats = getClusterModuleStats(currentClusterId);
     const maxComponents = Math.max(...Object.values(moduleStats).map(s => s.componentCount), 1);
     updateLegend(maxComponents);
+    // TODO: no need for any legend or labels at all, just tooltips. simplify this as much as possible
 
     // Update cluster label
     document.getElementById('clusterLabel').textContent = currentClusterId;
@@ -255,6 +262,7 @@ function setupTooltips() {
 }
 
 
+// TODO: again, get rid of legend
 function updateLegend(maxValue) {
     const legendScale = document.getElementById('legendScale');
     legendScale.innerHTML = '';
@@ -272,7 +280,7 @@ function updateLegend(maxValue) {
     document.getElementById('maxLabel').textContent = maxValue.toString();
 }
 
-// Event listeners
+// TODO: this goes in html
 document.getElementById('clusterInput').addEventListener('change', (e) => {
     currentClusterId = e.target.value;
     renderModelView();
