@@ -54,10 +54,6 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         lr_schedule="cosine",
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
-        # Faithfulness Warmup
-        faithfulness_warmup_steps=2,
-        faithfulness_warmup_lr=0.001,
-        faithfulness_warmup_weight_decay=0.0,
         n_eval_steps=1,
         # Logging & Saving
         train_log_freq=50,  # Print at step 0, 50, and 100

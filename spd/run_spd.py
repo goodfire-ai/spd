@@ -49,7 +49,6 @@ def run_faithfulness_warmup(
     component_model: ComponentModel,
     component_params: list[torch.nn.Parameter],
     config: Config,
-    device: str,
 ) -> None:
     """Run faithfulness warmup phase to improve initialization.
 
@@ -57,12 +56,12 @@ def run_faithfulness_warmup(
         component_model: The component model to warm up
         component_params: List of component parameters to optimize
         config: Configuration object containing warmup settings
-        device: Device to run on
     """
 
-    logger.info(
-        f"Starting faithfulness warmup phase with {config.faithfulness_warmup_steps} steps at lr={config.faithfulness_warmup_lr}"
-    )
+    logger.info("Starting faithfulness warmup phase...")
+
+    assert component_params, "component_params is empty"
+    device = component_params[0].device
 
     faithfulness_warmup_optimizer = optim.AdamW(
         component_params,
@@ -76,15 +75,17 @@ def run_faithfulness_warmup(
         faithfulness_loss = calc_faithfulness_loss(weight_deltas, device)
         faithfulness_loss.backward()
         faithfulness_warmup_optimizer.step()
-        logger.info(
-            f"Faithfulness warmup step {faithfulness_warmup_step + 1}/{config.faithfulness_warmup_steps}; Faithfulness loss: {faithfulness_loss.item():.9f}"
-        )
 
+        if (
+            faithfulness_warmup_step % 100 == 0
+            or faithfulness_warmup_step == config.faithfulness_warmup_steps - 1
+        ):
+            logger.info(
+                f"Faithfulness warmup step {faithfulness_warmup_step + 1}/{config.faithfulness_warmup_steps}; Faithfulness loss: {faithfulness_loss.item():.9f}"
+            )
     del faithfulness_warmup_optimizer
     torch.cuda.empty_cache()
     gc.collect()
-
-    logger.info("Faithfulness warmup completed.")
 
 
 def local_log(
@@ -201,7 +202,7 @@ def optimize(
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
     if config.faithfulness_warmup_steps > 0:
-        run_faithfulness_warmup(component_model, component_params, config, device)
+        run_faithfulness_warmup(component_model, component_params, config)
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(

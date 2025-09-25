@@ -167,9 +167,6 @@ class TestConfigIntegration:
             "slow_eval_freq": 100,
             "ci_alive_threshold": 0.1,
             "n_examples_until_dead": 3200,
-            "faithfulness_warmup_steps": 0,
-            "faithfulness_warmup_lr": 0.001,
-            "faithfulness_warmup_weight_decay": 0.0,
             "pretrained_model_class": "spd.experiments.tms.models.TMSModel",
             "task_config": {
                 "task_name": "tms",
@@ -208,9 +205,6 @@ class TestConfigIntegration:
             "slow_eval_freq": 100,
             "ci_alive_threshold": 0.1,
             "n_examples_until_dead": 1638400,
-            "faithfulness_warmup_steps": 0,
-            "faithfulness_warmup_lr": 0.001,
-            "faithfulness_warmup_weight_decay": 0.0,
             "pretrained_model_class": "transformers.LlamaForCausalLM",
             "task_config": {
                 "task_name": "lm",
@@ -257,9 +251,6 @@ class TestConfigIntegration:
             "slow_eval_freq": 100,
             "ci_alive_threshold": 0.1,
             "n_examples_until_dead": 3200,
-            "faithfulness_warmup_steps": 0,
-            "faithfulness_warmup_lr": 0.001,
-            "faithfulness_warmup_weight_decay": 0.0,
             "pretrained_model_class": "spd.experiments.tms.models.TMSModel",
             "task_config": {"task_name": "tms", "feature_probability": 0.1},
         }
@@ -298,9 +289,6 @@ class TestConfigIntegration:
             "slow_eval_freq": 100,
             "ci_alive_threshold": 0.1,
             "n_examples_until_dead": 3200,
-            "faithfulness_warmup_steps": 0,
-            "faithfulness_warmup_lr": 0.001,
-            "faithfulness_warmup_weight_decay": 0.0,
             "pretrained_model_class": "spd.experiments.tms.models.TMSModel",
             "task_config": {
                 "task_name": "tms",

@@ -73,10 +73,6 @@ TEST_CONFIG = {
         "eval_data_split": "test[:100]",
         "shuffle_each_epoch": False,  # Need False in order to maintain determinicity
     },
-    # --- Faithfulness Warmup ---
-    "faithfulness_warmup_steps": 0,  # Disable warmup for testing
-    "faithfulness_warmup_lr": 0.001,
-    "faithfulness_warmup_weight_decay": 0.0,
     # --- Distributed ---
     "dist_backend": "gloo",  # Want to run this test on CPU
 }
