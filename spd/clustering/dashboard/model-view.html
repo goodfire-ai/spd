@@ -39,30 +39,6 @@
         }
 
 
-        .legend {
-            margin: 10px;
-            padding: 8px;
-            background: white;
-            border: 1px solid #ddd;
-            border-radius: 3px;
-            font-size: 11px;
-        }
-
-        .legend-scale {
-            display: flex;
-            height: 12px;
-            border: 1px solid #ddd;
-            border-radius: 1px;
-            overflow: hidden;
-            margin: 3px 0;
-        }
-
-        .legend-labels {
-            display: flex;
-            justify-content: space-between;
-            font-size: 9px;
-        }
-
         #controls {
             margin: 10px;
             padding: 8px;
@@ -92,7 +68,7 @@
     </style>
 </head>
 <body>
-    <h1>Model Architecture Visualization</h1>
+    <h1>Cluster Component Distribution</h1>
 
     <div id="controls">
         <label>Cluster ID: <input type="number" id="clusterInput" placeholder="0" min="0"></label>
@@ -113,14 +89,6 @@
         </label>
     </div>
 
-    <div class="legend">
-        <div class="legend-title">Components for Cluster <span id="clusterLabel">-</span></div>
-        <div class="legend-scale" id="legendScale"></div>
-        <div class="legend-labels">
-            <span id="minLabel">0</span>
-            <span id="maxLabel">Max</span>
-        </div>
-    </div>
 
     <div id="modelContainer">
         <div id="loading">Loading model data...</div>
@@ -132,6 +100,70 @@
         <a href="index.html">← Back to Cluster Selection</a>
     </div>
 
+    <script src="ColorUtil.js"></script>
     <script src="model-visualization.js"></script>
+    <script>
+        let clusterData = {};
+        let modelInfo = {};
+        let currentClusterId = null;
+        let currentColormap = 'blues';
+
+        async function loadData(filename = 'max_activations_iter7375_n16.json') {
+            try {
+                const [clusterResponse, modelResponse] = await Promise.all([
+                    fetch('data/' + filename),
+                    fetch('data/model_info.json')
+                ]);
+
+                clusterData = await clusterResponse.json();
+                modelInfo = await modelResponse.json();
+
+                // Set default cluster to first available
+                const clusterIds = Object.keys(clusterData);
+                if (clusterIds.length > 0 && currentClusterId === null) {
+                    currentClusterId = clusterIds[0];
+                    document.getElementById('clusterInput').value = currentClusterId;
+                }
+
+                renderView();
+                document.getElementById('loading').style.display = 'none';
+            } catch (error) {
+                document.getElementById('loading').textContent = 'Error loading data: ' + error.message;
+            }
+        }
+
+        function renderView() {
+            if (currentClusterId === null) return;
+
+            const container = document.getElementById('modelContainer');
+            const architecture = renderModelArchitecture(currentClusterId, clusterData, modelInfo, currentColormap);
+            const html = renderToHTML(architecture);
+            container.innerHTML = html;
+
+            // Add tooltip event listeners
+            setupTooltips(container);
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('clusterInput').addEventListener('change', (e) => {
+                currentClusterId = e.target.value;
+                renderView();
+            });
+
+            document.getElementById('dataFile').addEventListener('change', (e) => {
+                document.getElementById('loading').style.display = 'block';
+                loadData(e.target.value);
+            });
+
+            document.getElementById('colormapSelect').addEventListener('change', (e) => {
+                currentColormap = e.target.value;
+                renderView();
+            });
+
+            // Load initial data
+            loadData();
+        });
+    </script>
 </body>
 </html>
