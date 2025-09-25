@@ -1,0 +1,104 @@
+/* Notification system styling */
+.notification-container {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1001;
+    pointer-events: none;
+}
+
+.notification-indicator {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 34, 68, 0.95);
+    color: #00ff00;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    display: block;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border: 1px solid #00ff00;
+    min-width: 200px;
+    text-align: center;
+    transition: all 0.3s ease;
+    opacity: 1;
+    margin-bottom: 10px;
+}
+
+/* Success styling */
+.notification-indicator.success {
+    background: rgba(0, 68, 34, 0.95);
+    border-color: #00ff88;
+    color: #00ff88;
+}
+
+/* Error styling */
+.notification-indicator.error {
+    background: rgba(68, 0, 0, 0.95);
+    border-color: #ff4444;
+    color: #ff4444;
+}
+
+/* Loading spinner */
+.notification-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #004400;
+    border-radius: 50%;
+    border-top-color: #00ff00;
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.notification-indicator.success .notification-spinner {
+    border-color: #004400;
+    border-top-color: #00ff88;
+}
+
+.notification-indicator.error .notification-spinner {
+    display: none;
+    /* No spinner for errors */
+}
+
+/* Progress bar components */
+.notification-progress-container {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    margin-top: 8px;
+    overflow: hidden;
+}
+
+.notification-progress-bar {
+    height: 100%;
+    background: #00ff00;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.notification-indicator.success .notification-progress-bar {
+    background: #00ff88;
+}
+
+.notification-indicator.error .notification-progress-bar {
+    background: #ff4444;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Hide spinner when not in spinner mode */
+.notification-indicator:not(.spinner) .notification-spinner {
+    display: none;
+}
