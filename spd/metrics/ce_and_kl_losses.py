@@ -24,6 +24,7 @@ class CEandKLLosses(Metric):
 
     slow = False
     is_differentiable: bool | None = False
+    full_state_update: bool | None = False  # Avoid double update calls
 
     # TODO: Gross that we have to hardcode these here and hope they're the same as the output
     # of _calc_ce_and_kl_losses

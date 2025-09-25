@@ -262,7 +262,7 @@ def calc_kl_divergence_lm(
         return kl
 
 
-def calc_recon_loss_lm(
+def calc_sum_recon_loss_lm(
     pred: Float[Tensor, "... vocab"],
     target: Float[Tensor, "... vocab"],
     loss_type: Literal["mse", "kl"],

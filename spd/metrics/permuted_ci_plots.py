@@ -12,6 +12,8 @@ from spd.plotting import plot_causal_importance_vals
 class PermutedCIPlots(Metric):
     slow = True
     is_differentiable: bool | None = False
+    full_state_update: bool | None = False  # Avoid double update calls
+
     input_magnitude: float = 0.75
 
     def __init__(

@@ -17,6 +17,7 @@ class ComponentActivationDensity(Metric):
 
     slow = True
     is_differentiable: bool | None = False
+    full_state_update: bool | None = False  # Avoid double update calls
 
     n_examples: Int[Tensor, ""]
 

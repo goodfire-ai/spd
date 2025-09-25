@@ -8,7 +8,7 @@ from torchmetrics import Metric
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
-from spd.utils.general_utils import calc_recon_loss_lm
+from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
 def _stochastic_recon_loss_update(
@@ -37,7 +37,7 @@ def _stochastic_recon_loss_update(
     for stoch_mask_infos in stoch_mask_infos_list:
         out = model(batch, mode="components", mask_infos=stoch_mask_infos)
         loss_type = config.output_loss_type
-        loss = calc_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
+        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
         n_examples += out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
         sum_loss += loss
     return sum_loss, n_examples
@@ -68,6 +68,7 @@ class StochasticReconLoss(Metric):
 
     slow = False
     is_differentiable: bool | None = True
+    full_state_update: bool | None = False  # Avoid double update calls
 
     sum_loss: Float[Tensor, ""]
     n_examples: Int[Tensor, ""]

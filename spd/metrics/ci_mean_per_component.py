@@ -13,6 +13,7 @@ from spd.plotting import plot_mean_component_cis_both_scales
 class CIMeanPerComponent(Metric):
     slow = True
     is_differentiable: bool | None = False
+    full_state_update: bool | None = False  # Avoid double update calls
 
     def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)

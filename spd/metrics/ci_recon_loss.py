@@ -8,7 +8,7 @@ from torchmetrics import Metric
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
-from spd.utils.general_utils import calc_recon_loss_lm
+from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
 class CIMaskedReconLoss(Metric):
@@ -16,6 +16,7 @@ class CIMaskedReconLoss(Metric):
 
     slow = False
     is_differentiable: bool | None = True
+    full_state_update: bool | None = False  # Avoid double update calls
 
     sum_loss: Float[Tensor, ""]
     n_examples: Int[Tensor, ""]
@@ -40,7 +41,7 @@ class CIMaskedReconLoss(Metric):
         out = self.model(batch, mode="components", mask_infos=mask_infos)
 
         loss_type = self.config.output_loss_type
-        loss = calc_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
+        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
         self.n_examples += out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
         self.sum_loss += loss
 

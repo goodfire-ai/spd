@@ -118,6 +118,7 @@ class ImportanceMinimalityLoss(Metric):
 
     slow = False
     is_differentiable: bool | None = True
+    full_state_update: bool | None = False  # Avoid double update calls
 
     sum_loss: Float[Tensor, " C"]
     n_examples: Int[Tensor, ""]

@@ -14,6 +14,7 @@ from spd.plotting import plot_ci_values_histograms
 class CIHistograms(Metric):
     slow = True
     is_differentiable: bool | None = False
+    full_state_update: bool | None = False  # Avoid double update calls
 
     def __init__(
         self,
