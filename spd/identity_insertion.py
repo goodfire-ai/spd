@@ -11,6 +11,7 @@ from typing import Any
 
 import torch.nn as nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
+from transformers.models.llama.modeling_llama import LlamaRMSNorm
 
 from spd.log import logger
 from spd.models.components import Identity
@@ -58,6 +59,8 @@ def insert_identity_operations_(target_model: nn.Module, identity_patterns: list
                 d_in, _ = module.weight.shape
             case nn.Embedding():
                 raise ValueError("Embedding modules not supported for identity insertion")
+            case LlamaRMSNorm():
+                d_in = module.weight.shape[0]
             case _:
                 raise ValueError(f"Module {module} not supported. type: {type(module)}")
 
