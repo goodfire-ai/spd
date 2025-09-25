@@ -3,9 +3,96 @@
 <head>
     <title>Cluster Selection</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        .model-view-cell {
+            width: 200px;
+            height: 60px;
+        }
+
+        .model-view-cell .layer-block {
+            margin: 1px 0;
+            display: flex;
+            align-items: center;
+            gap: 1px;
+        }
+
+        .model-view-cell .module-group {
+            display: flex;
+            gap: 1px;
+            border: 1px solid #ddd;
+            padding: 1px;
+        }
+
+        .model-view-cell .module-cell {
+            width: 8px;
+            height: 8px;
+            border-radius: 1px;
+            cursor: pointer;
+        }
+
+        .sparkline-cell {
+            width: 120px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sparkline-cell svg {
+            border: 1px solid #e0e0e0;
+            border-radius: 2px;
+        }
+
+        .module-summary {
+            max-width: 150px;
+            font-size: 11px;
+        }
+
+        .datatable {
+            font-size: 12px;
+        }
+
+        .datatable td {
+            padding: 8px;
+            vertical-align: middle;
+        }
+
+        #tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 4px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            white-space: pre-line;
+            z-index: 100;
+            pointer-events: none;
+            display: none;
+        }
+
+        .datatable-wrapper {
+            margin: 20px 0;
+        }
+
+        .datatable th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            text-align: left;
+            padding: 10px 8px;
+        }
+
+        .datatable-filter-cell input {
+            font-size: 11px;
+            padding: 4px 6px;
+        }
+
+        .datatable tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+    </style>
 </head>
 <body>
-    <h1>Cluster Selection</h1>
+    <h1>Cluster Selection Dashboard</h1>
 
     <div id="modelInfo" style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px; display: none;">
         <h2 style="margin-top: 0;">Model Information</h2>
@@ -25,26 +112,14 @@
         </div>
     </div>
 
-    <table id="clusterTable">
-        <thead>
-            <tr>
-                <th onclick="sortTable(0)">Cluster ID ↕</th>
-                <th onclick="sortTable(1)">Components ↕</th>
-                <th>Modules</th>
-                <th onclick="sortTable(2)">Samples ↕</th>
-                <th onclick="sortTable(3)">Max Act ↕</th>
-                <th onclick="sortTable(4)">Mean Act ↕</th>
-                <th onclick="sortTable(5)">Median Act ↕</th>
-                <th onclick="sortTable(6)">Min Act ↕</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody id="clusterTableBody">
-        </tbody>
-    </table>
-    
+    <div id="clusterTableContainer"></div>
     <div id="loading">Loading data...</div>
-    
+    <div id="tooltip"></div>
+
+    <script src="ColorUtil.js"></script>
+    <script src="util/sparklines.js"></script>
+    <script src="util/table.js"></script>
+    <script src="model-visualization.js"></script>
     <script src="cluster-selection.js"></script>
 </body>
 </html>
