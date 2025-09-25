@@ -92,6 +92,17 @@ function getColorForValue(value, maxValue, colormap = 'blues') {
     return `rgb(${r}, ${g}, ${b})`;
 }
 
+function getModuleOrder(moduleName) {
+    if (moduleName.includes('q_proj')) return 0;
+    if (moduleName.includes('k_proj')) return 1;
+    if (moduleName.includes('v_proj')) return 2;
+    if (moduleName.includes('o_proj')) return 3;
+    if (moduleName.includes('gate_proj')) return 10;
+    if (moduleName.includes('up_proj')) return 11;
+    if (moduleName.includes('down_proj')) return 12;
+    return 999;
+}
+
 function renderModelArchitecture(clusterId, totalWidth = 800, totalHeight = 400, colormap = 'blues') {
     if (!modelInfo.module_list) {
         return '<div>Model info not loaded</div>';
@@ -131,6 +142,23 @@ function renderModelArchitecture(clusterId, totalWidth = 800, totalHeight = 400,
             name: moduleName,
             count: count,
             components: components
+        });
+    });
+
+    // Sort modules within each group by desired order
+    Object.values(layerGroups).forEach(layer => {
+        // Attention: q, k, v, o
+        layer.attention.sort((a, b) => {
+            const orderA = getModuleOrder(a.name);
+            const orderB = getModuleOrder(b.name);
+            return orderA - orderB;
+        });
+
+        // MLP: gate, up, down
+        layer.mlp.sort((a, b) => {
+            const orderA = getModuleOrder(a.name);
+            const orderB = getModuleOrder(b.name);
+            return orderA - orderB;
         });
     });
 
@@ -187,6 +215,9 @@ function renderModelView() {
     const html = renderModelArchitecture(currentClusterId, 800, 400, currentColormap);
     container.innerHTML = html;
 
+    // Add tooltip event listeners
+    setupTooltips();
+
     // Update legend
     const moduleStats = getClusterModuleStats(currentClusterId);
     const maxComponents = Math.max(...Object.values(moduleStats).map(s => s.componentCount), 1);
@@ -194,6 +225,33 @@ function renderModelView() {
 
     // Update cluster label
     document.getElementById('clusterLabel').textContent = currentClusterId;
+}
+
+function setupTooltips() {
+    const tooltip = document.getElementById('tooltip');
+    const cells = document.querySelectorAll('.module-cell');
+
+    cells.forEach(cell => {
+        cell.addEventListener('mouseenter', (e) => {
+            const module = e.target.dataset.module;
+            const count = e.target.dataset.count;
+            const components = e.target.dataset.components;
+
+            tooltip.textContent = `${module}\nComponents: ${count}\nIndices: ${components || 'none'}`;
+            tooltip.style.display = 'block';
+            tooltip.style.left = (e.pageX + 10) + 'px';
+            tooltip.style.top = (e.pageY + 10) + 'px';
+        });
+
+        cell.addEventListener('mouseleave', () => {
+            tooltip.style.display = 'none';
+        });
+
+        cell.addEventListener('mousemove', (e) => {
+            tooltip.style.left = (e.pageX + 10) + 'px';
+            tooltip.style.top = (e.pageY + 10) + 'px';
+        });
+    });
 }
 
 
