@@ -114,7 +114,18 @@ def calc_stochastic_component_mask_info(
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None
     if weight_deltas is not None:
         weight_deltas_and_masks = {
-            layer: (weight_deltas[layer], torch.rand(leading_dims, device=device, dtype=dtype))
+            layer: (
+                weight_deltas[layer],
+                torch.where(
+                    (choice := torch.rand(leading_dims, device=device)) < 0.25,
+                    torch.zeros(leading_dims, device=device, dtype=dtype),
+                    torch.where(
+                        choice < 0.75,
+                        torch.rand(leading_dims, device=device, dtype=dtype),
+                        torch.ones(leading_dims, device=device, dtype=dtype),
+                    ),
+                ),
+            )
             for layer in causal_importances
         }
     else:
