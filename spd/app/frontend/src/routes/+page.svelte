@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { api } from "$lib/api";
-    import type { RunPromptResponse, ComponentMask, StatusDTO } from "$lib/api";
+    import type { RunPromptResponse, ComponentMask, StatusDTO, SparseVector } from "$lib/api";
     import { runAblation, popupData, ablationResults } from "$lib/stores/componentState";
 
     import RunSelector from "$lib/components/RunSelector.svelte";
@@ -93,9 +93,9 @@
         tokenIdx: number,
         layer: string,
         layerIdx: number,
-        token_ci: { l0: number; component_cis: number[]; indices: number[] }
+        tokenCis: SparseVector,
     ) {
-        $popupData = { token, tokenIdx, layer, layerIdx, tokenCi: token_ci };
+        $popupData = { token, tokenIdx, layer, layerIdx, tokenCis };
     }
 
     function closePopup() {

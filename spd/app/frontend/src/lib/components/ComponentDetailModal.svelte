@@ -34,7 +34,7 @@
 
     function getAllComponentIndices(): number[] {
         if (!$popupData) return [];
-        return $popupData.tokenCi.indices;
+        return $popupData.tokenCis.indices;
     }
 
     function areAllComponentsDisabled(): boolean {
@@ -82,8 +82,6 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="popup-overlay" on:click={onClose}>
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="popup-modal" on:click|stopPropagation>
             <div class="popup-content">
                 <div class="popup-info">
@@ -91,10 +89,10 @@
                         <strong>Token:</strong> "{$popupData.token}" (position {$popupData.tokenIdx})
                     </p>
                     <p><strong>Layer:</strong> {$popupData.layer}</p>
-                    <p><strong>L0 (Non-zero components):</strong> {$popupData.tokenCi.l0}</p>
+                    <p><strong>L0 (Non-zero components):</strong> {$popupData.tokenCis.l0}</p>
                     <p>
                         <strong>Vector Length:</strong>
-                        {$popupData.tokenCi.component_cis.length}
+                        {$popupData.tokenCis.values.length}
                     </p>
                 </div>
                 <div class="vector-display">
@@ -110,29 +108,27 @@
                         </label>
                     </div>
                     <div class="vector-grid">
-                        {#each $popupData.tokenCi.component_cis as value, idx}
-                            <!-- svelte-ignore a11y_click_events_have_key_events -->
-                            <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        {#each $popupData.tokenCis.values as value, idx}
                             <div
                                 class="vector-item"
                                 style="--item-bg-color: {getColorFromCI(value / 3)}"
                                 class:disabled={isComponentDisabled(
                                     $popupData.layer,
                                     $popupData.tokenIdx,
-                                    $popupData.tokenCi.indices[idx]
+                                    $popupData.tokenCis.indices[idx]
                                 )}
                                 on:click={() => {
                                     if ($popupData) {
                                         onToggleComponent(
                                             $popupData.layer,
                                             $popupData.tokenIdx,
-                                            $popupData.tokenCi.indices[idx]
+                                            $popupData.tokenCis.indices[idx]
                                         );
                                     }
                                 }}
                             >
                                 <span class="component-idx"
-                                    >{$popupData.tokenCi.indices[idx]}:</span
+                                    >{$popupData.tokenCis.indices[idx]}:</span
                                 >
                                 <span class="component-value">{value.toFixed(4)}</span>
                             </div>

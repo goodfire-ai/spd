@@ -1,5 +1,11 @@
 const API_URL = "http://localhost:8000";
 
+export type SparseVector = {
+    l0: number;
+    indices: number[];
+    values: number[];
+};
+
 export type StatusDTO = {
     loaded: boolean;
     run_id: string | null;
@@ -12,12 +18,6 @@ export type OutputTokenLogit = {
     probability: number;
 };
 
-export type TokenCIs = {
-    l0: number;
-    component_cis: number[];
-    indices: number[];
-};
-
 export type CosineSimilarityData = {
     input_singular_vectors: number[][]; // 2D array for pairwise cosine similarities
     output_singular_vectors: number[][]; // 2D array for pairwise cosine similarities
@@ -26,7 +26,7 @@ export type CosineSimilarityData = {
 
 export type LayerCIs = {
     module: string;
-    token_cis: TokenCIs[];
+    token_cis: SparseVector[];
 };
 
 export type RunPromptResponse = {
@@ -40,6 +40,32 @@ export type ComponentMask = Record<string, number[][]>;
 
 export type ModifyComponentsResponse = {
     token_logits: OutputTokenLogit[][];
+};
+
+export type MaskOverrideDTO = {
+    id: string;
+    description: string | null;
+    combined_mask: SparseVector;
+};
+
+export type CombineMasksRequest = {
+    layer: string;
+    token_indices: number[]; // List of token positions to combine
+    description?: string;
+};
+
+export type CombineMasksResponse = {
+    mask_id: string;
+    mask_override: MaskOverrideDTO;
+};
+
+export type SimulateMergeRequest = {
+    layer: string;
+    token_indices: number[];
+};
+
+export type SimulateMergeResponse = {
+    l0: number;
 };
 
 class ApiClient {
@@ -124,10 +150,7 @@ class ApiClient {
         }
     }
 
-    async getCosineSimilarities(
-        layer: string,
-        tokenIdx: number
-    ): Promise<CosineSimilarityData> {
+    async getCosineSimilarities(layer: string, tokenIdx: number): Promise<CosineSimilarityData> {
         const params = new URLSearchParams({
             layer,
             token_idx: tokenIdx.toString()
@@ -142,6 +165,40 @@ class ApiClient {
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || "Failed to get cosine similarities");
+        }
+
+        return response.json();
+    }
+
+    async combineMasks(request: CombineMasksRequest): Promise<CombineMasksResponse> {
+        const response = await fetch(`${this.apiUrl}/combine_masks`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(request)
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "Failed to combine masks");
+        }
+
+        return response.json();
+    }
+
+    async simulateMerge(request: SimulateMergeRequest): Promise<SimulateMergeResponse> {
+        const response = await fetch(`${this.apiUrl}/simulate_merge`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(request)
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "Failed to simulate merge");
         }
 
         return response.json();

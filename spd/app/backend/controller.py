@@ -2,14 +2,16 @@
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from spd.app.backend.service import (
     AblationService,
     LayerCIsDTO,
+    MaskOverrideDTO,
     OutputTokenLogitDTO,
+    SparseVectorDTO,
     StatusDTO,
     TokenLayerCosineSimilarityDataDTO,
 )
@@ -111,6 +113,7 @@ def load_run(request: LoadRequest):
     global service
     service.load_run_from_wandb_id(request.wandb_run_id)
 
+
 @app.get("/status")
 def get_status() -> StatusDTO:
     return service.get_status()
@@ -119,6 +122,50 @@ def get_status() -> StatusDTO:
 @app.get("/cosine_similarities")
 def get_cosine_similarities(layer: str, token_idx: int) -> TokenLayerCosineSimilarityDataDTO:
     return service.get_cosine_similarities(layer, token_idx)
+
+
+class CombineMasksRequest(BaseModel):
+    layer: str
+    token_indices: list[int]  # List of token indices (positions) to combine
+    description: str | None = None
+
+
+class CombineMasksResponse(BaseModel):
+    mask_id: str
+    mask_override: MaskOverrideDTO
+
+
+@app.post("/combine_masks")
+def combine_masks(request: CombineMasksRequest) -> CombineMasksResponse:
+    mask_override = service.create_combined_mask(
+        layer=request.layer, token_indices=request.token_indices, description=request.description
+    )
+
+    return CombineMasksResponse(
+        mask_id=mask_override.id,
+        mask_override=mask_override.to_dto(),
+    )
+
+
+class SimulateMergeRequest(BaseModel):
+    layer: str
+    token_indices: list[int]
+
+
+class SimulateMergeResponse(BaseModel):
+    l0: int
+
+
+@app.post("/simulate_merge")
+def simulate_merge(request: SimulateMergeRequest) -> SimulateMergeResponse:
+    """Simulate merging masks without persisting the result"""
+    l0 = service.get_merge_l0(layer=request.layer, token_indices=request.token_indices)
+    return SimulateMergeResponse(l0=l0)
+
+
+@app.get("/mask_overrides")
+def get_mask_overrides() -> list[MaskOverrideDTO]:
+    return [mo.to_dto() for mo in service.mask_overrides.values()]
 
 
 if __name__ == "__main__":

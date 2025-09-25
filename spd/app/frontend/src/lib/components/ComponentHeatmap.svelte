@@ -1,6 +1,7 @@
 <script lang="ts">
-    import type { LayerCIs } from "$lib/api";
-    import { runAblation } from "$lib/stores/componentState";
+    import type { LayerCIs, SparseVector } from "$lib/api";
+    import { runAblation, multiSelectMode, selectedTokensForCombining, type SelectedToken } from "$lib/stores/componentState";
+    import MaskCombinePanel from "./MaskCombinePanel.svelte";
 
     export let result: { layer_cis: LayerCIs[]; prompt_tokens: string[] };
     export let onCellClick: (
@@ -8,8 +9,43 @@
         tokenIdx: number,
         layer: string,
         layerIdx: number,
-        token_ci: any
+        tokenCis: SparseVector
     ) => void;
+
+    function handleCellClick(
+        token: string,
+        tokenIdx: number,
+        layer: string,
+        layerIdx: number,
+        tokenCis: SparseVector
+    ) {
+        if ($multiSelectMode) {
+            // In multi-select mode, add/remove from selection
+            const existingIndex = $selectedTokensForCombining.findIndex(
+                (t) => t.layer === layer && t.tokenIdx === tokenIdx
+            );
+
+            if (existingIndex >= 0) {
+                // Remove if already selected
+                $selectedTokensForCombining = $selectedTokensForCombining.filter(
+                    (_, idx) => idx !== existingIndex
+                );
+            } else {
+                // Add to selection
+                $selectedTokensForCombining = [
+                    ...$selectedTokensForCombining,
+                    { layer, tokenIdx, token }
+                ];
+            }
+        } else {
+            // Normal click behavior - open popup
+            onCellClick(token, tokenIdx, layer, layerIdx, tokenCis);
+        }
+    }
+
+    function isTokenSelected(layer: string, tokenIdx: number): boolean {
+        return $selectedTokensForCombining.some((t) => t.layer === layer && t.tokenIdx === tokenIdx);
+    }
 
     let globalMax = Math.max(
         ...result.layer_cis.flatMap((layer) => layer.token_cis.map((tokenCIs) => tokenCIs.l0))
@@ -37,45 +73,50 @@
 </script>
 
 <div class="heatmap-container">
-    <div class="layer-labels">
-        <div class="layer-label-spacer"></div>
-        {#each layer_cis as layer}
-            <div class="layer-label">{layer.module}</div>
-        {/each}
-    </div>
+    <MaskCombinePanel />
+    <div class="heatmap-container-horiz">
+        <div class="layer-labels">
+            <div class="layer-label-spacer"></div>
+            {#each layer_cis as layer}
+                <div class="layer-label">{layer.module}</div>
+            {/each}
+        </div>
 
-    <div class="heatmap-scroll-area">
-        <div class="heatmap-grid">
-            {#each layer_cis as layer, layerIdx}
-                <div class="heatmap-row">
-                    {#each result.prompt_tokens as token, tokenIdx}
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <div
-                            class="heatmap-cell"
-                            style="background: {getColorFroml0(
-                                layer.token_cis[tokenIdx].l0,
-                                layer.module,
-                                tokenIdx
-                            )}"
-                            title="L0={layer.token_cis[tokenIdx].l0}"
-                            on:click={() =>
-                                onCellClick(
-                                    token,
-                                    tokenIdx,
+        <div class="heatmap-scroll-area">
+            <div class="heatmap-grid">
+                {#each layer_cis as layer, layerIdx}
+                    <div class="heatmap-row">
+                        {#each result.prompt_tokens as token, tokenIdx}
+                            <!-- svelte-ignore a11y_click_events_have_key_events -->
+                            <!-- svelte-ignore a11y_no_static_element_interactions -->
+                            <div
+                                class="heatmap-cell"
+                                class:selected={isTokenSelected(layer.module, tokenIdx)}
+                                class:multi-select-mode={$multiSelectMode}
+                                style="background: {getColorFroml0(
+                                    layer.token_cis[tokenIdx].l0,
                                     layer.module,
-                                    layerIdx,
-                                    layer.token_cis[tokenIdx]
-                                )}
-                        ></div>
+                                    tokenIdx
+                                )}"
+                                title="L0={layer.token_cis[tokenIdx].l0}"
+                                on:click={() =>
+                                    handleCellClick(
+                                        token,
+                                        tokenIdx,
+                                        layer.module,
+                                        layerIdx,
+                                        layer.token_cis[tokenIdx]
+                                    )}
+                            ></div>
+                        {/each}
+                    </div>
+                {/each}
+
+                <div class="token-labels">
+                    {#each result.prompt_tokens as token}
+                        <div class="token-label">{token}</div>
                     {/each}
                 </div>
-            {/each}
-
-            <div class="token-labels">
-                {#each result.prompt_tokens as token}
-                    <div class="token-label">{token}</div>
-                {/each}
             </div>
         </div>
     </div>
@@ -83,12 +124,17 @@
 
 <style>
     .heatmap-container {
-        flex: 1;
         display: flex;
+        flex-direction: column;
         border: 1px solid #ddd;
         border-radius: 4px;
         padding: 1rem;
         background-color: #fafafa;
+    }
+
+    .heatmap-container-horiz {
+        flex: 1;
+        display: flex;
     }
 
     .layer-labels {
@@ -144,6 +190,36 @@
         border: 2px solid #241d8c;
         z-index: 10;
         position: relative;
+    }
+
+    /* Multi-select mode styling */
+    .heatmap-cell.multi-select-mode {
+        cursor: pointer;
+    }
+
+    .heatmap-cell.multi-select-mode:hover {
+        border: 2px solid #4caf50;
+        box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+    }
+
+    /* Selected cell styling */
+    .heatmap-cell.selected {
+        border: 3px solid #4caf50 !important;
+        box-shadow: 0 0 8px rgba(76, 175, 80, 0.7);
+        position: relative;
+        z-index: 5;
+    }
+
+    .heatmap-cell.selected::after {
+        content: "✓";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: white;
+        font-size: 14px;
+        font-weight: bold;
+        text-shadow: 0 0 3px rgba(0, 0, 0, 0.7);
     }
 
     .token-labels {

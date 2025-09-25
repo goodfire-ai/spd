@@ -1,6 +1,7 @@
 #  %%
+import uuid
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import torch
 import torch.nn.functional as F
@@ -25,26 +26,26 @@ class PromptContext:
     causal_importances: dict[str, Float[torch.Tensor, " seq_len C"]]
 
 
-class TokenCIsDTO(BaseModel):
-    l0: float
-    component_cis: list[float]
+class SparseVectorDTO(BaseModel):
+    l0: int
     indices: list[int]
+    values: list[float]
 
     @classmethod
-    def from_ci(cls, ci: Float[torch.Tensor, " C"]) -> "TokenCIsDTO":
-        assert ci.ndim == 1, "CI must be 1D"
-        l0 = (ci > 0.0).float().sum().item()
-        (nonzero_indices,) = ci.nonzero(as_tuple=True)
+    def from_tensor(cls, tensor: Float[torch.Tensor, " C"]) -> "SparseVectorDTO":
+        assert tensor.ndim == 1, "Tensor must be 1D"
+        l0 = (tensor > 0.0).float().sum().item()
+        (nonzero_indices,) = tensor.nonzero(as_tuple=True)
         return cls(
-            l0=l0,
-            component_cis=ci[nonzero_indices].tolist(),
+            l0=int(l0),
             indices=nonzero_indices.tolist(),
+            values=tensor[nonzero_indices].tolist(),
         )
 
 
 class LayerCIsDTO(BaseModel):
     module: str
-    token_cis: list[TokenCIsDTO]
+    token_cis: list[SparseVectorDTO]
 
 
 class OutputTokenLogitDTO(BaseModel):
@@ -74,10 +75,33 @@ class RunContext:
     train_loader: DataLoader[Any]
 
 
+@dataclass
+class MaskOverrideDTO:
+    id: str
+    description: str | None
+    combined_mask: SparseVectorDTO
+
+
+@dataclass
+class MaskOverride:
+    id: str
+    layer: str
+    combined_mask: Float[Tensor, " C"]
+    description: str | None
+
+    def to_dto(self) -> MaskOverrideDTO:
+        return MaskOverrideDTO(
+            id=self.id,
+            description=self.description,
+            combined_mask=SparseVectorDTO.from_tensor(self.combined_mask),
+        )
+
+
 class AblationService:
     def __init__(self):
         self.run_context: RunContext | None = None
         self.prompt_context: PromptContext | None = None
+        self.mask_overrides: dict[str, MaskOverride] = {}
 
     def get_status(self) -> StatusDTO:
         if self.run_context is None:
@@ -115,8 +139,6 @@ class AblationService:
         assert isinstance(prompt_tokens, list)
         assert isinstance(prompt_tokens[0], str)
 
-        base_model_logits = run.cm.target_model(inputs).logits
-
         target_logits_out, pre_weight_acts = run.cm.forward(
             inputs,
             mode="input_cache",
@@ -129,22 +151,22 @@ class AblationService:
             sampling=run.config.sampling,
         )
 
-        self.prompt_context = PromptContext(
-            prompt=prompt_str,
-            input_token_ids=inputs[0],
-            causal_importances={module: ci[0] for module, ci in causal_importances.items()},
-        )
-
         ci_masked_logits = run.cm(
             inputs,
             mode="components",
             mask_infos=make_mask_infos(causal_importances),
         )
 
+        self.prompt_context = PromptContext(
+            prompt=prompt_str,
+            input_token_ids=inputs[0],
+            causal_importances={module: ci[0] for module, ci in causal_importances.items()},
+        )
+
         layer_causal_importances = [
             LayerCIsDTO(
                 module=module,
-                token_cis=[TokenCIsDTO.from_ci(token_ci) for token_ci in ci],
+                token_cis=[SparseVectorDTO.from_tensor(token_ci) for token_ci in ci],
             )
             for module, ci in self.prompt_context.causal_importances.items()
         ]
@@ -159,17 +181,12 @@ class AblationService:
     TOPK = 5
 
     def ablate_components(
-        self,
-        # prompt: str,
-        component_mask: dict[str, list[list[int]]],
+        self, component_mask: dict[str, list[list[int]]]
     ) -> list[list[OutputTokenLogitDTO]]:
         assert self.run_context is not None, "Run context not found"
         run = self.run_context
 
         assert self.prompt_context is not None, "Prompt context not found"
-        # assert self.prompt_context.prompt == prompt, (
-        #     f"Prompt mismatch, got [{prompt}] != [{self.prompt_context.prompt}]"
-        # )
 
         masked_ci = self.prompt_context.causal_importances.copy()
         for module, token_masks in component_mask.items():
@@ -285,7 +302,9 @@ class AblationService:
             f"Expected {n_nonzero}x{n_nonzero} shape, got {u_pairwise_cosine_similarities.shape}"
         )
 
-        v_singular_vectors: Float[torch.Tensor, "d C"] = run.cm.components[layer].V[:, nonzero_indices]
+        v_singular_vectors: Float[torch.Tensor, "d C"] = run.cm.components[layer].V[
+            :, nonzero_indices
+        ]
         v_pairwise_cosine_similarities = pairwise_cosine_similarities(v_singular_vectors.T)
         assert v_pairwise_cosine_similarities.shape == (n_nonzero, n_nonzero), (
             f"Expected {n_nonzero}x{n_nonzero} shape, got {v_pairwise_cosine_similarities.shape}"
@@ -297,7 +316,41 @@ class AblationService:
             component_indices=nonzero_indices.tolist(),
         )
 
-def pairwise_cosine_similarities(
-    vectors: Float[Tensor, "n d"]
-) -> Float[Tensor, "n n"]:
+    def create_combined_mask(
+        self,
+        layer: str,
+        token_indices: list[int],
+        description: str | None = None,
+        save: bool = True,
+    ) -> MaskOverride:
+        assert self.run_context is not None, "Run context not found"
+        assert self.prompt_context is not None, "Prompt context not found"
+
+        # Get the CIs for the specified layer
+        layer_ci = self.prompt_context.causal_importances[layer]
+
+        # Combine masks using element-wise max
+        token_masks: Float[Tensor, "seq_len C"] = layer_ci[token_indices]
+        combined_mask: Float[Tensor, " C"] = torch.max(token_masks, dim=0).values
+
+        mask_override = MaskOverride(
+            id=str(uuid.uuid4()),
+            layer=layer,
+            combined_mask=combined_mask,
+            description=description,
+        )
+
+        if save:
+            self.mask_overrides[mask_override.id] = mask_override
+
+        return mask_override
+    
+    def get_merge_l0(self, layer: str, token_indices: list[int]) -> int:
+        mask_override = self.create_combined_mask(
+            layer=layer, token_indices=token_indices, description=None, save=False
+        )
+        return SparseVectorDTO.from_tensor(mask_override.combined_mask).l0
+
+
+def pairwise_cosine_similarities(vectors: Float[Tensor, "n d"]) -> Float[Tensor, "n n"]:
     return F.cosine_similarity(vectors[:, None, :], vectors[None, :, :], dim=-1)
