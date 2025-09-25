@@ -8,7 +8,7 @@ from torchmetrics import Metric
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
-from spd.utils.general_utils import calc_kl_divergence_lm
+from spd.utils.general_utils import calc_recon_loss_lm
 
 
 class StochasticReconLayerwiseLoss(Metric):
@@ -48,14 +48,11 @@ class StochasticReconLayerwiseLoss(Metric):
         for stoch_mask_infos in stoch_mask_infos_list:
             for module_name, mask_info in stoch_mask_infos.items():
                 out = self.model(batch, mode="components", mask_infos={module_name: mask_info})
-                if self.config.output_loss_type == "mse":
-                    loss = ((out - target_out) ** 2).sum()
-                else:
-                    loss = calc_kl_divergence_lm(pred=out, target=target_out, reduce=False).sum()
+
+                loss_type = self.config.output_loss_type
+                loss = calc_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
                 self.n_examples += (
-                    out.shape.numel()
-                    if self.config.output_loss_type == "mse"
-                    else out.shape[:-1].numel()
+                    out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
                 )
                 self.sum_loss += loss
 

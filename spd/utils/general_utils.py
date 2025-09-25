@@ -262,6 +262,20 @@ def calc_kl_divergence_lm(
         return kl
 
 
+def calc_recon_loss_lm(
+    pred: Float[Tensor, "... vocab"],
+    target: Float[Tensor, "... vocab"],
+    loss_type: Literal["mse", "kl"],
+) -> Float[Tensor, ""]:
+    """Calculate the reconstruction loss for a language model."""
+    match loss_type:
+        case "mse":
+            loss = ((pred - target) ** 2).sum()
+        case "kl":
+            loss = calc_kl_divergence_lm(pred=pred, target=target, reduce=False).sum()
+    return loss
+
+
 def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
     """Apply nested updates to a dictionary."""
     result = copy.deepcopy(base_dict)

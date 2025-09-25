@@ -9,7 +9,7 @@ from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import sample_uniform_k_subset_routing_masks
-from spd.utils.general_utils import calc_kl_divergence_lm
+from spd.utils.general_utils import calc_recon_loss_lm
 
 
 class CIMaskedReconSubset(Metric):
@@ -24,7 +24,7 @@ class CIMaskedReconSubset(Metric):
     def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model = model
-        self.output_loss_type = config.output_loss_type
+        self.config = config
         self.add_state("sum_loss", torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_examples", torch.tensor(0), dist_reduce_fx="sum")
 
@@ -48,13 +48,9 @@ class CIMaskedReconSubset(Metric):
             weight_deltas_and_masks=None,
         )
         out = self.model(batch, mode="components", mask_infos=mask_infos)
-        if self.output_loss_type == "mse":
-            loss = ((out - target_out) ** 2).sum()
-        else:
-            loss = calc_kl_divergence_lm(pred=out, target=target_out, reduce=False).sum()
-        self.n_examples += (
-            out.shape.numel() if self.output_loss_type == "mse" else out.shape[:-1].numel()
-        )
+        loss_type = self.config.output_loss_type
+        loss = calc_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
+        self.n_examples += out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
         self.sum_loss += loss
 
     @override
