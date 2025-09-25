@@ -66,6 +66,7 @@ export type SimulateMergeRequest = {
 
 export type SimulateMergeResponse = {
     l0: number;
+    jacc: number;
 };
 
 class ApiClient {

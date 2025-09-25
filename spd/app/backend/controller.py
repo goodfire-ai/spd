@@ -154,13 +154,14 @@ class SimulateMergeRequest(BaseModel):
 
 class SimulateMergeResponse(BaseModel):
     l0: int
+    jacc: float
 
 
 @app.post("/simulate_merge")
 def simulate_merge(request: SimulateMergeRequest) -> SimulateMergeResponse:
     """Simulate merging masks without persisting the result"""
-    l0 = service.get_merge_l0(layer=request.layer, token_indices=request.token_indices)
-    return SimulateMergeResponse(l0=l0)
+    l0, jacc = service.get_merge_l0(layer=request.layer, token_indices=request.token_indices)
+    return SimulateMergeResponse(l0=l0, jacc=jacc)
 
 
 @app.get("/mask_overrides")

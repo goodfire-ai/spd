@@ -345,12 +345,58 @@ class AblationService:
 
         return mask_override
     
-    def get_merge_l0(self, layer: str, token_indices: list[int]) -> int:
+    # change this to also return the metric
+    def get_merge_l0(self, layer: str, token_indices: list[int]) -> tuple[int, float]:
+        # Build the combined mask as before (element-wise max)
         mask_override = self.create_combined_mask(
             layer=layer, token_indices=token_indices, description=None, save=False
         )
-        return SparseVectorDTO.from_tensor(mask_override.combined_mask).l0
+        l0 = SparseVectorDTO.from_tensor(mask_override.combined_mask).l0
+
+        # Compute the k-way Jaccard on the original token masks for this layer
+        assert self.prompt_context is not None, "Prompt context not found"
+        layer_ci = self.prompt_context.causal_importances[layer]   # (seq_len, C)
+        token_masks: Float[Tensor, "m C"] = layer_ci[token_indices]
+
+        # Weighted/tensor Jaccard (choose this or the set version below)
+        jacc = k_way_weighted_jaccard(token_masks)
+
+        # If you prefer the set/binary interpretation (presence > 0.0), use:
+        # jacc = k_way_set_jaccard(token_masks, threshold=0.0)
+
+        return l0, jacc
+
 
 
 def pairwise_cosine_similarities(vectors: Float[Tensor, "n d"]) -> Float[Tensor, "n n"]:
     return F.cosine_similarity(vectors[:, None, :], vectors[None, :, :], dim=-1)
+
+def k_way_weighted_jaccard(token_masks: Float[Tensor, "m C"]) -> float:
+    """
+    Weighted (Ruzicka/Tanimoto) k-way Jaccard for nonnegative masks.
+    token_masks: shape (m, C) where m=len(token_indices)
+    Returns a scalar in [0, 1]. If the union is empty, returns 1.0 by convention.
+    """
+    assert token_masks.ndim == 2, "Expected (m, C)"
+    # Assumes nonnegative entries; clamp to be safe against tiny negatives from numerics
+    token_masks = token_masks.clamp_min(0.0)
+    mins = token_masks.min(dim=0).values       # (C,)
+    maxs = token_masks.max(dim=0).values       # (C,)
+    numerator = mins.sum()
+    denominator = maxs.sum()
+    return float(numerator / denominator) if float(denominator) > 0.0 else 1.0
+
+
+# def k_way_set_jaccard(token_masks: Float[Tensor, "m C"], threshold: float = 0.0) -> float:
+#     """
+#     Set-style k-way Jaccard using a presence threshold.
+#     Presence is (value > threshold). Returns |\cap| / |\cup|.
+#     If the union is empty, returns 1.0 by convention.
+#     """
+#     assert token_masks.ndim == 2, "Expected (m, C)"
+#     present = token_masks > threshold           # (m, C) boolean
+#     all_present = present.all(dim=0)            # (C,) in intersection
+#     any_present = present.any(dim=0)            # (C,) in union
+#     inter_size = all_present.sum().item()
+#     union_size = any_present.sum().item()
+#     return float(inter_size / union_size) if union_size > 0 else 1.0

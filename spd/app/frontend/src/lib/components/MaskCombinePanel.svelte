@@ -1,10 +1,11 @@
 <script lang="ts">
-    import { multiSelectMode, selectedTokensForCombining, combinedMasks } from "$lib/stores/componentState";
+    import { multiSelectMode, selectedTokensForCombining } from "$lib/stores/componentState";
     import { api } from "$lib/api";
 
     let combining = false;
     let description = "";
     let simulatedL0: number | null = null;
+    let simulatedJacc: number | null = null;
     let simulating = false;
 
     function toggleMultiSelectMode() {
@@ -13,12 +14,14 @@
             // Clear selections when exiting multi-select mode
             $selectedTokensForCombining = [];
             simulatedL0 = null;
+            simulatedJacc = null;
         }
     }
 
     function clearSelections() {
         $selectedTokensForCombining = [];
         simulatedL0 = null;
+        simulatedJacc = null;
     }
 
     // Reactively simulate merge whenever selections change
@@ -26,12 +29,14 @@
         simulateMergeL0();
     } else {
         simulatedL0 = null;
+        simulatedJacc = null;
     }
 
     async function simulateMergeL0() {
         const layers = getLayersWithSelections();
         if (layers.length !== 1) {
             simulatedL0 = null;
+            simulatedJacc = null;
             return;
         }
 
@@ -42,6 +47,7 @@
 
         if (tokenIndices.length === 0) {
             simulatedL0 = null;
+            simulatedJacc = null;
             return;
         }
 
@@ -52,9 +58,11 @@
                 token_indices: tokenIndices,
             });
             simulatedL0 = response.l0;
+            simulatedJacc = response.jacc;
         } catch (error) {
             console.error("Failed to simulate merge:", error);
             simulatedL0 = null;
+            simulatedJacc = null;
         } finally {
             simulating = false;
         }
@@ -80,25 +88,18 @@
 
         combining = true;
         try {
-            const response = await api.combineMasks({
+            await api.combineMasks({
                 layer,
                 token_indices: tokenIndices,
                 description,
             });
 
-            // Add to combined masks store
-            // $combinedMasks = [...$combinedMasks, {
-            //     layer,
-            //     tokenIndices,
-            //     description: description || `Combined mask for ${layer}`,
-            //     l0: response.mask_override.combined_mask.l0,
-            //     createdAt: Date.now()
-            // }];
-
             // Clear selections after successful combination
             $selectedTokensForCombining = [];
             $multiSelectMode = false;
             description = ""; // Reset description
+            simulatedL0 = null; // Reset simulated L0
+            simulatedJacc = null;
         } catch (error) {
             console.error("Failed to combine masks:", error);
         } finally {
@@ -124,8 +125,14 @@
             </button>
 
             {#if simulatedL0 !== null}
-                <span class="l0-display">
+                <span class="metric-display">
                     L0: {simulating ? "..." : simulatedL0}
+                </span>
+            {/if}
+
+            {#if simulatedJacc !== null}
+                <span class="metric-display">
+                    Jacc: {simulating ? "..." : simulatedJacc}
                 </span>
             {/if}
 
@@ -217,7 +224,7 @@
         font-size: 0.85rem;
     }
 
-    .l0-display {
+    .metric-display {
         padding: 0.5rem 1rem;
         background: #e3f2fd;
         border: 1px solid #2196f3;
