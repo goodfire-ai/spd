@@ -35,6 +35,21 @@ const columnRenderers = {
     modelView: function(value, row, col) {
         const clusterId = row.id;
 
+        // Debug logging
+        console.log('Rendering model view for cluster', clusterId);
+        console.log('clusterData keys:', Object.keys(clusterData));
+        console.log('modelInfo:', modelInfo);
+
+        if (!modelInfo || !modelInfo.module_list) {
+            console.warn('Model info not available');
+            return '<span style="color: #999; font-size: 11px;">Model info loading...</span>';
+        }
+
+        if (!clusterData[clusterId]) {
+            console.warn('Cluster data not found for', clusterId);
+            return '<span style="color: #999; font-size: 11px;">Cluster data missing</span>';
+        }
+
         try {
             // Create compact model architecture visualization
             const architecture = renderModelArchitecture(clusterId, clusterData, modelInfo, 'blues');
@@ -49,8 +64,8 @@ const columnRenderers = {
 
             return container;
         } catch (error) {
-            console.warn('Error rendering model view for cluster', clusterId, error);
-            return '<span style="color: #999; font-size: 11px;">No data</span>';
+            console.error('Error rendering model view for cluster', clusterId, error);
+            return `<span style="color: #999; font-size: 11px;">Error: ${error.message}</span>`;
         }
     },
 
