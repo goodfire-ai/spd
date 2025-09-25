@@ -7,19 +7,20 @@
     export let onClose: () => void;
     export let onToggleComponent: (layerName: string, tokenIdx: number, componentIdx: number) => void;
     export let isComponentDisabled: (layerName: string, tokenIdx: number, componentIdx: number) => boolean;
+    export let promptId: string | null = null;
 
     let similarityData: CosineSimilarityData | null = null;
     let loadingSimilarities = false;
 
     // Load cosine similarities when popup data changes
-    $: if ($popupData) {
-        loadCosineSimilarities($popupData.layer, $popupData.tokenIdx);
+    $: if ($popupData && promptId) {
+        loadCosineSimilarities(promptId, $popupData.layer, $popupData.tokenIdx);
     }
 
-    async function loadCosineSimilarities(layer: string, tokenIdx: number) {
+    async function loadCosineSimilarities(promptId: string, layer: string, tokenIdx: number) {
         loadingSimilarities = true;
         try {
-            similarityData = await api.getCosineSimilarities(layer, tokenIdx);
+            similarityData = await api.getCosineSimilarities(promptId, layer, tokenIdx);
         } catch (error) {
             console.error("Failed to load cosine similarities:", error);
             similarityData = null;

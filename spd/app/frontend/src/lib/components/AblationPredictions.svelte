@@ -1,10 +1,11 @@
 <script lang="ts">
     import TokenPredictions from "./TokenPredictions.svelte";
-    import type { OutputTokenLogit, ComponentMask } from "$lib/api";
+    import type { OutputTokenLogit, ComponentMask, MaskOverrideDTO } from "$lib/api";
 
     export let tokenLogits: OutputTokenLogit[][];
     export let promptTokens: string[];
     export let appliedMask: ComponentMask;
+    export let maskOverride: any = undefined;
 </script>
 
 <div class="ablation-output-section">
@@ -18,17 +19,27 @@
     <div class="ablation-summary">
         <h3>Applied ablations:</h3>
         <div class="applied-ablations">
-            {#each Object.entries(appliedMask) as [layerName, tokenArrays]}
-                {#each tokenArrays as disabledComponents, tokenIdx}
-                    {#if disabledComponents.length > 0}
-                        <div class="applied-ablation-item">
-                            <strong>{promptTokens[tokenIdx]}</strong>
-                            in
-                            <em>{layerName}</em>: disabled components {disabledComponents.join(", ")}
-                        </div>
-                    {/if}
+            {#if maskOverride}
+                <div class="mask-override-info">
+                    <strong>Mask Override Applied:</strong>
+                    <span class="mask-description">{maskOverride.description || "Unnamed mask"}</span>
+                    <span class="mask-details">
+                        (Layer: {maskOverride.layer}, L0: {maskOverride.combined_mask.l0})
+                    </span>
+                </div>
+            {:else}
+                {#each Object.entries(appliedMask) as [layerName, tokenArrays]}
+                    {#each tokenArrays as disabledComponents, tokenIdx}
+                        {#if disabledComponents.length > 0}
+                            <div class="applied-ablation-item">
+                                <strong>{promptTokens[tokenIdx]}</strong>
+                                in
+                                <em>{layerName}</em>: disabled components {disabledComponents.join(", ")}
+                            </div>
+                        {/if}
+                    {/each}
                 {/each}
-            {/each}
+            {/if}
         </div>
     </div>
 </div>
@@ -68,5 +79,24 @@
         border-left: 3px solid #ff6b35;
         font-size: 0.85rem;
         color: #555;
+    }
+
+    .mask-override-info {
+        padding: 0.5rem;
+        background: #e3f2fd;
+        border-left: 3px solid #2196f3;
+        border-radius: 4px;
+        font-size: 0.9rem;
+    }
+
+    .mask-description {
+        font-weight: 600;
+        color: #1976d2;
+    }
+
+    .mask-details {
+        color: #666;
+        font-size: 0.85rem;
+        margin-left: 0.5rem;
     }
 </style>

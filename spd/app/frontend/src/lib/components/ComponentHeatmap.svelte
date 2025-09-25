@@ -2,8 +2,12 @@
     import type { LayerCIs, SparseVector } from "$lib/api";
     import { runAblation, multiSelectMode, selectedTokensForCombining, type SelectedToken } from "$lib/stores/componentState";
     import MaskCombinePanel from "./MaskCombinePanel.svelte";
+    import { createEventDispatcher } from "svelte";
+
+    const dispatch = createEventDispatcher();
 
     export let result: { layer_cis: LayerCIs[]; prompt_tokens: string[] };
+    export let promptId: string;
     export let onCellClick: (
         token: string,
         tokenIdx: number,
@@ -11,6 +15,10 @@
         layerIdx: number,
         tokenCis: SparseVector
     ) => void;
+
+    function handleMaskCreated() {
+        dispatch('maskCreated');
+    }
 
     function handleCellClick(
         token: string,
@@ -73,7 +81,7 @@
 </script>
 
 <div class="heatmap-container">
-    <MaskCombinePanel />
+    <MaskCombinePanel {promptId} on:maskCreated={handleMaskCreated} />
     <div class="heatmap-container-horiz">
         <div class="layer-labels">
             <div class="layer-label-spacer"></div>

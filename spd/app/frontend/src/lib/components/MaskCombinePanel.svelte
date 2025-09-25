@@ -1,6 +1,11 @@
 <script lang="ts">
     import { multiSelectMode, selectedTokensForCombining } from "$lib/stores/componentState";
     import { api } from "$lib/api";
+    import { createEventDispatcher } from "svelte";
+
+    const dispatch = createEventDispatcher();
+
+    export let promptId: string;
 
     let combining = false;
     let description = "";
@@ -25,7 +30,7 @@
     }
 
     // Reactively simulate merge whenever selections change
-    $: if ($selectedTokensForCombining.length > 0 && getLayersWithSelections().length === 1) {
+    $: if ($selectedTokensForCombining.length > 0 && layersWithSelections.length === 1) {
         simulateMergeL0();
     } else {
         simulatedL0 = null;
@@ -33,14 +38,13 @@
     }
 
     async function simulateMergeL0() {
-        const layers = getLayersWithSelections();
-        if (layers.length !== 1) {
+        if (layersWithSelections.length !== 1) {
             simulatedL0 = null;
             simulatedJacc = null;
             return;
         }
 
-        const layer = layers[0];
+        const layer = layersWithSelections[0];
         const tokenIndices = $selectedTokensForCombining
             .filter((t) => t.layer === layer)
             .map((t) => t.tokenIdx);
@@ -53,10 +57,7 @@
 
         simulating = true;
         try {
-            const response = await api.simulateMerge({
-                layer,
-                token_indices: tokenIndices,
-            });
+            const response = await api.simulateMerge(promptId, layer, tokenIndices);
             simulatedL0 = response.l0;
             simulatedJacc = response.jacc;
         } catch (error) {
@@ -68,31 +69,27 @@
         }
     }
 
-    function getLayersWithSelections(): string[] {
+    // Make this reactive
+    $: layersWithSelections = (() => {
         const layers = new Set<string>();
         $selectedTokensForCombining.forEach((token) => layers.add(token.layer));
         return Array.from(layers);
-    }
+    })();
 
 
     async function combineMasks() {
         if (combining) return;
 
-        const layers = getLayersWithSelections();
-        if (layers.length !== 1) return;
+        if (layersWithSelections.length !== 1) return;
 
-        const layer = layers[0];
+        const layer = layersWithSelections[0];
         const tokenIndices = $selectedTokensForCombining
             .filter((t) => t.layer === layer)
             .map((t) => t.tokenIdx);
 
         combining = true;
         try {
-            await api.combineMasks({
-                layer,
-                token_indices: tokenIndices,
-                description,
-            });
+            await api.combineMasks(promptId, layer, tokenIndices, description);
 
             // Clear selections after successful combination
             $selectedTokensForCombining = [];
@@ -100,6 +97,9 @@
             description = ""; // Reset description
             simulatedL0 = null; // Reset simulated L0
             simulatedJacc = null;
+
+            // Notify parent to refresh saved masks
+            dispatch('maskCreated');
         } catch (error) {
             console.error("Failed to combine masks:", error);
         } finally {
@@ -138,14 +138,20 @@
 
             <button
                 class="combine-btn"
-                disabled={getLayersWithSelections().length !== 1 || combining}
+                disabled={layersWithSelections.length !== 1 || combining}
                 on:click={combineMasks}
             >
                 {combining ? "Combining..." : "Combine Masks"}
             </button>
 
-            {#if getLayersWithSelections().length > 1}
-                <span class="warning"> ⚠️ Multiple layers selected </span>
+            {#if layersWithSelections.length > 1}
+                <div class="multi-layer-warning">
+                    <span class="warning-icon">⚠️</span>
+                    <span class="warning-text">
+                        Multi-select only available on a single layer.
+                        Please clear selections and select from one layer only.
+                    </span>
+                </div>
             {/if}
         {/if}
     </div>
@@ -222,6 +228,31 @@
         padding: 0.25rem 0.5rem;
         color: #856404;
         font-size: 0.85rem;
+    }
+
+    .multi-layer-warning {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        padding: 0.75rem;
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-left: 4px solid #ff6b35;
+        border-radius: 6px;
+        color: #664d03;
+        max-width: 400px;
+        margin: 0.5rem 0;
+    }
+
+    .warning-icon {
+        font-size: 1.2rem;
+        margin-top: 0.1rem;
+    }
+
+    .warning-text {
+        font-size: 0.9rem;
+        line-height: 1.4;
+        font-weight: 500;
     }
 
     .metric-display {

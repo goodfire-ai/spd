@@ -79,7 +79,14 @@ class RunContext:
 class MaskOverrideDTO:
     id: str
     description: str | None
+    layer: str
     combined_mask: SparseVectorDTO
+
+
+class AvailablePromptDTO(BaseModel):
+    index: int
+    text: str
+    full_text: str
 
 
 @dataclass
@@ -93,6 +100,7 @@ class MaskOverride:
         return MaskOverrideDTO(
             id=self.id,
             description=self.description,
+            layer=self.layer,
             combined_mask=SparseVectorDTO.from_tensor(self.combined_mask),
         )
 
@@ -100,7 +108,7 @@ class MaskOverride:
 class AblationService:
     def __init__(self):
         self.run_context: RunContext | None = None
-        self.prompt_context: PromptContext | None = None
+        self.prompt_contexts: dict[str, PromptContext] = {}  # Multiple prompts by ID
         self.mask_overrides: dict[str, MaskOverride] = {}
 
     def get_status(self) -> StatusDTO:
@@ -113,10 +121,18 @@ class AblationService:
         return StatusDTO(
             loaded=True,
             run_id=self.run_context.wandb_id,
-            prompt=self.prompt_context.prompt if self.prompt_context is not None else None,
+            prompt=None,  # No "current" prompt anymore
         )
 
-    def run_prompt(self, prompt: str | torch.Tensor):
+    def run_prompt(
+        self, prompt: str | torch.Tensor
+    ) -> tuple[
+        str,
+        list[str],
+        list[LayerCIsDTO],
+        list[list[OutputTokenLogitDTO]],
+        list[list[OutputTokenLogitDTO]],
+    ]:
         assert self.run_context is not None, "Run context not found"
         run = self.run_context
 
@@ -157,21 +173,121 @@ class AblationService:
             mask_infos=make_mask_infos(causal_importances),
         )
 
-        self.prompt_context = PromptContext(
+        # Generate a unique prompt ID
+        prompt_id = str(uuid.uuid4())
+
+        # Store the prompt context with its ID
+        prompt_context = PromptContext(
             prompt=prompt_str,
             input_token_ids=inputs[0],
             causal_importances={module: ci[0] for module, ci in causal_importances.items()},
         )
+        self.prompt_contexts[prompt_id] = prompt_context
 
         layer_causal_importances = [
             LayerCIsDTO(
                 module=module,
                 token_cis=[SparseVectorDTO.from_tensor(token_ci) for token_ci in ci],
             )
-            for module, ci in self.prompt_context.causal_importances.items()
+            for module, ci in prompt_context.causal_importances.items()
         ]
 
         return (
+            prompt_id,  # Return the prompt ID first
+            prompt_tokens,
+            layer_causal_importances,
+            self.logits_to_token_logits(target_logits_out),
+            self.logits_to_token_logits(ci_masked_logits),
+        )
+
+    def run_prompt_with_mask_override(self, prompt: str | torch.Tensor, mask_override_id: str):
+        """Run a prompt with a saved mask override applied to all tokens."""
+        assert self.run_context is not None, "Run context not found"
+        assert mask_override_id in self.mask_overrides, (
+            f"Mask override {mask_override_id} not found"
+        )
+
+        run = self.run_context
+        mask_override = self.mask_overrides[mask_override_id]
+
+        # Process prompt as normal
+        match prompt:
+            case str():
+                inputs = runtime_cast(
+                    torch.Tensor, run.tokenizer.encode(prompt, return_tensors="pt")
+                )
+                assert inputs.ndim == 2, "Inputs must be 2D (batch, seq_len)"
+                assert inputs.shape[0] == 1, "Inputs must not be batched"
+                prompt_str = prompt[:]
+                assert prompt_str == prompt
+            case torch.Tensor():
+                inputs = prompt
+                assert inputs.ndim == 1, "Inputs must be 1D (seq_len)"
+                prompt_str = run.tokenizer.decode(inputs)  # pyright: ignore[reportAttributeAccessIssue]
+                inputs = inputs[None]
+
+        prompt_tokens = cast(list[str], run.tokenizer.batch_decode(inputs[0]))  # pyright: ignore[reportAttributeAccessIssue]
+        assert isinstance(prompt_tokens, list)
+        assert isinstance(prompt_tokens[0], str)
+
+        # Get normal forward pass
+        target_logits_out, pre_weight_acts = run.cm.forward(
+            inputs,
+            mode="input_cache",
+            module_names=list(run.cm.components.keys()),
+        )
+
+        # Calculate causal importances normally
+        causal_importances, _ = run.cm.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts,
+            sigmoid_type=run.config.sigmoid_type,
+            sampling=run.config.sampling,
+        )
+
+        # Override the causal importances for the specified layer
+        # Apply the mask to ALL tokens
+        seq_len = inputs.shape[1]
+        overridden_ci = causal_importances.copy()
+        if mask_override.layer in overridden_ci:
+            # Broadcast the saved mask to all token positions
+            existing_shape = overridden_ci[mask_override.layer].shape
+            new_mask = mask_override.combined_mask.unsqueeze(0).expand(seq_len, -1)
+            assert new_mask.shape == existing_shape, (
+                f"Expected {existing_shape}, got {new_mask.shape}"
+            )
+            overridden_ci[mask_override.layer] = new_mask
+
+        # Run with overridden mask
+        ci_masked_logits = run.cm(
+            inputs,
+            mode="components",
+            mask_infos=make_mask_infos(overridden_ci),
+        )
+
+        # Store context
+        # Generate a unique prompt ID
+        prompt_id = str(uuid.uuid4())
+
+        # Store the prompt context with overridden masks
+        self.prompt_contexts[prompt_id] = PromptContext(
+            prompt=prompt_str,
+            input_token_ids=inputs[0],
+            causal_importances={
+                module: ci[0] if ci.ndim == 2 else ci for module, ci in overridden_ci.items()
+            },
+        )
+
+        # Format response
+        layer_causal_importances = [
+            LayerCIsDTO(
+                module=module,
+                token_cis=[SparseVectorDTO.from_tensor(token_ci) for token_ci in ci],
+            )
+            for module, ci in self.prompt_contexts[prompt_id].causal_importances.items()
+        ]
+
+        return (
+            prompt_id,  # Return prompt ID first
             prompt_tokens,
             layer_causal_importances,
             self.logits_to_token_logits(target_logits_out),
@@ -180,21 +296,56 @@ class AblationService:
 
     TOPK = 5
 
+    def ablate_with_mask_override(
+        self, prompt_id: str, mask_override_id: str
+    ) -> list[list[OutputTokenLogitDTO]]:
+        """Apply a saved mask override as an ablation to a specific prompt."""
+        assert self.run_context is not None, "Run context not found"
+        assert prompt_id in self.prompt_contexts, f"Prompt {prompt_id} not found"
+        assert mask_override_id in self.mask_overrides, (
+            f"Mask override {mask_override_id} not found"
+        )
+
+        run = self.run_context
+        mask_override = self.mask_overrides[mask_override_id]
+        prompt_context = self.prompt_contexts[prompt_id]
+
+        # Start with the prompt's causal importances
+        masked_ci = prompt_context.causal_importances.copy()
+
+        # Override the specified layer with the saved mask for ALL tokens
+        if mask_override.layer in masked_ci:
+            seq_len = len(prompt_context.input_token_ids)
+            # Expand the mask to all token positions
+            masked_ci[mask_override.layer] = mask_override.combined_mask.unsqueeze(0).expand(
+                seq_len, -1
+            )
+
+        # Run with the mask override
+        ci_masked_logits = run.cm(
+            prompt_context.input_token_ids[None],
+            mode="components",
+            mask_infos=make_mask_infos(masked_ci),
+        )
+
+        return self.logits_to_token_logits(ci_masked_logits)
+
     def ablate_components(
-        self, component_mask: dict[str, list[list[int]]]
+        self, prompt_id: str, component_mask: dict[str, list[list[int]]]
     ) -> list[list[OutputTokenLogitDTO]]:
         assert self.run_context is not None, "Run context not found"
+        assert prompt_id in self.prompt_contexts, f"Prompt {prompt_id} not found"
+
         run = self.run_context
+        prompt_context = self.prompt_contexts[prompt_id]
 
-        assert self.prompt_context is not None, "Prompt context not found"
-
-        masked_ci = self.prompt_context.causal_importances.copy()
+        masked_ci = prompt_context.causal_importances.copy()
         for module, token_masks in component_mask.items():
             for token_idx, token_mask in enumerate(token_masks):
                 masked_ci[module][token_idx][token_mask] = 0
 
         ci_masked_logits = run.cm(
-            self.prompt_context.input_token_ids[None],
+            prompt_context.input_token_ids[None],
             mode="components",
             mask_infos=make_mask_infos(masked_ci),
         )
@@ -268,18 +419,54 @@ class AblationService:
             train_loader=train_loader,
         )
 
-    def get_random_prompt(self) -> torch.Tensor:
+    def get_available_prompts(self) -> list[AvailablePromptDTO]:
+        """Get first 100 prompts from the dataset with their indices and text."""
         assert (ctx := self.run_context) is not None, "Run context not found"
-        import random
 
-        idx = random.randint(0, 1000)
-        example = ctx.train_loader.dataset[idx]["input_ids"]
+        prompts = []
+        for idx in range(min(100, len(ctx.train_loader.dataset))):  # pyright: ignore[reportArgumentType]
+            example = ctx.train_loader.dataset[idx]["input_ids"]
+            assert isinstance(example, torch.Tensor)
+            assert example.ndim == 1, "Example must be 1D (seq_len)"
+
+            # Decode to text for display
+            text = ctx.tokenizer.decode(example, skip_special_tokens=True)  # pyright: ignore[reportAttributeAccessIssue]
+
+            prompts.append(
+                AvailablePromptDTO(
+                    index=idx,
+                    text=text[:200] + "..." if len(text) > 200 else text,  # Truncate for display
+                    full_text=text,
+                )
+            )
+
+        return prompts
+
+    def run_prompt_by_index(
+        self, dataset_index: int
+    ) -> tuple[
+        str,
+        list[str],
+        list[LayerCIsDTO],
+        list[list[OutputTokenLogitDTO]],
+        list[list[OutputTokenLogitDTO]],
+    ]:
+        """Run a specific prompt from the dataset by index."""
+        assert (ctx := self.run_context) is not None, "Run context not found"
+
+        if dataset_index >= len(ctx.train_loader.dataset):  # pyright: ignore[reportArgumentType]
+            raise ValueError(
+                f"Index {dataset_index} out of range for dataset of size {len(ctx.train_loader.dataset)}"
+            )  # pyright: ignore[reportArgumentType]
+
+        example = ctx.train_loader.dataset[dataset_index]["input_ids"]
         assert isinstance(example, torch.Tensor)
         assert example.ndim == 1, "Example must be 1D (seq_len)"
-        return example
+
+        return self.run_prompt(example)
 
     def get_cosine_similarities(
-        self, layer: str, token_idx: int
+        self, prompt_id: str, layer: str, token_idx: int
     ) -> TokenLayerCosineSimilarityDataDTO:
         assert (run := self.run_context) is not None, "Run context not found"
 
@@ -287,7 +474,7 @@ class AblationService:
 
         assert layer in run.cm.components, f"Layer {layer} not found"
 
-        assert (pc := self.prompt_context) is not None, "Prompt context not found"
+        pc = self.prompt_contexts[prompt_id]
 
         ci = pc.causal_importances[layer][token_idx]
         assert ci.shape == (C,), f"Expected {C} CI, got {ci.shape}"
@@ -318,16 +505,18 @@ class AblationService:
 
     def create_combined_mask(
         self,
+        prompt_id: str,
         layer: str,
         token_indices: list[int],
         description: str | None = None,
         save: bool = True,
     ) -> MaskOverride:
         assert self.run_context is not None, "Run context not found"
-        assert self.prompt_context is not None, "Prompt context not found"
+        assert prompt_id in self.prompt_contexts, f"Prompt {prompt_id} not found"
 
         # Get the CIs for the specified layer
-        layer_ci = self.prompt_context.causal_importances[layer]
+        prompt_context = self.prompt_contexts[prompt_id]
+        layer_ci = prompt_context.causal_importances[layer]
 
         # Combine masks using element-wise max
         token_masks: Float[Tensor, "seq_len C"] = layer_ci[token_indices]
@@ -344,18 +533,25 @@ class AblationService:
             self.mask_overrides[mask_override.id] = mask_override
 
         return mask_override
-    
+
     # change this to also return the metric
-    def get_merge_l0(self, layer: str, token_indices: list[int]) -> tuple[int, float]:
+    def get_merge_l0(
+        self, prompt_id: str, layer: str, token_indices: list[int]
+    ) -> tuple[int, float]:
         # Build the combined mask as before (element-wise max)
         mask_override = self.create_combined_mask(
-            layer=layer, token_indices=token_indices, description=None, save=False
+            prompt_id=prompt_id,
+            layer=layer,
+            token_indices=token_indices,
+            description=None,
+            save=False,
         )
         l0 = SparseVectorDTO.from_tensor(mask_override.combined_mask).l0
 
         # Compute the k-way Jaccard on the original token masks for this layer
-        assert self.prompt_context is not None, "Prompt context not found"
-        layer_ci = self.prompt_context.causal_importances[layer]   # (seq_len, C)
+        assert prompt_id in self.prompt_contexts, f"Prompt {prompt_id} not found"
+        prompt_context = self.prompt_contexts[prompt_id]
+        layer_ci = prompt_context.causal_importances[layer]  # (seq_len, C)
         token_masks: Float[Tensor, "m C"] = layer_ci[token_indices]
 
         # Weighted/tensor Jaccard (choose this or the set version below)
@@ -367,9 +563,9 @@ class AblationService:
         return l0, jacc
 
 
-
 def pairwise_cosine_similarities(vectors: Float[Tensor, "n d"]) -> Float[Tensor, "n n"]:
     return F.cosine_similarity(vectors[:, None, :], vectors[None, :, :], dim=-1)
+
 
 def k_way_weighted_jaccard(token_masks: Float[Tensor, "m C"]) -> float:
     """
@@ -380,23 +576,8 @@ def k_way_weighted_jaccard(token_masks: Float[Tensor, "m C"]) -> float:
     assert token_masks.ndim == 2, "Expected (m, C)"
     # Assumes nonnegative entries; clamp to be safe against tiny negatives from numerics
     token_masks = token_masks.clamp_min(0.0)
-    mins = token_masks.min(dim=0).values       # (C,)
-    maxs = token_masks.max(dim=0).values       # (C,)
+    mins = token_masks.min(dim=0).values  # (C,)
+    maxs = token_masks.max(dim=0).values  # (C,)
     numerator = mins.sum()
     denominator = maxs.sum()
     return float(numerator / denominator) if float(denominator) > 0.0 else 1.0
-
-
-# def k_way_set_jaccard(token_masks: Float[Tensor, "m C"], threshold: float = 0.0) -> float:
-#     """
-#     Set-style k-way Jaccard using a presence threshold.
-#     Presence is (value > threshold). Returns |\cap| / |\cup|.
-#     If the union is empty, returns 1.0 by convention.
-#     """
-#     assert token_masks.ndim == 2, "Expected (m, C)"
-#     present = token_masks > threshold           # (m, C) boolean
-#     all_present = present.all(dim=0)            # (C,) in intersection
-#     any_present = present.any(dim=0)            # (C,) in union
-#     inter_size = all_present.sum().item()
-#     union_size = any_present.sum().item()
-#     return float(inter_size / union_size) if union_size > 0 else 1.0

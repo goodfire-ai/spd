@@ -1,5 +1,5 @@
 import { writable } from "svelte/store";
-import type { ComponentMask, OutputTokenLogit, SparseVector } from "$lib/api";
+import type { ComponentMask, OutputTokenLogit, SparseVector, RunPromptResponse } from "$lib/api";
 
 
 
@@ -15,6 +15,7 @@ export interface AblationResult {
     tokenLogits: OutputTokenLogit[][];
     applied_mask: ComponentMask;
     id: number;
+    maskOverride?: any; // MaskOverrideDTO when a saved mask was applied
 }
 
 export interface SelectedToken {
@@ -37,6 +38,13 @@ export interface CombinedMask {
     createdAt: number;
 }
 
+export interface PromptWorkspace {
+    promptId: string;
+    promptData: RunPromptResponse;
+    ablationResults: AblationResult[];
+    runAblation: ComponentMask;
+}
+
 export const runAblation = writable<ComponentMask>({});
 export const popupData = writable<PopupData | null>(null);
 export const ablationResults = writable<AblationResult[]>([]);
@@ -46,3 +54,7 @@ export const isScrolling = writable(false);
 export const multiSelectMode = writable(false);
 export const selectedTokensForCombining = writable<SelectedToken[]>([]);
 export const combinedMasks = writable<CombinedMask[]>([]);
+
+// Multi-prompt workspace management
+export const promptWorkspaces = writable<PromptWorkspace[]>([]);
+export const currentWorkspaceIndex = writable<number>(0);

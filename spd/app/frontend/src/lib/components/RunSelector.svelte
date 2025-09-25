@@ -4,7 +4,6 @@
     export let wandbRunId: string | null = null;
     export let loadingRun: boolean = false;
     export let isLoading: boolean = false;
-    export let onRunLoaded: () => Promise<void>;
 
     const presetRuns = [
         { id: "ry05f67a", label: "Run ry05f67a" },
@@ -17,7 +16,6 @@
         loadingRun = true;
         try {
             await api.loadRun(wandbRunId);
-            await onRunLoaded();
         } catch (error: any) {
             console.error(`Error loading run: ${error.message}`);
             alert(`Failed to load run: ${error.message}`);
