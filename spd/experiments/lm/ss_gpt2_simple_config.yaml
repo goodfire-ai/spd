@@ -65,7 +65,7 @@ eval_metric_configs:
     extra_init_kwargs:
       rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
-  - classname: "SubsetReconstructionLoss"
+  - classname: "SubsetReconCEAndKL"
     extra_init_kwargs:
       n_mask_samples: 1
       include_patterns:

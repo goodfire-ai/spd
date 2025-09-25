@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from fnmatch import fnmatch
 from typing import Any, override
 
@@ -16,7 +15,7 @@ from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
-class SubsetReconstructionLoss(Metric):
+class SubsetReconCEAndKL(Metric):
     """Compute reconstruction loss for specific subsets of components.
 
     NOTE: Assumes all batches and sequences are the same size.
@@ -85,7 +84,7 @@ class SubsetReconstructionLoss(Metric):
             getattr(self, sanitized_key).append(value)
 
     @override
-    def compute(self) -> Mapping[str, float | str]:
+    def compute(self) -> dict[str, float | str]:
         results: dict[str, float | str] = {}
         for sanitized_key, key in self.sanitized_to_key.items():
             vals: list[float] = getattr(self, sanitized_key)

@@ -9,6 +9,30 @@ from spd.configs import Config
 from spd.models.component_model import ComponentModel
 
 
+def _faithfulness_loss_update(
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
+) -> tuple[Float[Tensor, ""], int]:
+    assert weight_deltas, "Empty weight deltas"
+    device = next(iter(weight_deltas.values())).device
+    sum_loss = torch.tensor(0.0, device=device)
+    total_params = 0
+    for delta in weight_deltas.values():
+        sum_loss += (delta**2).sum()
+        total_params += delta.numel()
+    return sum_loss, total_params
+
+
+def _faithfulness_loss_compute(
+    sum_loss: Float[Tensor, ""], total_params: Int[Tensor, ""] | int
+) -> Float[Tensor, ""]:
+    return sum_loss / total_params
+
+
+def faithfulness_loss(weight_deltas: dict[str, Float[Tensor, "d_out d_in"]]) -> Float[Tensor, ""]:
+    sum_loss, total_params = _faithfulness_loss_update(weight_deltas)
+    return _faithfulness_loss_compute(sum_loss, total_params)
+
+
 class FaithfulnessLoss(Metric):
     """MSE between the target weights and the sum of the components."""
 
@@ -30,10 +54,10 @@ class FaithfulnessLoss(Metric):
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **kwargs: Any,
     ) -> None:
-        for delta in weight_deltas.values():
-            self.sum_loss += (delta**2).sum()
-            self.total_params += delta.numel()
+        sum_loss, total_params = _faithfulness_loss_update(weight_deltas)
+        self.sum_loss += sum_loss
+        self.total_params += total_params
 
     @override
     def compute(self) -> Float[Tensor, ""]:
-        return self.sum_loss / self.total_params
+        return _faithfulness_loss_compute(self.sum_loss, self.total_params)

@@ -359,6 +359,20 @@ class Config(BaseModel):
             del config_dict["importance_minimality_coeff"]
             del config_dict["pnorm"]
 
+        # Remove SubsetReconstructionLoss if it appears
+        if "loss_metric_configs" in config_dict and any(
+            cfg.classname == "SubsetReconstructionLoss"
+            for cfg in config_dict["loss_metric_configs"]
+        ):
+            logger.warning(
+                "SubsetReconstructionLoss is deprecated, replacing with SubsetReconCEAndKL"
+            )
+            config_dict["loss_metric_configs"] = [
+                cfg
+                for cfg in config_dict["loss_metric_configs"]
+                if cfg.classname != "SubsetReconstructionLoss"
+            ]
+
         for key in list(config_dict.keys()):
             val = config_dict[key]
             if key in cls.DEPRECATED_CONFIG_KEYS:
