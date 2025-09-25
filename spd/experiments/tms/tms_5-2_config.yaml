@@ -1,6 +1,6 @@
 # TMS 5-2 (Non-identity)
 # --- WandB ---
-# wandb_project: spd
+wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
@@ -43,6 +43,7 @@ save_freq: null
 ci_alive_threshold: 0.1
 n_examples_until_dead: 4_096_000
 eval_metric_configs:
+  - classname: "FaithfulnessLoss"
   - classname: "CIHistograms"
     extra_init_kwargs:
       n_batches_accum: 5
