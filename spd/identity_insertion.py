@@ -10,7 +10,6 @@ the model, namely, allowing us to decompose the identity operation.
 from typing import Any
 
 import torch.nn as nn
-from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.log import logger
 from spd.models.components import Identity
@@ -51,15 +50,15 @@ def insert_identity_operations_(target_model: nn.Module, identity_patterns: list
     for module_path in identity_module_paths:
         module = target_model.get_submodule(module_path)
 
-        match module:
-            case nn.Linear():
-                _, d_in = module.weight.shape
-            case RadfordConv1D():
-                d_in, _ = module.weight.shape
-            case nn.Embedding():
-                raise ValueError("Embedding modules not supported for identity insertion")
-            case _:
-                raise ValueError(f"Module {module} not supported. type: {type(module)}")
+        # match module:
+        #     case nn.Linear():
+        #         _, d_in = module.weight.shape
+        #     case RadfordConv1D():
+        #         d_in, _ = module.weight.shape
+        #     case nn.Embedding():
+        #         raise ValueError("Embedding modules not supported for identity insertion")
+        #     case _:
+        #         raise ValueError(f"Module {module} not supported. type: {type(module)}")
 
         module.pre_identity = Identity(d_in)  # type: ignore
         module.register_forward_pre_hook(pre_id_hook, with_kwargs=True)
