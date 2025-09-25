@@ -23,7 +23,7 @@ stochastic_recon_coeff: 1.0
 ci_recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1.0
 importance_minimality_coeff: 1e-5
-pnorm: 2
+pnorm: 1.0
 output_loss_type: mse
 
 # --- Training ---
@@ -33,6 +33,7 @@ steps: 50_000
 lr: 1e-3
 lr_schedule: constant
 lr_warmup_pct: 0.00
+optimizer_reset_step: 25_000  # Reset optimizer at 50% through training
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200

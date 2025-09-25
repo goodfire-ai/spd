@@ -209,6 +209,10 @@ class Config(BaseModel):
         default=1,
         description="Number of steps to accumulate gradients over before updating parameters",
     )
+    optimizer_reset_step: NonNegativeInt | None = Field(
+        default=None,
+        description="Step at which to reset optimizer state (None = no reset). Useful for clearing momentum buffers mid-training.",
+    )
 
     # --- Faithfulness Warmup ---
     faithfulness_warmup_steps: NonNegativeInt = Field(

@@ -372,6 +372,15 @@ def optimize(
         if step != config.steps:
             sync_across_processes()
             optimizer.step()
+            
+            # Reset optimizer state if specified
+            if config.optimizer_reset_step is not None and step == config.optimizer_reset_step:
+                if is_main_process():
+                    logger.info(f"Resetting optimizer state at step {step}")
+                # Create a new optimizer with the same parameters to reset state
+                optimizer = optim.AdamW(component_params + gate_params, lr=config.lr, weight_decay=0)
+                # Reset learning rate schedule to start fresh from current step
+                lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
 
     if is_main_process():
         logger.info("Finished training loop.")
