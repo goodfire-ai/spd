@@ -263,38 +263,38 @@ async function loadData() {
             columns: [
                 {
                     key: 'id',
-                    label: 'Cluster ID',
+                    label: 'ID',
                     type: 'number',
-                    width: '80px',
+                    width: '10px',
                     align: 'center'
                 },
                 {
                     key: 'componentCount',
                     label: 'Model View',
                     type: 'number',
-                    width: '220px',
+                    width: '160px',
                     align: 'center',
                     renderer: columnRenderers.modelView
                 },
                 {
                     key: 'componentCount',
-                    label: 'Components',
+                    label: 'Comps',
                     type: 'number',
-                    width: '100px',
+                    width: '50px',
                     align: 'right'
                 },
                 {
                     key: 'modules',
                     label: 'Modules',
                     type: 'string',
-                    width: '180px',
+                    width: '100px',
                     renderer: columnRenderers.modulesSummary
                 },
                 {
                     key: 'allActivations',
-                    label: 'Activation Histogram',
+                    label: 'Histogram',
                     type: 'string',
-                    width: '140px',
+                    width: '100px',
                     align: 'center',
                     renderer: columnRenderers.activationHistogram
                 },
@@ -302,46 +302,46 @@ async function loadData() {
                     key: 'sampleCount',
                     label: 'Samples',
                     type: 'number',
-                    width: '80px',
+                    width: '50px',
                     align: 'right'
                 },
                 {
                     key: 'maxActivation',
-                    label: 'Max Act',
+                    label: 'Max',
                     type: 'number',
-                    width: '90px',
+                    width: '60px',
                     align: 'right',
-                    renderer: (value) => value.toFixed(4)
+                    renderer: (value) => value.toFixed(3)
                 },
                 {
                     key: 'meanActivation',
-                    label: 'Mean Act',
+                    label: 'Mean',
                     type: 'number',
-                    width: '90px',
+                    width: '60px',
                     align: 'right',
-                    renderer: (value) => value.toFixed(4)
+                    renderer: (value) => value.toFixed(3)
                 },
                 {
                     key: 'medianActivation',
-                    label: 'Median Act',
+                    label: 'Med',
                     type: 'number',
-                    width: '90px',
+                    width: '60px',
                     align: 'right',
-                    renderer: (value) => value.toFixed(4)
+                    renderer: (value) => value.toFixed(3)
                 },
                 {
                     key: 'minActivation',
-                    label: 'Min Act',
+                    label: 'Min',
                     type: 'number',
-                    width: '90px',
+                    width: '60px',
                     align: 'right',
-                    renderer: (value) => value.toFixed(6)
+                    renderer: (value) => value.toFixed(4)
                 },
                 {
                     key: 'id',
                     label: 'Actions',
                     type: 'string',
-                    width: '80px',
+                    width: '50px',
                     align: 'center',
                     renderer: columnRenderers.clusterLink
                 }

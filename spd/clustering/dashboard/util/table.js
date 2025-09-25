@@ -65,7 +65,12 @@ class DataTable {
             const th = document.createElement('th');
             th.className = 'datatable-header';
             th.style.position = 'relative';
-            th.style.minWidth = col.width || '100px';
+            if (col.width) {
+                th.style.width = col.width;
+                th.style.minWidth = col.width;
+            } else {
+                th.style.minWidth = '10px';
+            }
 
             // Apply column alignment
             if (col.align) {
