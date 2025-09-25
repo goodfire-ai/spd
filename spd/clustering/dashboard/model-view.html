@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cluster Component Distribution</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        #modelContainer {
+            margin: 10px;
+            padding: 10px;
+        }
+
+        .layer-block {
+            margin: 2px 0;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .layer-label {
+            width: 30px;
+            font-size: 10px;
+            color: #666;
+            text-align: center;
+        }
+
+        .module-group {
+            display: flex;
+            gap: 1px;
+            border: 1px solid #ddd;
+            padding: 1px;
+        }
+
+        .module-cell {
+            width: 12px;
+            height: 12px;
+            background: #f0f0f0;
+            border-radius: 1px;
+            cursor: pointer;
+        }
+
+
+        .legend {
+            margin: 10px;
+            padding: 8px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
+        .legend-scale {
+            display: flex;
+            height: 12px;
+            border: 1px solid #ddd;
+            border-radius: 1px;
+            overflow: hidden;
+            margin: 3px 0;
+        }
+
+        .legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+        }
+
+        #controls {
+            margin: 10px;
+            padding: 8px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+
+        #controls select, #controls input {
+            margin: 0 5px;
+            padding: 2px;
+            font-size: 11px;
+        }
+
+        #tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 4px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            white-space: pre-line;
+            z-index: 100;
+            pointer-events: none;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Model Architecture Visualization</h1>
+
+    <div id="controls">
+        <label>Cluster ID: <input type="number" id="clusterInput" placeholder="0" min="0"></label>
+        <label>Data File:
+            <select id="dataFile">
+                <option value="max_activations_iter-1_n4.json">Iteration 1 (n=4)</option>
+                <option value="max_activations_iter7375_n4.json">Iteration 7375 (n=4)</option>
+                <option value="max_activations_iter7375_n16.json" selected>Iteration 7375 (n=16)</option>
+            </select>
+        </label>
+        <label>Colormap:
+            <select id="colormapSelect">
+                <option value="blues">Blues</option>
+                <option value="reds">Reds</option>
+                <option value="viridis">Viridis</option>
+                <option value="plasma">Plasma</option>
+            </select>
+        </label>
+    </div>
+
+    <div class="legend">
+        <div class="legend-title">Components for Cluster <span id="clusterLabel">-</span></div>
+        <div class="legend-scale" id="legendScale"></div>
+        <div class="legend-labels">
+            <span id="minLabel">0</span>
+            <span id="maxLabel">Max</span>
+        </div>
+    </div>
+
+    <div id="modelContainer">
+        <div id="loading">Loading model data...</div>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <div style="margin: 20px;">
+        <a href="index.html">← Back to Cluster Selection</a>
+    </div>
+
+    <script src="model-visualization.js"></script>
+</body>
+</html>
