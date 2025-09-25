@@ -57,6 +57,12 @@ def _importance_minimality_loss_update(
     p_anneal_end_frac: float,
     current_frac_of_training: float,
 ) -> tuple[Float[Tensor, " C"], int]:
+    """Calculate the sum of the importance minimality loss over all layers.
+
+    NOTE: We don't normalize over the number of layers because a change in the number of layers
+    should not change the ci loss that an ablation of a single component in a single layer might
+    have. That said, we're unsure about this, perhaps we do want to normalize over n_layers.
+    """
     assert ci_upper_leaky, "Empty ci_upper_leaky"
     pnorm = _get_linear_annealed_p(
         current_frac_of_training=current_frac_of_training,
@@ -67,12 +73,11 @@ def _importance_minimality_loss_update(
     )
     device = next(iter(ci_upper_leaky.values())).device
     sum_loss = torch.tensor(0.0, device=device)
-    total_params = 0
     for layer_ci_upper_leaky in ci_upper_leaky.values():
         # Note: layer_ci_upper_leaky already >= 0
         sum_loss += ((layer_ci_upper_leaky + eps) ** pnorm).sum()
-        total_params += layer_ci_upper_leaky.shape[:-1].numel()
-    return sum_loss, total_params
+    n_params = next(iter(ci_upper_leaky.values())).shape[:-1].numel()
+    return sum_loss, n_params
 
 
 def _importance_minimality_loss_compute(
@@ -105,6 +110,9 @@ def importance_minimality_loss(
 class ImportanceMinimalityLoss(Metric):
     """L_p loss on the sum of CI values.
 
+    NOTE: We don't normalize over the number of layers because a change in the number of layers
+    should not change the ci loss that an ablation of a single component in a single layer might
+    have. That said, we're unsure about this, perhaps we do want to normalize over n_layers.
 
     Args:
         pnorm: The p value for the L_p norm
