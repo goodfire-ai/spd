@@ -1,5 +1,5 @@
 # --- WandB ---
-# wandb_project: spd
+wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
@@ -14,30 +14,21 @@ target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.dow
 identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
-
-# --- Loss Coefficients ---
-# faithfulness_coeff: null
-# ci_recon_coeff: null
-# stochastic_recon_coeff: 0.2
-# ci_recon_layerwise_coeff: null
-# stochastic_recon_layerwise_coeff: 2.0
-# importance_minimality_coeff: 0.0003
-# pnorm: 2.0
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
     coeff: 0.0003
     extra_init_kwargs:
       pnorm: 2.0
+      p_anneal_start_frac: 0.0
+      p_anneal_final_p: 0.3
+      p_anneal_end_frac: 1.0
   - classname: "StochasticReconLayerwiseLoss"
     coeff: 2.0
-p_anneal_start_frac: 0.0
-p_anneal_final_p: 0.3
-p_anneal_end_frac: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 48
-eval_batch_size: 48
+batch_size: 6
+eval_batch_size: 6
 steps: 50000
 lr: 0.0005
 lr_schedule: cosine

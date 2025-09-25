@@ -156,20 +156,6 @@ class Config(BaseModel):
             "coefficients provided here are also used for weighting the training loss and eval loss/total."
         ),
     )
-    # TODO: Move the p-annealing fields to the ImportanceMinimalityLoss config.
-    p_anneal_start_frac: Probability = Field(
-        default=1.0,
-        description="Fraction of training after which to start annealing p (1.0 = no annealing)",
-    )
-    p_anneal_final_p: PositiveFloat | None = Field(
-        default=None,
-        description="Final p value to anneal to (None = no annealing)",
-    )
-    p_anneal_end_frac: Probability = Field(
-        default=1.0,
-        description="Fraction of training when annealing ends. We stay at the final p value from "
-        "this point onward (default 1.0 = anneal until end)",
-    )
     output_loss_type: Literal["mse", "kl"] = Field(
         ...,
         description="Metric used to measure recon error between model outputs and targets",
@@ -297,6 +283,7 @@ class Config(BaseModel):
         "uses the default backend for the current device.",
     )
 
+    @property
     def pnorm(self) -> float:
         """Return the p-norm value for importance minimality from loss_metric_configs."""
         cfg = next(
@@ -324,6 +311,9 @@ class Config(BaseModel):
         "recon_layerwise_coeff",
         "ci_recon_coeff",
         "ci_recon_layerwise_coeff",
+        "p_anneal_start_frac",
+        "p_anneal_final_p",
+        "p_anneal_end_frac",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
@@ -346,6 +336,9 @@ class Config(BaseModel):
 
         if "importance_minimality_coeff" in config_dict:
             pnorm = config_dict["pnorm"]
+            p_anneal_start_frac = config_dict.get("p_anneal_start_frac", 1.0)
+            p_anneal_final_p = config_dict.get("p_anneal_final_p")
+            p_anneal_end_frac = config_dict.get("p_anneal_end_frac", 1.0)
             if "loss_metric_configs" not in config_dict:
                 config_dict["loss_metric_configs"] = []
 
@@ -353,7 +346,12 @@ class Config(BaseModel):
                 {
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": config_dict["importance_minimality_coeff"],
-                    "extra_init_kwargs": {"pnorm": pnorm},
+                    "extra_init_kwargs": {
+                        "pnorm": pnorm,
+                        "p_anneal_start_frac": p_anneal_start_frac,
+                        "p_anneal_final_p": p_anneal_final_p,
+                        "p_anneal_end_frac": p_anneal_end_frac,
+                    },
                 }
             )
             del config_dict["importance_minimality_coeff"]

@@ -1,6 +1,6 @@
 # TMS 5-2 (Non-identity)
 # --- WandB ---
-wandb_project: spd
+# wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
@@ -24,12 +24,6 @@ loss_metric_configs:
     coeff: 1.0
   - classname: "StochasticReconLayerwiseLoss"
     coeff: 1.0
-  - classname: "CIMaskedReconLoss"
-    coeff: 1.0
-  - classname: "CIMaskedReconLayerwiseLoss"
-    coeff: 1.0
-  - classname: "FaithfulnessLoss"
-    coeff: 2.0
 output_loss_type: mse
 
 # --- Training ---

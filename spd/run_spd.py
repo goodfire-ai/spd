@@ -15,6 +15,7 @@ from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
 from torch.utils.data import DataLoader
+from torchmetrics import Metric
 from tqdm import tqdm
 
 from spd.configs import Config
@@ -23,6 +24,7 @@ from spd.eval import avg_eval_metrics_across_ranks, evaluate
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_total_loss
+from spd.metrics.utils import create_metrics
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
@@ -35,7 +37,6 @@ from spd.utils.distributed_utils import (
 )
 from spd.utils.general_utils import (
     extract_batch_data,
-    get_linear_annealed_p,
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
@@ -163,6 +164,17 @@ def optimize(
         ci_alive_threshold=config.ci_alive_threshold,
     )
 
+    loss_metrics: list[Metric] = create_metrics(
+        metric_configs=config.loss_metric_configs,
+        component_model=component_model,
+        config=config,
+        sync_on_compute=False,
+    )
+    loss_coeffs: dict[str, float] = {}
+    for cfg in config.loss_metric_configs:
+        assert cfg.coeff is not None, f"Loss metric {cfg.classname} has no coeff"
+        loss_coeffs[cfg.classname] = cfg.coeff
+
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
 
@@ -178,7 +190,6 @@ def optimize(
             group["lr"] = step_lr
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
-        current_p = config.pnorm()
 
         for _ in range(config.gradient_accumulation_steps):
             weight_deltas = component_model.calc_weight_deltas()
@@ -203,26 +214,15 @@ def optimize(
 
             alive_tracker.watch_batch(causal_importances)
 
-            # Calculate current p value with annealing
-            current_p = get_linear_annealed_p(
-                step=step,
-                steps=config.steps,
-                initial_p=config.pnorm(),
-                p_anneal_start_frac=config.p_anneal_start_frac,
-                p_anneal_final_p=config.p_anneal_final_p,
-                p_anneal_end_frac=config.p_anneal_end_frac,
-            )
-
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metric_configs=config.loss_metric_configs,
-                model=component_model,
+                loss_metrics=loss_metrics,
+                loss_coeffs=loss_coeffs,
                 batch=batch,
-                config=config,
                 ci=causal_importances,
                 ci_upper_leaky=causal_importances_upper_leaky,
                 target_out=target_out,
                 weight_deltas=weight_deltas,
-                device=device,
+                current_frac_of_training=step / config.steps,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
@@ -260,7 +260,6 @@ def optimize(
                     grad_norm += param.grad.data.flatten().pow(2).sum()
             microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
             microbatch_log_data["train/misc/lr"] = step_lr
-            microbatch_log_data["train/misc/current_p"] = current_p
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")
@@ -282,12 +281,14 @@ def optimize(
                 )
 
                 metrics = evaluate(
+                    metric_configs=config.eval_metric_configs + config.loss_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
                     device=device,
                     config=config,
                     run_slow=run_slow,
-                    n_steps=n_eval_steps,
+                    n_eval_steps=n_eval_steps,
+                    current_frac_of_training=step / config.steps,
                 )
 
                 if is_distributed():

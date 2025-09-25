@@ -12,7 +12,21 @@ gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["transformer.h.1.attn.c_attn"]
+identity_module_patterns: null
 sampling: "continuous"
+use_delta_component: true
+loss_metric_configs:
+  - classname: "ImportanceMinimalityLoss"
+    coeff: 0.0003
+    extra_init_kwargs:
+      pnorm: 2.0
+      p_anneal_start_frac: 0.0
+      p_anneal_final_p: 0.3
+      p_anneal_end_frac: 1.0
+  - classname: "StochasticReconLayerwiseLoss"
+    coeff: 2.0
+output_loss_type: kl
+
 
 # --- Loss Coefficients ---
 faithfulness_coeff: null

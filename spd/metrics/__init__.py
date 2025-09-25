@@ -6,6 +6,8 @@ This package exposes:
 
 """
 
+from torchmetrics import Metric
+
 # Note that "... as ..." allows for these to be imported elsewhere (See PEP 484 on re-exporting)
 from .ce_and_kl_losses import CEandKLLosses as CEandKLLosses
 from .ci_histograms import CIHistograms as CIHistograms
@@ -35,7 +37,7 @@ from .stochastic_recon_subset_loss import (
 from .subset_reconstruction_loss import SubsetReconCEAndKL as SubsetReconCEAndKL
 from .uv_plots import UVPlots as UVPlots
 
-METRICS = {
+METRICS: dict[str, type[Metric]] = {
     cls.__name__: cls
     for cls in [
         CI_L0,

@@ -15,17 +15,16 @@ identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
 
-# --- Loss Coefficients ---
-faithfulness_coeff: null
-ci_recon_coeff: null
-stochastic_recon_coeff: 0.2
-ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 2.0
-importance_minimality_coeff: 3e-4
-pnorm: 2.0
-p_anneal_start_frac: 0.0
-p_anneal_final_p: 0.3
-p_anneal_end_frac: 1.0
+loss_metric_configs:
+  - classname: "ImportanceMinimalityLoss"
+    coeff: 0.0003
+    extra_init_kwargs:
+      pnorm: 2.0
+      p_anneal_start_frac: 0.0
+      p_anneal_final_p: 0.3
+      p_anneal_end_frac: 1.0
+  - classname: "StochasticReconLayerwiseLoss"
+    coeff: 2.0
 output_loss_type: kl
 
 # --- Training ---

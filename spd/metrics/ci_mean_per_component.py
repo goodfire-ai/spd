@@ -14,7 +14,7 @@ class CIMeanPerComponent(Metric):
     slow = True
     is_differentiable: bool | None = False
 
-    def __init__(self, model: ComponentModel, _config: Config, **kwargs: Any) -> None:
+    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.components = model.components
 

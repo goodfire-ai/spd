@@ -57,12 +57,9 @@ class SubsetReconCEAndKL(Metric):
 
         for key in all_keys:
             sanitized_key_raw = key.replace(".", "-").replace("*", "all")
-            sanitized_keys = [
-                f"{sanitized_key_raw}_kl",
-                f"{sanitized_key_raw}_ce",
-                f"{sanitized_key_raw}_ce_unrec",
-            ]
-            for sanitized_key in sanitized_keys:
+            for suffix in ["_kl", "_ce", "_ce_unrec"]:
+                key = f"{sanitized_key_raw}{suffix}"
+                sanitized_key = f"{sanitized_key_raw}{suffix}"
                 self.key_to_sanitized[key] = sanitized_key
                 self.sanitized_to_key[sanitized_key] = key
                 self.add_state(sanitized_key, default=[], dist_reduce_fx="cat")

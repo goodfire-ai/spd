@@ -15,7 +15,6 @@ target_module_patterns: ["linear1", "linear2"]
 identity_module_patterns: null
 use_delta_component: true
 
-# --- Loss config ---
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
     coeff: 1e-4

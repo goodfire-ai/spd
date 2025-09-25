@@ -69,32 +69,31 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
 
 
 def evaluate(
+    metric_configs: list[MetricConfig],
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."] | tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: str,
     config: Config,
     run_slow: bool,
-    n_steps: int,
+    n_eval_steps: int,
+    current_frac_of_training: float,
 ) -> MetricOutType:
-    """Run evaluation and return a flat mapping of metric names to values/images.
+    """Run evaluation and return a flat mapping of metric names to values/images."""
 
-    Returns keys without the "eval/" prefix. The caller is responsible for namespacing.
-    """
-
-    eval_metrics: list[Metric] = []
-    combined_cfgs: list[MetricConfig] = [*config.eval_metric_configs, *config.loss_metric_configs]
-    for cfg in combined_cfgs:
-        metric_cls = METRICS[cfg.classname]
+    metrics: list[Metric] = []
+    for cfg in metric_configs:
+        metric_cls: type[Metric] = METRICS[cfg.classname]
         if not _should_run_metric(cfg, metric_cls, run_slow):
             continue
-        metric_obj = metric_cls(model, config, **cfg.extra_init_kwargs, sync_on_compute=False)
-        metric_obj = metric_obj.to(device)
-        eval_metrics.append(metric_obj)
+        metric = metric_cls(
+            model=model, config=config, **cfg.extra_init_kwargs, sync_on_compute=False
+        ).to(device)
+        metrics.append(metric)
 
     # Weight deltas can be computed once per eval since params are frozen
     weight_deltas = model.calc_weight_deltas()
 
-    for _ in range(n_steps):
+    for _ in range(n_eval_steps):
         batch_raw = next(eval_iterator)
         batch = extract_batch_data(batch_raw).to(device)
 
@@ -108,18 +107,18 @@ def evaluate(
             sampling=config.sampling,
         )
 
-        for metric in eval_metrics:
+        for metric in metrics:
             metric.update(
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
                 ci_upper_leaky=ci_upper_leaky,
                 weight_deltas=weight_deltas,
+                current_frac_of_training=current_frac_of_training,
             )
 
     outputs: MetricOutType = {}
-
-    for metric in eval_metrics:
+    for metric in metrics:
         computed_raw: Any = metric.compute()
         computed = clean_metric_output(metric_name=type(metric).__name__, computed_raw=computed_raw)
         outputs.update(computed)

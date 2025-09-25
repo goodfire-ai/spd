@@ -42,7 +42,7 @@ class FaithfulnessLoss(Metric):
     sum_loss: Float[Tensor, ""]
     total_params: Int[Tensor, ""]
 
-    def __init__(self, model: ComponentModel, _config: Config, **kwargs: Any) -> None:
+    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model = model
         self.add_state("sum_loss", default=torch.tensor(0.0), dist_reduce_fx="sum")
