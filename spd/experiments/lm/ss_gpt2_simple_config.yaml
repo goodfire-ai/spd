@@ -47,6 +47,7 @@ save_freq: null
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
 eval_metric_configs:
+  - classname: "FaithfulnessLoss"
   - classname: "CIHistograms"
     extra_init_kwargs:
       n_batches_accum: 5

@@ -47,6 +47,7 @@ slow_eval_on_first_step: true
 save_freq: null
 n_examples_until_dead: 8_192_000
 eval_metric_configs:
+  - classname: "FaithfulnessLoss"
   - classname: "CIHistograms"
   - classname: "ComponentActivationDensity"
   - classname: "CI_L0"

@@ -41,7 +41,6 @@ class CIMaskedReconLayerwiseLoss(Metric):
 
         mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
         for module_name, mask_info in mask_infos.items():
-            # TODO: Refactor this accumulation, it's used in lots of losses
             out = self.model(batch, mode="components", mask_infos={module_name: mask_info})
             loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
             self.n_examples += out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()

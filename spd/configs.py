@@ -283,17 +283,6 @@ class Config(BaseModel):
         "uses the default backend for the current device.",
     )
 
-    @property
-    def pnorm(self) -> float:
-        """Return the p-norm value for importance minimality from loss_metric_configs."""
-        cfg = next(
-            (c for c in self.loss_metric_configs if c.classname == "ImportanceMinimalityLoss"), None
-        )
-        assert cfg is not None, "ImportanceMinimalityLoss must be in loss_metric_configs"
-        if "pnorm" not in cfg.extra_init_kwargs:
-            raise KeyError("Missing 'pnorm' in ImportanceMinimalityLoss.extra_init_kwargs")
-        return float(cfg.extra_init_kwargs["pnorm"])
-
     DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = [
         "image_on_first_step",
         "image_freq",
@@ -303,7 +292,6 @@ class Config(BaseModel):
         "embedding_recon_coeff",
         "is_embed_unembed_recon",
         "out_recon_coeff",
-        # Ignoring the below entries means that our new config won't have loss coefficients
         "faithfulness_coeff",
         "stochastic_recon_coeff",
         "stochastic_recon_layerwise_coeff",
@@ -329,33 +317,7 @@ class Config(BaseModel):
         loss_metric_configs. This is done by DEPRECATED_CONFIG_KEYS. This means that old runs which
         have these keys will not be able to be used for e.g. finetuning, but the raw model will be
         the same.
-
-        However, we convert importance minimality loss to a proper MetricConfig because we
-        require this loss.
         """
-
-        if "importance_minimality_coeff" in config_dict:
-            pnorm = config_dict["pnorm"]
-            p_anneal_start_frac = config_dict.get("p_anneal_start_frac", 1.0)
-            p_anneal_final_p = config_dict.get("p_anneal_final_p")
-            p_anneal_end_frac = config_dict.get("p_anneal_end_frac", 1.0)
-            if "loss_metric_configs" not in config_dict:
-                config_dict["loss_metric_configs"] = []
-
-            config_dict["loss_metric_configs"].append(
-                {
-                    "classname": "ImportanceMinimalityLoss",
-                    "coeff": config_dict["importance_minimality_coeff"],
-                    "extra_init_kwargs": {
-                        "pnorm": pnorm,
-                        "p_anneal_start_frac": p_anneal_start_frac,
-                        "p_anneal_final_p": p_anneal_final_p,
-                        "p_anneal_end_frac": p_anneal_end_frac,
-                    },
-                }
-            )
-            del config_dict["importance_minimality_coeff"]
-            del config_dict["pnorm"]
 
         # Remove SubsetReconstructionLoss if it appears
         if "loss_metric_configs" in config_dict:
@@ -396,17 +358,6 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
-        imp_min_loss_cfg = next(
-            (
-                cfg
-                for cfg in self.loss_metric_configs
-                if cfg.classname == "ImportanceMinimalityLoss"
-            ),
-            None,
-        )
-        assert imp_min_loss_cfg is not None, (
-            "ImportanceMinimalityLoss must be in loss_metric_configs"
-        )
         # Check that lr_exponential_halflife is not None if lr_schedule is "exponential"
         if self.lr_schedule == "exponential":
             assert self.lr_exponential_halflife is not None, (

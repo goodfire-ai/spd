@@ -231,12 +231,6 @@ def optimize(
                     loss_value / config.gradient_accumulation_steps
                 )
 
-            # Also log per-term loss metrics for train parity without instantiating classes
-            for k, v in microbatch_loss_terms.items():
-                microbatch_log_data[f"train/loss_terms/{k}"] += (
-                    v / config.gradient_accumulation_steps
-                )
-
             for layer_name, layer_ci in causal_importances.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
                 microbatch_log_data[f"train/{layer_name}/l0"] += (

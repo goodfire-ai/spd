@@ -27,17 +27,6 @@ loss_metric_configs:
     coeff: 2.0
 output_loss_type: kl
 
-
-# --- Loss Coefficients ---
-faithfulness_coeff: null
-ci_recon_coeff: null
-stochastic_recon_coeff: null
-ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 1
-importance_minimality_coeff: 1e-3
-pnorm: 1.0
-output_loss_type: kl
-
 # --- Training ---
 batch_size: 2
 steps: 50_000
@@ -57,6 +46,7 @@ save_freq: null
 ci_alive_threshold: 0.0
 n_examples_until_dead: 3_276_800  # train_log_freq * batch_size * max_seq_len = 100 * 64 * 512
 eval_metric_configs:
+  - classname: "FaithfulnessLoss"
   - classname: "CIHistograms"
     extra_init_kwargs:
       n_batches_accum: 5

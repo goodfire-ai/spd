@@ -86,12 +86,6 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/lm/ss_llama_config.yaml"),
         expected_runtime=60 * 37,  # ~37 hours with data parallelism over 8 GPUs
     ),
-    "ss_llama_single": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_single_gpu_config.yaml"),
-        expected_runtime=60 * 94,  # ~72 hours on 1 gpu
-    ),
     "ss_gpt2": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
@@ -116,18 +110,12 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/lm/ss_gpt2_simple_noln_config.yaml"),
         expected_runtime=330,
     ),
-    # "ss_emb": ExperimentConfig(
-    #     task_name="lm",
-    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-    #     config_path=Path("spd/experiments/lm/ss_emb_config.yaml"),
-    #     expected_runtime=60,
-    # ),
-    # "ts": ExperimentConfig(
-    #     experiment_type="lm",
-    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-    #     config_path=Path("spd/experiments/lm/ts_config.yaml"),
-    #     expected_runtime=120,
-    # ),
+    "ts": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ts_config.yaml"),
+        expected_runtime=120,
+    ),
 }
 
 

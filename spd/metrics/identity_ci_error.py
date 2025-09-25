@@ -15,6 +15,7 @@ class IdentityCIError(Metric):
     slow = True
     is_differentiable: bool | None = False
     full_state_update: bool | None = False  # Avoid double update calls
+    input_magnitude: float = 0.75
 
     def __init__(
         self,
@@ -54,7 +55,7 @@ class IdentityCIError(Metric):
         ci_arrays, _ = get_single_feature_causal_importances(
             model=self.model,
             batch_shape=self.batch_shape,
-            input_magnitude=0.75,
+            input_magnitude=self.input_magnitude,
             sampling=self.config.sampling,
             sigmoid_type=self.config.sigmoid_type,
         )
