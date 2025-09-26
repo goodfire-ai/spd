@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 import torch
 
 from spd.clustering.merge_history import MergeHistory
-from spd.clustering.scripts.s2_run_clustering import save_group_idxs_artifact
+from spd.clustering.scripts.s2_clustering import save_group_idxs_artifact
 from spd.clustering.scripts.s3_normalize_histories import load_merge_histories_from_wandb
 
 

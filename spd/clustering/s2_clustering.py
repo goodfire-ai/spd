@@ -12,11 +12,11 @@ from tqdm import tqdm
 from wandb.sdk.wandb_run import Run
 
 from spd.clustering.activations import component_activations, process_activations
+from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_history_costs
-from spd.clustering.refactored.merge import merge_iteration
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
