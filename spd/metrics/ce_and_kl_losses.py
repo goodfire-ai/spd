@@ -74,11 +74,11 @@ class CEandKLLosses(Metric):
 
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
         n_positions_in_batch = batch.shape[0] * batch.shape[1]
-        self.n_positions += n_positions_in_batch
 
         for key in self.loss_keys:
-            key_sum = getattr(self, f"{key}_sum") * n_positions_in_batch
-            key_sum += ce_losses[key]
+            key_sum = getattr(self, f"{key}_sum")
+            key_sum += ce_losses[key] * n_positions_in_batch
+        self.n_positions += n_positions_in_batch
 
     @override
     def compute(self) -> dict[str, float]:

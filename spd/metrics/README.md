@@ -1,0 +1,9 @@
+
+For metrics that we use for training loss functions:
+- They must have `is_differentiable=True`.
+- When initializing the loss metrics, we set `sync_on_compute=False` to avoid double-syncing across ranks (DistributedDataParallel model will automatically sync gradients across ranks when loss.backward() is called).
+- For eval metrics, we set `sync_on_compute=False` and don't care about the `is_differentiable` attribute. Here, the `Metric.update()` will process each batch individually, and a call to `Metric.compute()` will sync across ranks before entering the method (it does this with a sneaky instance variable of the baseclass `Metric.compute: Callable = self._wrap_compute(self.compute)`).
+- Metric.__call__() will call both update() and compute().
+  - We set `full_state_update=False` on all of our metrics. This will ensure that, when Metric.__call__() is called, the `Metric.update()` method will only be called once rather than twice.
+    - The reason `full_state_update=True` will call update() twice is because the it wants the output of a forward pass to be only the per-batch results that's completely independent of any previous batches, but for the global state of the Metric to update as if the previous state was used in the computation of update(). If `full_state_update=False`, then the update will be computed only once, and it will just compute the per-batch output will ignoring all previous state accumulated in the Metric.
+    - TODO: I found this incredibly confusing, and will likely subclass Metric with SPDMetric and raise an error if SPDMetric.forward() is called to prevent people having to worry about this when calling forward().

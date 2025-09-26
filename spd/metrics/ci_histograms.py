@@ -25,8 +25,8 @@ class CIHistograms(Metric):
     ):
         super().__init__(**kwargs)
         self.n_batches_accum = n_batches_accum
-        self.batches_seen: int = 0
         self.module_names = list(model.components.keys())
+        self.batches_seen = 0
 
         for module_name in self.module_names:
             self.add_state(f"causal_importances_{module_name}", default=[], dist_reduce_fx="cat")
@@ -46,3 +46,8 @@ class CIHistograms(Metric):
             cis[module_name] = dim_zero_cat(getattr(self, f"causal_importances_{module_name}"))
         fig = plot_ci_values_histograms(causal_importances=cis)
         return {"figures/causal_importance_values": fig}
+
+    @override
+    def reset(self) -> None:
+        super().reset()
+        self.batches_seen = 0
