@@ -94,7 +94,6 @@ def save_group_idxs_artifact(
 
 def plot_merge_iteration_callback(
     costs: torch.Tensor,
-    # merge_history: MergeHistory,
     current_merge: Any,
     current_coact: torch.Tensor,
     i: int,
@@ -128,7 +127,6 @@ def run_clustering(
     save_dir: Path = REPO_ROOT / "data/clustering/merge_history/wip/",
     device: str = "cuda",
     plot: bool = True,
-    sort_components: bool = False,
 ) -> Path:
     # setup
     # ======================================================================
@@ -185,7 +183,6 @@ def run_clustering(
         plot_callback = functools.partial(
             plot_merge_iteration_callback,
             wandb_run=wandb_run,
-            batch_id=_BATCH_ID,
         )
 
     # get model and data
@@ -205,7 +202,7 @@ def run_clustering(
     log(f"computing activations on {device = }")
     component_acts: dict[str, Tensor] = component_activations(
         model=component_model,
-        batch=data_batch,
+        batch=data_batch.to(device),
         device=device,
         # threshold=0.1,
         sigmoid_type=spd_run.config.sigmoid_type,
@@ -227,7 +224,6 @@ def run_clustering(
         filter_dead_threshold=config_.filter_dead_threshold,
         seq_mode="concat" if config_.task_name == "lm" else None,
         filter_modules=config_.filter_modules,
-        sort_components=sort_components,
     )
     dbg_tensor(processed_activations.activations)
 
@@ -239,11 +235,9 @@ def run_clustering(
         # Use original activations for raw plots, but filtered data for concat/coact/histograms
         plot_activations(
             processed_activations=processed_activations,
-            n_samples_max=256,
-            save_pdf=True,
-            pdf_prefix=(this_merge_figs / "activations").as_posix(),
+            save_dir=this_merge_figs,
+            pdf_prefix="activations",
             wandb_run=wandb_run,
-            log=log,
         )
 
     # memory cleanup
@@ -384,11 +378,6 @@ def cli(argv: list[str] | None = None) -> None:
         required=True,
         help="Directory to save the merge history",
     )
-    # parser.add_argument(
-    #     "--sort-components",
-    #     action="store_true",
-    #     help="Sort components by similarity within each module before concatenation",
-    # )
     parser.add_argument(
         "--plot",
         action="store_true",
@@ -412,8 +401,6 @@ def cli(argv: list[str] | None = None) -> None:
         dataset_path=args.dataset_path,
         device=args.device,
         save_dir=args.save_dir,
-        # sort_components=args.sort_components,
-        sort_components=False,
         plot=args.plot,
     )
 

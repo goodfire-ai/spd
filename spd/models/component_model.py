@@ -68,7 +68,7 @@ class SPDRunInfo(RunInfo[Config]):
 
         return cls(checkpoint_path=comp_model_path, config=config)
 
-
+# TODO encapsulate Gates in a separate class (containing sigmoid type and sampling mode)
 class ComponentModel(LoadableModule):
     """Wrapper around an arbitrary model for running SPD.
 

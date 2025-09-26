@@ -12,7 +12,7 @@ from muutils.dbg import dbg_tensor
 
 from spd.clustering.math.merge_distances import DistancesArray, DistancesMethod
 from spd.clustering.merge_run_config import MergeRunConfig
-from spd.clustering.scripts.s1_split_dataset import split_dataset
+from spd.clustering.scripts.s1_split_dataset import split_and_save_dataset
 from spd.clustering.scripts.s3_normalize_histories import normalize_histories
 from spd.clustering.scripts.s4_compute_distances import compute_histories_distances
 from spd.log import logger
@@ -158,7 +158,6 @@ def main(
     distances_method: DistancesMethod = "perm_invariant_hamming",
     devices: Sequence[str] | str = "cuda:0",
     max_concurrency: int | None = None,
-    plot: bool = True,
 ):
     # 0. preprocessing
     # ================================================================================
@@ -174,8 +173,8 @@ def main(
         config_path = config
     else:
         merge_run_config = config
-        config_path = REPO_ROOT / f"data/clustering/configs/{merge_run_config.stable_hash}.json"
-        merge_run_config.to_file(config_path)
+        config_path = base_path / "configs" / f"{merge_run_config.stable_hash}.json"
+        config_path.write_text(merge_run_config.model_dump_json(indent=2))
 
     # device
     devices_: list[str]
@@ -200,7 +199,7 @@ def main(
                 base_path=str(base_path),
                 devices=devices_,
                 max_concurrency=max_concurrency,
-                plot=plot,
+                plot=True, # can we remove this?
                 repo_root=str(REPO_ROOT),
                 run_id=merge_run_config_id,
                 run_path=str(run_path),
@@ -217,16 +216,12 @@ def main(
     # 1. tokenize and split the dataset into n_batches of batch_size
     # ================================================================================
     logger.section("Splitting dataset")
-    _split_dataset_info_path: Path
-    split_dataset_info: dict[str, Any]
-    _split_dataset_info_path, split_dataset_info = split_dataset(
+    data_files = split_and_save_dataset(
         config=merge_run_config,
-        base_path=run_path,
+        output_path=run_path,
         save_file_fmt=f"{batches_path}/batch_{{batch_idx}}.npz",
         cfg_file_fmt=batches_config_path.as_posix(),
     )
-
-    data_files: list[Path] = list(map(Path, split_dataset_info["output_files"]))
 
     # 2. run the clustering on each batch individually
     # ================================================================================

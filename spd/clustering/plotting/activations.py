@@ -1,6 +1,7 @@
 """Plotting functions for activation visualizations."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
+from pathlib import Path
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -12,14 +13,13 @@ from jaxtyping import Float
 from torch import Tensor
 
 from spd.clustering.activations import ProcessedActivations, compute_coactivatons
-from spd.log import logger
 
 
 def plot_activations(
     processed_activations: ProcessedActivations,
-    n_samples_max: int | None = None,
-    save_pdf: bool = False,
+    save_dir: Path,
     pdf_prefix: str = "activations",
+    n_samples_max: int = 256,
     figsize_raw: tuple[int, int] = (12, 4),
     figsize_concat: tuple[int, int] = (12, 2),
     figsize_coact: tuple[int, int] = (8, 6),
@@ -27,7 +27,6 @@ def plot_activations(
     hist_bins: int = 100,
     do_sorted_samples: bool = False,
     wandb_run: wandb.sdk.wandb_run.Run | None = None,
-    log: Callable[[str], None] = logger.info,
 ) -> None:
     """Plot activation visualizations including raw, concatenated, sorted, and coactivations.
 
@@ -36,7 +35,7 @@ def plot_activations(
         act_concat: Concatenated activations tensor
         coact: Coactivation matrix
         labels: Component labels
-        save_pdf: Whether to save plots as PDFs
+        save_dir: The directory to save the plots to
         pdf_prefix: Prefix for PDF filenames
         figsize_raw: Figure size for raw activations
         figsize_concat: Figure size for concatenated activations
@@ -44,20 +43,17 @@ def plot_activations(
         hist_scales: Tuple of (x_scale, y_scale) where each is "lin" or "log"
         hist_bins: Number of bins for histograms
     """
-    log(f"Saving figures to {'/'.join(pdf_prefix.split('/')[:-1])}")
-
     act_dict: dict[str, Float[Tensor, " n_steps c"]] = processed_activations.activations_raw
     act_concat: Float[Tensor, " n_steps c"] = processed_activations.activations
     coact: Float[Tensor, " c c"] = compute_coactivatons(act_concat)
     labels: list[str] = processed_activations.labels
 
     # trim the activations if n_samples_max is specified
-    if n_samples_max is not None:
-        # clone here so we don't modify the original tensor
-        act_concat = act_concat[:n_samples_max].clone()
-        # we don't use the stuff in this dict again, so we can modify it in-place
-        for key in act_dict:
-            act_dict[key] = act_dict[key][:n_samples_max]
+    # clone here so we don't modify the original tensor
+    act_concat = act_concat[:n_samples_max].clone()
+    # we don't use the stuff in this dict again, so we can modify it in-place
+    for key in act_dict:
+        act_dict[key] = act_dict[key][:n_samples_max]
 
     # Raw activations
     axs_act: Sequence[plt.Axes]
@@ -73,9 +69,8 @@ def plot_activations(
         axs_act[i].set_ylabel(f"components\n{key}")
         axs_act[i].set_title(f"Raw Activations: {key} (shape: {act_raw_data.shape})")
 
-    if save_pdf:
-        fig1_fname = f"{pdf_prefix}_raw.pdf"
-        _fig1.savefig(fig1_fname, bbox_inches="tight", dpi=300)
+    fig1_fname = save_dir / f"{pdf_prefix}_raw.pdf"
+    _fig1.savefig(fig1_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -95,9 +90,8 @@ def plot_activations(
 
     plt.colorbar(im2)
 
-    if save_pdf:
-        fig2_fname = f"{pdf_prefix}_concatenated.pdf"
-        fig2.savefig(fig2_fname, bbox_inches="tight", dpi=300)
+    fig2_fname = save_dir / f"{pdf_prefix}_concatenated.pdf"
+    fig2.savefig(fig2_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -160,9 +154,8 @@ def plot_activations(
 
         plt.colorbar(im3)
 
-        if save_pdf:
-            fig3_fname = f"{pdf_prefix}_concatenated_sorted.pdf"
-            fig3.savefig(fig3_fname, bbox_inches="tight", dpi=300)
+        fig3_fname = save_dir / f"{pdf_prefix}_concatenated_sorted.pdf"
+        fig3.savefig(fig3_fname, bbox_inches="tight", dpi=300)
 
         # Log to WandB if available
         if wandb_run is not None:
@@ -183,9 +176,8 @@ def plot_activations(
 
     plt.colorbar(im4)
 
-    if save_pdf:
-        fig4_fname = f"{pdf_prefix}_coactivations.pdf"
-        fig4.savefig(fig4_fname, bbox_inches="tight", dpi=300)
+    fig4_fname = save_dir / f"{pdf_prefix}_coactivations.pdf"
+    fig4.savefig(fig4_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -205,9 +197,8 @@ def plot_activations(
     add_component_labeling(ax4_log, labels, axis="x")
     add_component_labeling(ax4_log, labels, axis="y")
     plt.colorbar(im4_log)
-    if save_pdf:
-        fig4_log_fname = f"{pdf_prefix}_coactivations_log.pdf"
-        fig4_log.savefig(fig4_log_fname, bbox_inches="tight", dpi=300)
+    fig4_log_fname = save_dir / f"{pdf_prefix}_coactivations_log.pdf"
+    fig4_log.savefig(fig4_log_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -298,9 +289,8 @@ def plot_activations(
 
     plt.tight_layout()
 
-    if save_pdf:
-        fig5_fname = f"{pdf_prefix}_histograms.pdf"
-        fig5.savefig(fig5_fname, bbox_inches="tight", dpi=300)
+    fig5_fname = save_dir / f"{pdf_prefix}_histograms.pdf"
+    fig5.savefig(fig5_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
     if wandb_run is not None:

@@ -10,7 +10,6 @@ from matplotlib.colors import LogNorm
 from matplotlib.lines import Line2D
 from tqdm import tqdm
 
-from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
 
@@ -225,34 +224,6 @@ def add_colorbar_or_legend(
             bbox_to_anchor=(0.5, -0.1),
             ncol=len(line_values),
         )
-
-
-def run_hyperparameter_sweep(
-    raw_activations: torch.Tensor,
-    sweep_config: SweepConfig,
-    component_labels: list[str],
-) -> list[MergeHistory]:
-    """Run hyperparameter sweep across all parameter combinations."""
-    configs = sweep_config.generate_configs()
-    print(f"{len(configs) = }")
-
-    results: list[MergeHistory] = []
-
-    for _i, merge_config in tqdm(enumerate(configs), total=len(configs)):
-        try:
-            merge_history = merge_iteration(
-                activations=raw_activations,
-                merge_config=merge_config,
-                component_labels=component_labels,
-            )
-
-            # Config is already stored in merge_history from merge_iteration
-            results.append(merge_history)
-        except Exception as e:
-            print(f"Failed: {e}")
-
-    print(f"{len(results) = }")
-    return results
 
 
 def plot_evolution_histories(

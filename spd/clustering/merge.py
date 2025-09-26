@@ -17,7 +17,7 @@ from spd.clustering.compute_costs import (
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
 from spd.clustering.merge_config import MergeConfig
-from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
+from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import _DEFAULT_INTERVALS, IntervalsDict, MergeRunConfig
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
 
@@ -159,9 +159,8 @@ def _wandb_iter_log(
 
 def merge_iteration(
     activations: Float[Tensor, "samples c_components"],
-    merge_config: MergeConfig | MergeRunConfig,
+    merge_config: MergeRunConfig,
     component_labels: list[str],
-    initial_merge: GroupMerge | None = None,
     wandb_run: wandb.sdk.wandb_run.Run | None = None,
     prefix: str = "",
     plot_callback: Callable[..., None] | None = None,
@@ -173,7 +172,6 @@ def merge_iteration(
         activations: (samples, c_components) component causal importances
         merge_config: configuration for the merge process
         component_labels: list of strings naming each component, should be length c_components
-        initial_merge: optional initial GroupMerge to start from. if None, starts from identity
         wandb_run: optional wandb run for logging
         prefix: optional string prefix for progress bar, usually used to identify different parallel runs in an ensemble
         plot_callback: optional function to call for plotting at intervals
@@ -216,11 +214,7 @@ def merge_iteration(
         )
 
     # start with an identity merge
-    current_merge: GroupMerge
-    if initial_merge is not None:
-        current_merge = initial_merge
-    else:
-        current_merge = GroupMerge.identity(n_components=c_components)
+    current_merge = GroupMerge.identity(n_components=c_components)
 
     # initialize variables for the merge process
     k_groups: int = c_components
@@ -255,6 +249,8 @@ def merge_iteration(
         # pop components
         # --------------------------------------------------
         if do_pop and iter_pop[iter_idx]:  # pyright: ignore[reportPossiblyUnboundVariable]
+            assert activation_mask_orig is not None, "Activation mask original is None"
+
             # we split up the group which our chosen component belongs to
             pop_component_idx_i: int = int(pop_component_idx[iter_idx].item())  # pyright: ignore[reportPossiblyUnboundVariable]
             n_components_in_pop_grp: int = int(
@@ -272,7 +268,7 @@ def merge_iteration(
                     activation_mask=current_act_mask,
                     # this complains if `activation_mask_orig is None`, but this is only the case
                     # if `do_pop` is False, which it won't be here. we do this to save memory
-                    activation_mask_orig=activation_mask_orig,  # pyright: ignore[reportArgumentType]
+                    activation_mask_orig=activation_mask_orig,
                 )
                 k_groups = current_coact.shape[0]
 
@@ -350,27 +346,3 @@ def merge_iteration(
     # ==================================================
     return merge_history
 
-
-def merge_iteration_ensemble(
-    activations: Float[Tensor, "samples c_components"],
-    merge_config: MergeConfig,
-    ensemble_size: int,
-    component_labels: list[str],
-    initial_merge: GroupMerge | None = None,
-) -> MergeHistoryEnsemble:
-    """Run many merge iterations"""
-
-    output: list[MergeHistory] = []
-    for _ in tqdm(range(ensemble_size), unit="ensemble"):
-        # run the merge iteration
-        merge_history = merge_iteration(
-            activations=activations,
-            merge_config=merge_config,
-            component_labels=component_labels,
-            initial_merge=initial_merge,
-        )
-
-        # store the history
-        output.append(merge_history)
-
-    return MergeHistoryEnsemble(data=output)

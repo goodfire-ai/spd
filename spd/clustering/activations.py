@@ -5,37 +5,22 @@ from typing import Literal, NamedTuple
 import torch
 from jaxtyping import Bool, Float, Float16, Int
 from torch import Tensor
-from torch.utils.data import DataLoader
 
 from spd.clustering.util import ModuleFilterFunc
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
-from spd.utils.general_utils import extract_batch_data
 
 
 def component_activations(
     model: ComponentModel,
     device: torch.device | str,
-    dataloader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
-    | None = None,
-    batch: Int[Tensor, "batch_size n_ctx"] | None = None,
-    sigmoid_type: SigmoidTypes = "normal",
+    batch: Int[Tensor, "batch_size n_ctx"],
+    sigmoid_type: SigmoidTypes,
 ) -> dict[str, Float[Tensor, " n_steps C"]]:
     """Get the component activations over a **single** batch."""
     with torch.no_grad():
-        batch_: Tensor
-        if batch is None:
-            assert dataloader is not None, "provide either a batch or a dataloader, not both"
-            batch_ = extract_batch_data(next(iter(dataloader)))
-        else:
-            assert dataloader is None, "provide either a batch or a dataloader, not both"
-            batch_ = batch
-
-        batch_ = batch_.to(device)
-
         _, pre_weight_acts = model.forward(
-            batch_,
+            batch.to(device),
             mode="input_cache",
             module_names=model.module_paths,
         )
@@ -47,7 +32,7 @@ def component_activations(
             detach_inputs=False,
         )
 
-        return causal_importances
+    return causal_importances
 
 
 def compute_coactivatons(
@@ -276,7 +261,6 @@ def process_activations(
     filter_dead_threshold: float = 0.01,
     seq_mode: Literal["concat", "seq_mean", None] = None,
     filter_modules: ModuleFilterFunc | None = None,
-    sort_components: bool = False,
 ) -> ProcessedActivations:
     """get back a dict of coactivations, slices, and concated activations
 
@@ -313,27 +297,12 @@ def process_activations(
     if filter_modules is not None:
         activations_ = {key: act for key, act in activations_.items() if filter_modules(key)}
 
-    # Sort components within each module if requested
-    sort_indices_dict: dict[str, Int[Tensor, " C"]] = {}
-    if sort_components:
-        sorted_activations = {}
-        for key, act in activations_.items():
-            sorted_act, sort_idx = sort_module_components_by_similarity(act)
-            sorted_activations[key] = sorted_act
-            sort_indices_dict[key] = sort_idx
-        activations_ = sorted_activations
-
     # compute the labels and total component count
     total_c: int = 0
     labels: list[str] = list()
     for key, act in activations_.items():
         c = act.shape[-1]
-        if sort_components and key in sort_indices_dict:
-            # Use sorted indices for labeling
-            sort_idx = sort_indices_dict[key]
-            labels.extend([f"{key}:{int(sort_idx[i].item())}" for i in range(c)])
-        else:
-            labels.extend([f"{key}:{i}" for i in range(c)])
+        labels.extend([f"{key}:{i}" for i in range(c)])
         total_c += c
 
     # concat the activations
@@ -352,14 +321,6 @@ def process_activations(
         f"({filtered_components.n_alive = }) + ({filtered_components.n_dead = }) != ({total_c = })"
     )
 
-    # logger.values({
-    #     "total_components": total_c,
-    #     "n_alive_components": len(labels),
-    #     "n_dead_components": len(dead_components_lst),
-    # })
-
-    # return
-    # ============================================================
     return ProcessedActivations(
         activations_raw=activations_,
         activations=filtered_components.activations,

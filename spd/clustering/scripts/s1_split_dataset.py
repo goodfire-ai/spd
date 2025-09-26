@@ -15,18 +15,16 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.settings import REPO_ROOT
-from spd.spd_types import TaskName
 
 
 def split_dataset_lm(
     model_path: str,
     n_batches: int,
     batch_size: int,
-    base_path: Path = REPO_ROOT / "data/split_datasets",
-    save_file_fmt: str = "batchsize_{batch_size}/batch_{batch_idx}.npz",
-    cfg_file_fmt: str = "batchsize_{batch_size}/_config.json",
-) -> tuple[Path, dict[str, Any]]:
+    output_path: Path,
+    save_file_fmt: str,
+    cfg_file_fmt: str,
+) -> list[Path]:
     """split up a SS dataset into n_batches of batch_size, returned the saved paths
 
     1. load the config for a SimpleStories SPD Run given by model_path
@@ -74,9 +72,9 @@ def split_dataset_lm(
         )
 
     # make dirs
-    base_path.mkdir(parents=True, exist_ok=True)
+    output_path.mkdir(parents=True, exist_ok=True)
     (
-        base_path
+        output_path
         / save_file_fmt.format(batch_size=batch_size, batch_idx="XX", n_batches=f"{n_batches:02d}")
     ).parent.mkdir(parents=True, exist_ok=True)
     # iterate over the requested number of batches and save them
@@ -88,7 +86,7 @@ def split_dataset_lm(
     ):
         if batch_idx >= n_batches:
             break
-        batch_path: Path = base_path / save_file_fmt.format(
+        batch_path: Path = output_path / save_file_fmt.format(
             batch_size=batch_size,
             batch_idx=f"{batch_idx:02d}",
             n_batches=f"{n_batches:02d}",
@@ -100,7 +98,7 @@ def split_dataset_lm(
         output_paths.append(batch_path)
 
     # save a config file
-    cfg_path: Path = base_path / cfg_file_fmt.format(batch_size=batch_size)
+    cfg_path: Path = output_path / cfg_file_fmt.format(batch_size=batch_size)
     cfg_data: dict[str, Any] = dict(
         # args to this function
         model_path=model_path,
@@ -112,7 +110,7 @@ def split_dataset_lm(
         tokenizer_type=str(getattr(_tokenizer, "__class__", None)),
         # files we saved
         output_files=[str(p) for p in output_paths],
-        output_dir=str(base_path),
+        output_dir=str(output_path),
         output_file_fmt=save_file_fmt,
         cfg_file_fmt=cfg_file_fmt,
         cfg_file=str(cfg_path),
@@ -122,17 +120,17 @@ def split_dataset_lm(
 
     print(f"Saved config to: {cfg_path}")
 
-    return cfg_path, cfg_data
+    return output_paths
 
 
 def split_dataset_resid_mlp(
     model_path: str,
     n_batches: int,
     batch_size: int,
-    base_path: Path = REPO_ROOT / "data/split_datasets",
-    save_file_fmt: str = "batchsize_{batch_size}/batch_{batch_idx}.npz",
-    cfg_file_fmt: str = "batchsize_{batch_size}/_config.json",
-) -> tuple[Path, dict[str, Any]]:
+    output_path: Path,
+    save_file_fmt: str,
+    cfg_file_fmt: str,
+) -> list[Path]:
     """Split a ResidMLP dataset into n_batches of batch_size and save the batches."""
     from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
     from spd.utils.data_utils import DatasetGeneratedDataLoader
@@ -170,9 +168,9 @@ def split_dataset_resid_mlp(
         dataloader = DatasetGeneratedDataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     # make dirs
-    base_path.mkdir(parents=True, exist_ok=True)
+    output_path.mkdir(parents=True, exist_ok=True)
     (
-        base_path
+        output_path
         / save_file_fmt.format(batch_size=batch_size, batch_idx="XX", n_batches=f"{n_batches:02d}")
     ).parent.mkdir(parents=True, exist_ok=True)
 
@@ -188,7 +186,7 @@ def split_dataset_resid_mlp(
         if batch_idx >= n_batches:
             break
 
-        batch_path: Path = base_path / save_file_fmt.format(
+        batch_path: Path = output_path / save_file_fmt.format(
             batch_size=batch_size,
             batch_idx=f"{batch_idx:02d}",
             n_batches=f"{n_batches:02d}",
@@ -200,7 +198,7 @@ def split_dataset_resid_mlp(
         output_paths.append(batch_path)
 
         # save the config file
-    cfg_path: Path = base_path / cfg_file_fmt.format(batch_size=batch_size)
+    cfg_path: Path = output_path / cfg_file_fmt.format(batch_size=batch_size)
     cfg_data: dict[str, Any] = dict(
         # args to this function
         model_path=model_path,
@@ -210,7 +208,7 @@ def split_dataset_resid_mlp(
         resid_mlp_dataset_kwargs=resid_mlp_dataset_kwargs,
         # files we saved
         output_files=[str(p) for p in output_paths],
-        output_dir=str(base_path),
+        output_dir=str(output_path),
         output_file_fmt=save_file_fmt,
         cfg_file_fmt=cfg_file_fmt,
         cfg_file=str(cfg_path),
@@ -220,73 +218,36 @@ def split_dataset_resid_mlp(
     cfg_path.write_text(json.dumps(cfg_data, indent="\t"))
     print(f"Saved config to: {cfg_path}")
 
-    return cfg_path, cfg_data
+    return output_paths
 
 
-def split_dataset(
-    config: MergeRunConfig | Path,
-    base_path: Path = REPO_ROOT / "data/split_datasets",
-    save_file_fmt: str = "batchsize_{batch_size}/batch_{batch_idx}.npz",
-    cfg_file_fmt: str = "batchsize_{batch_size}/_config.json",
-) -> tuple[Path, dict[str, Any]]:
+def split_and_save_dataset(
+    config: MergeRunConfig,
+    output_path: Path,
+    save_file_fmt: str,
+    cfg_file_fmt: str,
+) -> list[Path]:
     """Split a dataset into n_batches of batch_size and save the batches"""
-    if isinstance(config, Path):
-        config = MergeRunConfig.from_file(config)
-
-    model_path: str = config.model_path
-    task_name: TaskName = config.task_name
-    n_batches: int = config.n_batches
-    batch_size: int = config.batch_size
-
-    if task_name == "lm":
-        return split_dataset_lm(
-            model_path=model_path,
-            n_batches=n_batches,
-            batch_size=batch_size,
-            base_path=base_path,
-            save_file_fmt=save_file_fmt,
-            cfg_file_fmt=cfg_file_fmt,
-        )
-    elif task_name == "resid_mlp":
-        return split_dataset_resid_mlp(
-            model_path=model_path,
-            n_batches=n_batches,
-            batch_size=batch_size,
-            base_path=base_path,
-            save_file_fmt=save_file_fmt,
-            cfg_file_fmt=cfg_file_fmt,
-        )
-    else:
-        raise ValueError(
-            f"Unsupported task name '{task_name}'. Supported tasks are 'lm' and 'resid_mlp'. {model_path=}, {task_name=}"
-        )
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="tokenize and split a SimpleStories dataset into smaller batches for clustering ensemble",
-    )
-
-    parser.add_argument(
-        "--config",
-        "-c",
-        type=Path,
-        required=True,
-        help="Path to merge run config JSON/YAML file",
-    )
-    parser.add_argument(
-        "--base-path",
-        "-p",
-        type=Path,
-        default=Path("data/split_datasets"),
-        help="Base path to save the split datasets to",
-    )
-
-    args: argparse.Namespace = parser.parse_args()
-
-    split_dataset(
-        config=args.config,
-        base_path=args.base_path,
-    )
+    match config.task_name:
+        case "lm":
+            return split_dataset_lm(
+                model_path=config.model_path,
+                n_batches=config.n_batches,
+                batch_size=config.batch_size,
+                output_path=output_path,
+                save_file_fmt=save_file_fmt,
+                cfg_file_fmt=cfg_file_fmt,
+            )
+        case "resid_mlp":
+            return split_dataset_resid_mlp(
+                model_path=config.model_path,
+                n_batches=config.n_batches,
+                batch_size=config.batch_size,
+                output_path=output_path,
+                save_file_fmt=save_file_fmt,
+                cfg_file_fmt=cfg_file_fmt,
+            )
+        case name:
+            raise ValueError(
+                f"Unsupported task name '{name}'. Supported tasks are 'lm' and 'resid_mlp'. {config.model_path=}, {name=}"
+            )
