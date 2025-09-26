@@ -49,15 +49,16 @@ def process_batches_parallel(
     ]
 
     # Simple pool without initializer
-    with Pool(n_workers) as pool:
-        # Process batches with progress bar
-        results = list(
-            tqdm(
-                pool.imap(_worker_fn, worker_args),
-                total=len(data_files),
-                desc="Processing batches",
-            )
-        )
+    # with Pool(n_workers) as pool:
+    #     # Process batches with progress bar
+    #     results = list(
+    #         tqdm(
+    #             pool.imap(_worker_fn, worker_args),
+    #             total=len(data_files),
+    #             desc="Processing batches",
+    #         )
+    #     )
+    results = [_worker_fn(args) for args in worker_args]
 
     return results
 
@@ -120,6 +121,7 @@ def run_clustering(
     del batch  # already did the forward pass
 
     history = merge_iteration(config, batch_id, activations, component_labels, run)
+    breakpoint()
 
     if run is not None:
         _save_merge_history_to_wandb(run, batch_id, config.config_identifier, history)
@@ -182,9 +184,9 @@ def _save_merge_history_to_wandb(
             "n_iters": history.n_iters_current,
         },
     )
-    artifact.add_file(str(hist_path))
+    artifact.add_file(str(hist_path), policy="now")
     run.log_artifact(artifact)
-    hist_path.unlink()
+    # hist_path.unlink()
 
 
 def _log_merge_history_plots_to_wandb(run: Run, history: MergeHistory):
