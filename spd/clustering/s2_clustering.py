@@ -121,19 +121,21 @@ def run_clustering(
     del batch  # already did the forward pass
 
     history = merge_iteration(config, batch_id, activations, component_labels, run)
-    breakpoint()
-
-    if run is not None:
-        _save_merge_history_to_wandb(run, batch_id, config.config_identifier, history)
-        _log_merge_history_plots_to_wandb(run, history)
-        wandb_url = run.url
-        run.finish()
-    else:
-        wandb_url = None
 
     history_save_path = this_merge_dir / "merge_history.zip"
 
     history.save(history_save_path)
+
+    if run is not None:
+        _log_merge_history_plots_to_wandb(run, history)
+        # _save_merge_history_to_wandb(
+        #     run, history_save_path, batch_id, config.config_identifier, history
+        # )
+
+        wandb_url = run.url
+        run.finish()
+    else:
+        wandb_url = None
 
     return ClusteringResult(history_save_path=history_save_path, wandb_url=wandb_url)
 
@@ -167,13 +169,11 @@ def _setup_wandb(
 
 def _save_merge_history_to_wandb(
     run: Run,
+    history_path: Path,
     batch_id: str,
     config_identifier: str,
     history: MergeHistory,
 ):
-    # Save final merge history as artifact
-    hist_path = Path(f"/tmp/{batch_id}_final.zip")
-    history.save(hist_path)
     artifact = wandb.Artifact(
         name=f"merge_history_{batch_id}",
         type="merge_history",
@@ -181,12 +181,13 @@ def _save_merge_history_to_wandb(
         metadata={
             "batch_name": batch_id,
             "config_identifier": config_identifier,
-            "n_iters": history.n_iters_current,
+            "n_iters_current": history.n_iters_current,
+            "filename": history_path,
         },
     )
-    artifact.add_file(str(hist_path), policy="now")
+    # Add both files before logging the artifact
+    artifact.add_file(str(history_path))
     run.log_artifact(artifact)
-    # hist_path.unlink()
 
 
 def _log_merge_history_plots_to_wandb(run: Run, history: MergeHistory):

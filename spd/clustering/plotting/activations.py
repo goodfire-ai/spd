@@ -190,7 +190,8 @@ def plot_activations(
 
     # log coactivations
     fig4_log, ax4_log = plt.subplots(figsize=figsize_coact)
-    coact_log_data: np.ndarray = np.log10(coact_data + 1e-10)
+    assert np.all(coact_data >= 0)
+    coact_log_data: np.ndarray = np.log10(coact_data + 1e-6)
     im4_log = ax4_log.matshow(
         coact_log_data, aspect="auto", vmin=coact_log_data.min(), vmax=coact_log_data.max()
     )

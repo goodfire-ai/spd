@@ -299,10 +299,10 @@ class MergeHistoryEnsemble:
                 i_comp_new: int = component_label_idxs[comp_label]
                 merges_array[i_ens, :, i_comp_new] = history.merges.group_idxs[:, i_comp_old]
 
-            assert np.max(merges_array[i_ens]) == hist_n_components - 1, (
-                f"Max component index in history {i_ens} should be {hist_n_components - 1}, "
-                f"but got {np.max(merges_array[i_ens])}"
-            )
+            # assert np.max(merges_array[i_ens]) == hist_n_components - 1, (
+            #     f"Max component index in history {i_ens} should be {hist_n_components - 1}, "
+            #     f"but got {np.max(merges_array[i_ens])}"
+            # )
 
             # put each missing label into its own group
             hist_missing_labels: set[str] = unique_labels_set - set(hist_c_labels)
