@@ -33,11 +33,12 @@ steps: 20_000
 lr: 1e-3
 lr_schedule: constant
 lr_warmup_pct: 0.00
+optimizer_reset_step: 10_000  # Reset optimizer at 50% through training
 
 # --- Faithfulness Warmup ---
-faithfulness_warmup_steps: 200
+faithfulness_warmup_steps: 25
 faithfulness_warmup_lr: 0.01
-faithfulness_warmup_weight_decay: 0.1
+faithfulness_warmup_weight_decay: 0.0
 
 # --- Logging & Saving ---
 train_log_freq: 50

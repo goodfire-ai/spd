@@ -16,7 +16,7 @@ sampling: "continuous"
 use_delta_component: true
 
 # --- Loss Coefficients ---
-faithfulness_coeff: null
+faithfulness_coeff: 1.0
 ci_recon_coeff: null
 stochastic_recon_coeff: 0.2
 ci_recon_layerwise_coeff: null
@@ -39,9 +39,9 @@ lr_exponential_halflife: null
 gradient_accumulation_steps: 1
 
 # --- Faithfulness Warmup ---
-faithfulness_warmup_steps: 200
+faithfulness_warmup_steps: 25
 faithfulness_warmup_lr: 0.01
-faithfulness_warmup_weight_decay: 0.1
+faithfulness_warmup_weight_decay: 0.0
 
 # --- Logging & Saving ---
 train_log_freq: 200
