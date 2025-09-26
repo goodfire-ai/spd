@@ -1,7 +1,7 @@
 #  %%
 import uuid
 from dataclasses import dataclass
-from typing import Any, Self, cast
+from typing import Any, cast
 
 import torch
 import torch.nn.functional as F
@@ -456,8 +456,8 @@ class AblationService:
 
         if dataset_index >= len(ctx.train_loader.dataset):  # pyright: ignore[reportArgumentType]
             raise ValueError(
-                f"Index {dataset_index} out of range for dataset of size {len(ctx.train_loader.dataset)}"
-            )  # pyright: ignore[reportArgumentType]
+                f"Index {dataset_index} out of range for dataset of size {len(ctx.train_loader.dataset)}"  # pyright: ignore[reportArgumentType]
+            )
 
         example = ctx.train_loader.dataset[dataset_index]["input_ids"]
         assert isinstance(example, torch.Tensor)
@@ -581,3 +581,108 @@ def k_way_weighted_jaccard(token_masks: Float[Tensor, "m C"]) -> float:
     numerator = mins.sum()
     denominator = maxs.sum()
     return float(numerator / denominator) if float(denominator) > 0.0 else 1.0
+
+
+# def create_data_loader(
+#     dataset_config: DatasetConfig,
+#     batch_size: int,
+#     buffer_size: int,
+#     global_seed: int = 0,
+#     ddp_rank: int = 0,
+#     ddp_world_size: int = 1,
+#     to_lower: bool = True,
+# ) -> tuple[DataLoader[Any], PreTrainedTokenizer]:
+#     """Create a DataLoader for the given dataset.
+
+#     Uses PyTorch's DistributedSampler to ensure each rank gets the correct
+#     subset of data in distributed mode. The sampler ensures that:
+#     - Each rank gets a different subset of the data
+#     - Data is distributed deterministically based on rank
+#     - No data is duplicated across ranks
+
+#     For shuffling datasets between epochs:
+#     - When dp>1 and streaming=True, we shard the dataset across ranks and use the default sampler.
+#         If the dataset has fewer dataset shards than we have ddp ranks, we split up the dataset
+#         by example. We also use dataset.set_epoch(epoch) during training.
+#     - When dp>1 and streaming=False, we use a DistributedSampler and run
+#         sampler.set_epoch(epoch) during training.
+#     - When dp=1 and streaming=True, we use the default sampler and run
+#         dataset.set_epoch(epoch) during training.
+#     - When dp=1 and streaming=False, we use the default sampler and set shuffle=True on the
+#         DataLoader.
+
+#     Args:
+#         dataset_config: The configuration for the dataset.
+#         batch_size: The batch size.
+#         buffer_size: The buffer size for streaming datasets.
+#         global_seed: Used for shuffling if dataset_config.seed is None.
+#         ddp_rank: The rank of the current process in DDP.
+#         ddp_world_size: The world size in DDP.
+
+#     Returns:
+#         A tuple of the DataLoader and the tokenizer.
+#     """
+
+#     dataset = load_dataset(
+#         dataset_config.name,
+#         streaming=dataset_config.streaming,
+#         split=dataset_config.split,
+#         trust_remote_code=False,
+#     )
+
+#     seed = dataset_config.seed if dataset_config.seed is not None else global_seed
+
+#     assert not dataset_config.streaming
+#     assert isinstance(dataset, Dataset)
+#     dataset = dataset.shuffle(seed=seed)
+
+#     tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)
+
+#     torch_dataset: Dataset
+#     if dataset_config.is_tokenized:
+#         torch_dataset = dataset.with_format("torch")
+#         # Verify tokenization
+#         sample = next(iter(torch_dataset))[dataset_config.column_name]  # pyright: ignore[reportCallIssue, reportArgumentType]
+#         assert isinstance(sample, Tensor) and sample.ndim == 1, (
+#             f"Expected the dataset to be tokenized. Got type {type(sample)}"
+#         )
+#         assert len(sample) == dataset_config.n_ctx, (
+#             f"n_ctx ({dataset_config.n_ctx}) does not match the tokenized length ({len(sample)})."
+#         )
+#     else:
+#         to_lower = "SimpleStories" in dataset_config.name
+#         torch_dataset = tokenize_and_concatenate(
+#             dataset,  # pyright: ignore[reportArgumentType]
+#             tokenizer,
+#             max_length=dataset_config.n_ctx,
+#             column_name=dataset_config.column_name,
+#             add_bos_token=False,
+#             to_lower=to_lower,
+#         )
+
+#     sampler = None
+#     if not dataset_config.streaming and is_ddp:
+#         sampler = DistributedSampler(
+#             torch_dataset,  # pyright: ignore[reportArgumentType]
+#             num_replicas=ddp_world_size,
+#             rank=ddp_rank,
+#             shuffle=dataset_config.shuffle_each_epoch,
+#             seed=seed,
+#             drop_last=True,
+#         )
+
+#     # Ensure determinicity when not distributed and not streaming
+#     generator = torch.Generator(device="cpu")
+#     generator.manual_seed(seed)
+
+#     loader = DataLoader[Dataset | IterableDataset](
+#         torch_dataset,  # pyright: ignore[reportArgumentType]
+#         batch_size=batch_size,
+#         sampler=sampler,
+#         shuffle=(
+#             sampler is None and dataset_config.shuffle_each_epoch and not dataset_config.streaming
+#         ),
+#         drop_last=True,
+#         generator=generator,
+#     )
+#     return loader, tokenizer

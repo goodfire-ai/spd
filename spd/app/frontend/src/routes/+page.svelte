@@ -1,3 +1,5 @@
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     import { onMount } from "svelte";
     import { api } from "$lib/api";
@@ -418,19 +420,6 @@
         padding-right: 1rem;
     }
 
-    .prompt-selection {
-        margin-bottom: 1rem;
-        padding: 1rem;
-        background: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-    }
-
-    .prompt-selection h3 {
-        margin: 0 0 1rem 0;
-        font-size: 1.1rem;
-        color: #333;
-    }
 
     .prompt-list {
         display: flex;
