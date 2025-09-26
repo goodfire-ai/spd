@@ -116,7 +116,7 @@ def cli():
         "--base-path",
         "-p",
         type=Path,
-        default=REPO_ROOT / "data/clustering/",
+        default=REPO_ROOT / ".data/clustering/",
         help="Base path for saving clustering outputs",
     )
     parser.add_argument(
@@ -138,7 +138,6 @@ def cli():
     # Parse devices
     if args.devices is None:
         import torch
-
         devices = ["cuda" if torch.cuda.is_available() else "cpu"]
     else:
         devices = args.devices.split(",")

@@ -43,6 +43,8 @@ def plot_activations(
         hist_scales: Tuple of (x_scale, y_scale) where each is "lin" or "log"
         hist_bins: Number of bins for histograms
     """
+    save_dir.mkdir(parents=True, exist_ok=True)
+
     act_dict: dict[str, Float[Tensor, " n_steps c"]] = processed_activations.activations_raw
     act_concat: Float[Tensor, " n_steps c"] = processed_activations.activations
     coact: Float[Tensor, " c c"] = compute_coactivatons(act_concat)

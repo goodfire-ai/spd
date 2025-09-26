@@ -185,23 +185,6 @@ class MergeRunConfig(MergeConfig):
 
         return cls.model_validate(data)
 
-    # def to_file(self, path: Path) -> None:
-    #     """Save config to file (format inferred from extension)."""
-    #     path.parent.mkdir(parents=True, exist_ok=True)
-
-    #     if path.suffix == ".json":
-    #         path.write_text(self.model_dump_json(indent=2))
-    #     elif path.suffix in [".yaml", ".yml"]:
-    #         path.write_text(
-    #             yaml.dump(
-    #                 self.model_dump(mode="json"),
-    #                 default_flow_style=False,
-    #                 sort_keys=False,
-    #             )
-    #         )
-    #     else:
-    #         raise ValueError(f"Unsupported file extension: {path.suffix}")
-
     def model_dump_with_properties(self) -> dict[str, Any]:
         """Serialize config including computed properties for WandB logging."""
         base_dump: dict[str, Any] = self.model_dump()

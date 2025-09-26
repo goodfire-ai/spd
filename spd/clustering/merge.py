@@ -197,7 +197,7 @@ def _wandb_iter_log(
     merge_history: MergeHistory,
     iter_idx: int,
     k_groups: int,
-    pbar: tqdm[int],
+    pbar: "tqdm[int]",
 ):
     # Compute metrics for logging
     diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)

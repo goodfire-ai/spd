@@ -16,7 +16,7 @@ from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.plotting.activations import plot_activations
-from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_history_costs
+from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -26,6 +26,10 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 class ClusteringResult:
     history_save_path: Path
     wandb_url: str | None
+
+
+def _worker_fn(args: tuple[MergeRunConfig, Path, Path, str]) -> ClusteringResult:
+    return run_clustering(*args)
 
 
 # TODO consider making this a generator
@@ -49,7 +53,7 @@ def process_batches_parallel(
         # Process batches with progress bar
         results = list(
             tqdm(
-                pool.imap(lambda args: run_clustering(*args), worker_args),
+                pool.imap(_worker_fn, worker_args),
                 total=len(data_files),
                 desc="Processing batches",
             )
@@ -68,7 +72,7 @@ def run_clustering(
 
     run = _setup_wandb(batch_id=batch_id, config=config) if config.wandb_enabled else None
 
-    this_merge_dir = output_base_dir / f"{config.config_identifier}-data_{batch_id}"
+    this_merge_dir = output_base_dir / f"data_{batch_id}"
     this_merge_plots_dir = this_merge_dir / "plots"
 
     spd_run = SPDRunInfo.from_path(config.model_path)
@@ -184,17 +188,13 @@ def _save_merge_history_to_wandb(
 
 
 def _log_merge_history_plots_to_wandb(run: Run, history: MergeHistory):
-    # Create and log final plots
     fig_cs = plot_merge_history_cluster_sizes(history=history)
-    fig_costs = plot_merge_history_costs(history=history)
 
     run.log(
         {
             "plots/merge_history_cluster_sizes": wandb.Image(fig_cs),
-            "plots/merge_history_costs": wandb.Image(fig_costs),
         },
         step=history.n_iters_current,
     )
 
     plt.close(fig_cs)
-    plt.close(fig_costs)
