@@ -86,7 +86,7 @@ def evaluate(
         if not _should_run_metric(cfg, metric_cls, run_slow):
             continue
         metric = metric_cls(
-            model=model, config=config, **cfg.extra_init_kwargs, sync_on_compute=False
+            model=model, config=config, **cfg.extra_init_kwargs, sync_on_compute=True
         ).to(device)
         metrics.append(metric)
 
