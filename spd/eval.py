@@ -10,16 +10,63 @@ from torch.types import Number
 from torchmetrics import Metric
 from wandb.plot.custom_chart import CustomChart
 
-from spd.configs import Config, MetricConfig
-from spd.metrics import METRICS
+from spd.configs import (
+    CEandKLLossesConfig,
+    CI_L0Config,
+    CIHistogramsConfig,
+    CIMaskedReconLayerwiseLossTrainConfig,
+    CIMaskedReconLossTrainConfig,
+    CIMaskedReconSubsetLossTrainConfig,
+    CIMeanPerComponentConfig,
+    ComponentActivationDensityConfig,
+    Config,
+    EvalMetricConfig,
+    EvalMetricConfigType,
+    FaithfulnessLossTrainConfig,
+    IdentityCIErrorConfig,
+    ImportanceMinimalityLossTrainConfig,
+    PermutedCIPlotsConfig,
+    StochasticReconLayerwiseLossTrainConfig,
+    StochasticReconLossTrainConfig,
+    StochasticReconSubsetCEAndKLConfig,
+    StochasticReconSubsetLossTrainConfig,
+    TrainMetricConfig,
+    TrainMetricConfigType,
+)
+from spd.metrics.ce_and_kl_losses import CEandKLLosses
+from spd.metrics.ci_histograms import CIHistograms
+from spd.metrics.ci_l0 import CI_L0
+from spd.metrics.ci_masked_recon_layerwise_loss import CIMaskedReconLayerwiseLoss
+from spd.metrics.ci_masked_recon_loss import CIMaskedReconLoss
+from spd.metrics.ci_masked_recon_subset_loss import CIMaskedReconSubsetLoss
+from spd.metrics.ci_mean_per_component import CIMeanPerComponent
+from spd.metrics.component_activation_density import ComponentActivationDensity
+from spd.metrics.faithfulness_loss import FaithfulnessLoss
+from spd.metrics.identity_ci_error import IdentityCIError
+from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
+from spd.metrics.permuted_ci_plots import PermutedCIPlots
+from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
+from spd.metrics.stochastic_recon_loss import StochasticReconLoss
+from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
+from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.models.component_model import ComponentModel
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import extract_batch_data
 
 
-def _should_run_metric(cfg: MetricConfig, cls: type, run_slow: bool) -> bool:
-    is_slow = cfg.slow if cfg.slow is not None else bool(getattr(cls, "slow", False))
-    return not (is_slow and not run_slow)
+def _should_run_metric(
+    cfg: EvalMetricConfig | TrainMetricConfig, metric: Metric, slow_step: bool
+) -> bool:
+    # TODO: Now that we have eval configs, best to just set a default argument for slow in each
+    # of the metric classes and overwrite it in the yaml if desired
+    if not slow_step:
+        return True
+    match cfg:
+        case TrainMetricConfig():
+            # Always run training metrics
+            return True
+        case EvalMetricConfig():
+            return cfg.slow if cfg.slow is not None else bool(getattr(metric, "slow", False))
 
 
 MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
@@ -68,13 +115,108 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
     return {**metrics, **avg_metrics}
 
 
+def init_metric(
+    cfg: EvalMetricConfigType | TrainMetricConfigType,
+    model: ComponentModel,
+    run_config: Config,
+    device: str,
+) -> Metric:
+    match cfg:
+        case ImportanceMinimalityLossTrainConfig():
+            metric = ImportanceMinimalityLoss(
+                model=model,
+                pnorm=cfg.pnorm,
+                p_anneal_start_frac=cfg.p_anneal_start_frac,
+                p_anneal_final_p=cfg.p_anneal_final_p,
+                p_anneal_end_frac=cfg.p_anneal_end_frac,
+            )
+        case CEandKLLossesConfig():
+            metric = CEandKLLosses(
+                model=model, sampling=cfg.sampling, rounding_threshold=cfg.rounding_threshold
+            )
+        case CIHistogramsConfig():
+            metric = CIHistograms(model=model, n_batches_accum=cfg.n_batches_accum)
+        case CI_L0Config():
+            metric = CI_L0(
+                model=model, ci_alive_threshold=cfg.ci_alive_threshold, groups=cfg.groups
+            )
+        case CIMaskedReconSubsetLossTrainConfig():
+            metric = CIMaskedReconSubsetLoss(
+                model=model, output_loss_type=run_config.output_loss_type
+            )
+        case CIMaskedReconLayerwiseLossTrainConfig():
+            metric = CIMaskedReconLayerwiseLoss(
+                model=model, output_loss_type=run_config.output_loss_type
+            )
+        case CIMaskedReconLossTrainConfig():
+            metric = CIMaskedReconLoss(model=model, output_loss_type=run_config.output_loss_type)
+        case CIMeanPerComponentConfig():
+            metric = CIMeanPerComponent(model=model)
+        case ComponentActivationDensityConfig():
+            metric = ComponentActivationDensity(
+                model=model, ci_alive_threshold=cfg.ci_alive_threshold
+            )
+        case FaithfulnessLossTrainConfig():
+            metric = FaithfulnessLoss(model=model)
+        case IdentityCIErrorConfig():
+            metric = IdentityCIError(
+                model=model,
+                sampling=run_config.sampling,
+                sigmoid_type=run_config.sigmoid_type,
+                identity_ci=cfg.identity_ci,
+                dense_ci=cfg.dense_ci,
+            )
+        case PermutedCIPlotsConfig():
+            metric = PermutedCIPlots(
+                model=model,
+                sampling=run_config.sampling,
+                sigmoid_type=cfg.sigmoid_type,
+                identity_patterns=cfg.identity_patterns,
+                dense_patterns=cfg.dense_patterns,
+            )
+        case StochasticReconLayerwiseLossTrainConfig():
+            metric = StochasticReconLayerwiseLoss(
+                model=model,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+                output_loss_type=run_config.output_loss_type,
+            )
+        case StochasticReconLossTrainConfig():
+            metric = StochasticReconLoss(
+                model=model,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+                output_loss_type=run_config.output_loss_type,
+            )
+        case StochasticReconSubsetLossTrainConfig():
+            metric = StochasticReconSubsetLoss(
+                model=model,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+                output_loss_type=run_config.output_loss_type,
+            )
+        case StochasticReconSubsetCEAndKLConfig():
+            metric = StochasticReconSubsetCEAndKL(
+                model=model,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+                output_loss_type=run_config.output_loss_type,
+            )
+    metric.to(device)
+    return metric
+
+
 def evaluate(
-    metric_configs: list[MetricConfig],
+    metric_configs: list[EvalMetricConfigType | TrainMetricConfigType],
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."] | tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: str,
-    config: Config,
-    run_slow: bool,
+    run_config: Config,
+    slow_step: bool,
     n_eval_steps: int,
     current_frac_of_training: float,
 ) -> MetricOutType:
@@ -82,13 +224,10 @@ def evaluate(
 
     metrics: list[Metric] = []
     for cfg in metric_configs:
-        metric_cls: type[Metric] = METRICS[cfg.classname]
-        if not _should_run_metric(cfg, metric_cls, run_slow):
-            continue
-        metric = metric_cls(
-            model=model, config=config, **cfg.extra_init_kwargs, sync_on_compute=True
-        ).to(device)
+        metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
         metrics.append(metric)
+        if not _should_run_metric(cfg=cfg, metric=metric, slow_step=slow_step):
+            continue
 
     # Weight deltas can be computed once per eval since params are frozen
     weight_deltas = model.calc_weight_deltas()
@@ -102,9 +241,9 @@ def evaluate(
         )
         ci, ci_upper_leaky = model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
-            sigmoid_type=config.sigmoid_type,
+            sigmoid_type=run_config.sigmoid_type,
             detach_inputs=False,
-            sampling=config.sampling,
+            sampling=run_config.sampling,
         )
 
         for metric in metrics:
@@ -112,9 +251,9 @@ def evaluate(
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
+                current_frac_of_training=current_frac_of_training,
                 ci_upper_leaky=ci_upper_leaky,
                 weight_deltas=weight_deltas,
-                current_frac_of_training=current_frac_of_training,
             )
 
     outputs: MetricOutType = {}

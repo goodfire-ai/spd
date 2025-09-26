@@ -1,9 +1,7 @@
 """Config classes of various types"""
 
-import importlib
-import inspect
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -21,23 +19,84 @@ from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
 from spd.models.components import GateType
+from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
 
+#### Train Metric Configs ####
+TrainMetricClassname = Literal[
+    "CIMaskedReconSubsetLoss",
+    "CIMaskedReconLayerwiseLoss",
+    "CIMaskedReconLoss",
+    "FaithfulnessLoss",
+    "ImportanceMinimalityLoss",
+    "StochasticReconLayerwiseLoss",
+    "StochasticReconLoss",
+    "StochasticReconSubsetLoss",
+]
 
-class MetricConfig(BaseModel):
+
+class TrainMetricConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    classname: str = Field(
+
+    coeff: float = Field(
         ...,
-        description="Name of the class to instantiate",
+        description="Coefficient used for weighting into loss/total.",
     )
-    extra_init_kwargs: dict[str, Any] = Field(
-        default={},
-        description="Extra keyword arguments to pass to the class constructor besides `model: ComponentModel` and `config: Config`",
-    )
-    coeff: float | None = Field(
-        default=None,
-        description="Optional coefficient used for weighting into loss/total.",
-    )
+
+
+class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
+
+
+class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
+
+
+class CIMaskedReconLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
+
+
+class FaithfulnessLossTrainConfig(TrainMetricConfig):
+    classname: Literal["FaithfulnessLoss"] = "FaithfulnessLoss"
+
+
+class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
+    classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
+    pnorm: float
+    p_anneal_start_frac: float = 1.0
+    p_anneal_final_p: float | None = None
+    p_anneal_end_frac: float = 1.0
+    eps: float = 1e-12
+
+
+class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
+    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
+
+
+class StochasticReconLossTrainConfig(TrainMetricConfig):
+    classname: Literal["StochasticReconLoss"] = "StochasticReconLoss"
+
+
+class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
+    classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+
+
+#### Eval Metric Configs ####
+EvalMetricClassname = Literal[
+    "CEandKLLosses",
+    "CIHistograms",
+    "CI_L0",
+    "CIMeanPerComponent",
+    "ComponentActivationDensity",
+    "IdentityCIError",
+    "PermutedCIPlots",
+    "StochasticReconSubsetCEAndKL",
+]
+
+
+class EvalMetricConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+
     slow: bool | None = Field(
         default=None,
         description=(
@@ -46,40 +105,71 @@ class MetricConfig(BaseModel):
         ),
     )
 
-    def _get_metric_class(self) -> type | None:
-        available_classes = importlib.import_module("spd.metrics").METRICS
-        cls = available_classes.get(self.classname)
-        if cls is None:
-            logger.warning(
-                f"Metric class {self.classname!r} not found. Available classes: {available_classes.keys()}"
-            )
-        return cls
 
-    @model_validator(mode="after")
-    def validate_class_kwargs(self) -> Self:
-        """Check that the classname and kwargs are valid.
+class CEandKLLossesConfig(EvalMetricConfig):
+    classname: Literal["CEandKLLosses"] = "CEandKLLosses"
+    sampling: Literal["continuous", "binomial"]
+    rounding_threshold: float
 
-        If the classname is not found, we warn instead of raising an error. This allows us to
-        load checkpoints from a run where a user might have added custom metrics.
-        """
-        cls = self._get_metric_class()
-        if cls is None:
-            return self
-        sig = inspect.signature(cls.__init__)
-        # Skip 'self' plus the first two actual parameters (model: ComponentModel, config: Config)
-        params_after_required = list(sig.parameters.values())[3:]
-        sig_extra_only = inspect.Signature(params_after_required)
 
-        # Check that kwargs are valid
-        try:
-            sig_extra_only.bind(**self.extra_init_kwargs)
-        except TypeError as e:
-            # Raise a warning instead of an error
-            # e.g. "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
-            logger.warning(f"Invalid kwargs for {self.classname!r}: {e}")
+class CIHistogramsConfig(EvalMetricConfig):
+    classname: Literal["CIHistograms"] = "CIHistograms"
+    n_batches_accum: int | None
 
-        return self
 
+class CI_L0Config(EvalMetricConfig):
+    classname: Literal["CI_L0"] = "CI_L0"
+    ci_alive_threshold: float
+    groups: dict[str, list[str]] | None
+
+
+class CIMeanPerComponentConfig(EvalMetricConfig):
+    classname: Literal["CIMeanPerComponent"] = "CIMeanPerComponent"
+
+
+class ComponentActivationDensityConfig(EvalMetricConfig):
+    classname: Literal["ComponentActivationDensity"] = "ComponentActivationDensity"
+    ci_alive_threshold: float
+
+
+class IdentityCIErrorConfig(EvalMetricConfig):
+    classname: Literal["IdentityCIError"] = "IdentityCIError"
+    identity_ci: list[dict[str, str | int]] | None
+    dense_ci: list[dict[str, str | int]] | None
+
+
+class PermutedCIPlotsConfig(EvalMetricConfig):
+    classname: Literal["PermutedCIPlots"] = "PermutedCIPlots"
+    sigmoid_type: SigmoidTypes
+    identity_patterns: list[str] | None
+    dense_patterns: list[str] | None
+
+
+class StochasticReconSubsetCEAndKLConfig(EvalMetricConfig):
+    classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
+
+
+TrainMetricConfigType = (
+    CIMaskedReconSubsetLossTrainConfig
+    | CIMaskedReconLayerwiseLossTrainConfig
+    | CIMaskedReconLossTrainConfig
+    | FaithfulnessLossTrainConfig
+    | ImportanceMinimalityLossTrainConfig
+    | StochasticReconLayerwiseLossTrainConfig
+    | StochasticReconLossTrainConfig
+    | StochasticReconSubsetLossTrainConfig
+)
+EvalMetricConfigType = (
+    CEandKLLossesConfig
+    | CIHistogramsConfig
+    | CI_L0Config
+    | CIMeanPerComponentConfig
+    | ComponentActivationDensityConfig
+    | IdentityCIErrorConfig
+    | PermutedCIPlotsConfig
+    | StochasticReconSubsetCEAndKLConfig
+)
+MetricConfigType = TrainMetricConfigType | EvalMetricConfigType
 
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
@@ -149,7 +239,9 @@ class Config(BaseModel):
         "model and component weights. This allows for removing the faithfulness loss.",
     )
 
-    loss_metric_configs: list[MetricConfig] = Field(
+    loss_metric_configs: list[
+        Annotated[TrainMetricConfigType, Field(discriminator="classname")]
+    ] = Field(
         default=[],
         description=(
             "List of configs for loss metrics to compute (used for both training logs and eval); "
@@ -228,9 +320,11 @@ class Config(BaseModel):
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    eval_metric_configs: list[MetricConfig] = Field(
-        default=[],
-        description="List of configs for metrics to use for evaluation",
+    eval_metric_configs: list[Annotated[EvalMetricConfigType, Field(discriminator="classname")]] = (
+        Field(
+            default=[],
+            description="List of configs for metrics to use for evaluation",
+        )
     )
 
     # --- Component Tracking ---
@@ -326,7 +420,7 @@ class Config(BaseModel):
             filtered_configs = []
             found_deprecated = False
             for cfg in config_dict["loss_metric_configs"]:
-                assert isinstance(cfg, dict | MetricConfig)
+                assert isinstance(cfg, dict | TrainMetricConfigType)
                 classname = cfg["classname"] if isinstance(cfg, dict) else cfg.classname
                 if classname == "SubsetReconstructionLoss":
                     found_deprecated = True
@@ -337,7 +431,7 @@ class Config(BaseModel):
                     filtered_configs.append(cfg)
 
             if found_deprecated:
-                config_dict["loss_metric_configs"] = filtered_configs
+                del config_dict["loss_metric_configs"]["SubsetReconstructionLoss"]
 
         for key in list(config_dict.keys()):
             val = config_dict[key]

@@ -8,7 +8,7 @@ from jaxtyping import Float, Int
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
-from spd.configs import Config, MetricConfig
+from spd.configs import Config, ImportanceMinimalityLossTrainConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
@@ -119,13 +119,6 @@ def test_from_run_info():
         base_model_path = base_model_dir / "model.pth"
         save_file(target_model.state_dict(), base_model_path)
 
-        loss_metric_configs = [
-            MetricConfig(
-                classname="ImportanceMinimalityLoss",
-                coeff=1.0,
-                extra_init_kwargs={"pnorm": 1.0, "eps": 1e-12},
-            )
-        ]
         config = Config(
             pretrained_model_class="tests.test_component_model.SimpleTestModel",
             pretrained_model_path=base_model_path,
@@ -142,7 +135,7 @@ def test_from_run_info():
             eval_batch_size=1,
             eval_freq=1,
             slow_eval_freq=1,
-            loss_metric_configs=loss_metric_configs,
+            loss_metric_configs=[ImportanceMinimalityLossTrainConfig(coeff=1.0, pnorm=1.0)],
             n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,

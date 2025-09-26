@@ -7,7 +7,6 @@ from jaxtyping import Float
 from torch import Tensor
 from torchmetrics import Metric
 
-from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_ci_l_zero
 
@@ -25,12 +24,12 @@ class CI_L0(Metric):
     def __init__(
         self,
         model: ComponentModel,
-        config: Config,
+        ci_alive_threshold: float,
         groups: dict[str, list[str]] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
-        self.l0_threshold = config.ci_alive_threshold
+        self.l0_threshold = ci_alive_threshold
         self.groups = groups
 
         # Avoid using e.g. "layers.*.mlp_in" as an attribute
@@ -48,7 +47,7 @@ class CI_L0(Metric):
             self.add_state(sanitized_key, default=[], dist_reduce_fx="cat")
 
     @override
-    def update(self, *, ci: dict[str, Float[Tensor, "... C"]], **kwargs: Any) -> None:
+    def update(self, *, ci: dict[str, Float[Tensor, "... C"]], **_: Any) -> None:
         group_sums = defaultdict(float) if self.groups else {}
         for layer_name, layer_ci in ci.items():
             l0_val = calc_ci_l_zero(layer_ci, self.l0_threshold)

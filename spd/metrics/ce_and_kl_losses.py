@@ -1,4 +1,4 @@
-from typing import Any, override
+from typing import Any, Literal, override
 
 import einops
 import torch
@@ -7,7 +7,6 @@ from jaxtyping import Int
 from torch import Tensor
 from torchmetrics import Metric
 
-from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
@@ -47,11 +46,15 @@ class CEandKLLosses(Metric):
     n_positions: Int[Tensor, ""]  # batch_size * seq_len * n_batches_seen
 
     def __init__(
-        self, model: ComponentModel, config: Config, rounding_threshold: float, **kwargs: Any
+        self,
+        model: ComponentModel,
+        sampling: Literal["continuous", "binomial"],
+        rounding_threshold: float,
+        **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.model = model
-        self.config = config
+        self.sampling: Literal["continuous", "binomial"] = sampling
         self.rounding_threshold = rounding_threshold
 
         for key in self.loss_keys:
@@ -65,10 +68,11 @@ class CEandKLLosses(Metric):
     @override
     def update(
         self,
+        *,
         batch: Tensor,
         target_out: Tensor,
         ci: dict[str, Tensor],
-        **kwargs: Any,
+        **_: Any,
     ) -> None:
         ce_losses = self._calc_ce_and_kl_losses(batch=batch, target_out=target_out, ci=ci)
 
@@ -113,7 +117,7 @@ class CEandKLLosses(Metric):
         # Sample stochastic masks based on the causal importances
         mask_infos = calc_stochastic_component_mask_info(
             causal_importances=ci,
-            sampling=self.config.sampling,
+            sampling=self.sampling,
             routing="all",
             weight_deltas=None,
         )

@@ -5,7 +5,6 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torchmetrics import Metric
 
-from spd.configs import Config
 from spd.models.component_model import ComponentModel
 
 
@@ -88,9 +87,9 @@ def _importance_minimality_loss_compute(
 
 def importance_minimality_loss(
     ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-    pnorm: float,
-    eps: float,
     current_frac_of_training: float,
+    eps: float,
+    pnorm: float,
     p_anneal_start_frac: float,
     p_anneal_final_p: float | None,
     p_anneal_end_frac: float,
@@ -134,20 +133,19 @@ class ImportanceMinimalityLoss(Metric):
     def __init__(
         self,
         model: ComponentModel,
-        config: Config,
-        pnorm: Any,
+        pnorm: float,
         p_anneal_start_frac: float = 1.0,
         p_anneal_final_p: float | None = None,
         p_anneal_end_frac: float = 1.0,
-        eps: Any = 1e-12,
+        eps: float = 1e-12,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
-        self.pnorm = float(pnorm)
-        self.eps = float(eps)
-        self.p_anneal_start_frac = float(p_anneal_start_frac)
-        self.p_anneal_final_p = float(p_anneal_final_p) if p_anneal_final_p is not None else None
-        self.p_anneal_end_frac = float(p_anneal_end_frac)
+        self.pnorm = pnorm
+        self.eps = eps
+        self.p_anneal_start_frac = p_anneal_start_frac
+        self.p_anneal_final_p = p_anneal_final_p if p_anneal_final_p is not None else None
+        self.p_anneal_end_frac = p_anneal_end_frac
         self.add_state("sum_loss", torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_examples", torch.tensor(0), dist_reduce_fx="sum")
 
@@ -157,7 +155,7 @@ class ImportanceMinimalityLoss(Metric):
         *,
         ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
         current_frac_of_training: float,
-        **kwargs: Any,
+        **_: Any,
     ) -> None:
         sum_loss, total_params = _importance_minimality_loss_update(
             ci_upper_leaky=ci_upper_leaky,

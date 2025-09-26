@@ -5,7 +5,6 @@ from PIL import Image
 from torch import Tensor
 from torchmetrics import Metric
 
-from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_mean_component_cis_both_scales
 
@@ -15,7 +14,7 @@ class CIMeanPerComponent(Metric):
     is_differentiable: bool | None = False
     full_state_update: bool | None = False  # Avoid double update calls
 
-    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
+    def __init__(self, model: ComponentModel, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.components = model.components
 
@@ -32,7 +31,7 @@ class CIMeanPerComponent(Metric):
             )
 
     @override
-    def update(self, *, ci: dict[str, Tensor], **kwargs: Any) -> None:
+    def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
         for module_name, ci_vals in ci.items():
             n_leading_dims = ci_vals.ndim - 1
             n_examples = ci_vals.shape[:n_leading_dims].numel()

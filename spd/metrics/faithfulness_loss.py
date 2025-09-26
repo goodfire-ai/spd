@@ -5,7 +5,6 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torchmetrics import Metric
 
-from spd.configs import Config
 from spd.models.component_model import ComponentModel
 
 
@@ -43,18 +42,14 @@ class FaithfulnessLoss(Metric):
     sum_loss: Float[Tensor, ""]
     total_params: Int[Tensor, ""]
 
-    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
+    def __init__(self, model: ComponentModel, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model = model
         self.add_state("sum_loss", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total_params", default=torch.tensor(0), dist_reduce_fx="sum")
 
     @override
-    def update(
-        self,
-        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
-        **kwargs: Any,
-    ) -> None:
+    def update(self, *, weight_deltas: dict[str, Float[Tensor, "d_out d_in"]], **_: Any) -> None:
         sum_loss, total_params = _faithfulness_loss_update(weight_deltas)
         self.sum_loss += sum_loss
         self.total_params += total_params

@@ -158,7 +158,8 @@ class TestConfigIntegration:
                 {
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
-                    "extra_init_kwargs": {"pnorm": 1.0, "eps": 1e-12},
+                    "pnorm": 1.0,
+                    "eps": 1e-12,
                 }
             ],
             "output_loss_type": "mse",
@@ -201,7 +202,8 @@ class TestConfigIntegration:
                 {
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
-                    "extra_init_kwargs": {"pnorm": 1.0, "eps": 1e-12},
+                    "pnorm": 1.0,
+                    "eps": 1e-12,
                 }
             ],
             "output_loss_type": "kl",
@@ -252,7 +254,8 @@ class TestConfigIntegration:
                 {
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
-                    "extra_init_kwargs": {"pnorm": 1.0, "eps": 1e-12},
+                    "pnorm": 1.0,
+                    "eps": 1e-12,
                 }
             ],
             "output_loss_type": "mse",
@@ -295,7 +298,8 @@ class TestConfigIntegration:
                 {
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
-                    "extra_init_kwargs": {"pnorm": 1.0, "eps": 1e-12},
+                    "pnorm": 1.0,
+                    "eps": 1e-12,
                 }
             ],
             "output_loss_type": "mse",

@@ -15,7 +15,6 @@ from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
 from torch.utils.data import DataLoader
-from torchmetrics import Metric
 from tqdm import tqdm
 
 from spd.configs import Config
@@ -24,7 +23,6 @@ from spd.eval import avg_eval_metrics_across_ranks, evaluate
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_total_loss
-from spd.metrics.utils import create_metrics
 from spd.models.component_model import ComponentModel
 from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
@@ -164,17 +162,6 @@ def optimize(
         ci_alive_threshold=config.ci_alive_threshold,
     )
 
-    loss_metrics: list[Metric] = create_metrics(
-        metric_configs=config.loss_metric_configs,
-        component_model=component_model,
-        config=config,
-        sync_on_compute=False,
-    )
-    loss_coeffs: dict[str, float] = {}
-    for cfg in config.loss_metric_configs:
-        assert cfg.coeff is not None, f"Loss metric {cfg.classname} has no coeff"
-        loss_coeffs[cfg.classname] = cfg.coeff
-
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
 
@@ -215,14 +202,18 @@ def optimize(
             alive_tracker.watch_batch(causal_importances)
 
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metrics=loss_metrics,
-                loss_coeffs=loss_coeffs,
+                loss_metric_configs=config.loss_metric_configs,
+                model=component_model,
                 batch=batch,
                 ci=causal_importances,
                 ci_upper_leaky=causal_importances_upper_leaky,
                 target_out=target_out,
                 weight_deltas=weight_deltas,
                 current_frac_of_training=step / config.steps,
+                sampling=config.sampling,
+                use_delta_component=config.use_delta_component,
+                n_mask_samples=config.n_mask_samples,
+                output_loss_type=config.output_loss_type,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
@@ -268,7 +259,7 @@ def optimize(
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
             with torch.inference_mode():
-                run_slow: bool = (
+                slow_step: bool = (
                     config.slow_eval_on_first_step
                     if step == 0
                     else step % config.slow_eval_freq == 0
@@ -279,8 +270,8 @@ def optimize(
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
                     device=device,
-                    config=config,
-                    run_slow=run_slow,
+                    run_config=config,
+                    slow_step=slow_step,
                     n_eval_steps=n_eval_steps,
                     current_frac_of_training=step / config.steps,
                 )

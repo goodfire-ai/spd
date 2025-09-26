@@ -38,11 +38,11 @@ class TestCIHistograms:
         }
 
     def test_n_batches_accum_enforcement(
-        self, mock_model: Mock, mock_config: Mock, sample_ci: dict[str, torch.Tensor]
+        self, mock_model: Mock, sample_ci: dict[str, torch.Tensor]
     ):
         """Test that CIHistograms stops accumulating after n_batches_accum."""
         n_batches_accum = 3
-        ci_hist = CIHistograms(mock_model, mock_config, n_batches_accum=n_batches_accum)
+        ci_hist = CIHistograms(mock_model, n_batches_accum=n_batches_accum)
 
         # Create dummy batch and target_out
         batch = torch.randn(4, 8)
@@ -59,11 +59,9 @@ class TestCIHistograms:
         assert len(ci_hist.causal_importances_layer1) == n_batches_accum  # pyright: ignore[reportArgumentType]
         assert len(ci_hist.causal_importances_layer2) == n_batches_accum  # pyright: ignore[reportArgumentType]
 
-    def test_none_n_batches_accum(
-        self, mock_model: Mock, mock_config: Mock, sample_ci: dict[str, torch.Tensor]
-    ):
+    def test_none_n_batches_accum(self, mock_model: Mock, sample_ci: dict[str, torch.Tensor]):
         """Test unlimited batch accumulation when n_batches_accum is None."""
-        ci_hist = CIHistograms(mock_model, mock_config, n_batches_accum=None)
+        ci_hist = CIHistograms(mock_model, n_batches_accum=None)
 
         batch = torch.randn(4, 8)
         target_out = torch.randn(4, 8, 100)
@@ -80,10 +78,10 @@ class TestCIHistograms:
         assert len(ci_hist.causal_importances_layer1) == num_batches  # pyright: ignore[reportArgumentType]
         assert len(ci_hist.causal_importances_layer2) == num_batches  # pyright: ignore[reportArgumentType]
 
-    def test_empty_compute(self, mock_model: Mock, mock_config: Mock):
+    def test_empty_compute(self, mock_model: Mock):
         """Test compute() when no batches have been updated."""
 
-        ci_hist = CIHistograms(mock_model, mock_config)
+        ci_hist = CIHistograms(mock_model)
 
         # When no batches watched, dim_zero_cat will raise a ValueError
         # We also expect a warning about compute being called before update

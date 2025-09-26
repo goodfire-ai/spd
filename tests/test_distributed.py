@@ -34,7 +34,8 @@ TEST_CONFIG = {
         {
             "classname": "ImportanceMinimalityLoss",
             "coeff": 0.1,
-            "extra_init_kwargs": {"pnorm": 2.0, "eps": 1e-12},
+            "pnorm": 2.0,
+            "eps": 1e-12,
         },
         # Disable stochastic terms for deterministic dp test; keep a simple layerwise recon if needed
         {"classname": "CIMaskedReconLayerwiseLoss", "coeff": 1.0},
@@ -58,7 +59,7 @@ TEST_CONFIG = {
     "n_examples_until_dead": 999999,  # We're not tracking this
     "eval_metrics": [
         {"classname": "CI_L0"},
-        {"classname": "CEandKLLosses", "extra_init_kwargs": {"rounding_threshold": 0.1}},
+        {"classname": "CEandKLLosses", "rounding_threshold": 0.1},
     ],
     # --- Pretrained model info ---
     "pretrained_model_class": "transformers.LlamaForCausalLM",

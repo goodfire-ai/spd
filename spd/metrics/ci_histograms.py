@@ -6,7 +6,6 @@ from torch import Tensor
 from torchmetrics import Metric
 from torchmetrics.utilities import dim_zero_cat
 
-from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_ci_values_histograms
 
@@ -19,7 +18,6 @@ class CIHistograms(Metric):
     def __init__(
         self,
         model: ComponentModel,
-        config: Config,
         n_batches_accum: int | None = None,
         **kwargs: Any,
     ):
@@ -32,7 +30,7 @@ class CIHistograms(Metric):
             self.add_state(f"causal_importances_{module_name}", default=[], dist_reduce_fx="cat")
 
     @override
-    def update(self, *, ci: dict[str, Tensor], **kwargs: Any) -> None:
+    def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
         if self.n_batches_accum is not None and self.batches_seen >= self.n_batches_accum:
             return
         self.batches_seen += 1

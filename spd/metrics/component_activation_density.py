@@ -7,7 +7,6 @@ from PIL import Image
 from torch import Tensor
 from torchmetrics import Metric
 
-from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_component_activation_density
 
@@ -21,10 +20,10 @@ class ComponentActivationDensity(Metric):
 
     n_examples: Int[Tensor, ""]
 
-    def __init__(self, model: ComponentModel, config: Config, **kwargs: Any) -> None:
+    def __init__(self, model: ComponentModel, ci_alive_threshold: float, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.model = model
-        self.config = config
+        self.ci_alive_threshold = ci_alive_threshold
 
         self.add_state("n_examples", default=torch.tensor(0.0), dist_reduce_fx="sum")
 
@@ -36,12 +35,12 @@ class ComponentActivationDensity(Metric):
             )
 
     @override
-    def update(self, ci: dict[str, Tensor], **kwargs: Any) -> None:
+    def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
         n_examples_this_batch = next(iter(ci.values())).shape[:-1].numel()
         self.n_examples += n_examples_this_batch
 
         for module_name, ci_vals in ci.items():
-            active_components = ci_vals > self.config.ci_alive_threshold
+            active_components = ci_vals > self.ci_alive_threshold
             n_activations_per_component = reduce(active_components, "... C -> C", "sum")
             counts = getattr(self, f"component_activation_counts_{module_name}")
             counts += n_activations_per_component * n_examples_this_batch

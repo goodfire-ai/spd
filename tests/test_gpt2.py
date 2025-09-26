@@ -1,6 +1,16 @@
 from transformers import PreTrainedModel
 
-from spd.configs import Config, MetricConfig
+from spd.configs import (
+    CEandKLLossesConfig,
+    CI_L0Config,
+    CIHistogramsConfig,
+    ComponentActivationDensityConfig,
+    Config,
+    FaithfulnessLossTrainConfig,
+    ImportanceMinimalityLossTrainConfig,
+    StochasticReconLayerwiseLossTrainConfig,
+    StochasticReconLossTrainConfig,
+)
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.identity_insertion import insert_identity_operations_
@@ -28,14 +38,14 @@ def test_gpt_2_decomposition_happy_path() -> None:
         target_module_patterns=["transformer.h.*.attn.c_attn", "transformer.h.*.attn.c_proj"],
         identity_module_patterns=["transformer.h.*.attn.c_attn"],
         loss_metric_configs=[
-            MetricConfig(
-                classname="ImportanceMinimalityLoss",
+            ImportanceMinimalityLossTrainConfig(
                 coeff=1e-2,
-                extra_init_kwargs={"pnorm": 0.9, "eps": 1e-12},
+                pnorm=0.9,
+                eps=1e-12,
             ),
-            MetricConfig(classname="StochasticReconLayerwiseLoss", coeff=1.0),
-            MetricConfig(classname="StochasticReconLoss", coeff=1.0),
-            MetricConfig(classname="FaithfulnessLoss", coeff=200),
+            StochasticReconLayerwiseLossTrainConfig(coeff=1.0),
+            StochasticReconLossTrainConfig(coeff=1.0),
+            FaithfulnessLossTrainConfig(coeff=200),
         ],
         output_loss_type="kl",
         # Training
@@ -56,10 +66,10 @@ def test_gpt_2_decomposition_happy_path() -> None:
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
         eval_metric_configs=[
-            MetricConfig(classname="CIHistograms", extra_init_kwargs={"n_batches_accum": 5}),
-            MetricConfig(classname="ComponentActivationDensity"),
-            MetricConfig(classname="CI_L0"),
-            MetricConfig(classname="CEandKLLosses", extra_init_kwargs={"rounding_threshold": 0.0}),
+            CIHistogramsConfig(n_batches_accum=5),
+            ComponentActivationDensityConfig(ci_alive_threshold=0.1),
+            CI_L0Config(ci_alive_threshold=0.1, groups=None),
+            CEandKLLossesConfig(sampling="continuous", rounding_threshold=0.0),
         ],
         # Pretrained model info
         pretrained_model_class="transformers.GPT2LMHeadModel",
