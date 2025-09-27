@@ -171,6 +171,7 @@ def main(
 
     if is_main_process():
         logger.info("Starting optimization...")
+
     optimize(
         target_model=target_model,
         config=config,

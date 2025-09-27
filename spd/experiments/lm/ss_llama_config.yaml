@@ -17,15 +17,11 @@ use_delta_component: true
 
 # --- Loss Coefficients ---
 faithfulness_coeff: null
-recon_coeff: null
+ci_recon_coeff: null
 stochastic_recon_coeff: 0.2
-recon_layerwise_coeff: null
+ci_recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 2.0
 importance_minimality_coeff: 0.0003
-schatten_coeff: null
-out_recon_coeff: null
-embedding_recon_coeff: null
-is_embed_unembed_recon: false
 pnorm: 2.0
 p_anneal_start_frac: 0.0
 p_anneal_final_p: 0.3
@@ -72,7 +68,6 @@ eval_metrics:
   - classname: "SubsetReconstructionLoss"
     extra_init_kwargs:
       n_mask_samples: 1
-      use_all_ones_for_non_replaced: false
       include_patterns:
         layer_0_only: ["model.layers.0.*"]
         layer_1_only: ["model.layers.1.*"]

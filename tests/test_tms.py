@@ -7,6 +7,7 @@ from spd.configs import Config
 from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.experiments.tms.train_tms import get_model_and_dataloader, train
+from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.general_utils import set_seed
@@ -40,16 +41,14 @@ def test_tms_decomposition_happy_path() -> None:
         gate_type="mlp",
         gate_hidden_dims=[8],
         target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
+        identity_module_patterns=["linear1"],
         # Loss Coefficients
         faithfulness_coeff=1.0,
-        recon_coeff=None,
+        ci_recon_coeff=None,
         stochastic_recon_coeff=1.0,
-        recon_layerwise_coeff=1e-1,
+        ci_recon_layerwise_coeff=1e-1,
         stochastic_recon_layerwise_coeff=1.0,
         importance_minimality_coeff=3e-3,
-        schatten_coeff=None,
-        embedding_recon_coeff=None,
-        is_embed_unembed_recon=False,
         pnorm=2.0,
         output_loss_type="mse",
         # Training
@@ -85,6 +84,9 @@ def test_tms_decomposition_happy_path() -> None:
     # Create a pretrained model
     target_model = TMSModel(config=tms_model_config).to(device)
     target_model.eval()
+
+    if config.identity_module_patterns is not None:
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
     assert isinstance(config.task_config, TMSTaskConfig)
     # Create dataset
