@@ -70,11 +70,21 @@ class SPDRunInfo(RunInfo[Config]):
 
 
 class ComponentModel(LoadableModule):
-    """Wrapper around an arbitrary model for running SPD.
+    """Wrapper around an arbitrary pytorch model for running SPD.
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
     `LlamaForCausalLM`, `AutoModelForCausalLM`) as long as its sub-module names
     match the patterns you pass in `target_module_patterns`.
+
+    Forward passes are performed in three modes:
+    - 'target': Standard forward pass of the target model
+    - 'components': Forward with (masked) components replacing chosen modules. The components are
+        inserted in place of the chosen modules with the use of forward hooks.
+    - 'input_cache': Forward with caching inputs to chosen modules
+
+    We register components and gates as modules in this class in order to have them update
+    correctly when the model is wrapped in a `DistributedDataParallel` wrapper (and for other
+    conveniences).
     """
 
     def __init__(
@@ -279,7 +289,7 @@ class ComponentModel(LoadableModule):
     ) -> Any:
         """Forward pass of the patched model.
 
-        NOTE: We need all the forward options in forward in order for DistributedDataParallel to
+        NOTE: We need all the forward options in this method in order for DistributedDataParallel to
         work (https://discuss.pytorch.org/t/is-it-ok-to-use-methods-other-than-forward-in-ddp/176509).
 
         Args:
@@ -294,16 +304,17 @@ class ComponentModel(LoadableModule):
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
-        if mode == "components":
-            assert mask_infos is not None, "mask_infos are required for mode='components'"
-            return self._forward_with_components(*args, mask_infos=mask_infos, **kwargs)
-        elif mode == "input_cache":
-            assert module_names is not None, (
-                "module_names parameter is required for mode='input_cache'"
-            )
-            return self._forward_with_input_cache(*args, module_names=module_names, **kwargs)
-        else:
-            return self._extract_output(self.target_model(*args, **kwargs))
+        match mode:
+            case "components":
+                assert mask_infos is not None, "mask_infos are required for mode='components'"
+                return self._forward_with_components(*args, mask_infos=mask_infos, **kwargs)
+            case "input_cache":
+                assert module_names is not None, (
+                    "module_names parameter is required for mode='input_cache'"
+                )
+                return self._forward_with_input_cache(*args, module_names=module_names, **kwargs)
+            case "target" | None:
+                return self._extract_output(self.target_model(*args, **kwargs))
 
     @contextmanager
     def _attach_forward_hooks(
