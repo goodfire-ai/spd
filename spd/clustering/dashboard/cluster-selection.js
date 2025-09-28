@@ -116,7 +116,9 @@ const columnRenderers = {
                 shading: true, // Solid fill for histogram bars
                 lineWidth: 0,  // No line, just bars
                 markers: '',   // No markers
-                margin: 2
+                margin: 2,
+                xAxis: {line: true, ticks: true},
+                yAxis: {line: true, ticks: true}
             });
 
             container.innerHTML = svg;
