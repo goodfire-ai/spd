@@ -307,51 +307,51 @@ async function loadData() {
                 },
                 {
                     key: 'allActivations',
-                    label: 'Histogram',
+                    label: 'Activations',
                     type: 'string',
                     width: '100px',
                     align: 'center',
                     renderer: columnRenderers.activationHistogram
                 },
-                {
-                    key: 'sampleCount',
-                    label: 'Samples',
-                    type: 'number',
-                    width: '50px',
-                    align: 'right'
-                },
-                {
-                    key: 'maxActivation',
-                    label: 'Max',
-                    type: 'number',
-                    width: '20px',
-                    align: 'right',
-                    renderer: (value) => value.toFixed(3)
-                },
-                {
-                    key: 'meanActivation',
-                    label: 'Mean',
-                    type: 'number',
-                    width: '20px',
-                    align: 'right',
-                    renderer: (value) => value.toFixed(3)
-                },
-                {
-                    key: 'medianActivation',
-                    label: 'Med',
-                    type: 'number',
-                    width: '20px',
-                    align: 'right',
-                    renderer: (value) => value.toFixed(3)
-                },
-                {
-                    key: 'minActivation',
-                    label: 'Min',
-                    type: 'number',
-                    width: '20px',
-                    align: 'right',
-                    renderer: (value) => value.toFixed(4)
-                },
+                // {
+                //     key: 'sampleCount',
+                //     label: 'Samples',
+                //     type: 'number',
+                //     width: '50px',
+                //     align: 'right'
+                // },
+                // {
+                //     key: 'maxActivation',
+                //     label: 'Max',
+                //     type: 'number',
+                //     width: '20px',
+                //     align: 'right',
+                //     renderer: (value) => value.toFixed(3)
+                // },
+                // {
+                //     key: 'meanActivation',
+                //     label: 'Mean',
+                //     type: 'number',
+                //     width: '20px',
+                //     align: 'right',
+                //     renderer: (value) => value.toFixed(3)
+                // },
+                // {
+                //     key: 'medianActivation',
+                //     label: 'Med',
+                //     type: 'number',
+                //     width: '20px',
+                //     align: 'right',
+                //     renderer: (value) => value.toFixed(3)
+                // },
+                // {
+                //     key: 'minActivation',
+                //     label: 'Min',
+                //     type: 'number',
+                //     width: '20px',
+                //     align: 'right',
+                //     renderer: (value) => value.toFixed(4)
+                // },
                 {
                     key: 'id',
                     label: 'Actions',
