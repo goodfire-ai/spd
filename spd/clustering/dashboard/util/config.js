@@ -1,3 +1,7 @@
+// config.js - Configuration management system
+// origin: https://github.com/mivanit/js-dev-toolkit
+// license: GPLv3
+
 /**
  * Configuration Handler
  *

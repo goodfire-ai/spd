@@ -1,3 +1,7 @@
+// DataFrame.js - Tabular data manipulation and display
+// origin: https://github.com/mivanit/js-dev-toolkit
+// license: GPLv3
+
 class DataFrame {
 	/**
 	 * Creates a DataFrame from a list of row objects

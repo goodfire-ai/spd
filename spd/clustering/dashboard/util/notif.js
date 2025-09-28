@@ -1,4 +1,6 @@
-/* notif.js - Standalone notification system */
+// notif.js - notification system
+// origin: https://github.com/mivanit/js-dev-toolkit
+// license: GPLv3
 class NotificationManager {
     constructor(options = {}) {
         // Timeout settings

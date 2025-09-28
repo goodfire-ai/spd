@@ -1,64 +1,86 @@
+// sparklines.js - Generate SVG sparklines and sparkbars from data arrays
+// origin: https://github.com/mivanit/js-dev-toolkit
+// license: GPLv3
+
+const _PLOT_OPTS_DEFAULT = {
+	// Chart dimensions and basic styling
+	width: 160,  // number: SVG width in pixels
+	height: 80,  // number: SVG height in pixels
+	color: '#4169E1',  // string: CSS color for line/bars/markers
+	shading: 0.3,  // boolean|number: false=none, true=solid fill, 0-1=gradient opacity
+	lineWidth: 2,  // number: stroke width for line charts in pixels
+	markers: null,  // null|number: null=no markers, positive number=circle radius
+	margin: 5,  // number: base margin around chart content in pixels
+	style: 'line',  // string: 'line' or 'bar' (internal, set by sparkline/sparkbars)
+	barWidthRatio: 1,  // number: 0-1 ratio, 1=touching bars, <1=gaps between bars
+
+	// X-axis configuration
+	xAxis: {
+		line: false,  // boolean: show axis line
+		ticks: false,  // boolean: show tick labels (min/max values)
+		text_offset: 10,  // number: pixels below axis for tick labels
+		text_y_position: 0,  // number: additional Y offset for labels (positive = down)
+		label_margin: 5,  // number: extra margin in pixels when ticks shown
+		limits_length: 2  // number: expected array length for xlims (internal)
+	},
+
+	// Y-axis configuration
+	yAxis: {
+		line: false,  // boolean: show axis line
+		ticks: false,  // boolean: show tick labels (min/max values)
+		text_offset: 2,  // number: pixels left of axis for tick labels
+		text_y_offset: 0,  // number: pixels down from top edge for max label to prevent cutoff
+		label_margin: 10,  // number: extra margin in pixels when ticks shown
+		limits_length: 2  // number: expected array length for ylims (internal)
+	},
+
+	xlims: null,  // null|array: [min, max] numbers or null for auto from data
+	ylims: null,  // null|array: [min, max] numbers or null for auto from data
+
+	// Bar chart specific settings
+	bar: {
+		opacity: 0.8,  // number: 0-1 opacity of bar rectangles
+		y_axis_shift_ratio: 0.6,  // number: Y-axis left shift as ratio of bar width
+		y_axis_reduction_factor: 1  // number: width reduction factor for Y-axis labels
+	},
+
+	// Axis styling (applies to both X and Y)
+	axis_style: {
+		color: '#ccc',  // string: CSS color for axis lines
+		width: 1,  // number: axis line stroke width in pixels
+		font_size: 10,  // number: tick label font size in pixels
+		text_color: '#666'  // string: CSS color for tick labels
+	},
+
+	// Gradient fill configuration (when shading is 0-1)
+	gradient: {
+		start_offset: '0%',  // string: SVG gradient start position
+		end_offset: '100%',  // string: SVG gradient end position
+		end_opacity: 0  // number: 0-1 opacity at gradient end
+	},
+
+	min_range: 1  // number: minimum range when max equals min in data
+};
 /**
- * Generate an SVG sparkline chart from data
- *
- * Creates a small inline chart suitable for embedding in tables, dashboards, or text.
- * The sparkline automatically scales to fit the data range and supports various
- * visual customizations including gradients, markers, and optional axes.
- *
- * # Parameters:
- *  - `values : number[]`
- *     Array of values to plot. If yvalues is null, these are y-values with auto x-values (0..n-1).
- *     If yvalues is provided, these are x-values.
- *  - `yvalues : number[]|null`
- *     Array of y-values (defaults to null). When provided, values becomes x-values.
- *  - `options : object`
- *     Configuration object with the following properties:
- *     - `width : number` - SVG width in pixels (defaults to `120`)
- *     - `height : number` - SVG height in pixels (defaults to `40`)
- *     - `color : string` - Color for line, markers, and fill (defaults to `"#4169E1"`)
- *     - `shading : boolean|number` - Fill under the line:
- *       - `false` for no shading
- *       - `true` for solid fill
- *       - `0.0-1.0` for gradient with specified opacity (defaults to `0.3`)
- *     - `lineWidth : number` - Stroke width of the line (defaults to `2`)
- *     - `markers : string` - Data point markers:
- *       - `""` for no markers
- *       - `"."` for small dots
- *       - `"o"` for large dots (defaults to `"."`)
- *     - `margin : number` - Base margin around the chart (defaults to `5`)
- *     - `xAxis : object` - X-axis configuration:
- *       - `line : boolean` - Draw axis line (defaults to `false`)
- *       - `ticks : boolean` - Show tick labels (defaults to `false`)
- *     - `yAxis : object` - Y-axis configuration:
- *       - `line : boolean` - Draw axis line (defaults to `false`) 
- *       - `ticks : boolean` - Show tick labels (defaults to `false`)
- * 
- * # Returns:
- *  - `string`
- *     Complete SVG element as an HTML string
- * 
- * # Usage:
- *
- * ```javascript
- * // Basic sparkline with auto x-values (0, 1, 2, 3, 4) - matplotlib style
- * document.getElementById('chart').innerHTML = sparkline([1, 5, 2, 8, 3]);
- *
- * // Sparkline with custom x and y values - matplotlib style
- * document.getElementById('chart').innerHTML = sparkline([0, 2, 4, 6, 8], [1, 5, 2, 8, 3]);
- *
- * // Customized sparkline with axes
- * document.getElementById('chart').innerHTML = sparkline([10, 25, 15, 30, 20], null, {
- *     width: 200,
- *     height: 60,
- *     color: '#22c55e',
- *     shading: 0.5,
- *     markers: 'o',
- *     xAxis: { line: true, ticks: true },
- *     yAxis: { line: true, ticks: true }
- * });
- * ```
+ * Deep merge options with defaults
  */
-function sparkline(values, yvalues = null, options = {}) {
+function merge_options(options = {}) {
+	return {
+		..._PLOT_OPTS_DEFAULT,
+		...options,
+		xAxis: { ..._PLOT_OPTS_DEFAULT.xAxis, ...(options.xAxis || {}) },
+		yAxis: { ..._PLOT_OPTS_DEFAULT.yAxis, ...(options.yAxis || {}) },
+		bar: { ..._PLOT_OPTS_DEFAULT.bar, ...(options.bar || {}) },
+		axis_style: { ..._PLOT_OPTS_DEFAULT.axis_style, ...(options.axis_style || {}) },
+		gradient: { ..._PLOT_OPTS_DEFAULT.gradient, ...(options.gradient || {}) }
+	};
+}
+
+/**
+ * Process and validate input values
+ * Returns { xvalues, yvalues } arrays
+ */
+function process_values(values, yvalues = null) {
 	// Validate inputs
 	if (!Array.isArray(values)) {
 		throw new Error(`First parameter must be an array, got: ${typeof values}`);
@@ -68,142 +90,216 @@ function sparkline(values, yvalues = null, options = {}) {
 		throw new Error('Values array cannot be empty');
 	}
 
-	// Default options
-	const opts = {
-		width: 120,
-		height: 40,
-		color: '#4169E1',
-		shading: 0.3,
-		lineWidth: 2,
-		markers: '.',
-		margin: 5,
-		xAxis: { line: false, ticks: false },
-		yAxis: { line: false, ticks: false },
-		...options
-	};
-
-	// Handle matplotlib-style parameter interpretation
-	let xvalues, yvals;
+	let xvals, yvals;
 
 	if (yvalues === null) {
 		// values is y-values, generate x-values as 0..n-1
 		yvals = values;
-		xvalues = Array.from({ length: values.length }, (_, i) => i);
+		xvals = Array.from({ length: values.length }, (_, i) => i);
 	} else {
 		// values is x-values, yvalues is y-values
 		if (!Array.isArray(yvalues)) {
 			throw new Error(`Second parameter must be an array or null, got: ${typeof yvalues}`);
 		}
-		xvalues = values;
+		xvals = values;
 		yvals = yvalues;
 	}
 
 	// Validate that x and y arrays have same length
-	if (xvalues.length !== yvals.length) {
-		throw new Error(`x-values length (${xvalues.length}) must match y-values length (${yvals ? yvals.length : 'undefined'})`);
+	if (xvals.length !== yvals.length) {
+		throw new Error(`x-values length (${xvals.length}) must match y-values length (${yvals.length})`);
 	}
+
+	return { xvalues: xvals, yvalues: yvals };
+}
+
+function plot(values, yvalues = null, options = {}) {
+	const opts = merge_options(options);
+	const { xvalues, yvalues: yvals } = process_values(values, yvalues);
 
 	// Calculate margins based on what's shown
 	const needsLeftMargin = opts.yAxis.ticks;
 	const needsBottomMargin = opts.xAxis.ticks;
-	const leftMargin = needsLeftMargin ? opts.margin + 20 : opts.margin;
-	const rightMargin = opts.margin;
-	const topMargin = opts.margin;
-	const bottomMargin = needsBottomMargin ? opts.margin + 15 : opts.margin;
+	// For bar charts with Y-axis, we need extra left margin since axis is shifted left
+	const barChartExtraMargin = opts.style === 'bar' && (opts.yAxis.line || opts.yAxis.ticks) ?
+		(opts.width - 2 * opts.margin) / yvals.length * opts.bar.y_axis_shift_ratio : 0;
+	const leftMargin = (needsLeftMargin ? opts.margin + opts.yAxis.label_margin : opts.margin) + barChartExtraMargin;
+	const bottomMargin = needsBottomMargin ? opts.margin + opts.xAxis.label_margin : opts.margin;
 
-	const ymin = Math.min(...yvals);
-	const ymax = Math.max(...yvals);
-	const yrange = ymax - ymin || 1;
+	// Calculate axis limits - use custom limits if provided, otherwise data range
+	const ymin = opts.ylims ? opts.ylims[0] : Math.min(...yvals);
+	const ymax = opts.ylims ? opts.ylims[1] : Math.max(...yvals);
+	const yrange = ymax - ymin || opts.min_range;
 
-	const xmin = Math.min(...xvalues);
-	const xmax = Math.max(...xvalues);
-	const xrange = xmax - xmin || 1;
+	const xmin = opts.xlims ? opts.xlims[0] : Math.min(...xvalues);
+	const xmax = opts.xlims ? opts.xlims[1] : Math.max(...xvalues);
+	const xrange = xmax - xmin || opts.min_range;
 
-	const chartWidth = opts.width - leftMargin - rightMargin;
-	const chartHeight = opts.height - topMargin - bottomMargin;
-
-	// Build path
-	let path = '';
-	let dots = '';
-	const points = [];
-
-	yvals.forEach((yval, i) => {
-		const xval = xvalues[i];
-		const x = leftMargin + ((xval - xmin) / xrange) * chartWidth;
-		const y = topMargin + (1 - (yval - ymin) / yrange) * chartHeight;
-		points.push({ x, y, xval, yval });
-
-		path += `${i === 0 ? 'M' : 'L'} ${x} ${y} `;
-
-		// Add markers
-		if (opts.markers === '.') {
-			dots += `<circle cx="${x}" cy="${y}" r="2" fill="${opts.color}"/>`;
-		} else if (opts.markers === 'o') {
-			dots += `<circle cx="${x}" cy="${y}" r="3.5" fill="${opts.color}"/>`;
-		}
-	});
+	const chartWidth = opts.width - leftMargin - opts.margin;
+	const chartHeight = opts.height - opts.margin - bottomMargin;
 
 	// Build SVG
-	let svg = `<svg width="${opts.width}" height="${opts.height}">`;
 
-	// Add shading if requested
-	if (opts.shading !== false) {
-		if (opts.shading === true) {
-			// Solid fill
-			for (let i = 0; i < points.length - 1; i++) {
-				const p1 = points[i];
-				const p2 = points[i + 1];
-				const segmentPath = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y} L ${p2.x} ${opts.height - bottomMargin} L ${p1.x} ${opts.height - bottomMargin} Z`;
-				svg += `<path d="${segmentPath}" fill="${opts.color}"/>`;
-			}
+	// this setup is messy, but syntax highlighting gets confused with template strings??
+	let svg = "<svg " + `width="${opts.width}" height="${opts.height}"` + ">";
+
+	if (opts.style === 'bar') {
+		// Bar chart rendering
+		const baseY = opts.height - bottomMargin;
+		// For bars, we position them at centers, with the first at 0 and last at (n-1)/n of the width
+		// This matches how the X-axis is drawn (ending at center of last bar)
+		const adjustedChartWidth = chartWidth - (chartWidth / yvals.length / 2);
+
+		// Calculate bar spacing based on actual x-values
+		let barSpacing;
+		if (yvals.length === 1) {
+			// Single bar: use full available width
+			barSpacing = adjustedChartWidth;
 		} else {
-			// Gradient fill
-			const gradId = `grad${Date.now()}${Math.random()}`;
-			const opacity = parseFloat(opts.shading);
-			svg += `
-            <defs>
-                <linearGradient id="${gradId}" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" style="stop-color:${opts.color};stop-opacity:${opacity}"/>
-                    <stop offset="100%" style="stop-color:${opts.color};stop-opacity:0"/>
-                </linearGradient>
-            </defs>`;
+			// Multiple bars: find minimum spacing between consecutive x-values
+			const sortedIndices = [...Array(xvalues.length).keys()].sort((a, b) => xvalues[a] - xvalues[b]);
+			let minSpacing = Infinity;
+			for (let j = 1; j < sortedIndices.length; j++) {
+				const prevX = xvalues[sortedIndices[j - 1]];
+				const currX = xvalues[sortedIndices[j]];
+				const spacing = ((currX - prevX) / xrange) * adjustedChartWidth;
+				if (spacing < minSpacing) minSpacing = spacing;
+			}
+			// If all x-values are the same, fall back to dividing by count
+			barSpacing = minSpacing === Infinity ? adjustedChartWidth / yvals.length : minSpacing;
+		}
 
-			for (let i = 0; i < points.length - 1; i++) {
-				const p1 = points[i];
-				const p2 = points[i + 1];
-				const segmentPath = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y} L ${p2.x} ${opts.height - bottomMargin} L ${p1.x} ${opts.height - bottomMargin} Z`;
-				svg += `<path d="${segmentPath}" fill="url(#${gradId})"/>`;
+		// Bar width is the spacing times the ratio (1 = touching, <1 = gaps)
+		const actualBarWidth = barSpacing * opts.barWidthRatio;
+
+		yvals.forEach((yval, i) => {
+			const xval = xvalues[i];
+			// Position at bar center
+			const x = leftMargin + ((xval - xmin) / xrange) * adjustedChartWidth;
+			const barHeight = Math.abs((yval - ymin) / yrange) * chartHeight;
+			const barY = baseY - barHeight;
+
+			// Calculate bar x position (offset by half width to center)
+			const barX = x - actualBarWidth / 2;
+
+			svg += `<rect x="${barX}" y="${barY}" width="${actualBarWidth}" height="${barHeight}" fill="${opts.color}" opacity="${opts.bar.opacity}"/>`;
+		});
+	} else {
+		// Line chart rendering (existing code)
+		let path = '';
+		let dots = '';
+		const points = [];
+
+		yvals.forEach((yval, i) => {
+			const xval = xvalues[i];
+			const x = leftMargin + ((xval - xmin) / xrange) * chartWidth;
+			const y = opts.margin + (1 - (yval - ymin) / yrange) * chartHeight;
+			points.push({ x, y, xval, yval });
+
+			path += `${i === 0 ? 'M' : 'L'} ${x} ${y} `;
+
+			// Add markers if specified
+			if (opts.markers !== null && opts.markers > 0) {
+				dots += `<circle cx="${x}" cy="${y}" r="${opts.markers}" fill="${opts.color}"/>`;
+			}
+		});
+
+		// Add shading if requested
+		if (opts.shading !== false) {
+			if (opts.shading === true) {
+				// Solid fill
+				for (let i = 0; i < points.length - 1; i++) {
+					const p1 = points[i];
+					const p2 = points[i + 1];
+					const segmentPath = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y} L ${p2.x} ${opts.height - bottomMargin} L ${p1.x} ${opts.height - bottomMargin} Z`;
+					svg += `<path d="${segmentPath}" fill="${opts.color}"/>`;
+				}
+			} else {
+				// Gradient fill
+				const gradId = `grad${Date.now()}${Math.random()}`;
+				const opacity = parseFloat(opts.shading);
+				svg += `
+	            <defs>
+	                <linearGradient id="${gradId}" x1="${opts.gradient.start_offset}" y1="${opts.gradient.start_offset}" x2="${opts.gradient.start_offset}" y2="${opts.gradient.end_offset}">
+	                    <stop offset="${opts.gradient.start_offset}" style="stop-color:${opts.color};stop-opacity:${opacity}"/>
+	                    <stop offset="${opts.gradient.end_offset}" style="stop-color:${opts.color};stop-opacity:${opts.gradient.end_opacity}"/>
+	                </linearGradient>
+	            </defs>`;
+
+				for (let i = 0; i < points.length - 1; i++) {
+					const p1 = points[i];
+					const p2 = points[i + 1];
+					const segmentPath = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y} L ${p2.x} ${opts.height - bottomMargin} L ${p1.x} ${opts.height - bottomMargin} Z`;
+					svg += `<path d="${segmentPath}" fill="url(#${gradId})"/>`;
+				}
 			}
 		}
+
+		// Add the line
+		svg += `<path d="${path}" stroke="${opts.color}" stroke-width="${opts.lineWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+
+		// Add dots
+		svg += dots;
 	}
 
 	// Add y-axis
-	if (opts.yAxis.line) {
-		svg += `<line x1="${leftMargin}" y1="${topMargin}" x2="${leftMargin}" y2="${opts.height - bottomMargin}" 
-                      stroke="#ccc" stroke-width="1"/>`;
-	}
-	if (opts.yAxis.ticks) {
-		svg += `<text x="${leftMargin - 3}" y="${topMargin + 3}" font-size="9" fill="#666" text-anchor="end">${ymax}</text>`;
-		svg += `<text x="${leftMargin - 3}" y="${opts.height - bottomMargin + 3}" font-size="9" fill="#666" text-anchor="end">${ymin}</text>`;
+	if (opts.yAxis.line || opts.yAxis.ticks) {
+		// For bar charts, shift Y-axis left by 0.75 bar widths to avoid overlap
+		const barShift = opts.style === 'bar' ? (chartWidth / yvals.length * opts.bar.y_axis_shift_ratio) : 0;
+		const yAxisX = leftMargin - barShift;
+
+		if (opts.yAxis.line) {
+			svg += `<line x1="${yAxisX}" y1="${opts.margin}" x2="${yAxisX}" y2="${opts.height - bottomMargin}"
+                      stroke="${opts.axis_style.color}" stroke-width="${opts.axis_style.width}"/>`;
+		}
+		if (opts.yAxis.ticks) {
+			svg += `<text x="${yAxisX - opts.yAxis.text_offset}" y="${opts.margin + opts.yAxis.text_y_offset + opts.axis_style.font_size}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="end">${ymax}</text>`;
+			svg += `<text x="${yAxisX - opts.yAxis.text_offset}" y="${opts.height - bottomMargin + opts.yAxis.text_offset}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="end">${ymin}</text>`;
+		}
 	}
 
 	// Add x-axis
 	if (opts.xAxis.line) {
-		svg += `<line x1="${leftMargin}" y1="${opts.height - bottomMargin}" x2="${opts.width - rightMargin}" y2="${opts.height - bottomMargin}" 
-                      stroke="#ccc" stroke-width="1"/>`;
+		// For bar charts, end X-axis at center of last bar, not full width
+		const xAxisEnd = opts.style === 'bar' ?
+			leftMargin + chartWidth - (chartWidth / yvals.length / 2) :
+			opts.width - opts.margin;
+		svg += `<line x1="${leftMargin}" y1="${opts.height - bottomMargin}" x2="${xAxisEnd}" y2="${opts.height - bottomMargin}"
+                      stroke="${opts.axis_style.color}" stroke-width="${opts.axis_style.width}"/>`;
 	}
 	if (opts.xAxis.ticks && yvals.length > 0) {
-		svg += `<text x="${leftMargin}" y="${opts.height - bottomMargin + 12}" font-size="9" fill="#666" text-anchor="middle">${xmin}</text>`;
-		svg += `<text x="${opts.width - rightMargin}" y="${opts.height - bottomMargin + 12}" font-size="9" fill="#666" text-anchor="middle">${xmax}</text>`;
+		// For bar charts, position end tick at center of last bar
+		const xTickEnd = opts.style === 'bar' ?
+			leftMargin + chartWidth - (chartWidth / yvals.length / 2) :
+			opts.width - opts.margin;
+		const xLabelY = opts.height - bottomMargin + opts.xAxis.text_offset + opts.xAxis.text_y_position;
+		svg += `<text x="${leftMargin}" y="${xLabelY}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="middle">${xmin}</text>`;
+		svg += `<text x="${xTickEnd}" y="${xLabelY}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="middle">${xmax}</text>`;
 	}
-
-	// Add the line
-	svg += `<path d="${path}" stroke="${opts.color}" stroke-width="${opts.lineWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
-
-	// Add dots
-	svg += dots;
 
 	svg += '</svg>';
 
 	return svg;
+}
+
+/**
+ * Generate an SVG sparkline (line chart) from data
+ * @param {number[]} values - Y-values or X-values if yvalues provided
+ * @param {number[]|null} yvalues - Y-values (when values becomes x-values)
+ * @param {object} options - Chart options
+ * @returns {string} SVG element as HTML string
+ */
+function sparkline(values, yvalues = null, options = {}) {
+	return plot(values, yvalues, { ...options, style: 'line' });
+}
+
+/**
+ * Generate an SVG sparkbar chart (bar chart) from data
+ * @param {number[]} values - Y-values or X-values if yvalues provided
+ * @param {number[]|null} yvalues - Y-values (when values becomes x-values)
+ * @param {object} options - Chart options
+ * @returns {string} SVG element as HTML string
+ */
+function sparkbars(values, yvalues = null, options = {}) {
+	return plot(values, yvalues, { ...options, style: 'bar' });
 }
