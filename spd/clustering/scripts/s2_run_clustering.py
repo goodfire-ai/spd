@@ -26,7 +26,6 @@ from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.plotting.merge import (
     plot_merge_history_cluster_sizes,
-    plot_merge_history_costs,
     plot_merge_iteration,
 )
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
@@ -314,22 +313,13 @@ def run_clustering(
             history=merge_history,
             file_prefix=(this_merge_figs / "merge").as_posix(),
         )
-        fig_costs: plt.Figure = plot_merge_history_costs(
-            history=merge_history,
-            file_prefix=(this_merge_figs / "merge").as_posix(),
-        )
         if wandb_run is not None:
             wandb_run.log(
                 {"plots/merge_history_cluster_sizes": wandb.Image(fig_cs)},
                 step=merge_history.n_iters_current,
             )
-            wandb_run.log(
-                {"plots/merge_history_costs": wandb.Image(fig_costs)},
-                step=merge_history.n_iters_current,
-            )
-        # Close figures to free memory
+        # Close figure to free memory
         plt.close(fig_cs)
-        plt.close(fig_costs)
 
     # Finish WandB run
     if wandb_run is not None:

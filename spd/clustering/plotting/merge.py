@@ -216,44 +216,6 @@ def plot_dists_distribution(
     return ax_
 
 
-def plot_merge_history_costs(
-    history: MergeHistory,
-    figsize: tuple[int, int] = (10, 5),
-    fmt: str = "pdf",
-    file_prefix: str | None = None,
-    ylim: tuple[float, float] | None = None,
-) -> plt.Figure:
-    """Plot cost evolution from merge history.
-
-    Note:
-        Caller is responsible for closing the returned figure with plt.close(fig)
-        to prevent memory leaks.
-    """
-    assert history
-    raise NotImplementedError("we dont keep costs in history anymore, rely on wandb for this")
-    fig, ax = plt.subplots(figsize=figsize)  # pyright: ignore[reportUnreachable]
-    # ax.plot(history.costs_stats["min"], label="min")
-    # ax.plot(history.costs_stats["max"], label="max")
-    # ax.plot(history.costs_stats["mean"], ":", label="mean")
-    # ax.plot(history.costs_stats["median"], label="median")
-    # ax.plot(history.costs_stats["q01"], label="1% quantile", alpha=0.2)
-    # ax.plot(history.costs_stats["q05"], label="5% quantile", alpha=0.2)
-    # ax.plot(history.costs_stats["q10"], label="10% quantile", alpha=0.2)
-    # ax.plot(history.costs_stats["chosen_pair"], label="selected pair cost")
-    ax.set_xlabel("Iteration")
-    ax.set_ylabel("Non-diagonal costs")
-    ax.axhline(0, color="black", linestyle="--", linewidth=0.5)
-    ax.legend()
-
-    if ylim is not None:
-        ax.set_ylim(ylim)
-
-    if file_prefix:
-        fig.savefig(f"{file_prefix}_cost_evolution.{fmt}", bbox_inches="tight", dpi=300)
-
-    return fig
-
-
 def plot_merge_history_cluster_sizes(
     history: MergeHistory,
     figsize: tuple[int, int] = (10, 5),
