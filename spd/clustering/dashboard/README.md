@@ -1,3 +1,48 @@
+# Design doc
+
+We have several interfaces:
+
+- streamlit subcomponent dashboard
+- cluster selection interface (big table) [`index.html`](index.html)
+- cluster individual view [`cluster.html`](cluster.html)
+- inference with causal masks
+
+rather than trying to put these all into one interface, we should instead:
+
+- ensure that we can specify via URL various parameters specifying which cluster/component/causal mask/sample/etc we are looking at
+   - using cookies/local storage/something server side to do this adds more complexity, makes it less observable to the user, and makes sharing specific views harder
+- link between these interfaces using these URLs in some reasonable way
+
+## Interface Flow Diagram
+
+```mermaid
+flowchart TD
+    A[Streamlit Dashboard<br/>Subcomponent View] -->|"URL: ?component=X"| B[Cluster Selection<br/>index.html<br/>Big Table]
+    B -->|"URL: ?cluster=Y"| C[Cluster Individual View<br/>cluster.html]
+    C -->|"URL: ?mask_hash=Z"| D[Causal Mask Inference]
+
+    B -->|"filter by component"| B
+    C -->|"select samples"| E[Sample Viewer]
+
+    D -->|"apply mask"| F[Inference Results]
+    F -->|"view cluster details"| C
+
+    A -->|"direct cluster link<br/>URL: ?cluster=Y"| C
+
+    G[Causal Mask Editor] -->|"save mask<br/>returns hash"| H[Mask Storage<br/>Backend]
+    H -->|"load mask<br/>by hash"| D
+
+    E -->|"navigate back"| C
+    C -->|"navigate back"| B
+
+    style A fill:#e1f5fe
+    style B fill:#fff3e0
+    style C fill:#f3e5f5
+    style D fill:#e8f5e9
+    style G fill:#fce4ec
+```
+
+
 # TODO
 
 ## static:
@@ -29,75 +74,3 @@ this requires an easy way to define and use custom causal masks. a good solution
 	- it should have a button to "label" a causal mask -- probably, we can hash the causal mask, save the mask to a file on the backend, and use that hash as a key
 	- copy the hash
 - in other interfaces for doing inference with the mask, we can paste the hash to specify a causal mask
-
-# Enhanced Cluster Dashboard
-
-## Current State Analysis
-
-The current index.html has:
-- Basic HTML table with manual sorting via onclick handlers
-- Custom cluster-selection.js with processTableData(), sortTableData(), renderTable()
-- Model info display panel
-- Basic statistics columns (Component count, samples, activation stats)
-- Link to detail view (cluster.html)
-
-## Planned Refactor
-
-### New Table Structure with util/table.js
-Replace the manual table implementation with DataTable class:
-- Automatic sorting/filtering on all columns
-- Pagination for large datasets
-- CSV export functionality
-- Consistent styling and UX
-
-### Enhanced Columns
-1. **Cluster ID** - sortable, filterable
-2. **Model View** - inline visualization using model-visualization.js
-   - Compact heatmap showing component distribution across model architecture
-   - Tooltip on hover for module details
-3. **Component Count** - numeric with filtering (>50, <100, etc.)
-4. **Module Distribution** - text summary of which modules contain components
-5. **Sparklines** - activation distribution visualizations
-   - Max/Mean/Median activation sparklines over samples
-   - Compact SVG charts using util/sparklines.js
-6. **Sample Count** - numeric with filtering
-7. **Activation Stats** - formatted numeric values
-8. **Actions** - links to detail views
-
-### Technical Implementation Plan
-
-#### Data Processing Pipeline
-1. Load cluster data and model info (existing)
-2. Process raw cluster data into table-friendly format:
-   - Extract component statistics per cluster
-   - Prepare activation arrays for sparklines
-   - Generate model architecture data for each cluster
-3. Configure DataTable with custom renderers for complex columns
-
-#### Custom Column Renderers
-- **Model View**: Call renderModelArchitecture() and renderToHTML(), return compact version
-- **Sparklines**: Generate SVG using sparkline() function with activation data
-- **Module Distribution**: Smart text formatting with tooltips for full lists
-
-#### Integration Points
-- Reuse model-visualization.js utilities (pure functions)
-- Leverage util/sparklines.js for activation distributions
-- Maintain existing data loading from max_activations_*.json and model_info.json
-
-### Benefits
-- Better UX with proper table functionality (sort, filter, paginate)
-- Rich visualizations directly in the overview table
-- Faster cluster comparison without clicking into details
-- Consistent styling and behavior patterns
-- Maintainable code using utility modules
-
-### File Changes Required
-- index.html: Major restructure to use DataTable
-- cluster-selection.js: Refactor to data processing + DataTable setup
-- New custom renderers for model view and sparkline columns
-- CSS updates for embedded visualizations
-
-
-
-
-
