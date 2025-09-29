@@ -1,18 +1,12 @@
-from pathlib import Path
-
-import numpy as np
 import wandb
 from matplotlib import pyplot as plt
 
 from spd.clustering.math.merge_distances import (
     DistancesArray,
     DistancesMethod,
-    MergesArray,
-    compute_distances,
 )
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.log import logger
-
 
 # def compute_and_save_distances_new(
 #     merge_array: MergesArray,

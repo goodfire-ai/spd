@@ -70,8 +70,7 @@ def merge_iteration(
     do_pop = merge_config.pop_component_prob > 0.0
     if do_pop:
         iter_pop = (
-            torch.rand(merge_config.iters, device=coact.device)
-            < merge_config.pop_component_prob
+            torch.rand(merge_config.iters, device=coact.device) < merge_config.pop_component_prob
         )
         pop_component_idx = torch.randint(
             0, c_components, (merge_config.iters,), device=coact.device
@@ -83,8 +82,7 @@ def merge_iteration(
     if do_pop:
         # at each iteration, we will pop a component with probability `pop_component_prob`
         iter_pop: Bool[Tensor, " iters"] = (
-            torch.rand(merge_config.iters, device=coact.device)
-            < merge_config.pop_component_prob
+            torch.rand(merge_config.iters, device=coact.device) < merge_config.pop_component_prob
         )
         # we pick a subcomponent at random, and if we decide to pop, we pop that one out of its group
         # if the component is a singleton, nothing happens. this naturally biases towards popping

@@ -19,13 +19,13 @@ class TestMergeIntegration:
 
         # Configure with range sampler
         config = MergeConfig(
-            merge_config.activation_threhol=0.1,
-            merge_config.alpha=1.0,
-            merge_config.iters=5,
-            merge_config.merge_pair_sampling_method="range",
-            merge_config.merge_pair_sampling_kwargs={"threshold": 0.1},
-            merge_config.pop_component_prob=0,
-            merge_config.filter_dead_threshold=0.001,
+            activation_threhol=0.1,
+            alpha=1.0,
+            iters=5,
+            merge_pair_sampling_method="range",
+            merge_pair_sampling_kwargs={"threshold": 0.1},
+            pop_component_prob=0,
+            filter_dead_threshold=0.001,
         )
 
         # Run merge iteration
@@ -54,13 +54,13 @@ class TestMergeIntegration:
 
         # Configure with MCMC sampler
         config = MergeConfig(
-            merge_config.activation_threhol=0.1,
-            merge_config.alpha=1.0,
-            merge_config.iters=5,
-            merge_config.merge_pair_sampling_method="mcmc",
-            merge_config.merge_pair_sampling_kwargs={"temperature": 1.0},
-            merge_config.pop_component_prob=0,
-            merge_config.filter_dead_threshold=0.001,
+            activation_threhol=0.1,
+            alpha=1.0,
+            iters=5,
+            merge_pair_sampling_method="mcmc",
+            merge_pair_sampling_kwargs={"temperature": 1.0},
+            pop_component_prob=0,
+            filter_dead_threshold=0.001,
         )
 
         # Run merge iteration
@@ -88,13 +88,13 @@ class TestMergeIntegration:
 
         # Configure with popping enabled
         config = MergeConfig(
-            merge_config.activation_threhol=0.1,
-            merge_config.alpha=1.0,
-            merge_config.iters=10,
-            merge_config.merge_pair_sampling_method="range",
-            merge_config.merge_pair_sampling_kwargs={"threshold": 0.05},
-            merge_config.pop_component_prob=0.3,  # 30% chance of popping
-            merge_config.filter_dead_threshold=0.001,
+            activation_threhol=0.1,
+            alpha=1.0,
+            iters=10,
+            merge_pair_sampling_method="range",
+            merge_pair_sampling_kwargs={"threshold": 0.05},
+            pop_component_prob=0.3,  # 30% chance of popping
+            filter_dead_threshold=0.001,
         )
 
         # Run merge iteration
@@ -125,12 +125,12 @@ class TestMergeIntegration:
 
         # Run with range sampler (threshold=0 for deterministic minimum selection)
         config_range = MergeConfig(
-            merge_config.activation_threhol=0.1,
-            merge_config.alpha=1.0,
-            merge_config.iters=3,
-            merge_config.merge_pair_sampling_method="range",
-            merge_config.merge_pair_sampling_kwargs={"threshold": 0.0},  # Always select minimum
-            merge_config.pop_component_prob=0,
+            activation_threhol=0.1,
+            alpha=1.0,
+            iters=3,
+            merge_pair_sampling_method="range",
+            merge_pair_sampling_kwargs={"threshold": 0.0},  # Always select minimum
+            pop_component_prob=0,
         )
 
         history_range = merge_iteration(
@@ -141,12 +141,12 @@ class TestMergeIntegration:
 
         # Run with MCMC sampler (low temperature for near-deterministic)
         config_mcmc = MergeConfig(
-            merge_config.activation_threhol=0.1,
-            merge_config.alpha=1.0,
-            merge_config.iters=3,
-            merge_config.merge_pair_sampling_method="mcmc",
-            merge_config.merge_pair_sampling_kwargs={"temperature": 0.01},  # Very low temp
-            merge_config.pop_component_prob=0,
+            activation_threhol=0.1,
+            alpha=1.0,
+            iters=3,
+            merge_pair_sampling_method="mcmc",
+            merge_pair_sampling_kwargs={"temperature": 0.01},  # Very low temp
+            pop_component_prob=0,
         )
 
         history_mcmc = merge_iteration(
@@ -170,12 +170,12 @@ class TestMergeIntegration:
         component_labels = [f"comp_{i}" for i in range(n_components)]
 
         config = MergeConfig(
-            merge_config.activation_threhol=0.1,
-            merge_config.alpha=1.0,
-            merge_config.iters=1,  # Just one merge
-            merge_config.merge_pair_sampling_method="mcmc",
-            merge_config.merge_pair_sampling_kwargs={"temperature": 2.0},
-            merge_config.pop_component_prob=0,
+            activation_threhol=0.1,
+            alpha=1.0,
+            iters=1,  # Just one merge
+            merge_pair_sampling_method="mcmc",
+            merge_pair_sampling_kwargs={"temperature": 2.0},
+            pop_component_prob=0,
         )
 
         history = merge_iteration(
