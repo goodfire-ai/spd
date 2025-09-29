@@ -43,12 +43,7 @@ dev = [
     "seaborn",
     "muutils", # custom (by mivanit) utils, using it for debugging
     "zanj", # custom (by mivanit), with `muutils` it makes it easier to save/load merge histories
-    "js-embedding-vis", # custom (by mivanit) embedding vis
     "plotly",  # wandb.errors.errors.Error: plotly is required to log interactive plots, install with: `pip install plotly` or convert the plot to an image with `wandb.Image(plt)`
-    # broken for python >=3.10 ?
-    # "umap-learn>=0.5.7",
-    # RuntimeError: Cannot install on Python version 3.12.10; only versions >=3.6,<3.10 are supported.
-    # help: `llvmlite` (v0.36.0) was included because `spd:dev-grouping` (v0.0.1) depends on `umap-learn` (v0.5.9.post2) which depends on `pynndescent` (v0.5.13) which depends on `llvmlite`
 ]
 
 [tool.uv.sources]

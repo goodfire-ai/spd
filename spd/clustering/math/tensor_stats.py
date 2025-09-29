@@ -3,7 +3,7 @@ from typing import Literal
 import torch
 from torch import Tensor
 
-StatsKeys = Literal[
+StatsKey = Literal[
     "mean",
     "std",
     "median",
@@ -69,7 +69,7 @@ def stats_dict(
     approx_if_large: bool = True,
     max_elems_for_quantile: int = 5_000_000,
     rng: torch.Generator | None = None,
-) -> dict[StatsKeys, float]:
+) -> dict[StatsKey, float]:
     """summary
 
     Compute common stats plus a set of quantiles. Uses a single quantile() call
@@ -87,7 +87,7 @@ def stats_dict(
         Optional torch generator for reproducible subsampling.
 
     # Returns:
-     - `dict[StatsKeys, float]`
+     - `dict[StatsKey, float]`
         Mapping from stat name to Python float.
 
     # Modifies:
@@ -137,7 +137,7 @@ def stats_dict(
     else:
         qs_all = _exact_quantile_all_at_once(xf, q_values)
 
-    out: dict[StatsKeys, float] = {
+    out: dict[StatsKey, float] = {
         "mean": float(mean.item()),
         "std": float(std.item()),
         "median": float(qs_all[4].item()),  # median is at index 4
