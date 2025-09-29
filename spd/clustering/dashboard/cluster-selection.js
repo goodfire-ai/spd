@@ -129,11 +129,97 @@ const columnRenderers = {
             const mean = activations.reduce((a,b) => a+b, 0) / activations.length;
             const maxBinCount = Math.max(...histogramCounts);
 
-            container.title = `Activation Histogram (n=${activations.length})\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMax bin: ${maxBinCount} samples`;
+            container.title = `All Positive Activations Histogram (n=${activations.length})\nShows distribution of all positive activation values across all samples.\nEach activation represents a component's response to input.\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMax bin: ${maxBinCount} samples`;
 
             return container;
         } catch (error) {
             console.warn('Error creating histogram for cluster', row.id, error);
+            return '<span style="color: #999; font-size: 11px;">Error</span>';
+        }
+    },
+
+    maxActivationDistribution: function(value, row, col) {
+        try {
+            const maxActivations = row.maxActivations || [];
+            if (maxActivations.length === 0) {
+                return '<span style="color: #999; font-size: 11px;">No data</span>';
+            }
+
+            const container = document.createElement('div');
+            container.className = 'sparkline-cell';
+
+            // Create histogram bins (10 bins) for the distribution of max activations
+            const histogramCounts = createHistogramBins(maxActivations, 10);
+
+            // Use sparkbars to render the histogram as a bar chart
+            const svg = sparkbars(histogramCounts, null, {
+                width: 120,
+                height: 50,
+                color: '#DC143C', // Crimson red
+                shading: true, // Solid fill for histogram bars
+                lineWidth: 0,  // No line, just bars
+                markers: '',   // No markers
+                margin: 2,
+                ylims: [0, null],
+                xAxis: {line: true, ticks: true, label_margin: 10},
+                yAxis: {line: true, ticks: true, label_margin: 20}
+            });
+
+            container.innerHTML = svg;
+
+            const min = Math.min(...maxActivations);
+            const max = Math.max(...maxActivations);
+            const mean = maxActivations.reduce((a,b) => a+b, 0) / maxActivations.length;
+            const maxBinCount = Math.max(...histogramCounts);
+
+            container.title = `Max Activation Per Sample Histogram (n=${maxActivations.length})\nShows distribution of the highest activation value in each sample.\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMax bin: ${maxBinCount} samples`;
+
+            return container;
+        } catch (error) {
+            console.warn('Error creating max activation distribution for cluster', row.id, error);
+            return '<span style="color: #999; font-size: 11px;">Error</span>';
+        }
+    },
+
+    stdActivationDistribution: function(value, row, col) {
+        try {
+            const stdActivations = row.stdActivations || [];
+            if (stdActivations.length === 0) {
+                return '<span style="color: #999; font-size: 11px;">No data</span>';
+            }
+
+            const container = document.createElement('div');
+            container.className = 'sparkline-cell';
+
+            // Create histogram bins (10 bins) for the distribution of standard deviations
+            const histogramCounts = createHistogramBins(stdActivations, 10);
+
+            // Use sparkbars to render the histogram as a bar chart
+            const svg = sparkbars(histogramCounts, null, {
+                width: 120,
+                height: 50,
+                color: '#228B22', // Forest green
+                shading: true, // Solid fill for histogram bars
+                lineWidth: 0,  // No line, just bars
+                markers: '',   // No markers
+                margin: 2,
+                ylims: [0, null],
+                xAxis: {line: true, ticks: true, label_margin: 10},
+                yAxis: {line: true, ticks: true, label_margin: 20}
+            });
+
+            container.innerHTML = svg;
+
+            const min = Math.min(...stdActivations);
+            const max = Math.max(...stdActivations);
+            const mean = stdActivations.reduce((a,b) => a+b, 0) / stdActivations.length;
+            const maxBinCount = Math.max(...histogramCounts);
+
+            container.title = `Standard Deviation Per Sample Histogram (n=${stdActivations.length})\nShows distribution of activation variability within each sample.\nComputed as std dev of positive activations per sample.\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMax bin: ${maxBinCount} samples`;
+
+            return container;
+        } catch (error) {
+            console.warn('Error creating std activation distribution for cluster', row.id, error);
             return '<span style="color: #999; font-size: 11px;">Error</span>';
         }
     },
@@ -220,12 +306,30 @@ function processClusterData() {
 
         // Calculate activation statistics
         const allActivations = [];
+        const maxActivations = [];
+        const stdActivations = [];
         cluster.samples.forEach(sample => {
             sample.activations.forEach(act => {
                 if (act > 0) {
                     allActivations.push(act);
                 }
             });
+            // Get the maximum activation for this sample
+            const maxAct = Math.max(...sample.activations);
+            if (maxAct > 0) {
+                maxActivations.push(maxAct);
+            }
+
+            // Calculate standard deviation for this sample
+            const positiveActivations = sample.activations.filter(act => act > 0);
+            if (positiveActivations.length > 1) {
+                const mean = positiveActivations.reduce((a, b) => a + b, 0) / positiveActivations.length;
+                const variance = positiveActivations.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / positiveActivations.length;
+                const stdDev = Math.sqrt(variance);
+                stdActivations.push(stdDev);
+            } else if (positiveActivations.length === 1) {
+                stdActivations.push(0); // Single value has no deviation
+            }
         });
 
         // Calculate stats
@@ -255,7 +359,9 @@ function processClusterData() {
             meanActivation: meanActivation,
             medianActivation: medianActivation,
             minActivation: minActivation,
-            allActivations: allActivations
+            allActivations: allActivations,
+            maxActivations: maxActivations,
+            stdActivations: stdActivations
         });
     }
 
@@ -288,18 +394,18 @@ async function loadData() {
                 },
                 {
                     key: 'componentCount',
+                    label: 'Comps',
+                    type: 'number',
+                    width: '50px',
+                    align: 'right'
+                },
+                {
+                    key: 'componentCount',
                     label: 'Model View',
                     type: 'number',
                     width: '160px',
                     align: 'center',
                     renderer: columnRenderers.modelView
-                },
-                {
-                    key: 'componentCount',
-                    label: 'Comps',
-                    type: 'number',
-                    width: '50px',
-                    align: 'right'
                 },
                 {
                     key: 'modules',
@@ -315,6 +421,22 @@ async function loadData() {
                     width: '100px',
                     align: 'center',
                     renderer: columnRenderers.activationHistogram
+                },
+                {
+                    key: 'maxActivations',
+                    label: 'Max Samples',
+                    type: 'string',
+                    width: '100px',
+                    align: 'center',
+                    renderer: columnRenderers.maxActivationDistribution
+                },
+                {
+                    key: 'stdActivations',
+                    label: 'Std Dev',
+                    type: 'string',
+                    width: '100px',
+                    align: 'center',
+                    renderer: columnRenderers.stdActivationDistribution
                 },
                 // {
                 //     key: 'sampleCount',
