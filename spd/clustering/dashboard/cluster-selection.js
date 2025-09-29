@@ -109,16 +109,16 @@ const columnRenderers = {
             const histogramCounts = createHistogramBins(activations, 10);
 
             // Use sparklines to render the histogram as a bar chart
-            const svg = sparkline(histogramCounts, null, {
+            const svg = sparkbars(histogramCounts, null, {
                 width: 120,
-                height: 30,
+                height: 50,
                 color: '#4169E1',
                 shading: true, // Solid fill for histogram bars
                 lineWidth: 0,  // No line, just bars
                 markers: '',   // No markers
                 margin: 2,
-                xAxis: {line: true, ticks: true},
-                yAxis: {line: true, ticks: true}
+                xAxis: {line: true, ticks: true, label_margin: 10},
+                yAxis: {line: true, ticks: true, label_margin: 20}
             });
 
             container.innerHTML = svg;
