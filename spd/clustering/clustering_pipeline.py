@@ -5,26 +5,10 @@ Replaces the original 370+ line subprocess/FD system with simple multiprocessing
 Each batch loads its own model and WandB run to match original design.
 """
 
-from pathlib import Path
-
-from pydantic import BaseModel
-
 from spd.clustering.merge_run_config import MergeRunConfig
 
 
-class RunRecord(BaseModel):
-    merge_run_config: MergeRunConfig
-    output_dir: Path
-    devices: list[str]
-    max_concurrency: int
-
-
-def main(
-    config: MergeRunConfig,
-    base_path: Path,
-    devices: list[str],
-    workers_per_device: int,
-):
+def main(config: MergeRunConfig):
     from spd.clustering.math.merge_distances import compute_and_save_distances
     from spd.clustering.s1_split_dataset import split_and_save_dataset
     from spd.clustering.s2_clustering import process_batches_parallel
@@ -34,33 +18,28 @@ def main(
     )
 
     # TODO: factor these out into dataclass or something
-    run_path = base_path / config.config_identifier
+    run_path = config.base_path / config.config_identifier
     run_record_path = run_path / "run_record.json"
     histories_dir = run_path / "merge_histories"
     dataset_dir = run_path / "dataset"
     ensemble_dir = run_path / "ensemble"
     distances_dir = run_path / "distances"
 
-    run_record = RunRecord(
-        merge_run_config=config,
-        output_dir=run_path,
-        devices=devices,
-        max_concurrency=workers_per_device,
-    )
-
     print(f"Run record saved to {run_record_path}")
-    run_record_path.write_text(run_record.model_dump_json(indent=2))
+    run_record_path.write_text(config.model_dump_json(indent=2))
 
     print(f"Splitting dataset into {config.n_batches} batches...")
     data_files = split_and_save_dataset(config=config, output_dir=dataset_dir)
 
-    print(f"Processing {len(data_files)} batches with {workers_per_device} workers per device...")
+    print(
+        f"Processing {len(data_files)} batches with {config.workers_per_device} workers per device..."
+    )
     results = process_batches_parallel(
         data_files=data_files,
         config=config,
         output_dir=histories_dir,
-        workers_per_device=workers_per_device,
-        devices=devices,
+        workers_per_device=config.workers_per_device,
+        devices=config.devices,
     )
 
     normalized_merge_array = normalize_and_save(

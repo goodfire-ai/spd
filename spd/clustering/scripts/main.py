@@ -18,27 +18,27 @@ def cli():
         required=True,
         help="Path to the merge run config JSON/YAML file",
     )
-    parser.add_argument(
-        "--base-path",
-        "-p",
-        type=Path,
-        default=REPO_ROOT / ".data/clustering/",
-        help="Base path for saving clustering outputs",
-    )
-    parser.add_argument(
-        "--devices",
-        "-d",
-        type=str,
-        default=None,
-        help="comma-separated list of devices to use for clustering (e.g., 'cuda:0,cuda:1')",
-    )
-    parser.add_argument(
-        "--workers-per-device",
-        "-x",
-        type=int,
-        default=1,
-        help="Maximum number of concurrent clustering processes per device (default: 1)",
-    )
+    # parser.add_argument(
+    #     "--base-path",
+    #     "-p",
+    #     type=Path,
+    #     default=REPO_ROOT / ".data/clustering/",
+    #     help="Base path for saving clustering outputs",
+    # )
+    # parser.add_argument(
+    #     "--devices",
+    #     "-d",
+    #     type=str,
+    #     default=None,
+    #     help="comma-separated list of devices to use for clustering (e.g., 'cuda:0,cuda:1')",
+    # )
+    # parser.add_argument(
+    #     "--workers-per-device",
+    #     "-x",
+    #     type=int,
+    #     default=1,
+    #     help="Maximum number of concurrent clustering processes per device (default: 1)",
+    # )
     args = parser.parse_args()
 
     # Parse devices
@@ -48,6 +48,8 @@ def cli():
         devices = ["cuda" if torch.cuda.is_available() else "cpu"]
     else:
         devices = args.devices.split(",")
+
+    # TODO override configs with given args
 
     main(
         config=MergeRunConfig.from_file(args.config),

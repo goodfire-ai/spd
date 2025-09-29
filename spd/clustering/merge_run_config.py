@@ -8,7 +8,7 @@ from typing import Any, Literal, Self, override
 
 import yaml
 from muutils.misc.numerical import shorten_numerical_to_str
-from pydantic import Field, PositiveInt, model_validator
+from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from spd.clustering.merge_config import MergeConfig
 from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
@@ -56,24 +56,14 @@ class RunFilePaths:
         self.distances_dir.mkdir(exist_ok=True)
 
 
-class MergeRunConfig(MergeConfig):
+class MergeRunConfig(BaseModel):
     """Configuration for a complete merge clustering run.
 
     Extends MergeConfig with parameters for model, dataset, and batch configuration.
     CLI-only parameters (base_path, devices, max_concurrency) are intentionally excluded.
     """
-
-    base_path: Path = Field(
-        ...,
-        description="Base path for saving clustering outputs",
-    )
-    workers_per_device: int = Field(
-        ...,
-        description="Maximum number of concurrent clustering processes per device",
-    )
-    devices: list[str] = Field(
-        ...,
-        description="Devices to use for clustering",
+    merge_config: MergeConfig = Field(
+        description="Merge configuration",
     )
 
     model_path: str = Field(
@@ -95,6 +85,21 @@ class MergeRunConfig(MergeConfig):
         description="Size of each batch for processing",
     )
 
+    # ==================
+
+    base_path: Path = Field(
+        ...,
+        description="Base path for saving clustering outputs",
+    )
+    workers_per_device: int = Field(
+        ...,
+        description="Maximum number of concurrent clustering processes per device",
+    )
+    devices: list[str] = Field(
+        ...,
+        description="Devices to use for clustering",
+    )
+
     # WandB configuration
     wandb_enabled: bool = Field(
         default=False,
@@ -108,6 +113,8 @@ class MergeRunConfig(MergeConfig):
         default_factory=lambda: _DEFAULT_INTERVALS.copy(),
         description="Intervals for different logging operations",
     )
+
+    # ==================
 
     @model_validator(mode="after")
     def validate_model_path(self) -> Self:
