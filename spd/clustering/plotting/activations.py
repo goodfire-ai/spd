@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import wandb
 import wandb.sdk.wandb_run
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.clustering.activations import ProcessedActivations, compute_coactivatons
@@ -49,6 +49,7 @@ def plot_activations(
     act_concat: Float[Tensor, " n_steps c"] = processed_activations.activations
     coact: Float[Tensor, " c c"] = compute_coactivatons(act_concat)
     labels: list[str] = processed_activations.labels
+    n_samples: int = act_concat.shape[0]
 
     # trim the activations if n_samples_max is specified
     # clone here so we don't modify the original tensor
@@ -59,6 +60,7 @@ def plot_activations(
 
     # Raw activations
     axs_act: Sequence[plt.Axes]
+    _fig1: plt.Figure
     _fig1, axs_act = plt.subplots(len(act_dict), 1, figsize=figsize_raw)  # pyright: ignore[reportAssignmentType]
     if len(act_dict) == 1:
         assert isinstance(axs_act, plt.Axes)
@@ -82,6 +84,8 @@ def plot_activations(
     plt.close(_fig1)
 
     # Concatenated activations
+    fig2: plt.Figure
+    ax2: plt.Axes
     fig2, ax2 = plt.subplots(figsize=figsize_concat)
     act_data: np.ndarray = act_concat.T.cpu().numpy()
     im2 = ax2.matshow(act_data, aspect="auto", vmin=act_data.min(), vmax=act_data.max())
@@ -92,7 +96,7 @@ def plot_activations(
 
     plt.colorbar(im2)
 
-    fig2_fname = save_dir / f"{pdf_prefix}_concatenated.pdf"
+    fig2_fname: Path = save_dir / f"{pdf_prefix}_concatenated.pdf"
     fig2.savefig(fig2_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
@@ -104,34 +108,35 @@ def plot_activations(
 
     # Concatenated activations, sorted samples
     if do_sorted_samples:
+        fig3: plt.Figure
+        ax3: plt.Axes
         fig3, ax3 = plt.subplots(figsize=figsize_concat)
 
         # Compute gram matrix (sample similarity) and sort samples using greedy ordering
         gram_matrix: Float[Tensor, " n_steps n_steps"] = act_concat @ act_concat.T
 
         # Normalize gram matrix to get cosine similarity
-        norms = torch.norm(act_concat, dim=1, keepdim=True)
+        norms: Float[Tensor, " n_steps 1"] = torch.norm(act_concat, dim=1, keepdim=True)
         norms = torch.where(norms > 1e-8, norms, torch.ones_like(norms))
-        similarity_matrix = gram_matrix / (norms @ norms.T)
+        similarity_matrix: Float[Tensor, " n_steps n_steps"] = gram_matrix / (norms @ norms.T)
 
         # Greedy ordering: start with sample most similar to all others
-        avg_similarity = similarity_matrix.mean(dim=1)
-        start_idx = int(torch.argmax(avg_similarity).item())
+        avg_similarity: Float[Tensor, " n_steps"] = similarity_matrix.mean(dim=1)
+        start_idx: int = int(torch.argmax(avg_similarity).item())
 
         # Build ordering greedily
-        n_samples = act_concat.shape[0]
-        ordered_indices = [start_idx]
-        remaining = set(range(n_samples))
+        ordered_indices: list[int] = [start_idx]
+        remaining: set[int] = set(range(n_samples))
         remaining.remove(start_idx)
 
         # Greedily add the nearest unvisited sample
-        current_idx = start_idx
+        current_idx: int = start_idx
         while remaining:
             # Find the unvisited sample most similar to current
-            best_similarity = -1
-            best_idx = -1
+            best_similarity: float = -1
+            best_idx: int = -1
             for idx in remaining:
-                sim = similarity_matrix[current_idx, idx].item()
+                sim: float = similarity_matrix[current_idx, idx].item()
                 if sim > best_similarity:
                     best_similarity = sim
                     best_idx = idx
@@ -140,7 +145,9 @@ def plot_activations(
             remaining.remove(best_idx)
             current_idx = best_idx
 
-        sorted_indices = torch.tensor(ordered_indices, dtype=torch.long, device=act_concat.device)
+        sorted_indices: Int[Tensor, " n_steps"] = torch.tensor(
+            ordered_indices, dtype=torch.long, device=act_concat.device
+        )
         act_concat_sorted: Float[Tensor, " n_steps c"] = act_concat[sorted_indices]
 
         # Handle log10 properly - add small epsilon to avoid log(0)
@@ -156,7 +163,7 @@ def plot_activations(
 
         plt.colorbar(im3)
 
-        fig3_fname = save_dir / f"{pdf_prefix}_concatenated_sorted.pdf"
+        fig3_fname: Path = save_dir / f"{pdf_prefix}_concatenated_sorted.pdf"
         fig3.savefig(fig3_fname, bbox_inches="tight", dpi=300)
 
         # Log to WandB if available
@@ -167,6 +174,8 @@ def plot_activations(
         plt.close(fig3)
 
     # Coactivations
+    fig4: plt.Figure
+    ax4: plt.Axes
     fig4, ax4 = plt.subplots(figsize=figsize_coact)
     coact_data: np.ndarray = coact.cpu().numpy()
     im4 = ax4.matshow(coact_data, aspect="auto", vmin=coact_data.min(), vmax=coact_data.max())
@@ -178,7 +187,7 @@ def plot_activations(
 
     plt.colorbar(im4)
 
-    fig4_fname = save_dir / f"{pdf_prefix}_coactivations.pdf"
+    fig4_fname: Path = save_dir / f"{pdf_prefix}_coactivations.pdf"
     fig4.savefig(fig4_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
@@ -189,6 +198,8 @@ def plot_activations(
     plt.close(fig4)
 
     # log coactivations
+    fig4_log: plt.Figure
+    ax4_log: plt.Axes
     fig4_log, ax4_log = plt.subplots(figsize=figsize_coact)
     assert np.all(coact_data >= 0)
     coact_log_data: np.ndarray = np.log10(coact_data + 1e-6)
@@ -200,7 +211,7 @@ def plot_activations(
     add_component_labeling(ax4_log, labels, axis="x")
     add_component_labeling(ax4_log, labels, axis="y")
     plt.colorbar(im4_log)
-    fig4_log_fname = save_dir / f"{pdf_prefix}_coactivations_log.pdf"
+    fig4_log_fname: Path = save_dir / f"{pdf_prefix}_coactivations_log.pdf"
     fig4_log.savefig(fig4_log_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
@@ -217,11 +228,15 @@ def plot_activations(
     ax5c: plt.Axes
     fig5, (ax5a, ax5b, ax5c) = plt.subplots(1, 3, figsize=(15, 4))  # pyright: ignore[reportGeneralTypeIssues]
 
+    x_scale: str
+    y_scale: str
     x_scale, y_scale = hist_scales
 
     # Histogram 1: All activations
     all_activations: Float[Tensor, ""] = act_concat.flatten()
     all_vals: np.ndarray = all_activations.cpu().numpy()
+    hist_counts: np.ndarray
+    bin_edges: np.ndarray
     hist_counts, bin_edges = np.histogram(all_vals, bins=hist_bins)
     bin_centers: np.ndarray = (bin_edges[:-1] + bin_edges[1:]) / 2
     ax5a.plot(bin_centers, hist_counts, color="blue", linewidth=2)
@@ -236,7 +251,6 @@ def plot_activations(
 
     # Histogram 2: Activations per component
     n_components: int = act_concat.shape[1]
-    n_samples: int = act_concat.shape[0]
 
     # Common bin edges for all component histograms
     all_min: float = float(all_vals.min())
@@ -292,7 +306,7 @@ def plot_activations(
 
     plt.tight_layout()
 
-    fig5_fname = save_dir / f"{pdf_prefix}_histograms.pdf"
+    fig5_fname: Path = save_dir / f"{pdf_prefix}_histograms.pdf"
     fig5.savefig(fig5_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available

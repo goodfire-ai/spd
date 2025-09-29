@@ -25,13 +25,15 @@ IterationInfo = dict[str, int | list[int] | GroupMerge]
 
 def _zip_save_arr(zf: zipfile.ZipFile, name: str, arr: np.ndarray) -> None:
     """Save a numpy array to a zip file."""
-    buf = io.BytesIO()
+    buf: io.BytesIO = io.BytesIO()
     np.save(buf, arr)
     zf.writestr(name, buf.getvalue())
 
 
 def _zip_save_arr_dict(zf: zipfile.ZipFile, data: dict[str, np.ndarray]) -> None:
     """Save a dictionary of numpy arrays to a zip file, {key}.npy used as path"""
+    key: str
+    arr: np.ndarray
     for key, arr in data.items():
         _zip_save_arr(zf, f"{key}.npy", arr)
 
@@ -127,6 +129,7 @@ class MergeHistory:
         return int(self.merges.k_groups[0].item())
 
     def save(self, path: Path, wandb_url: str | None = None) -> None:
+        zf: zipfile.ZipFile
         with zipfile.ZipFile(path, "w") as zf:
             # save arrays
             _zip_save_arr_dict(
@@ -154,6 +157,7 @@ class MergeHistory:
 
     @classmethod
     def read(cls, path: Path) -> "MergeHistory":
+        zf: zipfile.ZipFile
         with zipfile.ZipFile(path, "r") as zf:
             group_idxs: np.ndarray = np.load(io.BytesIO(zf.read("merge.group_idxs.npy")))
             k_groups: np.ndarray = np.load(io.BytesIO(zf.read("merge.k_groups.npy")))
@@ -296,6 +300,8 @@ class MergeHistoryEnsemble:
             hist_n_components: int = len(hist_c_labels)
             overlap_stats[i_ens] = hist_n_components / c_components
             # map from old component indices to new component indices
+            i_comp_old: int
+            comp_label: str
             for i_comp_old, comp_label in enumerate(hist_c_labels):
                 i_comp_new: int = component_label_idxs[comp_label]
                 merges_array[i_ens, :, i_comp_new] = history.merges.group_idxs[:, i_comp_old]
@@ -308,6 +314,8 @@ class MergeHistoryEnsemble:
             # put each missing label into its own group
             hist_missing_labels: set[str] = unique_labels_set - set(hist_c_labels)
             assert len(hist_missing_labels) == c_components - hist_n_components
+            idx_missing: int
+            missing_label: str
             for idx_missing, missing_label in enumerate(hist_missing_labels):
                 i_comp_new_relabel: int = component_label_idxs[missing_label]
                 merges_array[i_ens, :, i_comp_new_relabel] = np.full(

@@ -55,15 +55,15 @@ def merge_iteration(
     """
 
     # Compute coactivations
-    activation_mask_orig = (
+    activation_mask_orig: Bool[Tensor, "n_steps c"] | Float[Tensor, "n_steps c"] | None = (
         activations > merge_config.activation_threshold
         if merge_config.activation_threshold is not None
         else activations
     )
-    coact = activation_mask_orig.float().T @ activation_mask_orig.float()
+    coact: Float[Tensor, "c c"] = activation_mask_orig.float().T @ activation_mask_orig.float()
 
     # Setup
-    c_components = coact.shape[0]
+    c_components: int = coact.shape[0]
     assert coact.shape[1] == c_components, "Coactivation matrix must be square"
 
     # Prepare pop component logic
@@ -93,15 +93,17 @@ def merge_iteration(
         )
 
     # Initialize merge
-    current_merge = GroupMerge.identity(n_components=c_components)
+    current_merge: GroupMerge = GroupMerge.identity(n_components=c_components)
 
     # Initialize variables
-    k_groups = c_components
+    k_groups: int = c_components
     current_coact: Float[Tensor, "k_groups k_groups"] = coact.clone()
     current_act_mask: Bool[Tensor, "samples k_groups"] = activation_mask_orig.clone()
 
     # Initialize history
-    merge_history = MergeHistory.from_config(config=merge_config, labels=component_labels)
+    merge_history: MergeHistory = MergeHistory.from_config(
+        config=merge_config, labels=component_labels
+    )
 
     # Memory cleanup
     if not do_pop:
@@ -110,14 +112,14 @@ def merge_iteration(
         activation_mask_orig = None
 
     # Main iteration loop with progress bar
-    pbar = tqdm(range(merge_config.iters), unit="iter", total=merge_config.iters)
+    pbar: tqdm[int] = tqdm(range(merge_config.iters), unit="iter", total=merge_config.iters)
     for iter_idx in pbar:
         if do_pop and iter_pop[iter_idx]:  # pyright: ignore[reportPossiblyUnboundVariable]
             assert activation_mask_orig is not None, "Activation mask original is None"
 
-            pop_component_idx_i = int(pop_component_idx[iter_idx].item())  # pyright: ignore[reportPossiblyUnboundVariable]
-            group_idx = int(current_merge.group_idxs[pop_component_idx_i].item())
-            n_components_in_pop_grp = int(current_merge.components_per_group[group_idx].item())
+            pop_component_idx_i: int = int(pop_component_idx[iter_idx].item())  # pyright: ignore[reportPossiblyUnboundVariable]
+            group_idx: int = int(current_merge.group_idxs[pop_component_idx_i].item())
+            n_components_in_pop_grp: int = int(current_merge.components_per_group[group_idx].item())
 
             if n_components_in_pop_grp > 1:
                 current_merge, current_coact, current_act_mask = recompute_coacts_pop_group(
@@ -130,13 +132,13 @@ def merge_iteration(
                 k_groups = current_coact.shape[0]
 
         # Compute costs
-        costs = compute_merge_costs(
+        costs: Float[Tensor, "k_groups k_groups"] = compute_merge_costs(
             coact=current_coact / current_act_mask.shape[0],
             merges=current_merge,
             alpha=merge_config.alpha,
         )
 
-        merge_pair = merge_config.merge_pair_sample(costs)
+        merge_pair: tuple[int, int] = merge_config.merge_pair_sample(costs)
 
         # Merge the pair (after logging so we can see the cost)
         current_merge, current_coact, current_act_mask = recompute_coacts_merge_pair(
@@ -155,17 +157,17 @@ def merge_iteration(
 
         # Compute metrics for logging
         diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)
-        mdl_loss = compute_mdl_cost(
+        mdl_loss: float = compute_mdl_cost(
             acts=diag_acts,
             merges=current_merge,
             alpha=merge_config.alpha,
         )
-        mdl_loss_norm = mdl_loss / current_act_mask.shape[0]
-        merge_pair_cost = float(costs[merge_pair].item())
+        mdl_loss_norm: float = mdl_loss / current_act_mask.shape[0]
+        merge_pair_cost: float = float(costs[merge_pair].item())
 
         # Update progress bar
 
-        prefix = f"\033[38;5;208m[{batch_id}]\033[0m"
+        prefix: str = f"\033[38;5;208m[{batch_id}]\033[0m"
         pbar.set_description(
             f"{prefix} k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={merge_pair_cost:.4f}"
         )

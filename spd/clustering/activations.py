@@ -18,6 +18,7 @@ def component_activations(
     sigmoid_type: SigmoidTypes,
 ) -> dict[str, Float[Tensor, " n_steps C"]]:
     """Get the component activations over a **single** batch."""
+    causal_importances: dict[str, Float[Tensor, " n_steps C"]]
     with torch.no_grad():
         _, pre_weight_acts = model.forward(
             batch.to(device),
@@ -42,8 +43,8 @@ def compute_coactivatons(
     # TODO: this works for both boolean and continuous activations,
     # but we could do better by just using OR for boolean activations
     # and maybe even some bitshift hacks. but for now, we convert to float16
-    activations = activations.to(torch.float16)
-    return activations.T @ activations
+    activations_f16: Float16[Tensor, " n_steps c"] = activations.to(torch.float16)
+    return activations_f16.T @ activations_f16
 
 
 class FilteredActivations(NamedTuple):
@@ -89,13 +90,13 @@ def filter_dead_components(
     if filter_dead_threshold > 0:
         dead_components_lst = list()
         max_act: Float[Tensor, " c"] = activations.max(dim=0).values
-        dead_components: Bool[Tensor, " n_steps c"] = max_act < filter_dead_threshold
+        dead_components: Bool[Tensor, " c"] = max_act < filter_dead_threshold
 
         if dead_components.any():
-            activations = activations[:, ~dead_components]
+            alive_mask: Bool[Tensor, " c"] = ~dead_components
+            activations = activations[:, alive_mask]
             alive_labels: list[tuple[str, bool]] = [
-                (lbl, bool(keep.item()))
-                for lbl, keep in zip(labels, ~dead_components, strict=False)
+                (lbl, bool(keep.item())) for lbl, keep in zip(labels, alive_mask, strict=False)
             ]
             # re-assign labels only if we are filtering
             labels = [label for label, keep in alive_labels if keep]
@@ -182,10 +183,8 @@ class ProcessedActivations:
 
     def get_module_indices(self, module_key: str) -> list[int | None]:
         """given a module key, return a list len "num components in that moduel", with int index in alive components, or None if dead"""
-        return [
-            self.label_index[f"{module_key}:{i}"]
-            for i in range(self.activations_raw[module_key].shape[1])
-        ]
+        num_components: int = self.activations_raw[module_key].shape[1]
+        return [self.label_index[f"{module_key}:{i}"] for i in range(num_components)]
 
 
 def process_activations(
@@ -237,7 +236,7 @@ def process_activations(
     total_c: int = 0
     labels: list[str] = list()
     for key, act in activations_.items():
-        c = act.shape[-1]
+        c: int = act.shape[-1]
         labels.extend([f"{key}:{i}" for i in range(c)])
         total_c += c
 

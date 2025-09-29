@@ -19,7 +19,7 @@ class TestMergeIntegration:
 
         # Configure with range sampler
         config = MergeConfig(
-            activation_threhol=0.1,
+            activation_threshold=0.1,
             alpha=1.0,
             iters=5,
             merge_pair_sampling_method="range",
@@ -31,6 +31,7 @@ class TestMergeIntegration:
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
+            batch_id="test_merge_with_range_sampler",
             merge_config=config,
             component_labels=component_labels,
         )
@@ -54,7 +55,7 @@ class TestMergeIntegration:
 
         # Configure with MCMC sampler
         config = MergeConfig(
-            activation_threhol=0.1,
+            activation_threshold=0.1,
             alpha=1.0,
             iters=5,
             merge_pair_sampling_method="mcmc",
@@ -66,6 +67,7 @@ class TestMergeIntegration:
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
+            batch_id="test_merge_with_mcmc_sampler",
             merge_config=config,
             component_labels=component_labels,
         )
@@ -88,7 +90,7 @@ class TestMergeIntegration:
 
         # Configure with popping enabled
         config = MergeConfig(
-            activation_threhol=0.1,
+            activation_threshold=0.1,
             alpha=1.0,
             iters=10,
             merge_pair_sampling_method="range",
@@ -100,6 +102,7 @@ class TestMergeIntegration:
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
+            batch_id="test_merge_with_popping",
             merge_config=config,
             component_labels=component_labels,
         )
@@ -125,7 +128,7 @@ class TestMergeIntegration:
 
         # Run with range sampler (threshold=0 for deterministic minimum selection)
         config_range = MergeConfig(
-            activation_threhol=0.1,
+            activation_threshold=0.1,
             alpha=1.0,
             iters=3,
             merge_pair_sampling_method="range",
@@ -135,13 +138,14 @@ class TestMergeIntegration:
 
         history_range = merge_iteration(
             activations=activations.clone(),
+            batch_id="test_merge_comparison_samplers_range",
             merge_config=config_range,
             component_labels=component_labels.copy(),
         )
 
         # Run with MCMC sampler (low temperature for near-deterministic)
         config_mcmc = MergeConfig(
-            activation_threhol=0.1,
+            activation_threshold=0.1,
             alpha=1.0,
             iters=3,
             merge_pair_sampling_method="mcmc",
@@ -151,6 +155,7 @@ class TestMergeIntegration:
 
         history_mcmc = merge_iteration(
             activations=activations.clone(),
+            batch_id="test_merge_comparison_samplers_mcmc",
             merge_config=config_mcmc,
             component_labels=component_labels.copy(),
         )
@@ -170,7 +175,7 @@ class TestMergeIntegration:
         component_labels = [f"comp_{i}" for i in range(n_components)]
 
         config = MergeConfig(
-            activation_threhol=0.1,
+            activation_threshold=0.1,
             alpha=1.0,
             iters=1,  # Just one merge
             merge_pair_sampling_method="mcmc",
@@ -180,6 +185,7 @@ class TestMergeIntegration:
 
         history = merge_iteration(
             activations=activations,
+            batch_id="test_merge_with_small_components",
             merge_config=config,
             component_labels=component_labels,
         )

@@ -1,5 +1,6 @@
 import wandb
 from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
 
 from spd.clustering.math.merge_distances import (
     DistancesArray,
@@ -60,7 +61,7 @@ def create_clustering_report(
         config=dict(config_identifier=config_identifier, method=method),
     ) as run:
         # Create and log the distances distribution plot
-        ax = plot_dists_distribution(
+        ax: Axes = plot_dists_distribution(
             distances=distances, mode="points", label=f"{method} distances"
         )
         plt.title(f"Distance Distribution ({method})")
@@ -71,7 +72,8 @@ def create_clustering_report(
             plt.legend()
 
         # Get the figure from the axes
-        fig = ax.get_figure()
+        fig: plt.Figure | None = ax.get_figure()
+        assert fig is not None
 
         # Log the plot
         run.log(
@@ -94,7 +96,7 @@ def create_clustering_report(
         run_ids: list[str] = []
         for url in wandb_urls:
             if "runs/" in url:
-                run_id = url.split("runs/")[-1]
+                run_id: str = url.split("runs/")[-1]
                 run_ids.append(run_id)
 
         if run_ids:

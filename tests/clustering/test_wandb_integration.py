@@ -4,113 +4,125 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import torch
-
-from spd.clustering.cli.s2_clustering import save_group_idxs_artifact
-from spd.clustering.cli.s3_normalize_histories import load_merge_histories_from_wandb
 from spd.clustering.merge_history import MergeHistory
+from spd.clustering.s2_clustering import _save_merge_history_to_wandb
+from spd.clustering.s3_normalize_histories import normalize_and_save
 
 
 def test_wandb_url_parsing_short_format():
-    """Test parsing wandb:entity/project/run_id format URLs."""
-    urls = ["wandb:entity/project/run123", "wandb:entity/project/run456"]
+    """Test that normalize_and_save can process merge histories."""
+    # Create temporary merge history files
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
 
-    with patch("spd.clustering.scripts.s3_normalize_histories.wandb.Api") as mock_api:
-        # Mock the API and artifacts
-        mock_run = Mock()
-        mock_artifact = Mock()
-        mock_artifact.type = "merge_history"
-        mock_artifact.download.return_value = "/tmp/test"
-        mock_run.logged_artifacts.return_value = [mock_artifact]
-        mock_api.return_value.run.return_value = mock_run
+        # Create mock merge histories
+        from spd.clustering.merge_config import MergeConfig
 
-        with patch("spd.clustering.scripts.s3_normalize_histories.Path") as mock_path:
-            mock_path.return_value.glob.return_value = [Path("/tmp/test.zanj")]
+        config = MergeConfig(
+            iters=5,
+            alpha=1.0,
+            activation_threshold=None,
+            pop_component_prob=0.0,
+        )
 
-            with patch("spd.clustering.scripts.s3_normalize_histories.ZANJ") as mock_zanj:
-                mock_history = Mock(spec=MergeHistory)
-                mock_zanj.return_value.read.return_value = mock_history
+        history_paths = []
+        for idx in range(2):
+            history = MergeHistory.from_config(
+                config=config,
+                labels=[f"comp{j}" for j in range(5)],
+            )
+            history_path = tmp_path / f"history_{idx}.zip"
+            history.save(history_path)
+            history_paths.append(history_path)
 
-                try:
-                    result_urls, ensemble = load_merge_histories_from_wandb(urls)
-                    assert result_urls == urls
-                    assert len(ensemble.data) == 2
-                except Exception:
-                    # Test passes if we can parse URLs without errors in the parsing logic
-                    pass
+        # Test normalize_and_save
+        output_dir = tmp_path / "output"
+        result = normalize_and_save(history_paths, output_dir)
 
-
-def test_wandb_url_parsing_full_format():
-    """Test parsing full https://wandb.ai/entity/project/runs/run_id format URLs."""
-    urls = [
-        "https://wandb.ai/entity/project/runs/run123",
-        "https://wandb.ai/entity/project/runs/run456",
-    ]
-
-    with patch("spd.clustering.scripts.s3_normalize_histories.wandb.Api") as mock_api:
-        # Mock the API and artifacts
-        mock_run = Mock()
-        mock_artifact = Mock()
-        mock_artifact.type = "merge_history"
-        mock_artifact.download.return_value = "/tmp/test"
-        mock_run.logged_artifacts.return_value = [mock_artifact]
-        mock_api.return_value.run.return_value = mock_run
-
-        with patch("spd.clustering.scripts.s3_normalize_histories.Path") as mock_path:
-            mock_path.return_value.glob.return_value = [Path("/tmp/test.zanj")]
-
-            with patch("spd.clustering.scripts.s3_normalize_histories.ZANJ") as mock_zanj:
-                mock_history = Mock(spec=MergeHistory)
-                mock_zanj.return_value.read.return_value = mock_history
-
-                try:
-                    result_urls, ensemble = load_merge_histories_from_wandb(urls)
-                    assert result_urls == urls
-                    assert len(ensemble.data) == 2
-                except Exception:
-                    # Test passes if we can parse URLs without errors in the parsing logic
-                    pass
+        # Basic checks
+        assert result is not None
+        assert output_dir.exists()
+        assert (output_dir / "ensemble_meta.json").exists()
+        assert (output_dir / "ensemble_merge_array.npz").exists()
 
 
-def test_save_group_idxs_artifact_creates_file():
-    """Test that save_group_idxs_artifact creates the expected file."""
-    # Create a mock MergeHistory with group_idxs
-    mock_history = Mock()
-    mock_merges = Mock()
-    mock_group_idxs = torch.randint(0, 10, (5, 20))  # 5 iterations, 20 components
-    mock_merges.group_idxs = mock_group_idxs
-    mock_history.merges = mock_merges
+def test_merge_history_ensemble():
+    """Test that MergeHistoryEnsemble can handle multiple histories."""
+    from spd.clustering.merge_config import MergeConfig
+    from spd.clustering.merge_history import MergeHistoryEnsemble
 
-    # Mock wandb run
+    # Create test merge histories
+    config = MergeConfig(
+        iters=3,
+        alpha=1.0,
+        activation_threshold=None,
+        pop_component_prob=0.0,
+    )
+
+    histories = []
+    for _idx in range(2):
+        history = MergeHistory.from_config(
+            config=config,
+            labels=[f"comp{j}" for j in range(4)],
+        )
+        histories.append(history)
+
+    # Test ensemble creation
+    ensemble = MergeHistoryEnsemble(data=histories)
+    assert len(ensemble.data) == 2
+
+    # Test normalization
+    normalized_array, metadata = ensemble.normalized()
+    assert normalized_array is not None
+    assert metadata is not None
+
+
+def test_save_merge_history_to_wandb():
+    """Test that _save_merge_history_to_wandb creates the expected artifact."""
+    from spd.clustering.merge_config import MergeConfig
+
+    # Create a real MergeHistory
+    config = MergeConfig(
+        iters=5,
+        alpha=1.0,
+        activation_threshold=None,
+        pop_component_prob=0.0,
+    )
+
+    history = MergeHistory.from_config(
+        config=config,
+        labels=["comp0", "comp1", "comp2"],
+    )
+
+    # Mock wandb run and artifact
     mock_wandb_run = Mock()
     mock_artifact = Mock()
-    mock_wandb_run.log_artifact.return_value = None
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        save_dir = Path(tmp_dir)
+        history_path = Path(tmp_dir) / "test_history.zip"
+        history.save(history_path)
 
-        with patch(
-            "spd.clustering.scripts.s2_run_clustering.wandb.Artifact"
-        ) as mock_artifact_class:
+        with patch("spd.clustering.s2_clustering.wandb.Artifact") as mock_artifact_class:
             mock_artifact_class.return_value = mock_artifact
 
-            with patch("spd.clustering.scripts.s2_run_clustering.np.save") as _mock_np_save:
-                # Call the function
-                save_group_idxs_artifact(
-                    merge_hist=mock_history,
-                    iteration=3,
-                    wandb_run=mock_wandb_run,
-                    save_dir=save_dir,
-                    dataset_stem="batch_01",
-                )
+            # Call the function
+            _save_merge_history_to_wandb(
+                run=mock_wandb_run,
+                history_path=history_path,
+                batch_id="batch_01",
+                config_identifier="test_config",
+                history=history,
+            )
 
-                # Check that the function was called and file was saved
-                expected_path = save_dir / "iter_0003.zip"
-                mock_history.save.assert_called_once_with(expected_path)
+            # Check that artifact was created and logged
+            mock_artifact_class.assert_called_once()
+            mock_wandb_run.log_artifact.assert_called_once_with(mock_artifact)
 
-                # Check that artifact was created and logged
-                mock_artifact_class.assert_called_once()
-                mock_wandb_run.log_artifact.assert_called_once_with(mock_artifact)
+            # Check artifact creation parameters
+            call_args = mock_artifact_class.call_args
+            assert call_args.kwargs["name"] == "merge_history_batch_01"
+            assert call_args.kwargs["type"] == "merge_history"
+            assert "batch_01" in call_args.kwargs["description"]
 
 
 def test_wandb_url_field_in_merge_history():
@@ -121,7 +133,7 @@ def test_wandb_url_field_in_merge_history():
     config = MergeConfig(
         iters=10,
         alpha=1.0,
-        activation_threhold=None,
+        activation_threshold=None,
         pop_component_prob=0.0,
     )
 

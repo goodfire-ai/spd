@@ -42,7 +42,7 @@ class GroupMerge:
             raise ValueError("group indices out of range")
 
         if require_nonempty:
-            has_empty_groups = self.components_per_group.eq(0).any().item()
+            has_empty_groups: bool = bool(self.components_per_group.eq(0).any().item())
             if has_empty_groups:
                 raise ValueError("one or more groups are empty")
 
@@ -66,8 +66,8 @@ class GroupMerge:
             raise TypeError("mat must have dtype bool")
         if not mat.sum(dim=0).eq(1).all():
             raise ValueError("each column must contain exactly one True")
-        group_idxs = mat.argmax(dim=0).to(torch.int64)
-        inst = cls(group_idxs=group_idxs, k_groups=int(mat.shape[0]))
+        group_idxs: Int[Tensor, " n_components"] = mat.argmax(dim=0).to(torch.int64)
+        inst: GroupMerge = cls(group_idxs=group_idxs, k_groups=int(mat.shape[0]))
         inst.validate(require_nonempty=False)
         return inst
 
@@ -82,17 +82,22 @@ class GroupMerge:
     ) -> "GroupMerge":
         if ensure_groups_nonempty and n_components < k_groups:
             raise ValueError("n_components must be >= k_groups when ensure_groups_nonempty is True")
+
+        group_idxs: Int[Tensor, " n_components"]
+
         if ensure_groups_nonempty:
-            base = torch.arange(k_groups, device=device)
+            base: Int[Tensor, " k_groups"] = torch.arange(k_groups, device=device)
             if n_components > k_groups:
-                extra = torch.randint(0, k_groups, (n_components - k_groups,), device=device)
+                extra: Int[Tensor, " ..."] = torch.randint(
+                    0, k_groups, (n_components - k_groups,), device=device
+                )
                 group_idxs = torch.cat((base, extra))
                 group_idxs = group_idxs[torch.randperm(n_components, device=device)]
             else:
                 group_idxs = base
         else:
             group_idxs = torch.randint(0, k_groups, (n_components,), device=device)
-        inst = cls(group_idxs=group_idxs, k_groups=k_groups)
+        inst: GroupMerge = cls(group_idxs=group_idxs, k_groups=k_groups)
         inst.validate(require_nonempty=ensure_groups_nonempty)
         return inst
 
@@ -116,7 +121,7 @@ class GroupMerge:
             group_a, group_b = group_b, group_a
 
         # make a copy
-        new_idxs = self.group_idxs.clone()
+        new_idxs: Int[Tensor, " n_components"] = self.group_idxs.clone()
         # wherever its currently b, change it to a
         new_idxs[new_idxs == group_b] = group_a
         # wherever i currently above b, change it to i-1
@@ -187,16 +192,20 @@ class BatchedGroupMerge:
         cls,
         merge_matrices: list[GroupMerge],
     ) -> "BatchedGroupMerge":
-        group_idxs = torch.stack([mm.group_idxs for mm in merge_matrices], dim=0)
-        k_groups = torch.tensor([mm.k_groups for mm in merge_matrices], dtype=torch.int64)
-        inst = cls(group_idxs=group_idxs, k_groups=k_groups)
+        group_idxs: Int[Tensor, " batch n_components"] = torch.stack(
+            [mm.group_idxs for mm in merge_matrices], dim=0
+        )
+        k_groups: Int[Tensor, " batch"] = torch.tensor(
+            [mm.k_groups for mm in merge_matrices], dtype=torch.int64
+        )
+        inst: BatchedGroupMerge = cls(group_idxs=group_idxs, k_groups=k_groups)
         # inst.validate(require_nonempty=False)
         return inst
 
     def __getitem__(self, idx: int) -> GroupMerge:
         if not (0 <= idx < self._batch_size):
             raise IndexError("index out of range")
-        group_idxs = self.group_idxs[idx]
+        group_idxs: Int[Tensor, " n_components"] = self.group_idxs[idx]
         k_groups: int = int(self.k_groups[idx].item())
         return GroupMerge(group_idxs=group_idxs, k_groups=k_groups)
 
