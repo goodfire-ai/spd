@@ -4,11 +4,11 @@ import hashlib
 import json
 import warnings
 from pathlib import Path
-from typing import Any, Literal, Self, override
+from typing import Any, Literal, Self
 
 import yaml
 from muutils.misc.numerical import shorten_numerical_to_str
-from pydantic import Field, PositiveInt, model_validator
+from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from spd.clustering.merge_config import MergeConfig
 from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
@@ -35,12 +35,37 @@ _DEFAULT_INTERVALS: IntervalsDict = {
 }
 
 
-class MergeRunConfig(MergeConfig):
+class RunFilePaths:
+    def __init__(self, run_path: Path):
+        self.run_path = run_path
+
+    @property
+    def histories_path(self) -> Path:
+        return self.run_path / "merge_histories"
+
+    @property
+    def distances_dir(self) -> Path:
+        return self.run_path / "distances"
+
+    @property
+    def run_config_path(self) -> Path:
+        return self.run_path / "run_config.json"
+
+    def scaffold(self) -> None:
+        self.histories_path.mkdir(exist_ok=True)
+        self.distances_dir.mkdir(exist_ok=True)
+
+
+class RunConfig(BaseModel):
     """Configuration for a complete merge clustering run.
 
     Extends MergeConfig with parameters for model, dataset, and batch configuration.
     CLI-only parameters (base_path, devices, max_concurrency) are intentionally excluded.
     """
+
+    merge_config: MergeConfig = Field(
+        description="Merge configuration",
+    )
 
     model_path: str = Field(
         description="WandB path to the model (format: wandb:entity/project/run_id)",
@@ -59,6 +84,20 @@ class MergeRunConfig(MergeConfig):
     batch_size: PositiveInt = Field(
         default=64,
         description="Size of each batch for processing",
+    )
+
+    # Implementation details:
+    base_path: Path = Field(
+        ...,
+        description="Base path for saving clustering outputs",
+    )
+    workers_per_device: int = Field(
+        ...,
+        description="Maximum number of concurrent clustering processes per device",
+    )
+    devices: list[str] = Field(
+        ...,
+        description="Devices to use for clustering",
     )
 
     # WandB configuration
@@ -126,26 +165,24 @@ class MergeRunConfig(MergeConfig):
     @property
     def _iters_str(self) -> str:
         """Shortened string representation of iterations for run ID"""
-        return shorten_numerical_to_str(self.iters)
+        return shorten_numerical_to_str(self.merge_config.iters)
 
     @property
-    @override
     def config_identifier(self) -> str:
         """Unique identifier for this specific config on this specific model.
 
         Format: model_abc123-a0.1-i1k-b64-n10-h_12ab
         Allows filtering in WandB for all runs with this exact config and model.
         """
-        return f"task_{self.task_name}-w_{self.wandb_decomp_model}-a{self.alpha:g}-i{self._iters_str}-b{self.batch_size}-n{self.n_batches}-h_{self.stable_hash}"
+        return f"task_{self.task_name}-w_{self.wandb_decomp_model}-a{self.merge_config.alpha:g}-i{self._iters_str}-b{self.batch_size}-n{self.n_batches}-h_{self.stable_hash}"
 
     @property
-    @override
     def stable_hash(self) -> str:
         """Generate a stable hash including all config parameters."""
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
 
     @classmethod
-    def from_file(cls, path: Path) -> "MergeRunConfig":
+    def from_file(cls, path: Path) -> "RunConfig":
         """Load config from JSON or YAML file.
 
         Handles legacy spd_exp: model_path format and enforces consistency.
@@ -200,3 +237,11 @@ class MergeRunConfig(MergeConfig):
         )
 
         return base_dump
+
+
+if __name__ == "__main__":
+    with open("merge_run_config.json", "w") as f:
+        json.dump(RunConfig.model_json_schema(), f, indent=2)
+
+    # config = MergeRunConfig.from_file(Path("data/clustering/configs/1234567890.json"))
+    # print(config.model_dump_with_properties())

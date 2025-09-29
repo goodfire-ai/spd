@@ -6,9 +6,9 @@ from unittest.mock import Mock, patch
 
 import torch
 
+from spd.clustering.cli.s2_clustering import save_group_idxs_artifact
+from spd.clustering.cli.s3_normalize_histories import load_merge_histories_from_wandb
 from spd.clustering.merge_history import MergeHistory
-from spd.clustering.scripts.s2_clustering import save_group_idxs_artifact
-from spd.clustering.scripts.s3_normalize_histories import load_merge_histories_from_wandb
 
 
 def test_wandb_url_parsing_short_format():
@@ -119,10 +119,10 @@ def test_wandb_url_field_in_merge_history():
 
     # Create a simple config
     config = MergeConfig(
-        iters=10,
-        alpha=1.0,
-        activation_threshold=None,
-        pop_component_prob=0.0,
+        merge_config.iters=10,
+        merge_config.alpha=1.0,
+        merge_config.activation_threhol=None,
+        merge_config.pop_component_prob=0.0,
     )
 
     # Create MergeHistory with wandb_url
