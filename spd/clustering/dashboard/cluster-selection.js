@@ -117,6 +117,7 @@ const columnRenderers = {
                 lineWidth: 0,  // No line, just bars
                 markers: '',   // No markers
                 margin: 2,
+                ylims: [0, null],
                 xAxis: {line: true, ticks: true, label_margin: 10},
                 yAxis: {line: true, ticks: true, label_margin: 20}
             });

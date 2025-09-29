@@ -48,28 +48,40 @@ function displayCluster() {
 }
 
 function setupComponentsTable() {
-    // Setup table only
-    const columns = [
-        { name: 'Module', sortable: true },
-        { name: 'Index', sortable: true },
-        { name: 'Label', sortable: true }
-    ];
-    
-    const tableData = clusterData.components.map(comp => [
-        comp.module,
-        comp.index,
-        comp.label
-    ]);
-    
-    createSortableTable('componentsTable', columns, tableData, (row) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${row[0]}</td>
-            <td>${row[1]}</td>
-            <td>${row[2]}</td>
-        `;
-        return tr;
-    });
+    const tableData = clusterData.components.map(comp => ({
+        module: comp.module,
+        index: comp.index,
+        label: comp.label
+    }));
+
+    const tableConfig = {
+        data: tableData,
+        columns: [
+            {
+                key: 'module',
+                label: 'Module',
+                type: 'string',
+                width: '200px'
+            },
+            {
+                key: 'index',
+                label: 'Index',
+                type: 'number',
+                width: '80px',
+                align: 'right'
+            },
+            {
+                key: 'label',
+                label: 'Label',
+                type: 'string',
+                width: '300px'
+            }
+        ],
+        pageSize: 25,
+        showFilters: true
+    };
+
+    new DataTable('#componentsTable', tableConfig);
 }
 
 function displaySamples() {
