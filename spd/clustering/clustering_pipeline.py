@@ -13,9 +13,7 @@ def main(config: RunConfig):
     from spd.clustering.s1_split_dataset import split_and_save_dataset
     from spd.clustering.s2_clustering import process_batches_parallel
     from spd.clustering.s3_normalize_histories import normalize_and_save
-    from spd.clustering.s4_compute_distances import (
-        create_clustering_report,
-    )
+    from spd.clustering.s4_compute_distances import create_clustering_report
 
     # TODO: factor these out into dataclass or something
     run_path = config.base_path / config.config_identifier
