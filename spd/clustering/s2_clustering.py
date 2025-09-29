@@ -117,9 +117,9 @@ def _run_clustering(
 
     if run is not None:
         _log_merge_history_plots_to_wandb(run, history)
-        # _save_merge_history_to_wandb(
-        #     run, history_save_path, batch_id, config.config_identifier, history
-        # )
+        _save_merge_history_to_wandb(
+            run, history_save_path, batch_id, config.config_identifier, history
+        )
 
         run.finish()
 
@@ -155,12 +155,30 @@ def _setup_wandb(
 
 def _log_merge_history_plots_to_wandb(run: Run, history: MergeHistory):
     fig_cs = plot_merge_history_cluster_sizes(history=history)
-
     run.log(
-        {
-            "plots/merge_history_cluster_sizes": wandb.Image(fig_cs),
-        },
+        {"plots/merge_history_cluster_sizes": wandb.Image(fig_cs)},
         step=history.n_iters_current,
     )
-
     plt.close(fig_cs)
+
+
+def _save_merge_history_to_wandb(
+    run: Run,
+    history_path: Path,
+    batch_id: str,
+    config_identifier: str,
+    history: MergeHistory,
+):
+    artifact = wandb.Artifact(
+        name=f"merge_history_{batch_id}",
+        type="merge_history",
+        description=f"Merge history for batch {batch_id}",
+        metadata={
+            "batch_name": batch_id,
+            "config_identifier": config_identifier,
+            "n_iters_current": history.n_iters_current,
+            "filename": history_path,
+        },
+    )
+    artifact.add_file(str(history_path))
+    run.log_artifact(artifact)
