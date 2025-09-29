@@ -45,7 +45,7 @@ def merge_iteration(
     batch_id: str,
     activations: Float[Tensor, "n_steps c"],
     component_labels: list[str],
-    wandb_callback: LogCallback | None = None,
+    log_callback: LogCallback | None = None,
 ) -> MergeHistory:
     """
     Merge iteration with optional logging/plotting callbacks.
@@ -172,8 +172,8 @@ def merge_iteration(
             f"{prefix} k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={merge_pair_cost:.4f}"
         )
 
-        if wandb_callback is not None:
-            wandb_callback(
+        if log_callback is not None:
+            log_callback(
                 iter_idx=iter_idx,
                 current_coact=current_coact,
                 component_labels=component_labels,
