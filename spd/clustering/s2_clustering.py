@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from multiprocessing import Pool
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -8,7 +7,6 @@ import torch
 import wandb
 from jaxtyping import Int
 from torch import Tensor
-from tqdm import tqdm
 from wandb.sdk.wandb_run import Run
 
 from spd.clustering.activations import component_activations, process_activations
