@@ -8,7 +8,6 @@ import torch
 import wandb
 from jaxtyping import Int
 from torch import Tensor
-from tqdm import tqdm
 from wandb.sdk.wandb_run import Run
 
 from spd.clustering.activations import component_activations, process_activations
@@ -28,10 +27,6 @@ class ClusteringResult:
     wandb_url: str | None
 
 
-def _worker_fn(args: tuple[MergeRunConfig, Path, Path, str]) -> ClusteringResult:
-    return run_clustering(*args)
-
-
 # TODO consider making this a generator
 def process_batches_parallel(
     config: MergeRunConfig,
@@ -48,22 +43,17 @@ def process_batches_parallel(
         for i, data_path in enumerate(data_files)
     ]
 
-    # Simple pool without initializer
-    # with Pool(n_workers) as pool:
-    #     # Process batches with progress bar
-    #     results = list(
-    #         tqdm(
-    #             pool.imap(_worker_fn, worker_args),
-    #             total=len(data_files),
-    #             desc="Processing batches",
-    #         )
-    #     )
-    results = [_worker_fn(args) for args in worker_args]
+    with Pool(n_workers) as pool:
+        results = pool.map(_worker_fn, worker_args)
 
     return results
 
 
-def run_clustering(
+def _worker_fn(args: tuple[MergeRunConfig, Path, Path, str]) -> ClusteringResult:
+    return _run_clustering(*args)
+
+
+def _run_clustering(
     config: MergeRunConfig,
     data_path: Path,
     output_base_dir: Path,
@@ -165,29 +155,6 @@ def _setup_wandb(
     )
     logger.info(f"Initialized WandB run: {run.name} in group {config.wandb_group}")
     return run
-
-
-def _save_merge_history_to_wandb(
-    run: Run,
-    history_path: Path,
-    batch_id: str,
-    config_identifier: str,
-    history: MergeHistory,
-):
-    artifact = wandb.Artifact(
-        name=f"merge_history_{batch_id}",
-        type="merge_history",
-        description=f"Merge history for batch {batch_id}",
-        metadata={
-            "batch_name": batch_id,
-            "config_identifier": config_identifier,
-            "n_iters_current": history.n_iters_current,
-            "filename": history_path,
-        },
-    )
-    # Add both files before logging the artifact
-    artifact.add_file(str(history_path))
-    run.log_artifact(artifact)
 
 
 def _log_merge_history_plots_to_wandb(run: Run, history: MergeHistory):

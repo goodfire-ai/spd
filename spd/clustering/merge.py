@@ -259,9 +259,8 @@ def _wandb_iter_log(
         )
 
     if iter_idx > 0 and iter_idx % config.intervals["artifact"] == 0:
-        with tempfile.TemporaryFile() as tmp_file:
-            file: Path = Path(tmp_file.name)
-            file.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile() as tmp_file:
+            file = Path(tmp_file.name)
             merge_history.save(file)
             artifact = wandb.Artifact(
                 name=f"merge_hist_iter.{batch_id}.iter_{iter_idx}",

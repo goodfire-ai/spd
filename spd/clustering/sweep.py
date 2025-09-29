@@ -5,10 +5,8 @@ from typing import Any
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from matplotlib.colors import LogNorm
 from matplotlib.lines import Line2D
-from tqdm import tqdm
 
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
