@@ -221,27 +221,3 @@ class RunConfig(BaseModel):
             data["task_name"] = exp_config.task_name
 
         return cls.model_validate(data)
-
-    def model_dump_with_properties(self) -> dict[str, Any]:
-        """Serialize config including computed properties for WandB logging."""
-        base_dump: dict[str, Any] = self.model_dump()
-
-        # Add computed properties
-        base_dump.update(
-            {
-                "wandb_decomp_model": self.wandb_decomp_model,
-                "wandb_group": self.wandb_group,
-                "config_identifier": self.config_identifier,
-                "stable_hash": self.stable_hash,
-            }
-        )
-
-        return base_dump
-
-
-if __name__ == "__main__":
-    with open("merge_run_config.json", "w") as f:
-        json.dump(RunConfig.model_json_schema(), f, indent=2)
-
-    # config = MergeRunConfig.from_file(Path("data/clustering/configs/1234567890.json"))
-    # print(config.model_dump_with_properties())

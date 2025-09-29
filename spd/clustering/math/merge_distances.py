@@ -21,16 +21,6 @@ DISTANCES_METHODS: dict[DistancesMethod, Callable[[MergesAtIterArray], Distances
 # pyright: reportUnnecessaryComparison=false, reportUnreachable=false
 
 
-def compute_and_save_distances(
-    normalized_merge_array: MergesArray,
-    output_dir: Path,
-    method: DistancesMethod = "perm_invariant_hamming",
-) -> DistancesArray:
-    distances = compute_distances(normalized_merge_array, method)
-    np.savez_compressed(output_dir / f"distances_{method}.npz", distances=distances)
-    return distances
-
-
 def compute_distances(
     normalized_merge_array: MergesArray,
     method: DistancesMethod = "perm_invariant_hamming",
