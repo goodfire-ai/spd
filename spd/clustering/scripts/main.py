@@ -33,11 +33,11 @@ def cli():
         help="comma-separated list of devices to use for clustering (e.g., 'cuda:0,cuda:1')",
     )
     parser.add_argument(
-        "--max-concurrency",
+        "--workers-per-device",
         "-x",
         type=int,
-        default=None,
-        help="Maximum number of concurrent clustering processes (default: all devices)",
+        default=1,
+        help="Maximum number of concurrent clustering processes per device (default: 1)",
     )
     args = parser.parse_args()
 
@@ -53,7 +53,7 @@ def cli():
         config=MergeRunConfig.from_file(args.config),
         base_path=args.base_path,
         devices=devices,
-        n_workers=args.max_concurrency if args.max_concurrency is not None else len(devices),
+        workers_per_device=args.workers_per_device,
     )
 
 

@@ -27,23 +27,19 @@ class ClusteringResult:
     wandb_url: str | None
 
 
-# TODO consider making this a generator
 def process_batches_parallel(
     config: MergeRunConfig,
     data_files: list[Path],
     output_base_dir: Path,
-    n_workers: int,
+    workers_per_device: int,
     devices: list[str],
 ) -> list[ClusteringResult]:
-    devices = devices or ["cuda:0"]
-
-    # Create worker arguments with device assignment
     worker_args = [
         (config, data_path, output_base_dir, devices[i % len(devices)])
         for i, data_path in enumerate(data_files)
     ]
 
-    with Pool(n_workers) as pool:
+    with Pool(workers_per_device * len(devices)) as pool:
         results = pool.map(_worker_fn, worker_args)
 
     return results

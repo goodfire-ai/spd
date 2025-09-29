@@ -35,12 +35,46 @@ _DEFAULT_INTERVALS: IntervalsDict = {
 }
 
 
+class RunFilePaths:
+    def __init__(self, run_path: Path):
+        self.run_path = run_path
+
+    @property
+    def histories_path(self) -> Path:
+        return self.run_path / "merge_histories"
+
+    @property
+    def distances_dir(self) -> Path:
+        return self.run_path / "distances"
+
+    @property
+    def run_config_path(self) -> Path:
+        return self.run_path / "run_config.json"
+
+    def scaffold(self) -> None:
+        self.histories_path.mkdir(exist_ok=True)
+        self.distances_dir.mkdir(exist_ok=True)
+
+
 class MergeRunConfig(MergeConfig):
     """Configuration for a complete merge clustering run.
 
     Extends MergeConfig with parameters for model, dataset, and batch configuration.
     CLI-only parameters (base_path, devices, max_concurrency) are intentionally excluded.
     """
+
+    base_path: Path = Field(
+        ...,
+        description="Base path for saving clustering outputs",
+    )
+    workers_per_device: int = Field(
+        ...,
+        description="Maximum number of concurrent clustering processes per device",
+    )
+    devices: list[str] = Field(
+        ...,
+        description="Devices to use for clustering",
+    )
 
     model_path: str = Field(
         description="WandB path to the model (format: wandb:entity/project/run_id)",

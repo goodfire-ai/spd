@@ -21,7 +21,7 @@ def split_dataset_lm(
     model_path: str,
     n_batches: int,
     batch_size: int,
-    output_path: Path,
+    output_dir: Path,
     save_file_fmt: str,
     cfg_file_fmt: str,
 ) -> list[Path]:
@@ -72,9 +72,9 @@ def split_dataset_lm(
         )
 
     # make dirs
-    output_path.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     (
-        output_path
+        output_dir
         / save_file_fmt.format(batch_size=batch_size, batch_idx="XX", n_batches=f"{n_batches:02d}")
     ).parent.mkdir(parents=True, exist_ok=True)
     # iterate over the requested number of batches and save them
@@ -86,7 +86,7 @@ def split_dataset_lm(
     ):
         if batch_idx >= n_batches:
             break
-        batch_path: Path = output_path / save_file_fmt.format(
+        batch_path: Path = output_dir / save_file_fmt.format(
             batch_size=batch_size,
             batch_idx=f"{batch_idx:02d}",
             n_batches=f"{n_batches:02d}",
@@ -98,7 +98,7 @@ def split_dataset_lm(
         output_paths.append(batch_path)
 
     # save a config file
-    cfg_path: Path = output_path / cfg_file_fmt.format(batch_size=batch_size)
+    cfg_path: Path = output_dir / cfg_file_fmt.format(batch_size=batch_size)
     cfg_data: dict[str, Any] = dict(
         # args to this function
         model_path=model_path,
@@ -110,7 +110,7 @@ def split_dataset_lm(
         tokenizer_type=str(getattr(_tokenizer, "__class__", None)),
         # files we saved
         output_files=[str(p) for p in output_paths],
-        output_dir=str(output_path),
+        output_dir=str(output_dir),
         output_file_fmt=save_file_fmt,
         cfg_file_fmt=cfg_file_fmt,
         cfg_file=str(cfg_path),
@@ -127,7 +127,7 @@ def split_dataset_resid_mlp(
     model_path: str,
     n_batches: int,
     batch_size: int,
-    output_path: Path,
+    output_dir: Path,
     save_file_fmt: str,
     cfg_file_fmt: str,
 ) -> list[Path]:
@@ -168,9 +168,9 @@ def split_dataset_resid_mlp(
         dataloader = DatasetGeneratedDataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     # make dirs
-    output_path.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     (
-        output_path
+        output_dir
         / save_file_fmt.format(batch_size=batch_size, batch_idx="XX", n_batches=f"{n_batches:02d}")
     ).parent.mkdir(parents=True, exist_ok=True)
 
@@ -186,7 +186,7 @@ def split_dataset_resid_mlp(
         if batch_idx >= n_batches:
             break
 
-        batch_path: Path = output_path / save_file_fmt.format(
+        batch_path: Path = output_dir / save_file_fmt.format(
             batch_size=batch_size,
             batch_idx=f"{batch_idx:02d}",
             n_batches=f"{n_batches:02d}",
@@ -198,7 +198,7 @@ def split_dataset_resid_mlp(
         output_paths.append(batch_path)
 
         # save the config file
-    cfg_path: Path = output_path / cfg_file_fmt.format(batch_size=batch_size)
+    cfg_path: Path = output_dir / cfg_file_fmt.format(batch_size=batch_size)
     cfg_data: dict[str, Any] = dict(
         # args to this function
         model_path=model_path,
@@ -208,7 +208,7 @@ def split_dataset_resid_mlp(
         resid_mlp_dataset_kwargs=resid_mlp_dataset_kwargs,
         # files we saved
         output_files=[str(p) for p in output_paths],
-        output_dir=str(output_path),
+        output_dir=str(output_dir),
         output_file_fmt=save_file_fmt,
         cfg_file_fmt=cfg_file_fmt,
         cfg_file=str(cfg_path),
@@ -223,7 +223,7 @@ def split_dataset_resid_mlp(
 
 def split_and_save_dataset(
     config: MergeRunConfig,
-    output_path: Path,
+    output_dir: Path,
     save_file_fmt: str,
     cfg_file_fmt: str,
 ) -> list[Path]:
@@ -234,7 +234,7 @@ def split_and_save_dataset(
                 model_path=config.model_path,
                 n_batches=config.n_batches,
                 batch_size=config.batch_size,
-                output_path=output_path,
+                output_dir=output_dir,
                 save_file_fmt=save_file_fmt,
                 cfg_file_fmt=cfg_file_fmt,
             )
@@ -243,7 +243,7 @@ def split_and_save_dataset(
                 model_path=config.model_path,
                 n_batches=config.n_batches,
                 batch_size=config.batch_size,
-                output_path=output_path,
+                output_dir=output_dir,
                 save_file_fmt=save_file_fmt,
                 cfg_file_fmt=cfg_file_fmt,
             )

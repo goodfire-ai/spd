@@ -7,14 +7,24 @@ Each batch loads its own model and WandB run to match original design.
 
 from pathlib import Path
 
-from spd.clustering.merge_run_config import MergeRunConfig
+from pydantic import BaseModel
+
+from spd.clustering.merge_run_config import RunFilePaths, MergeRunConfig
+
+
+class RunRecord(BaseModel):
+    merge_run_config: MergeRunConfig
+    output_dir: Path
+    devices: list[str]
+    max_concurrency: int
+    plot: bool
 
 
 def main(
     config: MergeRunConfig,
     base_path: Path,
-    n_workers: int,
     devices: list[str],
+    workers_per_device: int,
 ):
     """
     The following is (hopefully) correct (thought see there's some repetition I'd like to change)
@@ -42,38 +52,29 @@ def main(
         create_clustering_report,
     )
 
-    output_dir = base_path / config.config_identifier
+    run_path = base_path / config.config_identifier
+    histories_path = run_path / "merge_histories"
+    dataset_dir = run_path / "dataset"
+    distances_dir = run_path / "distances"
+    run_config_path = run_path / "run_config.json"
 
-    histories_path = output_dir / "merge_histories"
-    histories_path.mkdir(parents=True, exist_ok=True)
-
-    distances_dir = output_dir / "distances"
-    distances_dir.mkdir(parents=True, exist_ok=True)
-
-    # TODO see if we actually need this
-    # run_config_path = output_dir / "run_config.json"
-    # run_config_path.write_text(
-    #     json.dumps(
-    #         dict(merge_run_config=config.model_dump(mode="json"), base_path=str(base_path), devices=devices, max_concurrency=n_workers, plot=True,  # can we remove this?  repo_root=str(REPO_ROOT), run_id=config.config_identifier, run_path=str(output_dir),),
-    #         indent="\t",
-    #     )
-    # )
-    # print(f"Run config saved to {run_config_path}")
+    print(f"Run config saved to {run_config_path}")
+    run_config_path.write_text(config.model_dump_json(indent=2))
 
     print(f"Splitting dataset into {config.n_batches} batches...")
     data_files = split_and_save_dataset(
         config=config,
-        output_path=output_dir,
+        output_dir=dataset_dir,
         save_file_fmt="batch_{batch_idx}.npz",
         cfg_file_fmt="config.json",  # just a place we save a raw dict of metadata
     )
 
-    print(f"Processing {len(data_files)} batches with {n_workers} workers...")
+    print(f"Processing {len(data_files)} batches with {workers_per_device} workers per device...")
     results = process_batches_parallel(
         data_files=data_files,
         config=config,
         output_base_dir=histories_path,
-        n_workers=n_workers,
+        workers_per_device=workers_per_device,
         devices=devices,
     )
 
