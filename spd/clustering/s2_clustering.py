@@ -30,12 +30,12 @@ class ClusteringResult:
 def process_batches_parallel(
     config: MergeRunConfig,
     data_files: list[Path],
-    output_base_dir: Path,
+    output_dir: Path,
     workers_per_device: int,
     devices: list[str],
 ) -> list[ClusteringResult]:
     worker_args = [
-        (config, data_path, output_base_dir, devices[i % len(devices)])
+        (config, data_path, output_dir, devices[i % len(devices)])
         for i, data_path in enumerate(data_files)
     ]
 
@@ -89,6 +89,9 @@ def _run_clustering(
             step=0,
             single=True,
         )
+        wandb_url = run.url
+    else:
+        wandb_url = None
 
     # Use original activations for raw plots, but filtered data for concat/coact/histograms
     logger.info("plotting")
@@ -118,10 +121,7 @@ def _run_clustering(
         #     run, history_save_path, batch_id, config.config_identifier, history
         # )
 
-        wandb_url = run.url
         run.finish()
-    else:
-        wandb_url = None
 
     return ClusteringResult(history_save_path=history_save_path, wandb_url=wandb_url)
 

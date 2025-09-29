@@ -234,3 +234,10 @@ class MergeRunConfig(MergeConfig):
         )
 
         return base_dump
+
+if __name__ == "__main__":
+    with open("merge_run_config.json", "w") as f:
+        json.dump(MergeRunConfig.model_json_schema(), f, indent=2)
+
+    # config = MergeRunConfig.from_file(Path("data/clustering/configs/1234567890.json"))
+    # print(config.model_dump_with_properties())

@@ -1,4 +1,17 @@
+"""
+writes a dataset into a directory of batches
+
+directory structure:
+dataset/
+    config.json
+    batches/
+        batch_00.npz
+        batch_01.npz
+        ...
+"""
+
 import json
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -16,15 +29,61 @@ from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskC
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
+CONFIG_FILE_PATH = "dataset_config.json"
+BATCHES_DIR_PATH = "batches"
+BATCH_FILE_FMT = "batch_{batch_idx:02d}.npz"
 
-def split_dataset_lm(
+
+def split_and_save_dataset(config: MergeRunConfig, output_dir: Path) -> list[Path]:
+    """Split a dataset into n_batches of batch_size and save the batches"""
+    match config.task_name:
+        case "lm":
+            ds, ds_config_dict = _get_dataloader_lm(
+                model_path=config.model_path,
+                batch_size=config.batch_size,
+            )
+        case "resid_mlp":
+            ds, ds_config_dict = _get_dataloader_resid_mlp(
+                model_path=config.model_path,
+                batch_size=config.batch_size,
+            )
+        case name:
+            raise ValueError(
+                f"Unsupported task name '{name}'. Supported tasks are 'lm' and 'resid_mlp'. {config.model_path=}, {name=}"
+            )
+
+    # make dirs
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    dataset_config_path = output_dir / CONFIG_FILE_PATH
+    dataset_config_path.write_text(json.dumps(ds_config_dict, indent=2))
+
+    batches_dir = output_dir / BATCHES_DIR_PATH
+    # iterate over the requested number of batches and save them
+    output_paths: list[Path] = []
+    for batch_idx, batch in tqdm(
+        enumerate(ds),
+        total=config.n_batches,
+        unit="batch",
+    ):
+        if batch_idx >= config.n_batches:
+            break
+
+        batch_path: Path = batches_dir / BATCH_FILE_FMT.format(batch_idx=batch_idx)
+
+        np.savez_compressed(
+            batch_path,
+            input_ids=batch.cpu().numpy(),
+        )
+        output_paths.append(batch_path)
+
+    return output_paths
+
+
+def _get_dataloader_lm(
     model_path: str,
-    n_batches: int,
     batch_size: int,
-    output_dir: Path,
-    save_file_fmt: str,
-    cfg_file_fmt: str,
-) -> list[Path]:
+) -> tuple[Generator[torch.Tensor, None, None], dict[str, Any]]:
     """split up a SS dataset into n_batches of batch_size, returned the saved paths
 
     1. load the config for a SimpleStories SPD Run given by model_path
@@ -42,11 +101,11 @@ def split_dataset_lm(
             assert pretrained_model_name is not None
         except Exception as e:
             raise AttributeError(
-                "Could not find 'pretrained_model_name' in the SPD Run config, but called `split_dataset_lm`"
+                "Could not find 'pretrained_model_name' in the SPD Run config, but called `_get_dataloader_lm`"
             ) from e
 
         assert isinstance(cfg.task_config, LMTaskConfig), (
-            f"Expected task_config to be of type LMTaskConfig since using `split_dataset_lm`, but got {type(cfg.task_config) = }"
+            f"Expected task_config to be of type LMTaskConfig since using `_get_dataloader_lm`, but got {type(cfg.task_config) = }"
         )
 
         dataset_config: DatasetConfig = DatasetConfig(
@@ -71,66 +130,13 @@ def split_dataset_lm(
             ddp_world_size=1,
         )
 
-    # make dirs
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (
-        output_dir
-        / save_file_fmt.format(batch_size=batch_size, batch_idx="XX", n_batches=f"{n_batches:02d}")
-    ).parent.mkdir(parents=True, exist_ok=True)
-    # iterate over the requested number of batches and save them
-    output_paths: list[Path] = []
-    for batch_idx, batch in tqdm(
-        enumerate(iter(dataloader)),
-        total=n_batches,
-        unit="batch",
-    ):
-        if batch_idx >= n_batches:
-            break
-        batch_path: Path = output_dir / save_file_fmt.format(
-            batch_size=batch_size,
-            batch_idx=f"{batch_idx:02d}",
-            n_batches=f"{n_batches:02d}",
-        )
-        np.savez_compressed(
-            batch_path,
-            input_ids=batch["input_ids"].cpu().numpy(),
-        )
-        output_paths.append(batch_path)
-
-    # save a config file
-    cfg_path: Path = output_dir / cfg_file_fmt.format(batch_size=batch_size)
-    cfg_data: dict[str, Any] = dict(
-        # args to this function
-        model_path=model_path,
-        batch_size=batch_size,
-        n_batches=n_batches,
-        # dataset and tokenizer config
-        dataset_config=dataset_config.model_dump(mode="json"),
-        tokenizer_path=str(getattr(_tokenizer, "name_or_path", None)),
-        tokenizer_type=str(getattr(_tokenizer, "__class__", None)),
-        # files we saved
-        output_files=[str(p) for p in output_paths],
-        output_dir=str(output_dir),
-        output_file_fmt=save_file_fmt,
-        cfg_file_fmt=cfg_file_fmt,
-        cfg_file=str(cfg_path),
-    )
-    cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(json.dumps(cfg_data, indent="\t"))
-
-    print(f"Saved config to: {cfg_path}")
-
-    return output_paths
+    return (batch["input_ids"] for batch in dataloader), dataset_config.model_dump(mode="json")
 
 
-def split_dataset_resid_mlp(
+def _get_dataloader_resid_mlp(
     model_path: str,
-    n_batches: int,
     batch_size: int,
-    output_dir: Path,
-    save_file_fmt: str,
-    cfg_file_fmt: str,
-) -> list[Path]:
+) -> tuple[Generator[torch.Tensor, None, None], dict[str, Any]]:
     """Split a ResidMLP dataset into n_batches of batch_size and save the batches."""
     from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
     from spd.utils.data_utils import DatasetGeneratedDataLoader
@@ -143,14 +149,14 @@ def split_dataset_resid_mlp(
 
     with SpinnerContext(message="Creating ResidMLPDataset..."):
         assert isinstance(cfg.task_config, ResidMLPTaskConfig), (
-            f"Expected task_config to be of type ResidMLPTaskConfig since using `split_dataset_resid_mlp`, but got {type(cfg.task_config) = }"
+            f"Expected task_config to be of type ResidMLPTaskConfig since using `_get_dataloader_resid_mlp`, but got {type(cfg.task_config) = }"
         )
         assert isinstance(component_model.target_model, ResidMLP), (
-            f"Expected patched_model to be of type ResidMLP since using `split_dataset_resid_mlp`, but got {type(component_model.patched_model) = }"
+            f"Expected patched_model to be of type ResidMLP since using `_get_dataloader_resid_mlp`, but got {type(component_model.patched_model) = }"
         )
 
         assert isinstance(component_model.target_model.config, ResidMLPModelConfig), (
-            f"Expected patched_model.config to be of type ResidMLPModelConfig since using `split_dataset_resid_mlp`, but got {type(component_model.target_model.config) = }"
+            f"Expected patched_model.config to be of type ResidMLPModelConfig since using `_get_dataloader_resid_mlp`, but got {type(component_model.target_model.config) = }"
         )
         resid_mlp_dataset_kwargs: dict[str, Any] = dict(
             n_features=component_model.target_model.config.n_features,
@@ -167,87 +173,4 @@ def split_dataset_resid_mlp(
 
         dataloader = DatasetGeneratedDataLoader(dataset, batch_size=batch_size, shuffle=False)
 
-    # make dirs
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (
-        output_dir
-        / save_file_fmt.format(batch_size=batch_size, batch_idx="XX", n_batches=f"{n_batches:02d}")
-    ).parent.mkdir(parents=True, exist_ok=True)
-
-    # iterate over the requested number of batches and save them
-    output_paths: list[Path] = []
-    batch: torch.Tensor
-    # second term in the tuple is same as the first
-    for batch_idx, (batch, _) in tqdm(
-        enumerate(iter(dataloader)),
-        total=n_batches,
-        unit="batch",
-    ):
-        if batch_idx >= n_batches:
-            break
-
-        batch_path: Path = output_dir / save_file_fmt.format(
-            batch_size=batch_size,
-            batch_idx=f"{batch_idx:02d}",
-            n_batches=f"{n_batches:02d}",
-        )
-        np.savez_compressed(
-            batch_path,
-            input_ids=batch.cpu().numpy(),
-        )
-        output_paths.append(batch_path)
-
-        # save the config file
-    cfg_path: Path = output_dir / cfg_file_fmt.format(batch_size=batch_size)
-    cfg_data: dict[str, Any] = dict(
-        # args to this function
-        model_path=model_path,
-        batch_size=batch_size,
-        n_batches=n_batches,
-        # dataset and tokenizer config
-        resid_mlp_dataset_kwargs=resid_mlp_dataset_kwargs,
-        # files we saved
-        output_files=[str(p) for p in output_paths],
-        output_dir=str(output_dir),
-        output_file_fmt=save_file_fmt,
-        cfg_file_fmt=cfg_file_fmt,
-        cfg_file=str(cfg_path),
-    )
-
-    cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(json.dumps(cfg_data, indent="\t"))
-    print(f"Saved config to: {cfg_path}")
-
-    return output_paths
-
-
-def split_and_save_dataset(
-    config: MergeRunConfig,
-    output_dir: Path,
-    save_file_fmt: str,
-    cfg_file_fmt: str,
-) -> list[Path]:
-    """Split a dataset into n_batches of batch_size and save the batches"""
-    match config.task_name:
-        case "lm":
-            return split_dataset_lm(
-                model_path=config.model_path,
-                n_batches=config.n_batches,
-                batch_size=config.batch_size,
-                output_dir=output_dir,
-                save_file_fmt=save_file_fmt,
-                cfg_file_fmt=cfg_file_fmt,
-            )
-        case "resid_mlp":
-            return split_dataset_resid_mlp(
-                model_path=config.model_path,
-                n_batches=config.n_batches,
-                batch_size=config.batch_size,
-                output_dir=output_dir,
-                save_file_fmt=save_file_fmt,
-                cfg_file_fmt=cfg_file_fmt,
-            )
-        case name:
-            raise ValueError(
-                f"Unsupported task name '{name}'. Supported tasks are 'lm' and 'resid_mlp'. {config.model_path=}, {name=}"
-            )
+    return (batch[0] for batch in dataloader), resid_mlp_dataset_kwargs

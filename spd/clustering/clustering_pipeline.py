@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from spd.clustering.merge_run_config import RunFilePaths, MergeRunConfig
+from spd.clustering.merge_run_config import MergeRunConfig
 
 
 class RunRecord(BaseModel):
@@ -31,6 +31,12 @@ def main(
 
     base_dir/
         {config.config_identifier}/
+            dataset/
+                config.json
+                batches/
+                    batch_00.npz
+                    batch_01.npz
+                    ...
             merge_histories/
                 {config.config_identifier}-data_{batch_id}/
                     merge_history.zip
@@ -53,7 +59,7 @@ def main(
     )
 
     run_path = base_path / config.config_identifier
-    histories_path = run_path / "merge_histories"
+    histories_dir = run_path / "merge_histories"
     dataset_dir = run_path / "dataset"
     distances_dir = run_path / "distances"
     run_config_path = run_path / "run_config.json"
@@ -62,18 +68,13 @@ def main(
     run_config_path.write_text(config.model_dump_json(indent=2))
 
     print(f"Splitting dataset into {config.n_batches} batches...")
-    data_files = split_and_save_dataset(
-        config=config,
-        output_dir=dataset_dir,
-        save_file_fmt="batch_{batch_idx}.npz",
-        cfg_file_fmt="config.json",  # just a place we save a raw dict of metadata
-    )
+    data_files = split_and_save_dataset(config=config, output_dir=dataset_dir)
 
     print(f"Processing {len(data_files)} batches with {workers_per_device} workers per device...")
     results = process_batches_parallel(
         data_files=data_files,
         config=config,
-        output_base_dir=histories_path,
+        output_dir=histories_dir,
         workers_per_device=workers_per_device,
         devices=devices,
     )
