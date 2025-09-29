@@ -1,6 +1,5 @@
 import io
 import json
-import sys
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -280,13 +279,12 @@ class MergeHistoryEnsemble:
                 dtype=np.int16,
             )
         except Exception as e:
-            print(
+            err_msg = (
                 f"failed to create merge array, probably due to issues with getting shape.\n"
                 f"{self = }\n"
-                f"{self.data = }\n",
-                file=sys.stderr,
+                f"{self.data = }\n"
             )
-            raise e
+            raise RuntimeError(err_msg) from e
 
         overlap_stats: Float[np.ndarray, " n_ens"] = np.full(
             self.n_ensemble,
@@ -342,6 +340,7 @@ class MergeHistoryEnsemble:
                 history_metadatas.append(None)
 
         return (
+            # TODO: dataclass this
             merges_array,
             dict(
                 component_labels=unique_labels,

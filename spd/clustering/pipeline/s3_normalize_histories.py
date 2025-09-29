@@ -15,10 +15,11 @@ def normalize_and_save(
 ) -> MergesArray:
     """Main function to load merge histories and compute distances"""
     # load
-    data = [MergeHistory.read(p) for p in history_paths]
-    ensemble = MergeHistoryEnsemble(data=data)
+    data: list[MergeHistory] = [MergeHistory.read(p) for p in history_paths]
+    ensemble: MergeHistoryEnsemble = MergeHistoryEnsemble(data=data)
 
     # normalize
+    normalized_merge_array: MergesArray
     normalized_merge_array, normalized_merge_meta = ensemble.normalized()
 
     # save
@@ -29,11 +30,5 @@ def normalize_and_save(
     logger.info(f"metadata saved to {path_metadata}")
     np.savez_compressed(enseble_merge_arr_path, merges=normalized_merge_array)
     logger.info(f"merge array saved to {enseble_merge_arr_path}")
-
-    # TODO: double check we're already saving everything we need outside of the zanj file
-
-    # path_hist_ensemble: Path = output_dir / "ensemble_raw.zanj"
-    # ZANJ().save(ensemble, path_hist_ensemble)
-    # logger.info(f"Ensemble saved to {path_hist_ensemble}")
 
     return normalized_merge_array
