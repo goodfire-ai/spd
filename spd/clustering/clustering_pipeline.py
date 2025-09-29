@@ -17,7 +17,6 @@ class RunRecord(BaseModel):
     output_dir: Path
     devices: list[str]
     max_concurrency: int
-    plot: bool
 
 
 def main(
@@ -26,46 +25,31 @@ def main(
     devices: list[str],
     workers_per_device: int,
 ):
-    """
-    The following is (hopefully) correct (thought see there's some repetition I'd like to change)
-
-    base_dir/
-        {config.config_identifier}/
-            dataset/
-                config.json
-                batches/
-                    batch_00.npz
-                    batch_01.npz
-                    ...
-            merge_histories/
-                {config.config_identifier}-data_{batch_id}/
-                    merge_history.zip
-                    plots/
-                        activations_raw.pdf
-                        activations_concat.pdf
-                        activations_coact.pdf
-                        activations_coact_log.pdf
-                        merge_iteration.pdf
-            distances/
-            figures/
-            run_config.json
-    """
+    from spd.clustering.math.merge_distances import compute_and_save_distances
     from spd.clustering.s1_split_dataset import split_and_save_dataset
     from spd.clustering.s2_clustering import process_batches_parallel
-    from spd.clustering.s3_normalize_histories import normalize_and_ensemble_and_save
+    from spd.clustering.s3_normalize_histories import normalize_and_save
     from spd.clustering.s4_compute_distances import (
-        compute_and_save_distances_new,
         create_clustering_report,
     )
 
+    # TODO: factor these out into dataclass or something
     run_path = base_path / config.config_identifier
+    run_record_path = run_path / "run_record.json"
     histories_dir = run_path / "merge_histories"
     dataset_dir = run_path / "dataset"
+    ensemble_dir = run_path / "ensemble"
     distances_dir = run_path / "distances"
-    run_config_path = run_path / "run_config.json"
 
-    print(f"Run config saved to {run_config_path}")
-    run_config_path.write_text(config.model_dump_json(indent=2))
+    run_record = RunRecord(
+        merge_run_config=config,
+        output_dir=run_path,
+        devices=devices,
+        max_concurrency=workers_per_device,
+    )
+
+    print(f"Run record saved to {run_record_path}")
+    run_record_path.write_text(run_record.model_dump_json(indent=2))
 
     print(f"Splitting dataset into {config.n_batches} batches...")
     data_files = split_and_save_dataset(config=config, output_dir=dataset_dir)
@@ -79,14 +63,14 @@ def main(
         devices=devices,
     )
 
-    enseble_merge_arr_path = normalize_and_ensemble_and_save(
+    normalized_merge_array = normalize_and_save(
         history_paths=[r.history_save_path for r in results],
-        distances_dir=distances_dir,
+        output_dir=ensemble_dir,
     )
 
-    distances = compute_and_save_distances_new(
-        merges_path=enseble_merge_arr_path,
-        method="perm_invariant_hamming",
+    distances = compute_and_save_distances(
+        normalized_merge_array=normalized_merge_array,
+        output_dir=distances_dir,
     )
 
     create_clustering_report(

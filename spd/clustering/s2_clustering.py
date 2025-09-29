@@ -1,21 +1,27 @@
 from dataclasses import dataclass
+from functools import partial
 from multiprocessing import Pool
 from pathlib import Path
+import tempfile
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from tqdm import tqdm
 import wandb
-from jaxtyping import Int
+from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from wandb.sdk.wandb_run import Run
 
 from spd.clustering.activations import component_activations, process_activations
+from spd.clustering.compute_costs import compute_mdl_cost
+from spd.clustering.math.merge_matrix import GroupMerge
+from spd.clustering.math.semilog import semilog
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import MergeRunConfig
 from spd.clustering.plotting.activations import plot_activations
-from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes
+from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_iteration
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -109,11 +115,17 @@ def _run_clustering(
     del model  # already did the forward pass
     del batch  # already did the forward pass
 
-    history = merge_iteration(config, batch_id, activations, component_labels, run)
+    log_callback = (
+        partial(_log_callback, run=run, batch_id=batch_id, config=config)
+        if run is not None
+        else None
+    )
+
+    history = merge_iteration(config, batch_id, activations, component_labels, log_callback)
 
     history_save_path = this_merge_dir / "merge_history.zip"
 
-    history.save(history_save_path)
+    history.save(history_save_path, wandb_url=wandb_url)
 
     if run is not None:
         _log_merge_history_plots_to_wandb(run, history)
@@ -182,3 +194,92 @@ def _save_merge_history_to_wandb(
     )
     artifact.add_file(str(history_path))
     run.log_artifact(artifact)
+
+
+def _log_callback(
+    run: Run,
+    batch_id: str,
+    current_coact: Float[Tensor, "k_groups k_groups"],
+    component_labels: list[str],
+    current_merge: GroupMerge,
+    config: MergeRunConfig,
+    costs: Float[Tensor, "k_groups k_groups"],
+    merge_history: MergeHistory,
+    iter_idx: int,
+    k_groups: int,
+    merge_pair_cost: float,
+    mdl_loss: float,
+    mdl_loss_norm: float,
+    diag_acts: Float[Tensor, " k_groups"],
+):
+    if iter_idx % config.intervals["stat"] == 0:
+        run.log(
+            {
+                "k_groups": int(k_groups),
+                "merge_pair_cost": merge_pair_cost,
+                "merge_pair_cost_semilog[1e-3]": semilog(merge_pair_cost, epsilon=1e-3),
+                "mdl_loss": float(mdl_loss),
+                "mdl_loss_norm": float(mdl_loss_norm),
+            },
+            step=iter_idx,
+        )
+
+    if iter_idx % config.intervals["tensor"] == 0:
+        group_sizes: Int[Tensor, " k_groups"] = current_merge.components_per_group
+
+        tensor_data = {
+            "coactivation": current_coact,
+            "costs": costs,
+            "group_sizes": group_sizes,
+            "group_activations": diag_acts,
+            "group_activations_over_sizes": diag_acts
+            / group_sizes.to(device=diag_acts.device).float(),
+        }
+
+        fraction_singleton_groups = (group_sizes == 1).float().mean().item()
+        if fraction_singleton_groups > 0:
+            tensor_data["group_sizes.log1p"] = torch.log1p(group_sizes.float())
+
+        fraction_zero_coacts = (current_coact == 0).float().mean().item()
+        if fraction_zero_coacts > 0:
+            tensor_data["coactivation.log1p"] = torch.log1p(current_coact.float())
+
+        wandb_log_tensor(run, tensor_data, name="iters", step=iter_idx)
+
+        run.log(
+            {
+                "fraction_singleton_groups": float(fraction_singleton_groups),
+                "fraction_zero_coacts": float(fraction_zero_coacts),
+            },
+            step=iter_idx,
+        )
+
+    if iter_idx > 0 and iter_idx % config.intervals["artifact"] == 0:
+        with tempfile.NamedTemporaryFile() as tmp_file:
+            file = Path(tmp_file.name)
+            merge_history.save(file)
+            artifact = wandb.Artifact(
+                name=f"merge_hist_iter.{batch_id}.iter_{iter_idx}",
+                type="merge_hist_iter",
+                description=f"Group indices for batch {batch_id} at iteration {iter_idx}",
+                metadata={
+                    "batch_name": batch_id,
+                    "iteration": iter_idx,
+                    "config": merge_history.config.model_dump(mode="json"),
+                    "config_identifier": merge_history.config,
+                },
+            )
+            artifact.add_file(str(file))
+            run.log_artifact(artifact)
+
+    if iter_idx % config.intervals["plot"] == 0:
+        fig = plot_merge_iteration(
+            current_merge=current_merge,
+            current_coact=current_coact,
+            costs=costs,
+            iteration=iter_idx,
+            component_labels=component_labels,
+            show=False,
+        )
+        run.log({"plots/merges": wandb.Image(fig)}, step=iter_idx)
+        plt.close(fig)

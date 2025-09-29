@@ -44,29 +44,29 @@ class MergeHistory:
     selected_pairs: Int[np.ndarray, " n_iters 2"]
     labels: list[str]
     config: MergeConfig
-    wandb_url: str | None
-    c_components: int
     n_iters_current: int
+
+    meta: dict[str, Any] | None = None
+
+    @property
+    def c_components(self) -> int:
+        return len(self.labels)
 
     @classmethod
     def from_config(
         cls,
         config: MergeConfig,
-        c_components: int,
         labels: list[str],
-        wandb_url: str | None,
     ) -> "MergeHistory":
         n_iters_target: int = config.iters
         return MergeHistory(
-            c_components=c_components,
             labels=labels,
             n_iters_current=0,
             selected_pairs=np.full((n_iters_target, 2), -1, dtype=np.int16),
             merges=BatchedGroupMerge.init_empty(
-                batch_size=n_iters_target, n_components=c_components
+                batch_size=n_iters_target, n_components=len(labels)
             ),
             config=config,
-            wandb_url=wandb_url,
         )
 
     def add_iteration(
@@ -126,7 +126,7 @@ class MergeHistory:
             return self.c_components
         return int(self.merges.k_groups[0].item())
 
-    def save(self, path: Path) -> None:
+    def save(self, path: Path, wandb_url: str | None = None) -> None:
         with zipfile.ZipFile(path, "w") as zf:
             # save arrays
             _zip_save_arr_dict(
@@ -145,7 +145,7 @@ class MergeHistory:
                 json.dumps(
                     dict(
                         config=self.config.model_dump(mode="json"),
-                        wandb_url=self.wandb_url,
+                        wandb_url=wandb_url,
                         c_components=self.c_components,
                         n_iters_current=self.n_iters_current,
                     )
@@ -165,15 +165,16 @@ class MergeHistory:
             labels: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
             metadata: dict[str, Any] = json.loads(zf.read("metadata.json").decode("utf-8"))
             config: MergeConfig = MergeConfig.model_validate(metadata["config"])
+        
+        metadata['origin_path'] = path
 
         return cls(
             merges=merges,
             selected_pairs=selected_pairs,
             labels=labels,
             config=config,
-            wandb_url=metadata["wandb_url"],
-            c_components=metadata["c_components"],
             n_iters_current=metadata["n_iters_current"],
+            meta=metadata,
         )
 
 
@@ -327,6 +328,7 @@ class MergeHistoryEnsemble:
                 n_iters=self.n_iters,
                 c_components=c_components,
                 config=self.config.model_dump(mode="json"),
+                history_metadatas=[history.meta for history in self.data],
             ),
         )
 
