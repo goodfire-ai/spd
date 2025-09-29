@@ -266,7 +266,7 @@ def _log_callback(
                     "batch_name": batch_id,
                     "iteration": iter_idx,
                     "config": merge_history.config.model_dump(mode="json"),
-                    "config_identifier": merge_history.config,
+                    "config_identifier": merge_history.config.config_identifier,
                 },
             )
             artifact.add_file(str(file))
