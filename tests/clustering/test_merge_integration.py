@@ -111,7 +111,8 @@ class TestMergeIntegration:
 
         # Check results
         assert history is not None
-        assert history.merges.k_groups[0].item() == n_components
+        # First entry is after first merge, so should be n_components - 1
+        assert history.merges.k_groups[0].item() == n_components - 1
         # Final group count depends on pops, but should be less than initial
         assert history.merges.k_groups[-1].item() < n_components
 
@@ -192,8 +193,8 @@ class TestMergeIntegration:
             component_labels=component_labels,
         )
 
-        # Should start with 3 components
-        assert history.merges.k_groups[0].item() == 3
+        # First entry is after first merge, so should be 3 - 1 = 2
+        assert history.merges.k_groups[0].item() == 2
         # Early stopping may occur at 2 groups, so final count could be 2 or 3
         assert history.merges.k_groups[-1].item() >= 2
         assert history.merges.k_groups[-1].item() <= 3

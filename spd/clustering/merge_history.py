@@ -328,6 +328,19 @@ class MergeHistoryEnsemble:
         # For now, keep using dbg_tensor for overlap_stats analysis
         dbg_tensor(overlap_stats)
 
+        # Convert any Path objects to strings for JSON serialization
+        history_metadatas = []
+        for history in self.data:
+            if history.meta is not None:
+                meta_copy = history.meta.copy()
+                # Convert Path objects to strings
+                for key, value in meta_copy.items():
+                    if isinstance(value, Path):
+                        meta_copy[key] = str(value)
+                history_metadatas.append(meta_copy)
+            else:
+                history_metadatas.append(None)
+
         return (
             merges_array,
             dict(
@@ -336,7 +349,7 @@ class MergeHistoryEnsemble:
                 n_iters=self.n_iters,
                 c_components=c_components,
                 config=self.config.model_dump(mode="json"),
-                history_metadatas=[history.meta for history in self.data],
+                history_metadatas=history_metadatas,
             ),
         )
 

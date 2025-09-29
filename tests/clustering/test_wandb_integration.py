@@ -4,9 +4,10 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from spd.clustering.merge_history import MergeHistory
-from spd.clustering.s2_clustering import _save_merge_history_to_wandb
-from spd.clustering.s3_normalize_histories import normalize_and_save
+from spd.clustering.merge_config import MergeConfig
+from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
+from spd.clustering.pipeline.s2_clustering import _save_merge_history_to_wandb
+from spd.clustering.pipeline.s3_normalize_histories import normalize_and_save
 
 
 def test_wandb_url_parsing_short_format():
@@ -48,8 +49,6 @@ def test_wandb_url_parsing_short_format():
 
 def test_merge_history_ensemble():
     """Test that MergeHistoryEnsemble can handle multiple histories."""
-    from spd.clustering.merge_config import MergeConfig
-    from spd.clustering.merge_history import MergeHistoryEnsemble
 
     # Create test merge histories
     config = MergeConfig(
@@ -79,7 +78,6 @@ def test_merge_history_ensemble():
 
 def test_save_merge_history_to_wandb():
     """Test that _save_merge_history_to_wandb creates the expected artifact."""
-    from spd.clustering.merge_config import MergeConfig
 
     # Create a real MergeHistory
     config = MergeConfig(
@@ -102,7 +100,7 @@ def test_save_merge_history_to_wandb():
         history_path = Path(tmp_dir) / "test_history.zip"
         history.save(history_path)
 
-        with patch("spd.clustering.s2_clustering.wandb.Artifact") as mock_artifact_class:
+        with patch("spd.clustering.pipeline.s2_clustering.wandb.Artifact") as mock_artifact_class:
             mock_artifact_class.return_value = mock_artifact
 
             # Call the function
@@ -127,7 +125,6 @@ def test_save_merge_history_to_wandb():
 
 def test_wandb_url_field_in_merge_history():
     """Test that MergeHistory can store and serialize wandb_url."""
-    from spd.clustering.merge_config import MergeConfig
 
     # Create a simple config
     config = MergeConfig(
@@ -148,5 +145,5 @@ def test_wandb_url_field_in_merge_history():
         history.save(save_path)
         loaded_history = MergeHistory.read(save_path)
 
-        assert loaded_history
-        assert loaded_history.merges.group_idxs.shape == (0, 5)
+        assert loaded_history is not None
+        assert loaded_history.merges.group_idxs.shape == (10, 5)  # (iters, n_components)
