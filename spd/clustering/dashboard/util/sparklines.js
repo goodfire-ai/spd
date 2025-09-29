@@ -34,8 +34,8 @@ const _PLOT_OPTS_DEFAULT = {
 		limits_length: 2  // number: expected array length for ylims (internal)
 	},
 
-	xlims: null,  // null|array: [min, max] numbers or null for auto from data
-	ylims: null,  // null|array: [min, max] numbers or null for auto from data
+	xlims: null,  // null|array: [min, max] numbers, null values, or null for auto from data
+	ylims: null,  // null|array: [min, max] numbers, null values, or null for auto from data
 
 	// Bar chart specific settings
 	bar: {
@@ -127,12 +127,16 @@ function plot(values, yvalues = null, options = {}) {
 	const bottomMargin = needsBottomMargin ? opts.margin + opts.xAxis.label_margin : opts.margin;
 
 	// Calculate axis limits - use custom limits if provided, otherwise data range
-	const ymin = opts.ylims ? opts.ylims[0] : Math.min(...yvals);
-	const ymax = opts.ylims ? opts.ylims[1] : Math.max(...yvals);
+	const dataYmin = Math.min(...yvals);
+	const dataYmax = Math.max(...yvals);
+	const ymin = opts.ylims && opts.ylims[0] !== null ? opts.ylims[0] : dataYmin;
+	const ymax = opts.ylims && opts.ylims[1] !== null ? opts.ylims[1] : dataYmax;
 	const yrange = ymax - ymin || opts.min_range;
 
-	const xmin = opts.xlims ? opts.xlims[0] : Math.min(...xvalues);
-	const xmax = opts.xlims ? opts.xlims[1] : Math.max(...xvalues);
+	const dataXmin = Math.min(...xvalues);
+	const dataXmax = Math.max(...xvalues);
+	const xmin = opts.xlims && opts.xlims[0] !== null ? opts.xlims[0] : dataXmin;
+	const xmax = opts.xlims && opts.xlims[1] !== null ? opts.xlims[1] : dataXmax;
 	const xrange = xmax - xmin || opts.min_range;
 
 	const chartWidth = opts.width - leftMargin - opts.margin;
@@ -286,7 +290,7 @@ function plot(values, yvalues = null, options = {}) {
  * Generate an SVG sparkline (line chart) from data
  * @param {number[]} values - Y-values or X-values if yvalues provided
  * @param {number[]|null} yvalues - Y-values (when values becomes x-values)
- * @param {object} options - Chart options
+ * @param {object} options - Chart options (xlims/ylims can be [min,max] with null for auto)
  * @returns {string} SVG element as HTML string
  */
 function sparkline(values, yvalues = null, options = {}) {
@@ -297,7 +301,7 @@ function sparkline(values, yvalues = null, options = {}) {
  * Generate an SVG sparkbar chart (bar chart) from data
  * @param {number[]} values - Y-values or X-values if yvalues provided
  * @param {number[]|null} yvalues - Y-values (when values becomes x-values)
- * @param {object} options - Chart options
+ * @param {object} options - Chart options (xlims/ylims can be [min,max] with null for auto)
  * @returns {string} SVG element as HTML string
  */
 function sparkbars(values, yvalues = null, options = {}) {
