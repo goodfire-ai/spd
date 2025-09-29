@@ -53,10 +53,10 @@ def main(config: RunConfig) -> None:
         MergesArray,
         compute_and_save_distances,
     )
-    from spd.clustering.s1_split_dataset import split_and_save_dataset
-    from spd.clustering.s2_clustering import ClusteringResult, process_batches_parallel
-    from spd.clustering.s3_normalize_histories import normalize_and_save
-    from spd.clustering.s4_compute_distances import create_clustering_report
+    from spd.clustering.pipeline.s1_split_dataset import split_and_save_dataset
+    from spd.clustering.pipeline.s2_clustering import ClusteringResult, process_batches_parallel
+    from spd.clustering.pipeline.s3_normalize_histories import normalize_and_save
+    from spd.clustering.pipeline.s4_compute_distances import create_clustering_report
 
     paths: PipelinePaths = PipelinePaths(config=config)
 

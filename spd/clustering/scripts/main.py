@@ -1,8 +1,8 @@
 import argparse
 from pathlib import Path
 
-from spd.clustering.clustering_pipeline import main
 from spd.clustering.merge_run_config import RunConfig
+from spd.clustering.pipeline.clustering_pipeline import main
 from spd.settings import REPO_ROOT
 
 
