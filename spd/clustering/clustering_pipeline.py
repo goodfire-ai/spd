@@ -5,10 +5,10 @@ Replaces the original 370+ line subprocess/FD system with simple multiprocessing
 Each batch loads its own model and WandB run to match original design.
 """
 
-from spd.clustering.merge_run_config import MergeRunConfig
+from spd.clustering.merge_run_config import RunConfig
 
 
-def main(config: MergeRunConfig):
+def main(config: RunConfig):
     from spd.clustering.math.merge_distances import compute_and_save_distances
     from spd.clustering.s1_split_dataset import split_and_save_dataset
     from spd.clustering.s2_clustering import process_batches_parallel

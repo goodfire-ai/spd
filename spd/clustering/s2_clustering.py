@@ -1,25 +1,23 @@
+import tempfile
 from dataclasses import dataclass
 from functools import partial
 from multiprocessing import Pool
 from pathlib import Path
-import tempfile
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from tqdm import tqdm
 import wandb
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Float, Int
 from torch import Tensor
 from wandb.sdk.wandb_run import Run
 
 from spd.clustering.activations import component_activations, process_activations
-from spd.clustering.compute_costs import compute_mdl_cost
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
-from spd.clustering.merge_run_config import MergeRunConfig
+from spd.clustering.merge_run_config import RunConfig
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_iteration
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
@@ -34,7 +32,7 @@ class ClusteringResult:
 
 
 def process_batches_parallel(
-    config: MergeRunConfig,
+    config: RunConfig,
     data_files: list[Path],
     output_dir: Path,
     workers_per_device: int,
@@ -51,12 +49,12 @@ def process_batches_parallel(
     return results
 
 
-def _worker_fn(args: tuple[MergeRunConfig, Path, Path, str]) -> ClusteringResult:
+def _worker_fn(args: tuple[RunConfig, Path, Path, str]) -> ClusteringResult:
     return _run_clustering(*args)
 
 
 def _run_clustering(
-    config: MergeRunConfig,
+    config: RunConfig,
     data_path: Path,
     output_base_dir: Path,
     device: str,
@@ -82,9 +80,9 @@ def _run_clustering(
 
     processed_activations = process_activations(
         activations=compoenent_activations,
-        filter_dead_threshold=config.filter_dead_threshold,
+        filter_dead_threshold=config.merge_config.filter_dead_threshold,
         seq_mode="concat" if config.task_name == "lm" else None,
-        filter_modules=config.filter_modules,
+        filter_modules=config.merge_config.filter_modules,
     )
 
     if run is not None:
@@ -121,7 +119,9 @@ def _run_clustering(
         else None
     )
 
-    history = merge_iteration(config, batch_id, activations, component_labels, log_callback)
+    history = merge_iteration(
+        config.merge_config, batch_id, activations, component_labels, log_callback
+    )
 
     history_save_path = this_merge_dir / "merge_history.zip"
 
@@ -146,7 +146,7 @@ def _load_batch_data(data_path: Path) -> Int[Tensor, "batch_size n_ctx"]:
 
 def _setup_wandb(
     batch_id: str,
-    config: MergeRunConfig,
+    config: RunConfig,
 ) -> Run:
     run = wandb.init(
         project=config.wandb_project,
@@ -202,7 +202,7 @@ def _log_callback(
     current_coact: Float[Tensor, "k_groups k_groups"],
     component_labels: list[str],
     current_merge: GroupMerge,
-    config: MergeRunConfig,
+    config: RunConfig,
     costs: Float[Tensor, "k_groups k_groups"],
     merge_history: MergeHistory,
     iter_idx: int,

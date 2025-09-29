@@ -119,10 +119,10 @@ def test_wandb_url_field_in_merge_history():
 
     # Create a simple config
     config = MergeConfig(
-        iters=10,
-        alpha=1.0,
-        activation_threshold=None,
-        pop_component_prob=0.0,
+        merge_config.iters=10,
+        merge_config.alpha=1.0,
+        merge_config.activation_threhol=None,
+        merge_config.pop_component_prob=0.0,
     )
 
     # Create MergeHistory with wandb_url

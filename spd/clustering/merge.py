@@ -19,8 +19,8 @@ from spd.clustering.compute_costs import (
     recompute_coacts_pop_group,
 )
 from spd.clustering.math.merge_matrix import GroupMerge
+from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
-from spd.clustering.merge_run_config import MergeRunConfig
 
 
 class LogCallback(Protocol):
@@ -41,7 +41,7 @@ class LogCallback(Protocol):
 
 
 def merge_iteration(
-    config: MergeRunConfig,
+    merge_config: MergeConfig,
     batch_id: str,
     activations: Float[Tensor, "n_steps c"],
     component_labels: list[str],
@@ -56,8 +56,8 @@ def merge_iteration(
 
     # Compute coactivations
     activation_mask_orig = (
-        activations > config.activation_threshold
-        if config.activation_threshold is not None
+        activations > merge_config.activation_threshold
+        if merge_config.activation_threshold is not None
         else activations
     )
     coact = activation_mask_orig.float().T @ activation_mask_orig.float()
@@ -67,25 +67,31 @@ def merge_iteration(
     assert coact.shape[1] == c_components, "Coactivation matrix must be square"
 
     # Prepare pop component logic
-    do_pop = config.pop_component_prob > 0.0
+    do_pop = merge_config.pop_component_prob > 0.0
     if do_pop:
-        iter_pop = torch.rand(config.iters, device=coact.device) < config.pop_component_prob
-        pop_component_idx = torch.randint(0, c_components, (config.iters,), device=coact.device)
+        iter_pop = (
+            torch.rand(merge_config.iters, device=coact.device)
+            < merge_config.pop_component_prob
+        )
+        pop_component_idx = torch.randint(
+            0, c_components, (merge_config.iters,), device=coact.device
+        )
 
     # for speed, we precompute whether to pop components and which components to pop
     # if we are not popping, we don't need these variables and can also delete other things
-    do_pop: bool = config.pop_component_prob > 0.0
+    do_pop: bool = merge_config.pop_component_prob > 0.0
     if do_pop:
         # at each iteration, we will pop a component with probability `pop_component_prob`
         iter_pop: Bool[Tensor, " iters"] = (
-            torch.rand(config.iters, device=coact.device) < config.pop_component_prob
+            torch.rand(merge_config.iters, device=coact.device)
+            < merge_config.pop_component_prob
         )
         # we pick a subcomponent at random, and if we decide to pop, we pop that one out of its group
         # if the component is a singleton, nothing happens. this naturally biases towards popping
         # less at the start and more at the end, since the effective probability of popping a component
         # is actually something like `pop_component_prob * (c_components - k_groups) / c_components`
         pop_component_idx: Int[Tensor, " iters"] = torch.randint(
-            0, c_components, (config.iters,), device=coact.device
+            0, c_components, (merge_config.iters,), device=coact.device
         )
 
     # Initialize merge
@@ -97,7 +103,7 @@ def merge_iteration(
     current_act_mask: Bool[Tensor, "samples k_groups"] = activation_mask_orig.clone()
 
     # Initialize history
-    merge_history = MergeHistory.from_config(config=config, labels=component_labels)
+    merge_history = MergeHistory.from_config(config=merge_config, labels=component_labels)
 
     # Memory cleanup
     if not do_pop:
@@ -106,7 +112,7 @@ def merge_iteration(
         activation_mask_orig = None
 
     # Main iteration loop with progress bar
-    pbar = tqdm(range(config.iters), unit="iter", total=config.iters)
+    pbar = tqdm(range(merge_config.iters), unit="iter", total=merge_config.iters)
     for iter_idx in pbar:
         if do_pop and iter_pop[iter_idx]:  # pyright: ignore[reportPossiblyUnboundVariable]
             assert activation_mask_orig is not None, "Activation mask original is None"
@@ -129,10 +135,10 @@ def merge_iteration(
         costs = compute_merge_costs(
             coact=current_coact / current_act_mask.shape[0],
             merges=current_merge,
-            alpha=config.alpha,
+            alpha=merge_config.alpha,
         )
 
-        merge_pair = config.merge_pair_sample(costs)
+        merge_pair = merge_config.merge_pair_sample(costs)
 
         # Merge the pair (after logging so we can see the cost)
         current_merge, current_coact, current_act_mask = recompute_coacts_merge_pair(
@@ -154,7 +160,7 @@ def merge_iteration(
         mdl_loss = compute_mdl_cost(
             acts=diag_acts,
             merges=current_merge,
-            alpha=config.alpha,
+            alpha=merge_config.alpha,
         )
         mdl_loss_norm = mdl_loss / current_act_mask.shape[0]
         merge_pair_cost = float(costs[merge_pair].item())

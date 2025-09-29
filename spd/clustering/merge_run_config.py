@@ -4,7 +4,7 @@ import hashlib
 import json
 import warnings
 from pathlib import Path
-from typing import Any, Literal, Self, override
+from typing import Any, Literal, Self
 
 import yaml
 from muutils.misc.numerical import shorten_numerical_to_str
@@ -56,12 +56,13 @@ class RunFilePaths:
         self.distances_dir.mkdir(exist_ok=True)
 
 
-class MergeRunConfig(BaseModel):
+class RunConfig(BaseModel):
     """Configuration for a complete merge clustering run.
 
     Extends MergeConfig with parameters for model, dataset, and batch configuration.
     CLI-only parameters (base_path, devices, max_concurrency) are intentionally excluded.
     """
+
     merge_config: MergeConfig = Field(
         description="Merge configuration",
     )
@@ -85,8 +86,7 @@ class MergeRunConfig(BaseModel):
         description="Size of each batch for processing",
     )
 
-    # ==================
-
+    # Implementation details:
     base_path: Path = Field(
         ...,
         description="Base path for saving clustering outputs",
@@ -113,8 +113,6 @@ class MergeRunConfig(BaseModel):
         default_factory=lambda: _DEFAULT_INTERVALS.copy(),
         description="Intervals for different logging operations",
     )
-
-    # ==================
 
     @model_validator(mode="after")
     def validate_model_path(self) -> Self:
@@ -167,26 +165,24 @@ class MergeRunConfig(BaseModel):
     @property
     def _iters_str(self) -> str:
         """Shortened string representation of iterations for run ID"""
-        return shorten_numerical_to_str(self.iters)
+        return shorten_numerical_to_str(self.merge_config.iters)
 
     @property
-    @override
     def config_identifier(self) -> str:
         """Unique identifier for this specific config on this specific model.
 
         Format: model_abc123-a0.1-i1k-b64-n10-h_12ab
         Allows filtering in WandB for all runs with this exact config and model.
         """
-        return f"task_{self.task_name}-w_{self.wandb_decomp_model}-a{self.alpha:g}-i{self._iters_str}-b{self.batch_size}-n{self.n_batches}-h_{self.stable_hash}"
+        return f"task_{self.task_name}-w_{self.wandb_decomp_model}-a{self.merge_config.alpha:g}-i{self._iters_str}-b{self.batch_size}-n{self.n_batches}-h_{self.stable_hash}"
 
     @property
-    @override
     def stable_hash(self) -> str:
         """Generate a stable hash including all config parameters."""
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
 
     @classmethod
-    def from_file(cls, path: Path) -> "MergeRunConfig":
+    def from_file(cls, path: Path) -> "RunConfig":
         """Load config from JSON or YAML file.
 
         Handles legacy spd_exp: model_path format and enforces consistency.
@@ -242,9 +238,10 @@ class MergeRunConfig(BaseModel):
 
         return base_dump
 
+
 if __name__ == "__main__":
     with open("merge_run_config.json", "w") as f:
-        json.dump(MergeRunConfig.model_json_schema(), f, indent=2)
+        json.dump(RunConfig.model_json_schema(), f, indent=2)
 
     # config = MergeRunConfig.from_file(Path("data/clustering/configs/1234567890.json"))
     # print(config.model_dump_with_properties())

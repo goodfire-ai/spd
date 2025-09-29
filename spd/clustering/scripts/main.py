@@ -2,8 +2,7 @@ import argparse
 from pathlib import Path
 
 from spd.clustering.clustering_pipeline import main
-from spd.clustering.merge_run_config import MergeRunConfig
-from spd.settings import REPO_ROOT
+from spd.clustering.merge_run_config import RunConfig
 
 
 def cli():
@@ -52,7 +51,7 @@ def cli():
     # TODO override configs with given args
 
     main(
-        config=MergeRunConfig.from_file(args.config),
+        config=RunConfig.from_file(args.config),
         base_path=args.base_path,
         devices=devices,
         workers_per_device=args.workers_per_device,

@@ -21,7 +21,7 @@ from muutils.spinner import SpinnerContext
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from spd.clustering.merge_run_config import MergeRunConfig
+from spd.clustering.merge_run_config import RunConfig
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -34,7 +34,7 @@ BATCHES_DIR_PATH = "batches"
 BATCH_FILE_FMT = "batch_{batch_idx:02d}.npz"
 
 
-def split_and_save_dataset(config: MergeRunConfig, output_dir: Path) -> list[Path]:
+def split_and_save_dataset(config: RunConfig, output_dir: Path) -> list[Path]:
     """Split a dataset into n_batches of batch_size and save the batches"""
     match config.task_name:
         case "lm":
