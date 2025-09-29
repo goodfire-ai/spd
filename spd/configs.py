@@ -108,7 +108,7 @@ class Config(BaseModel):
         default=[8],
         description="Hidden dimensions for the gate used to calculate the causal importance",
     )
-    sampling: Literal["continuous", "binomial"] = Field(
+    sampling: Literal["continuous", "binomial", "mixture"] = Field(
         default="continuous",
         description="Sampling mode for stochastic elements: 'continuous' (default) or 'binomial'",
     )
