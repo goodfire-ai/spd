@@ -39,7 +39,8 @@ class TestMergeIntegration:
         # Check results
         assert history is not None
         assert len(history.merges.k_groups) > 0
-        assert history.merges.k_groups[0].item() == n_components
+        # First entry is after first merge, so should be n_components - 1
+        assert history.merges.k_groups[0].item() == n_components - 1
         # After iterations, should have fewer groups (merges reduce count)
         # Exact count depends on early stopping conditions
         assert history.merges.k_groups[-1].item() < n_components
@@ -75,7 +76,8 @@ class TestMergeIntegration:
         # Check results
         assert history is not None
         assert len(history.merges.k_groups) > 0
-        assert history.merges.k_groups[0].item() == n_components
+        # First entry is after first merge, so should be n_components - 1
+        assert history.merges.k_groups[0].item() == n_components - 1
         # Should have fewer groups after iterations
         assert history.merges.k_groups[-1].item() < n_components
         assert history.merges.k_groups[-1].item() >= 2
