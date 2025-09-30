@@ -3,7 +3,7 @@ import json
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 import numpy as np
 import torch
@@ -123,6 +123,7 @@ class MergeHistory(SaveableObject):
             return self.c_components
         return int(self.merges.k_groups[0].item())
 
+    @override
     def save(self, path: Path, wandb_url: str | None = None) -> None:
         zf: zipfile.ZipFile
         with zipfile.ZipFile(path, "w") as zf:
@@ -151,6 +152,7 @@ class MergeHistory(SaveableObject):
                 ),
             )
 
+    @override
     @classmethod
     def read(cls, path: Path) -> "MergeHistory":
         zf: zipfile.ZipFile

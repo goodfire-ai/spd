@@ -9,9 +9,8 @@ from spd.clustering.merge_run_config import RunConfig
 
 
 def main(config: RunConfig) -> None:
+    from spd.clustering.consts import DistancesArray, MergesArray
     from spd.clustering.math.merge_distances import (
-        DistancesArray,
-        MergesArray,
         compute_distances,
     )
     from spd.clustering.pipeline.s1_split_dataset import split_dataset

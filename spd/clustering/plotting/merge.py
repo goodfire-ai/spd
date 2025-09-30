@@ -8,7 +8,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from spd.clustering.math.merge_distances import DistancesArray
+from spd.clustering.consts import DistancesArray
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.util import format_scientific_latex

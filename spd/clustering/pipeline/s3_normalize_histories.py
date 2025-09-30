@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 
-from spd.clustering.math.merge_distances import MergesArray
+from spd.clustering.consts import MergesArray
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.pipeline.storage import ClusteringStorage, NormalizedEnsemble
 from spd.log import logger

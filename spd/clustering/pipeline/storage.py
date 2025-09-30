@@ -196,14 +196,26 @@ class ClusteringStorage:
 
     # History storage methods
 
-    def save_history(self, history: MergeHistory, batch_id: str) -> Path:
+    def save_history(self, history: "MergeHistory", batch_id: str) -> Path:
         history_path: Path = self.history_path(batch_id)
         history_path.parent.mkdir(parents=True, exist_ok=True)
         history.save(history_path)
         return history_path
 
+    def load_history(self, batch_id: str) -> "MergeHistory":
+        # Import only at runtime to avoid circular dependencies
+        from spd.clustering.merge_history import MergeHistory
+
+        return MergeHistory.read(self.history_path(batch_id))
+
     def get_history_paths(self) -> list[Path]:
         return sorted(self._histories_dir.glob(f"*/{self._MERGE_HISTORY_FILE}"))
+
+    def load_histories(self) -> list["MergeHistory"]:
+        # Import only at runtime to avoid circular dependencies
+        from spd.clustering.merge_history import MergeHistory
+
+        return [MergeHistory.read(path) for path in self.get_history_paths()]
 
     # Ensemble related storage methods
 

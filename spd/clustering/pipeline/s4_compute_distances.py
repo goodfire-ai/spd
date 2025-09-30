@@ -2,7 +2,7 @@ import wandb
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 
-from spd.clustering.math.merge_distances import (
+from spd.clustering.consts import (
     DistancesArray,
     DistancesMethod,
 )

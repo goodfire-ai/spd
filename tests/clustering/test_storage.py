@@ -1,13 +1,14 @@
 """Comprehensive tests for ClusteringStorage."""
 
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 
-from spd.clustering.math.merge_distances import DistancesMethod
+from spd.clustering.consts import DistancesMethod
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import RunConfig
@@ -15,7 +16,7 @@ from spd.clustering.pipeline.storage import ClusteringStorage, NormalizedEnsembl
 
 
 @pytest.fixture
-def temp_storage():
+def temp_storage() -> Iterator[ClusteringStorage]:
     """Create a temporary ClusteringStorage instance."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         storage = ClusteringStorage(base_path=Path(tmp_dir), run_identifier="test_run")
@@ -23,7 +24,7 @@ def temp_storage():
 
 
 @pytest.fixture
-def sample_config():
+def sample_config() -> MergeConfig:
     """Create a sample MergeConfig for testing."""
     return MergeConfig(
         iters=5,
@@ -53,7 +54,7 @@ class TestStorageInitialization:
 
             assert storage.run_path == base_path
 
-    def test_storage_paths_are_consistent(self, temp_storage):
+    def test_storage_paths_are_consistent(self, temp_storage: ClusteringStorage):
         """Test that all storage paths are under the run path."""
         assert str(temp_storage._dataset_dir).startswith(str(temp_storage.run_path))
         assert str(temp_storage._batches_dir).startswith(str(temp_storage.run_path))
@@ -65,7 +66,7 @@ class TestStorageInitialization:
 class TestRunConfigStorage:
     """Test run configuration storage."""
 
-    def test_save_and_load_run_config(self, temp_storage):
+    def test_save_and_load_run_config(self, temp_storage: ClusteringStorage):
         """Test saving and loading RunConfig."""
         # Create a minimal RunConfig
         config = RunConfig(
@@ -99,7 +100,7 @@ class TestRunConfigStorage:
 class TestBatchStorage:
     """Test batch data storage."""
 
-    def test_save_single_batch(self, temp_storage):
+    def test_save_single_batch(self, temp_storage: ClusteringStorage):
         """Test saving a single batch."""
         batch = torch.randint(0, 100, (8, 16))  # batch_size=8, seq_len=16
         batch_idx = 0
@@ -108,7 +109,7 @@ class TestBatchStorage:
         assert saved_path.exists()
         assert saved_path.name == "batch_00.npz"
 
-    def test_save_and_load_batch(self, temp_storage):
+    def test_save_and_load_batch(self, temp_storage: ClusteringStorage):
         """Test saving and loading a batch."""
         original_batch = torch.randint(0, 100, (8, 16))
         batch_idx = 0
@@ -122,7 +123,7 @@ class TestBatchStorage:
         # Verify
         assert torch.equal(loaded_batch, original_batch)
 
-    def test_save_multiple_batches(self, temp_storage):
+    def test_save_multiple_batches(self, temp_storage: ClusteringStorage):
         """Test saving multiple batches using save_batches."""
         batches = [torch.randint(0, 100, (8, 16)) for _ in range(3)]
         config = {"test": "config"}
@@ -133,7 +134,7 @@ class TestBatchStorage:
         assert all(p.exists() for p in saved_paths)
         assert temp_storage.dataset_config_file.exists()
 
-    def test_get_batch_paths(self, temp_storage):
+    def test_get_batch_paths(self, temp_storage: ClusteringStorage):
         """Test retrieving all batch paths."""
         # Save some batches
         for i in range(3):
@@ -151,7 +152,9 @@ class TestBatchStorage:
 class TestHistoryStorage:
     """Test merge history storage."""
 
-    def test_save_and_load_history(self, temp_storage, sample_config):
+    def test_save_and_load_history(
+        self, temp_storage: ClusteringStorage, sample_config: MergeConfig
+    ):
         """Test saving and loading merge history."""
         # Create history
         history = MergeHistory.from_config(
@@ -171,7 +174,9 @@ class TestHistoryStorage:
         assert loaded_history is not None
         assert len(loaded_history.labels) == 3
 
-    def test_load_multiple_histories(self, temp_storage, sample_config):
+    def test_load_multiple_histories(
+        self, temp_storage: ClusteringStorage, sample_config: MergeConfig
+    ):
         """Test loading all histories."""
         # Save multiple histories
         for i in range(3):
@@ -185,7 +190,7 @@ class TestHistoryStorage:
         histories = temp_storage.load_histories()
         assert len(histories) == 3
 
-    def test_get_history_paths(self, temp_storage, sample_config):
+    def test_get_history_paths(self, temp_storage: ClusteringStorage, sample_config: MergeConfig):
         """Test getting all history paths."""
         # Save histories
         for i in range(2):
@@ -204,7 +209,7 @@ class TestHistoryStorage:
 class TestEnsembleStorage:
     """Test ensemble data storage."""
 
-    def test_save_ensemble(self, temp_storage):
+    def test_save_ensemble(self, temp_storage: ClusteringStorage):
         """Test saving ensemble data."""
         # Create dummy ensemble data
         merge_array = np.random.randint(0, 10, size=(2, 5, 8))  # n_ens, n_iters, c_components
@@ -220,7 +225,7 @@ class TestEnsembleStorage:
         assert meta_path == temp_storage.ensemble_meta_file
         assert array_path == temp_storage.ensemble_array_file
 
-    def test_ensemble_data_integrity(self, temp_storage):
+    def test_ensemble_data_integrity(self, temp_storage: ClusteringStorage):
         """Test that ensemble data can be saved and loaded correctly."""
         # Create ensemble data
         original_array = np.random.randint(0, 10, size=(2, 5, 8))
@@ -241,7 +246,7 @@ class TestEnsembleStorage:
 class TestDistancesStorage:
     """Test distance matrix storage."""
 
-    def test_save_distances(self, temp_storage):
+    def test_save_distances(self, temp_storage: ClusteringStorage):
         """Test saving distance matrix."""
         distances = np.random.rand(5, 3, 3)  # n_iters, n_ens, n_ens
         method: DistancesMethod = "perm_invariant_hamming"
@@ -251,7 +256,7 @@ class TestDistancesStorage:
         assert saved_path.exists()
         assert method in saved_path.name
 
-    def test_save_and_load_distances(self, temp_storage):
+    def test_save_and_load_distances(self, temp_storage: ClusteringStorage):
         """Test saving and loading distances."""
         original_distances = np.random.rand(5, 3, 3)
         method: DistancesMethod = "perm_invariant_hamming"
@@ -268,7 +273,9 @@ class TestDistancesStorage:
 class TestStorageIntegration:
     """Test integration scenarios."""
 
-    def test_full_pipeline_storage_flow(self, temp_storage, sample_config):
+    def test_full_pipeline_storage_flow(
+        self, temp_storage: ClusteringStorage, sample_config: MergeConfig
+    ):
         """Test a complete storage workflow."""
         # 1. Save run config
         run_config = RunConfig(
@@ -315,7 +322,7 @@ class TestStorageIntegration:
         assert temp_storage.ensemble_meta_file.exists()
         assert temp_storage.ensemble_array_file.exists()
 
-    def test_storage_filesystem_structure(self, temp_storage):
+    def test_storage_filesystem_structure(self, temp_storage: ClusteringStorage):
         """Test that the filesystem structure matches documentation."""
         # Create minimal data to generate structure
         temp_storage.save_run_config(
