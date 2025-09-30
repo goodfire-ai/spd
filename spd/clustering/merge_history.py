@@ -150,6 +150,7 @@ class MergeHistory:
                         wandb_url=wandb_url,
                         c_components=self.c_components,
                         n_iters_current=self.n_iters_current,
+                        labels=self.labels,
                     )
                 ),
             )

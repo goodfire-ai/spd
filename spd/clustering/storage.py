@@ -32,6 +32,12 @@ class NormalizedEnsemble:
     metadata: dict[str, Any]
 
 
+def _write_text_to_path_and_return(path: Path, data: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(data)
+    return path
+
+
 class ClusteringStorage:
     """Handles all file I/O operations for the clustering pipeline.
 
@@ -97,11 +103,11 @@ class ClusteringStorage:
     @property
     def run_config_file(self) -> Path:
         return self.run_path / self.RUN_CONFIG_FILE
-    
+
     @property
     def dataset_config_file(self) -> Path:
         return self.dataset_dir / self.DATASET_CONFIG_FILE
-    
+
     @property
     def ensemble_meta_file(self) -> Path:
         return self.ensemble_dir / self.ENSEMBLE_META_FILE
@@ -111,22 +117,27 @@ class ClusteringStorage:
         return self.ensemble_dir / self.ENSEMBLE_ARRAY_FILE
 
     # dynamic
+
     def batch_path(self, batch_idx: int) -> Path:
         return self.batches_dir / self.BATCH_FILE_FMT.format(batch_idx=batch_idx)
 
     def history_path(self, batch_id: str) -> Path:
-        return self.histories_dir / self.HISTORY_FILE_FMT.format(batch_id=batch_id) / self.MERGE_HISTORY_FILE
+        return (
+            self.histories_dir
+            / self.HISTORY_FILE_FMT.format(batch_id=batch_id)
+            / self.MERGE_HISTORY_FILE
+        )
 
     # Batch storage methods
 
     def save_dataset_config(self, config: dict[str, Any]) -> Path:
-        self.dataset_dir.mkdir(parents=True, exist_ok=True)
-        self.dataset_config_file.write_text(json.dumps(config, indent=2))
-        return self.dataset_config_file
+        return _write_text_to_path_and_return(
+            self.dataset_config_file, json.dumps(config, indent=2)
+        )
 
     def save_batch(self, batch: Tensor, batch_idx: int) -> Path:
-        self.batches_dir.mkdir(parents=True, exist_ok=True)
         batch_path: Path = self.batch_path(batch_idx)
+        batch_path.parent.mkdir(parents=True, exist_ok=True)
 
         np.savez_compressed(batch_path, input_ids=batch.cpu().numpy())
         return batch_path
@@ -152,20 +163,13 @@ class ClusteringStorage:
     # History storage methods
 
     def save_history(self, history: MergeHistory, batch_id: str) -> Path:
-        history_dir: Path = self.histories_dir / self.HISTORY_FILE_FMT.format(batch_id=batch_id)
-        history_dir.mkdir(parents=True, exist_ok=True)
-
-        history_path: Path = history_dir / self.MERGE_HISTORY_FILE
+        history_path: Path = self.history_path(batch_id)
+        history_path.parent.mkdir(parents=True, exist_ok=True)
         history.save(history_path)
         return history_path
 
     def load_history(self, batch_id: str) -> MergeHistory:
-        history_path = (
-            self.histories_dir
-            / self.HISTORY_FILE_FMT.format(batch_id=batch_id)
-            / self.MERGE_HISTORY_FILE
-        )
-        return MergeHistory.read(history_path)
+        return MergeHistory.read(self.history_path(batch_id))
 
     def get_history_paths(self) -> list[Path]:
         return sorted(self.histories_dir.glob(f"*/{self.MERGE_HISTORY_FILE}"))
@@ -174,7 +178,6 @@ class ClusteringStorage:
         return [MergeHistory.read(path) for path in self.get_history_paths()]
 
     # Ensemble storage methods
-
     def save_ensemble(self, ensemble: NormalizedEnsemble) -> tuple[Path, Path]:
         """Save normalized ensemble data"""
         self.ensemble_dir.mkdir(parents=True, exist_ok=True)
@@ -202,6 +205,5 @@ class ClusteringStorage:
         return data["distances"]
 
     def save_run_config(self, config: RunConfig) -> Path:
-        config_path = self.run_path / self.RUN_CONFIG_FILE
-        config_path.write_text(config.model_dump_json(indent=2))
-        return config_path
+        self.run_config_file.write_text(config.model_dump_json(indent=2))
+        return self.run_config_file
