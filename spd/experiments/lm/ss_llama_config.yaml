@@ -11,6 +11,7 @@ gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj", "model.layers.*.self_attn.q_proj", "model.layers.*.self_attn.k_proj", "model.layers.*.self_attn.v_proj", "model.layers.*.self_attn.o_proj"]
+# target_module_patterns: ["model.layers.*.self_attn.k_proj"]
 identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
@@ -29,8 +30,8 @@ p_anneal_end_frac: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 48
-eval_batch_size: 48
+batch_size: 8
+eval_batch_size: 8
 steps: 50000
 lr: 0.0005
 lr_schedule: cosine
@@ -69,17 +70,19 @@ eval_metrics:
     extra_init_kwargs:
       n_mask_samples: 1
       include_patterns:
-        layer_0_only: ["model.layers.0.*"]
-        layer_1_only: ["model.layers.1.*"]
-        layer_2_only: ["model.layers.2.*"]
-        layer_3_only: ["model.layers.3.*"]
-        mlp_only: ["*.mlp.*"]
-        attention_only: ["*.self_attn.*"]
-      exclude_patterns:
-        all_but_layer_0: ["model.layers.0.*"]
-        all_but_layer_1: ["model.layers.1.*"]
-        all_but_layer_2: ["model.layers.2.*"]
-        all_but_layer_3: ["model.layers.3.*"]
+        # layer_0_only: ["model.layers.0.*"]
+        # layer_1_only: ["model.layers.1.*"]
+        # layer_2_only: ["model.layers.2.*"]
+        # layer_3_only: ["model.layers.3.*"]
+        # mlp_only: ["*.mlp.*"]
+        # attention_only: ["*.self_attn.*"]
+        key_only: ["*.self_attn.k_proj"]
+        query_only: ["*.self_attn.q_proj"]
+      # exclude_patterns:
+      #   all_but_layer_0: ["model.layers.0.*"]
+      #   all_but_layer_1: ["model.layers.1.*"]
+      #   all_but_layer_2: ["model.layers.2.*"]
+      #   all_but_layer_3: ["model.layers.3.*"]
   - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
