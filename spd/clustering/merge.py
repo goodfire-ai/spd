@@ -151,7 +151,7 @@ def merge_iteration(
 
         # merge the pair
         # --------------------------------------------------
-        # we do this *after* logging, so we can see how the sampled pair cost compares
+        # we do this *before* logging, so we can see how the sampled pair cost compares
         # to the costs of all the other possible pairs
         current_merge, current_coact, current_act_mask = recompute_coacts_merge_pair(
             coact=current_coact,
