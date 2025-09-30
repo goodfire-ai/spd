@@ -234,3 +234,208 @@ class TestMetricBasics:
         sum_result, cat_result = metric.compute()
         assert sum_result == 6.0
         torch.testing.assert_close(cat_result, torch.tensor([1.0, 2.0, 3.0]))
+
+    def test_add_state_dict_sum(self):
+        """Test add_state with dictionary of tensors for sum reduction."""
+
+        class DictSumMetric(Metric):
+            totals: dict[str, torch.Tensor]
+
+            def __init__(self):
+                super().__init__()
+                self.add_state(
+                    "totals",
+                    default={"a": torch.tensor(0.0), "b": torch.tensor(0.0)},
+                    dist_reduce_fx="sum",
+                )
+
+            @override
+            def update(self, **_: Any) -> None:
+                self.totals["a"] += torch.tensor(1.0)
+                self.totals["b"] += torch.tensor(2.0)
+
+            @override
+            def compute(self) -> dict[str, float]:
+                return {k: v.item() for k, v in self.totals.items()}
+
+        metric = DictSumMetric()
+        assert hasattr(metric, "totals")
+        assert isinstance(metric.totals, dict)
+        assert "totals" in metric._state_names
+        assert metric._state_reduce_fns["totals"] == "sum"
+        assert "totals" in metric._dict_state_keys
+        assert set(metric._dict_state_keys["totals"]) == {"a", "b"}
+
+    def test_add_state_dict_cat(self):
+        """Test add_state with dictionary of lists for cat reduction."""
+
+        class DictCatMetric(Metric):
+            values: dict[str, list[torch.Tensor]]
+
+            def __init__(self):
+                super().__init__()
+                self.add_state("values", default={"a": [], "b": []}, dist_reduce_fx="cat")
+
+            @override
+            def update(self, *, value: torch.Tensor, **_: Any) -> None:
+                self.values["a"].append(value)
+                self.values["b"].append(value * 2)
+
+            @override
+            def compute(self) -> dict[str, torch.Tensor]:
+                return {k: torch.cat(v, dim=0) for k, v in self.values.items()}
+
+        metric = DictCatMetric()
+        assert hasattr(metric, "values")
+        assert isinstance(metric.values, dict)
+        assert "values" in metric._state_names
+        assert metric._state_reduce_fns["values"] == "cat"
+        assert "values" in metric._dict_state_keys
+        assert set(metric._dict_state_keys["values"]) == {"a", "b"}
+
+    def test_update_and_compute_dict_sum(self):
+        """Test update and compute for dictionary sum reduction."""
+
+        class DictSumMetric(Metric):
+            totals: dict[str, torch.Tensor]
+
+            def __init__(self):
+                super().__init__()
+                self.add_state(
+                    "totals",
+                    default={"a": torch.tensor(0.0), "b": torch.tensor(0.0)},
+                    dist_reduce_fx="sum",
+                )
+
+            @override
+            def update(self, *, values: dict[str, torch.Tensor], **_: Any) -> None:
+                for k, v in values.items():
+                    self.totals[k] += v.sum()
+
+            @override
+            def compute(self) -> dict[str, float]:
+                return {k: v.item() for k, v in self.totals.items()}
+
+        metric = DictSumMetric()
+        metric.update(values={"a": torch.tensor([1.0, 2.0]), "b": torch.tensor([3.0])})
+        metric.update(values={"a": torch.tensor([4.0]), "b": torch.tensor([5.0, 6.0])})
+
+        result = metric.compute()
+        assert result["a"] == pytest.approx(7.0)
+        assert result["b"] == pytest.approx(14.0)
+
+    def test_update_and_compute_dict_cat(self):
+        """Test update and compute for dictionary cat reduction."""
+
+        class DictCatMetric(Metric):
+            values: dict[str, list[torch.Tensor]]
+
+            def __init__(self):
+                super().__init__()
+                self.add_state("values", default={"a": [], "b": []}, dist_reduce_fx="cat")
+
+            @override
+            def update(self, *, values: dict[str, torch.Tensor], **_: Any) -> None:
+                for k, v in values.items():
+                    self.values[k].append(v)
+
+            @override
+            def compute(self) -> dict[str, torch.Tensor]:
+                return {k: torch.cat(v, dim=0) for k, v in self.values.items()}
+
+        metric = DictCatMetric()
+        metric.update(values={"a": torch.tensor([1.0, 2.0]), "b": torch.tensor([10.0])})
+        metric.update(values={"a": torch.tensor([3.0]), "b": torch.tensor([20.0, 30.0])})
+
+        result = metric.compute()
+        torch.testing.assert_close(result["a"], torch.tensor([1.0, 2.0, 3.0]))
+        torch.testing.assert_close(result["b"], torch.tensor([10.0, 20.0, 30.0]))
+
+    def test_reset_dict_sum(self):
+        """Test reset for dictionary sum reduction."""
+
+        class DictSumMetric(Metric):
+            totals: dict[str, torch.Tensor]
+
+            def __init__(self):
+                super().__init__()
+                self.add_state(
+                    "totals",
+                    default={"a": torch.tensor(0.0), "b": torch.tensor(0.0)},
+                    dist_reduce_fx="sum",
+                )
+
+            @override
+            def update(self, **_: Any) -> None:
+                self.totals["a"] += torch.tensor(1.0)
+                self.totals["b"] += torch.tensor(2.0)
+
+            @override
+            def compute(self) -> dict[str, float]:
+                return {k: v.item() for k, v in self.totals.items()}
+
+        metric = DictSumMetric()
+        metric.update()
+        assert metric.totals["a"] != 0.0
+        assert metric.totals["b"] != 0.0
+
+        metric.reset()
+        assert metric.totals["a"] == 0.0
+        assert metric.totals["b"] == 0.0
+
+    def test_reset_dict_cat(self):
+        """Test reset for dictionary cat reduction."""
+
+        class DictCatMetric(Metric):
+            values: dict[str, list[torch.Tensor]]
+
+            def __init__(self):
+                super().__init__()
+                self.add_state("values", default={"a": [], "b": []}, dist_reduce_fx="cat")
+
+            @override
+            def update(self, *, value: torch.Tensor, **_: Any) -> None:
+                self.values["a"].append(value)
+                self.values["b"].append(value)
+
+            @override
+            def compute(self) -> dict[str, torch.Tensor]:
+                return {k: torch.cat(v, dim=0) for k, v in self.values.items()}
+
+        metric = DictCatMetric()
+        metric.update(value=torch.tensor([1.0]))
+        assert len(metric.values["a"]) > 0
+        assert len(metric.values["b"]) > 0
+
+        metric.reset()
+        assert len(metric.values["a"]) == 0
+        assert len(metric.values["b"]) == 0
+
+    def test_to_device_dict(self):
+        """Test moving dictionary metric states to device."""
+
+        class DictSumMetric(Metric):
+            totals: dict[str, torch.Tensor]
+
+            def __init__(self):
+                super().__init__()
+                self.add_state(
+                    "totals",
+                    default={"a": torch.tensor(0.0), "b": torch.tensor(0.0)},
+                    dist_reduce_fx="sum",
+                )
+
+            @override
+            def update(self, **_: Any) -> None:
+                pass
+
+            @override
+            def compute(self) -> dict[str, float]:
+                return {k: v.item() for k, v in self.totals.items()}
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        metric = DictSumMetric()
+        metric.to(device)
+
+        assert metric.totals["a"].device.type == device
+        assert metric.totals["b"].device.type == device

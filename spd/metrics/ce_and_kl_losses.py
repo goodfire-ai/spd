@@ -21,6 +21,8 @@ class CEandKLLosses(Metric):
 
     is_differentiable: bool | None = False
 
+    loss_sums: dict[str, Tensor]
+
     # NOTE: Gross that we have to hardcode these here. Open to other ideas.
     loss_keys: list[str] = [
         "kl/ci_masked",
@@ -55,12 +57,11 @@ class CEandKLLosses(Metric):
         self.sampling: Literal["continuous", "binomial"] = sampling
         self.rounding_threshold = rounding_threshold
 
-        for key in self.loss_keys:
-            self.add_state(
-                f"{key}_sum",
-                default=torch.tensor(0.0),
-                dist_reduce_fx="sum",
-            )
+        self.add_state(
+            "loss_sums",
+            default={key: torch.tensor(0.0) for key in self.loss_keys},
+            dist_reduce_fx="sum",
+        )
         self.add_state("n_positions", default=torch.tensor(0), dist_reduce_fx="sum")
 
     @override
@@ -78,16 +79,14 @@ class CEandKLLosses(Metric):
         n_positions_in_batch = batch.shape[0] * batch.shape[1]
 
         for key in self.loss_keys:
-            key_sum = getattr(self, f"{key}_sum")
-            key_sum += ce_losses[key] * n_positions_in_batch
+            self.loss_sums[key] += ce_losses[key] * n_positions_in_batch
         self.n_positions += n_positions_in_batch
 
     @override
     def compute(self) -> dict[str, float]:
         losses = {}
         for key in self.loss_keys:
-            loss_sum = getattr(self, f"{key}_sum")
-            losses[key] = loss_sum / self.n_positions
+            losses[key] = self.loss_sums[key] / self.n_positions
         return losses
 
     def _calc_ce_and_kl_losses(

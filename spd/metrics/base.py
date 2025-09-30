@@ -5,7 +5,7 @@ supports distributed training with synchronized state across ranks.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import torch
 from torch import Tensor
@@ -63,37 +63,76 @@ class Metric(ABC):
         super().__init__()
         self._state_names: list[str] = []
         self._state_reduce_fns: dict[str, Literal["sum", "cat"]] = {}
+        self._dict_state_keys: dict[str, list[str]] = {}  # Maps dict state names to their keys
+
+    def _validate_state_value(
+        self, value: Tensor | list[Any], dist_reduce_fx: Literal["sum", "cat"], context: str = ""
+    ) -> None:
+        match dist_reduce_fx:
+            case "sum":
+                assert isinstance(value, Tensor), (
+                    f"sum reduce requires Tensor{context}, got {type(value)}"
+                )
+            case "cat":
+                assert isinstance(value, list) and len(value) == 0, (
+                    f"cat reduce requires empty list{context}, got {type(value)}"
+                )
 
     def add_state(
         self,
         name: str,
-        default: Tensor | list[Any],
+        default: Tensor | list[Any] | dict[str, Tensor] | dict[str, list[Any]],
         dist_reduce_fx: Literal["sum", "cat"],
     ) -> None:
         """Register a state variable that should be synchronized across ranks.
 
         Args:
             name: Name of the state variable
-            default: Default value (Tensor for "sum", empty list for "cat")
+            default: Default value (Tensor for "sum", empty list for "cat", or dict of these)
             dist_reduce_fx: How to reduce across ranks ("sum" or "cat")
 
         Raises:
             AssertionError: If default value doesn't match reduce function
         """
         assert dist_reduce_fx in ["sum", "cat"], f"Invalid reduce function: {dist_reduce_fx}"
-        match dist_reduce_fx:
-            case "sum":
-                assert isinstance(default, Tensor), (
-                    f"sum reduce requires Tensor default, got {type(default)}"
-                )
-            case "cat":
-                assert isinstance(default, list) and len(default) == 0, (
-                    f"cat reduce requires empty list default, got {type(default)}"
-                )
+
+        if isinstance(default, dict):
+            self._dict_state_keys[name] = list(default.keys())
+            for key, value in default.items():
+                self._validate_state_value(value, dist_reduce_fx, context=f" for key '{key}'")
+        else:
+            self._validate_state_value(default, dist_reduce_fx)
 
         setattr(self, name, default)
         self._state_names.append(name)
         self._state_reduce_fns[name] = dist_reduce_fx
+
+    def _reduce_state_value(
+        self, value: Tensor | list[Tensor], reduce_fn: Literal["sum", "cat"]
+    ) -> Tensor | list[Tensor]:
+        """Reduce a single state value across distributed ranks.
+
+        Args:
+            value: The value to reduce (Tensor for sum, list of Tensors for cat)
+            reduce_fn: The reduction function
+
+        Returns:
+            The reduced value as a Tensor, or empty list if input was empty list
+        """
+        assert reduce_fn in ["sum", "cat"], f"Invalid reduce function: {reduce_fn}"
+        match reduce_fn:
+            case "sum":
+                assert isinstance(value, Tensor), "sum reduce requires Tensor value"
+                gathered = _gather_all_tensors(value)
+                return cast(Tensor, sum(gathered))
+            case "cat":
+                assert isinstance(value, list), "cat reduce requires list value"
+                if len(value) == 0:
+                    return value
+
+                local_tensor = torch.cat(value, dim=0)
+                gathered = _gather_all_tensors(local_tensor)
+                return torch.cat(gathered, dim=0)
 
     def sync_dist(self) -> None:
         """Synchronize all registered states across distributed ranks.
@@ -101,6 +140,8 @@ class Metric(ABC):
         For "sum" reduction: gathers tensors from all ranks and sums them.
         For "cat" reduction: concatenates list elements locally, then gathers
         and concatenates across all ranks.
+
+        For dictionary states: applies the reduction to each value in the dict.
         """
         if not torch.distributed.is_available() or not torch.distributed.is_initialized():
             return
@@ -109,24 +150,43 @@ class Metric(ABC):
             state = getattr(self, name)
             reduce_fn = self._state_reduce_fns[name]
 
-            if reduce_fn == "sum":
-                # Note, this could be quicker with a torch.distributed.all_reduce, but this is
-                # simpler and I don't expect the performance to be a bottleneck for evals
-                gathered = _gather_all_tensors(state)
-                setattr(self, name, sum(gathered))
+            if name in self._dict_state_keys:
+                assert isinstance(state, dict), (
+                    f"Expected dict for state '{name}', got {type(state)}"
+                )
+                synced_dict = {
+                    key: self._reduce_state_value(state[key], reduce_fn)
+                    for key in self._dict_state_keys[name]
+                }
+                setattr(self, name, synced_dict)
+            else:
+                reduced = self._reduce_state_value(state, reduce_fn)
+                # Skip empty lists for cat reduction
+                if not (reduce_fn == "cat" and isinstance(reduced, list)):
+                    setattr(self, name, reduced)
 
-            elif reduce_fn == "cat":
-                if len(state) == 0:
-                    continue
+    def _move_value_to_device(
+        self, value: Tensor | list[Tensor], device: torch.device | str
+    ) -> Tensor | list[Tensor]:
+        """Move a value to the specified device.
 
-                # Concatenate local list elements
-                local_tensor = torch.cat(state, dim=0)
+        Args:
+            value: The value to move (Tensor, list, or other)
+            device: Target device
 
-                # Gather from all ranks
-                gathered = _gather_all_tensors(local_tensor)
-
-                # Concatenate across ranks and replace state
-                setattr(self, name, torch.cat(gathered, dim=0))
+        Returns:
+            The value moved to the device
+        """
+        assert isinstance(value, Tensor | list), "Value must be Tensor or list"
+        match value:
+            case Tensor():
+                return value.to(device)
+            case list():
+                items = []
+                for item in value:
+                    assert isinstance(item, Tensor), "List must contain Tensors"
+                    items.append(item.to(device))
+                return items
 
     def to(self, device: torch.device | str) -> "Metric":
         """Move all tensor states to the specified device.
@@ -139,25 +199,24 @@ class Metric(ABC):
         """
         for name in self._state_names:
             state = getattr(self, name)
-
-            if isinstance(state, Tensor):
-                setattr(self, name, state.to(device))
-            elif isinstance(state, list):
-                moved_list = [
-                    item.to(device) if isinstance(item, Tensor) else item for item in state
-                ]
-                setattr(self, name, moved_list)
+            if isinstance(state, dict):
+                state = {key: self._move_value_to_device(val, device) for key, val in state.items()}
+            else:
+                state = self._move_value_to_device(state, device)
+            setattr(self, name, state)
 
         return self
 
     def reset(self) -> None:
         """Reset the metric state."""
         for name in self._state_names:
-            match self._state_reduce_fns[name]:
-                case "sum":
-                    setattr(self, name, torch.tensor(0.0))
-                case "cat":
-                    setattr(self, name, [])
+            reduce_fn = self._state_reduce_fns[name]
+            default = torch.tensor(0.0) if reduce_fn == "sum" else []
+
+            if name in self._dict_state_keys:
+                setattr(self, name, {key: default for key in self._dict_state_keys[name]})
+            else:
+                setattr(self, name, default)
 
     @abstractmethod
     def update(self, **kwargs: Any) -> None:

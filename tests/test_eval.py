@@ -56,8 +56,8 @@ class TestCIHistograms:
 
         # Check that only n_batches_accum were accumulated
         assert ci_hist.batches_seen == n_batches_accum
-        assert len(ci_hist.causal_importances_layer1) == n_batches_accum  # pyright: ignore[reportAttributeAccessIssue]
-        assert len(ci_hist.causal_importances_layer2) == n_batches_accum  # pyright: ignore[reportAttributeAccessIssue]
+        assert len(ci_hist.causal_importances["layer1"]) == n_batches_accum
+        assert len(ci_hist.causal_importances["layer2"]) == n_batches_accum
 
     def test_none_n_batches_accum(self, mock_model: Mock, sample_ci: dict[str, torch.Tensor]):
         """Test unlimited batch accumulation when n_batches_accum is None."""
@@ -75,8 +75,8 @@ class TestCIHistograms:
 
         # All batches should be accumulated
         assert ci_hist.batches_seen == num_batches
-        assert len(ci_hist.causal_importances_layer1) == num_batches  # pyright: ignore[reportAttributeAccessIssue]
-        assert len(ci_hist.causal_importances_layer2) == num_batches  # pyright: ignore[reportAttributeAccessIssue]
+        assert len(ci_hist.causal_importances["layer1"]) == num_batches
+        assert len(ci_hist.causal_importances["layer2"]) == num_batches
 
     def test_empty_compute(self, mock_model: Mock):
         """Test compute() when no batches have been updated."""
