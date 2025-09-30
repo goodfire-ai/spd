@@ -1,9 +1,4 @@
-"""
-Orchestration layer - clean clustering pipeline coordination.
-
-Replaces the original 370+ line subprocess/FD system with simple multiprocessing.Pool.
-Each batch loads its own model and WandB run to match original design.
-"""
+"""Orchestration layer - clustering pipeline coordination"""
 
 from collections.abc import Iterator
 from typing import Any
