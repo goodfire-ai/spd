@@ -3,7 +3,6 @@
 import json
 import os
 import subprocess
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -118,7 +117,6 @@ def distribute_clustering(
     workers_per_device: int = 1,
     log_fn: Callable[[str], None] | None = None,
     log_fn_error: Callable[[str], None] | None = None,
-    wait_before_next_loop: float = 1.0,
 ) -> list[dict[str, str | None]]:
     """Distribute clustering tasks across multiple devices via subprocess.
 
@@ -127,8 +125,9 @@ def distribute_clustering(
 
     The concurrency model:
     - Total concurrency = workers_per_device x len(devices)
-    - Tasks are round-robin assigned to devices
-    - Each device can have up to workers_per_device tasks running concurrently
+    - Uses round-robin device assignment starting point
+    - If target device is full, uses any available device
+    - If all devices are full, waits for a process on the target device to finish
 
     Args:
         config_path: Path to clustering configuration file
@@ -139,7 +138,6 @@ def distribute_clustering(
         workers_per_device: Maximum concurrent workers per device
         log_fn: Optional logging function for info messages
         log_fn_error: Optional logging function for error messages
-        wait_before_next_loop: Seconds to wait before checking for free slots among all devices again
 
     Returns:
         List of result dictionaries from each batch processing
@@ -165,37 +163,35 @@ def distribute_clustering(
     results: list[dict[str, str | None]] = []
 
     n_files: int = len(data_files)
-    device_idx: int
-    attempts: int
     try:
         for idx, dataset in enumerate(data_files):
-            # Find next device with capacity using round-robin starting point
+            # Find a device with capacity, starting from round-robin position
             device_idx = idx % n_devices
-            attempts = 0
-            while device_active_counts[devices[device_idx]] >= workers_per_device:
-                # Wait for any process to finish if all devices are at capacity
-                if all(count >= workers_per_device for count in device_active_counts.values()):
-                    # wait for the first process to finish
-                    active_proc = active[0]
-                    result = _read_json_result(active_proc.json_fd, active_proc.dataset_path)
-                    active_proc.proc.wait()
-                    # store it
-                    results.append(result)
-                    device_active_counts[active_proc.device] -= 1
-                    # log it
-                    log_fn(
-                        f"Process {active_proc.proc.pid} finished, freeing slot on {active_proc.device}"
-                    )
-                    # remove from active list
-                    active.pop(0)
 
-                # Try next device
-                device_idx = (device_idx + 1) % n_devices
-                attempts += 1
-                if attempts >= n_devices:
-                    # We've checked all devices, start from beginning
-                    attempts = 0
-                    time.sleep(wait_before_next_loop)
+            # Check if we need to wait for a device to free up
+            while all(count >= workers_per_device for count in device_active_counts.values()):
+                # All devices are at capacity - wait for ANY process to finish
+                log_fn(
+                    f"All devices at capacity ({workers_per_device} workers each). Waiting for any process to finish..."
+                )
+
+                # Wait for the first process (any device)
+                active_proc = active[0]
+                result = _read_json_result(active_proc.json_fd, active_proc.dataset_path)
+                active_proc.proc.wait()
+                results.append(result)
+                device_active_counts[active_proc.device] -= 1
+                log_fn(
+                    f"Process {active_proc.proc.pid} finished, freeing slot on {active_proc.device}"
+                )
+                active.pop(0)
+
+            # Now find a device with capacity, starting from our round-robin position
+            for i in range(n_devices):
+                check_idx = (device_idx + i) % n_devices
+                if device_active_counts[devices[check_idx]] < workers_per_device:
+                    device_idx = check_idx
+                    break
 
             device: str = devices[device_idx]
 

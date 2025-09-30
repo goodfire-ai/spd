@@ -58,6 +58,9 @@ def plot_activations(
     for key in act_dict:
         act_dict[key] = act_dict[key][:n_samples_max]
 
+    # Update n_samples to reflect the truncated size
+    n_samples = act_concat.shape[0]
+
     # Raw activations
     axs_act: Sequence[plt.Axes]
     _fig1: plt.Figure
