@@ -94,22 +94,54 @@ class VectorMLPGates(nn.Module):
 
 
 class VectorSharedMLPGate(nn.Module):
-    """Maps a module's input vector to a scalar output for each component with a 'pure' MLP."""
+    """Maps a module's input vector to a scalar output for each component using Transformer blocks."""
+
+    class _TransformerGateBlock(nn.Module):
+        """Pre-norm self-attention + MLP with residual connections (embed dim stays constant)."""
+
+        def __init__(self, embed_dim: int, ff_hidden_dim: int):
+            super().__init__()
+            self.embed_dim = embed_dim
+            self.attn_norm = nn.RMSNorm(embed_dim)
+            self.attn = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=4, batch_first=True)
+            self.ff_norm = nn.RMSNorm(embed_dim)
+            self.ff = nn.Sequential(
+                Linear(embed_dim, ff_hidden_dim, nonlinearity="relu"),
+                nn.GELU(),
+                Linear(ff_hidden_dim, embed_dim, nonlinearity="linear"),
+            )
+
+        @override
+        def forward(self, x: Float[Tensor, "B S E"]) -> Float[Tensor, "B S E"]:
+            attn_in = self.attn_norm(x)
+            attn_out, _ = self.attn(attn_in, attn_in, attn_in, need_weights=False)
+            x = x + attn_out
+            ff_in = self.ff_norm(x)
+            ff_out = self.ff(ff_in)
+            return x + ff_out
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
-        self.layers = nn.Sequential()
-        for i in range(len(hidden_dims)):
-            in_dim = input_dim if i == 0 else hidden_dims[i - 1]
-            output_dim = hidden_dims[i]
-            self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
-            self.layers.append(nn.GELU())
-        final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else input_dim
-        self.layers.append(Linear(final_dim, C, nonlinearity="linear"))
+        self.C = C
+        self.input_dim = input_dim
+
+        # Initial projection to component dimension followed by RMSNorm
+        self.input_proj = Linear(input_dim, 128, nonlinearity="linear")
+        self.input_norm = nn.RMSNorm(128)
+
+        # Stack of transformer-style blocks, each keeping embed dim = C and FF width = hidden_dims[i]
+        self.blocks = nn.ModuleList(
+            [self._TransformerGateBlock(embed_dim=128, ff_hidden_dim=h) for h in hidden_dims]
+        )
+        self.output_proj = Linear(128, C, nonlinearity="linear")
 
     @override
-    def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
-        return self.layers(x)
+    def forward(self, x: Float[Tensor, "B S d_in"]) -> Float[Tensor, "B S C"]:
+        x_proj = self.input_proj(x)
+        x_proj = self.input_norm(x_proj)
+        for block in self.blocks:
+            x_proj = block(x_proj)
+        return self.output_proj(x_proj)
 
 
 WeightDeltaAndMask = tuple[Float[Tensor, " d_out d_in"], Float[Tensor, "..."]]
