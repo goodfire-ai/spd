@@ -9,7 +9,7 @@ from spd.models.components import ComponentsMaskInfo, WeightDeltaAndMask, make_m
 
 def _sample_stochastic_mask(
     causal_importances: Float[Tensor, "... C"],
-    sampling: Literal["continuous", "binomial"],
+    sampling: Literal["continuous", "binomial", "mixture"],
 ) -> Float[Tensor, "... C"]:
     match sampling:
         case "binomial":
@@ -18,6 +18,15 @@ def _sample_stochastic_mask(
             ).float()
         case "continuous":
             rand_tensor = torch.rand_like(causal_importances)
+        case "mixture":
+            rand_tensor = torch.rand_like(causal_importances)
+            rand_tensor = torch.where(
+                rand_tensor < 0.25,
+                torch.zeros_like(rand_tensor),
+                torch.where(
+                    rand_tensor < 0.75, torch.rand_like(rand_tensor), torch.ones_like(rand_tensor)
+                ),
+            )
 
     return causal_importances + (1 - causal_importances) * rand_tensor
 
