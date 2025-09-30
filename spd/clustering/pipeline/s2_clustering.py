@@ -67,7 +67,7 @@ def process_batches_parallel(
     ]
 
     with Pool(workers_per_device * len(devices)) as pool:
-        results: list[ClusteringResult] = pool.map(_worker_fn, worker_args)
+        results: list[ClusteringResult] = list(pool.map(_worker_fn, worker_args))
 
     return results
 
@@ -83,6 +83,7 @@ def _run_clustering(
     run_identifier: str,
     device: str,
 ) -> ClusteringResult:
+    logger.section("starting batch")
     storage: ClusteringStorage = ClusteringStorage(
         base_path=base_path, run_identifier=run_identifier
     )
@@ -91,29 +92,34 @@ def _run_clustering(
     run: Run | None = (
         _setup_wandb(batch_id=batch_id, config=config) if config.wandb_enabled else None
     )
+    logger.info("wandb setup complete")
 
     this_merge_plots_dir: Path = storage.history_path(batch_id).parent / "plots"
 
     spd_run: SPDRunInfo = SPDRunInfo.from_path(config.model_path)
+    logger.info("loaded spd run info")
+
     model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path).to(device)
+    logger.info("loaded model")
 
     batch: Int[Tensor, "batch seq"] = storage.load_batch(data_path).to(device)
+    logger.info(f"loaded batch {batch_id} with shape {batch.shape}")
 
-    compoenent_activations: dict[str, Float[Tensor, "batch seq n_components"]] = (
-        component_activations(
-            model=model,
-            batch=batch,
-            device=device,
-            sigmoid_type=spd_run.config.sigmoid_type,
-        )
+    activations_dict: dict[str, Float[Tensor, "batch seq n_components"]] = component_activations(
+        model=model,
+        batch=batch,
+        device=device,
+        sigmoid_type=spd_run.config.sigmoid_type,
     )
+    logger.info("computed activations")
 
     processed_activations: ProcessedActivations = process_activations(
-        activations=compoenent_activations,
+        activations=activations_dict,
         filter_dead_threshold=config.merge_config.filter_dead_threshold,
         seq_mode="concat" if config.task_name == "lm" else None,
         filter_modules=config.merge_config.filter_modules,
     )
+    logger.info("processed activations")
 
     wandb_url: str | None
     if run is not None:
@@ -135,12 +141,13 @@ def _run_clustering(
         save_dir=this_merge_plots_dir,
         wandb_run=run,
     )
+    logger.info(f"plots saved to {this_merge_plots_dir}")
 
     logger.info("cleaning up memory")
     activations: Float[Tensor, "samples n_components"] = processed_activations.activations
     component_labels: list[str] = processed_activations.labels.copy()
     del processed_activations  # we copied what we needed
-    del compoenent_activations  # processed already
+    del activations_dict  # processed already
     del model  # already did the forward pass
     del batch  # already did the forward pass
 
@@ -150,6 +157,7 @@ def _run_clustering(
         else None
     )
 
+    logger.info("starting merging")
     history: MergeHistory = merge_iteration(
         merge_config=config.merge_config,
         batch_id=batch_id,
@@ -157,6 +165,7 @@ def _run_clustering(
         component_labels=component_labels,
         log_callback=log_callback,
     )
+    logger.info("merging complete")
 
     history_save_path: Path = storage.history_path(batch_id)
 
@@ -169,6 +178,8 @@ def _run_clustering(
         )
 
         run.finish()
+
+    logger.info("batch complete")
 
     return ClusteringResult(history_save_path=history_save_path, wandb_url=wandb_url)
 
