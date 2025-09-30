@@ -82,6 +82,7 @@ clustering-test:
 .PHONY: clustering-dashboard
 clustering-dashboard:
 	python spd/clustering/dashboard/lm_max_activations.py \
-		--model-path wandb:goodfire/spd/runs/rn9klzfs \
-		--merge-history-path data/clustering/task_lm-w_rn9klzfs-a1-iauto-b32-n1-h_81bcb6/merge_history/task_lm-w_rn9klzfs-a1-iauto-b32-n1-h_81bcb6-data_batch_00/merge_history.zip \
-		--iteration 7375
+		--wandb-run goodfire/spd-cluster/runs/j8dgvemf \
+		--iteration 4500 \
+		--n-samples 16 \
+		--n-batches 4
