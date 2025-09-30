@@ -1,4 +1,5 @@
 # %%
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import torch
@@ -21,6 +22,10 @@ from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
+TEMP_DIR: Path = Path(
+    "tests/.temp"
+)  # save to an actual dir that is gitignored, so users can view plots
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 # magic autoreload
 # %load_ext autoreload
@@ -77,7 +82,7 @@ PROCESSED_ACTIVATIONS: ProcessedActivations = process_activations(
 
 plot_activations(
     processed_activations=PROCESSED_ACTIVATIONS,
-    save_dir=None,
+    save_dir=TEMP_DIR,
     wandb_run=None,
 )
 

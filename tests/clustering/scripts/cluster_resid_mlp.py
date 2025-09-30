@@ -1,4 +1,5 @@
 # %%
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -26,6 +27,13 @@ from spd.registry import EXPERIMENT_REGISTRY
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
+TEMP_DIR: Path = Path(
+    "tests/.temp"
+)  # save to an actual dir that is gitignored, so users can view plots
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# pyright: reportUnusedParameter=false
 
 # magic autoreload
 # %load_ext autoreload
@@ -97,7 +105,7 @@ PROCESSED_ACTIVATIONS: ProcessedActivations = process_activations(
 
 plot_activations(
     processed_activations=PROCESSED_ACTIVATIONS,
-    save_dir=None,
+    save_dir=TEMP_DIR,
     wandb_run=None,
 )
 
