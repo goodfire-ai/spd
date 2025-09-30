@@ -80,36 +80,36 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         expected_runtime=60,
         canonical_run="wandb:goodfire/spd/runs/xawvyhq3",  # A few imperfections in layers 0 and 1
     ),
-    # "ss_llama": ExperimentConfig(
-    #     task_name="lm",
-    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-    #     config_path=Path("spd/experiments/lm/ss_llama_config.yaml"),
-    #     expected_runtime=60 * 37,  # ~37 hours with data parallelism over 8 GPUs
-    # ),
-    # "ss_gpt2": ExperimentConfig(
-    #     task_name="lm",
-    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-    #     config_path=Path("spd/experiments/lm/ss_gpt2_config.yaml"),
-    #     expected_runtime=60,
-    # ),
-    # "gpt2": ExperimentConfig(
-    #     task_name="lm",
-    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-    #     config_path=Path("spd/experiments/lm/gpt2_config.yaml"),
-    #     expected_runtime=60,
-    # ),
-    # "ss_gpt2_simple": ExperimentConfig(
-    #     task_name="lm",
-    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-    #     config_path=Path("spd/experiments/lm/ss_gpt2_simple_config.yaml"),
-    #     expected_runtime=330,
-    # ),
-    # "ss_gpt2_simple_noln": ExperimentConfig(
-    #     task_name="lm",
-    #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-    #     config_path=Path("spd/experiments/lm/ss_gpt2_simple_noln_config.yaml"),
-    #     expected_runtime=330,
-    # ),
+    "ss_llama": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_config.yaml"),
+        expected_runtime=60 * 37,  # ~37 hours with data parallelism over 8 GPUs
+    ),
+    "ss_gpt2": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_gpt2_config.yaml"),
+        expected_runtime=60,
+    ),
+    "gpt2": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/gpt2_config.yaml"),
+        expected_runtime=60,
+    ),
+    "ss_gpt2_simple": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_gpt2_simple_config.yaml"),
+        expected_runtime=330,
+    ),
+    "ss_gpt2_simple_noln": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_gpt2_simple_noln_config.yaml"),
+        expected_runtime=330,
+    ),
     # "ts": ExperimentConfig(
     #     task_name="lm",
     #     decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),

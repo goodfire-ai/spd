@@ -19,7 +19,6 @@ class CEandKLLosses(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
-    slow = False
     is_differentiable: bool | None = False
 
     # NOTE: Gross that we have to hardcode these here. Open to other ideas.

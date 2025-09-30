@@ -20,7 +20,6 @@ class StochasticReconSubsetCEAndKL(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
-    slow = False
     is_differentiable: bool | None = False
 
     def __init__(

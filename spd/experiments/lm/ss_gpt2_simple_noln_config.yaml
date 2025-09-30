@@ -24,6 +24,8 @@ loss_metric_configs:
     p_anneal_end_frac: 1.0
   - classname: "StochasticReconLayerwiseLoss"
     coeff: 2.0
+  - classname: "StochasticReconLoss"
+    coeff: 0.2
 output_loss_type: kl
 
 # --- Training ---

@@ -10,7 +10,6 @@ from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
 
 
 class UVPlots(Metric):
-    slow = True
     is_differentiable: bool | None = False
 
     input_magnitude: float = 0.75

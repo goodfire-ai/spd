@@ -54,7 +54,6 @@ def ci_masked_recon_layerwise_loss(
 class CIMaskedReconLayerwiseLoss(Metric):
     """Recon loss when masking with CI values directly one layer at a time."""
 
-    slow = False
     is_differentiable: bool | None = True
 
     sum_loss: Float[Tensor, ""]

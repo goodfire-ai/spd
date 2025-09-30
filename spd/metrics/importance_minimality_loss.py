@@ -123,7 +123,6 @@ class ImportanceMinimalityLoss(Metric):
         eps: The epsilon value for numerical stability.
     """
 
-    slow = False
     is_differentiable: bool | None = True
 
     sum_loss: Float[Tensor, " C"]

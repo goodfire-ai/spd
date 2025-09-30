@@ -79,7 +79,6 @@ def stochastic_recon_loss(
 class StochasticReconLoss(Metric):
     """Recon loss when sampling with stochastic masks on all component layers."""
 
-    slow = False
     is_differentiable: bool | None = True
 
     sum_loss: Float[Tensor, ""]

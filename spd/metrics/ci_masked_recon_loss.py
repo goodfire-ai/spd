@@ -50,7 +50,6 @@ def ci_masked_recon_loss(
 class CIMaskedReconLoss(Metric):
     """Recon loss when masking with CI values directly on all component layers."""
 
-    slow = False
     is_differentiable: bool | None = True
 
     sum_loss: Float[Tensor, ""]

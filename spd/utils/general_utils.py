@@ -250,7 +250,16 @@ def calc_kl_divergence_lm(
     target: Float[Tensor, "... vocab"],
     reduce: bool = True,
 ) -> Float[Tensor, ""] | Float[Tensor, "..."]:
-    """Calculate the KL divergence between two logits."""
+    """Calculate the KL divergence between two logits.
+
+    Args:
+        pred: The predicted logits
+        target: The target logits
+        reduce: Whether to reduce the KL divergence across the batch and sequence dimensions
+
+    Returns:
+        The KL divergence
+    """
     assert pred.shape == target.shape
     log_q = torch.log_softmax(pred, dim=-1)  # log Q
     p = torch.softmax(target, dim=-1)  # P
@@ -267,7 +276,7 @@ def calc_sum_recon_loss_lm(
     target: Float[Tensor, "... vocab"],
     loss_type: Literal["mse", "kl"],
 ) -> Float[Tensor, ""]:
-    """Calculate the reconstruction loss for a language model."""
+    """Calculate the reconstruction loss for a language model without reduction."""
     match loss_type:
         case "mse":
             loss = ((pred - target) ** 2).sum()

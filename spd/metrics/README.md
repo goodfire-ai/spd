@@ -31,7 +31,7 @@ The `Metric` base class provides:
 - Computes the final metric value from current state
 - Works on whatever state is available (local or synchronized)
 - Must be implemented by subclasses
-- **For training:** Call directly after updates to get per-rank metrics
+- **For training with DDP:** Call directly after updates to get per-rank metrics
 - **For evaluation:** Call after `sync_dist()` to get global metrics
 
 **`sync_dist()`**
@@ -122,7 +122,7 @@ class MyTrainingLoss(Metric):
 # Usage in training:
 metric = MyTrainingLoss(model)
 metric.update(batch=batch, target=target)
-loss = metric.compute()  # Get per-rank loss (no sync needed)
+loss = metric.compute()  # Get per-rank loss (no sync needed as DDP will sync gradients itself)
 loss.backward()  # DDP syncs gradients automatically
 ```
 
@@ -172,13 +172,3 @@ def compute(self):
         values = self.my_state
     return values.mean()
 ```
-
-## Migration from torchmetrics
-
-Key differences from torchmetrics:
-1. **Manual sync control** - Call `sync_dist()` explicitly before `compute()` for evaluation
-2. **No `full_state_update`** - This confusing parameter is removed
-3. **No `sync_on_compute`** - You control when synchronization happens
-4. **Strict shape validation** - No automatic padding/trimming for different shapes
-5. **Simpler API** - Only the essential features needed for this codebase
-6. **Reset support** - Unlike our previous version, `reset()` is now available for metric reuse

@@ -22,9 +22,6 @@ def _gather_all_tensors(tensor: Tensor, group: Any = None) -> list[Tensor]:
 
     Returns:
         List of tensors from all ranks (including local rank)
-
-    Raises:
-        AssertionError: If tensors have different shapes across ranks
     """
     if not torch.distributed.is_available() or not torch.distributed.is_initialized():
         return [tensor]
@@ -36,20 +33,6 @@ def _gather_all_tensors(tensor: Tensor, group: Any = None) -> list[Tensor]:
     world_size = torch.distributed.get_world_size(group)
     current_rank = torch.distributed.get_rank(group)
 
-    # Gather sizes from all ranks
-    local_size = torch.tensor(tensor.shape, device=tensor.device)
-    local_sizes = [torch.zeros_like(local_size) for _ in range(world_size)]
-    torch.distributed.all_gather(local_sizes, local_size, group=group)
-
-    # Assert all shapes are identical
-    for rank, size in enumerate(local_sizes):
-        assert torch.equal(size, local_size), (
-            f"Shape mismatch in distributed gather: "
-            f"rank {rank} has shape {size.tolist()}, "
-            f"rank {current_rank} (current) has shape {local_size.tolist()}"
-        )
-
-    # Gather tensors from all ranks
     gathered = [torch.zeros_like(tensor) for _ in range(world_size)]
     torch.distributed.all_gather(gathered, tensor, group=group)
 
@@ -75,7 +58,6 @@ class Metric(ABC):
     """
 
     is_differentiable: bool | None = None
-    slow: bool = False
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__()
@@ -161,7 +143,6 @@ class Metric(ABC):
             if isinstance(state, Tensor):
                 setattr(self, name, state.to(device))
             elif isinstance(state, list):
-                # Move all tensors in the list
                 moved_list = [
                     item.to(device) if isinstance(item, Tensor) else item for item in state
                 ]
@@ -194,7 +175,7 @@ class Metric(ABC):
         - Local (per-rank) state if called directly after updates
         - Synchronized (all-ranks) state if called after `sync_dist()`
 
-        For training: call `compute()` directly to get per-rank metrics
+        For training with DDP: call `compute()` directly to get per-rank metrics
         For evaluation: call `sync_dist()` then `compute()` to get global metrics
         """
         pass

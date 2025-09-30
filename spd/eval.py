@@ -31,6 +31,7 @@ from spd.configs import (
     StochasticReconSubsetLossTrainConfig,
     TrainMetricConfig,
     TrainMetricConfigType,
+    UVPlotsConfig,
 )
 from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
@@ -49,24 +50,16 @@ from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwise
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
 from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
 from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
+from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import extract_batch_data
 
 
-def _should_run_metric(
-    cfg: EvalMetricConfig | TrainMetricConfig, metric: Metric, slow_step: bool
-) -> bool:
-    # TODO: Now that we have eval configs, best to just set a default argument for slow in each
-    # of the metric classes and overwrite it in the yaml if desired
-    if not slow_step:
+def _should_run_metric(cfg: EvalMetricConfig | TrainMetricConfig, slow_step: bool) -> bool:
+    if not slow_step or isinstance(cfg, TrainMetricConfig):
         return True
-    match cfg:
-        case TrainMetricConfig():
-            # Always run training metrics
-            return True
-        case EvalMetricConfig():
-            return cfg.slow if cfg.slow is not None else bool(getattr(metric, "slow", False))
+    return cfg.slow
 
 
 MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
@@ -207,6 +200,14 @@ def init_metric(
                 include_patterns=cfg.include_patterns,
                 exclude_patterns=cfg.exclude_patterns,
             )
+        case UVPlotsConfig():
+            metric = UVPlots(
+                model=model,
+                sampling=run_config.sampling,
+                sigmoid_type=run_config.sigmoid_type,
+                identity_patterns=cfg.identity_patterns,
+                dense_patterns=cfg.dense_patterns,
+            )
     metric.to(device)
     return metric
 
@@ -221,13 +222,13 @@ def evaluate(
     n_eval_steps: int,
     current_frac_of_training: float,
 ) -> MetricOutType:
-    """Run evaluation and return a flat mapping of metric names to values/images."""
+    """Run evaluation and return a mapping of metric names to values/images."""
 
     metrics: list[Metric] = []
     for cfg in metric_configs:
         metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
         metrics.append(metric)
-        if not _should_run_metric(cfg=cfg, metric=metric, slow_step=slow_step):
+        if not _should_run_metric(cfg=cfg, slow_step=slow_step):
             continue
 
     # Weight deltas can be computed once per eval since params are frozen

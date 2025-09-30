@@ -80,7 +80,6 @@ def stochastic_recon_subset_loss(
 class StochasticReconSubsetLoss(Metric):
     """Recon loss when sampling with stochastic masks and routing to subsets of component layers."""
 
-    slow = False
     is_differentiable: bool | None = True
 
     sum_loss: Float[Tensor, ""]
