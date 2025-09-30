@@ -183,7 +183,7 @@ class TestMetricBasics:
 
         NOTE: If GPU is not available, this test will be trivial, but we run it anyway
         """
-        device = "cpu" if torch.cuda.is_available() else "cuda"
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         metric = SumMetric()
         metric.update(value=torch.tensor([1.0, 2.0]))
 
