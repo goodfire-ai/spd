@@ -187,6 +187,38 @@ class BatchedGroupMerge:
     def _n_components(self) -> int:
         return int(self.group_idxs.shape[1])
 
+    @property
+    def k_groups_unique(self) -> int:
+        """Returns the number of groups across all matrices, throws exception if they differ."""
+        k_groups_set: set[int] = set(self.k_groups.tolist())
+        if len(k_groups_set) != 1:
+            raise ValueError("All matrices must have the same number of groups")
+        return k_groups_set.pop()
+
+    def to_matrix(
+        self, device: torch.device | None = None
+    ) -> Bool[Tensor, "batch k_groups n_components"]:
+        if device is None:
+            device = self.group_idxs.device
+        k_groups_u: int = self.k_groups_unique
+        mat = torch.nn.functional.one_hot(self.group_idxs, num_classes=k_groups_u)
+        return mat.permute(0, 2, 1).to(device=device, dtype=torch.bool)
+
+    @classmethod
+    def from_matrix(cls, mat: Bool[Tensor, "batch k_groups n_components"]) -> "BatchedGroupMerge":
+        if mat.dtype is not torch.bool:
+            raise TypeError("mat must have dtype bool")
+        if not mat.sum(dim=1).eq(1).all():
+            raise ValueError("each column must have exactly one True per matrix")
+        group_idxs = mat.argmax(dim=1).to(torch.int64)
+        batch_size: int = int(mat.shape[0])
+        inst = cls(
+            group_idxs=group_idxs,
+            k_groups=torch.full((batch_size,), int(mat.shape[1]), dtype=torch.int64),
+        )
+        # inst.validate(require_nonempty=False)
+        return inst
+
     @classmethod
     def from_list(
         cls,
