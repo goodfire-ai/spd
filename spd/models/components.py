@@ -37,7 +37,7 @@ class Linear(nn.Module):
         self.output_dim = output_dim
         self.W = nn.Parameter(torch.empty(input_dim, output_dim))
         self.b = nn.Parameter(torch.zeros(output_dim))
-        init_param_(self.W, fan_val=input_dim, nonlinearity=nonlinearity)
+        init_param_(self.W, fan_val=output_dim, nonlinearity=nonlinearity)
 
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
