@@ -33,7 +33,7 @@ def compute_distances(
             distances_list: list[Float[np.ndarray, "n_ens n_ens"]] = run_maybe_parallel(
                 func=perm_invariant_hamming_matrix,
                 iterable=merges_array_list,
-                parallel=8,
+                parallel=True,
             )
 
             return np.stack(distances_list, axis=0)
