@@ -50,6 +50,8 @@ def cli():
         devices = args.devices.split(",")
 
     # load and augment config
+    # note that the defaults for args here always override the default values in `RunConfig` itself,
+    # but we must have those defaults to avoid type issues
     config: RunConfig = RunConfig.from_file(args.config)
     config.base_path = args.base_path
     config.devices = devices

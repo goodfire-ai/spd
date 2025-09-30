@@ -65,17 +65,19 @@ class RunConfig(BaseModel):
         description="Size of each batch for processing",
     )
 
-    # Implementation details:
+    # Implementation details
+    # note that these are *always* overriden by CLI args in `spd/clustering/scripts/main.py`, but we have to have defaults here
+    # to avoid type issues with pydantic. however, these defaults should match the defaults in the CLI args.
     base_path: Path = Field(
-        ...,
+        default_factory=lambda: Path(".data/clustering/"),
         description="Base path for saving clustering outputs",
     )
     workers_per_device: int = Field(
-        ...,
+        default=1,
         description="Maximum number of concurrent clustering processes per device",
     )
     devices: list[str] = Field(
-        ...,
+        default_factory=lambda: ["cpu"],
         description="Devices to use for clustering",
     )
 
