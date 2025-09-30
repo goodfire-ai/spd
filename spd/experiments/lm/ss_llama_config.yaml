@@ -11,6 +11,7 @@ gate_type: "vector_mlp"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj", "model.layers.*.self_attn.q_proj", "model.layers.*.self_attn.k_proj", "model.layers.*.self_attn.v_proj", "model.layers.*.self_attn.o_proj"]
+# target_module_patterns: ["model.layers.*.self_attn.k_proj"]
 identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
@@ -75,6 +76,8 @@ eval_metrics:
         layer_3_only: ["model.layers.3.*"]
         mlp_only: ["*.mlp.*"]
         attention_only: ["*.self_attn.*"]
+        key_only: ["*.self_attn.k_proj"]
+        query_only: ["*.self_attn.q_proj"]
       exclude_patterns:
         all_but_layer_0: ["model.layers.0.*"]
         all_but_layer_1: ["model.layers.1.*"]
