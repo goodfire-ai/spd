@@ -10,12 +10,8 @@ import torch
 from jaxtyping import Float, Int
 from muutils.dbg import dbg_tensor
 
-from spd.clustering.math.merge_distances import (
-    DistancesArray,
-    DistancesMethod,
-    MergesArray,
-    compute_distances,
-)
+from spd.clustering.consts import DistancesArray, DistancesMethod, MergesArray, SaveableObject
+from spd.clustering.math.merge_distances import compute_distances
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
 from spd.clustering.merge_config import MergeConfig
 
@@ -38,7 +34,7 @@ def _zip_save_arr_dict(zf: zipfile.ZipFile, data: dict[str, np.ndarray]) -> None
 
 
 @dataclass(kw_only=True)
-class MergeHistory:
+class MergeHistory(SaveableObject):
     """Track merge iteration history"""
 
     merges: BatchedGroupMerge

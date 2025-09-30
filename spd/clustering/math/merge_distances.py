@@ -1,16 +1,16 @@
 from collections.abc import Callable
-from typing import Literal
 
 import numpy as np
-from jaxtyping import Float, Int
+from jaxtyping import Int
 from muutils.parallel import run_maybe_parallel
 
+from spd.clustering.consts import (
+    DistancesArray,
+    DistancesMethod,
+    MergesArray,
+    MergesAtIterArray,
+)
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming_matrix
-
-MergesAtIterArray = Int[np.ndarray, "n_ens c_components"]
-MergesArray = Int[np.ndarray, "n_ens n_iters c_components"]
-DistancesMethod = Literal["perm_invariant_hamming"]
-DistancesArray = Float[np.ndarray, "n_iters n_ens n_ens"]
 
 
 DISTANCES_METHODS: dict[DistancesMethod, Callable[[MergesAtIterArray], DistancesArray]] = {

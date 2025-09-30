@@ -4,16 +4,18 @@ import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
 from jaxtyping import Int
 from torch import Tensor
 
-from spd.clustering.math.merge_distances import DistancesArray, DistancesMethod, MergesArray
-from spd.clustering.merge_history import MergeHistory
+from spd.clustering.consts import DistancesArray, DistancesMethod, MergesArray
 from spd.clustering.merge_run_config import RunConfig
+
+if TYPE_CHECKING:
+    from spd.clustering.merge_history import MergeHistory
 
 
 @dataclass
@@ -200,14 +202,8 @@ class ClusteringStorage:
         history.save(history_path)
         return history_path
 
-    def load_history(self, batch_id: str) -> MergeHistory:
-        return MergeHistory.read(self.history_path(batch_id))
-
     def get_history_paths(self) -> list[Path]:
         return sorted(self._histories_dir.glob(f"*/{self._MERGE_HISTORY_FILE}"))
-
-    def load_histories(self) -> list[MergeHistory]:
-        return [MergeHistory.read(path) for path in self.get_history_paths()]
 
     # Ensemble related storage methods
 
