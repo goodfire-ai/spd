@@ -181,7 +181,7 @@ def _test_gather_large_tensor():
         assert len(gathered) == world_size
 
         # Check values
-        for i, t in gathered:
+        for i, t in enumerate(gathered):
             expected = torch.arange(1000, dtype=torch.float32) + i * 1000
             torch.testing.assert_close(t, expected)
 
