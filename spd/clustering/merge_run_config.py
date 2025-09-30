@@ -35,27 +35,6 @@ _DEFAULT_INTERVALS: IntervalsDict = {
 }
 
 
-class RunFilePaths:
-    def __init__(self, run_path: Path):
-        self.run_path = run_path
-
-    @property
-    def histories_path(self) -> Path:
-        return self.run_path / "merge_histories"
-
-    @property
-    def distances_dir(self) -> Path:
-        return self.run_path / "distances"
-
-    @property
-    def run_config_path(self) -> Path:
-        return self.run_path / "run_config.json"
-
-    def scaffold(self) -> None:
-        self.histories_path.mkdir(exist_ok=True)
-        self.distances_dir.mkdir(exist_ok=True)
-
-
 class RunConfig(BaseModel):
     """Configuration for a complete merge clustering run.
 
