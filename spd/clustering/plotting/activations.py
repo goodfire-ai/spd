@@ -108,7 +108,8 @@ def plot_activations(
 
     # Concatenated activations, sorted samples
     if do_sorted_samples:
-        # TODO: move sample sorting logic to its own function
+        # TODO: move sample sorting logic to its own function, see
+        # https://github.com/goodfire-ai/spd/pull/172/files#r2387275601
         fig3: plt.Figure
         ax3: plt.Axes
         fig3, ax3 = plt.subplots(figsize=figsize_concat)
