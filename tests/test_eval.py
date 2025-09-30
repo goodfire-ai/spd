@@ -83,6 +83,6 @@ class TestCIHistograms:
 
         ci_hist = CIHistograms(mock_model)
 
-        # When no batches watched, compute will raise a ValueError
-        with pytest.raises(ValueError, match="No samples to concatenate"):
+        # When no batches watched, compute will raise a RuntimeError
+        with pytest.raises(RuntimeError, match="expected a non-empty list of Tensors"):
             ci_hist.compute()

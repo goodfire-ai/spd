@@ -20,11 +20,10 @@ use_delta_component: true
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
     coeff: 0.0003
-    extra_init_kwargs:
-      pnorm: 2.0
-      p_anneal_start_frac: 0.0
-      p_anneal_final_p: 0.3
-      p_anneal_end_frac: 1.0
+    pnorm: 2.0
+    p_anneal_start_frac: 0.0
+    p_anneal_final_p: 0.3
+    p_anneal_end_frac: 1.0
   - classname: "StochasticReconLayerwiseLoss"
     coeff: 2.0
 output_loss_type: kl
@@ -47,13 +46,13 @@ slow_eval_on_first_step: true
 save_freq: null
 n_examples_until_dead: 8_192_000
 eval_metric_configs:
-  - classname: "FaithfulnessLoss"
   - classname: "CIHistograms"
+    n_batches_accum: null
   - classname: "ComponentActivationDensity"
   - classname: "CI_L0"
+    groups: null
   - classname: "CEandKLLosses"
-    extra_init_kwargs:
-      rounding_threshold: 0.1
+    rounding_threshold: 0.1
   - classname: "CIMeanPerComponent"
 
 # --- Pretrained model info ---

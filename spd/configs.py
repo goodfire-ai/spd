@@ -414,6 +414,10 @@ class Config(BaseModel):
         the same.
         """
 
+        # We don't bother doing the complex mapping from an old structure with the ``eval_metrics``
+        # key to the new structure with the ``eval_metric_configs`` key.
+        config_dict.pop("eval_metrics", None)
+
         # Remove SubsetReconstructionLoss if it appears
         if "loss_metric_configs" in config_dict:
             filtered_configs = []

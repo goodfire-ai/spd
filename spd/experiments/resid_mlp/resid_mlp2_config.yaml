@@ -20,9 +20,7 @@ use_delta_component: true
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
     coeff: 3e-5
-    extra_init_kwargs:
-      pnorm: 2.0
-      eps: 1e-12
+    pnorm: 2.0
   - classname: "StochasticReconLayerwiseLoss"
     coeff: 1.0
   - classname: "StochasticReconLoss"
@@ -47,28 +45,22 @@ save_freq: null
 ci_alive_threshold: 0.1
 n_examples_until_dead: 1_024_000
 eval_metric_configs:
-  - classname: "FaithfulnessLoss"
   - classname: "CIHistograms"
-    extra_init_kwargs:
-      n_batches_accum: 5
+    n_batches_accum: 5
   - classname: "ComponentActivationDensity"
   - classname: "PermutedCIPlots"
-    extra_init_kwargs:
-      identity_patterns: ["layers.*.mlp_in"]
-      dense_patterns: ["layers.*.mlp_out"]
-  - classname: "UVPlots"
-    extra_init_kwargs:
-      identity_patterns: ["layers.*.mlp_in"]
-      dense_patterns: ["layers.*.mlp_out"]
+    sigmoid_type: "leaky_hard"
+    identity_patterns: ["layers.*.mlp_in"]
+    dense_patterns: ["layers.*.mlp_out"]
   - classname: "IdentityCIError"
-    extra_init_kwargs:
-      identity_ci:
-        - layer_pattern: "layers.*.mlp_in"
-          n_features: 100
-      dense_ci:
-        - layer_pattern: "layers.*.mlp_out"
-          k: 25
+    identity_ci:
+      - layer_pattern: "layers.*.mlp_in"
+        n_features: 100
+    dense_ci:
+      - layer_pattern: "layers.*.mlp_out"
+        k: 25
   - classname: "CI_L0"
+    groups: null
   - classname: "CIMeanPerComponent"
 
 
