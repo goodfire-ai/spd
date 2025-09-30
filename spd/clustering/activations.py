@@ -93,10 +93,9 @@ def filter_dead_components(
         dead_components: Bool[Tensor, " c"] = max_act < filter_dead_threshold
 
         if dead_components.any():
-            alive_mask: Bool[Tensor, " c"] = ~dead_components
-            activations = activations[:, alive_mask]
+            activations = activations[:, ~dead_components]
             alive_labels: list[tuple[str, bool]] = [
-                (lbl, bool(keep.item())) for lbl, keep in zip(labels, alive_mask, strict=False)
+                (lbl, bool(keep.item())) for lbl, keep in zip(labels, ~dead_components, strict=False)
             ]
             # re-assign labels only if we are filtering
             labels = [label for label, keep in alive_labels if keep]
