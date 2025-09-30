@@ -54,7 +54,9 @@ def merge_iteration(
     the same core algorithm logic.
     """
 
-    # Compute coactivations
+    # setup
+    # ==================================================
+    # compute coactivations
     activation_mask_orig: Bool[Tensor, "n_steps c"] | Float[Tensor, "n_steps c"] | None = (
         activations > merge_config.activation_threshold
         if merge_config.activation_threshold is not None
@@ -62,19 +64,9 @@ def merge_iteration(
     )
     coact: Float[Tensor, "c c"] = activation_mask_orig.float().T @ activation_mask_orig.float()
 
-    # Setup
+    # check shapes
     c_components: int = coact.shape[0]
     assert coact.shape[1] == c_components, "Coactivation matrix must be square"
-
-    # Prepare pop component logic
-    do_pop = merge_config.pop_component_prob > 0.0
-    if do_pop:
-        iter_pop = (
-            torch.rand(merge_config.iters, device=coact.device) < merge_config.pop_component_prob
-        )
-        pop_component_idx = torch.randint(
-            0, c_components, (merge_config.iters,), device=coact.device
-        )
 
     # for speed, we precompute whether to pop components and which components to pop
     # if we are not popping, we don't need these variables and can also delete other things
@@ -92,46 +84,57 @@ def merge_iteration(
             0, c_components, (merge_config.iters,), device=coact.device
         )
 
-    # Initialize merge
+    # start with an identity merge
     current_merge: GroupMerge = GroupMerge.identity(n_components=c_components)
 
-    # Initialize variables
+    # initialize variables for the merge process
     k_groups: int = c_components
     current_coact: Float[Tensor, "k_groups k_groups"] = coact.clone()
     current_act_mask: Bool[Tensor, "samples k_groups"] = activation_mask_orig.clone()
 
-    # Initialize history
+    # variables we keep track of
     merge_history: MergeHistory = MergeHistory.from_config(
         config=merge_config, labels=component_labels
     )
 
-    # Memory cleanup
+    # free up memory
     if not do_pop:
         del coact
         del activation_mask_orig
         activation_mask_orig = None
 
-    # Main iteration loop with progress bar
+    # merge iteration
+    # ==================================================
+    # while i < merge_config.iters:
     pbar: tqdm[int] = tqdm(range(merge_config.iters), unit="iter", total=merge_config.iters)
     for iter_idx in pbar:
+        # pop components
+        # --------------------------------------------------
         if do_pop and iter_pop[iter_idx]:  # pyright: ignore[reportPossiblyUnboundVariable]
-            assert activation_mask_orig is not None, "Activation mask original is None"
-
+            # we split up the group which our chosen component belongs to
             pop_component_idx_i: int = int(pop_component_idx[iter_idx].item())  # pyright: ignore[reportPossiblyUnboundVariable]
-            group_idx: int = int(current_merge.group_idxs[pop_component_idx_i].item())
-            n_components_in_pop_grp: int = int(current_merge.components_per_group[group_idx].item())
+            n_components_in_pop_grp: int = int(
+                current_merge.components_per_group[  # pyright: ignore[reportArgumentType]
+                    current_merge.group_idxs[pop_component_idx_i].item()
+                ]
+            )
 
+            # but, if the component is the only one in its group, there is nothing to do
             if n_components_in_pop_grp > 1:
                 current_merge, current_coact, current_act_mask = recompute_coacts_pop_group(
                     coact=current_coact,
                     merges=current_merge,
                     component_idx=pop_component_idx_i,
                     activation_mask=current_act_mask,
-                    activation_mask_orig=activation_mask_orig,
+                    # this complains if `activation_mask_orig is None`, but this is only the case
+                    # if `do_pop` is False, which it won't be here. we do this to save memory
+                    activation_mask_orig=activation_mask_orig,  # pyright: ignore[reportArgumentType]
                 )
                 k_groups = current_coact.shape[0]
 
-        # Compute costs
+        # compute costs, figure out what to merge
+        # --------------------------------------------------
+        # HACK: this is messy
         costs: Float[Tensor, "k_groups k_groups"] = compute_merge_costs(
             coact=current_coact / current_act_mask.shape[0],
             merges=current_merge,
@@ -140,7 +143,10 @@ def merge_iteration(
 
         merge_pair: tuple[int, int] = merge_config.merge_pair_sample(costs)
 
-        # Merge the pair (after logging so we can see the cost)
+        # merge the pair
+        # --------------------------------------------------
+        # we do this *after* logging, so we can see how the sampled pair cost compares
+        # to the costs of all the other possible pairs
         current_merge, current_coact, current_act_mask = recompute_coacts_merge_pair(
             coact=current_coact,
             merges=current_merge,
@@ -156,6 +162,8 @@ def merge_iteration(
         )
 
         # Compute metrics for logging
+        # the MDL loss computed here is the *cost of the current merge*, a single scalar value
+        # rather than the *delta in cost from merging a specific pair* (which is what `costs` matrix contains)
         diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)
         mdl_loss: float = compute_mdl_cost(
             acts=diag_acts,
@@ -163,10 +171,10 @@ def merge_iteration(
             alpha=merge_config.alpha,
         )
         mdl_loss_norm: float = mdl_loss / current_act_mask.shape[0]
+        # this is the cost for the selected pair
         merge_pair_cost: float = float(costs[merge_pair].item())
 
         # Update progress bar
-
         prefix: str = f"\033[38;5;208m[{batch_id}]\033[0m"
         pbar.set_description(
             f"{prefix} k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={merge_pair_cost:.4f}"
@@ -187,7 +195,8 @@ def merge_iteration(
                 diag_acts=diag_acts,
             )
 
-        # Update and check
+        # iterate and sanity checks
+        # --------------------------------------------------
         k_groups -= 1
         assert current_coact.shape[0] == k_groups, (
             "Coactivation matrix shape should match number of groups"
@@ -199,7 +208,8 @@ def merge_iteration(
             "Activation mask shape should match number of groups"
         )
 
-        # Early stopping
+        # early stopping failsafe
+        # --------------------------------------------------
         if k_groups <= 3:
             warnings.warn(
                 f"Stopping early at iteration {iter_idx} as only {k_groups} groups left",
@@ -207,4 +217,6 @@ def merge_iteration(
             )
             break
 
+    # finish up
+    # ==================================================
     return merge_history
