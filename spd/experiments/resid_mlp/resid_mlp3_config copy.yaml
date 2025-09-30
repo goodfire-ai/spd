@@ -33,11 +33,12 @@ output_loss_type: mse
 batch_size: 2048
 eval_batch_size: 2048
 steps: 50_000
-lr: 1e-3
-lr_schedule: cosine
-lr_warmup_pct: 0.0    
-lr_exponential_halflife: null
-gradient_accumulation_steps: 1
+gate_lr: 1e-5          # Learning rate for gates (causal importance functions)
+component_lr: 1e-3     # Learning rate for components (subcomponents)
+gate_lr_schedule: cosine
+component_lr_schedule: cosine
+gate_lr_warmup_pct: 0.0    
+component_lr_warmup_pct: 0.0
 
 # --- Logging & Saving ---
 train_log_freq: 50
