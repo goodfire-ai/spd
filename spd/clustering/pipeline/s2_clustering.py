@@ -139,6 +139,7 @@ def _run_clustering(
     plot_activations(
         processed_activations=processed_activations,
         save_dir=this_merge_plots_dir,
+        n_samples_max=256,  # TODO: make this configurable?
         wandb_run=run,
     )
     logger.info(f"plots saved to {this_merge_plots_dir}")

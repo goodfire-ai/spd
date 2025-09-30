@@ -83,6 +83,7 @@ PROCESSED_ACTIVATIONS: ProcessedActivations = process_activations(
 plot_activations(
     processed_activations=PROCESSED_ACTIVATIONS,
     save_dir=TEMP_DIR,
+    n_samples_max=256,
     wandb_run=None,
 )
 

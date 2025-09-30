@@ -18,8 +18,8 @@ from spd.clustering.activations import ProcessedActivations, compute_coactivaton
 def plot_activations(
     processed_activations: ProcessedActivations,
     save_dir: Path,
+    n_samples_max: int,
     pdf_prefix: str = "activations",
-    n_samples_max: int = 256,
     figsize_raw: tuple[int, int] = (12, 4),
     figsize_concat: tuple[int, int] = (12, 2),
     figsize_coact: tuple[int, int] = (8, 6),
