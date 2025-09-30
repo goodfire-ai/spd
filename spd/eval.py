@@ -7,7 +7,6 @@ from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
 from torch.types import Number
-from torchmetrics import Metric
 from wandb.plot.custom_chart import CustomChart
 
 from spd.configs import (
@@ -33,6 +32,7 @@ from spd.configs import (
     TrainMetricConfig,
     TrainMetricConfigType,
 )
+from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
 from spd.metrics.ci_l0 import CI_L0
@@ -259,6 +259,8 @@ def evaluate(
 
     outputs: MetricOutType = {}
     for metric in metrics:
+        # Combine metric states across all data-parallel processes
+        metric.sync_dist()
         computed_raw: Any = metric.compute()
         computed = clean_metric_output(metric_name=type(metric).__name__, computed_raw=computed_raw)
         outputs.update(computed)

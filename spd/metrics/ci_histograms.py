@@ -1,11 +1,11 @@
 from typing import Any, override
 
+import torch
 from jaxtyping import Float
 from PIL import Image
 from torch import Tensor
-from torchmetrics import Metric
-from torchmetrics.utilities import dim_zero_cat
 
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_ci_values_histograms
 
@@ -13,7 +13,6 @@ from spd.plotting import plot_ci_values_histograms
 class CIHistograms(Metric):
     slow = True
     is_differentiable: bool | None = False
-    full_state_update: bool | None = False  # Avoid double update calls
 
     def __init__(
         self,
@@ -41,11 +40,9 @@ class CIHistograms(Metric):
     def compute(self) -> dict[str, Image.Image]:
         cis: dict[str, Float[Tensor, "... C"]] = {}
         for module_name in self.module_names:
-            cis[module_name] = dim_zero_cat(getattr(self, f"causal_importances_{module_name}"))
+            ci_list = getattr(self, f"causal_importances_{module_name}")
+            # After self.sync_dist(), this will be a single tensor; otherwise concat list
+            cis[module_name] = torch.cat(ci_list, dim=0) if isinstance(ci_list, list) else ci_list
+
         fig = plot_ci_values_histograms(causal_importances=cis)
         return {"figures/causal_importance_values": fig}
-
-    @override
-    def reset(self) -> None:
-        super().reset()
-        self.batches_seen = 0

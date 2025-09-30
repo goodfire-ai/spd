@@ -2,8 +2,8 @@ from typing import Any, Literal, override
 
 from PIL import Image
 from torch import Tensor
-from torchmetrics import Metric
 
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
@@ -12,7 +12,6 @@ from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
 class UVPlots(Metric):
     slow = True
     is_differentiable: bool | None = False
-    full_state_update: bool | None = False  # Avoid double update calls
 
     input_magnitude: float = 0.75
 

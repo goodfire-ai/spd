@@ -1,8 +1,8 @@
 from typing import Any, Literal, override
 
 from torch import Tensor
-from torchmetrics import Metric
 
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.plotting import get_single_feature_causal_importances
@@ -14,7 +14,6 @@ class IdentityCIError(Metric):
 
     slow = True
     is_differentiable: bool | None = False
-    full_state_update: bool | None = False  # Avoid double update calls
     input_magnitude: float = 0.75
 
     def __init__(

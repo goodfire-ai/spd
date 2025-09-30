@@ -5,8 +5,8 @@ import torch
 import torch.nn.functional as F
 from jaxtyping import Int
 from torch import Tensor
-from torchmetrics import Metric
 
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
@@ -21,7 +21,6 @@ class CEandKLLosses(Metric):
 
     slow = False
     is_differentiable: bool | None = False
-    full_state_update: bool | None = False  # Avoid double update calls
 
     # NOTE: Gross that we have to hardcode these here. Open to other ideas.
     loss_keys: list[str] = [

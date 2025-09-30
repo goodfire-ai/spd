@@ -5,8 +5,8 @@ from einops import reduce
 from jaxtyping import Int
 from PIL import Image
 from torch import Tensor
-from torchmetrics import Metric
 
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_component_activation_density
 
@@ -16,7 +16,6 @@ class ComponentActivationDensity(Metric):
 
     slow = True
     is_differentiable: bool | None = False
-    full_state_update: bool | None = False  # Avoid double update calls
 
     n_examples: Int[Tensor, ""]
 

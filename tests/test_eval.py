@@ -56,8 +56,8 @@ class TestCIHistograms:
 
         # Check that only n_batches_accum were accumulated
         assert ci_hist.batches_seen == n_batches_accum
-        assert len(ci_hist.causal_importances_layer1) == n_batches_accum  # pyright: ignore[reportArgumentType]
-        assert len(ci_hist.causal_importances_layer2) == n_batches_accum  # pyright: ignore[reportArgumentType]
+        assert len(ci_hist.causal_importances_layer1) == n_batches_accum  # pyright: ignore[reportAttributeAccessIssue]
+        assert len(ci_hist.causal_importances_layer2) == n_batches_accum  # pyright: ignore[reportAttributeAccessIssue]
 
     def test_none_n_batches_accum(self, mock_model: Mock, sample_ci: dict[str, torch.Tensor]):
         """Test unlimited batch accumulation when n_batches_accum is None."""
@@ -75,21 +75,14 @@ class TestCIHistograms:
 
         # All batches should be accumulated
         assert ci_hist.batches_seen == num_batches
-        assert len(ci_hist.causal_importances_layer1) == num_batches  # pyright: ignore[reportArgumentType]
-        assert len(ci_hist.causal_importances_layer2) == num_batches  # pyright: ignore[reportArgumentType]
+        assert len(ci_hist.causal_importances_layer1) == num_batches  # pyright: ignore[reportAttributeAccessIssue]
+        assert len(ci_hist.causal_importances_layer2) == num_batches  # pyright: ignore[reportAttributeAccessIssue]
 
     def test_empty_compute(self, mock_model: Mock):
         """Test compute() when no batches have been updated."""
 
         ci_hist = CIHistograms(mock_model)
 
-        # When no batches watched, dim_zero_cat will raise a ValueError
-        # We also expect a warning about compute being called before update
-        with (
-            pytest.warns(
-                UserWarning,
-                match=r"The ``compute`` method of metric .* was called before the ``update`` method",
-            ),
-            pytest.raises(ValueError, match="No samples to concatenate"),
-        ):
+        # When no batches watched, compute will raise a ValueError
+        with pytest.raises(ValueError, match="No samples to concatenate"):
             ci_hist.compute()

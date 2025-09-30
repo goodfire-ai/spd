@@ -3,8 +3,8 @@ from typing import Any, Literal, override
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
-from torchmetrics import Metric
 
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.general_utils import calc_sum_recon_loss_lm
@@ -56,7 +56,6 @@ class CIMaskedReconLayerwiseLoss(Metric):
 
     slow = False
     is_differentiable: bool | None = True
-    full_state_update: bool | None = False  # Avoid double update calls
 
     sum_loss: Float[Tensor, ""]
     n_examples: Int[Tensor, ""]
