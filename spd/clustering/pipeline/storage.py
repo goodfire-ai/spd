@@ -12,7 +12,7 @@ from jaxtyping import Int
 from torch import Tensor
 
 from spd.clustering.consts import DistancesArray, DistancesMethod, MergesArray
-from spd.clustering.merge_run_config import RunConfig
+from spd.clustering.merge_run_config import ClusteringRunConfig
 
 if TYPE_CHECKING:
     from spd.clustering.merge_history import MergeHistory
@@ -245,7 +245,7 @@ class ClusteringStorage:
         data: dict[str, np.ndarray] = np.load(distances_path)
         return data["distances"]
 
-    def save_run_config(self, config: RunConfig) -> Path:
+    def save_run_config(self, config: ClusteringRunConfig) -> Path:
         return _write_text_to_path_and_return(
             self.run_config_file, config.model_dump_json(indent=2)
         )

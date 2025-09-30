@@ -15,7 +15,7 @@ from spd.clustering.activations import (
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
-from spd.clustering.merge_run_config import RunConfig
+from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.pipeline.s1_split_dataset import split_dataset
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_dists_distribution
@@ -42,7 +42,7 @@ MODEL.to(DEVICE)
 SPD_CONFIG = SPD_RUN.config
 
 # Use split_dataset with RunConfig to get real data
-CONFIG: RunConfig = RunConfig(
+CONFIG: ClusteringRunConfig = ClusteringRunConfig(
     merge_config=MergeConfig(),
     model_path=MODEL_PATH,
     task_name="lm",

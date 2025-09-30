@@ -12,7 +12,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from spd.clustering.merge_run_config import RunConfig
+from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -23,7 +23,7 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 BatchTensor = Int[Tensor, "batch seq"]
 
 
-def split_dataset(config: RunConfig) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
+def split_dataset(config: ClusteringRunConfig) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
     """Split a dataset into n_batches of batch_size, returning iterator and config"""
     ds: Generator[BatchTensor, None, None]
     ds_config_dict: dict[str, Any]

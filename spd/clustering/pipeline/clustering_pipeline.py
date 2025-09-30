@@ -8,15 +8,15 @@ Each batch loads its own model and WandB run to match original design.
 from collections.abc import Iterator
 from typing import Any
 
-from spd.clustering.merge_run_config import RunConfig
+from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.log import logger
 
 
-def main(config: RunConfig) -> None:
+def main(config: ClusteringRunConfig) -> None:
     """Run the complete clustering pipeline.
 
     Args:
-        config: RunConfig containing all pipeline parameters
+        config: ClusteringRunConfig containing all pipeline parameters
     """
     logger.section("setup")
 

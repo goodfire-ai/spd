@@ -66,7 +66,7 @@ def toml_read_file_with_none(path: Path, null_sentinel: str = "__NULL__") -> dic
     return replace_sentinel_recursive(data)
 
 
-class RunConfig(BaseModel):
+class ClusteringRunConfig(BaseModel):
     """Configuration for a complete merge clustering run.
 
     Extends MergeConfig with parameters for model, dataset, and batch configuration.
@@ -194,7 +194,7 @@ class RunConfig(BaseModel):
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
 
     @classmethod
-    def read(cls, path: Path) -> "RunConfig":
+    def read(cls, path: Path) -> "ClusteringRunConfig":
         """Load config from JSON, YAML, or TOML file.
 
         Handles legacy spd_exp: model_path format and enforces consistency.

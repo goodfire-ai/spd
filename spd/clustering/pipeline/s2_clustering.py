@@ -22,7 +22,7 @@ from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
-from spd.clustering.merge_run_config import RunConfig
+from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.pipeline.storage import ClusteringStorage
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_iteration
@@ -55,13 +55,13 @@ class ClusteringResult:
 
 
 def process_batches_parallel(
-    config: RunConfig,
+    config: ClusteringRunConfig,
     storage: ClusteringStorage,
     workers_per_device: int,
     devices: list[str],
 ) -> list[ClusteringResult]:
     batch_paths: list[Path] = storage.get_batch_paths()
-    worker_args: list[tuple[RunConfig, Path, Path, str, str]] = [
+    worker_args: list[tuple[ClusteringRunConfig, Path, Path, str, str]] = [
         (config, batch_path, storage.base_path, storage.run_path.name, devices[i % len(devices)])
         for i, batch_path in enumerate(batch_paths)
     ]
@@ -72,12 +72,12 @@ def process_batches_parallel(
     return results
 
 
-def _worker_fn(args: tuple[RunConfig, Path, Path, str, str]) -> ClusteringResult:
+def _worker_fn(args: tuple[ClusteringRunConfig, Path, Path, str, str]) -> ClusteringResult:
     return _run_clustering(*args)
 
 
 def _run_clustering(
-    config: RunConfig,
+    config: ClusteringRunConfig,
     data_path: Path,
     base_path: Path,
     run_identifier: str,
@@ -187,7 +187,7 @@ def _run_clustering(
 
 def _setup_wandb(
     batch_id: str,
-    config: RunConfig,
+    config: ClusteringRunConfig,
 ) -> Run:
     run: Run = wandb.init(
         project=config.wandb_project,
@@ -243,7 +243,7 @@ def _log_callback(
     current_coact: Float[Tensor, "k_groups k_groups"],
     component_labels: list[str],
     current_merge: GroupMerge,
-    config: RunConfig,
+    config: ClusteringRunConfig,
     costs: Float[Tensor, "k_groups k_groups"],
     merge_history: MergeHistory,
     iter_idx: int,

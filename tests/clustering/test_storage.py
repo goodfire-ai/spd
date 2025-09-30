@@ -11,7 +11,7 @@ import torch
 from spd.clustering.consts import DistancesMethod
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
-from spd.clustering.merge_run_config import RunConfig
+from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.pipeline.storage import ClusteringStorage, NormalizedEnsemble
 
 
@@ -69,7 +69,7 @@ class TestRunConfigStorage:
     def test_save_and_load_run_config(self, temp_storage: ClusteringStorage):
         """Test saving and loading RunConfig."""
         # Create a minimal RunConfig
-        config = RunConfig(
+        config = ClusteringRunConfig(
             merge_config=MergeConfig(
                 iters=10,
                 alpha=1.0,
@@ -91,7 +91,7 @@ class TestRunConfigStorage:
         assert saved_path == temp_storage.run_config_file
 
         # Load and verify
-        loaded_config = RunConfig.read(saved_path)
+        loaded_config = ClusteringRunConfig.read(saved_path)
         assert loaded_config.n_batches == 5
         assert loaded_config.batch_size == 32
         assert loaded_config.task_name == "lm"
@@ -278,7 +278,7 @@ class TestStorageIntegration:
     ):
         """Test a complete storage workflow."""
         # 1. Save run config
-        run_config = RunConfig(
+        run_config = ClusteringRunConfig(
             merge_config=sample_config,
             model_path="wandb:entity/project/run_id",
             task_name="lm",
@@ -326,7 +326,7 @@ class TestStorageIntegration:
         """Test that the filesystem structure matches documentation."""
         # Create minimal data to generate structure
         temp_storage.save_run_config(
-            RunConfig(
+            ClusteringRunConfig(
                 merge_config=MergeConfig(
                     iters=1,
                     alpha=1.0,
