@@ -5,26 +5,33 @@ Replaces the original 370+ line subprocess/FD system with simple multiprocessing
 Each batch loads its own model and WandB run to match original design.
 """
 
+from collections.abc import Iterator
+from typing import Any
+
 from spd.clustering.merge_run_config import RunConfig
 
 
 def main(config: RunConfig) -> None:
-    from spd.clustering.consts import DistancesArray, MergesArray
+    from spd.clustering.consts import DistancesArray, DistancesMethod, MergesArray
     from spd.clustering.math.merge_distances import (
         compute_distances,
     )
-    from spd.clustering.pipeline.s1_split_dataset import split_dataset
+    from spd.clustering.pipeline.s1_split_dataset import BatchTensor, split_dataset
     from spd.clustering.pipeline.s2_clustering import ClusteringResult, process_batches_parallel
     from spd.clustering.pipeline.s3_normalize_histories import normalize_and_save
     from spd.clustering.pipeline.s4_compute_distances import create_clustering_report
     from spd.clustering.pipeline.storage import ClusteringStorage
 
-    storage = ClusteringStorage(base_path=config.base_path, run_identifier=config.config_identifier)
+    storage: ClusteringStorage = ClusteringStorage(
+        base_path=config.base_path, run_identifier=config.config_identifier
+    )
 
     print(f"Run record saved to {storage.run_config_file}")
     storage.save_run_config(config)
 
     print(f"Splitting dataset into {config.n_batches} batches...")
+    batches: Iterator[BatchTensor]
+    dataset_config: dict[str, Any]
     batches, dataset_config = split_dataset(config=config)
     storage.save_batches(batches=batches, config=dataset_config)
 
@@ -40,7 +47,8 @@ def main(config: RunConfig) -> None:
 
     normalized_merge_array: MergesArray = normalize_and_save(storage=storage)
 
-    method = "perm_invariant_hamming"
+    # TODO: read method from config
+    method: DistancesMethod = "perm_invariant_hamming"
     distances: DistancesArray = compute_distances(
         normalized_merge_array=normalized_merge_array,
         method=method,

@@ -1,7 +1,6 @@
 # %%
 
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
 from jaxtyping import Int
 from muutils.dbg import dbg_auto
@@ -15,7 +14,8 @@ from spd.clustering.activations import (
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
-from spd.clustering.pipeline.s1_split_dataset import split_dataset_lm
+from spd.clustering.merge_run_config import RunConfig
+from spd.clustering.pipeline.s1_split_dataset import split_dataset
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -31,23 +31,25 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 # ============================================================
 MODEL_PATH: str = "wandb:goodfire/spd/runs/ioprgffh"
 
-_, DATA_CFG = split_dataset_lm(
-    model_path=MODEL_PATH,
-    n_batches=1,
-    batch_size=2,
-)
-DATASET_PATH: str = DATA_CFG["output_files"][0]
-
 SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(MODEL_PATH)
 MODEL: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 MODEL.to(DEVICE)
 SPD_CONFIG = SPD_RUN.config
 
+# Use split_dataset with RunConfig to get real data
+CONFIG: RunConfig = RunConfig(
+    merge_config=MergeConfig(),
+    model_path=MODEL_PATH,
+    task_name="lm",
+    n_batches=1,
+    batch_size=2,
+)
+BATCHES, _ = split_dataset(config=CONFIG)
 
 # %%
 # Load data batch
 # ============================================================
-DATA_BATCH: Int[Tensor, "batch_size n_ctx"] = torch.tensor(np.load(DATASET_PATH)["input_ids"])
+DATA_BATCH: Int[Tensor, "batch_size n_ctx"] = next(BATCHES)
 
 # %%
 # Get component activations
@@ -75,7 +77,8 @@ PROCESSED_ACTIVATIONS: ProcessedActivations = process_activations(
 
 plot_activations(
     processed_activations=PROCESSED_ACTIVATIONS,
-    save_pdf=False,
+    save_dir=None,
+    wandb_run=None,
 )
 
 # %%
@@ -94,18 +97,18 @@ MERGE_CFG: MergeConfig = MergeConfig(
 
 # Modern approach: run merge_iteration multiple times to create ensemble
 ENSEMBLE_SIZE: int = 2
-histories: list[MergeHistory] = []
+HISTORIES: list[MergeHistory] = []
 for i in range(ENSEMBLE_SIZE):
-    history: MergeHistory = merge_iteration(
+    HISTORY: MergeHistory = merge_iteration(
         merge_config=MERGE_CFG,
         batch_id=f"batch_{i}",
         activations=PROCESSED_ACTIVATIONS.activations,
         component_labels=PROCESSED_ACTIVATIONS.labels,
         log_callback=None,
     )
-    histories.append(history)
+    HISTORIES.append(HISTORY)
 
-ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=histories)
+ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=HISTORIES)
 
 
 # %%

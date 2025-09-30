@@ -70,10 +70,14 @@ DATALOADER = DatasetGeneratedDataLoader(DATASET, batch_size=N_SAMPLES, shuffle=F
 # %%
 # Get component activations
 # ============================================================
+# Get a single batch from the dataloader
+BATCH_DATA: tuple[Tensor, Tensor] = next(iter(DATALOADER))
+BATCH: Tensor = BATCH_DATA[0]
+
 COMPONENT_ACTS: dict[str, Tensor] = component_activations(
     model=MODEL,
     device=DEVICE,
-    dataloader=DATALOADER,
+    batch=BATCH,
     sigmoid_type="hard",
 )
 
@@ -88,13 +92,13 @@ FILTER_DEAD_THRESHOLD: float = 0.1
 PROCESSED_ACTIVATIONS: ProcessedActivations = process_activations(
     COMPONENT_ACTS,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
-    sort_components=False,  # Test the new sorting functionality
 )
 
 
 plot_activations(
     processed_activations=PROCESSED_ACTIVATIONS,
-    save_pdf=False,
+    save_dir=None,
+    wandb_run=None,
 )
 
 # %%
@@ -113,27 +117,24 @@ MERGE_CFG: MergeConfig = MergeConfig(
 
 
 def _plot_func(
-    costs: torch.Tensor,
-    # merge_history: MergeHistory,
-    current_merge: Any,
     current_coact: torch.Tensor,
-    # current_act_mask: torch.Tensor,
-    i: int,
-    # k_groups: int,
-    # activation_mask_orig: torch.Tensor,
     component_labels: list[str],
-    # sweep_params: dict[str, Any],
-    **kwargs: Any,
+    current_merge: Any,
+    costs: torch.Tensor,
+    merge_history: MergeHistory,
+    iter_idx: int,
+    k_groups: int,
+    merge_pair_cost: float,
+    mdl_loss: float,
+    mdl_loss_norm: float,
+    diag_acts: torch.Tensor,
 ) -> None:
-    assert kwargs
-    if (i % 50 == 0 and i > 0) or i == 1:
-        # latest = merge_history.latest()
-        # latest['merges'].plot()
+    if (iter_idx % 50 == 0 and iter_idx > 0) or iter_idx == 1:
         plot_merge_iteration(
             current_merge=current_merge,
             current_coact=current_coact,
             costs=costs,
-            iteration=i,
+            iteration=iter_idx,
             component_labels=component_labels,
             show=True,  # Show the plot interactively
         )
@@ -144,7 +145,7 @@ MERGE_HIST: MergeHistory = merge_iteration(
     batch_id="batch_0",
     activations=PROCESSED_ACTIVATIONS.activations,
     component_labels=PROCESSED_ACTIVATIONS.labels,
-    log_callback=None,
+    log_callback=_plot_func,
 )
 
 # %%
@@ -162,18 +163,18 @@ MERGE_HIST: MergeHistory = merge_iteration(
 
 # Modern approach: run merge_iteration multiple times to create ensemble
 ENSEMBLE_SIZE: int = 4
-histories: list[MergeHistory] = []
+HISTORIES: list[MergeHistory] = []
 for i in range(ENSEMBLE_SIZE):
-    history: MergeHistory = merge_iteration(
+    HISTORY: MergeHistory = merge_iteration(
         merge_config=MERGE_CFG,
         batch_id=f"batch_{i}",
         activations=PROCESSED_ACTIVATIONS.activations,
         component_labels=PROCESSED_ACTIVATIONS.labels,
         log_callback=None,
     )
-    histories.append(history)
+    HISTORIES.append(HISTORY)
 
-ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=histories)
+ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=HISTORIES)
 
 DISTANCES = ENSEMBLE.get_distances(method="perm_invariant_hamming")
 
