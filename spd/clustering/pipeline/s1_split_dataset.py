@@ -1,23 +1,14 @@
 """
-writes a dataset into a directory of batches
-
-directory structure:
-dataset/
-    config.json
-    batches/
-        batch_00.npz
-        batch_01.npz
-        ...
+Loads and splits dataset into batches, returning them as an iterator.
 """
 
-import json
-from collections.abc import Generator
-from pathlib import Path
+from collections.abc import Generator, Iterator
 from typing import Any
 
-import numpy as np
 import torch
+from jaxtyping import Int
 from muutils.spinner import SpinnerContext
+from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -29,13 +20,13 @@ from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskC
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
-CONFIG_FILE_PATH = "dataset_config.json"
-BATCHES_DIR_PATH = "batches"
-BATCH_FILE_FMT = "batch_{batch_idx:02d}.npz"
+BatchTensor = Int[Tensor, "batch seq"]
 
 
-def split_and_save_dataset(config: RunConfig, output_dir: Path) -> list[Path]:
-    """Split a dataset into n_batches of batch_size and save the batches"""
+def split_dataset(config: RunConfig) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
+    """Split a dataset into n_batches of batch_size, returning iterator and config"""
+    ds: Generator[BatchTensor, None, None]
+    ds_config_dict: dict[str, Any]
     match config.task_name:
         case "lm":
             ds, ds_config_dict = _get_dataloader_lm(
@@ -52,38 +43,22 @@ def split_and_save_dataset(config: RunConfig, output_dir: Path) -> list[Path]:
                 f"Unsupported task name '{name}'. Supported tasks are 'lm' and 'resid_mlp'. {config.model_path=}, {name=}"
             )
 
-    # make dirs
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Limit iterator to n_batches
+    def limited_iterator() -> Iterator[BatchTensor]:
+        batch_idx: int
+        batch: BatchTensor
+        for batch_idx, batch in tqdm(enumerate(ds), total=config.n_batches, unit="batch"):
+            if batch_idx >= config.n_batches:
+                break
+            yield batch
 
-    dataset_config_path = output_dir / CONFIG_FILE_PATH
-    dataset_config_path.write_text(json.dumps(ds_config_dict, indent=2))
-
-    batches_dir = output_dir / BATCHES_DIR_PATH
-    # iterate over the requested number of batches and save them
-    output_paths: list[Path] = []
-    for batch_idx, batch in tqdm(
-        enumerate(ds),
-        total=config.n_batches,
-        unit="batch",
-    ):
-        if batch_idx >= config.n_batches:
-            break
-
-        batch_path: Path = batches_dir / BATCH_FILE_FMT.format(batch_idx=batch_idx)
-
-        np.savez_compressed(
-            batch_path,
-            input_ids=batch.cpu().numpy(),
-        )
-        output_paths.append(batch_path)
-
-    return output_paths
+    return limited_iterator(), ds_config_dict
 
 
 def _get_dataloader_lm(
     model_path: str,
     batch_size: int,
-) -> tuple[Generator[torch.Tensor, None, None], dict[str, Any]]:
+) -> tuple[Generator[BatchTensor, None, None], dict[str, Any]]:
     """split up a SS dataset into n_batches of batch_size, returned the saved paths
 
     1. load the config for a SimpleStories SPD Run given by model_path
@@ -171,6 +146,8 @@ def _get_dataloader_resid_mlp(
         )
         dataset: ResidMLPDataset = ResidMLPDataset(**resid_mlp_dataset_kwargs)
 
-        dataloader = DatasetGeneratedDataLoader(dataset, batch_size=batch_size, shuffle=False)
+        dataloader: DatasetGeneratedDataLoader[tuple[Tensor, Tensor]] = DatasetGeneratedDataLoader(
+            dataset, batch_size=batch_size, shuffle=False
+        )
 
     return (batch[0] for batch in dataloader), resid_mlp_dataset_kwargs

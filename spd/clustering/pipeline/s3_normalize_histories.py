@@ -1,34 +1,32 @@
-import json
 from pathlib import Path
+from typing import Any
 
-import numpy as np
-
-# from zanj import ZANJ
 from spd.clustering.math.merge_distances import MergesArray
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
+from spd.clustering.pipeline.storage import ClusteringStorage, NormalizedEnsemble
 from spd.log import logger
 
 
-def normalize_and_save(
-    history_paths: list[Path],
-    output_dir: Path,
-) -> MergesArray:
-    """Main function to load merge histories and compute distances"""
+def normalize_and_save(storage: ClusteringStorage) -> MergesArray:
+    """Load merge histories from storage, normalize, and save ensemble"""
     # load
-    data: list[MergeHistory] = [MergeHistory.read(p) for p in history_paths]
-    ensemble: MergeHistoryEnsemble = MergeHistoryEnsemble(data=data)
+    histories: list[MergeHistory] = storage.load_histories()
+    ensemble: MergeHistoryEnsemble = MergeHistoryEnsemble(data=histories)
 
     # normalize
     normalized_merge_array: MergesArray
+    normalized_merge_meta: dict[str, Any]
     normalized_merge_array, normalized_merge_meta = ensemble.normalized()
 
     # save
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path_metadata: Path = output_dir / "ensemble_meta.json"
-    enseble_merge_arr_path: Path = output_dir / "ensemble_merge_array.npz"
-    path_metadata.write_text(json.dumps(normalized_merge_meta, indent="\t"))
-    logger.info(f"metadata saved to {path_metadata}")
-    np.savez_compressed(enseble_merge_arr_path, merges=normalized_merge_array)
-    logger.info(f"merge array saved to {enseble_merge_arr_path}")
+    ensemble_data: NormalizedEnsemble = NormalizedEnsemble(
+        merge_array=normalized_merge_array,
+        metadata=normalized_merge_meta,
+    )
+    metadata_path: Path
+    array_path: Path
+    metadata_path, array_path = storage.save_ensemble(ensemble_data)
+    logger.info(f"metadata saved to {metadata_path}")
+    logger.info(f"merge array saved to {array_path}")
 
     return normalized_merge_array

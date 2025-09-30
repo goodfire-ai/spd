@@ -9,21 +9,6 @@ from spd.clustering.math.merge_distances import (
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.log import logger
 
-# def compute_and_save_distances_new(
-#     merge_array: MergesArray,
-#     method: DistancesMethod = "perm_invariant_hamming",
-# ) -> DistancesArray:
-#     """Main function to load merge histories and compute distances"""
-#     distances: DistancesArray = compute_distances(
-#         normalized_merge_array=merge_array,
-#         method=method,
-#     )
-
-#     distances_path: Path = merges_path.with_suffix(f".{method}.distances.npz")
-#     np.savez_compressed(distances_path, distances=distances)
-
-#     return distances
-
 
 def create_clustering_report(
     distances: DistancesArray,
