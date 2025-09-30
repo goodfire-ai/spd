@@ -43,6 +43,27 @@ class ClusteringStorage:
 
     This class provides a clean separation between data transformations and persistence,
     making the pipeline more testable and flexible.
+
+    Filesystem structure:
+        <base_path>/
+        └── <run_identifier>/              # Optional run-specific subdirectory
+            ├── run_config.json            # Run configuration parameters
+            ├── dataset/                   # Dataset and batch storage
+            │   ├── dataset_config.json    # Dataset configuration metadata
+            │   └── batches/               # Individual data batches
+            │       ├── batch_00.npz       # Batch 0 (input_ids array)
+            │       ├── batch_01.npz       # Batch 1
+            │       └── ...
+            ├── merge_histories/           # Merge history per batch
+            │   ├── data_<batch_id>/       # Per-batch history directory
+            │   │   └── merge_history.zip  # Compressed merge history
+            │   └── ...
+            ├── ensemble/                  # Normalized ensemble results
+            │   ├── ensemble_meta.json     # Ensemble metadata
+            │   └── ensemble_merge_array.npz  # Normalized merge array
+            └── distances/                 # Distance matrices
+                ├── distances.<method>.npz # Distance array for each method
+                └── ...
     """
 
     # Directory structure constants
