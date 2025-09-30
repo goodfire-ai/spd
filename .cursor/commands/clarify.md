@@ -1,1 +1,0 @@
-Ask me any clarifying questions you have. If you're not confident about an implementation, ask me questions that would help reduce your uncertainty. I've very likely missed important things in my prompt to you.

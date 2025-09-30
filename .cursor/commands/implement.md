@@ -1,1 +1,0 @@
-Implement the spec in PLAN.md in chunks. As you finish each step, review your implementation and how well it fits to the spec in its entirety. Feel free to go back and change your implementation if you have a better idea. Also, feel free to update the plan if you stumble upon a better idea after working on it. But be mindful not to lose sight of the main goal that I've given you.
