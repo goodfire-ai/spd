@@ -11,14 +11,17 @@ from spd.clustering.pipeline.s3_normalize_histories import normalize_and_save
 
 
 def test_wandb_url_parsing_short_format():
-    """Test that normalize_and_save can process merge histories."""
-    # Create temporary merge history files
+    """Test that normalize_and_save can process merge histories using storage."""
+    from spd.clustering.pipeline.storage import ClusteringStorage
+
+    # Create temporary directory for storage
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
 
-        # Create mock merge histories
-        from spd.clustering.merge_config import MergeConfig
+        # Create ClusteringStorage instance
+        storage = ClusteringStorage(base_path=tmp_path, run_identifier="test_run")
 
+        # Create mock merge histories
         config = MergeConfig(
             iters=5,
             alpha=1.0,
@@ -26,25 +29,25 @@ def test_wandb_url_parsing_short_format():
             pop_component_prob=0.0,
         )
 
-        history_paths = []
+        # Save histories using storage
         for idx in range(2):
             history = MergeHistory.from_config(
                 config=config,
                 labels=[f"comp{j}" for j in range(5)],
             )
-            history_path = tmp_path / f"history_{idx}.zip"
-            history.save(history_path)
-            history_paths.append(history_path)
+            storage.save_history(history, batch_id=f"batch_{idx:02d}")
 
-        # Test normalize_and_save
-        output_dir = tmp_path / "output"
-        result = normalize_and_save(history_paths, output_dir)
+        # Test normalize_and_save with storage
+        result = normalize_and_save(storage=storage)
 
         # Basic checks
         assert result is not None
-        assert output_dir.exists()
-        assert (output_dir / "ensemble_meta.json").exists()
-        assert (output_dir / "ensemble_merge_array.npz").exists()
+        assert storage.ensemble_meta_file.exists()
+        assert storage.ensemble_array_file.exists()
+
+        # Verify we can load the histories back
+        loaded_histories = storage.load_histories()
+        assert len(loaded_histories) == 2
 
 
 def test_merge_history_ensemble():
