@@ -31,6 +31,7 @@ class TestMergeIntegration:
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
+            batch_id="test_merge_with_range_sampler",
             merge_config=config,
             component_labels=component_labels,
         )
@@ -38,7 +39,8 @@ class TestMergeIntegration:
         # Check results
         assert history is not None
         assert len(history.merges.k_groups) > 0
-        assert history.merges.k_groups[0].item() == n_components
+        # First entry is after first merge, so should be n_components - 1
+        assert history.merges.k_groups[0].item() == n_components - 1
         # After iterations, should have fewer groups (merges reduce count)
         # Exact count depends on early stopping conditions
         assert history.merges.k_groups[-1].item() < n_components
@@ -66,6 +68,7 @@ class TestMergeIntegration:
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
+            batch_id="test_merge_with_mcmc_sampler",
             merge_config=config,
             component_labels=component_labels,
         )
@@ -73,7 +76,8 @@ class TestMergeIntegration:
         # Check results
         assert history is not None
         assert len(history.merges.k_groups) > 0
-        assert history.merges.k_groups[0].item() == n_components
+        # First entry is after first merge, so should be n_components - 1
+        assert history.merges.k_groups[0].item() == n_components - 1
         # Should have fewer groups after iterations
         assert history.merges.k_groups[-1].item() < n_components
         assert history.merges.k_groups[-1].item() >= 2
@@ -100,13 +104,15 @@ class TestMergeIntegration:
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
+            batch_id="test_merge_with_popping",
             merge_config=config,
             component_labels=component_labels,
         )
 
         # Check results
         assert history is not None
-        assert history.merges.k_groups[0].item() == n_components
+        # First entry is after first merge, so should be n_components - 1
+        assert history.merges.k_groups[0].item() == n_components - 1
         # Final group count depends on pops, but should be less than initial
         assert history.merges.k_groups[-1].item() < n_components
 
@@ -135,6 +141,7 @@ class TestMergeIntegration:
 
         history_range = merge_iteration(
             activations=activations.clone(),
+            batch_id="test_merge_comparison_samplers_range",
             merge_config=config_range,
             component_labels=component_labels.copy(),
         )
@@ -151,6 +158,7 @@ class TestMergeIntegration:
 
         history_mcmc = merge_iteration(
             activations=activations.clone(),
+            batch_id="test_merge_comparison_samplers_mcmc",
             merge_config=config_mcmc,
             component_labels=component_labels.copy(),
         )
@@ -180,12 +188,13 @@ class TestMergeIntegration:
 
         history = merge_iteration(
             activations=activations,
+            batch_id="test_merge_with_small_components",
             merge_config=config,
             component_labels=component_labels,
         )
 
-        # Should start with 3 components
-        assert history.merges.k_groups[0].item() == 3
+        # First entry is after first merge, so should be 3 - 1 = 2
+        assert history.merges.k_groups[0].item() == 2
         # Early stopping may occur at 2 groups, so final count could be 2 or 3
         assert history.merges.k_groups[-1].item() >= 2
         assert history.merges.k_groups[-1].item() <= 3

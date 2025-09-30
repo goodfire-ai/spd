@@ -5,37 +5,23 @@ from typing import Literal, NamedTuple
 import torch
 from jaxtyping import Bool, Float, Float16, Int
 from torch import Tensor
-from torch.utils.data import DataLoader
 
 from spd.clustering.util import ModuleFilterFunc
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
-from spd.utils.general_utils import extract_batch_data
 
 
 def component_activations(
     model: ComponentModel,
     device: torch.device | str,
-    dataloader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
-    | None = None,
-    batch: Int[Tensor, "batch_size n_ctx"] | None = None,
-    sigmoid_type: SigmoidTypes = "normal",
+    batch: Int[Tensor, "batch_size n_ctx"],
+    sigmoid_type: SigmoidTypes,
 ) -> dict[str, Float[Tensor, " n_steps C"]]:
     """Get the component activations over a **single** batch."""
+    causal_importances: dict[str, Float[Tensor, " n_steps C"]]
     with torch.no_grad():
-        batch_: Tensor
-        if batch is None:
-            assert dataloader is not None, "provide either a batch or a dataloader, not both"
-            batch_ = extract_batch_data(next(iter(dataloader)))
-        else:
-            assert dataloader is None, "provide either a batch or a dataloader, not both"
-            batch_ = batch
-
-        batch_ = batch_.to(device)
-
         _, pre_weight_acts = model.forward(
-            batch_,
+            batch.to(device),
             mode="input_cache",
             module_names=model.module_paths,
         )
@@ -47,7 +33,7 @@ def component_activations(
             detach_inputs=False,
         )
 
-        return causal_importances
+    return causal_importances
 
 
 def compute_coactivatons(
@@ -57,72 +43,8 @@ def compute_coactivatons(
     # TODO: this works for both boolean and continuous activations,
     # but we could do better by just using OR for boolean activations
     # and maybe even some bitshift hacks. but for now, we convert to float16
-    activations = activations.to(torch.float16)
-    return activations.T @ activations
-
-
-def sort_module_components_by_similarity(
-    activations: Float[Tensor, "n_steps C"],
-) -> tuple[Float[Tensor, "n_steps C"], Int[Tensor, " C"]]:
-    """Sort components within a single module by their similarity using greedy ordering.
-
-    Uses a greedy nearest-neighbor approach: starts with the component most similar
-    to all others, then iteratively picks the most similar unvisited component.
-
-    Args:
-        activations: Activations for a single module
-
-    Returns:
-        Tuple of (sorted_activations, sort_indices)
-    """
-    n_components = activations.shape[1]
-
-    # If only one component, no sorting needed
-    if n_components <= 1:
-        return activations, torch.arange(n_components, device=activations.device)
-
-    # Compute coactivation matrix
-    coact = activations.T @ activations
-
-    # Convert to similarity matrix (normalize by diagonal)
-    diag = torch.diagonal(coact).sqrt()
-    # Avoid division by zero
-    diag = torch.where(diag > 1e-8, diag, torch.ones_like(diag))
-    similarity = coact / (diag.unsqueeze(0) * diag.unsqueeze(1))
-
-    # Greedy ordering: start with component most similar to all others
-    # (highest average similarity)
-    avg_similarity = similarity.mean(dim=1)
-    start_idx = int(torch.argmax(avg_similarity).item())
-
-    # Build ordering greedily
-    ordered_indices = [start_idx]
-    remaining = set(range(n_components))
-    remaining.remove(start_idx)
-
-    # Greedily add the nearest unvisited component
-    current_idx = start_idx
-    while remaining:
-        # Find the unvisited component most similar to current
-        best_similarity = -1
-        best_idx = -1
-        for idx in remaining:
-            sim = similarity[current_idx, idx].item()
-            if sim > best_similarity:
-                best_similarity = sim
-                best_idx = idx
-
-        ordered_indices.append(best_idx)
-        remaining.remove(best_idx)
-        current_idx = best_idx
-
-    # Create sorting tensor
-    sort_indices = torch.tensor(ordered_indices, dtype=torch.long, device=activations.device)
-
-    # Apply sorting
-    sorted_act = activations[:, sort_indices]
-
-    return sorted_act, sort_indices
+    activations_f16: Float16[Tensor, " n_steps c"] = activations.to(torch.float16)
+    return activations_f16.T @ activations_f16
 
 
 class FilteredActivations(NamedTuple):
@@ -168,7 +90,7 @@ def filter_dead_components(
     if filter_dead_threshold > 0:
         dead_components_lst = list()
         max_act: Float[Tensor, " c"] = activations.max(dim=0).values
-        dead_components: Bool[Tensor, " n_steps c"] = max_act < filter_dead_threshold
+        dead_components: Bool[Tensor, " c"] = max_act < filter_dead_threshold
 
         if dead_components.any():
             activations = activations[:, ~dead_components]
@@ -261,10 +183,8 @@ class ProcessedActivations:
 
     def get_module_indices(self, module_key: str) -> list[int | None]:
         """given a module key, return a list len "num components in that moduel", with int index in alive components, or None if dead"""
-        return [
-            self.label_index[f"{module_key}:{i}"]
-            for i in range(self.activations_raw[module_key].shape[1])
-        ]
+        num_components: int = self.activations_raw[module_key].shape[1]
+        return [self.label_index[f"{module_key}:{i}"] for i in range(num_components)]
 
 
 def process_activations(
@@ -276,7 +196,6 @@ def process_activations(
     filter_dead_threshold: float = 0.01,
     seq_mode: Literal["concat", "seq_mean", None] = None,
     filter_modules: ModuleFilterFunc | None = None,
-    sort_components: bool = False,
 ) -> ProcessedActivations:
     """get back a dict of coactivations, slices, and concated activations
 
@@ -313,27 +232,12 @@ def process_activations(
     if filter_modules is not None:
         activations_ = {key: act for key, act in activations_.items() if filter_modules(key)}
 
-    # Sort components within each module if requested
-    sort_indices_dict: dict[str, Int[Tensor, " C"]] = {}
-    if sort_components:
-        sorted_activations = {}
-        for key, act in activations_.items():
-            sorted_act, sort_idx = sort_module_components_by_similarity(act)
-            sorted_activations[key] = sorted_act
-            sort_indices_dict[key] = sort_idx
-        activations_ = sorted_activations
-
     # compute the labels and total component count
     total_c: int = 0
     labels: list[str] = list()
     for key, act in activations_.items():
-        c = act.shape[-1]
-        if sort_components and key in sort_indices_dict:
-            # Use sorted indices for labeling
-            sort_idx = sort_indices_dict[key]
-            labels.extend([f"{key}:{int(sort_idx[i].item())}" for i in range(c)])
-        else:
-            labels.extend([f"{key}:{i}" for i in range(c)])
+        c: int = act.shape[-1]
+        labels.extend([f"{key}:{i}" for i in range(c)])
         total_c += c
 
     # concat the activations
@@ -352,14 +256,6 @@ def process_activations(
         f"({filtered_components.n_alive = }) + ({filtered_components.n_dead = }) != ({total_c = })"
     )
 
-    # logger.values({
-    #     "total_components": total_c,
-    #     "n_alive_components": len(labels),
-    #     "n_dead_components": len(dead_components_lst),
-    # })
-
-    # return
-    # ============================================================
     return ProcessedActivations(
         activations_raw=activations_,
         activations=filtered_components.activations,

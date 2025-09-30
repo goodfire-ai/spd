@@ -1,4 +1,5 @@
 # %%
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -11,10 +12,9 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.merge import merge_iteration, merge_iteration_ensemble
+from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
-from spd.clustering.merge_sweep import sweep_multiple_parameters
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import (
     plot_dists_distribution,
@@ -27,6 +27,13 @@ from spd.registry import EXPERIMENT_REGISTRY
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
+TEMP_DIR: Path = Path(
+    "tests/.temp"
+)  # save to an actual dir that is gitignored, so users can view plots
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# pyright: reportUnusedParameter=false
 
 # magic autoreload
 # %load_ext autoreload
@@ -71,10 +78,14 @@ DATALOADER = DatasetGeneratedDataLoader(DATASET, batch_size=N_SAMPLES, shuffle=F
 # %%
 # Get component activations
 # ============================================================
+# Get a single batch from the dataloader
+BATCH_DATA: tuple[Tensor, Tensor] = next(iter(DATALOADER))
+BATCH: Tensor = BATCH_DATA[0]
+
 COMPONENT_ACTS: dict[str, Tensor] = component_activations(
     model=MODEL,
     device=DEVICE,
-    dataloader=DATALOADER,
+    batch=BATCH,
     sigmoid_type="hard",
 )
 
@@ -89,13 +100,14 @@ FILTER_DEAD_THRESHOLD: float = 0.1
 PROCESSED_ACTIVATIONS: ProcessedActivations = process_activations(
     COMPONENT_ACTS,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
-    sort_components=False,  # Test the new sorting functionality
 )
 
 
 plot_activations(
     processed_activations=PROCESSED_ACTIVATIONS,
-    save_pdf=False,
+    save_dir=TEMP_DIR,
+    n_samples_max=256,
+    wandb_run=None,
 )
 
 # %%
@@ -114,37 +126,35 @@ MERGE_CFG: MergeConfig = MergeConfig(
 
 
 def _plot_func(
-    costs: torch.Tensor,
-    # merge_history: MergeHistory,
-    current_merge: Any,
     current_coact: torch.Tensor,
-    # current_act_mask: torch.Tensor,
-    i: int,
-    # k_groups: int,
-    # activation_mask_orig: torch.Tensor,
     component_labels: list[str],
-    # sweep_params: dict[str, Any],
-    **kwargs: Any,
+    current_merge: Any,
+    costs: torch.Tensor,
+    merge_history: MergeHistory,
+    iter_idx: int,
+    k_groups: int,
+    merge_pair_cost: float,
+    mdl_loss: float,
+    mdl_loss_norm: float,
+    diag_acts: torch.Tensor,
 ) -> None:
-    assert kwargs
-    if (i % 50 == 0 and i > 0) or i == 1:
-        # latest = merge_history.latest()
-        # latest['merges'].plot()
+    if (iter_idx % 50 == 0 and iter_idx > 0) or iter_idx == 1:
         plot_merge_iteration(
             current_merge=current_merge,
             current_coact=current_coact,
             costs=costs,
-            iteration=i,
+            iteration=iter_idx,
             component_labels=component_labels,
             show=True,  # Show the plot interactively
         )
 
 
 MERGE_HIST: MergeHistory = merge_iteration(
-    activations=PROCESSED_ACTIVATIONS.activations,
     merge_config=MERGE_CFG,
+    batch_id="batch_0",
+    activations=PROCESSED_ACTIVATIONS.activations,
     component_labels=PROCESSED_ACTIVATIONS.labels,
-    plot_callback=_plot_func,
+    log_callback=_plot_func,
 )
 
 # %%
@@ -160,12 +170,20 @@ MERGE_HIST: MergeHistory = merge_iteration(
 # compute and plot distances in an ensemble
 # ============================================================
 
-ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
-    activations=PROCESSED_ACTIVATIONS.activations,
-    component_labels=PROCESSED_ACTIVATIONS.labels,
-    merge_config=MERGE_CFG,
-    ensemble_size=4,
-)
+# Modern approach: run merge_iteration multiple times to create ensemble
+ENSEMBLE_SIZE: int = 4
+HISTORIES: list[MergeHistory] = []
+for i in range(ENSEMBLE_SIZE):
+    HISTORY: MergeHistory = merge_iteration(
+        merge_config=MERGE_CFG,
+        batch_id=f"batch_{i}",
+        activations=PROCESSED_ACTIVATIONS.activations,
+        component_labels=PROCESSED_ACTIVATIONS.labels,
+        log_callback=None,
+    )
+    HISTORIES.append(HISTORY)
+
+ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=HISTORIES)
 
 DISTANCES = ENSEMBLE.get_distances(method="perm_invariant_hamming")
 
@@ -175,24 +193,3 @@ plot_dists_distribution(
     # label="v1"
 )
 plt.legend()
-
-
-# %%
-# do sweeps
-# ============================================================
-
-SWEEP_RESULTS: dict[str, Any] = sweep_multiple_parameters(
-    activations=PROCESSED_ACTIVATIONS.activations,
-    parameter_sweeps={
-        "alpha": [1, 5],
-        # "check_threshold": [0.0001, 0.001, 0.01, 0.1, 0.5],
-        # "pop_component_prob": [0.0001, 0.01, 0.5],
-    },
-    base_config=MERGE_CFG.model_dump(mode="json"),  # pyright: ignore[reportArgumentType],
-    component_labels=PROCESSED_ACTIVATIONS.labels,
-    ensemble_size=4,
-)
-
-# Show all plots
-for param_name, (ensembles, fig, ax) in SWEEP_RESULTS.items():  # noqa: B007
-    plt.show()

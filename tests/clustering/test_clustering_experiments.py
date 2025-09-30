@@ -6,11 +6,15 @@ from pathlib import Path
 
 import pytest
 
+# Test resource directories
+NOTEBOOK_DIR: Path = Path("tests/clustering/scripts")
+CONFIG_DIR: Path = Path("spd/clustering/configs")
+
 
 @pytest.mark.slow
 def test_cluster_resid_mlp_notebook():
     """Test running the cluster_resid_mlp.py notebook-style script."""
-    script_path = Path("spd/clustering/experiments/cluster_resid_mlp.py")
+    script_path = NOTEBOOK_DIR / "cluster_resid_mlp.py"
     assert script_path.exists(), f"Script not found: {script_path}"
 
     # Run the script as-is
@@ -30,7 +34,7 @@ def test_cluster_resid_mlp_notebook():
 @pytest.mark.slow
 def test_clustering_with_resid_mlp1_config():
     """Test running clustering with test-resid_mlp1.json config."""
-    config_path = Path("spd/clustering/configs/test-resid_mlp1.json")
+    config_path = CONFIG_DIR / "test-resid_mlp1.json"
     assert config_path.exists(), f"Config not found: {config_path}"
 
     # Run the clustering main script with the test config
@@ -54,7 +58,7 @@ def test_clustering_with_resid_mlp1_config():
 @pytest.mark.slow
 def test_cluster_ss_notebook():
     """Test running the cluster_ss.py notebook-style script."""
-    script_path = Path("spd/clustering/experiments/cluster_ss.py")
+    script_path = NOTEBOOK_DIR / "cluster_ss.py"
     assert script_path.exists(), f"Script not found: {script_path}"
 
     # Run the script as-is
@@ -74,7 +78,7 @@ def test_cluster_ss_notebook():
 @pytest.mark.slow
 def test_clustering_with_simplestories_config():
     """Test running clustering with test-simplestories.json config."""
-    config_path = Path("spd/clustering/configs/test-simplestories.json")
+    config_path = CONFIG_DIR / "test-simplestories.json"
     assert config_path.exists(), f"Config not found: {config_path}"
 
     # Run the clustering main script with the test config

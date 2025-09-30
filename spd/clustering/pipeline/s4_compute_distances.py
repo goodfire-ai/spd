@@ -1,55 +1,16 @@
-from pathlib import Path
-
-import numpy as np
 import wandb
 from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
 
-from spd.clustering.math.merge_distances import (
+from spd.clustering.consts import (
     DistancesArray,
     DistancesMethod,
-    MergesArray,
-    compute_distances,
 )
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.log import logger
 
 
-def compute_histories_distances(
-    merges_path: Path,
-    method: DistancesMethod = "perm_invariant_hamming",
-    wandb_urls: list[str] | None = None,
-    config_identifier: str | None = None,
-) -> tuple[Path, DistancesArray]:
-    """Main function to load merge histories and compute distances"""
-
-    # load
-    merge_array: MergesArray = np.load(merges_path, allow_pickle=True)["merges"]
-
-    # compute
-    distances: DistancesArray = compute_distances(
-        normalized_merge_array=merge_array,
-        method=method,
-    )
-
-    # save
-    distances_path: Path = merges_path.with_suffix(f".{method}.distances.npz")
-    np.savez_compressed(distances_path, distances=distances)
-
-    logger.info(f"Saved distances to {distances_path}")
-
-    # Create WandB report if URLs provided
-    if wandb_urls and config_identifier:
-        _create_clustering_report(
-            distances=distances,
-            method=method,
-            wandb_urls=wandb_urls,
-            config_identifier=config_identifier,
-        )
-
-    return distances_path, distances
-
-
-def _create_clustering_report(
+def create_clustering_report(
     distances: DistancesArray,
     method: DistancesMethod,
     wandb_urls: list[str],
@@ -85,7 +46,7 @@ def _create_clustering_report(
         config=dict(config_identifier=config_identifier, method=method),
     ) as run:
         # Create and log the distances distribution plot
-        ax = plot_dists_distribution(
+        ax: Axes = plot_dists_distribution(
             distances=distances, mode="points", label=f"{method} distances"
         )
         plt.title(f"Distance Distribution ({method})")
@@ -96,7 +57,8 @@ def _create_clustering_report(
             plt.legend()
 
         # Get the figure from the axes
-        fig = ax.get_figure()
+        fig: plt.Figure | None = ax.get_figure()
+        assert fig is not None
 
         # Log the plot
         run.log(
@@ -119,7 +81,7 @@ def _create_clustering_report(
         run_ids: list[str] = []
         for url in wandb_urls:
             if "runs/" in url:
-                run_id = url.split("runs/")[-1]
+                run_id: str = url.split("runs/")[-1]
                 run_ids.append(run_id)
 
         if run_ids:
@@ -128,21 +90,3 @@ def _create_clustering_report(
         logger.info(
             f"Created wandb clustering summary report with {len(wandb_urls)} batch runs from config {config_identifier}:\n{run.url}/overview"
         )
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="Compute distances between merge histories"
-    )
-    parser.add_argument("merges-path", type=Path, help="Path to the merge histories file")
-    parser.add_argument(
-        "--method", type=str, default="perm_invariant_hamming", help="Distance method to use"
-    )
-    args: argparse.Namespace = parser.parse_args()
-
-    compute_histories_distances(
-        merges_path=args.merges_path,
-        method=args.method,
-    )

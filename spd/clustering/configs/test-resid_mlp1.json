@@ -1,22 +1,24 @@
 {
-  "activation_threshold": 0.1,
-  "alpha": 1,
-  "iters": 140,
-  "merge_pair_sampling_method": "range",
-  "merge_pair_sampling_kwargs": {"threshold": 0.05},
-  "pop_component_prob": 0,
-  "filter_dead_threshold": 0.1,
-  "module_name_filter": null,
-  "rank_cost_fn_name": "const_1",
+  "merge_config": {
+    "activation_threshold": 0.1,
+    "alpha": 1,
+    "iters": 140,
+    "merge_pair_sampling_method": "range",
+    "merge_pair_sampling_kwargs": {"threshold": 0.05},
+    "pop_component_prob": 0,
+    "filter_dead_threshold": 0.1,
+    "module_name_filter": null,
+    "rank_cost_fn_name": "const_1"
+  },
   "experiment_key": "resid_mlp1",
-  "n_batches": 1,
+  "n_batches": 2,
   "batch_size": 100,
   "wandb_enabled": true,
   "wandb_project": "spd-cluster",
   "intervals": {
     "stat": 1,
     "tensor": 5,
-    "plot": 5,
-    "artifact": 5
+    "plot": 10,
+    "artifact": 10
   }
 }

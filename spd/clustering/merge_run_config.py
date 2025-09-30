@@ -2,13 +2,14 @@
 
 import hashlib
 import json
+import tomllib
 import warnings
 from pathlib import Path
-from typing import Any, Literal, Self, override
+from typing import Any, Literal, Self
 
 import yaml
 from muutils.misc.numerical import shorten_numerical_to_str
-from pydantic import Field, PositiveInt, model_validator
+from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from spd.clustering.merge_config import MergeConfig
 from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
@@ -35,12 +36,46 @@ _DEFAULT_INTERVALS: IntervalsDict = {
 }
 
 
-class MergeRunConfig(MergeConfig):
+def toml_read_file_with_none(path: Path, null_sentinel: str = "__NULL__") -> dict[str, Any]:
+    """Read a TOML file and recursively convert sentinel values to None.
+
+    TOML doesn't support null/None values natively, so we use a sentinel string
+    that gets converted to None after parsing.
+
+    Args:
+        path: Path to the TOML file
+        null_sentinel: String value to be converted to None (default: "__NULL__")
+
+    Returns:
+        Dictionary with sentinel values replaced by None
+    """
+
+    def replace_sentinel_recursive(obj: Any) -> Any:
+        """Recursively replace sentinel values with None."""
+        if isinstance(obj, dict):
+            return {key: replace_sentinel_recursive(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [replace_sentinel_recursive(item) for item in obj]
+        elif isinstance(obj, str) and obj == null_sentinel:
+            return None
+        else:
+            return obj
+
+    with path.open("rb") as f:
+        data = tomllib.load(f)
+    return replace_sentinel_recursive(data)
+
+
+class ClusteringRunConfig(BaseModel):
     """Configuration for a complete merge clustering run.
 
     Extends MergeConfig with parameters for model, dataset, and batch configuration.
     CLI-only parameters (base_path, devices, max_concurrency) are intentionally excluded.
     """
+
+    merge_config: MergeConfig = Field(
+        description="Merge configuration",
+    )
 
     model_path: str = Field(
         description="WandB path to the model (format: wandb:entity/project/run_id)",
@@ -59,6 +94,22 @@ class MergeRunConfig(MergeConfig):
     batch_size: PositiveInt = Field(
         default=64,
         description="Size of each batch for processing",
+    )
+
+    # Implementation details
+    # note that these are *always* overriden by CLI args in `spd/clustering/scripts/main.py`, but we have to have defaults here
+    # to avoid type issues with pydantic. however, these defaults should match the defaults in the CLI args.
+    base_path: Path = Field(
+        default_factory=lambda: Path(".data/clustering/"),
+        description="Base path for saving clustering outputs",
+    )
+    workers_per_device: int = Field(
+        default=1,
+        description="Maximum number of concurrent clustering processes per device",
+    )
+    devices: list[str] = Field(
+        default_factory=lambda: ["cpu"],
+        description="Devices to use for clustering",
     )
 
     # WandB configuration
@@ -126,39 +177,44 @@ class MergeRunConfig(MergeConfig):
     @property
     def _iters_str(self) -> str:
         """Shortened string representation of iterations for run ID"""
-        return shorten_numerical_to_str(self.iters)
+        return shorten_numerical_to_str(self.merge_config.iters)
 
     @property
-    @override
     def config_identifier(self) -> str:
         """Unique identifier for this specific config on this specific model.
 
         Format: model_abc123-a0.1-i1k-b64-n10-h_12ab
         Allows filtering in WandB for all runs with this exact config and model.
         """
-        return f"task_{self.task_name}-w_{self.wandb_decomp_model}-a{self.alpha:g}-i{self._iters_str}-b{self.batch_size}-n{self.n_batches}-h_{self.stable_hash}"
+        return f"task_{self.task_name}-w_{self.wandb_decomp_model}-a{self.merge_config.alpha:g}-i{self._iters_str}-b{self.batch_size}-n{self.n_batches}-h_{self.stable_hash}"
 
     @property
-    @override
     def stable_hash(self) -> str:
         """Generate a stable hash including all config parameters."""
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
 
     @classmethod
-    def from_file(cls, path: Path) -> "MergeRunConfig":
-        """Load config from JSON or YAML file.
+    def read(cls, path: Path) -> "ClusteringRunConfig":
+        """Load config from JSON, YAML, or TOML file.
 
         Handles legacy spd_exp: model_path format and enforces consistency.
+        For TOML files, the sentinel value "__NULL__" is converted to None.
         """
         # read the file contents, load them according to extension
-        content: str = path.read_text()
         data: dict[str, Any]
+        content: str
         if path.suffix == ".json":
+            content = path.read_text()
             data = json.loads(content)
         elif path.suffix in [".yaml", ".yml"]:
+            content = path.read_text()
             data = yaml.safe_load(content)
+        elif path.suffix == ".toml":
+            data = toml_read_file_with_none(path)
         else:
-            raise ValueError(f"Unsupported file extension: {path.suffix}")
+            raise ValueError(
+                f"Unsupported file extension '{path.suffix}' on file '{path}' -- must be .json, .yaml, .yml, or .toml"
+            )
 
         # if we provide an experiment_key, then:
         # 1. use the `EXPERIMENT_REGISTRY` to fill in model_path and task_name
@@ -185,10 +241,9 @@ class MergeRunConfig(MergeConfig):
 
         return cls.model_validate(data)
 
-    def to_file(self, path: Path) -> None:
+    def save(self, path: Path) -> None:
         """Save config to file (format inferred from extension)."""
         path.parent.mkdir(parents=True, exist_ok=True)
-
         if path.suffix == ".json":
             path.write_text(self.model_dump_json(indent=2))
         elif path.suffix in [".yaml", ".yml"]:
@@ -201,10 +256,6 @@ class MergeRunConfig(MergeConfig):
             )
         else:
             raise ValueError(f"Unsupported file extension: {path.suffix}")
-
-    def to_merge_config(self) -> MergeConfig:
-        """Extract the base MergeConfig from this instance."""
-        return MergeConfig(**{field: getattr(self, field) for field in MergeConfig.model_fields})
 
     def model_dump_with_properties(self) -> dict[str, Any]:
         """Serialize config including computed properties for WandB logging."""
