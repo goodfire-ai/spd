@@ -108,6 +108,7 @@ def plot_activations(
 
     # Concatenated activations, sorted samples
     if do_sorted_samples:
+        # TODO: move sample sorting logic to its own function
         fig3: plt.Figure
         ax3: plt.Axes
         fig3, ax3 = plt.subplots(figsize=figsize_concat)
