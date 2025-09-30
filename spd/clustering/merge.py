@@ -56,7 +56,9 @@ def merge_iteration(
 
     # setup
     # ==================================================
+
     # compute coactivations
+    # --------------------------------------------------
     activation_mask_orig: Bool[Tensor, "n_steps c"] | Float[Tensor, "n_steps c"] | None = (
         activations > merge_config.activation_threshold
         if merge_config.activation_threshold is not None
@@ -68,6 +70,8 @@ def merge_iteration(
     c_components: int = coact.shape[0]
     assert coact.shape[1] == c_components, "Coactivation matrix must be square"
 
+    # pop logic setup
+    # --------------------------------------------------
     # for speed, we precompute whether to pop components and which components to pop
     # if we are not popping, we don't need these variables and can also delete other things
     do_pop: bool = merge_config.pop_component_prob > 0.0
@@ -84,6 +88,8 @@ def merge_iteration(
             0, c_components, (merge_config.iters,), device=coact.device
         )
 
+    # initialize vars
+    # --------------------------------------------------
     # start with an identity merge
     current_merge: GroupMerge = GroupMerge.identity(n_components=c_components)
 
@@ -154,6 +160,8 @@ def merge_iteration(
             activation_mask=current_act_mask,
         )
 
+        # metrics and logging
+        # --------------------------------------------------
         # Store in history
         merge_history.add_iteration(
             idx=iter_idx,
