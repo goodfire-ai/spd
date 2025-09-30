@@ -118,12 +118,3 @@ class MergeConfig(BaseModel):
     @property
     def stable_hash(self) -> str:
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
-
-    @property
-    def config_identifier(self) -> str:
-        """Unique identifier for this specific config on this specific model.
-
-        Format: model_abc123-a0.1-i1k-b64-n10-h_12ab
-        Allows filtering in WandB for all runs with this exact config and model.
-        """
-        return f"a{self.alpha:g}-h_{self.stable_hash}"

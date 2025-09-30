@@ -8,7 +8,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from spd.clustering.math.merge_distances import DistancesArray
+from spd.clustering.consts import DistancesArray
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.util import format_scientific_latex
@@ -19,6 +19,63 @@ DEFAULT_PLOT_CONFIG: dict[str, Any] = dict(
     save_pdf=False,
     pdf_prefix="merge_iteration",
 )
+
+
+def plot_merge_matrix(
+    merge_matrix: Tensor,
+    show: bool = True,
+    figsize: tuple[int, int] = (10, 3),
+    show_row_sums: bool | None = None,
+    ax: "plt.Axes | None" = None,
+    component_labels: list[str] | None = None,
+) -> None:
+    import matplotlib.pyplot as plt
+
+    merge_matrix = merge_matrix
+    k_groups, _ = merge_matrix.shape
+    group_sizes = merge_matrix.sum(dim=1)
+
+    if show_row_sums is None:
+        show_row_sums = k_groups <= 20
+
+    ax_lbl: plt.Axes | None = None
+    if ax is not None:
+        show_row_sums = False  # don't show row sums if we have an ax to plot on
+        ax_mat = ax
+        assert not show_row_sums
+    else:
+        if show_row_sums:
+            _fig, (ax_mat, ax_lbl) = plt.subplots(  # pyright: ignore[reportGeneralTypeIssues]
+                1, 2, figsize=figsize, gridspec_kw={"width_ratios": [10, 1]}
+            )
+        else:
+            _fig, ax_mat = plt.subplots(figsize=figsize)
+
+    ax_mat.matshow(merge_matrix.cpu(), aspect="auto", cmap="Blues", interpolation="nearest")
+    ax_mat.set_xlabel("Components")
+    ax_mat.set_ylabel("Groups")
+    ax_mat.set_title("Merge Matrix")
+
+    # Add component labeling if component labels are provided
+    if component_labels is not None:
+        # Import the function here to avoid circular imports
+        from spd.clustering.plotting.activations import add_component_labeling
+
+        add_component_labeling(ax_mat, component_labels, axis="x")
+
+    if show_row_sums:
+        assert ax_lbl is not None
+        ax_lbl.set_xlim(0, 1)
+        ax_lbl.set_ylim(-0.5, k_groups - 0.5)
+        ax_lbl.invert_yaxis()
+        ax_lbl.set_title("Row Sums")
+        ax_lbl.axis("off")
+        for i, size in enumerate(group_sizes):
+            ax_lbl.text(0.5, i, str(size.item()), va="center", ha="center", fontsize=12)
+
+    plt.tight_layout()
+    if show:
+        plt.show()
 
 
 def plot_merge_iteration(
@@ -62,7 +119,13 @@ def plot_merge_iteration(
     )
 
     # Merge plot
-    current_merge.plot(ax=axs[0], show=False, component_labels=component_labels)
+    plot_merge_matrix(
+        current_merge.to_matrix(),
+        ax=axs[0],
+        show=False,
+        component_labels=component_labels,
+    )
+
     axs[0].set_title("Merge")
 
     # Coactivations plot
@@ -214,44 +277,6 @@ def plot_dists_distribution(
     ax_.set_title("Distribution of pairwise distances between group merges in an ensemble")
 
     return ax_
-
-
-def plot_merge_history_costs(
-    history: MergeHistory,
-    figsize: tuple[int, int] = (10, 5),
-    fmt: str = "pdf",
-    file_prefix: str | None = None,
-    ylim: tuple[float, float] | None = None,
-) -> plt.Figure:
-    """Plot cost evolution from merge history.
-
-    Note:
-        Caller is responsible for closing the returned figure with plt.close(fig)
-        to prevent memory leaks.
-    """
-    assert history
-    raise NotImplementedError("we dont keep costs in history anymore, rely on wandb for this")
-    fig, ax = plt.subplots(figsize=figsize)  # pyright: ignore[reportUnreachable]
-    # ax.plot(history.costs_stats["min"], label="min")
-    # ax.plot(history.costs_stats["max"], label="max")
-    # ax.plot(history.costs_stats["mean"], ":", label="mean")
-    # ax.plot(history.costs_stats["median"], label="median")
-    # ax.plot(history.costs_stats["q01"], label="1% quantile", alpha=0.2)
-    # ax.plot(history.costs_stats["q05"], label="5% quantile", alpha=0.2)
-    # ax.plot(history.costs_stats["q10"], label="10% quantile", alpha=0.2)
-    # ax.plot(history.costs_stats["chosen_pair"], label="selected pair cost")
-    ax.set_xlabel("Iteration")
-    ax.set_ylabel("Non-diagonal costs")
-    ax.axhline(0, color="black", linestyle="--", linewidth=0.5)
-    ax.legend()
-
-    if ylim is not None:
-        ax.set_ylim(ylim)
-
-    if file_prefix:
-        fig.savefig(f"{file_prefix}_cost_evolution.{fmt}", bbox_inches="tight", dpi=300)
-
-    return fig
 
 
 def plot_merge_history_cluster_sizes(

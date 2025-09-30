@@ -13,6 +13,37 @@ from muutils.tensor_info import array_info
 from torch import Tensor
 
 
+def wandb_log_tensor(
+    run: wandb.sdk.wandb_run.Run,
+    data: Tensor | dict[str, Tensor],
+    name: str,
+    step: int,
+    single: bool = False,
+) -> None:
+    """Log tensor(s) with stats to WandB as metrics and histograms.
+
+    Args:
+        run: Current WandB run (None if WandB disabled)
+        data: Either a Tensor or dict[str, Tensor]
+        name: Name for logging
+        step: WandB step
+        single: True if this tensor is only logged once (component activations)
+    """
+    try:
+        if isinstance(data, dict):
+            # Handle dict of tensors
+            for key, tensor in data.items():
+                full_name: str = f"{name}.{key}"
+                _log_one(run, tensor, full_name, step, single=single)
+        else:
+            # Handle single tensor
+            _log_one(run, data, name, step, single=single)
+    except Exception as e:
+        warnings.warn(f"Failed to log tensor {name}: {e}")  # noqa: B028
+        dbg_tensor(data)
+        raise e
+
+
 def _create_histogram(
     info: dict[str, Any], tensor: Tensor, name: str, logy: bool = True
 ) -> plt.Figure:
@@ -159,37 +190,6 @@ def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:  # pyright:
     )
 
     return fig
-
-
-def wandb_log_tensor(
-    run: wandb.sdk.wandb_run.Run,
-    data: Tensor | dict[str, Tensor],
-    name: str,
-    step: int,
-    single: bool = False,
-) -> None:
-    """Log tensor(s) with stats to WandB as metrics and histograms.
-
-    Args:
-        run: Current WandB run (None if WandB disabled)
-        data: Either a Tensor or dict[str, Tensor]
-        name: Name for logging
-        step: WandB step
-        single: True if this tensor is only logged once (component activations)
-    """
-    try:
-        if isinstance(data, dict):
-            # Handle dict of tensors
-            for key, tensor in data.items():
-                full_name: str = f"{name}.{key}"
-                _log_one(run, tensor, full_name, step, single=single)
-        else:
-            # Handle single tensor
-            _log_one(run, data, name, step, single=single)
-    except Exception as e:
-        warnings.warn(f"Failed to log tensor {name}: {e}")  # noqa: B028
-        dbg_tensor(data)
-        raise e
 
 
 def _log_one(

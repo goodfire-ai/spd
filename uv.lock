@@ -914,11 +914,6 @@ wheels = [
 ]
 
 [[package]]
-name = "js-embedding-vis"
-version = "0.1.0"
-source = { git = "https://github.com/mivanit/js-embedding-vis/#2fbd6a5115b285edebaab9b4e96c8ef6f45ff8b9" }
-
-[[package]]
 name = "jsonschema"
 version = "4.25.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2526,7 +2521,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
-    { name = "js-embedding-vis" },
     { name = "muutils" },
     { name = "nbconvert" },
     { name = "plotly" },
@@ -2567,7 +2561,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright" },
-    { name = "js-embedding-vis", git = "https://github.com/mivanit/js-embedding-vis/" },
     { name = "muutils" },
     { name = "nbconvert" },
     { name = "plotly" },

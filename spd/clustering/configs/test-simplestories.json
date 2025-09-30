@@ -1,12 +1,14 @@
 {
-  "activation_threshold": 0.5,
-  "alpha": 1.0,
-  "iters": 5,
-  "merge_pair_sampling_method": "range",
-  "merge_pair_sampling_kwargs": {"threshold": 0.05},
-  "pop_component_prob": 0,
-  "filter_dead_threshold": 0.9,
-  "module_name_filter": "model.layers.0",
+  "merge_config": {
+    "activation_threshold": 0.5,
+    "alpha": 1.0,
+    "iters": 5,
+    "merge_pair_sampling_method": "range",
+    "merge_pair_sampling_kwargs": {"threshold": 0.05},
+    "pop_component_prob": 0,
+    "filter_dead_threshold": 0.9,
+    "module_name_filter": "model.layers.0"
+  },
   "model_path": "wandb:goodfire/spd/runs/ioprgffh",
   "task_name": "lm",
   "n_batches": 1,
