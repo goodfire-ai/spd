@@ -1,8 +1,10 @@
+"""Stage 2: Run clustering on individual batches (CLI script interface)."""
+
+import argparse
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
-from multiprocessing import Pool
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -23,6 +25,7 @@ from spd.clustering.math.semilog import semilog
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import ClusteringRunConfig
+from spd.clustering.pipeline.dist_utils import emit_result
 from spd.clustering.pipeline.storage import ClusteringStorage
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_iteration
@@ -54,35 +57,25 @@ class ClusteringResult:
     wandb_url: str | None
 
 
-def process_batches_parallel(
-    config: ClusteringRunConfig,
-    storage: ClusteringStorage,
-    workers_per_device: int,
-    devices: list[str],
-) -> list[ClusteringResult]:
-    batch_paths: list[Path] = storage.get_batch_paths()
-    worker_args: list[tuple[ClusteringRunConfig, Path, Path, str, str]] = [
-        (config, batch_path, storage.base_path, storage.run_path.name, devices[i % len(devices)])
-        for i, batch_path in enumerate(batch_paths)
-    ]
-
-    with Pool(workers_per_device * len(devices)) as pool:
-        results: list[ClusteringResult] = list(pool.map(_worker_fn, worker_args))
-
-    return results
-
-
-def _worker_fn(args: tuple[ClusteringRunConfig, Path, Path, str, str]) -> ClusteringResult:
-    return _run_clustering(*args)
-
-
-def _run_clustering(
+def run_clustering(
     config: ClusteringRunConfig,
     data_path: Path,
     base_path: Path,
     run_identifier: str,
     device: str,
 ) -> ClusteringResult:
+    """Run clustering on a single batch.
+
+    Args:
+        config: Clustering configuration
+        data_path: Path to batch data file
+        base_path: Base directory for storage
+        run_identifier: Unique identifier for this clustering run
+        device: Device to run on (e.g., 'cuda:0', 'cpu')
+
+    Returns:
+        ClusteringResult with save path and optional WandB URL
+    """
     logger.section("starting batch")
     storage: ClusteringStorage = ClusteringStorage(
         base_path=base_path, run_identifier=run_identifier
@@ -324,3 +317,73 @@ def _log_callback(
         )
         run.log({"plots/merges": wandb.Image(fig)}, step=iter_idx)
         plt.close(fig)
+
+
+def cli() -> None:
+    """Command-line interface for running clustering on a single batch."""
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        description="Run clustering on a single batch of data"
+    )
+    parser.add_argument(
+        "--config",
+        "-c",
+        type=Path,
+        required=True,
+        help="Path to the clustering run config JSON/YAML file",
+    )
+    parser.add_argument(
+        "--dataset-path",
+        "-d",
+        type=Path,
+        required=True,
+        help="Path to the dataset batch file (e.g., batch_00.npz)",
+    )
+    parser.add_argument(
+        "--base-path",
+        "-b",
+        type=Path,
+        required=True,
+        help="Base directory for clustering outputs",
+    )
+    parser.add_argument(
+        "--run-identifier",
+        "-r",
+        type=str,
+        required=True,
+        help="Unique identifier for this clustering run",
+    )
+    parser.add_argument(
+        "--device",
+        "-D",
+        type=str,
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        help="Device to run on (e.g., 'cuda:0', 'cpu')",
+    )
+
+    args: argparse.Namespace = parser.parse_args()
+
+    # Load config
+    config: ClusteringRunConfig = ClusteringRunConfig.read(args.config)
+
+    # Run clustering
+    result: ClusteringResult = run_clustering(
+        config=config,
+        data_path=args.dataset_path,
+        base_path=args.base_path,
+        run_identifier=args.run_identifier,
+        device=args.device,
+    )
+
+    # Emit structured result for parent process
+    emit_result(
+        {
+            "hist_save_path": str(result.history_save_path),
+            "wandb_url": result.wandb_url,
+            "batch_name": args.dataset_path.stem,
+            "config_identifier": config.config_identifier,
+        }
+    )
+
+
+if __name__ == "__main__":
+    cli()
