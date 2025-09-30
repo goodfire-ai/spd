@@ -56,6 +56,7 @@ class MLPGates(nn.Module):
         for i in range(len(hidden_dims)):
             input_dim = 1 if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
+            self.layers.append(nn.LayerNorm(input_dim))
             self.layers.append(ParallelLinear(C, input_dim, output_dim, nonlinearity="relu"))
             self.layers.append(nn.GELU())
         self.layers.append(ParallelLinear(C, hidden_dims[-1], 1, nonlinearity="linear"))
