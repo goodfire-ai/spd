@@ -161,6 +161,10 @@ class Config(BaseModel):
         description="Coefficient for recon loss with stochastically sampled masks on one layer at "
         "a time",
     )
+    stochastic_linear_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for recon loss with stochastically sampled linear masks (shared-C)",
+    )
     ci_masked_recon_subset_coeff: NonNegativeFloat | None = Field(
         default=None,
         description="Coefficient for recon loss with causal importance mask and routed components",
@@ -168,6 +172,10 @@ class Config(BaseModel):
     stochastic_recon_subset_coeff: NonNegativeFloat | None = Field(
         default=None,
         description="Coefficient for recon loss with stochastically sampled masks and routed components",
+    )
+    stochastic_linear_subset_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for recon loss with stochastically sampled linear masks and routed components",
     )
     importance_minimality_coeff: NonNegativeFloat = Field(
         ...,

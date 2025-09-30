@@ -9,6 +9,7 @@ from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import (
     calc_stochastic_component_mask_info,
+    calc_stochastic_component_mask_info_linear,
     sample_uniform_k_subset_routing_masks,
 )
 from spd.utils.general_utils import calc_kl_divergence_lm
@@ -205,6 +206,28 @@ def calculate_losses(
         total_loss += config.stochastic_recon_coeff * stochastic_recon_loss
         loss_terms["stochastic_recon"] = stochastic_recon_loss.item()
 
+    # Stochastic linear reconstruction loss (shared-C randomness)
+    if config.stochastic_linear_coeff is not None:
+        stoch_linear_mask_infos_list = [
+            calc_stochastic_component_mask_info_linear(
+                causal_importances=causal_importances,
+                sampling=config.sampling,
+                routing="all",
+                weight_deltas=weight_deltas if config.use_delta_component else None,
+            )
+            for _ in range(config.n_mask_samples)
+        ]
+        stochastic_linear_loss = calc_masked_recon_loss(
+            model=model,
+            batch=batch,
+            mask_infos_list=stoch_linear_mask_infos_list,
+            target_out=target_out,
+            loss_type=config.output_loss_type,
+            device=device,
+        )
+        total_loss += config.stochastic_linear_coeff * stochastic_linear_loss
+        loss_terms["stochastic_linear"] = stochastic_linear_loss.item()
+
     # CI reconstruction layerwise loss
     if config.ci_recon_layerwise_coeff is not None:
         ci_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
@@ -284,6 +307,28 @@ def calculate_losses(
         )
         total_loss += config.stochastic_recon_subset_coeff * stochastic_recon_subset_loss
         loss_terms["stochastic_recon_subset"] = stochastic_recon_subset_loss.item()
+
+    # Stochastic linear reconstruction subset loss (shared-C randomness)
+    if config.stochastic_linear_subset_coeff is not None:
+        stoch_linear_mask_infos_list = [
+            calc_stochastic_component_mask_info_linear(
+                causal_importances=causal_importances,
+                sampling=config.sampling,
+                weight_deltas=weight_deltas if config.use_delta_component else None,
+                routing="uniform_k-stochastic",
+            )
+            for _ in range(config.n_mask_samples)
+        ]
+        stochastic_linear_subset_loss = calc_masked_recon_loss(
+            model=model,
+            batch=batch,
+            mask_infos_list=stoch_linear_mask_infos_list,
+            target_out=target_out,
+            loss_type=config.output_loss_type,
+            device=device,
+        )
+        total_loss += config.stochastic_linear_subset_coeff * stochastic_linear_subset_loss
+        loss_terms["stochastic_linear_subset"] = stochastic_linear_subset_loss.item()
 
     # Importance minimality loss
     pnorm_value = current_p if current_p is not None else config.pnorm
