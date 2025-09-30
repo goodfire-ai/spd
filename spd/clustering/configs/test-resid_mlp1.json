@@ -11,14 +11,14 @@
     "rank_cost_fn_name": "const_1"
   },
   "experiment_key": "resid_mlp1",
-  "n_batches": 1,
+  "n_batches": 2,
   "batch_size": 100,
   "wandb_enabled": true,
   "wandb_project": "spd-cluster",
   "intervals": {
     "stat": 1,
     "tensor": 5,
-    "plot": 5,
-    "artifact": 5
+    "plot": 10,
+    "artifact": 10
   }
 }
