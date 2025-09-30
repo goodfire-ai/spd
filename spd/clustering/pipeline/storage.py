@@ -81,7 +81,7 @@ class ClusteringStorage:
     _ENSEMBLE_META_FILE: str = "ensemble_meta.json"
     _ENSEMBLE_ARRAY_FILE: str = "ensemble_merge_array.npz"
     _BATCH_FILE_FMT: str = "batch_{batch_idx:02d}.npz"
-    _HISTORY_FILE_FMT: str = "data_{batch_id}"
+    _HISTORY_FILE_FMT: str = "{batch_id}"
     _MERGE_HISTORY_FILE: str = "merge_history.zip"
     _DISTANCES_FILE_FMT: str = "distances.{method}.npz"
 
