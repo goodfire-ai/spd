@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import tomllib
 import warnings
 from pathlib import Path
 from typing import Any, Literal, Self
@@ -33,6 +34,36 @@ _DEFAULT_INTERVALS: IntervalsDict = {
     "plot": 100,
     "artifact": 100,
 }
+
+
+def toml_read_file_with_none(path: Path, null_sentinel: str = "__NULL__") -> dict[str, Any]:
+    """Read a TOML file and recursively convert sentinel values to None.
+
+    TOML doesn't support null/None values natively, so we use a sentinel string
+    that gets converted to None after parsing.
+
+    Args:
+        path: Path to the TOML file
+        null_sentinel: String value to be converted to None (default: "__NULL__")
+
+    Returns:
+        Dictionary with sentinel values replaced by None
+    """
+
+    def replace_sentinel_recursive(obj: Any) -> Any:
+        """Recursively replace sentinel values with None."""
+        if isinstance(obj, dict):
+            return {key: replace_sentinel_recursive(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [replace_sentinel_recursive(item) for item in obj]
+        elif isinstance(obj, str) and obj == null_sentinel:
+            return None
+        else:
+            return obj
+
+    with path.open("rb") as f:
+        data = tomllib.load(f)
+    return replace_sentinel_recursive(data)
 
 
 class RunConfig(BaseModel):
@@ -164,19 +195,25 @@ class RunConfig(BaseModel):
 
     @classmethod
     def from_file(cls, path: Path) -> "RunConfig":
-        """Load config from JSON or YAML file.
+        """Load config from JSON, YAML, or TOML file.
 
         Handles legacy spd_exp: model_path format and enforces consistency.
+        For TOML files, the sentinel value "__NULL__" is converted to None.
         """
         # read the file contents, load them according to extension
-        content: str = path.read_text()
         data: dict[str, Any]
         if path.suffix == ".json":
+            content: str = path.read_text()
             data = json.loads(content)
         elif path.suffix in [".yaml", ".yml"]:
+            content: str = path.read_text()
             data = yaml.safe_load(content)
+        elif path.suffix == ".toml":
+            data = toml_read_file_with_none(path)
         else:
-            raise ValueError(f"Unsupported file extension: {path.suffix}")
+            raise ValueError(
+                f"Unsupported file extension '{path.suffix}' on file '{path}' -- must be .json, .yaml, .yml, or .toml"
+            )
 
         # if we provide an experiment_key, then:
         # 1. use the `EXPERIMENT_REGISTRY` to fill in model_path and task_name
