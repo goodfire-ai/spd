@@ -159,9 +159,13 @@ def optimize(
     component_optimizer = optim.AdamW(component_params, lr=config.component_lr, weight_decay=0)
 
     # Create separate learning rate schedule functions
-    gate_lr_schedule_fn = get_lr_schedule_fn(config.gate_lr_schedule, config.gate_lr_exponential_halflife)
-    component_lr_schedule_fn = get_lr_schedule_fn(config.component_lr_schedule, config.component_lr_exponential_halflife)
-    
+    gate_lr_schedule_fn = get_lr_schedule_fn(
+        config.gate_lr_schedule, config.gate_lr_exponential_halflife
+    )
+    component_lr_schedule_fn = get_lr_schedule_fn(
+        config.component_lr_schedule, config.component_lr_exponential_halflife
+    )
+
     logger.info(f"Gate LR scheduler created: {config.gate_lr_schedule}")
     logger.info(f"Component LR scheduler created: {config.component_lr_schedule}")
 
@@ -186,7 +190,7 @@ def optimize(
             lr_schedule_fn=gate_lr_schedule_fn,
             lr_warmup_pct=config.gate_lr_warmup_pct,
         )
-        
+
         component_step_lr = get_lr_with_warmup(
             step=step,
             steps=config.steps,

@@ -196,7 +196,9 @@ class Config(BaseModel):
     )
 
     # --- Training ---
-    gate_lr: PositiveFloat = Field(..., description="Learning rate for gate/causal importance functions")
+    gate_lr: PositiveFloat = Field(
+        ..., description="Learning rate for gate/causal importance functions"
+    )
     component_lr: PositiveFloat = Field(..., description="Learning rate for subcomponents")
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
     batch_size: PositiveInt = Field(
