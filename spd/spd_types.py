@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BeforeValidator, Field, PlainSerializer
 
@@ -46,3 +46,5 @@ RootPath = Annotated[
 
 
 Probability = Annotated[float, Field(strict=True, ge=0, le=1)]
+
+TaskName = Literal["tms", "resid_mlp", "lm", "ih"]
