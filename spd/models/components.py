@@ -77,6 +77,7 @@ class VectorMLPGates(nn.Module):
         self.hidden_dims = hidden_dims
 
         self.layers = nn.Sequential()
+        self.layers.append(nn.LayerNorm(input_dim))
         for i in range(len(hidden_dims)):
             input_dim = input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
