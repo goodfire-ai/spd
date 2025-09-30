@@ -106,7 +106,8 @@ def merge_iteration(
 
     # variables we keep track of
     merge_history: MergeHistory = MergeHistory.from_config(
-        config=merge_config, labels=component_labels
+        merge_config=merge_config,
+        labels=component_labels,
     )
 
     # free up memory

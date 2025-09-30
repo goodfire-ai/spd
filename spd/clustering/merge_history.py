@@ -40,7 +40,7 @@ class MergeHistory(SaveableObject):
     merges: BatchedGroupMerge
     selected_pairs: Int[np.ndarray, " n_iters 2"]
     labels: list[str]
-    config: MergeConfig
+    merge_config: MergeConfig
     n_iters_current: int
 
     meta: dict[str, Any] | None = None
@@ -52,11 +52,11 @@ class MergeHistory(SaveableObject):
     @classmethod
     def from_config(
         cls,
-        config: MergeConfig,
+        merge_config: MergeConfig,
         labels: list[str],
     ) -> "MergeHistory":
         n_components: int = len(labels)
-        n_iters_target: int = config.get_num_iters(n_components)
+        n_iters_target: int = merge_config.get_num_iters(n_components)
         return MergeHistory(
             labels=labels,
             n_iters_current=0,
@@ -64,7 +64,7 @@ class MergeHistory(SaveableObject):
             merges=BatchedGroupMerge.init_empty(
                 batch_size=n_iters_target, n_components=n_components
             ),
-            config=config,
+            merge_config=merge_config,
         )
 
     def summary(self) -> dict[str, str | int | None | dict[str, int | str | None]]:
@@ -73,8 +73,8 @@ class MergeHistory(SaveableObject):
             n_iters_current=self.n_iters_current,
             total_iters=len(self.merges.k_groups),
             len_labels=len(self.labels),
-            wandb_url=self.wandb_url,
-            config=self.config.model_dump(mode="json"),
+            # wandb_url=self.wandb_url,
+            merge_config=self.merge_config.model_dump(mode="json"),
             merges_summary=self.merges.summary(),
         )
 
@@ -164,7 +164,7 @@ class MergeHistory(SaveableObject):
                 "metadata.json",
                 json.dumps(
                     dict(
-                        config=self.config.model_dump(mode="json"),
+                        merge_config=self.merge_config.model_dump(mode="json"),
                         wandb_url=wandb_url,
                         c_components=self.c_components,
                         n_iters_current=self.n_iters_current,
@@ -187,7 +187,7 @@ class MergeHistory(SaveableObject):
             )
             labels: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
             metadata: dict[str, Any] = json.loads(zf.read("metadata.json").decode("utf-8"))
-            config: MergeConfig = MergeConfig.model_validate(metadata["config"])
+            merge_config: MergeConfig = MergeConfig.model_validate(metadata["merge_config"])
 
         metadata["origin_path"] = path
 
@@ -195,7 +195,7 @@ class MergeHistory(SaveableObject):
             merges=merges,
             selected_pairs=selected_pairs,
             labels=labels,
-            config=config,
+            merge_config=merge_config,
             n_iters_current=metadata["n_iters_current"],
             meta=metadata,
         )
@@ -215,16 +215,16 @@ class MergeHistoryEnsemble:
         """Ensure all histories have the same merge config."""
         if not self.data:
             return
-        first_config: MergeConfig = self.data[0].config
+        first_config: MergeConfig = self.data[0].merge_config
         for history in self.data[1:]:
-            if history.config != first_config:
+            if history.merge_config != first_config:
                 raise ValueError("All histories must have the same merge config")
 
     @property
     def config(self) -> MergeConfig:
         """Get the merge config used in the ensemble."""
         self._validate_configs_match()
-        return self.data[0].config
+        return self.data[0].merge_config
 
     @property
     def n_iters(self) -> int:

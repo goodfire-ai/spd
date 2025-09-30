@@ -24,6 +24,7 @@ from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data, get_module_device
 
 
@@ -47,6 +48,7 @@ class TextSample:
 
 def compute_max_activations(
     model: ComponentModel,
+    sigmoid_type: SigmoidTypes,
     tokenizer: PreTrainedTokenizer,
     dataloader: DataLoader[Any],
     merge_history: MergeHistory,
@@ -86,12 +88,12 @@ def compute_max_activations(
         )
         cluster_components[cluster_id] = []
         for comp_idx in component_indices:
-            label: str = merge_history.labels[comp_idx]
+            label_comp: str = merge_history.labels[comp_idx]
             module: str
             idx_str: str
-            module, idx_str = label.rsplit(":", 1)
+            module, idx_str = label_comp.rsplit(":", 1)
             cluster_components[cluster_id].append(
-                {"module": module, "index": int(idx_str), "label": label}
+                {"module": module, "index": int(idx_str), "label": label_comp}
             )
 
     for batch_idx, batch_data in enumerate(tqdm(dataloader, total=n_batches)):
@@ -105,7 +107,10 @@ def compute_max_activations(
 
         # Get activations
         activations: dict[str, Float[Tensor, "n_steps C"]] = component_activations(
-            model, device, batch=batch
+            model,
+            device,
+            batch=batch,
+            sigmoid_type=sigmoid_type,
         )
         processed: ProcessedActivations = process_activations(activations, seq_mode="concat")
 
@@ -158,10 +163,13 @@ def compute_max_activations(
                         # Extract full sequence data
                         tokens: Int[Tensor, " n_ctx"] = batch[batch_idx_i].cpu()
                         tokens_list: list[int] = tokens.tolist()
-                        text: str = tokenizer.decode(tokens)
+                        text: str = tokenizer.decode(tokens)  # pyright: ignore[reportAttributeAccessIssue]
 
                         # Convert token IDs to token strings
-                        token_strings: list[str] = [tokenizer.decode([tid]) for tid in tokens_list]
+                        token_strings: list[str] = [
+                            tokenizer.decode([tid])  # pyright: ignore[reportAttributeAccessIssue]
+                            for tid in tokens_list
+                        ]
 
                         # Get all activations for this sequence
                         sequence_acts: Float[Tensor, " seq_len"] = acts_2d[batch_idx_i]
@@ -333,14 +341,15 @@ def main() -> None:
         model.to(device)
         model.eval()
         config: Config = spd_run.config
-        tokenizer_name = config.tokenizer_name
+        tokenizer_name = config.tokenizer_name  # pyright: ignore[reportAssignmentType]
         wandb_run_path = args.model_path
         config_dict = config.model_dump(mode="json")
     else:
-        model = torch.load(args.model_path)
-        model.to(device)
-        model.eval()
-        tokenizer_name = "gpt2"  # fallback
+        raise NotImplementedError("Only wandb model paths are currently supported.")
+        # model = torch.load(args.model_path)
+        # model.to(device)
+        # model.eval()
+        # tokenizer_name = "gpt2"  # fallback
 
     logger.info(f"{tokenizer_name = }")
 
@@ -383,6 +392,7 @@ def main() -> None:
     logger.info("computing max activations")
     result: dict[int, dict[str, list[dict[str, Any]]]] = compute_max_activations(
         model=model,
+        sigmoid_type=spd_run.config.sigmoid_type,
         tokenizer=tokenizer,
         dataloader=dataloader,
         merge_history=merge_history,

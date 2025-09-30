@@ -309,8 +309,9 @@ def _log_callback(
                 metadata={
                     "batch_name": batch_id,
                     "iteration": iter_idx,
-                    "config": merge_history.config.model_dump(mode="json"),
-                    "config_identifier": merge_history.config.config_identifier,
+                    "config": merge_history.merge_config.model_dump(mode="json"),
+                    # TODO: had to remove identifiers on config due to MergeConfig <--> ClusteringRunConfig (formerly MergeRunConfig) split
+                    # "config_identifier": merge_history.merge_config.config_identifier,
                 },
             )
             artifact.add_file(str(file))

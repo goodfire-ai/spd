@@ -185,7 +185,8 @@ class BatchedGroupMerge:
         return dict(
             group_idxs=array_summary(self.group_idxs, as_list=False),
             k_groups=array_summary(self.k_groups, as_list=False),
-            meta=f"len={len(self.meta)}" if self.meta is not None else None,
+            # TODO: re-add metadata (which pairs merged at each step)
+            # meta=f"len={len(self.meta)}" if self.meta is not None else None,
         )
 
     @classmethod

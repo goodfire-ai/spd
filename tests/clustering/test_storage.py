@@ -158,7 +158,7 @@ class TestHistoryStorage:
         """Test saving and loading merge history."""
         # Create history
         history = MergeHistory.from_config(
-            config=sample_config,
+            merge_config=sample_config,
             labels=["comp0", "comp1", "comp2"],
         )
 
@@ -181,7 +181,7 @@ class TestHistoryStorage:
         # Save multiple histories
         for i in range(3):
             history = MergeHistory.from_config(
-                config=sample_config,
+                merge_config=sample_config,
                 labels=[f"comp{j}" for j in range(4)],
             )
             temp_storage.save_history(history, batch_id=f"batch_{i:02d}")
@@ -195,7 +195,7 @@ class TestHistoryStorage:
         # Save histories
         for i in range(2):
             history = MergeHistory.from_config(
-                config=sample_config,
+                merge_config=sample_config,
                 labels=["comp0", "comp1"],
             )
             temp_storage.save_history(history, batch_id=f"batch_{i:02d}")
@@ -297,7 +297,7 @@ class TestStorageIntegration:
         # 3. Save histories
         for i in range(2):
             history = MergeHistory.from_config(
-                config=sample_config,
+                merge_config=sample_config,
                 labels=["comp0", "comp1", "comp2"],
             )
             temp_storage.save_history(history, batch_id=f"batch_{i:02d}")
