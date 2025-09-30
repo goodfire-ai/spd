@@ -2,6 +2,7 @@
 
 import json
 import os
+import selectors
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,6 +11,9 @@ from typing import IO
 
 from spd.log import logger
 from spd.settings import REPO_ROOT
+
+# Module-global cache for JSON writer in child processes
+_JSON_WRITER: IO[str] | None = None
 
 
 @dataclass
@@ -63,9 +67,17 @@ def _open_json_fd() -> IO[str]:
     """Open file descriptor for JSON output from environment variable.
 
     Called by child processes to get the fd for emitting structured results.
+    Caches the writer globally to avoid re-wrapping the same FD.
+
+    Returns:
+        IO[str]: Text-mode writer (utf-8), line-buffered
     """
-    fd_num: int = int(os.environ["JSON_FD"])
-    return os.fdopen(fd_num, "w", buffering=1)
+    global _JSON_WRITER
+    if _JSON_WRITER is None:
+        fd_num: int = int(os.environ["JSON_FD"])
+        # Use utf-8 explicitly; line-buffered
+        _JSON_WRITER = os.fdopen(fd_num, "w", buffering=1, encoding="utf-8")  # pyright: ignore[reportConstantRedefinition]
+    return _JSON_WRITER
 
 
 def emit_result(obj: dict[str, str | None]) -> None:
@@ -96,16 +108,60 @@ def _read_json_result(json_r: IO[bytes], dataset_path: Path) -> dict[str, str | 
     """
     json_line: bytes = json_r.readline()
     if not json_line:
-        raise RuntimeError(f"No JSON result received from {dataset_path.stem}")
+        raise RuntimeError(f"No JSON result received from {dataset_path}")
 
-    json_str: str = json_line.decode().strip()
+    json_str: str = json_line.decode("utf-8", errors="strict").strip()
     try:
         result: dict[str, str | None] = json.loads(json_str)
         return result
     except json.JSONDecodeError as e:
         raise ValueError(
-            f"Failed to parse JSON result from {dataset_path.stem}: {e}\nJSON string: {json_str}"
+            f"Failed to parse JSON result from {dataset_path}: {e}\nJSON string: {json_str}"
         ) from e
+
+
+def _collect_one_ready(
+    active: list[ActiveProcess],
+    log_fn: Callable[[str], None],
+) -> tuple[dict[str, str | None], ActiveProcess]:
+    """Block until any active process has JSON ready, then collect it.
+
+    Uses selectors to wait on multiple FDs simultaneously, avoiding head-of-line blocking.
+
+    Args:
+        active: Currently active processes
+        log_fn: Logger for info messages
+
+    Returns:
+        Tuple of (parsed JSON result, the corresponding ActiveProcess)
+
+    Raises:
+        RuntimeError: If subprocess exits with non-zero code
+    """
+    sel: selectors.BaseSelector = selectors.DefaultSelector()
+    try:
+        for ap in active:
+            sel.register(ap.json_fd, selectors.EVENT_READ, ap)
+        key: selectors.SelectorKey
+        key, _mask = sel.select()[0]  # select() -> list[(SelectorKey, int)]
+        ap: ActiveProcess = key.data  # type: ignore[assignment]
+    finally:
+        sel.close()
+
+    result: dict[str, str | None] = _read_json_result(ap.json_fd, ap.dataset_path)
+    rc: int | None = ap.proc.wait()
+    try:  # noqa: SIM105
+        ap.json_fd.close()
+    except Exception:
+        pass
+
+    if rc != 0:
+        raise RuntimeError(
+            f"Subprocess {ap.proc.pid} on {ap.device} exited with code {rc} for dataset {ap.dataset_path}"
+        )
+
+    log_fn(f"Process {ap.proc.pid} finished, freeing slot on {ap.device}")
+    return result, ap
 
 
 def distribute_clustering(
@@ -127,7 +183,7 @@ def distribute_clustering(
     - Total concurrency = workers_per_device x len(devices)
     - Uses round-robin device assignment starting point
     - If target device is full, uses any available device
-    - If all devices are full, waits for a process on the target device to finish
+    - If all devices are full, waits for ANY process to finish (whichever is ready first)
 
     Args:
         config_path: Path to clustering configuration file
@@ -152,7 +208,10 @@ def distribute_clustering(
     if log_fn_error is None:
         log_fn_error = lambda msg: logger.error(msg)
 
-    # check devices
+    # validate parameters
+    if workers_per_device < 1:
+        raise ValueError("workers_per_device must be >= 1")
+
     n_devices: int = len(devices)
     if n_devices == 0:
         raise ValueError("devices must be non-empty")
@@ -175,16 +234,11 @@ def distribute_clustering(
                     f"All devices at capacity ({workers_per_device} workers each). Waiting for any process to finish..."
                 )
 
-                # Wait for the first process (any device)
-                active_proc = active[0]
-                result = _read_json_result(active_proc.json_fd, active_proc.dataset_path)
-                active_proc.proc.wait()
-                results.append(result)
-                device_active_counts[active_proc.device] -= 1
-                log_fn(
-                    f"Process {active_proc.proc.pid} finished, freeing slot on {active_proc.device}"
-                )
-                active.pop(0)
+                # Wait for whichever process is ready first
+                result_i, finished_ap = _collect_one_ready(active, log_fn)
+                results.append(result_i)
+                device_active_counts[finished_ap.device] -= 1
+                active.remove(finished_ap)
 
             # Now find a device with capacity, starting from our round-robin position
             for i in range(n_devices):
@@ -224,19 +278,26 @@ def distribute_clustering(
             )
 
         # Wait for remaining processes
-        for active_proc in active:
-            result = _read_json_result(active_proc.json_fd, active_proc.dataset_path)
-            active_proc.proc.wait()
-            results.append(result)
-            device_active_counts[active_proc.device] -= 1
-            log_fn(f"Process {active_proc.proc.pid} finished on {active_proc.device}")
+        while active:
+            result_i, finished_ap = _collect_one_ready(active, log_fn)
+            results.append(result_i)
+            device_active_counts[finished_ap.device] -= 1
+            active.remove(finished_ap)
+            log_fn(f"Process {finished_ap.proc.pid} finished on {finished_ap.device}")
 
-    except Exception as e:
+    except BaseException as e:
+        # this means we probably got a KeyboardInterrupt, so kill the child processes
         log_fn_error(f"An error occurred: {e}")
         for active_proc in active:
-            active_proc.proc.kill()
-            active_proc.json_fd.close()
+            try:  # noqa: SIM105
+                active_proc.proc.kill()
+            except Exception:
+                pass
+            try:  # noqa: SIM105
+                active_proc.json_fd.close()
+            except Exception:
+                pass
             log_fn_error(f"Killed process {active_proc.proc.pid} due to error")
-        raise e
+        raise
 
     return results
