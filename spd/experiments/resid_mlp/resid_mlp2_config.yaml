@@ -19,10 +19,12 @@ use_delta_component: true
 # --- Loss Coefficients ---
 faithfulness_coeff: null
 ci_recon_coeff: null
-stochastic_recon_coeff: 1.0
+stochastic_recon_coeff: null
 ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 1.0
+stochastic_recon_layerwise_coeff: null
 importance_minimality_coeff: 3e-5
+stochastic_linear_coeff: 1.0
+stochastic_linear_subset_coeff: 1.0
 pnorm: 2
 output_loss_type: mse
 

@@ -22,6 +22,33 @@ def _sample_stochastic_mask(
     return causal_importances + (1 - causal_importances) * rand_tensor
 
 
+def _sample_stochastic_mask_linear(
+    causal_importances: Float[Tensor, "... C"],
+    sampling: Literal["continuous", "binomial"],
+) -> Float[Tensor, "... C"]:
+    """Sample stochastic mask with noise shared across the C dimension.
+
+    For the "continuous" case, we sample independent uniform noise over the leading
+    dimensions and broadcast the same value across the final C dimension. For the
+    "binomial" case, we retain the original per-entry sampling behavior.
+    """
+    match sampling:
+        case "binomial":
+            rand_tensor = torch.randint(
+                0, 2, causal_importances.shape, device=causal_importances.device
+            ).float()
+        case "continuous":
+            leading_dims = causal_importances.shape[:-1]
+            rand_leading = torch.rand(
+                leading_dims,
+                device=causal_importances.device,
+                dtype=causal_importances.dtype,
+            )
+            rand_tensor = rand_leading.unsqueeze(-1).expand_as(causal_importances)
+
+    return causal_importances + (1 - causal_importances) * rand_tensor
+
+
 RoutingType = Literal["uniform_k-stochastic", "all"]
 """How to choose which (batch,) or (batch, seq_len) positions to route to components or target.
 
@@ -114,7 +141,75 @@ def calc_stochastic_component_mask_info(
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None
     if weight_deltas is not None:
         weight_deltas_and_masks = {
-            layer: (weight_deltas[layer], torch.rand(leading_dims, device=device, dtype=dtype))
+            layer: (
+                weight_deltas[layer],
+                torch.where(
+                    (choice := torch.rand(leading_dims, device=device)) < 0.25,
+                    torch.zeros(leading_dims, device=device, dtype=dtype),
+                    torch.where(
+                        choice < 0.75,
+                        torch.rand(leading_dims, device=device, dtype=dtype),
+                        torch.ones(leading_dims, device=device, dtype=dtype),
+                    ),
+                ),
+            )
+            for layer in causal_importances
+        }
+    else:
+        weight_deltas_and_masks = None
+
+    match routing:
+        case "uniform_k-stochastic":
+            routing_masks = sample_uniform_k_subset_routing_masks(
+                leading_dims,
+                list(causal_importances.keys()),
+                device,
+            )
+        case "all":
+            routing_masks = None
+
+    return make_mask_infos(
+        component_masks=component_masks,
+        routing_masks=routing_masks,
+        weight_deltas_and_masks=weight_deltas_and_masks,
+    )
+
+
+def calc_stochastic_component_mask_info_linear(
+    causal_importances: dict[str, Float[Tensor, "... C"]],
+    sampling: Literal["continuous", "binomial"],
+    routing: RoutingType,
+    weight_deltas: dict[str, Tensor] | None,
+) -> dict[str, ComponentsMaskInfo]:
+    """Like calc_stochastic_component_mask_info but shares noise across C.
+
+    The only difference is that the stochastic sampling for the component masks uses
+    noise that is identical across the final C dimension (for the continuous case).
+    """
+    ci_sample = next(iter(causal_importances.values()))
+    leading_dims = ci_sample.shape[:-1]
+    device = ci_sample.device
+    dtype = ci_sample.dtype
+
+    component_masks: dict[str, Float[Tensor, "... C"]] = {}
+    for layer, ci in causal_importances.items():
+        component_masks[layer] = _sample_stochastic_mask_linear(ci, sampling)
+
+    weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None
+    if weight_deltas is not None:
+        weight_deltas_and_masks = {
+            layer: (
+                weight_deltas[layer],
+                torch.where(
+                    (choice := torch.rand(leading_dims, device=device)) < 0.25,
+                    torch.zeros(leading_dims, device=device, dtype=dtype),
+                    torch.where(
+                        choice < 0.75,
+                        torch.rand(leading_dims, device=device, dtype=dtype),
+                        torch.ones(leading_dims, device=device, dtype=dtype),
+                    ),
+                ),
+            )
             for layer in causal_importances
         }
     else:
