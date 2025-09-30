@@ -202,11 +202,12 @@ class RunConfig(BaseModel):
         """
         # read the file contents, load them according to extension
         data: dict[str, Any]
+        content: str
         if path.suffix == ".json":
-            content: str = path.read_text()
+            content = path.read_text()
             data = json.loads(content)
         elif path.suffix in [".yaml", ".yml"]:
-            content: str = path.read_text()
+            content = path.read_text()
             data = yaml.safe_load(content)
         elif path.suffix == ".toml":
             data = toml_read_file_with_none(path)

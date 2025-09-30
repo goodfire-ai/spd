@@ -11,10 +11,9 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.merge import merge_iteration, merge_iteration_ensemble
+from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
-from spd.clustering.merge_sweep import sweep_multiple_parameters
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import (
     plot_dists_distribution,
@@ -141,10 +140,11 @@ def _plot_func(
 
 
 MERGE_HIST: MergeHistory = merge_iteration(
-    activations=PROCESSED_ACTIVATIONS.activations,
     merge_config=MERGE_CFG,
+    batch_id="batch_0",
+    activations=PROCESSED_ACTIVATIONS.activations,
     component_labels=PROCESSED_ACTIVATIONS.labels,
-    plot_callback=_plot_func,
+    log_callback=None,
 )
 
 # %%
@@ -160,12 +160,20 @@ MERGE_HIST: MergeHistory = merge_iteration(
 # compute and plot distances in an ensemble
 # ============================================================
 
-ENSEMBLE: MergeHistoryEnsemble = merge_iteration_ensemble(
-    activations=PROCESSED_ACTIVATIONS.activations,
-    component_labels=PROCESSED_ACTIVATIONS.labels,
-    merge_config=MERGE_CFG,
-    ensemble_size=4,
-)
+# Modern approach: run merge_iteration multiple times to create ensemble
+ENSEMBLE_SIZE: int = 4
+histories: list[MergeHistory] = []
+for i in range(ENSEMBLE_SIZE):
+    history: MergeHistory = merge_iteration(
+        merge_config=MERGE_CFG,
+        batch_id=f"batch_{i}",
+        activations=PROCESSED_ACTIVATIONS.activations,
+        component_labels=PROCESSED_ACTIVATIONS.labels,
+        log_callback=None,
+    )
+    histories.append(history)
+
+ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=histories)
 
 DISTANCES = ENSEMBLE.get_distances(method="perm_invariant_hamming")
 
@@ -175,24 +183,3 @@ plot_dists_distribution(
     # label="v1"
 )
 plt.legend()
-
-
-# %%
-# do sweeps
-# ============================================================
-
-SWEEP_RESULTS: dict[str, Any] = sweep_multiple_parameters(
-    activations=PROCESSED_ACTIVATIONS.activations,
-    parameter_sweeps={
-        "alpha": [1, 5],
-        # "check_threshold": [0.0001, 0.001, 0.01, 0.1, 0.5],
-        # "pop_component_prob": [0.0001, 0.01, 0.5],
-    },
-    base_config=MERGE_CFG.model_dump(mode="json"),  # pyright: ignore[reportArgumentType],
-    component_labels=PROCESSED_ACTIVATIONS.labels,
-    ensemble_size=4,
-)
-
-# Show all plots
-for param_name, (ensembles, fig, ax) in SWEEP_RESULTS.items():  # noqa: B007
-    plt.show()
