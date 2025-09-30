@@ -1,7 +1,6 @@
 """Compute max-activating text samples for language model component clusters."""
 
 import argparse
-import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -20,6 +19,8 @@ from spd.clustering.activations import (
 )
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
+from spd.clustering.merge_run_config import ClusteringRunConfig
+from spd.clustering.pipeline.storage import ClusteringStorage
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.log import logger
@@ -277,18 +278,17 @@ def main() -> None:
         description="Compute max-activating text samples for language model component clusters."
     )
     parser.add_argument(
-        "--model-path",
-        "-m",
-        type=str,
-        help="Path to model file or wandb:project/entity/run_id format",
+        "--run-config",
+        "-r",
+        type=Path,
+        help="Path to run_config.json file",
         required=True,
     )
     parser.add_argument(
-        "--merge-history-path",
-        "-p",
-        type=Path,
-        help="Path to merge history file",
-        required=True,
+        "--batch-id",
+        type=str,
+        help="Specific batch ID to use for merge history (default: uses first available)",
+        default=None,
     )
     parser.add_argument(
         "--iteration",
@@ -325,35 +325,47 @@ def main() -> None:
         default=64,
         help="Context length for tokenization (default: 64)",
     )
+    parser.add_argument(
+        "--copy-to",
+        type=Path,
+        default=None,
+        help="Optional directory to copy output files to (e.g., for dashboard deployment)",
+    )
     args: argparse.Namespace = parser.parse_args()
 
-    # Load model and merge history
+    # Load run config and initialize storage
+    logger.info(f"Loading run config from: {args.run_config}")
+    run_config: ClusteringRunConfig = ClusteringRunConfig.read(args.run_config)
+    logger.info(f"Loaded: {run_config.config_identifier = }")
+
+    storage: ClusteringStorage = ClusteringStorage(
+        base_path=run_config.base_path, run_identifier=run_config.config_identifier
+    )
+    logger.info(f"Initialized storage at: {storage.run_path}")
+
+    # Load model
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info("Loading model and tokenizer")
 
-    logger.info("getting tokenizer and model")
-    tokenizer_name: str
-    wandb_run_path: str | None = None
-    config_dict: dict[str, Any] | None = None
-
-    if args.model_path.startswith("wandb:"):
-        spd_run: SPDRunInfo = SPDRunInfo.from_path(args.model_path)
-        model: ComponentModel = ComponentModel.from_run_info(spd_run)
-        model.to(device)
-        model.eval()
-        config: Config = spd_run.config
-        tokenizer_name = config.tokenizer_name  # pyright: ignore[reportAssignmentType]
-        wandb_run_path = args.model_path
-        config_dict = config.model_dump(mode="json")
-    else:
-        raise NotImplementedError("Only wandb model paths are currently supported.")
-        # model = torch.load(args.model_path)
-        # model.to(device)
-        # model.eval()
-        # tokenizer_name = "gpt2"  # fallback
-
+    spd_run: SPDRunInfo = SPDRunInfo.from_path(run_config.model_path)
+    model: ComponentModel = ComponentModel.from_run_info(spd_run)
+    model.to(device)
+    model.eval()
+    config: Config = spd_run.config
+    tokenizer_name: str = config.tokenizer_name  # pyright: ignore[reportAssignmentType]
     logger.info(f"{tokenizer_name = }")
 
-    merge_history: MergeHistory = MergeHistory.read(args.merge_history_path)
+    # Load merge history
+    if args.batch_id:
+        merge_history: MergeHistory = storage.load_history(args.batch_id)
+        logger.info(f"Loaded merge history for batch_id={args.batch_id}")
+    else:
+        history_paths: list[Path] = storage.get_history_paths()
+        if not history_paths:
+            raise FileNotFoundError(f"No merge histories found in {storage._histories_dir}")
+        merge_history = MergeHistory.read(history_paths[0])
+        logger.info(f"Loaded first available merge history: {history_paths[0]}")
+
     logger.info(f"Loaded: {merge_history = }")
 
     # Get the merge at specified iteration for component counts
@@ -402,33 +414,47 @@ def main() -> None:
     )
     logger.info(f"computed max activations: {len(result) = }")
 
-    # Generate model information
-    model_info: dict[str, Any] = generate_model_info(
-        model=model,
-        merge_history=merge_history,
-        merge=merge,
-        iteration=iteration,
-        model_path=args.model_path,
-        tokenizer_name=tokenizer_name,
-        config_dict=config_dict,
-        wandb_run_path=wandb_run_path,
+    # Load or generate model information
+    existing_model_info: dict[str, Any] | None = storage.load_model_info()
+    if existing_model_info:
+        logger.info("Found existing model_info.json, copying to dashboard")
+        model_info = existing_model_info
+    else:
+        logger.info("Generating model information")
+        model_info = generate_model_info(
+            model=model,
+            merge_history=merge_history,
+            merge=merge,
+            iteration=iteration,
+            model_path=run_config.model_path,
+            tokenizer_name=tokenizer_name,
+            config_dict=config.model_dump(mode="json"),
+            wandb_run_path=run_config.model_path,
+        )
+
+    # Save results using storage
+    max_act_path: Path = storage.save_max_activations(
+        data=result, iteration=args.iteration, n_samples=args.n_samples
     )
+    logger.info(f"Max activations saved to: {max_act_path}")
 
-    # Save to output directory with reasonable name
-    output_dir: Path = args.merge_history_path.parent
-    output_filename: str = f"max_activations_iter{args.iteration}_n{args.n_samples}.json"
-    output_path: Path = output_dir / output_filename
-
-    # Save model info
-    model_info_path: Path = output_dir / "model_info.json"
-    with open(model_info_path, "w") as f:
-        json.dump(model_info, f, indent=2)
+    model_info_path: Path = storage.save_model_info_to_dashboard(model_info)
     logger.info(f"Model info saved to: {model_info_path}")
 
-    with open(output_path, "w") as f:
-        json.dump(result, f, indent=2)
+    # Copy to additional directory if specified
+    if args.copy_to:
+        copy_dir: Path = args.copy_to
+        copy_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Results saved to: {output_path}")
+        import shutil
+
+        max_act_copy: Path = copy_dir / max_act_path.name
+        shutil.copy2(max_act_path, max_act_copy)
+        logger.info(f"Copied max activations to: {max_act_copy}")
+
+        model_info_copy: Path = copy_dir / model_info_path.name
+        shutil.copy2(model_info_path, model_info_copy)
+        logger.info(f"Copied model info to: {model_info_copy}")
 
 
 if __name__ == "__main__":
