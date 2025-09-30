@@ -95,7 +95,8 @@ def filter_dead_components(
         if dead_components.any():
             activations = activations[:, ~dead_components]
             alive_labels: list[tuple[str, bool]] = [
-                (lbl, bool(keep.item())) for lbl, keep in zip(labels, ~dead_components, strict=False)
+                (lbl, bool(keep.item()))
+                for lbl, keep in zip(labels, ~dead_components, strict=False)
             ]
             # re-assign labels only if we are filtering
             labels = [label for label, keep in alive_labels if keep]

@@ -91,7 +91,7 @@ class TestRunConfigStorage:
         assert saved_path == temp_storage.run_config_file
 
         # Load and verify
-        loaded_config = RunConfig.from_file(saved_path)
+        loaded_config = RunConfig.read(saved_path)
         assert loaded_config.n_batches == 5
         assert loaded_config.batch_size == 32
         assert loaded_config.task_name == "lm"

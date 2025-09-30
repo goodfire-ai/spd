@@ -327,7 +327,7 @@ class MergeHistoryEnsemble:
 
         # TODO: double check this
         # Convert any Path objects to strings for JSON serialization
-        history_metadatas: list[dict[str, Any]|None] = []
+        history_metadatas: list[dict[str, Any] | None] = []
         for history in self.data:
             if history.meta is not None:
                 meta_copy = history.meta.copy()
