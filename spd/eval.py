@@ -132,13 +132,13 @@ def init_metric(
             )
         case CEandKLLossesConfig():
             metric = CEandKLLosses(
-                model=model, sampling=cfg.sampling, rounding_threshold=cfg.rounding_threshold
+                model=model, sampling=run_config.sampling, rounding_threshold=cfg.rounding_threshold
             )
         case CIHistogramsConfig():
             metric = CIHistograms(model=model, n_batches_accum=cfg.n_batches_accum)
         case CI_L0Config():
             metric = CI_L0(
-                model=model, ci_alive_threshold=cfg.ci_alive_threshold, groups=cfg.groups
+                model=model, ci_alive_threshold=run_config.ci_alive_threshold, groups=cfg.groups
             )
         case CIMaskedReconSubsetLossTrainConfig():
             metric = CIMaskedReconSubsetLoss(
@@ -154,7 +154,7 @@ def init_metric(
             metric = CIMeanPerComponent(model=model)
         case ComponentActivationDensityConfig():
             metric = ComponentActivationDensity(
-                model=model, ci_alive_threshold=cfg.ci_alive_threshold
+                model=model, ci_alive_threshold=run_config.ci_alive_threshold
             )
         case FaithfulnessLossTrainConfig():
             metric = FaithfulnessLoss(model=model)
@@ -204,7 +204,8 @@ def init_metric(
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
-                output_loss_type=run_config.output_loss_type,
+                include_patterns=cfg.include_patterns,
+                exclude_patterns=cfg.exclude_patterns,
             )
     metric.to(device)
     return metric

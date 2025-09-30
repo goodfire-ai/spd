@@ -47,24 +47,40 @@ class StochasticReconSubsetCEAndKL(Metric):
                 "At least one of include_patterns or exclude_patterns must be provided"
             )
 
+        # Precompute which modules each subset will evaluate
+        all_modules: list[str] = list(self.model.components.keys())
+        self.subset_modules: dict[str, list[str]] = {}
+
+        for subset_name, patterns in self.include_patterns.items():
+            matched = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
+            if not matched:
+                raise ValueError(
+                    f"Include subset '{subset_name}' with patterns {patterns} matched no modules. "
+                    f"Available modules: {all_modules}"
+                )
+            self.subset_modules[subset_name] = matched
+
+        for subset_name, patterns in self.exclude_patterns.items():
+            remaining = [m for m in all_modules if not any(fnmatch(m, p) for p in patterns)]
+            if not remaining:
+                raise ValueError(
+                    f"Exclude subset '{subset_name}' with patterns {patterns} excluded all modules. "
+                    f"Available modules: {all_modules}"
+                )
+            self.subset_modules[subset_name] = remaining
+
         # Avoid using e.g. "layers.*.mlp_in" as an attribute
         self.key_to_sanitized: dict[str, str] = {}
         self.sanitized_to_key: dict[str, str] = {}
 
-        all_keys: list[str] = []
-        if self.include_patterns:
-            all_keys += list(self.include_patterns.keys())
-        if self.exclude_patterns:
-            all_keys += list(self.exclude_patterns.keys())
-
-        for key in all_keys:
-            sanitized_key_raw = key.replace(".", "-").replace("*", "all")
+        for subset_name in self.subset_modules:
+            sanitized_key_raw = subset_name.replace(".", "-").replace("*", "all")
             for suffix in ["_kl", "_ce", "_ce_unrec"]:
-                key = f"{sanitized_key_raw}{suffix}"
-                sanitized_key = f"{sanitized_key_raw}{suffix}"
-                self.key_to_sanitized[key] = sanitized_key
-                self.sanitized_to_key[sanitized_key] = key
-                self.add_state(sanitized_key, default=[], dist_reduce_fx="cat")
+                raw_metric_key = f"{subset_name}{suffix}"
+                sanitized_metric_key = f"{sanitized_key_raw}{suffix}"
+                self.key_to_sanitized[raw_metric_key] = sanitized_metric_key
+                self.sanitized_to_key[sanitized_metric_key] = raw_metric_key
+                self.add_state(sanitized_metric_key, default=[], dist_reduce_fx="cat")
 
     @override
     def update(
@@ -149,38 +165,16 @@ class StochasticReconSubsetCEAndKL(Metric):
             )
             for _ in range(n_mask_samples)
         ]
-        results = {}
-        all_modules = list(ci.keys())
+        results: dict[str, float] = {}
 
-        # TODO: Reduce duplication
-        # Process include patterns
-        for name, patterns in self.include_patterns.items():
-            active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
-
-            outputs: list[Float[Tensor, "... vocab"]] = []  # pyright: ignore[reportRedeclaration]
-            for layers_masks in masks_list:
-                inc_mask_infos: dict[str, ComponentsMaskInfo] = {m: layers_masks[m] for m in active}
-                outputs.append(self.model(batch, mode="components", mask_infos=inc_mask_infos))
-
-            kl_losses = [kl_vs_target(out) for out in outputs]
-            ce_losses = [ce_vs_labels(out) for out in outputs]
-
-            mean_kl = sum(kl_losses) / len(kl_losses)
-            mean_ce = sum(ce_losses) / len(ce_losses)
-            ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
-
-            results[f"{name}_kl"] = mean_kl
-            results[f"{name}_ce"] = mean_ce
-            results[f"{name}_ce_unrec"] = ce_unrec
-
-        # Process exclude patterns
-        for name, exclude_patterns in self.exclude_patterns.items():
-            active = [m for m in all_modules if not any(fnmatch(m, p) for p in exclude_patterns)]
-
+        # Evaluate all precomputed subsets
+        for subset_name, active_modules in self.subset_modules.items():
             outputs: list[Float[Tensor, "... vocab"]] = []
             for layers_masks in masks_list:
-                exc_mask_infos: dict[str, ComponentsMaskInfo] = {m: layers_masks[m] for m in active}
-                outputs.append(self.model(batch, mode="components", mask_infos=exc_mask_infos))
+                mask_infos: dict[str, ComponentsMaskInfo] = {
+                    module: layers_masks[module] for module in active_modules
+                }
+                outputs.append(self.model(batch, mode="components", mask_infos=mask_infos))
 
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
@@ -189,8 +183,8 @@ class StochasticReconSubsetCEAndKL(Metric):
             mean_ce = sum(ce_losses) / len(ce_losses)
             ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
 
-            results[f"{name}_kl"] = mean_kl
-            results[f"{name}_ce"] = mean_ce
-            results[f"{name}_ce_unrec"] = ce_unrec
+            results[f"{subset_name}_kl"] = mean_kl
+            results[f"{subset_name}_ce"] = mean_ce
+            results[f"{subset_name}_ce_unrec"] = ce_unrec
 
         return results

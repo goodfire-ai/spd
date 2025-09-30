@@ -108,7 +108,6 @@ class EvalMetricConfig(BaseModel):
 
 class CEandKLLossesConfig(EvalMetricConfig):
     classname: Literal["CEandKLLosses"] = "CEandKLLosses"
-    sampling: Literal["continuous", "binomial"]
     rounding_threshold: float
 
 
@@ -119,7 +118,6 @@ class CIHistogramsConfig(EvalMetricConfig):
 
 class CI_L0Config(EvalMetricConfig):
     classname: Literal["CI_L0"] = "CI_L0"
-    ci_alive_threshold: float
     groups: dict[str, list[str]] | None
 
 
@@ -129,7 +127,6 @@ class CIMeanPerComponentConfig(EvalMetricConfig):
 
 class ComponentActivationDensityConfig(EvalMetricConfig):
     classname: Literal["ComponentActivationDensity"] = "ComponentActivationDensity"
-    ci_alive_threshold: float
 
 
 class IdentityCIErrorConfig(EvalMetricConfig):
@@ -147,6 +144,8 @@ class PermutedCIPlotsConfig(EvalMetricConfig):
 
 class StochasticReconSubsetCEAndKLConfig(EvalMetricConfig):
     classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
+    include_patterns: dict[str, list[str]] | None
+    exclude_patterns: dict[str, list[str]] | None
 
 
 TrainMetricConfigType = (
