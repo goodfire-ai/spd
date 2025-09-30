@@ -196,7 +196,8 @@ class Config(BaseModel):
     )
 
     # --- Training ---
-    lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
+    gate_lr: PositiveFloat = Field(..., description="Learning rate for gate/causal importance functions")
+    component_lr: PositiveFloat = Field(..., description="Learning rate for subcomponents")
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
     batch_size: PositiveInt = Field(
         ...,
@@ -214,17 +215,29 @@ class Config(BaseModel):
     def microbatch_size(self) -> PositiveInt:
         return self.batch_size // self.gradient_accumulation_steps
 
-    lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
+    gate_lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
         default="constant",
-        description="Type of learning-rate schedule to apply",
+        description="Type of learning-rate schedule for gates",
     )
-    lr_exponential_halflife: PositiveFloat | None = Field(
+    component_lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
+        default="constant",
+        description="Type of learning-rate schedule for components",
+    )
+    gate_lr_exponential_halflife: PositiveFloat | None = Field(
         default=None,
-        description="Half-life parameter when using an exponential LR schedule",
+        description="Half-life parameter for gate exponential LR schedule",
     )
-    lr_warmup_pct: Probability = Field(
+    component_lr_exponential_halflife: PositiveFloat | None = Field(
+        default=None,
+        description="Half-life parameter for component exponential LR schedule",
+    )
+    gate_lr_warmup_pct: Probability = Field(
         default=0.0,
-        description="Fraction of total steps to linearly warm up the learning rate",
+        description="Fraction of total steps to linearly warm up the gate learning rate",
+    )
+    component_lr_warmup_pct: Probability = Field(
+        default=0.0,
+        description="Fraction of total steps to linearly warm up the component learning rate",
     )
 
     # --- Logging & Saving ---
@@ -366,10 +379,14 @@ class Config(BaseModel):
         if self.faithfulness_coeff == 0:
             logger.warning(f"faithfulness_coeff {msg}")
 
-        # Check that lr_exponential_halflife is not None if lr_schedule is "exponential"
-        if self.lr_schedule == "exponential":
-            assert self.lr_exponential_halflife is not None, (
-                "lr_exponential_halflife must be set if lr_schedule is exponential"
+        # Check that exponential halflife is set if schedule is "exponential"
+        if self.gate_lr_schedule == "exponential":
+            assert self.gate_lr_exponential_halflife is not None, (
+                "gate_lr_exponential_halflife must be set if gate_lr_schedule is exponential"
+            )
+        if self.component_lr_schedule == "exponential":
+            assert self.component_lr_exponential_halflife is not None, (
+                "component_lr_exponential_halflife must be set if component_lr_schedule is exponential"
             )
 
         assert self.batch_size % self.gradient_accumulation_steps == 0, (
