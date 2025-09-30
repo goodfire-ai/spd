@@ -276,8 +276,9 @@ def _log_callback(
             "costs": costs,
             "group_sizes": group_sizes,
             "group_activations": diag_acts,
-            "group_activations_over_sizes": diag_acts
-            / group_sizes.to(device=diag_acts.device).float(),
+            "group_activations_over_sizes": (
+                diag_acts / group_sizes.to(device=diag_acts.device).float()
+            ),
         }
 
         fraction_singleton_groups: float = (group_sizes == 1).float().mean().item()
