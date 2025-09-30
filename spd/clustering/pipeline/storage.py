@@ -67,21 +67,21 @@ class ClusteringStorage:
     """
 
     # Directory structure constants
-    DATASET_DIR: str = "dataset"
-    BATCHES_DIR: str = "batches"
-    HISTORIES_DIR: str = "merge_histories"
-    ENSEMBLE_DIR: str = "ensemble"
-    DISTANCES_DIR: str = "distances"
+    _DATASET_DIR: str = "dataset"
+    _BATCHES_DIR: str = "batches"
+    _HISTORIES_DIR: str = "merge_histories"
+    _ENSEMBLE_DIR: str = "ensemble"
+    _DISTANCES_DIR: str = "distances"
 
     # File naming constants
-    RUN_CONFIG_FILE: str = "run_config.json"
-    DATASET_CONFIG_FILE: str = "dataset_config.json"
-    ENSEMBLE_META_FILE: str = "ensemble_meta.json"
-    ENSEMBLE_ARRAY_FILE: str = "ensemble_merge_array.npz"
-    BATCH_FILE_FMT: str = "batch_{batch_idx:02d}.npz"
-    HISTORY_FILE_FMT: str = "data_{batch_id}"
-    MERGE_HISTORY_FILE: str = "merge_history.zip"
-    DISTANCES_FILE_FMT: str = "distances.{method}.npz"
+    _RUN_CONFIG_FILE: str = "run_config.json"
+    _DATASET_CONFIG_FILE: str = "dataset_config.json"
+    _ENSEMBLE_META_FILE: str = "ensemble_meta.json"
+    _ENSEMBLE_ARRAY_FILE: str = "ensemble_merge_array.npz"
+    _BATCH_FILE_FMT: str = "batch_{batch_idx:02d}.npz"
+    _HISTORY_FILE_FMT: str = "data_{batch_id}"
+    _MERGE_HISTORY_FILE: str = "merge_history.zip"
+    _DISTANCES_FILE_FMT: str = "distances.{method}.npz"
 
     def __init__(self, base_path: Path, run_identifier: str | None = None):
         """Initialize storage with base path and optional run identifier.
@@ -90,63 +90,74 @@ class ClusteringStorage:
             base_path: Root directory for all storage operations
             run_identifier: Optional identifier to create a subdirectory for this run
         """
-        self.base_path: Path = base_path
+        self._base_path: Path = base_path
         if run_identifier:
-            self.run_path = base_path / run_identifier
+            self._run_path = base_path / run_identifier
         else:
-            self.run_path = base_path
+            self._run_path = base_path
 
         # Ensure base directory exists
-        self.run_path.mkdir(parents=True, exist_ok=True)
+        self._run_path.mkdir(parents=True, exist_ok=True)
 
     # directories
+
+    # make base and run path properties so we don't accidentally modify them
     @property
-    def dataset_dir(self) -> Path:
-        return self.run_path / self.DATASET_DIR
+    def base_path(self) -> Path:
+        return self._base_path
 
     @property
-    def batches_dir(self) -> Path:
-        return self.dataset_dir / self.BATCHES_DIR
+    def run_path(self) -> Path:
+        return self._run_path
 
     @property
-    def histories_dir(self) -> Path:
-        return self.run_path / self.HISTORIES_DIR
+    def _dataset_dir(self) -> Path:
+        return self.run_path / self._DATASET_DIR
+
+    # directories themselves private, use the storage/read methods to interact with them
+    @property
+    def _batches_dir(self) -> Path:
+        return self._dataset_dir / self._BATCHES_DIR
 
     @property
-    def ensemble_dir(self) -> Path:
-        return self.run_path / self.ENSEMBLE_DIR
+    def _histories_dir(self) -> Path:
+        return self.run_path / self._HISTORIES_DIR
 
     @property
-    def distances_dir(self) -> Path:
-        return self.run_path / self.DISTANCES_DIR
+    def _ensemble_dir(self) -> Path:
+        return self.run_path / self._ENSEMBLE_DIR
+
+    @property
+    def _distances_dir(self) -> Path:
+        return self.run_path / self._DISTANCES_DIR
 
     # files
     @property
     def run_config_file(self) -> Path:
-        return self.run_path / self.RUN_CONFIG_FILE
+        return self.run_path / self._RUN_CONFIG_FILE
 
     @property
     def dataset_config_file(self) -> Path:
-        return self.dataset_dir / self.DATASET_CONFIG_FILE
+        return self._dataset_dir / self._DATASET_CONFIG_FILE
 
     @property
     def ensemble_meta_file(self) -> Path:
-        return self.ensemble_dir / self.ENSEMBLE_META_FILE
+        return self._ensemble_dir / self._ENSEMBLE_META_FILE
 
     @property
     def ensemble_array_file(self) -> Path:
-        return self.ensemble_dir / self.ENSEMBLE_ARRAY_FILE
+        return self._ensemble_dir / self._ENSEMBLE_ARRAY_FILE
 
     # dynamic
 
     def batch_path(self, batch_idx: int) -> Path:
-        return self.batches_dir / self.BATCH_FILE_FMT.format(batch_idx=batch_idx)
+        return self._batches_dir / self._BATCH_FILE_FMT.format(batch_idx=batch_idx)
 
     def history_path(self, batch_id: str) -> Path:
         return (
-            self.histories_dir
-            / self.HISTORY_FILE_FMT.format(batch_id=batch_id)
-            / self.MERGE_HISTORY_FILE
+            self._histories_dir
+            / self._HISTORY_FILE_FMT.format(batch_id=batch_id)
+            / self._MERGE_HISTORY_FILE
         )
 
     # Batch storage methods
@@ -179,7 +190,7 @@ class ClusteringStorage:
         return torch.tensor(data["input_ids"])
 
     def get_batch_paths(self) -> list[Path]:
-        return sorted(self.batches_dir.glob("batch_*.npz"))
+        return sorted(self._batches_dir.glob("batch_*.npz"))
 
     # History storage methods
 
@@ -193,15 +204,16 @@ class ClusteringStorage:
         return MergeHistory.read(self.history_path(batch_id))
 
     def get_history_paths(self) -> list[Path]:
-        return sorted(self.histories_dir.glob(f"*/{self.MERGE_HISTORY_FILE}"))
+        return sorted(self._histories_dir.glob(f"*/{self._MERGE_HISTORY_FILE}"))
 
     def load_histories(self) -> list[MergeHistory]:
         return [MergeHistory.read(path) for path in self.get_history_paths()]
 
-    # Ensemble storage methods
+    # Ensemble related storage methods
+
     def save_ensemble(self, ensemble: NormalizedEnsemble) -> tuple[Path, Path]:
         """Save normalized ensemble data"""
-        self.ensemble_dir.mkdir(parents=True, exist_ok=True)
+        self._ensemble_dir.mkdir(parents=True, exist_ok=True)
 
         # Save metadata
         metadata_path: Path = self.ensemble_meta_file
@@ -214,17 +226,18 @@ class ClusteringStorage:
         return metadata_path, array_path
 
     def save_distances(self, distances: DistancesArray, method: DistancesMethod) -> Path:
-        self.distances_dir.mkdir(parents=True, exist_ok=True)
+        self._distances_dir.mkdir(parents=True, exist_ok=True)
 
-        distances_path: Path = self.distances_dir / self.DISTANCES_FILE_FMT.format(method=method)
+        distances_path: Path = self._distances_dir / self._DISTANCES_FILE_FMT.format(method=method)
         np.savez_compressed(distances_path, distances=distances)
         return distances_path
 
     def load_distances(self, method: DistancesMethod) -> DistancesArray:
-        distances_path: Path = self.distances_dir / self.DISTANCES_FILE_FMT.format(method=method)
+        distances_path: Path = self._distances_dir / self._DISTANCES_FILE_FMT.format(method=method)
         data: dict[str, np.ndarray] = np.load(distances_path)
         return data["distances"]
 
     def save_run_config(self, config: RunConfig) -> Path:
-        self.run_config_file.write_text(config.model_dump_json(indent=2))
-        return self.run_config_file
+        return _write_text_to_path_and_return(
+            self.run_config_file, config.model_dump_json(indent=2)
+        )
