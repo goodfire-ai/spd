@@ -217,8 +217,24 @@ class ClusterTopSamplesTracker:
     # Store tuples of (text_hash, stat_value) for efficient comparison during insertion
     top_samples: dict[ClusterHash, dict[CriterionHash, list[tuple[TextHash, float]]]]
 
-    # Metadata
-    criteria: list[TrackingCriterion]
+    # # Metadata
+    # criteria: list[TrackingCriterion]
+
+    @property
+    def criteria(self) -> list[TrackingCriterion]:
+        """Get list of unique criteria being tracked.
+        
+        FOOTGUN: Assumes all clusters track the same criteria.
+        """
+        if not self.top_samples:
+            return []
+
+        # Get criteria from the first cluster's entries
+        first_cluster = next(iter(self.top_samples.values()))
+        return [
+            TrackingCriterion.from_string(crit_hash)
+            for crit_hash in first_cluster.keys()
+        ]
 
     @classmethod
     def create_empty(
@@ -226,15 +242,14 @@ class ClusterTopSamplesTracker:
     ) -> "ClusterTopSamplesTracker":
         """Create an empty tracker for multiple clusters."""
         top_samples: dict[ClusterHash, dict[CriterionHash, list[tuple[TextHash, float]]]] = {}
+        criteria_hashes: list[CriterionHash] = [c.to_string() for c in criteria]
         for cluster_hash in cluster_hashes:
-            top_samples[cluster_hash] = {}
-            for criterion in criteria:
-                crit_hash = criterion.to_string()
-                top_samples[cluster_hash][crit_hash] = []
+            top_samples[cluster_hash] = {
+                crit_hash: [] for crit_hash in criteria_hashes
+            }
 
         return cls(
             top_samples=top_samples,
-            criteria=criteria,
         )
 
     def try_insert(
@@ -242,7 +257,7 @@ class ClusterTopSamplesTracker:
         cluster_hash: ClusterHash,
         text_hash: TextHash,
         stat_values: dict[CriterionHash, float],
-    ) -> dict[CriterionHash, bool]:
+    ) -> None:
         """Try to insert a text sample for all criteria in a specific cluster.
 
         Args:
@@ -253,17 +268,14 @@ class ClusterTopSamplesTracker:
         Returns:
             Dict mapping CriterionHash to True if inserted, False otherwise
         """
-        inserted: dict[CriterionHash, bool] = {}
-
         for criterion in self.criteria:
-            crit_hash = criterion.to_string()
+            crit_hash: CriterionHash = criterion.to_string()
             stat_value: float = stat_values[crit_hash]
 
             top_list: list[tuple[TextHash, float]] = self.top_samples[cluster_hash][crit_hash]
 
-            # Check if text_hash already in list
+            # skip if text_hash already in list
             if any(th == text_hash for th, _ in top_list):
-                inserted[crit_hash] = False
                 continue
 
             # Find insertion point based on direction
@@ -282,14 +294,8 @@ class ClusterTopSamplesTracker:
                 # Keep only top n_samples
                 if len(top_list) > criterion.n_samples:
                     top_list.pop()
-                inserted[crit_hash] = True
             elif len(top_list) < criterion.n_samples:
                 top_list.append((text_hash, stat_value))
-                inserted[crit_hash] = True
-            else:
-                inserted[crit_hash] = False
-
-        return inserted
 
     def get_cluster_top_samples(self) -> dict[ClusterHash, dict[CriterionHash, list[TextHash]]]:
         """Get top text hashes for all clusters and criteria (without stat values)."""
