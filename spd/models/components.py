@@ -61,7 +61,10 @@ class MLPGates(nn.Module):
         self.layers.append(ParallelLinear(C, hidden_dims[-1], 1, nonlinearity="linear"))
 
     @override
-    def forward(self, x: Float[Tensor, "... C"]) -> Float[Tensor, "... C"]:
+    def forward(self, x: Float[Tensor, "... C"], noise_std: float = 0.0) -> Float[Tensor, "... C"]:
+        if noise_std > 0.0:
+            noise = torch.randn_like(x) * noise_std
+            x = x + noise
         x = einops.rearrange(x, "... C -> ... C 1")
         for layer in self.layers:
             x = layer(x)

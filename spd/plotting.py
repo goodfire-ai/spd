@@ -212,6 +212,7 @@ def get_single_feature_causal_importances(
         sigmoid_type=sigmoid_type,
         detach_inputs=False,
         sampling=sampling,
+        gate_input_noise_std=0.0,  # No noise for plotting
     )
 
     return ci_raw, ci_upper_leaky_raw
