@@ -111,6 +111,11 @@ def calc_masked_recon_loss(
             loss = ((out - target_out) ** 2).mean()
         else:
             loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            # flat_logits = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
+            # masked_batch = batch.clone()
+            # masked_batch[:, 0] = -100
+            # flat_masked_batch = masked_batch.flatten()
+            # loss = F.cross_entropy(flat_logits[:-1], flat_masked_batch[1:], ignore_index=-100)
         total_loss += loss
 
     return total_loss / len(mask_infos_list)
