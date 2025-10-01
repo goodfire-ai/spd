@@ -1,7 +1,14 @@
+# spd/clustering/experiments/tms_5_2_clustering.py
 """
-Clustering pipeline for TMS 5-2 model.
+Clustering pipeline for TMS 5-2 model (with and without identity matrix).
+
+Usage:
+    python tms_5_2_clustering.py tms_5-2
+    python tms_5_2_clustering.py tms_5-2-id
 """
 
+import argparse
+import sys
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -20,31 +27,69 @@ from spd.clustering.plotting.merge import (
     plot_merge_iteration,
 )
 from spd.configs import Config
-# from spd.experiments.tms.tms_dataset import TMSDataset
+from spd.experiments.tms.tms_dataset import TMSDataset
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.registry import EXPERIMENT_REGISTRY
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
+
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Run SPD clustering on TMS 5-2 models"
+    )
+    parser.add_argument(
+        "model_key",
+        nargs="?",
+        default="tms_5-2",
+        choices=["tms_5-2", "tms_5-2-id"],
+        help="Model to use for clustering (default: tms_5-2)"
+    )
+    
+    # Handle Jupyter notebook execution
+    if hasattr(__builtins__, '__IPYTHON__'):
+        return parser.parse_args(["tms_5-2"])
+    else:
+        return parser.parse_args()
+
+
+# ============================================================
+# Parse arguments and validate
+# ============================================================
+args = parse_arguments()
+MODEL_KEY = args.model_key
+
+if MODEL_KEY not in EXPERIMENT_REGISTRY:
+    print(f"Error: Model '{MODEL_KEY}' not found in experiment registry")
+    print("Available models:")
+    for key in ["tms_5-2", "tms_5-2-id"]:
+        run = EXPERIMENT_REGISTRY.get(key)
+        if run:
+            print(f"  {key}: {run.canonical_run}")
+    sys.exit(1)
+
+canonical_run = EXPERIMENT_REGISTRY[MODEL_KEY].canonical_run
+if canonical_run is None:
+    print(f"Error: Model '{MODEL_KEY}' is not available (canonical_run is None)")
+    sys.exit(1)
+
 # ============================================================
 # Configuration
 # ============================================================
-MODEL_KEY = "tms_5-2"
 N_FEATURES = 5
 N_SAMPLES = 1000
 FILTER_DEAD_THRESHOLD = 0.1
 
-print(f"TMS 5-2 Clustering Pipeline")
+print(f"TMS 5-2 Clustering Pipeline ({MODEL_KEY})")
 print("=" * 80)
+print(f"Model path: {canonical_run}")
 print(f"Device: {DEVICE}")
 print("=" * 80)
 
 # ============================================================
 # Load model
 # ============================================================
-canonical_run = EXPERIMENT_REGISTRY[MODEL_KEY].canonical_run
-assert canonical_run is not None, f"No canonical run found for {MODEL_KEY}"
-
 SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(canonical_run)
 MODEL: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 MODEL.to(DEVICE)
@@ -106,7 +151,6 @@ print(f"✓ Processed {PROCESSED_ACTIVATIONS.n_components_alive} alive component
 # ============================================================
 # Run merge iteration
 # ============================================================
-# Merge most components, leaving a small number of final clusters
 n_merge_iters = int(PROCESSED_ACTIVATIONS.n_components_alive * 0.5)
 
 MERGE_CFG: MergeConfig = MergeConfig(
@@ -139,7 +183,7 @@ def _plot_func(
                 iteration=i,
                 component_labels=component_labels,
                 show=True,
-                plot_config={"save_pdf": True, "pdf_prefix": "./tms_5_2_iter"}
+                plot_config={"save_pdf": True, "pdf_prefix": f"./{MODEL_KEY.replace('-', '_')}_iter"}
             )
         except Exception as e:
             print(f"Plotting error at iteration {i}: {e}")
@@ -197,3 +241,4 @@ SWEEP_RESULTS: dict[str, Any] = sweep_multiple_parameters(
 
 for param_name, (ensembles, fig, ax) in SWEEP_RESULTS.items():
     plt.show()
+
