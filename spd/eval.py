@@ -30,6 +30,7 @@ from spd.plotting import (
     plot_ci_values_histograms,
     plot_component_activation_density,
     plot_mean_component_cis_both_scales,
+    plot_mlp_gate_shapes,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_mask_info
@@ -723,6 +724,66 @@ class FaithfulnessLoss(StreamingEval):
         return {"loss/faithfulness": loss.item()}
 
 
+class MLPGateShapePlot(StreamingEval):
+    SLOW = True
+
+    def __init__(
+        self,
+        model: ComponentModel,
+        config: Config,
+        input_range: tuple[float, float] = (-10.0, 10.0),
+        n_points: int = 100,
+        **kwargs: Any,
+    ):
+        self.model = model
+        self.config = config
+        self.input_range = input_range
+        self.n_points = n_points
+        self.device = next(iter(model.parameters())).device
+
+        # Track alive components
+        self.component_activation_counts: dict[str, Float[Tensor, " C"]] = {
+            module_name: torch.zeros(model.C, device=self.device)
+            for module_name in model.components
+        }
+        self.n_tokens = 0
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        # Track which components are alive based on firing frequency
+        n_tokens = next(iter(ci.values())).shape[:-1].numel()
+        self.n_tokens += n_tokens
+
+        for module_name, ci_vals in ci.items():
+            active_components = ci_vals > self.config.ci_alive_threshold
+            n_activations_per_component = reduce(active_components, "... C -> C", "sum")
+            self.component_activation_counts[module_name] += n_activations_per_component
+
+    @override
+    def compute(self) -> Mapping[str, Image.Image]:
+        """Generate MLP gate shape plots for all gates in the model."""
+        # Determine alive components (those that have fired at least once)
+        alive_components = {
+            module_name: self.component_activation_counts[module_name] > 0
+            for module_name in self.model.components
+        }
+
+        gate_shape_plot = plot_mlp_gate_shapes(
+            model=self.model,
+            config=self.config,
+            input_range=self.input_range,
+            n_points=self.n_points,
+            alive_components=alive_components,
+        )
+
+        return {"mlp_gate_shapes": gate_shape_plot}
+
+
 EVAL_CLASSES = {
     cls.__name__: cls
     for cls in [
@@ -736,6 +797,7 @@ EVAL_CLASSES = {
         CIMeanPerComponent,
         SubsetReconstructionLoss,
         FaithfulnessLoss,
+        MLPGateShapePlot,
     ]
 }
 
