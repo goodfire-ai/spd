@@ -56,7 +56,8 @@ function getDefaultConfig() {
     // Data paths
     data: {
       clusterDataFile: "data/max_activations_iter7375_n16.json",
-      modelInfoFile: "data/model_info.json"
+      modelInfoFile: "data/model_info.json",
+      explanationsFile: "data/cluster_explanations.json"
     },
 
     // Index page (cluster list) display settings
@@ -79,6 +80,22 @@ function getDefaultConfig() {
       histogramBins: 10,
       sparklineWidth: 120,
       sparklineHeight: 50
+    },
+
+    // GitHub integration for cluster explanations
+    github: {
+      enabled: true,
+      owner: "username",  // GitHub username or org
+      repo: "repository", // Repository name
+      labels: ["cluster-explanation", "mechanistic-interpretability"],
+      // Metadata about this decomposition run
+      runMetadata: {
+        model: "model_name",
+        wandbProject: "project_name",
+        wandbRun: "run_id",
+        decompRun: "decomp_run_id",
+        iteration: 7375
+      }
     }
   };
 

@@ -43,6 +43,16 @@ flowchart TD
 ```
 
 
+# cluster explanations:
+
+
+- have a separate repo for cluster dashboard (heavy data)
+- on each cluster page, have links to create an issue with prefilled info about that cluster and specially formatted title
+    - it also searches for existing issues with that title, and links to them
+    - potentially rate limit issue. if this is the case, we have a cron job action on the repo which checks for all issues and commits their info to a file. interface by default reads from that file, user hits a button to refresh issues from github (js running in browser makes requests filtered by timestamp)
+    - database/big json file on the server of explanations? this should also be how we store autointerp explanations
+
+
 # TODO
 
 ## static:

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import numpy as np
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
@@ -14,35 +15,39 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.dashboard.text_sample import ClusterMaxTracker, TextSample
+from spd.clustering.dashboard.text_sample import (
+    ActivationSample,
+    ClusterActivationTracker,
+    ClusterId,
+    ClusterLabel,
+    TextSample,
+)
 from spd.clustering.merge_history import MergeHistory
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data, get_module_device
 
 
-def _create_text_sample(
+def _create_samples(
+    cluster_id: ClusterId,
     batch: Int[Tensor, "batch_size n_ctx"],
     batch_idx: int,
-    pos_idx: int,
     sequence_acts: Float[Tensor, " seq_len"],
-    val: float,
     dataset_index: int,
     tokenizer: PreTrainedTokenizer,
-) -> TextSample:
-    """Create a TextSample from batch data and activations.
+) -> tuple[TextSample, ActivationSample]:
+    """Create TextSample and ActivationSample from batch data.
 
     Args:
+        cluster_id: ClusterId this sample belongs to
         batch: Input token batch
         batch_idx: Index within batch
-        pos_idx: Position of max activation
         sequence_acts: Activations for entire sequence
-        val: Max activation value
         dataset_index: Index in original dataset
         tokenizer: Tokenizer for decoding
 
     Returns:
-        TextSample instance
+        Tuple of (TextSample, ActivationSample)
     """
     # Extract full sequence data
     tokens: Int[Tensor, " n_ctx"] = batch[batch_idx].cpu()
@@ -55,24 +60,22 @@ def _create_text_sample(
         for tid in tokens_list
     ]
 
-    # Get all activations for this sequence
-    activations_list: list[float] = sequence_acts.cpu().tolist()
-
-    # Compute statistics
-    mean_act: float = float(sequence_acts.mean().item())
-    median_act: float = float(sequence_acts.median().item())
-    max_act: float = float(val)
-
-    return TextSample(
+    # Create TextSample (without activations)
+    text_sample = TextSample(
         full_text=text,
-        dataset_index=dataset_index,
         tokens=token_strings,
-        activations=activations_list,
-        mean_activation=mean_act,
-        median_activation=median_act,
-        max_activation=max_act,
-        max_position=pos_idx,
+        dataset_index=dataset_index,
     )
+
+    # Create ActivationSample (with numpy array)
+    activations_np: np.ndarray = sequence_acts.cpu().numpy()
+    activation_sample = ActivationSample(
+        cluster_id=cluster_id,
+        text_hash=text_sample.text_hash,
+        activations=activations_np,
+    )
+
+    return text_sample, activation_sample
 
 
 def _compute_cluster_activations(
@@ -118,7 +121,7 @@ def compute_max_activations(
     iteration: int,
     n_samples: int,
     n_batches: int,
-) -> dict[int, dict[str, list[dict[str, Any]]]]:
+) -> dict[int, dict[str, Any]]:
     """Compute max-activating text samples for each cluster.
 
     Args:
@@ -132,18 +135,58 @@ def compute_max_activations(
         n_batches: Number of batches to process
 
     Returns:
-        Dict mapping cluster_id to dict with "components" and "samples" keys
+        Dict mapping cluster_id to results with components and samples per criterion
     """
     device: torch.device = get_module_device(model)
 
-    # Get unique clusters and component info using MergeHistory methods
-    unique_clusters: list[int] = merge_history.get_unique_clusters(iteration)
+    # Get unique cluster indices and component info using MergeHistory methods
+    unique_cluster_indices: list[int] = merge_history.get_unique_clusters(iteration)
     cluster_components: dict[int, list[dict[str, Any]]] = {
-        cid: merge_history.get_cluster_components_info(iteration, cid) for cid in unique_clusters
+        cid: merge_history.get_cluster_components_info(iteration, cid)
+        for cid in unique_cluster_indices
     }
 
+    # Create ClusterId objects for each cluster
+    # TODO: Get actual model_info, spd_run, clustering_run from context
+    cluster_ids: list[ClusterId] = [
+        ClusterId(
+            model_info="unknown",  # TODO: populate from model/config
+            spd_run="unknown",  # TODO: populate from wandb run
+            clustering_run="unknown",  # TODO: populate from wandb run
+            cluster_label=ClusterLabel(
+                module_name="unknown",  # TODO: extract from merge_history
+                original_index=idx,
+            ),
+            cluster_index=idx,
+        )
+        for idx in unique_cluster_indices
+    ]
+
+    # Create mapping from cluster_index to ClusterId for easy lookup
+    cluster_id_map: dict[int, ClusterId] = {cid.cluster_index: cid for cid in cluster_ids}
+
+    # Define tracking criteria (default: just max_activation)
+    from spd.clustering.dashboard.text_sample import TrackingCriterion
+
+    criteria = [
+        TrackingCriterion(
+            property_name="max_activation",
+            direction="max",
+            n_samples=n_samples,
+        )
+    ]
+
     # Initialize tracker
-    tracker: ClusterMaxTracker = ClusterMaxTracker(unique_clusters, n_samples, device)
+    tracker = ClusterActivationTracker(
+        cluster_ids=cluster_ids,
+        criteria=criteria,
+        device=device,
+    )
+
+    # Build text pool separately
+    from spd.clustering.dashboard.text_sample import TextHash
+
+    text_pool: dict[TextHash, TextSample] = {}
     dataset_idx_counter: int = 0
 
     for batch_idx, batch_data in enumerate(tqdm(dataloader, total=n_batches)):
@@ -164,10 +207,10 @@ def compute_max_activations(
         )
         processed: ProcessedActivations = process_activations(activations, seq_mode="concat")
 
-        for cluster_id in unique_clusters:
+        for cluster_idx in unique_cluster_indices:
             # Compute cluster activations
             acts_2d: Float[Tensor, "batch_size seq_len"] = _compute_cluster_activations(
-                processed, cluster_components[cluster_id], batch_size, seq_len
+                processed, cluster_components[cluster_idx], batch_size, seq_len
             )
 
             if acts_2d.abs().max() == 0:
@@ -180,27 +223,31 @@ def compute_max_activations(
             top_idx: Int[Tensor, " k"]
             top_vals, top_idx = torch.topk(flat_acts, k)
 
-            # Create TextSamples for batch insertion
-            text_samples: list[TextSample] = []
-            for val, idx in zip(top_vals, top_idx, strict=False):
+            # Get ClusterId for this cluster
+            cluster_id: ClusterId = cluster_id_map[cluster_idx]
+
+            # Create samples for batch insertion
+            activation_samples: list[ActivationSample] = []
+            for idx in top_idx:
                 batch_idx_i: int = int(idx // seq_len)
-                pos_idx: int = int(idx % seq_len)
                 current_dataset_idx: int = dataset_idx_counter + batch_idx_i
 
-                text_sample: TextSample = _create_text_sample(
+                text_sample, act_sample = _create_samples(
+                    cluster_id=cluster_id,
                     batch=batch,
                     batch_idx=batch_idx_i,
-                    pos_idx=pos_idx,
                     sequence_acts=acts_2d[batch_idx_i],
-                    val=float(val),
                     dataset_index=current_dataset_idx,
                     tokenizer=tokenizer,
                 )
-                text_samples.append(text_sample)
 
-            # Batch insert into tracker
-            tracker.try_insert_batch(cluster_id, top_vals, text_samples)
+                # Add text sample to external pool
+                text_pool[text_sample.text_hash] = text_sample
+                activation_samples.append(act_sample)
+
+            # Batch insert activation samples into tracker
+            tracker.try_insert_batch(activation_samples)
 
         dataset_idx_counter += batch_size
 
-    return tracker.to_result_dict(cluster_components)
+    return tracker.to_result_dict(cluster_components, text_pool)
