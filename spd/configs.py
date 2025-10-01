@@ -332,6 +332,8 @@ class Config(BaseModel):
         "pretrained_model_name_hf": "pretrained_model_name",
         "recon_coeff": "ci_recon_coeff",
         "recon_layerwise_coeff": "ci_recon_layerwise_coeff",
+        "gate_type": "ci_fn_type",
+        "gate_hidden_dims": "ci_fn_hidden_dims",
     }
 
     @model_validator(mode="before")
