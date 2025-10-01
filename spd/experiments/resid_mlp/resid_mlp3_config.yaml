@@ -8,7 +8,7 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 500
 n_mask_samples: 1
-gate_type: "mlp" #options: "mlp", "vector_mlp", "vector_shared_mlp"
+gate_type: "linear_gates" #options: "mlp", "vector_mlp", "vector_shared_mlp", "linear_gates", "exponential_linear_gates"
 gate_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
@@ -33,10 +33,14 @@ output_loss_type: mse
 batch_size: 2048
 eval_batch_size: 2048
 steps: 50_000
-lr: 1e-3
-lr_schedule: cosine
-lr_warmup_pct: 0.05    
-lr_exponential_halflife: null
+gate_lr: 1e-3
+component_lr: 1e-3
+gate_lr_schedule: cosine
+component_lr_schedule: cosine
+gate_lr_warmup_pct: 0.05
+component_lr_warmup_pct: 0.05
+gate_lr_exponential_halflife: null
+component_lr_exponential_halflife: null
 gradient_accumulation_steps: 1
 
 # --- Logging & Saving ---
