@@ -27,7 +27,7 @@ from spd.utils.general_utils import extract_batch_data, get_module_device
 TextHash = NewType("TextHash", str)
 ActivationHash = NewType("ActivationHash", str)
 ClusterHash = NewType("ClusterHash", str)
-CriterionIndex = NewType("CriterionIndex", int)
+CriterionHash = NewType("CriterionHash", str)
 Direction = Literal["max", "min"]
 
 _SEPARATOR_1: str = "-"
@@ -180,93 +180,96 @@ class TrackingCriterion:
 
     n_samples: int
 
+    def to_string(self) -> CriterionHash:
+        """Convert to hash string representation."""
+        parts: list[str] = [self.property_name, self.direction, str(self.n_samples)]
+        assert all(_SEPARATOR_2 not in part for part in parts), "Parts cannot contain separator"
+        return CriterionHash(_SEPARATOR_2.join(parts))
+
+    @classmethod
+    def from_string(cls, s: CriterionHash) -> "TrackingCriterion":
+        """Create TrackingCriterion from its string representation."""
+        parts: list[str] = s.split(_SEPARATOR_2)
+        if len(parts) != 3:
+            raise ValueError(f"Invalid TrackingCriterion string: {s}")
+        direction = parts[1]
+        if direction not in ("max", "min"):
+            raise ValueError(f"Invalid direction: {direction}")
+        return cls(
+            property_name=parts[0],
+            direction=direction,  # pyright: ignore[reportArgumentType]
+            n_samples=int(parts[2]),
+        )
+
 
 @dataclass
-class ClusterActivationDatabase:
-    """Database for storing text samples and activations per cluster.
+class ClusterTopSamplesTracker:
+    """Tracks top-k text samples per cluster across multiple criteria.
 
-    Database tables:
-    - text_samples: {TextHash: TextSample}
-    - cluster_top_samples: {ClusterHash: {CriterionIndex: [TextHash]}}
-    - activation_samples: {(TextHash, ClusterHash): ActivationSample}
+    This can work with multiple clusters and be parallelized.
+    Stores only references (text hashes) and can be joined with text/activation tables later.
+
+    Table:
+    - top_samples: {ClusterHash: {CriterionHash: [(TextHash, stat_value)]}}
     """
 
-    # Table: TextHash -> TextSample
-    text_samples: dict[TextHash, TextSample]
-
-    # Table: ClusterHash -> {CriterionIndex -> [TextHash]}
-    cluster_top_samples: dict[ClusterHash, dict[CriterionIndex, list[TextHash]]]
-
-    # Table: (TextHash, ClusterHash) -> ActivationSample
-    activation_samples: dict[tuple[TextHash, ClusterHash], ActivationSample]
+    # Table: ClusterHash -> {CriterionHash -> [(TextHash, stat_value)]}
+    # Store tuples of (text_hash, stat_value) for efficient comparison during insertion
+    top_samples: dict[ClusterHash, dict[CriterionHash, list[tuple[TextHash, float]]]]
 
     # Metadata
-    cluster_ids: list[ClusterId]
     criteria: list[TrackingCriterion]
 
     @classmethod
     def create_empty(
-        cls, cluster_ids: list[ClusterId], criteria: list[TrackingCriterion]
-    ) -> "ClusterActivationDatabase":
-        """Create an empty database with initialized tables."""
-        cluster_top_samples: dict[ClusterHash, dict[CriterionIndex, list[TextHash]]] = {}
-        for cluster_id in cluster_ids:
-            cluster_hash = cluster_id.to_string()
-            cluster_top_samples[cluster_hash] = {}
-            for crit_idx in range(len(criteria)):
-                crit_idx_typed = CriterionIndex(crit_idx)
-                cluster_top_samples[cluster_hash][crit_idx_typed] = []
+        cls, cluster_hashes: list[ClusterHash], criteria: list[TrackingCriterion]
+    ) -> "ClusterTopSamplesTracker":
+        """Create an empty tracker for multiple clusters."""
+        top_samples: dict[ClusterHash, dict[CriterionHash, list[tuple[TextHash, float]]]] = {}
+        for cluster_hash in cluster_hashes:
+            top_samples[cluster_hash] = {}
+            for criterion in criteria:
+                crit_hash = criterion.to_string()
+                top_samples[cluster_hash][crit_hash] = []
 
         return cls(
-            text_samples={},
-            cluster_top_samples=cluster_top_samples,
-            activation_samples={},
-            cluster_ids=cluster_ids,
+            top_samples=top_samples,
             criteria=criteria,
         )
 
-    def _try_insert_activation(
-        self, act_sample: ActivationSample, text_sample: TextSample
-    ) -> dict[CriterionIndex, int]:
-        """Try to insert an activation sample for all criteria.
+    def try_insert(
+        self,
+        cluster_hash: ClusterHash,
+        text_hash: TextHash,
+        stat_values: dict[CriterionHash, float],
+    ) -> dict[CriterionHash, bool]:
+        """Try to insert a text sample for all criteria in a specific cluster.
+
+        Args:
+            cluster_hash: Hash of the cluster to insert into
+            text_hash: Hash of the text sample
+            stat_values: Dict mapping CriterionHash to its computed statistic value
 
         Returns:
-            Dict mapping CriterionIndex to 1 if inserted, 0 otherwise
+            Dict mapping CriterionHash to True if inserted, False otherwise
         """
-        n_inserted: dict[CriterionIndex, int] = {
-            CriterionIndex(i): 0 for i in range(len(self.criteria))
-        }
+        inserted: dict[CriterionHash, bool] = {}
 
-        cluster_hash: ClusterHash = act_sample.cluster_id.to_string()
-        text_hash: TextHash = text_sample.text_hash
+        for criterion in self.criteria:
+            crit_hash = criterion.to_string()
+            stat_value: float = stat_values[crit_hash]
 
-        # Store text sample if not already present
-        if text_hash not in self.text_samples:
-            self.text_samples[text_hash] = text_sample
+            top_list: list[tuple[TextHash, float]] = self.top_samples[cluster_hash][crit_hash]
 
-        # Store activation sample
-        key = (text_hash, cluster_hash)
-        if key in self.activation_samples:
-            # Already have this exact activation, skip
-            return n_inserted
-
-        self.activation_samples[key] = act_sample
-
-        # Try to insert for each criterion
-        for crit_idx, criterion in enumerate(self.criteria):
-            crit_idx_typed = CriterionIndex(crit_idx)
-            stat_value: float = getattr(act_sample, criterion.property_name)
-
-            top_list: list[TextHash] = self.cluster_top_samples[cluster_hash][crit_idx_typed]
+            # Check if text_hash already in list
+            if any(th == text_hash for th, _ in top_list):
+                inserted[crit_hash] = False
+                continue
 
             # Find insertion point based on direction
             insert_pos: int | None = None
 
-            for j, existing_text_hash in enumerate(top_list):
-                existing_key = (existing_text_hash, cluster_hash)
-                existing_sample = self.activation_samples[existing_key]
-                existing_value: float = getattr(existing_sample, criterion.property_name)
-
+            for j, (_, existing_value) in enumerate(top_list):
                 if (criterion.direction == "max" and stat_value > existing_value) or (
                     criterion.direction == "min" and stat_value < existing_value
                 ):
@@ -275,16 +278,73 @@ class ClusterActivationDatabase:
 
             # Insert if we found a position or list not full
             if insert_pos is not None:
-                top_list.insert(insert_pos, text_hash)
+                top_list.insert(insert_pos, (text_hash, stat_value))
                 # Keep only top n_samples
                 if len(top_list) > criterion.n_samples:
                     top_list.pop()
-                n_inserted[crit_idx_typed] += 1
+                inserted[crit_hash] = True
             elif len(top_list) < criterion.n_samples:
-                top_list.append(text_hash)
-                n_inserted[crit_idx_typed] += 1
+                top_list.append((text_hash, stat_value))
+                inserted[crit_hash] = True
+            else:
+                inserted[crit_hash] = False
 
-        return n_inserted
+        return inserted
+
+    def get_cluster_top_samples(self) -> dict[ClusterHash, dict[CriterionHash, list[TextHash]]]:
+        """Get top text hashes for all clusters and criteria (without stat values)."""
+        return {
+            cluster_hash: {
+                crit_hash: [th for th, _ in self.top_samples[cluster_hash][crit_hash]]
+                for crit_hash in self.top_samples[cluster_hash]
+            }
+            for cluster_hash in self.top_samples
+        }
+
+
+@dataclass
+class ClusterActivationDatabase:
+    """Database for storing text samples and activations per cluster.
+
+    Database tables:
+    - text_samples: {TextHash: TextSample}
+    - cluster_top_samples: {ClusterHash: {CriterionHash: [TextHash]}}
+    - activation_samples: {(TextHash, ClusterHash): ActivationSample}
+    """
+
+    # Table: TextHash -> TextSample
+    text_samples: dict[TextHash, TextSample]
+
+    # Table: ClusterHash -> {CriterionHash -> [TextHash]}
+    cluster_top_samples: dict[ClusterHash, dict[CriterionHash, list[TextHash]]]
+
+    # Table: (TextHash, ClusterHash) -> ActivationSample
+    activation_samples: dict[tuple[TextHash, ClusterHash], ActivationSample]
+
+    @classmethod
+    def from_tracker(
+        cls,
+        tracker: ClusterTopSamplesTracker,
+        text_samples: dict[TextHash, TextSample],
+        activation_samples: dict[tuple[TextHash, ClusterHash], ActivationSample],
+    ) -> "ClusterActivationDatabase":
+        """Create database from a tracker and sample tables.
+
+        Args:
+            tracker: ClusterTopSamplesTracker with all clusters
+            text_samples: Complete text samples table
+            activation_samples: Complete activation samples table
+
+        Returns:
+            Complete ClusterActivationDatabase
+        """
+        cluster_top_samples = tracker.get_cluster_top_samples()
+
+        return cls(
+            text_samples=text_samples,
+            cluster_top_samples=cluster_top_samples,
+            activation_samples=activation_samples,
+        )
 
     @classmethod
     def generate(
