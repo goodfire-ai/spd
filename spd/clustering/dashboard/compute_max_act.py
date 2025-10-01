@@ -147,23 +147,23 @@ def compute_max_activations(
     }
 
     # Create ClusterId objects for each cluster
-    # TODO: Get actual model_info, spd_run, clustering_run from context
+    # TODO: Get actual spd_run, clustering_run from context
     cluster_ids: list[ClusterId] = [
         ClusterId(
-            model_info="unknown",  # TODO: populate from model/config
             spd_run="unknown",  # TODO: populate from wandb run
             clustering_run="unknown",  # TODO: populate from wandb run
+            iteration=iteration,
             cluster_label=ClusterLabel(
                 module_name="unknown",  # TODO: extract from merge_history
                 original_index=idx,
             ),
-            cluster_index=idx,
+            __DELETEME__=idx,
         )
         for idx in unique_cluster_indices
     ]
 
     # Create mapping from cluster_index to ClusterId for easy lookup
-    cluster_id_map: dict[int, ClusterId] = {cid.cluster_index: cid for cid in cluster_ids}
+    cluster_id_map: dict[int, ClusterId] = {cid.__DELETEME__: cid for cid in cluster_ids}
 
     # Define tracking criteria (default: just max_activation)
     from spd.clustering.dashboard.text_sample import TrackingCriterion

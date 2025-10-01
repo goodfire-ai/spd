@@ -15,6 +15,9 @@ ClusterHash = NewType("ClusterHash", str)
 CriterionIndex = NewType("CriterionIndex", int)
 Direction = Literal["max", "min"]
 
+_SEPARATOR_1: str = "-"
+_SEPARATOR_2: str = ":"
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ClusterLabel:
@@ -26,38 +29,75 @@ class ClusterLabel:
     def __str__(self) -> str:
         """Format as 'module_name:original_index'."""
         return f"{self.module_name}:{self.original_index}"
-    
+
     def as_tuple(self) -> tuple[str, int]:
         """Return as a tuple (module_name, original_index)."""
         return (self.module_name, self.original_index)
 
+    def string(self) -> str:
+        """Return as a string 'module_name:original_index'."""
+        return f"{self.module_name}-{self.original_index}"
+
+    def from_string(s: str) -> "ClusterLabel":
+        """Create ClusterLabel from its string representation."""
+        parts: list[str] = s.split(_SEPARATOR_1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid ClusterLabel string: {s}")
+        return ClusterLabel(module_name=parts[0], original_index=int(parts[1]))
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ClusterId:
-    """Unique identifier for a cluster."""
+    """Unique identifier for a cluster. This should uniquely identify a cluster *globally*"""
 
-    model_info: str  # e.g., "gpt2-small"
     spd_run: str  # SPD run identifier
     clustering_run: str  # Clustering run identifier
+    iteration: int  # Merge iteration number
     cluster_label: ClusterLabel  # Component label
-    cluster_index: int  # Numeric index
 
-    @cached_property
-    def cluster_hash(self) -> ClusterHash:
+    def to_list(self) -> list[Any]:
+        """Return as a list of identifying components."""
+        return [
+            self.spd_run,
+            self.clustering_run,
+            self.iteration,
+            self.cluster_label.module_name,
+            self.cluster_label.original_index,
+        ]
+
+    def to_string(self) -> ClusterHash:
         """Hash uniquely identifying this cluster."""
         # Use all identifying information to create unique hash
-        return ClusterHash(
-            f"{self.model_info}:{self.spd_run}:{self.clustering_run}:{self.cluster_label}:{self.cluster_index}"
+        transformed_lst: list[str] = [str(part) for part in self.to_list()]
+        assert all(_SEPARATOR_1 not in part for part in transformed_lst), (
+            "Parts cannot contain separator"
+        )
+        assert all(_SEPARATOR_2 not in part for part in transformed_lst), (
+            "Parts cannot contain separator"
+        )
+
+        return ClusterHash(_SEPARATOR_1.join(transformed_lst))
+
+    @classmethod
+    def from_string(cls, s: str) -> "ClusterId":
+        """Create ClusterId from its string representation."""
+        parts: list[str] = s.split(_SEPARATOR_1)
+        if len(parts) != 5:
+            raise ValueError(f"Invalid ClusterId string: {s}")
+        return cls(
+            spd_run=parts[0],
+            clustering_run=parts[1],
+            iteration=int(parts[2]),
+            cluster_label=ClusterLabel(module_name=parts[3], original_index=int(parts[4])),
         )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TextSample:
-    """Text content, with a reference to the dataset."""
+    """Text content, with a reference to the dataset. depends on tokenizer used."""
 
     full_text: str
     tokens: list[str]
-    dataset_index: int
 
     @cached_property
     def text_hash(self) -> TextHash:
@@ -81,7 +121,7 @@ class ActivationSample:
     def activation_hash(self) -> ActivationHash:
         """Hash uniquely identifying this activation sample (cluster_hash + text_hash)."""
         # Combine cluster_hash with text_hash to create unique identifier
-        return ActivationHash(f"{self.cluster_id.cluster_hash}:{self.text_hash}")
+        return ActivationHash(f"{self.cluster_id.to_string}:{self.text_hash}")
 
     @property
     def mean_activation(self) -> float:
@@ -117,8 +157,11 @@ class ActivationSample:
 class TrackingCriterion:
     """Defines what statistics to track."""
 
-    property_name: str  # "max_activation", "mean_activation", etc. - must be a property on ActivationSample
+    property_name: str
+    "max_activation, mean_activation, etc. - must be a property on ActivationSample"
+
     direction: Direction
+
     n_samples: int
 
 
@@ -152,11 +195,11 @@ class ClusterActivationTracker:
             crit_idx_typed = CriterionIndex(crit_idx)
             self.top_samples[crit_idx_typed] = {}
             for cluster_id in cluster_ids:
-                self.top_samples[crit_idx_typed][cluster_id.cluster_hash] = []
+                self.top_samples[crit_idx_typed][cluster_id.to_string] = []
 
         # Track used text_hashes per cluster to avoid duplicates
         self.used_text_hashes: dict[ClusterHash, set[TextHash]] = {
-            cid.cluster_hash: set() for cid in cluster_ids
+            cid.to_string: set() for cid in cluster_ids
         }
 
     @property
@@ -185,7 +228,7 @@ class ClusterActivationTracker:
 
         for act_sample in activation_samples:
             # Get cluster_hash from the ClusterId
-            cluster_hash: ClusterHash = act_sample.cluster_id.cluster_hash
+            cluster_hash: ClusterHash = act_sample.cluster_id.to_string
 
             # Skip if we've already used this text hash for this cluster
             if act_sample.text_hash in self.used_text_hashes[cluster_hash]:
@@ -249,19 +292,19 @@ class ClusterActivationTracker:
         result: dict[int, dict[str, Any]] = {}
 
         for cluster_id in self.cluster_ids:
-            cluster_idx: int = cluster_id.cluster_index
-            cluster_hash: ClusterHash = cluster_id.cluster_hash
+            cluster_idx: int = cluster_id.__DELETEME__
+            cluster_hash: ClusterHash = cluster_id.to_string
             cluster_result: dict[str, Any] = {
                 "cluster_id": {
-                    "model_info": cluster_id.model_info,
                     "spd_run": cluster_id.spd_run,
                     "clustering_run": cluster_id.clustering_run,
+                    "iteration": cluster_id.iteration,
                     "cluster_label": {
                         "module_name": cluster_id.cluster_label.module_name,
                         "original_index": cluster_id.cluster_label.original_index,
                         "str": str(cluster_id.cluster_label),
                     },
-                    "cluster_index": cluster_id.cluster_index,
+                    "cluster_index": cluster_id.__DELETEME__,
                 },
                 "components": cluster_components[cluster_idx],
                 "criteria": {},
