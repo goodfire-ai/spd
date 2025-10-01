@@ -7,6 +7,21 @@ from typing import Any, Literal, NewType
 
 import numpy as np
 import torch
+from jaxtyping import Float, Int
+from torch import Tensor
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from transformers import PreTrainedTokenizer
+
+from spd.clustering.activations import (
+    ProcessedActivations,
+    component_activations,
+    process_activations,
+)
+from spd.clustering.merge_history import MergeHistory
+from spd.models.component_model import ComponentModel
+from spd.models.sigmoids import SigmoidTypes
+from spd.utils.general_utils import extract_batch_data, get_module_device
 
 # Type aliases
 TextHash = NewType("TextHash", str)
@@ -35,9 +50,10 @@ class ClusterLabel:
         return (self.module_name, self.original_index)
 
     def string(self) -> str:
-        """Return as a string 'module_name:original_index'."""
-        return f"{self.module_name}-{self.original_index}"
+        """Return as a string 'module_name-original_index'."""
+        return f"{self.module_name}{_SEPARATOR_1}{self.original_index}"
 
+    @staticmethod
     def from_string(s: str) -> "ClusterLabel":
         """Create ClusterLabel from its string representation."""
         parts: list[str] = s.split(_SEPARATOR_1)
@@ -79,7 +95,7 @@ class ClusterId:
         return ClusterHash(_SEPARATOR_1.join(transformed_lst))
 
     @classmethod
-    def from_string(cls, s: str) -> "ClusterId":
+    def from_string(cls, s: ClusterHash) -> "ClusterId":
         """Create ClusterId from its string representation."""
         parts: list[str] = s.split(_SEPARATOR_1)
         if len(parts) != 5:
@@ -121,7 +137,7 @@ class ActivationSample:
     def activation_hash(self) -> ActivationHash:
         """Hash uniquely identifying this activation sample (cluster_hash + text_hash)."""
         # Combine cluster_hash with text_hash to create unique identifier
-        return ActivationHash(f"{self.cluster_id.to_string}:{self.text_hash}")
+        return ActivationHash(f"{self.cluster_id.to_string()}:{self.text_hash}")
 
     @property
     def mean_activation(self) -> float:
@@ -165,179 +181,314 @@ class TrackingCriterion:
     n_samples: int
 
 
-class ClusterActivationTracker:
-    """Tracks top-k samples per cluster across multiple criteria.
+@dataclass
+class ClusterActivationDatabase:
+    """Database for storing text samples and activations per cluster.
 
-    Does not store text data - only activation samples with activation_hash references.
-    Text samples must be provided separately when serializing results.
-
-    Internal structure:
-    - activation_samples: {ActivationHash: ActivationSample}
-    - top_samples: {CriterionIndex: {ClusterHash: [ActivationHash]}}
+    Database tables:
+    - text_samples: {TextHash: TextSample}
+    - cluster_top_samples: {ClusterHash: {CriterionIndex: [TextHash]}}
+    - activation_samples: {(TextHash, ClusterHash): ActivationSample}
     """
 
-    def __init__(
-        self,
-        cluster_ids: list[ClusterId],
-        criteria: list[TrackingCriterion],
-        device: torch.device,
-    ):
-        self.cluster_ids: list[ClusterId] = cluster_ids
-        self.criteria: list[TrackingCriterion] = criteria
-        self.device: torch.device = device
+    # Table: TextHash -> TextSample
+    text_samples: dict[TextHash, TextSample]
 
-        # Store all activation samples by their unique hash
-        self.activation_samples: dict[ActivationHash, ActivationSample] = {}
+    # Table: ClusterHash -> {CriterionIndex -> [TextHash]}
+    cluster_top_samples: dict[ClusterHash, dict[CriterionIndex, list[TextHash]]]
 
-        # For each criterion, track top-k activation_hashes per cluster
-        self.top_samples: dict[CriterionIndex, dict[ClusterHash, list[ActivationHash]]] = {}
-        for crit_idx, _ in enumerate(criteria):
-            crit_idx_typed = CriterionIndex(crit_idx)
-            self.top_samples[crit_idx_typed] = {}
-            for cluster_id in cluster_ids:
-                self.top_samples[crit_idx_typed][cluster_id.to_string] = []
+    # Table: (TextHash, ClusterHash) -> ActivationSample
+    activation_samples: dict[tuple[TextHash, ClusterHash], ActivationSample]
 
-        # Track used text_hashes per cluster to avoid duplicates
-        self.used_text_hashes: dict[ClusterHash, set[TextHash]] = {
-            cid.to_string: set() for cid in cluster_ids
-        }
+    # Metadata
+    cluster_ids: list[ClusterId]
+    criteria: list[TrackingCriterion]
 
-    @property
-    def required_text_hashes(self) -> set[TextHash]:
-        """Compute the set of all text hashes needed by stored activation samples."""
-        hashes: set[TextHash] = set()
-        for act_sample in self.activation_samples.values():
-            hashes.add(act_sample.text_hash)
-        return hashes
+    @classmethod
+    def create_empty(
+        cls, cluster_ids: list[ClusterId], criteria: list[TrackingCriterion]
+    ) -> "ClusterActivationDatabase":
+        """Create an empty database with initialized tables."""
+        cluster_top_samples: dict[ClusterHash, dict[CriterionIndex, list[TextHash]]] = {}
+        for cluster_id in cluster_ids:
+            cluster_hash = cluster_id.to_string()
+            cluster_top_samples[cluster_hash] = {}
+            for crit_idx in range(len(criteria)):
+                crit_idx_typed = CriterionIndex(crit_idx)
+                cluster_top_samples[cluster_hash][crit_idx_typed] = []
 
-    def try_insert_batch(
-        self,
-        activation_samples: list[ActivationSample],
+        return cls(
+            text_samples={},
+            cluster_top_samples=cluster_top_samples,
+            activation_samples={},
+            cluster_ids=cluster_ids,
+            criteria=criteria,
+        )
+
+    def _try_insert_activation(
+        self, act_sample: ActivationSample, text_sample: TextSample
     ) -> dict[CriterionIndex, int]:
-        """Try to insert activation samples for all criteria.
-
-        Args:
-            activation_samples: ActivationSample objects to potentially insert
+        """Try to insert an activation sample for all criteria.
 
         Returns:
-            Dict mapping CriterionIndex to number of samples inserted
+            Dict mapping CriterionIndex to 1 if inserted, 0 otherwise
         """
         n_inserted: dict[CriterionIndex, int] = {
             CriterionIndex(i): 0 for i in range(len(self.criteria))
         }
 
-        for act_sample in activation_samples:
-            # Get cluster_hash from the ClusterId
-            cluster_hash: ClusterHash = act_sample.cluster_id.to_string
+        cluster_hash: ClusterHash = act_sample.cluster_id.to_string()
+        text_hash: TextHash = text_sample.text_hash
 
-            # Skip if we've already used this text hash for this cluster
-            if act_sample.text_hash in self.used_text_hashes[cluster_hash]:
-                continue
+        # Store text sample if not already present
+        if text_hash not in self.text_samples:
+            self.text_samples[text_hash] = text_sample
 
-            # Store activation sample
-            act_hash: ActivationHash = act_sample.activation_hash
-            self.activation_samples[act_hash] = act_sample
+        # Store activation sample
+        key = (text_hash, cluster_hash)
+        if key in self.activation_samples:
+            # Already have this exact activation, skip
+            return n_inserted
 
-            # Try to insert for each criterion
-            for crit_idx, criterion in enumerate(self.criteria):
-                crit_idx_typed = CriterionIndex(crit_idx)
-                # Get the value for this criterion
-                stat_value: float = getattr(act_sample, criterion.property_name)
+        self.activation_samples[key] = act_sample
 
-                top_list: list[ActivationHash] = self.top_samples[crit_idx_typed][cluster_hash]
+        # Try to insert for each criterion
+        for crit_idx, criterion in enumerate(self.criteria):
+            crit_idx_typed = CriterionIndex(crit_idx)
+            stat_value: float = getattr(act_sample, criterion.property_name)
 
-                # Find insertion point based on direction
-                insert_pos: int | None = None
+            top_list: list[TextHash] = self.cluster_top_samples[cluster_hash][crit_idx_typed]
 
-                for j, existing_hash in enumerate(top_list):
-                    existing_sample = self.activation_samples[existing_hash]
-                    existing_value: float = getattr(existing_sample, criterion.property_name)
+            # Find insertion point based on direction
+            insert_pos: int | None = None
 
-                    if (criterion.direction == "max" and stat_value > existing_value) or (
-                        criterion.direction == "min" and stat_value < existing_value
-                    ):
-                        insert_pos = j
-                        break
+            for j, existing_text_hash in enumerate(top_list):
+                existing_key = (existing_text_hash, cluster_hash)
+                existing_sample = self.activation_samples[existing_key]
+                existing_value: float = getattr(existing_sample, criterion.property_name)
 
-                # Insert if we found a position or list not full
-                if insert_pos is not None:
-                    top_list.insert(insert_pos, act_hash)
-                    # Keep only top n_samples
-                    if len(top_list) > criterion.n_samples:
-                        top_list.pop()
-                    n_inserted[crit_idx_typed] += 1
-                elif len(top_list) < criterion.n_samples:
-                    top_list.append(act_hash)
-                    n_inserted[crit_idx_typed] += 1
+                if (criterion.direction == "max" and stat_value > existing_value) or (
+                    criterion.direction == "min" and stat_value < existing_value
+                ):
+                    insert_pos = j
+                    break
 
-            # Mark text hash as used after trying all criteria
-            self.used_text_hashes[cluster_hash].add(act_sample.text_hash)
+            # Insert if we found a position or list not full
+            if insert_pos is not None:
+                top_list.insert(insert_pos, text_hash)
+                # Keep only top n_samples
+                if len(top_list) > criterion.n_samples:
+                    top_list.pop()
+                n_inserted[crit_idx_typed] += 1
+            elif len(top_list) < criterion.n_samples:
+                top_list.append(text_hash)
+                n_inserted[crit_idx_typed] += 1
 
         return n_inserted
 
-    def to_result_dict(
-        self,
-        cluster_components: dict[int, list[dict[str, Any]]],
-        text_pool: dict[TextHash, TextSample],
-    ) -> dict[int, dict[str, Any]]:
-        """Convert tracking state to final result dictionary.
+    @classmethod
+    def generate(
+        cls,
+        model: ComponentModel,
+        sigmoid_type: SigmoidTypes,
+        tokenizer: PreTrainedTokenizer,
+        dataloader: DataLoader[Any],
+        merge_history: MergeHistory,
+        iteration: int,
+        criteria: list[TrackingCriterion],
+        spd_run: str,
+        clustering_run: str,
+        n_batches: int,
+    ) -> "ClusterActivationDatabase":
+        """Generate database by computing activations from model and data.
 
         Args:
-            cluster_components: Mapping from cluster_index to component info dicts
-            text_pool: External text pool mapping text_hash to TextSample
+            model: ComponentModel to get activations from
+            sigmoid_type: Sigmoid type for activation computation
+            tokenizer: Tokenizer for decoding text
+            dataloader: DataLoader providing batches
+            merge_history: MergeHistory containing cluster information
+            iteration: Merge iteration to analyze
+            criteria: List of tracking criteria
+            spd_run: SPD run identifier
+            clustering_run: Clustering run identifier
+            n_batches: Number of batches to process
 
         Returns:
-            Dict mapping cluster_index to results with components and samples per criterion
+            Populated ClusterActivationDatabase
         """
-        result: dict[int, dict[str, Any]] = {}
+        device: torch.device = get_module_device(model)
 
-        for cluster_id in self.cluster_ids:
-            cluster_idx: int = cluster_id.__DELETEME__
-            cluster_hash: ClusterHash = cluster_id.to_string
-            cluster_result: dict[str, Any] = {
-                "cluster_id": {
-                    "spd_run": cluster_id.spd_run,
-                    "clustering_run": cluster_id.clustering_run,
-                    "iteration": cluster_id.iteration,
-                    "cluster_label": {
-                        "module_name": cluster_id.cluster_label.module_name,
-                        "original_index": cluster_id.cluster_label.original_index,
-                        "str": str(cluster_id.cluster_label),
-                    },
-                    "cluster_index": cluster_id.__DELETEME__,
-                },
-                "components": cluster_components[cluster_idx],
-                "criteria": {},
-            }
+        # Get unique cluster indices and component info
+        unique_cluster_indices: list[int] = merge_history.get_unique_clusters(iteration)
+        cluster_components: dict[int, list[dict[str, Any]]] = {
+            cid: merge_history.get_cluster_components_info(iteration, cid)
+            for cid in unique_cluster_indices
+        }
 
-            # For each criterion, collect samples
-            for crit_idx, criterion in enumerate(self.criteria):
-                crit_idx_typed = CriterionIndex(crit_idx)
-                activation_hashes: list[ActivationHash] = self.top_samples[crit_idx_typed][
-                    cluster_hash
-                ]
+        # Create ClusterId objects for each cluster
+        cluster_ids: list[ClusterId] = []
+        for idx in unique_cluster_indices:
+            # Get cluster label from first component
+            components = cluster_components[idx]
+            if components:
+                first_label = components[0]["label"]
+                module_name, original_index_str = first_label.rsplit(":", 1)
+                cluster_label = ClusterLabel(
+                    module_name=module_name, original_index=int(original_index_str)
+                )
+            else:
+                cluster_label = ClusterLabel(module_name="unknown", original_index=idx)
 
-                # Serialize samples with text data from external pool
-                serialized: list[dict[str, Any]] = []
-                for act_hash in activation_hashes:
-                    act_sample = self.activation_samples[act_hash]
-                    text_sample = text_pool[act_sample.text_hash]
-                    sample_dict: dict[str, Any] = {
-                        "full_text": text_sample.full_text,
-                        "tokens": text_sample.tokens,
-                        "dataset_index": text_sample.dataset_index,
-                        "activations": act_sample.activations.tolist(),
-                        "mean_activation": act_sample.mean_activation,
-                        "median_activation": act_sample.median_activation,
-                        "max_activation": act_sample.max_activation,
-                        "min_activation": act_sample.min_activation,
-                        "max_position": act_sample.max_position,
-                    }
-                    serialized.append(sample_dict)
+            cluster_ids.append(
+                ClusterId(
+                    spd_run=spd_run,
+                    clustering_run=clustering_run,
+                    iteration=iteration,
+                    cluster_label=cluster_label,
+                )
+            )
 
-                criterion_key: str = f"{criterion.property_name}_{criterion.direction}"
-                cluster_result["criteria"][criterion_key] = serialized
+        # Create mapping from cluster_index to ClusterId
+        cluster_id_map: dict[int, ClusterId] = {
+            unique_cluster_indices[i]: cluster_ids[i] for i in range(len(cluster_ids))
+        }
 
-            result[cluster_idx] = cluster_result
+        # Initialize empty database
+        db = cls.create_empty(cluster_ids=cluster_ids, criteria=criteria)
 
-        return result
+        # Process batches
+        for batch_idx, batch_data in enumerate(tqdm(dataloader, total=n_batches)):
+            if batch_idx >= n_batches:
+                break
+
+            batch: Int[Tensor, "batch_size n_ctx"] = extract_batch_data(batch_data).to(device)
+            batch_size: int
+            seq_len: int
+            batch_size, seq_len = batch.shape
+
+            # Get activations
+            activations: dict[str, Float[Tensor, "n_steps C"]] = component_activations(
+                model,
+                device,
+                batch=batch,
+                sigmoid_type=sigmoid_type,
+            )
+            processed: ProcessedActivations = process_activations(activations, seq_mode="concat")
+
+            for cluster_idx in unique_cluster_indices:
+                # Compute cluster activations
+                acts_2d: Float[Tensor, "batch_size seq_len"] = _compute_cluster_activations(
+                    processed, cluster_components[cluster_idx], batch_size, seq_len
+                )
+
+                if acts_2d.abs().max() == 0:
+                    continue
+
+                # Find top activations across all positions
+                flat_acts: Float[Tensor, " batch_size*seq_len"] = acts_2d.flatten()
+                # Get top k per criterion (max of n_samples across all criteria)
+                k: int = min(max(c.n_samples for c in criteria), len(flat_acts))
+                top_idx: Int[Tensor, " k"]
+                _, top_idx = torch.topk(flat_acts, k)
+
+                # Get ClusterId for this cluster
+                cluster_id: ClusterId = cluster_id_map[cluster_idx]
+
+                # Create and insert samples
+                for idx in top_idx:
+                    batch_idx_i: int = int(idx // seq_len)
+
+                    text_sample, act_sample = _create_samples(
+                        cluster_id=cluster_id,
+                        batch=batch,
+                        batch_idx=batch_idx_i,
+                        sequence_acts=acts_2d[batch_idx_i],
+                        tokenizer=tokenizer,
+                    )
+
+                    # Try to insert into database
+                    db._try_insert_activation(act_sample, text_sample)
+
+        return db
+
+
+def _compute_cluster_activations(
+    processed: ProcessedActivations,
+    cluster_components: list[dict[str, Any]],
+    batch_size: int,
+    seq_len: int,
+) -> Float[Tensor, "batch_size seq_len"]:
+    """Compute average activations for a cluster across its components.
+
+    Args:
+        processed: ProcessedActivations containing all component activations
+        cluster_components: List of component info dicts for this cluster
+        batch_size: Batch size
+        seq_len: Sequence length
+
+    Returns:
+        2D tensor of cluster activations (batch_size x seq_len)
+    """
+    # Get indices for components in this cluster
+    comp_indices: list[int] = []
+    for component_info in cluster_components:
+        label: str = component_info["label"]
+        comp_idx: int | None = processed.get_label_index(label)
+        if comp_idx is not None:
+            comp_indices.append(comp_idx)
+
+    if not comp_indices:
+        # Return zeros if no valid components
+        return torch.zeros((batch_size, seq_len), device=processed.activations.device)
+
+    # Average activations across cluster components
+    cluster_acts: Float[Tensor, " n_steps"] = processed.activations[:, comp_indices].mean(dim=1)
+    return cluster_acts.view(batch_size, seq_len)
+
+
+def _create_samples(
+    cluster_id: ClusterId,
+    batch: Int[Tensor, "batch_size n_ctx"],
+    batch_idx: int,
+    sequence_acts: Float[Tensor, " seq_len"],
+    tokenizer: PreTrainedTokenizer,
+) -> tuple[TextSample, ActivationSample]:
+    """Create TextSample and ActivationSample from batch data.
+
+    Args:
+        cluster_id: ClusterId this sample belongs to
+        batch: Input token batch
+        batch_idx: Index within batch
+        sequence_acts: Activations for entire sequence
+        tokenizer: Tokenizer for decoding
+
+    Returns:
+        Tuple of (TextSample, ActivationSample)
+    """
+    # Extract full sequence data
+    tokens: Int[Tensor, " n_ctx"] = batch[batch_idx].cpu()
+    tokens_list: list[int] = tokens.tolist()
+    text: str = tokenizer.decode(tokens)  # pyright: ignore[reportAttributeAccessIssue]
+
+    # Convert token IDs to token strings
+    token_strings: list[str] = [
+        tokenizer.decode([tid])  # pyright: ignore[reportAttributeAccessIssue]
+        for tid in tokens_list
+    ]
+
+    # Create TextSample
+    text_sample = TextSample(
+        full_text=text,
+        tokens=token_strings,
+    )
+
+    # Create ActivationSample (with numpy array)
+    activations_np: np.ndarray = sequence_acts.cpu().numpy()
+    activation_sample = ActivationSample(
+        cluster_id=cluster_id,
+        text_hash=text_sample.text_hash,
+        activations=activations_np,
+    )
+
+    return text_sample, activation_sample
