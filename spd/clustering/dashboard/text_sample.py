@@ -110,51 +110,6 @@ class TextSample:
         """Return the number of tokens."""
         return len(self.tokens)
 
-
-# @dataclass(frozen=True, slots=True, kw_only=True)
-# class ActivationSample:
-#     """Activations for a text sample in a specific cluster."""
-
-#     cluster_id: ClusterId
-#     text_hash: TextSampleHash  # Reference to TextSample
-#     activations: Float[np.ndarray, " n_ctx"]
-
-#     @cached_property
-#     def activation_hash(self) -> ActivationSampleHash:
-#         """Hash uniquely identifying this activation sample (cluster_hash + text_hash)."""
-#         # Combine cluster_hash with text_hash to create unique identifier
-#         return ActivationSampleHash(f"{self.cluster_id.to_string()}:{self.text_hash}")
-
-#     @property
-#     def mean_activation(self) -> float:
-#         """Compute mean activation across all tokens."""
-#         return float(np.mean(self.activations))
-
-#     @property
-#     def min_activation(self) -> float:
-#         """Compute minimum activation across all tokens."""
-#         return float(np.min(self.activations))
-
-#     @property
-#     def median_activation(self) -> float:
-#         """Compute median activation across all tokens."""
-#         return float(np.median(self.activations))
-
-#     @property
-#     def max_activation(self) -> float:
-#         """Compute maximum activation across all tokens."""
-#         return float(np.max(self.activations))
-
-#     @property
-#     def max_position(self) -> int:
-#         """Find position of maximum activation."""
-#         return int(np.argmax(self.activations))
-
-#     def length(self) -> int:
-#         """Return the number of activation values (sequence length)."""
-#         return len(self.activations)
-    
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ActivationSampleBatch:
     cluster_id: ClusterId
@@ -167,7 +122,7 @@ class ActivationSampleBatch:
         """Hashes uniquely identifying each activation sample (cluster_hash + text_hash)."""
         cluster_str = self.cluster_id.to_string()
         return [
-            ActivationSampleHash(f"{cluster_str}:{th}") for th in self.text_hashes
+            ActivationSampleHash(f"{cluster_str}{_SEPARATOR_2}{th}") for th in self.text_hashes
         ]
     
     @property
@@ -180,33 +135,6 @@ class ActivationSampleBatch:
         n_samples: int = self.activations.shape[0]
         assert len(self.text_hashes) == n_samples, "Mismatch between text_hashes and activations"
         return n_samples
-    
-    # def as_list(self) -> list[ActivationSample]:
-    #     """Convert batch to list of ActivationSample instances."""
-    #     return [
-    #         ActivationSample(
-    #             cluster_id=self.cluster_id,
-    #             text_hash=self.text_hashes[i],
-    #             activations=self.activations[i],
-    #         )
-    #         for i in range(len(self.text_hashes))
-    #     ]
-    
-    # @classmethod
-    # def from_list(cls, samples: list[ActivationSample]) -> "ActivationSampleBatch":
-    #     """Create ActivationSampleBatch from a list of ActivationSample instances."""
-    #     if not samples:
-    #         raise ValueError("Cannot create ActivationSampleBatch from empty list")
-        
-    #     cluster_id: ClusterId = samples[0].cluster_id
-    #     text_hashes: list[TextSampleHash] = [sample.text_hash for sample in samples]
-    #     activations: Float[np.ndarray, "batch n_ctx"] = np.stack([sample.activations for sample in samples])
-        
-    #     return cls(
-    #         cluster_id=cluster_id,
-    #         text_hashes=text_hashes,
-    #         activations=activations,
-    #     )
 
 
 ACTIVATION_SAMPLE_BATCH_STATS: dict[str, Callable[[ActivationSampleBatch], Float[np.ndarray, " batch"]]] = dict(
@@ -255,14 +183,6 @@ class TrackingCriterion:
             direction=direction,  # pyright: ignore[reportArgumentType]
             n_samples=int(parts[2]),
         )
-
-
-# input data looks like `{ cluster -> {text -> activation} }`
-# output data looks like:
-# cluster -> {
-#   {criterion -> texts}
-#   {various stats about the cluster}
-# }
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BinnedData:
@@ -334,3 +254,41 @@ class ClusterData:
             criterion_samples=criterion_samples,
             stats=stats,
         )
+
+    def get_unique_text_hashes(self) -> set[TextSampleHash]:
+        """Get all unique text hashes across all criteria."""
+        unique_hashes: set[TextSampleHash] = set()
+        for hashes in self.criterion_samples.values():
+            unique_hashes.update(hashes)
+        return unique_hashes
+    
+    def get_unique_activation_hashes(self) -> set[ActivationSampleHash]:
+        """Get all unique activation hashes across all criteria."""
+        unique_hashes: set[ActivationSampleHash] = set()
+        cluster_str = self.cluster_hash
+        for hashes in self.criterion_samples.values():
+            unique_hashes.update(
+                ActivationSampleHash(f"{cluster_str}{_SEPARATOR_2}{th}") for th in hashes
+            )
+        return unique_hashes
+    
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize to a dictionary."""
+        # TODO: implement, should be directly writeable to JSON in a reasonable way
+
+class DashboardData:
+    """All data for the dashboard."""
+
+    clusters: dict[ClusterIdHash, ClusterData]
+    text_samples: dict[TextSampleHash, TextSample]
+    activations_map: dict[ActivationSampleHash, int]
+    activations: ActivationSampleBatch
+
+    # activations_map maps ActivationSampleHash to index in `activations`
+
+
+    # TODO: a "save" method which saves this all into json (or numpy arrays) such that a frontend can read it and display it, without having to read too much data at a time (if we are looking at just one cluster)
+
+
+
