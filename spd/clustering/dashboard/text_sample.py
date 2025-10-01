@@ -3,9 +3,10 @@
 import hashlib
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Literal, NewType
+from typing import Any, Callable, Literal, NewType
 
 import numpy as np
+from jaxtyping import Float, Int
 
 # Type aliases
 TextSampleHash = NewType("TextSampleHash", str)
@@ -110,48 +111,113 @@ class TextSample:
         return len(self.tokens)
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ActivationSample:
-    """Activations for a text sample in a specific cluster."""
+# @dataclass(frozen=True, slots=True, kw_only=True)
+# class ActivationSample:
+#     """Activations for a text sample in a specific cluster."""
 
+#     cluster_id: ClusterId
+#     text_hash: TextSampleHash  # Reference to TextSample
+#     activations: Float[np.ndarray, " n_ctx"]
+
+#     @cached_property
+#     def activation_hash(self) -> ActivationSampleHash:
+#         """Hash uniquely identifying this activation sample (cluster_hash + text_hash)."""
+#         # Combine cluster_hash with text_hash to create unique identifier
+#         return ActivationSampleHash(f"{self.cluster_id.to_string()}:{self.text_hash}")
+
+#     @property
+#     def mean_activation(self) -> float:
+#         """Compute mean activation across all tokens."""
+#         return float(np.mean(self.activations))
+
+#     @property
+#     def min_activation(self) -> float:
+#         """Compute minimum activation across all tokens."""
+#         return float(np.min(self.activations))
+
+#     @property
+#     def median_activation(self) -> float:
+#         """Compute median activation across all tokens."""
+#         return float(np.median(self.activations))
+
+#     @property
+#     def max_activation(self) -> float:
+#         """Compute maximum activation across all tokens."""
+#         return float(np.max(self.activations))
+
+#     @property
+#     def max_position(self) -> int:
+#         """Find position of maximum activation."""
+#         return int(np.argmax(self.activations))
+
+#     def length(self) -> int:
+#         """Return the number of activation values (sequence length)."""
+#         return len(self.activations)
+    
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ActivationSampleBatch:
     cluster_id: ClusterId
-    text_hash: TextSampleHash  # Reference to TextSample
-    activations: np.ndarray  # Shape: (seq_len,)
+    text_hashes: list[TextSampleHash]
+    activations: Float[np.ndarray, "batch n_ctx"]
+
 
     @cached_property
-    def activation_hash(self) -> ActivationSampleHash:
-        """Hash uniquely identifying this activation sample (cluster_hash + text_hash)."""
-        # Combine cluster_hash with text_hash to create unique identifier
-        return ActivationSampleHash(f"{self.cluster_id.to_string()}:{self.text_hash}")
-
+    def activation_hashes(self) -> list[ActivationSampleHash]:
+        """Hashes uniquely identifying each activation sample (cluster_hash + text_hash)."""
+        cluster_str = self.cluster_id.to_string()
+        return [
+            ActivationSampleHash(f"{cluster_str}:{th}") for th in self.text_hashes
+        ]
+    
     @property
-    def mean_activation(self) -> float:
-        """Compute mean activation across all tokens."""
-        return float(np.mean(self.activations))
+    def shape(self) -> tuple[int, int]:
+        """Return the shape of the activations array (batch_size, n_ctx)."""
+        return self.activations.shape
+    
+    def __len__(self) -> int:
+        """Return the number of samples in the batch."""
+        n_samples: int = self.activations.shape[0]
+        assert len(self.text_hashes) == n_samples, "Mismatch between text_hashes and activations"
+        return n_samples
+    
+    # def as_list(self) -> list[ActivationSample]:
+    #     """Convert batch to list of ActivationSample instances."""
+    #     return [
+    #         ActivationSample(
+    #             cluster_id=self.cluster_id,
+    #             text_hash=self.text_hashes[i],
+    #             activations=self.activations[i],
+    #         )
+    #         for i in range(len(self.text_hashes))
+    #     ]
+    
+    # @classmethod
+    # def from_list(cls, samples: list[ActivationSample]) -> "ActivationSampleBatch":
+    #     """Create ActivationSampleBatch from a list of ActivationSample instances."""
+    #     if not samples:
+    #         raise ValueError("Cannot create ActivationSampleBatch from empty list")
+        
+    #     cluster_id: ClusterId = samples[0].cluster_id
+    #     text_hashes: list[TextSampleHash] = [sample.text_hash for sample in samples]
+    #     activations: Float[np.ndarray, "batch n_ctx"] = np.stack([sample.activations for sample in samples])
+        
+    #     return cls(
+    #         cluster_id=cluster_id,
+    #         text_hashes=text_hashes,
+    #         activations=activations,
+    #     )
 
-    @property
-    def min_activation(self) -> float:
-        """Compute minimum activation across all tokens."""
-        return float(np.min(self.activations))
 
-    @property
-    def median_activation(self) -> float:
-        """Compute median activation across all tokens."""
-        return float(np.median(self.activations))
+ACTIVATION_SAMPLE_BATCH_STATS: dict[str, Callable[[ActivationSampleBatch], Float[np.ndarray, " batch"]]] = dict(
+    mean_activation=lambda batch: np.mean(batch.activations, axis=1),
+    min_activation=lambda batch: np.min(batch.activations, axis=1),
+    median_activation=lambda batch: np.median(batch.activations, axis=1),
+    max_activation=lambda batch: np.max(batch.activations, axis=1),
+    max_position=lambda batch: np.argmax(batch.activations, axis=1).astype(float),
+)
 
-    @property
-    def max_activation(self) -> float:
-        """Compute maximum activation across all tokens."""
-        return float(np.max(self.activations))
 
-    @property
-    def max_position(self) -> int:
-        """Find position of maximum activation."""
-        return int(np.argmax(self.activations))
-
-    def length(self) -> int:
-        """Return the number of activation values (sequence length)."""
-        return len(self.activations)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -191,133 +257,80 @@ class TrackingCriterion:
         )
 
 
-# input data looks like `(cluster, text) -> activation` which is unique
+# input data looks like `{ cluster -> {text -> activation} }`
 # output data looks like:
 # cluster -> {
 #   {criterion -> texts}
 #   {various stats about the cluster}
 # }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-@dataclass
-class ClusterCriterionTracker:
-    """Accumulates all stat values per cluster per criterion, then filters to top-k"""
-
-    all_samples: dict[ClusterIdHash, dict[TrackingCriterionHash, list[tuple[TextSampleHash, float]]]]
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BinnedData:
+    bin_edges: list[float]
+    bin_counts: list[int]
 
     @classmethod
-    def create_empty(cls) -> "ClusterCriterionTracker":
-        """Create an empty tracker."""
-        return cls(all_samples={})
+    def from_arr(cls, arr: np.ndarray, n_bins: int) -> "BinnedData":
+        """Create BinnedData from a numpy array."""
+        counts, edges = np.histogram(arr, bins=n_bins)
+        return cls(bin_edges=edges.tolist(), bin_counts=counts.tolist())
 
-    def add_sample(
-        self,
-        cluster_hash: ClusterIdHash,
-        text_hash: TextSampleHash,
-        stat_values: dict[TrackingCriterionHash, float],
-    ) -> None:
-        """Add a sample to the tracker.
 
-        Args:
-            cluster_hash: Hash of the cluster
-            text_hash: Hash of the text sample
-            stat_values: Dict mapping TrackingCriterionHash to computed stat values
-        """
-        # Initialize cluster if needed
-        if cluster_hash not in self.all_samples:
-            self.all_samples[cluster_hash] = {}
 
-        # Add to each criterion
-        for crit_hash, stat_value in stat_values.items():
-            # Initialize criterion if needed
-            if crit_hash not in self.all_samples[cluster_hash]:
-                self.all_samples[cluster_hash][crit_hash] = []
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ClusterData:
+    cluster_hash: ClusterIdHash
+    criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]]
+    stats: dict[str, Any]
 
-            # Add sample (allow duplicates for now, dedup can happen in filter_top_k)
-            self.all_samples[cluster_hash][crit_hash].append((text_hash, stat_value))
+    @classmethod
+    def generate(
+        cls,
+        cluster_id: ClusterId,
+        activation_samples: ActivationSampleBatch,
+        criteria: list[TrackingCriterion],
+        hist_bins: int = 10,
+    ) -> "ClusterData":
+        cluster_hash: ClusterIdHash = cluster_id.to_string()
+        criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]] = {}
+        stats: dict[str, Any] = dict()
 
-    def filter_top_k(
-        self, criteria: list[TrackingCriterion]
-    ) -> dict[ClusterIdHash, dict[TrackingCriterionHash, list[TextSampleHash]]]:
-        """Filter to top-k samples per cluster per criterion.
 
-        Args:
-            criteria: List of criteria specifying n_samples and direction
+        # filter out top-k samples per criterion
+        for criterion in criteria:
+            # Extract property values
+            prop_values: Float[np.ndarray, " batch"] = ACTIVATION_SAMPLE_BATCH_STATS[criterion.property_name](activation_samples)
+            # Sort by property value
+            reverse: bool = criterion.direction == "max"
+            # TODO
 
-        Returns:
-            Dict mapping cluster -> criterion -> list of top-k text hashes
-        """
-        criteria_map: dict[TrackingCriterionHash, TrackingCriterion] = {
-            c.to_string(): c for c in criteria
-        }
+            # Take top k
 
-        result: dict[ClusterIdHash, dict[TrackingCriterionHash, list[TextSampleHash]]] = {}
+            # Extract just text hashes
+            criterion_samples[criterion.to_string()] = [th for th, _ in top_k]
 
-        for cluster_hash, cluster_data in self.all_samples.items():
-            result[cluster_hash] = {}
 
-            for crit_hash, samples in cluster_data.items():
-                if crit_hash not in criteria_map:
-                    continue
+            # add stats
+            stats[criterion.to_string()] = BinnedData.from_arr(
+                prop_values,
+                n_bins=hist_bins,
+            )
 
-                criterion = criteria_map[crit_hash]
+        # Add general stats
+        all_activations: Float[np.ndarray, " batch n_ctx"] = activation_samples.activations
+        stats["all_activations"] = BinnedData.from_arr(
+            all_activations.flatten(),
+            n_bins=hist_bins,
+        )
+        stats["n_samples"] = len(activation_samples)
+        stats["n_tokens"] = int(all_activations.size)
+        stats["mean_activation"] = float(np.mean(all_activations))
+        stats["min_activation"] = float(np.min(all_activations))
+        stats["max_activation"] = float(np.max(all_activations))
+        stats["median_activation"] = float(np.median(all_activations))
 
-                # Deduplicate by text_hash (keep first occurrence)
-                seen: set[TextSampleHash] = set()
-                deduped: list[tuple[TextSampleHash, float]] = []
-                for text_hash, stat_value in samples:
-                    if text_hash not in seen:
-                        seen.add(text_hash)
-                        deduped.append((text_hash, stat_value))
-
-                # Sort by stat value
-                reverse = criterion.direction == "max"
-                sorted_samples = sorted(deduped, key=lambda x: x[1], reverse=reverse)
-
-                # Take top k
-                top_k = sorted_samples[: criterion.n_samples]
-
-                # Extract just text hashes
-                result[cluster_hash][crit_hash] = [th for th, _ in top_k]
-
-        return result
+        return cls(
+            cluster_hash=cluster_hash,
+            criterion_samples=criterion_samples,
+            stats=stats,
+        )
