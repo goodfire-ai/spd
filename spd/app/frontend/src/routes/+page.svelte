@@ -238,9 +238,9 @@
 </script>
 
 <main>
-    <div class="container">
-        <!-- Top-level controls -->
-        <div class="top-controls">
+    <div class="app-layout">
+        <!-- Left Sidebar -->
+        <aside class="sidebar">
             <RunSelector bind:loadingRun bind:wandbRunId {isLoading} />
 
             <div class="tab-navigation">
@@ -259,160 +259,173 @@
                     Activation Contexts
                 </button>
             </div>
-        </div>
+        </aside>
 
-        <div class:hidden={activeTab !== "ablation"}>
-            <SavedMasksPanel bind:this={savedMasksPanel} onApplyMask={applyMaskAsAblation} />
-            <div class="workspace-navigation">
-                <div class="workspace-header">
-                    <h3>Prompt Workspaces</h3>
-                    <button class="add-prompt-btn" on:click={toggleAvailablePrompts}>
-                        {showAvailablePrompts ? "Cancel" : "+ Add Prompt"}
-                    </button>
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class:hidden={activeTab !== "ablation"}>
+                <SavedMasksPanel bind:this={savedMasksPanel} onApplyMask={applyMaskAsAblation} />
+                <div class="workspace-navigation">
+                    <div class="workspace-header">
+                        <h3>Prompt Workspaces</h3>
+                        <button class="add-prompt-btn" on:click={toggleAvailablePrompts}>
+                            {showAvailablePrompts ? "Cancel" : "+ Add Prompt"}
+                        </button>
+                    </div>
+
+                    {#if showAvailablePrompts}
+                        <div class="available-prompts-dropdown">
+                            {#if availablePrompts.length === 0}
+                                <p>Loading prompts...</p>
+                            {:else}
+                                <div class="prompt-list">
+                                    {#each availablePrompts as prompt, i}
+                                        <button
+                                            class="prompt-button"
+                                            on:click={() => {
+                                                runPromptByIndex(prompt.index);
+                                                showAvailablePrompts = false;
+                                            }}
+                                            disabled={isLoading}
+                                        >
+                                            <span class="prompt-number">#{i + 1}</span>
+                                            <span class="prompt-text">{prompt.text}</span>
+                                        </button>
+                                    {/each}
+                                </div>
+                            {/if}
+                        </div>
+                    {/if}
+
+                    {#if $promptWorkspaces.length > 0}
+                        <div class="workspace-list">
+                            {#each $promptWorkspaces as workspace, i}
+                                <button
+                                    class="workspace-item"
+                                    class:active={i === $currentWorkspaceIndex}
+                                    on:click={() => switchToWorkspace(i)}
+                                >
+                                    <span class="workspace-number">#{i + 1}</span>
+                                    <span class="workspace-text">
+                                        {workspace.promptData.prompt_tokens
+                                            .slice(0, 8)
+                                            .join(" ")}...
+                                    </span>
+                                    <span
+                                        class="workspace-close"
+                                        on:click|stopPropagation={() => closeWorkspace(i)}>×</span
+                                    >
+                                </button>
+                            {/each}
+                        </div>
+                    {:else}
+                        <div class="empty-workspaces">
+                            No prompts loaded. Click "Add Prompt" to start.
+                        </div>
+                    {/if}
                 </div>
 
-                {#if showAvailablePrompts}
-                    <div class="available-prompts-dropdown">
-                        {#if availablePrompts.length === 0}
-                            <p>Loading prompts...</p>
-                        {:else}
-                            <div class="prompt-list">
-                                {#each availablePrompts as prompt, i}
-                                    <button
-                                        class="prompt-button"
-                                        on:click={() => {
-                                            runPromptByIndex(prompt.index);
-                                            showAvailablePrompts = false;
-                                        }}
-                                        disabled={isLoading}
-                                    >
-                                        <span class="prompt-number">#{i + 1}</span>
-                                        <span class="prompt-text">{prompt.text}</span>
-                                    </button>
-                                {/each}
-                            </div>
+                <div class="main-layout">
+                    <div class="left-panel">
+                        {#if result && currentPromptId}
+                            <ComponentHeatmap
+                                {result}
+                                promptId={currentPromptId}
+                                onCellClick={openPopup}
+                                on:maskCreated={refreshSavedMasks}
+                            />
+
+                            <DisabledComponentsPanel
+                                promptTokens={result.prompt_tokens}
+                                {isLoading}
+                                onSendAblation={sendAblation}
+                                onToggleComponent={toggleComponentDisabled}
+                            />
                         {/if}
                     </div>
-                {/if}
 
-                {#if $promptWorkspaces.length > 0}
-                    <div class="workspace-list">
-                        {#each $promptWorkspaces as workspace, i}
-                            <button
-                                class="workspace-item"
-                                class:active={i === $currentWorkspaceIndex}
-                                on:click={() => switchToWorkspace(i)}
-                            >
-                                <span class="workspace-number">#{i + 1}</span>
-                                <span class="workspace-text">
-                                    {workspace.promptData.prompt_tokens.slice(0, 8).join(" ")}...
-                                </span>
-                                <span
-                                    class="workspace-close"
-                                    on:click|stopPropagation={() => closeWorkspace(i)}>×</span
-                                >
-                            </button>
-                        {/each}
-                    </div>
-                {:else}
-                    <div class="empty-workspaces">
-                        No prompts loaded. Click "Add Prompt" to start.
-                    </div>
-                {/if}
-            </div>
-
-            <div class="main-layout">
-                <div class="left-panel">
-                    {#if result && currentPromptId}
-                        <ComponentHeatmap
-                            {result}
-                            promptId={currentPromptId}
-                            onCellClick={openPopup}
-                            on:maskCreated={refreshSavedMasks}
-                        />
-
-                        <DisabledComponentsPanel
-                            promptTokens={result.prompt_tokens}
-                            {isLoading}
-                            onSendAblation={sendAblation}
-                            onToggleComponent={toggleComponentDisabled}
-                        />
-                    {/if}
-                </div>
-
-                <!-- Right side: Scrollable predictions -->
-                <div class="right-panel">
-                    {#if result && result.full_run_token_logits}
-                        <OriginalPredictions
-                            tokenLogits={result.full_run_token_logits}
-                            promptTokens={result.prompt_tokens}
-                            title="Original Model Predictions"
-                        />
-                    {/if}
-
-                    {#if result && result.ci_masked_token_logits}
-                        <OriginalPredictions
-                            tokenLogits={result.ci_masked_token_logits}
-                            promptTokens={result.prompt_tokens}
-                            title="Original <strong>CI Masked</strong> Model Predictions"
-                        />
-                    {/if}
-
-                    {#if result}
-                        {#each $ablationResults as ablationResult}
-                            <AblationPredictions
-                                tokenLogits={ablationResult.tokenLogits}
+                    <!-- Right side: Scrollable predictions -->
+                    <div class="right-panel">
+                        {#if result && result.full_run_token_logits}
+                            <OriginalPredictions
+                                tokenLogits={result.full_run_token_logits}
                                 promptTokens={result.prompt_tokens}
-                                appliedMask={ablationResult.applied_mask}
-                                maskOverride={ablationResult.maskOverride}
+                                title="Original Model Predictions"
                             />
-                        {/each}
-                    {/if}
+                        {/if}
+
+                        {#if result && result.ci_masked_token_logits}
+                            <OriginalPredictions
+                                tokenLogits={result.ci_masked_token_logits}
+                                promptTokens={result.prompt_tokens}
+                                title="Original <strong>CI Masked</strong> Model Predictions"
+                            />
+                        {/if}
+
+                        {#if result}
+                            {#each $ablationResults as ablationResult}
+                                <AblationPredictions
+                                    tokenLogits={ablationResult.tokenLogits}
+                                    promptTokens={result.prompt_tokens}
+                                    appliedMask={ablationResult.applied_mask}
+                                    maskOverride={ablationResult.maskOverride}
+                                />
+                            {/each}
+                        {/if}
+                    </div>
                 </div>
             </div>
-        </div>
-        <div class:hidden={activeTab !== "activation-contexts"}>
-            <!-- Activation Contexts Tab Content -->
-            {#if status}
-                <div class="activation-contexts-container">
-                    <ActivationContextsTab availableComponentLayers={status.component_layers} />
-                </div>
-            {/if}
-        </div>
+            <div class:hidden={activeTab !== "activation-contexts"}>
+                <!-- Activation Contexts Tab Content -->
+                {#if status}
+                    <div class="activation-contexts-container">
+                        <ActivationContextsTab availableComponentLayers={status.component_layers} />
+                    </div>
+                {/if}
+            </div>
 
-        <ComponentDetailModal
-            onClose={closePopup}
-            onToggleComponent={toggleComponentDisabled}
-            {isComponentDisabled}
-        />
+            <ComponentDetailModal
+                onClose={closePopup}
+                onToggleComponent={toggleComponentDisabled}
+                {isComponentDisabled}
+            />
+        </div>
     </div>
 </main>
 
 <style>
     main {
-        padding: 0.5rem;
         font-family:
             system-ui,
             -apple-system,
             sans-serif;
     }
 
-    .container {
-        max-width: none;
-        margin: 0;
+    .app-layout {
         display: flex;
-        flex-direction: column;
-        gap: 1rem;
+        min-height: 100vh;
     }
 
-    .top-controls {
+    .sidebar {
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+        padding: 1rem;
         display: flex;
         flex-direction: column;
         gap: 1rem;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+    }
+
+    .main-content {
+        flex: 1;
+        min-width: 0;
         padding: 1rem;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
     }
 
     .main-layout {
@@ -423,8 +436,8 @@
 
     .left-panel {
         padding: 0.5rem;
-        flex: 0 0 50%;
-        max-width: 50%;
+        flex: 1;
+        min-width: 0;
         position: sticky;
         top: 1rem;
         align-self: flex-start;
@@ -434,6 +447,7 @@
 
     .right-panel {
         flex: 1;
+        min-width: 0;
         overflow-y: auto;
         padding-right: 1rem;
     }
@@ -612,38 +626,33 @@
 
     .tab-navigation {
         display: flex;
-        gap: 0.5rem;
-        padding: 0 1rem;
-        background: #f8f9fa;
-        border-bottom: 2px solid #dee2e6;
+        flex-direction: column;
+        gap: 0.25rem;
     }
 
     .tab-button {
-        padding: 0.75rem 1.5rem;
-        background: transparent;
-        border: none;
-        border-bottom: 3px solid transparent;
+        padding: 0.75rem 1rem;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
         cursor: pointer;
-        font-size: 1rem;
+        font-size: 0.95rem;
         font-weight: 500;
         color: #6c757d;
         transition: all 0.2s;
-        position: relative;
-        top: 2px;
+        text-align: left;
     }
 
     .tab-button:hover {
         color: #007bff;
+        background: #f0f8ff;
+        border-color: #007bff;
     }
 
     .tab-button.active {
-        color: #007bff;
-        border-bottom-color: #007bff;
-        background: white;
-    }
-
-    .main-layout.hidden {
-        display: none;
+        color: white;
+        background: #007bff;
+        border-color: #0056b3;
     }
 
     .activation-contexts-container {
