@@ -3,9 +3,9 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { api } from "$lib/api";
-    import type { RunPromptResponse, ComponentMask, Status, SparseVector } from "$lib/api";
+    import type { RunPromptResponse, SubcomponentMask, Status, SparseVector } from "$lib/api";
     import {
-        runAblation,
+        ablationSubcomponentMask,
         popupData,
         ablationResults,
         promptWorkspaces,
@@ -49,7 +49,7 @@
 
     // Helper functions for workspace management
     function createNewWorkspace(promptData: RunPromptResponse): PromptWorkspace {
-        const newMask: ComponentMask = {};
+        const newMask: SubcomponentMask = {};
         for (const layer of promptData.layer_cis) {
             newMask[layer.module] = promptData.prompt_tokens.map(() => []);
         }
@@ -68,22 +68,8 @@
             const workspace = $promptWorkspaces[index];
             result = workspace.promptData;
             currentPromptId = workspace.promptId;
-            $runAblation = workspace.runAblation;
+            $ablationSubcomponentMask = workspace.runAblation;
             $ablationResults = workspace.ablationResults;
-        }
-    }
-
-    function updateCurrentWorkspace() {
-        if (
-            $currentWorkspaceIndex >= 0 &&
-            $currentWorkspaceIndex < $promptWorkspaces.length &&
-            result
-        ) {
-            $promptWorkspaces[$currentWorkspaceIndex] = {
-                ...$promptWorkspaces[$currentWorkspaceIndex],
-                runAblation: $runAblation,
-                ablationResults: $ablationResults
-            };
         }
     }
 
@@ -155,19 +141,19 @@
 
     function initializeRunAblation() {
         if (!result) return;
-        const newMask: ComponentMask = {};
+        const newMask: SubcomponentMask = {};
         for (const layer of result.layer_cis) {
             newMask[layer.module] = result.prompt_tokens.map(() => []);
         }
-        $runAblation = newMask;
+        $ablationSubcomponentMask = newMask;
     }
 
     function toggleComponentDisabled(layerName: string, tokenIdx: number, componentIdx: number) {
-        if (!$runAblation[layerName]) {
-            $runAblation[layerName] = result!.prompt_tokens.map(() => []);
+        if (!$ablationSubcomponentMask[layerName]) {
+            $ablationSubcomponentMask[layerName] = result!.prompt_tokens.map(() => []);
         }
 
-        const disabledComponents = $runAblation[layerName][tokenIdx];
+        const disabledComponents = $ablationSubcomponentMask[layerName][tokenIdx];
         const existingIdx = disabledComponents.indexOf(componentIdx);
 
         if (existingIdx === -1) {
@@ -176,7 +162,7 @@
             disabledComponents.splice(existingIdx, 1);
         }
 
-        $runAblation = { ...$runAblation };
+        $ablationSubcomponentMask = { ...$ablationSubcomponentMask };
     }
 
     function isComponentDisabled(
@@ -184,7 +170,7 @@
         tokenIdx: number,
         componentIdx: number
     ): boolean {
-        return $runAblation[layerName][tokenIdx].includes(componentIdx);
+        return $ablationSubcomponentMask[layerName][tokenIdx].includes(componentIdx);
     }
 
     async function sendAblation() {
@@ -192,10 +178,10 @@
 
         isLoading = true;
         try {
-            const data = await api.ablateComponents(currentPromptId, $runAblation);
+            const data = await api.ablateSubcomponents(currentPromptId, $ablationSubcomponentMask);
 
-            const deepCopyMask: ComponentMask = {};
-            for (const [layerName, tokenArrays] of Object.entries($runAblation)) {
+            const deepCopyMask: SubcomponentMask = {};
+            for (const [layerName, tokenArrays] of Object.entries($ablationSubcomponentMask)) {
                 deepCopyMask[layerName] = tokenArrays.map((tokenMask) => [...tokenMask]);
             }
 
@@ -450,7 +436,6 @@
         overflow-y: auto;
         padding-right: 1rem;
     }
-
 
     .prompt-list {
         display: flex;

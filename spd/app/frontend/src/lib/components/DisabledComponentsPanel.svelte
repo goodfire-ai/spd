@@ -1,15 +1,15 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
-    import { runAblation } from "$lib/stores/componentState";
+    import { ablationSubcomponentMask } from "$lib/stores/componentState";
 
     export let promptTokens: string[];
     export let isLoading: boolean;
     export let onSendAblation: () => void;
     export let onToggleComponent: (layerName: string, tokenIdx: number, componentIdx: number) => void;
 
-    $: hasDisabledComponents = Object.keys($runAblation).some((layer) =>
-        $runAblation[layer].some((tokenList) => tokenList.length > 0)
+    $: hasDisabledComponents = Object.keys($ablationSubcomponentMask).some((layer) =>
+        $ablationSubcomponentMask[layer].some((tokenList) => tokenList.length > 0)
     );
 </script>
 
@@ -26,7 +26,7 @@
     </div>
     {#if hasDisabledComponents}
         <div class="disabled-list">
-            {#each Object.entries($runAblation) as [layerName, tokenArrays]}
+            {#each Object.entries($ablationSubcomponentMask) as [layerName, tokenArrays]}
                 {#each tokenArrays as disabledComponents, tokenIdx}
                     {#if disabledComponents.length > 0}
                         <div class="disabled-group">

@@ -24,9 +24,21 @@ export type CosineSimilarityData = {
     component_indices: number[]; // indices corresponding to rows/cols
 };
 
+export type Component = {
+    index: number;
+    subcomponent_indices: number[];
+};
+
+export type MatrixCausalImportances = {
+    subcomponent_cis: SparseVector;
+    component_indices: number[];
+    component_agg_cis: number[];
+    components: Component[];
+};
+
 export type LayerCIs = {
     module: string;
-    token_cis: SparseVector[];
+    token_cis: MatrixCausalImportances[];
 };
 
 export type RunPromptResponse = {
@@ -37,9 +49,9 @@ export type RunPromptResponse = {
     ci_masked_token_logits: OutputTokenLogit[][];
 };
 
-export type ComponentMask = Record<string, number[][]>;
+export type SubcomponentMask = Record<string, number[][]>;
 
-export type ModifyComponentsResponse = {
+export type ModifySubcomponentsResponse = {
     token_logits: OutputTokenLogit[][];
 };
 
@@ -151,7 +163,7 @@ class ApiClient {
     async applyMaskAsAblation(
         promptId: string,
         maskOverrideId: string
-    ): Promise<ModifyComponentsResponse> {
+    ): Promise<ModifySubcomponentsResponse> {
         const response = await fetch(`${this.apiUrl}/apply_mask`, {
             method: "POST",
             headers: {
@@ -187,25 +199,25 @@ class ApiClient {
         return response.json();
     }
 
-    async ablateComponents(
+    async ablateSubcomponents(
         promptId: string,
-        componentMask: ComponentMask
-    ): Promise<ModifyComponentsResponse> {
+        subcomponentMask: SubcomponentMask
+    ): Promise<ModifySubcomponentsResponse> {
         console.log(
-            "ablate",
+            "ablateSubcomponents",
             JSON.stringify({
                 prompt_id: promptId,
-                component_mask: componentMask
+                subcomponent_mask: subcomponentMask
             })
         );
-        const response = await fetch(`${this.apiUrl}/ablate`, {
+        const response = await fetch(`${this.apiUrl}/ablate_subcomponents`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
                 prompt_id: promptId,
-                component_mask: componentMask
+                subcomponent_mask: subcomponentMask
             })
         });
 

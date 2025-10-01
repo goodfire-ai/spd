@@ -1,4 +1,7 @@
+import pickle
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -18,6 +21,7 @@ from spd.utils.general_utils import runtime_cast
 WANDB_PROJECT = "spd"
 
 DEVICE = get_device()
+
 
 
 @dataclass
@@ -68,6 +72,14 @@ class RunContextService:
         )
 
     def load_run_from_wandb_id(self, wandb_id: str):
+        self.run_context = get_pickle_cached(
+            wandb_id, lambda: self._load_run_from_wandb_id(wandb_id)
+        )
+        logger.info(f"Loaded run from wandb id: {wandb_id}")
+        # self.run_context = self._load_run_from_wandb_id(wandb_id)
+
+    @staticmethod
+    def _load_run_from_wandb_id(wandb_id: str):
         logger.info(f"Loading run from wandb id: {wandb_id}")
         path = f"wandb:goodfire/spd/runs/{wandb_id}"
         run_info = SPDRunInfo.from_path(path)
@@ -78,7 +90,7 @@ class RunContextService:
             name=task_config.dataset_name,
             hf_tokenizer_path=run_info.config.tokenizer_name,
             split=task_config.train_data_split,
-            n_ctx=task_config.max_seq_len,
+            n_ctx=24, # task_config.max_seq_len,
             is_tokenized=task_config.is_tokenized,
             streaming=task_config.streaming,
             column_name=task_config.column_name,
@@ -102,7 +114,7 @@ class RunContextService:
         cm = ComponentModel.from_run_info(run_info)
         cm.to(DEVICE)
 
-        self.run_context = RunContext(
+        return RunContext(
             wandb_id=wandb_id,
             config=run_info.config,
             cm=cm,
@@ -132,3 +144,36 @@ class RunContextService:
             )
 
         return prompts
+
+
+CACHE_DIR = Path(".data/cache")
+
+
+def get_pickle_cached(wandb_id: str, get_func: Callable[[], Any]) -> Any:
+    # Ensure the cache directory exists
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    key = CACHE_DIR / f"{wandb_id}.pkl"
+
+    if not key.exists():
+        print("cache miss")
+        res = get_func()
+        print("saving to cache")
+        with open(key, "wb") as f:
+            pickle.dump(res, f, protocol=pickle.HIGHEST_PROTOCOL)
+        print("saved to cache")
+        return res
+
+    print("cache hit!")
+    try:
+        with open(key, "rb") as f:
+            res = pickle.load(f)
+        print("loaded from cache")
+        return res
+    except Exception as e:
+        # Corrupted or incompatible cache; rebuild it
+        print(f"cache load failed, rebuilding: {e}")
+        res = get_func()
+        with open(key, "wb") as f:
+            pickle.dump(res, f, protocol=pickle.HIGHEST_PROTOCOL)
+        return res

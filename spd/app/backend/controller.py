@@ -10,7 +10,6 @@ from pydantic import BaseModel
 
 from spd.app.backend.services.ablation_service import (
     AblationService,
-    LayerCIs,
     MaskOverride,
     OutputTokenLogit,
     RunResponse,
@@ -67,8 +66,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        #
         "http://localhost:5174",
         "http://127.0.0.1:5174",
+        #
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ],
@@ -98,63 +99,24 @@ def get_available_prompts() -> list[AvailablePrompt]:
 @handle_errors
 def run_prompt_by_index(dataset_index: int) -> RunResponse:
     """Run a specific prompt from the dataset by index."""
-    (
-        prompt_id,
-        prompt_tokens,
-        layer_causal_importances,
-        full_run_token_logits,
-        ci_masked_token_logits,
-    ) = ablation_service.run_prompt_by_index(dataset_index)
-
-    return RunResponse(
-        prompt_id=prompt_id,
-        prompt_tokens=prompt_tokens,
-        layer_cis=layer_causal_importances,
-        full_run_token_logits=full_run_token_logits,
-        ci_masked_token_logits=ci_masked_token_logits,
-    )
-
-
-class RunWithMaskRequest(BaseModel):
-    prompt: str
-    mask_override_id: str
-
-
-@app.post("/run_with_mask")
-@handle_errors
-def run_prompt_with_mask(request: RunWithMaskRequest) -> RunResponse:
-    (
-        prompt_id,
-        prompt_tokens,
-        layer_causal_importances,
-        full_run_token_logits,
-        ci_masked_token_logits,
-    ) = ablation_service.run_prompt_with_mask_override(request.prompt, request.mask_override_id)
-
-    return RunResponse(
-        prompt_id=prompt_id,
-        prompt_tokens=prompt_tokens,
-        layer_cis=layer_causal_importances,
-        full_run_token_logits=full_run_token_logits,
-        ci_masked_token_logits=ci_masked_token_logits,
-    )
+    return ablation_service.run_prompt_by_index(dataset_index)
 
 
 class AblationRequest(BaseModel):
     prompt_id: str
-    component_mask: dict[str, list[list[int]]]
+    subcomponent_mask: dict[str, list[list[int]]]
 
 
 class AblationResponse(BaseModel):
     token_logits: list[list[OutputTokenLogit]]
 
 
-@app.post("/ablate")
+@app.post("/ablate_subcomponents")
 @handle_errors
-def ablate_components(request: AblationRequest) -> AblationResponse:
-    tokens_logits = ablation_service.ablate_components(
+def ablate_subcomponents(request: AblationRequest) -> AblationResponse:
+    tokens_logits = ablation_service.ablate_subcomponents(
         request.prompt_id,
-        request.component_mask,
+        request.subcomponent_mask,
     )
     return AblationResponse(token_logits=tokens_logits)
 
@@ -168,10 +130,11 @@ class ApplyMaskRequest(BaseModel):
 @handle_errors
 def apply_mask_as_ablation(request: ApplyMaskRequest) -> AblationResponse:
     """Apply a saved mask as an ablation to a specific prompt."""
-    tokens_logits = ablation_service.ablate_with_mask_override(
-        request.prompt_id, request.mask_override_id
+    return AblationResponse(
+        token_logits=ablation_service.run_with_mask_override(
+            request.prompt_id, request.mask_override_id
+        )
     )
-    return AblationResponse(token_logits=tokens_logits)
 
 
 @app.post("/runs/load/{wandb_run_id}")

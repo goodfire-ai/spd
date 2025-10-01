@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { popupData, runAblation } from "$lib/stores/componentState";
+    import { popupData, ablationSubcomponentMask } from "$lib/stores/componentState";
     import { api } from "$lib/api";
     import type { CosineSimilarityData } from "$lib/api";
     import CosineSimilarityPlot from "./CosineSimilarityPlot.svelte";
@@ -78,7 +78,7 @@
     $: disabledComponentIndices = (() => {
         if (!$popupData) return [];
         // Access $runAblation to trigger reactivity
-        const ablations = $runAblation;
+        const ablations = $ablationSubcomponentMask;
         const allIndices = getAllComponentIndices();
         return allIndices.filter((idx) => {
             const layerAblations = ablations[$popupData.layer];

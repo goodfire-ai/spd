@@ -5,7 +5,7 @@
 
     export let result: RunPromptResponse | null;
 
-    let selectedLayer: string = "";
+    let selectedLayer: string | null = null;
     let maxExamples = 5;
     let contextSize = 10;
     let threshold = 0.01;
@@ -19,8 +19,8 @@
         // Collect all unique component indices across all tokens
         const componentSet = new Set<number>();
         for (const tokenCis of layerData.token_cis) {
-            for (const idx of tokenCis.indices) {
-                componentSet.add(idx);
+            for (const c of tokenCis.components) {
+                componentSet.add(c.index);
             }
         }
 
@@ -32,7 +32,7 @@
         selectedLayer = result.layer_cis[0].module;
     }
 
-    $: componentIndices = selectedLayer ? getComponentIndicesForLayer(selectedLayer) : [];
+    $: componentIndices = selectedLayer ? getComponentIndicesForLayer(selectedLayer) : null;
 </script>
 
 <div class="activation-contexts-tab">
@@ -76,7 +76,7 @@
 
         <div class="info-banner">
             <p>
-                Showing activation examples for <strong>{componentIndices.length}</strong>
+                Showing activation examples for <strong>{componentIndices?.length ?? 0}</strong>
                 components in layer <strong>{selectedLayer}</strong>
             </p>
             <p class="help-text">
@@ -86,14 +86,14 @@
         </div>
 
         <div class="components-list">
-            {#if componentIndices.length === 0}
+            {#if componentIndices != null && componentIndices.length === 0}
                 <div class="empty-components">
                     No components found with activations in this layer.
                 </div>
             {:else}
-                {#each componentIndices as componentId}
+                {#each componentIndices! as componentId}
                     <div class="component-section">
-                        <ActivationContexts {componentId} layer={selectedLayer} compact={false} />
+                        <ActivationContexts {componentId} layer={selectedLayer!} compact={false} />
                     </div>
                 {/each}
             {/if}

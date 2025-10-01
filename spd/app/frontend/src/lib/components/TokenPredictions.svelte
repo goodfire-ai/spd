@@ -1,11 +1,11 @@
 <script lang="ts">
-    import type { OutputTokenLogit, ComponentMask } from "$lib/api";
+    import type { OutputTokenLogit, SubcomponentMask } from "$lib/api";
     import { isScrolling } from "$lib/stores/componentState";
 
     export let tokenLogits: OutputTokenLogit[][];
     export let promptTokens: string[];
     export let containerClass: string = "";
-    export let appliedMask: ComponentMask | null = null;
+    export let appliedMask: SubcomponentMask | null = null;
 
     function hasAblation(tokenIdx: number): boolean {
         if (!appliedMask) return false;

@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { LayerCIs, SparseVector } from "$lib/api";
     import {
-        runAblation,
+        ablationSubcomponentMask,
         multiSelectMode,
         selectedTokensForCombining
     } from "$lib/stores/componentState";
@@ -61,7 +61,9 @@
     }
 
     let globalMax = Math.max(
-        ...result.layer_cis.flatMap((layer) => layer.token_cis.map((tokenCIs) => tokenCIs.l0))
+        ...result.layer_cis.flatMap((layer) =>
+            layer.token_cis.map((tokenCIs) => tokenCIs.subcomponent_cis.l0)
+        )
     );
 
     $: layer_cis = result.layer_cis.toReversed();
@@ -69,7 +71,7 @@
     // Make this reactive so it updates when $runAblation changes
     $: getColorFroml0 = (l0: number, layerName: string, tokenIdx: number): string => {
         const intensity = Math.max(0, Math.min(1, l0 / globalMax));
-        const disabledComponents = $runAblation[layerName]?.[tokenIdx]?.length ?? 0;
+        const disabledComponents = $ablationSubcomponentMask[layerName]?.[tokenIdx]?.length ?? 0;
         const totalComponents = l0;
         const disabledRatio = totalComponents > 0 ? disabledComponents / totalComponents : 0;
 
@@ -107,18 +109,18 @@
                                 class:selected={isTokenSelected(layer.module, tokenIdx)}
                                 class:multi-select-mode={$multiSelectMode}
                                 style="background: {getColorFroml0(
-                                    layer.token_cis[tokenIdx].l0,
+                                    layer.token_cis[tokenIdx].subcomponent_cis.l0,
                                     layer.module,
                                     tokenIdx
                                 )}"
-                                title="L0={layer.token_cis[tokenIdx].l0}"
+                                title="L0={layer.token_cis[tokenIdx].subcomponent_cis.l0}"
                                 on:click={() =>
                                     handleCellClick(
                                         token,
                                         tokenIdx,
                                         layer.module,
                                         layerIdx,
-                                        layer.token_cis[tokenIdx]
+                                        layer.token_cis[tokenIdx].subcomponent_cis
                                     )}
                             ></div>
                         {/each}

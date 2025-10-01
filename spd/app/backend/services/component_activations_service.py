@@ -16,6 +16,7 @@ from spd.app.backend.workers.activation_contexts_worker import (
 )
 
 # from spd.app.backend.workers.activation_contexts_worker import main as worker_main
+from spd.app.backend.workers.activation_contexts_worker_v2 import Ctx
 from spd.app.backend.workers.activation_contexts_worker_v2 import main as worker_main
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
@@ -85,17 +86,19 @@ class ComponentActivationContextsService:
         try:
             # Use multiprocessing with 'spawn' to avoid CUDA/torch fork issues
             ctx = mp.get_context("spawn")
-            kwargs = dict(
-                wandb_id=wandb_id,
-                out=None,
-                n_prompts=20,
-                n_tokens_either_side=10,
-                n_steps=4,
-                ci_threshold=0.01,
-            )
             process = ctx.Process(
                 target=worker_main,
-                kwargs=kwargs,
+                args=(
+                    Ctx(
+                        wandb_id=wandb_id,
+                        importance_threshold=0.01,
+                        separation_threshold_tokens=10,
+                        max_examples_per_component=10,
+                        n_steps=4,
+                        n_tokens_either_side=10,
+                        out=None,
+                    ),
+                ),
                 daemon=True,
             )
             process.start()

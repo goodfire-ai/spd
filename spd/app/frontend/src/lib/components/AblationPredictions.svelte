@@ -1,10 +1,10 @@
 <script lang="ts">
     import TokenPredictions from "./TokenPredictions.svelte";
-    import type { OutputTokenLogit, ComponentMask } from "$lib/api";
+    import type { OutputTokenLogit, SubcomponentMask } from "$lib/api";
 
     export let tokenLogits: OutputTokenLogit[][];
     export let promptTokens: string[];
-    export let appliedMask: ComponentMask;
+    export let appliedMask: SubcomponentMask;
     export let maskOverride: MaskOverrideDTO | undefined = undefined;
 </script>
 

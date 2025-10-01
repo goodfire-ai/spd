@@ -78,16 +78,19 @@ def _write_json_atomic(path: Path, payload: Any) -> None:
     os.replace(tmp_path, path)
 
 
-def main(
-    wandb_id: str,
-    out: Path | None,
-    importance_threshold: float,
-    separation_threshold_tokens: int,
-    max_examples_per_component: int,
-    n_steps: int,
-    n_tokens_either_side: int,
-) -> Path | None:
-    out_path: Path = out or _default_output_path(wandb_id)
+@dataclass
+class Ctx:
+    wandb_id: str
+    out: Path | None
+    importance_threshold: float
+    separation_threshold_tokens: int
+    max_examples_per_component: int
+    n_steps: int
+    n_tokens_either_side: int
+
+
+def main(ctx: Ctx) -> Path | None:
+    out_path: Path = ctx.out or _default_output_path(ctx.wandb_id)
     lock_path: Path = out_path.with_suffix(out_path.suffix + ".lock")
 
     # Try to obtain a simple lock to avoid duplicate computation.
@@ -100,12 +103,12 @@ def main(
 
     try:
         activations_json = _main(
-            wandb_id,
-            importance_threshold,
-            separation_threshold_tokens,
-            max_examples_per_component,
-            n_steps,
-            n_tokens_either_side,
+            ctx.wandb_id,
+            ctx.importance_threshold,
+            ctx.separation_threshold_tokens,
+            ctx.max_examples_per_component,
+            ctx.n_steps,
+            ctx.n_tokens_either_side,
         )
         _write_json_atomic(out_path, activations_json)
         logger.info(f"Wrote v1-compatible activation contexts to {out_path}")
