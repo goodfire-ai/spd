@@ -21,9 +21,11 @@ from spd.models.components import (
     Components,
     ComponentsMaskInfo,
     EmbeddingComponents,
+    ExponentialLinearGates,
     GateType,
     Identity,
     LinearComponents,
+    LinearGates,
     MLPGates,
     VectorMLPGates,
     VectorSharedMLPGate,
@@ -209,6 +211,10 @@ class ComponentModel(LoadableModule):
 
         if gate_type == "mlp":
             return MLPGates(C=component_C, hidden_dims=gate_hidden_dims)
+        elif gate_type == "linear_gates":
+            return LinearGates(C=component_C, input_dim=1, output_dim=1)
+        elif gate_type == "exponential_linear_gates":
+            return ExponentialLinearGates(C=component_C, input_dim=1, output_dim=1)
 
         match target_module:
             case nn.Linear():
@@ -514,6 +520,8 @@ class ComponentModel(LoadableModule):
                     gate_input = self.components[param_name].get_inner_acts(acts)
                 case VectorMLPGates() | VectorSharedMLPGate():
                     gate_input = acts
+                case LinearGates() | ExponentialLinearGates():
+                    gate_input = self.components[param_name].get_inner_acts(acts)
                 case _:
                     raise ValueError(f"Unknown gate type: {type(gates)}")
 

@@ -9,7 +9,7 @@ from torch import Tensor, nn
 
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
-GateType = Literal["mlp", "vector_mlp", "shared_mlp"]
+GateType = Literal["mlp", "vector_mlp", "shared_mlp", "linear_gates", "exponential_linear_gates"]
 
 
 class ParallelLinear(nn.Module):
@@ -43,6 +43,37 @@ class Linear(nn.Module):
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
         return einops.einsum(x, self.W, "... d_in, d_in d_out -> ... d_out") + self.b
 
+
+class LinearGates(nn.Module):
+    """Linear-based gates that map component 'inner acts' to a scalar output for each component."""
+
+    def __init__(self, C: int, input_dim: int, output_dim: int):
+        super().__init__()
+        self.gate = ParallelLinear(C, input_dim, output_dim, nonlinearity="linear")
+
+    @override
+    def forward(self, x: Float[Tensor, "... C"]) -> Float[Tensor, "... C"]:
+        x = einops.rearrange(x, "... C -> ... C 1")
+        x = self.gate(x)
+        assert x.shape[-1] == 1, "Last dimension should be 1 after the final layer"
+        return x[..., 0]
+
+class ExponentialLinearGates(nn.Module):
+    """Exponential linear-based gates that map component 'inner acts' to a scalar output for each component."""
+
+    def __init__(self, C: int, input_dim: int, output_dim: int):
+        super().__init__()
+        self.gate = ParallelLinear(C, input_dim, output_dim, nonlinearity="linear")
+        self.exp_gate = nn.Parameter(torch.ones(C, output_dim))
+        self.exp_beta = ParallelLinear(C, input_dim, output_dim, nonlinearity="linear")
+
+    @override
+    def forward(self, x: Float[Tensor, "... C"]) -> Float[Tensor, "... C"]:
+        x = einops.rearrange(x, "... C -> ... C 1")
+        expo_x = self.exp_gate * torch.exp(self.exp_beta(x))
+        x = self.gate(x) + expo_x
+        assert x.shape[-1] == 1, "Last dimension should be 1 after the final layer"
+        return x[..., 0]
 
 class MLPGates(nn.Module):
     """MLP-based gates that map component 'inner acts' to a scalar output for each component."""

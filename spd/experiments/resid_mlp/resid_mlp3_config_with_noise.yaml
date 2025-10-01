@@ -1,4 +1,4 @@
-# ResidualMLP 3 layers
+# ResidualMLP 3 layers with parameter noise
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null
@@ -44,10 +44,10 @@ component_lr_exponential_halflife: null
 gradient_accumulation_steps: 1
 
 # --- Parameter Noise ---
-component_noise_std: null  # Set to a value like 0.01 to enable noise
-component_noise_schedule: "linear"  # options: "constant", "linear", "cosine", "exponential"
-component_noise_std_final: 0.0  # Final noise std for linear/cosine schedules (null = 0)
-component_noise_exponential_halflife: null  # Half-life for exponential schedule
+component_noise_std: 0.01  # Enable noise with std=0.01
+component_noise_schedule: "linear"  # Linear decay from 0.01 to 0
+component_noise_std_final: 0.0  # Final noise std (0.0)
+component_noise_exponential_halflife: null  # Not used for linear schedule
 
 # --- Logging & Saving ---
 train_log_freq: 50
