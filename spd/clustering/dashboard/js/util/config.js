@@ -55,8 +55,9 @@ function getDefaultConfig() {
   let default_cfg = {
     // Data paths
     data: {
-      clusterDataFile: "data/max_activations_iter7375_n16.json",
+      clusterDataFile: "data/clusters.json",
       modelInfoFile: "data/model_info.json",
+      textSamplesFile: "data/text_samples.json",
       explanationsFile: "data/cluster_explanations.json"
     },
 

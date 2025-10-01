@@ -1,5 +1,7 @@
 """Core computation logic for finding max-activating text samples."""
 
+from functools import partial
+from multiprocessing import Pool, cpu_count
 from typing import Any
 
 import numpy as np
@@ -34,13 +36,67 @@ from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data, get_module_device
 
 
+def _generate_cluster_data_worker(
+    cluster_idx: int,
+    cluster_id_map: dict[int, ClusterId],
+    cluster_activations: dict[ClusterIdHash, list[Float[np.ndarray, " n_ctx"]]],
+    cluster_text_hashes: dict[ClusterIdHash, list[TextSampleHash]],
+    cluster_components: dict[int, list[dict[str, Any]]],
+    criteria: list[TrackingCriterion],
+) -> tuple[ClusterIdHash, ClusterData | None]:
+    """Worker function to generate ClusterData for a single cluster.
+
+    Args:
+        cluster_idx: Index of the cluster to process
+        cluster_id_map: Mapping from cluster index to ClusterId
+        cluster_activations: Accumulated activations per cluster
+        cluster_text_hashes: Accumulated text hashes per cluster
+        cluster_components: Component info per cluster
+        criteria: Tracking criteria for top-k selection
+
+    Returns:
+        Tuple of (cluster_hash, ClusterData or None if empty)
+    """
+    cluster_id: ClusterId = cluster_id_map[cluster_idx]
+    cluster_hash: ClusterIdHash = cluster_id.to_string()
+
+    if not cluster_activations[cluster_hash]:
+        return cluster_hash, None
+
+    # Stack activations into batch
+    acts_array: Float[np.ndarray, "batch n_ctx"] = np.stack(cluster_activations[cluster_hash])
+    text_hashes_list: list[TextSampleHash] = cluster_text_hashes[cluster_hash]
+
+    activation_batch: ActivationSampleBatch = ActivationSampleBatch(
+        cluster_id=cluster_id,
+        text_hashes=text_hashes_list,
+        activations=acts_array,
+    )
+
+    # Convert component info to ComponentInfo objects
+    components_info: list[ComponentInfo] = [
+        ComponentInfo(module=comp["module"], index=comp["index"])
+        for comp in cluster_components[cluster_idx]
+    ]
+
+    # Generate ClusterData with stats and top-k samples
+    cluster_data: ClusterData = ClusterData.generate(
+        cluster_id=cluster_id,
+        activation_samples=activation_batch,
+        criteria=criteria,
+        components=components_info,
+    )
+
+    return cluster_hash, cluster_data
+
+
 def _compute_cluster_activations(
     processed: ProcessedActivations,
     cluster_components: list[dict[str, Any]],
     batch_size: int,
     seq_len: int,
 ) -> Float[Tensor, "batch_size seq_len"]:
-    """Compute average activations for a cluster across its components.
+    """Compute max activations for a cluster across its components.
 
     Args:
         processed: ProcessedActivations containing all component activations
@@ -63,8 +119,10 @@ def _compute_cluster_activations(
         # Return zeros if no valid components
         return torch.zeros((batch_size, seq_len), device=processed.activations.device)
 
-    # Average activations across cluster components
-    cluster_acts: Float[Tensor, " n_steps"] = processed.activations[:, comp_indices].mean(dim=1)
+    # Vectorized: max activations across cluster components
+    # processed.activations shape: [n_steps, C] where n_steps = batch_size * seq_len
+    # Index into component dimension, then take max across components, then reshape
+    cluster_acts: Float[Tensor, " n_steps"] = processed.activations[:, comp_indices].max(dim=1).values
     return cluster_acts.view(batch_size, seq_len)
 
 
@@ -157,6 +215,28 @@ def compute_max_activations(
         )
         processed: ProcessedActivations = process_activations(activations, seq_mode="concat")
 
+        # Batch tokenize all samples once per batch (move to CPU first)
+        batch_cpu: Int[Tensor, "batch_size n_ctx"] = batch.cpu()
+        batch_tokens_list: list[list[int]] = batch_cpu.tolist()
+
+        # Batch decode full texts
+        batch_texts: list[str] = tokenizer.batch_decode(batch_cpu)  # pyright: ignore[reportAttributeAccessIssue]
+
+        # Batch decode individual tokens for all samples
+        batch_token_strings: list[list[str]] = [
+            tokenizer.batch_decode([[tid] for tid in tokens_list])  # pyright: ignore[reportAttributeAccessIssue]
+            for tokens_list in batch_tokens_list
+        ]
+
+        # Create text samples for entire batch
+        batch_text_samples: list[TextSample] = []
+        for text, token_strings in zip(batch_texts, batch_token_strings, strict=True):
+            text_sample = TextSample(full_text=text, tokens=token_strings)
+            text_hash = text_sample.text_hash
+            if text_hash not in text_samples:
+                text_samples[text_hash] = text_sample
+            batch_text_samples.append(text_sample)
+
         for cluster_idx in unique_cluster_indices:
             # Compute cluster activations
             acts_2d: Float[Tensor, "batch_size seq_len"] = _compute_cluster_activations(
@@ -169,40 +249,51 @@ def compute_max_activations(
             current_cluster_id: ClusterId = cluster_id_map[cluster_idx]
             current_cluster_hash: ClusterIdHash = current_cluster_id.to_string()
 
+            # Batch transfer activations to CPU and convert to numpy
+            acts_2d_cpu: Float[np.ndarray, "batch_size seq_len"] = acts_2d.cpu().numpy()
+
             # Process each sample in batch
             for batch_sample_idx in range(batch_size):
-                # Extract tokens and create text sample
-                tokens: Int[Tensor, " n_ctx"] = batch[batch_sample_idx].cpu()
-                tokens_list: list[int] = tokens.tolist()
-                text: str = tokenizer.decode(tokens)  # pyright: ignore[reportAttributeAccessIssue]
-
-                token_strings: list[str] = [
-                    tokenizer.decode([tid])  # pyright: ignore[reportAttributeAccessIssue]
-                    for tid in tokens_list
-                ]
-
-                text_sample: TextSample = TextSample(
-                    full_text=text,
-                    tokens=token_strings,
-                )
-
-                # Store text sample (deduplicated by hash)
-                text_hash: TextSampleHash = text_sample.text_hash
-                if text_hash not in text_samples:
-                    text_samples[text_hash] = text_sample
+                text_sample = batch_text_samples[batch_sample_idx]
+                text_hash = text_sample.text_hash
 
                 # Store activations for this cluster
-                activations_np: Float[np.ndarray, " n_ctx"] = (
-                    acts_2d[batch_sample_idx].cpu().numpy()
-                )
+                activations_np: Float[np.ndarray, " n_ctx"] = acts_2d_cpu[batch_sample_idx]
                 cluster_activations[current_cluster_hash].append(activations_np)
                 cluster_text_hashes[current_cluster_hash].append(text_hash)
 
-    # Build ClusterData for each cluster
+    # Build ClusterData for each cluster in parallel
     clusters: dict[ClusterIdHash, ClusterData] = {}
+
+    # Use multiprocessing to parallelize ClusterData.generate across clusters
+    n_workers: int = min(cpu_count(), len(unique_cluster_indices))
+    worker_fn = partial(
+        _generate_cluster_data_worker,
+        cluster_id_map=cluster_id_map,
+        cluster_activations=cluster_activations,
+        cluster_text_hashes=cluster_text_hashes,
+        cluster_components=cluster_components,
+        criteria=criteria,
+    )
+
+    with Pool(processes=n_workers) as pool:
+        results: list[tuple[ClusterIdHash, ClusterData | None]] = list(
+            tqdm(
+                pool.imap(worker_fn, unique_cluster_indices),
+                total=len(unique_cluster_indices),
+                desc="Generating cluster data",
+            )
+        )
+
+    # Collect results
+    for cluster_hash, cluster_data in results:
+        if cluster_data is not None:
+            clusters[cluster_hash] = cluster_data
+
+    # Build global activations storage
     all_activations_list: list[Float[np.ndarray, " n_ctx"]] = []
     all_text_hashes_list: list[TextSampleHash] = []
-    activations_map: dict[ActivationSampleHash, int] = {}  # Maps activation hash to index
+    activations_map: dict[ActivationSampleHash, int] = {}
     current_idx: int = 0
 
     for cluster_idx in unique_cluster_indices:
@@ -212,7 +303,6 @@ def compute_max_activations(
         if not cluster_activations[cluster_hash]:
             continue
 
-        # Stack activations into batch
         acts_array: Float[np.ndarray, "batch n_ctx"] = np.stack(cluster_activations[cluster_hash])
         text_hashes_list: list[TextSampleHash] = cluster_text_hashes[cluster_hash]
 
@@ -221,22 +311,6 @@ def compute_max_activations(
             text_hashes=text_hashes_list,
             activations=acts_array,
         )
-
-        # Convert component info to ComponentInfo objects
-        components_info: list[ComponentInfo] = [
-            ComponentInfo(module=comp["module"], index=comp["index"])
-            for comp in cluster_components[cluster_idx]
-        ]
-
-        # Generate ClusterData with stats and top-k samples
-        cluster_data: ClusterData = ClusterData.generate(
-            cluster_id=cluster_id,
-            activation_samples=activation_batch,
-            criteria=criteria,
-            components=components_info,
-        )
-
-        clusters[cluster_hash] = cluster_data
 
         # Add to global activations storage
         act_hashes: list[ActivationSampleHash] = activation_batch.activation_hashes

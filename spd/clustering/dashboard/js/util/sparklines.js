@@ -13,6 +13,7 @@ const _PLOT_OPTS_DEFAULT = {
 	margin: 5,  // number: base margin around chart content in pixels
 	style: 'line',  // string: 'line' or 'bar' (internal, set by sparkline/sparkbars)
 	barWidthRatio: 1,  // number: 0-1 ratio, 1=touching bars, <1=gaps between bars
+	logScale: false,  // boolean: use logarithmic scale for y-axis
 
 	// X-axis configuration
 	xAxis: {
@@ -129,9 +130,32 @@ function plot(values, yvalues = null, options = {}) {
 	// Calculate axis limits - use custom limits if provided, otherwise data range
 	const dataYmin = Math.min(...yvals);
 	const dataYmax = Math.max(...yvals);
-	const ymin = opts.ylims && opts.ylims[0] !== null ? opts.ylims[0] : dataYmin;
-	const ymax = opts.ylims && opts.ylims[1] !== null ? opts.ylims[1] : dataYmax;
-	const yrange = ymax - ymin || opts.min_range;
+	let ymin = opts.ylims && opts.ylims[0] !== null ? opts.ylims[0] : dataYmin;
+	let ymax = opts.ylims && opts.ylims[1] !== null ? opts.ylims[1] : dataYmax;
+
+	// For log scale, assert all values >= 0
+	if (opts.logScale) {
+		if (yvals.some(v => v < 0) || ymin < 0 || ymax < 0) {
+			console.error('y-values:', yvals);
+			console.error('ymin:', ymin, 'ymax:', ymax);
+			throw new Error('Log scale requires all values >= 0');
+		}
+	}
+
+	// Transform to log space if needed, handling zeros
+	// For log scale, we use log10(y) for y > 0, and leave 0 as special case (will skip bars)
+	const transformY = opts.logScale
+		? (y) => y > 0 ? Math.log10(y) : 0
+		: (y) => y;
+
+	// For axis limits, only use positive values in log scale
+	const positiveYvals = opts.logScale ? yvals.filter(v => v > 0) : yvals;
+	const yminForScale = opts.logScale && positiveYvals.length > 0 ? Math.min(...positiveYvals) : ymin;
+	const ymaxForScale = opts.logScale && positiveYvals.length > 0 ? Math.max(...positiveYvals) : ymax;
+
+	const yminTransformed = transformY(yminForScale);
+	const ymaxTransformed = transformY(ymaxForScale);
+	const yrange = ymaxTransformed - yminTransformed || opts.min_range;
 
 	const dataXmin = Math.min(...xvalues);
 	const dataXmax = Math.max(...xvalues);
@@ -177,10 +201,16 @@ function plot(values, yvalues = null, options = {}) {
 		const actualBarWidth = barSpacing * opts.barWidthRatio;
 
 		yvals.forEach((yval, i) => {
+			// Skip bars with zero values in log scale
+			if (opts.logScale && yval === 0) {
+				return;
+			}
+
 			const xval = xvalues[i];
 			// Position at bar center
 			const x = leftMargin + ((xval - xmin) / xrange) * adjustedChartWidth;
-			const barHeight = Math.abs((yval - ymin) / yrange) * chartHeight;
+			const yvalTransformed = transformY(yval);
+			const barHeight = Math.abs((yvalTransformed - yminTransformed) / yrange) * chartHeight;
 			const barY = baseY - barHeight;
 
 			// Calculate bar x position (offset by half width to center)
@@ -197,10 +227,20 @@ function plot(values, yvalues = null, options = {}) {
 		yvals.forEach((yval, i) => {
 			const xval = xvalues[i];
 			const x = leftMargin + ((xval - xmin) / xrange) * chartWidth;
-			const y = opts.margin + (1 - (yval - ymin) / yrange) * chartHeight;
+
+			// Skip zero values in log scale for line charts (break the line)
+			if (opts.logScale && yval === 0) {
+				// Break the line by moving to next point
+				return;
+			}
+
+			const yvalTransformed = transformY(yval);
+			const y = opts.margin + (1 - (yvalTransformed - yminTransformed) / yrange) * chartHeight;
 			points.push({ x, y, xval, yval });
 
-			path += `${i === 0 ? 'M' : 'L'} ${x} ${y} `;
+			// Start new path segment if previous was skipped
+			const moveCmd = (i === 0 || (opts.logScale && i > 0 && yvals[i-1] === 0)) ? 'M' : 'L';
+			path += `${moveCmd} ${x} ${y} `;
 
 			// Add markers if specified
 			if (opts.markers !== null && opts.markers > 0) {
