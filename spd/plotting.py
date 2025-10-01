@@ -497,6 +497,7 @@ def plot_mlp_gate_shapes(
 ) -> Image.Image:
     """Plot the shape of each MLP gate by evaluating it over a range of input values.
     This plots the final causal importances (gate output + sigmoid), not just the raw gate output.
+    Only supports linear components (not embedding components).
 
     Args:
         model: The ComponentModel containing the gates
@@ -597,11 +598,9 @@ def plot_mlp_gate_shapes(
         C = model.C
         causal_importance_outputs = []
 
-        # Get the input dimension for this component
+        # Get the input dimension for this component (linear components only)
         component = model.components[gate_name]
-        d_in = component.d_in if hasattr(component, "d_in") else component.vocab_size
-
-        # Type assertion: both d_in and vocab_size are integers
+        d_in = component.d_in
         assert isinstance(d_in, int), f"Expected d_in to be int, got {type(d_in)}"
 
         # Determine which components to plot (alive components only)
@@ -613,17 +612,10 @@ def plot_mlp_gate_shapes(
             components_to_plot = list(range(C))
 
         for c in range(C):
-            # Create input tensor with correct d_in dimension
-            if hasattr(component, "d_in"):
-                # For linear components, create input with d_in features
-                x_input = torch.zeros(n_points, d_in, device=x_vals.device)
-                # Set one feature to the x_vals for this component
-                x_input[:, c % d_in] = x_vals
-            else:
-                # For embedding components, create one-hot vectors
-                x_input = torch.zeros(n_points, dtype=torch.long, device=x_vals.device)
-                # Use the x_vals as indices, but clamp to valid range
-                x_input = torch.clamp((x_vals * (d_in - 1) / 2 + d_in / 2).long(), 0, int(d_in) - 1)
+            # Create input tensor with correct d_in dimension (linear components only)
+            x_input = torch.zeros(n_points, d_in, device=x_vals.device)
+            # Set one feature to the x_vals for this component
+            x_input[:, c % d_in] = x_vals
 
             with torch.no_grad():
                 # Get gate input (for MLPGates, this is the inner acts)
