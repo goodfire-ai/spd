@@ -98,10 +98,12 @@ class VectorSharedMLPGate(nn.Module):
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
+        self.skip = nn.Linear(input_dim, C)
         self.layers = nn.Sequential()
         for i in range(len(hidden_dims)):
             in_dim = input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
+            self.layers.append(nn.LayerNorm(in_dim))
             self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
             self.layers.append(nn.GELU())
         final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else input_dim
@@ -109,7 +111,7 @@ class VectorSharedMLPGate(nn.Module):
 
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
-        return self.layers(x)
+        return self.layers(x) + self.skip(x)
 
 
 WeightDeltaAndMask = tuple[Float[Tensor, " d_out d_in"], Float[Tensor, "..."]]
