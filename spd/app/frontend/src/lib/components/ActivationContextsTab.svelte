@@ -1,102 +1,55 @@
 <script lang="ts">
+    import { api, type ComponentActivationContexts } from "$lib/api";
     import { onMount } from "svelte";
     import ActivationContexts from "./ActivationContexts.svelte";
-    import type { RunPromptResponse } from "$lib/api";
 
-    export let result: RunPromptResponse | null;
+    export let availableComponentLayers: string[];
 
-    let selectedLayer: string | null = null;
-    let maxExamples = 5;
-    let contextSize = 10;
-    let threshold = 0.01;
+    let selectedLayer: string = availableComponentLayers[0];
 
-    // Get all component indices for the selected layer
-    function getComponentIndicesForLayer(layer: string): number[] {
-        if (!result) return [];
-        const layerData = result.layer_cis.find((lc) => lc.module === layer);
-        if (!layerData) return [];
+    let exampleSets: ComponentActivationContexts[] | null = null;
 
-        // Collect all unique component indices across all tokens
-        const componentSet = new Set<number>();
-        for (const tokenCis of layerData.token_cis) {
-            for (const c of tokenCis.components) {
-                componentSet.add(c.index);
-            }
-        }
+    let loading = false;
 
-        return Array.from(componentSet).sort((a, b) => a - b);
+    async function loadContexts() {
+        loading = true;
+        console.log(`loading contexts for layer ${selectedLayer}`);
+        const result = await api.getLayerActivationContexts(selectedLayer);
+        console.log(result);
+        exampleSets = result.component_example_sets;
+        console.log(`loaded ${exampleSets.length} contexts`);
+        loading = false;
     }
 
-    // Set default layer when result changes
-    $: if (result && result.layer_cis.length > 0 && !selectedLayer) {
-        selectedLayer = result.layer_cis[0].module;
-    }
-
-    $: componentIndices = selectedLayer ? getComponentIndicesForLayer(selectedLayer) : null;
+    onMount(() => {
+        loadContexts();
+    });
 </script>
 
 <div class="activation-contexts-tab">
-    {#if !result}
-        <div class="empty-state">
-            <p>No prompt loaded. Please run a prompt first to view activation contexts.</p>
-        </div>
-    {:else}
-        <div class="controls">
-            <div class="control-group">
-                <label for="layer-select">Layer:</label>
-                <select id="layer-select" bind:value={selectedLayer}>
-                    {#each result.layer_cis as layerData}
-                        <option value={layerData.module}>{layerData.module}</option>
-                    {/each}
-                </select>
-            </div>
-
-            <div class="control-group">
-                <label for="max-examples">Examples per component:</label>
-                <input id="max-examples" type="number" min="1" max="20" bind:value={maxExamples} />
-            </div>
-
-            <div class="control-group">
-                <label for="context-size">Context window:</label>
-                <input id="context-size" type="number" min="5" max="50" bind:value={contextSize} />
-            </div>
-
-            <div class="control-group">
-                <label for="threshold">CI Threshold:</label>
-                <input
-                    id="threshold"
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    bind:value={threshold}
-                />
-            </div>
-        </div>
-
-        <div class="info-banner">
-            <p>
-                Showing activation examples for <strong>{componentIndices?.length ?? 0}</strong>
-                components in layer <strong>{selectedLayer}</strong>
-            </p>
-            <p class="help-text">
-                Scroll down to see examples for each component. Highlighted tokens show where the
-                component activates.
-            </p>
-        </div>
-
-        <div class="components-list">
-            {#if componentIndices != null && componentIndices.length === 0}
-                <div class="empty-components">
-                    No components found with activations in this layer.
-                </div>
-            {:else}
-                {#each componentIndices! as componentId}
-                    <div class="component-section">
-                        <ActivationContexts {componentId} layer={selectedLayer!} compact={false} />
-                    </div>
+    <div class="controls">
+        <div class="control-group">
+            <label for="layer-select">Layer:</label>
+            <select id="layer-select" bind:value={selectedLayer}>
+                {#each availableComponentLayers as layer}
+                    <option value={layer}>{layer}</option>
                 {/each}
-            {/if}
+            </select>
+        </div>
+
+        <button class="load-button" on:click={loadContexts}>Load Contexts</button>
+    </div>
+
+    {#if exampleSets}
+        <div class="components-list">
+            {#each exampleSets as exampleSet}
+                <div class="component-section">
+                    <ActivationContexts
+                        component_idx={exampleSet.component_idx}
+                        examples={exampleSet.examples}
+                    />
+                </div>
+            {/each}
         </div>
     {/if}
 </div>
@@ -107,13 +60,6 @@
         display: flex;
         flex-direction: column;
         gap: 1.5rem;
-    }
-
-    .empty-state {
-        padding: 3rem 1rem;
-        text-align: center;
-        color: #666;
-        font-style: italic;
     }
 
     .controls {
@@ -138,35 +84,12 @@
         color: #495057;
     }
 
-    .control-group select,
-    .control-group input {
+    .control-group select {
         padding: 0.5rem;
         border: 1px solid #ced4da;
         border-radius: 4px;
         font-size: 0.9rem;
         min-width: 150px;
-    }
-
-    .control-group input[type="number"] {
-        min-width: 100px;
-    }
-
-    .info-banner {
-        padding: 1rem;
-        background: #e7f3ff;
-        border-left: 4px solid #007bff;
-        border-radius: 4px;
-    }
-
-    .info-banner p {
-        margin: 0.25rem 0;
-        color: #004085;
-    }
-
-    .help-text {
-        font-size: 0.9rem;
-        color: #004085;
-        opacity: 0.8;
     }
 
     .components-list {
@@ -183,10 +106,17 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
-    .empty-components {
-        padding: 2rem;
-        text-align: center;
-        color: #666;
-        font-style: italic;
+    .load-button {
+        padding: 0.5rem 1rem;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+    }
+
+    .load-button:hover {
+        background: #f8f9fa;
+        cursor: pointer;
+        background: #007bff;
+        color: white;
+        border: 1px solid #007bff;
     }
 </style>

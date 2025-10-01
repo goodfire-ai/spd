@@ -23,7 +23,6 @@ WANDB_PROJECT = "spd"
 DEVICE = get_device()
 
 
-
 @dataclass
 class RunContext:
     wandb_id: str
@@ -36,7 +35,7 @@ class RunContext:
 class Status(BaseModel):
     loaded: bool
     run_id: str | None
-    prompt: str | None
+    component_layers: list[str] | None
 
 
 class AvailablePrompt(BaseModel):
@@ -63,12 +62,12 @@ class RunContextService:
             return Status(
                 loaded=False,
                 run_id=None,
-                prompt=None,
+                component_layers=None,
             )
         return Status(
             loaded=True,
             run_id=self.run_context.wandb_id,
-            prompt=None,  # No "current" prompt anymore
+            component_layers=list(self.run_context.cm.components.keys()),
         )
 
     def load_run_from_wandb_id(self, wandb_id: str):
@@ -90,7 +89,7 @@ class RunContextService:
             name=task_config.dataset_name,
             hf_tokenizer_path=run_info.config.tokenizer_name,
             split=task_config.train_data_split,
-            n_ctx=24, # task_config.max_seq_len,
+            n_ctx=24,  # task_config.max_seq_len,
             is_tokenized=task_config.is_tokenized,
             streaming=task_config.streaming,
             column_name=task_config.column_name,

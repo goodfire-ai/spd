@@ -9,7 +9,7 @@ export type SparseVector = {
 export type Status = {
     loaded: boolean;
     run_id: string | null;
-    prompt: string | null;
+    component_layers: string[]; // todo put me somewhere else
 };
 
 export type OutputTokenLogit = {
@@ -31,7 +31,6 @@ export type Component = {
 
 export type MatrixCausalImportances = {
     subcomponent_cis: SparseVector;
-    component_indices: number[];
     component_agg_cis: number[];
     components: Component[];
 };
@@ -99,6 +98,16 @@ export type ActivationContext = {
     token_ci_values: number[];
     active_position: number;
     ci_value: number;
+};
+
+export type ComponentActivationContexts = {
+    component_idx: number;
+    examples: ActivationContext[];
+};
+
+export type GetLayerActivationContextsResponse = {
+    layer: string;
+    component_example_sets: ComponentActivationContexts[];
 };
 
 export type ComponentActivationContextsResponse = {
@@ -263,19 +272,11 @@ class ApiClient {
     }
 
     async getCosineSimilarities(
-        promptId: string,
         layer: string,
-        tokenIdx: number
+        componentIdx: number
     ): Promise<CosineSimilarityData> {
-        const params = new URLSearchParams({
-            prompt_id: promptId,
-            layer,
-            token_idx: tokenIdx.toString()
-        });
-
-        const response = await fetch(`${this.apiUrl}/cosine_similarities?${params.toString()}`, {
-            method: "GET"
-        });
+        const url = `${this.apiUrl}/cosine_similarities/${layer}/${componentIdx}`;
+        const response = await fetch(url, { method: "GET" });
 
         if (!response.ok) {
             const error = await response.json();
@@ -334,6 +335,17 @@ class ApiClient {
             throw new Error(error.detail || "Failed to simulate merge");
         }
 
+        return response.json();
+    }
+
+    async getLayerActivationContexts(layer: string): Promise<GetLayerActivationContextsResponse> {
+        const response = await fetch(`${this.apiUrl}/component_activation_contexts/${layer}`, {
+            method: "GET"
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "Failed to get layer activation contexts");
+        }
         return response.json();
     }
 

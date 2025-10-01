@@ -1,41 +1,8 @@
 <script lang="ts">
-    import { onMount } from "svelte";
-    import { api } from "$lib/api";
     import type { ActivationContext } from "$lib/api";
 
-    export let componentId: number;
-    export let layer: string;
-    // export let maxExamples: number = 5;
-    // export let contextSize: number = 10;
-    // export let threshold: number = 0.01;
-    export let compact: boolean = false; // For modal view vs full tab view
-
-    let contexts: ActivationContext[] = [];
-    let loading = false;
-    let error: string | null = null;
-
-    async function loadContexts() {
-        loading = true;
-        error = null;
-        try {
-            const result = await api.getComponentActivationContexts(
-                componentId,
-                layer,
-                // maxExamples,
-                // contextSize,
-                // threshold
-            );
-            contexts = result.examples;
-        } catch (e: any) {
-            error = e.message || "Failed to load activation contexts";
-            console.error("Failed to load activation contexts:", e);
-        }
-        loading = false;
-    }
-
-    onMount(() => {
-        loadContexts();
-    });
+    export let component_idx: number;
+    export let examples: ActivationContext[];
 
     function getHighlightColor(importance: number): string {
         const importanceNorm = Math.min(Math.max(importance, 0), 1);
@@ -66,9 +33,7 @@
             if (ciValue > 0) {
                 const bgColor = getHighlightColor(ciValue);
                 const borderStyle =
-                    idx === activePosition
-                        ? "border: 2px solid rgba(255,100,0,0.6);"
-                        : "";
+                    idx === activePosition ? "border: 2px solid rgba(255,100,0,0.6);" : "";
                 htmlChunks.push(
                     `<span style="background-color:${bgColor}; padding: 2px 4px; border-radius: 3px; ${borderStyle}" title="Importance: ${ciValue.toFixed(3)}">${escapedText}</span>`
                 );
@@ -94,37 +59,25 @@
     }
 </script>
 
-<div class="activation-contexts" class:compact>
-    {#if loading}
-        <div class="loading">Loading activation examples...</div>
-    {:else if error}
-        <div class="error">{error}</div>
-    {:else if contexts.length === 0}
-        <div class="empty">No activation examples found above threshold.</div>
-    {:else}
-        {#if !compact}
-            <div class="header">
-                <h4>Component {componentId}</h4>
-                <span class="example-count">{contexts.length} examples</span>
-            </div>
-        {/if}
+<div class="activation-contexts">
+    <div class="header">
+        <h4>Component {component_idx}</h4>
+        <span class="example-count">{examples.length} examples</span>
+    </div>
 
-        <div class="examples-container" class:compact-container={compact}>
-            {#each contexts as context, i}
-                <div class="example-item">
-                    {#if !compact}
-                        <strong>{i + 1}.</strong>
-                    {/if}
-                    {@html renderTokenWithHighlight(
-                        context.raw_text,
-                        context.offset_mapping,
-                        context.token_ci_values,
-                        context.active_position
-                    )}
-                </div>
-            {/each}
-        </div>
-    {/if}
+    <div class="examples-container">
+        {#each examples as context, i}
+            <div class="example-item">
+                <strong>{i + 1}.</strong>
+                {@html renderTokenWithHighlight(
+                    context.raw_text,
+                    context.offset_mapping,
+                    context.token_ci_values,
+                    context.active_position
+                )}
+            </div>
+        {/each}
+    </div>
 </div>
 
 <style>
@@ -133,12 +86,6 @@
         background: var(--background-color, #fff);
         border-radius: 6px;
         border: 1px solid #e0e0e0;
-    }
-
-    .activation-contexts.compact {
-        padding: 0.5rem;
-        border: none;
-        background: transparent;
     }
 
     .header {
@@ -169,10 +116,6 @@
         overflow-y: auto;
     }
 
-    .compact-container {
-        gap: 0.5rem;
-    }
-
     .example-item {
         font-family: monospace;
         font-size: 14px;
@@ -182,24 +125,6 @@
         background: #f8f9fa;
         border-radius: 4px;
         border: 1px solid #e9ecef;
-    }
-
-    .compact .example-item {
-        font-size: 13px;
-        padding: 0.4rem;
-    }
-
-    .loading,
-    .error,
-    .empty {
-        padding: 1rem;
-        text-align: center;
-        color: #666;
-        font-style: italic;
-    }
-
-    .error {
-        color: #dc3545;
     }
 
     /* Tooltip styles for highlighted tokens */

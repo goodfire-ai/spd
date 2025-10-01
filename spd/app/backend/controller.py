@@ -175,14 +175,10 @@ def get_status() -> Status:
     return run_context_service.get_status()
 
 
-@app.get("/cosine_similarities")
+@app.get("/cosine_similarities/{layer}/{component_idx}")
 @handle_errors
-def get_cosine_similarities(
-    prompt_id: str, layer: str, token_idx: int
-) -> TokenLayerCosineSimilarityData:
-    return ablation_service.get_cosine_similarities_of_active_components(
-        prompt_id, layer, token_idx
-    )
+def get_cosine_similarities(layer: str, component_idx: int) -> TokenLayerCosineSimilarityData:
+    return ablation_service.get_subcomponent_cosine_sims(layer, component_idx)
 
 
 class CombineMasksRequest(BaseModel):
@@ -260,7 +256,7 @@ def get_mask_overrides() -> list[MaskOverrideDTO]:
 
 class GetLayerActivationContextsResponse(BaseModel):
     layer: str
-    component_examples: list[ComponentActivationContexts]
+    component_example_sets: list[ComponentActivationContexts]
 
 
 @app.get("/component_activation_contexts/{layer}")
@@ -268,10 +264,12 @@ class GetLayerActivationContextsResponse(BaseModel):
 def get_layer_activation_contexts(
     layer: str,
 ) -> GetLayerActivationContextsResponse:
-    return GetLayerActivationContextsResponse(
+    res = GetLayerActivationContextsResponse(
         layer=layer,
-        component_examples=component_activations_service.get_layer_activation_contexts(layer),
+        component_example_sets=component_activations_service.get_layer_activation_contexts(layer),
     )
+    print(type(res))
+    return res
 
 
 class GetComponentActivationContextsResponse(BaseModel):

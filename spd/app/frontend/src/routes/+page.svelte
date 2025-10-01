@@ -3,7 +3,12 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { api } from "$lib/api";
-    import type { RunPromptResponse, ComponentMask, Status, MatrixCausalImportances } from "$lib/api";
+    import type {
+        RunPromptResponse,
+        ComponentMask,
+        Status,
+        MatrixCausalImportances
+    } from "$lib/api";
     import {
         ablationComponentMask,
         popupData,
@@ -238,7 +243,26 @@
         <div class="top-controls">
             <RunSelector bind:loadingRun bind:wandbRunId {isLoading} />
 
-            <!-- Workspace Navigation -->
+            <div class="tab-navigation">
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "ablation"}
+                    on:click={() => (activeTab = "ablation")}
+                >
+                    Component Ablation
+                </button>
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "activation-contexts"}
+                    on:click={() => (activeTab = "activation-contexts")}
+                >
+                    Activation Contexts
+                </button>
+            </div>
+        </div>
+
+        <div class:hidden={activeTab !== "ablation"}>
+            <SavedMasksPanel bind:this={savedMasksPanel} onApplyMask={applyMaskAsAblation} />
             <div class="workspace-navigation">
                 <div class="workspace-header">
                     <h3>Prompt Workspaces</h3>
@@ -297,92 +321,69 @@
                 {/if}
             </div>
 
-            <SavedMasksPanel bind:this={savedMasksPanel} onApplyMask={applyMaskAsAblation} />
-        </div>
-
-        <!-- Tab Navigation -->
-        {#if result}
-            <div class="tab-navigation">
-                <button
-                    class="tab-button"
-                    class:active={activeTab === "ablation"}
-                    on:click={() => (activeTab = "ablation")}
-                >
-                    Component Ablation
-                </button>
-                <button
-                    class="tab-button"
-                    class:active={activeTab === "activation-contexts"}
-                    on:click={() => (activeTab = "activation-contexts")}
-                >
-                    Activation Contexts
-                </button>
-            </div>
-        {/if}
-
-        <div class="main-layout" class:hidden={activeTab !== "ablation"}>
-            <!-- Left side: Static heatmap and controls -->
-            <div class="left-panel">
-                {#if result && currentPromptId}
-                    <ComponentHeatmap
-                        {result}
-                        promptId={currentPromptId}
-                        onCellClick={openPopup}
-                        on:maskCreated={refreshSavedMasks}
-                    />
-
-                    <DisabledComponentsPanel
-                        promptTokens={result.prompt_tokens}
-                        {isLoading}
-                        onSendAblation={sendAblation}
-                        onToggleComponent={toggleComponentDisabled}
-                    />
-                {/if}
-            </div>
-
-            <!-- Right side: Scrollable predictions -->
-            <div class="right-panel">
-                {#if result && result.full_run_token_logits}
-                    <OriginalPredictions
-                        tokenLogits={result.full_run_token_logits}
-                        promptTokens={result.prompt_tokens}
-                        title="Original Model Predictions"
-                    />
-                {/if}
-
-                {#if result && result.ci_masked_token_logits}
-                    <OriginalPredictions
-                        tokenLogits={result.ci_masked_token_logits}
-                        promptTokens={result.prompt_tokens}
-                        title="Original <strong>CI Masked</strong> Model Predictions"
-                    />
-                {/if}
-
-                {#if result}
-                    {#each $ablationResults as ablationResult}
-                        <AblationPredictions
-                            tokenLogits={ablationResult.tokenLogits}
-                            promptTokens={result.prompt_tokens}
-                            appliedMask={ablationResult.applied_mask}
-                            maskOverride={ablationResult.maskOverride}
+            <div class="main-layout">
+                <div class="left-panel">
+                    {#if result && currentPromptId}
+                        <ComponentHeatmap
+                            {result}
+                            promptId={currentPromptId}
+                            onCellClick={openPopup}
+                            on:maskCreated={refreshSavedMasks}
                         />
-                    {/each}
-                {/if}
+
+                        <DisabledComponentsPanel
+                            promptTokens={result.prompt_tokens}
+                            {isLoading}
+                            onSendAblation={sendAblation}
+                            onToggleComponent={toggleComponentDisabled}
+                        />
+                    {/if}
+                </div>
+
+                <!-- Right side: Scrollable predictions -->
+                <div class="right-panel">
+                    {#if result && result.full_run_token_logits}
+                        <OriginalPredictions
+                            tokenLogits={result.full_run_token_logits}
+                            promptTokens={result.prompt_tokens}
+                            title="Original Model Predictions"
+                        />
+                    {/if}
+
+                    {#if result && result.ci_masked_token_logits}
+                        <OriginalPredictions
+                            tokenLogits={result.ci_masked_token_logits}
+                            promptTokens={result.prompt_tokens}
+                            title="Original <strong>CI Masked</strong> Model Predictions"
+                        />
+                    {/if}
+
+                    {#if result}
+                        {#each $ablationResults as ablationResult}
+                            <AblationPredictions
+                                tokenLogits={ablationResult.tokenLogits}
+                                promptTokens={result.prompt_tokens}
+                                appliedMask={ablationResult.applied_mask}
+                                maskOverride={ablationResult.maskOverride}
+                            />
+                        {/each}
+                    {/if}
+                </div>
             </div>
         </div>
-
-        <!-- Activation Contexts Tab Content -->
-        {#if activeTab === "activation-contexts"}
-            <div class="activation-contexts-container">
-                <ActivationContextsTab {result} />
-            </div>
-        {/if}
+        <div class:hidden={activeTab !== "activation-contexts"}>
+            <!-- Activation Contexts Tab Content -->
+            {#if status}
+                <div class="activation-contexts-container">
+                    <ActivationContextsTab availableComponentLayers={status.component_layers} />
+                </div>
+            {/if}
+        </div>
 
         <ComponentDetailModal
             onClose={closePopup}
             onToggleComponent={toggleComponentDisabled}
             {isComponentDisabled}
-            promptId={currentPromptId}
         />
     </div>
 </main>

@@ -10,7 +10,6 @@ from pydantic import BaseModel
 from torch._tensor import Tensor
 
 from spd.app.backend.services.run_context_service import RunContextService
-from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import get_device
@@ -53,8 +52,8 @@ class MatrixCausalImportances(BaseModel):
     subcomponent_cis: SparseVector
     """the CI values for each subcomponent"""
 
-    component_indices: list[int]
-    """len: C. the index of the component that the each subcomponent belongs to"""
+    # component_indices: list[int]
+    # """len: C. the index of the component that the each subcomponent belongs to"""
 
     component_agg_cis: list[float]  # or SparseVector
     """len: M. For each component, the assigned CI value as aggregated from the subcomponents (usually via
@@ -107,16 +106,16 @@ class AblationService:
 
         self.__mock_component_indices = None  # REMOVE ME
 
-    def _mock_component_indices(self) -> Int[Tensor, " seq_len C"]:
+    def _mock_component_indices(self) -> Int[Tensor, " C"]:
         assert (ctx := self.run_context_service.run_context) is not None, "Run context not found"
         C = ctx.config.C
-        # groups of 20 subcomponents
-        seq_len = 24
+        # groups of N_MOCK_COMPONENTS subcomponents
         if self.__mock_component_indices is None:
-            self.__mock_component_indices = torch.randint(0, N_MOCK_COMPONENTS, (seq_len, C))
-        return self.__mock_component_indices.to(DEVICE)
+            self.__mock_component_indices = torch.randint(0, N_MOCK_COMPONENTS, (C,)).to(DEVICE)
+        return self.__mock_component_indices
 
     def mock_aggregate_cis(self, cis: Float[Tensor, "seq_len C"]) -> Float[Tensor, "seq_len M"]:
+        # Pretend it's the same for each layer
         assert (cfg := self.run_context_service.run_context) is not None, "Run context not found"
 
         n_toks, n_subcomponents = cis.shape
@@ -125,13 +124,18 @@ class AblationService:
         assert n_toks == seq_len, "for now"
         assert n_subcomponents == cfg.config.C
 
-        component_indices = self._mock_component_indices()
+        # TODO not sure this is right
+        component_indices: Int[Tensor, " C"] = self._mock_component_indices()
 
         component_agg_cis = torch.full(
             (n_toks, N_MOCK_COMPONENTS), float("-inf"), dtype=cis.dtype, device=cis.device
         )
         component_agg_cis.scatter_reduce_(
-            dim=1, index=component_indices, src=cis, reduce="amax", include_self=True
+            dim=1,
+            index=component_indices.unsqueeze(0).repeat(n_toks, 1),
+            src=cis,
+            reduce="amax",
+            include_self=True,
         )
 
         return component_agg_cis
@@ -179,11 +183,15 @@ class AblationService:
             module_names=list(ctx.cm.components.keys()),
         )
 
+        logger.info(f"Pre-weight acts shape: {pre_weight_acts.keys()}")
+
         causal_importances, _ = ctx.cm.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
             sigmoid_type=ctx.config.sigmoid_type,
             sampling=ctx.config.sampling,
         )
+
+        logger.info(f"Causal importances shape: {causal_importances.keys()}")
 
         # Run with overridden mask
         ci_masked_logits = ctx.cm(
@@ -191,6 +199,8 @@ class AblationService:
             mode="components",
             mask_infos=make_mask_infos(causal_importances),
         )
+
+        logger.info(f"CI masked logits shape: {ci_masked_logits.shape}")
 
         # Store context
         # Generate a unique prompt ID
@@ -202,6 +212,8 @@ class AblationService:
             input_token_ids=inputs,
             subcomponent_causal_importances={k: v[0] for k, v in causal_importances.items()},
         )
+
+        logger.info("saved")
 
         return RunResponse(
             prompt_id=prompt_id,
@@ -224,25 +236,23 @@ class AblationService:
             component_agg_cis = self.mock_aggregate_cis(layer_ci)
             token_cis = []
 
-            for tok_component_agg_ci, tok_component_indices, tok_layer_ci in zip(
-                component_agg_cis, component_indices, layer_ci, strict=True
-            ):
+            for tok_component_agg_ci, tok_layer_ci in zip(component_agg_cis, layer_ci, strict=True):
                 assert tok_component_agg_ci.shape == (N_MOCK_COMPONENTS,)
-                assert tok_component_indices.shape == (ctx.config.C,), (
-                    f"got {tok_component_indices.shape}"
-                )
+                # assert tok_component_indices.shape == (ctx.config.C,), (
+                #     f"got {tok_component_indices.shape}"
+                # )
 
                 assert tok_layer_ci.shape == (ctx.config.C,), f"got {tok_layer_ci.shape}"
 
                 components = []
                 for i in range(N_MOCK_COMPONENTS):
-                    subcomponent_indices = torch.where(tok_component_indices == i)[0].tolist()
+                    subcomponent_indices = torch.where(component_indices == i)[0].tolist()
                     components.append(Component(index=i, subcomponent_indices=subcomponent_indices))
 
                 token_cis.append(
                     MatrixCausalImportances(
                         subcomponent_cis=SparseVector.from_tensor(tok_layer_ci),
-                        component_indices=tok_component_indices.tolist(),
+                        # component_indices=tok_component_indices.tolist(),
                         component_agg_cis=tok_component_agg_ci.tolist(),
                         components=components,
                     )
@@ -271,7 +281,7 @@ class AblationService:
             prompt_context.input_token_ids[None],
             mode="components",
             mask_infos=make_mask_infos(masked_ci),
-        )
+        )[0]
 
         return self._logits_to_token_logits(ci_masked_logits)
 
@@ -290,10 +300,10 @@ class AblationService:
             prompt_context.input_token_ids[None],
             mode="components",
             mask_infos=make_mask_infos(masked_ci),
-        )
+        )[0]
 
         return self._logits_to_token_logits(ci_masked_logits)
-    
+
     def ablate_components(
         self, prompt_id: str, component_mask: dict[str, list[list[int]]]
     ) -> list[list[OutputTokenLogit]]:
@@ -301,19 +311,21 @@ class AblationService:
         assert (prompt_context := self.prompt_contexts.get(prompt_id)) is not None
 
         component_indices = self._mock_component_indices()
-        
+
         masked_ci = prompt_context.subcomponent_causal_importances.copy()
         for module, token_component_masks in component_mask.items():
             for token_idx, token_component_mask in enumerate(token_component_masks):
                 for component_idx in token_component_mask:
-                    component_subcomponent_indices = torch.where(component_indices == component_idx)[0].tolist()
+                    component_subcomponent_indices = torch.where(
+                        component_indices == component_idx
+                    )[0].tolist()
                     masked_ci[module][token_idx][component_subcomponent_indices] = 0
 
         ci_masked_logits = ctx.cm(
             prompt_context.input_token_ids[None],
             mode="components",
             mask_infos=make_mask_infos(masked_ci),
-        )
+        )[0]
 
         return self._logits_to_token_logits(ci_masked_logits)
 
@@ -367,42 +379,46 @@ class AblationService:
 
         return self.run_prompt(example)
 
-    def get_cosine_similarities_of_active_components(
-        self, prompt_id: str, layer: str, token_idx: int
+    def get_subcomponent_cosine_sims(
+        self, layer: str, component_idx: int
     ) -> TokenLayerCosineSimilarityData:
         assert (run := self.run_context_service.run_context) is not None, "Run context not found"
+        assert (components := run.cm.components.get(layer)) is not None, f"Layer {layer} not found"
 
-        C = run.config.C
+        logger.info(f"component index: {component_idx}")
+        component_subcomponent_indices = torch.where(
+            self._mock_component_indices() == component_idx
+        )[0]
 
-        assert layer in run.cm.components, f"Layer {layer} not found"
+        logger.info(f"component subcomponent indices: {component_subcomponent_indices.shape}")
 
-        pc = self.prompt_contexts[prompt_id]
+        assert component_subcomponent_indices.ndim == 1, "Nonzero indices must be 1D"
+        n_nonzero = component_subcomponent_indices.shape[0]
 
-        ci = pc.subcomponent_causal_importances[layer][token_idx]
-        assert ci.shape == (C,), f"Expected {C} CI, got {ci.shape}"
-
-        (nonzero_indices,) = ci.nonzero(as_tuple=True)
-        assert nonzero_indices.ndim == 1, "Nonzero indices must be 1D"
-        n_nonzero = nonzero_indices.shape[0]
-
-        u_singular_vectors: Float[torch.Tensor, "C d"] = run.cm.components[layer].U[nonzero_indices]
+        u_singular_vectors: Float[torch.Tensor, "C d"] = components.U[
+            component_subcomponent_indices.tolist()
+        ]
         u_pairwise_cosine_similarities = pairwise_cosine_similarities(u_singular_vectors)
         assert u_pairwise_cosine_similarities.shape == (n_nonzero, n_nonzero), (
             f"Expected {n_nonzero}x{n_nonzero} shape, got {u_pairwise_cosine_similarities.shape}"
         )
 
-        v_singular_vectors: Float[torch.Tensor, "d C"] = run.cm.components[layer].V[
-            :, nonzero_indices
+        v_singular_vectors: Float[torch.Tensor, "d C"] = components.V[
+            :, component_subcomponent_indices.tolist()
         ]
         v_pairwise_cosine_similarities = pairwise_cosine_similarities(v_singular_vectors.T)
         assert v_pairwise_cosine_similarities.shape == (n_nonzero, n_nonzero), (
             f"Expected {n_nonzero}x{n_nonzero} shape, got {v_pairwise_cosine_similarities.shape}"
         )
 
+        logger.info(f"U pairwise cosine similarities: {u_pairwise_cosine_similarities.shape}")
+        logger.info(f"V pairwise cosine similarities: {v_pairwise_cosine_similarities.shape}")
+        logger.info(f"Component indices: {component_subcomponent_indices.tolist()}")
+
         return TokenLayerCosineSimilarityData(
             input_singular_vectors=u_pairwise_cosine_similarities.tolist(),
             output_singular_vectors=v_pairwise_cosine_similarities.tolist(),
-            component_indices=nonzero_indices.tolist(),
+            component_indices=component_subcomponent_indices.tolist(),
         )
 
     def create_combined_mask(
@@ -482,3 +498,4 @@ def k_way_weighted_jaccard(token_masks: Float[Tensor, "m C"]) -> float:
     numerator = mins.sum()
     denominator = maxs.sum()
     return float(numerator / denominator) if float(denominator) > 0.0 else 1.0
+
