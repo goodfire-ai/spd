@@ -153,10 +153,25 @@ def optimize(
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
-    optimizer = optim.AdamW(component_params + gate_params, lr=config.lr, weight_decay=0)
+    # Create optimizer with separate parameter groups for components and gates
+    optimizer = optim.AdamW(
+        [
+            {"params": component_params, "lr": config.effective_component_lr},
+            {"params": gate_params, "lr": config.effective_gate_lr},
+        ],
+        weight_decay=0,
+    )
 
-    lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
-    logger.info(f"Base LR scheduler created: {config.lr_schedule}")
+    # Create per-group LR schedule functions
+    component_lr_schedule_fn = get_lr_schedule_fn(
+        config.effective_component_lr_schedule, config.effective_component_lr_exponential_halflife
+    )
+    gate_lr_schedule_fn = get_lr_schedule_fn(
+        config.effective_gate_lr_schedule, config.effective_gate_lr_exponential_halflife
+    )
+    logger.info(
+        f"LR schedulers created | components: {config.effective_component_lr_schedule}, gates: {config.effective_gate_lr_schedule}"
+    )
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
@@ -170,16 +185,27 @@ def optimize(
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
 
-        step_lr = get_lr_with_warmup(
+        # Compute per-group LRs with warmup
+        step_lr_component = get_lr_with_warmup(
             step=step,
             steps=config.steps,
-            lr=config.lr,
-            lr_schedule_fn=lr_schedule_fn,
-            lr_warmup_pct=config.lr_warmup_pct,
+            lr=config.effective_component_lr,
+            lr_schedule_fn=component_lr_schedule_fn,
+            lr_warmup_pct=config.effective_component_lr_warmup_pct,
+        )
+        step_lr_gate = get_lr_with_warmup(
+            step=step,
+            steps=config.steps,
+            lr=config.effective_gate_lr,
+            lr_schedule_fn=gate_lr_schedule_fn,
+            lr_warmup_pct=config.effective_gate_lr_warmup_pct,
         )
 
-        for group in optimizer.param_groups:
-            group["lr"] = step_lr
+        # Apply per-group learning rates
+        if len(optimizer.param_groups) >= 1:
+            optimizer.param_groups[0]["lr"] = step_lr_component
+        if len(optimizer.param_groups) >= 2:
+            optimizer.param_groups[1]["lr"] = step_lr_gate
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
         current_p = config.pnorm  # Initialize with default value
@@ -257,12 +283,15 @@ def optimize(
                 if param.grad is not None:
                     grad_norm += param.grad.data.flatten().pow(2).sum()
             microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
-            microbatch_log_data["train/misc/lr"] = step_lr
+            # Log both LRs (keep legacy key for backward compatibility)
+            microbatch_log_data["train/misc/lr_component"] = step_lr_component
+            microbatch_log_data["train/misc/lr_gate"] = step_lr_gate
+            microbatch_log_data["train/misc/lr"] = step_lr_component
             microbatch_log_data["train/misc/current_p"] = current_p
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")
-                tqdm.write(f"LR: {step_lr:.6f}")
+                tqdm.write(f"LRs -> components: {step_lr_component:.6f}, gates: {step_lr_gate:.6f}")
                 for name, value in microbatch_log_data.items():
                     tqdm.write(f"{name}: {value:.15f}")
                 if out_dir is not None:
