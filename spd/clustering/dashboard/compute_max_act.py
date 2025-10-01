@@ -108,16 +108,17 @@ def compute_max_activations(
     # Create ClusterId objects for each cluster
     cluster_id_map: dict[int, ClusterId] = {}
     for idx in unique_cluster_indices:
-        components = cluster_components[idx]
-        if components:
-            first_label = components[0]["label"]
-            module_name, original_index_str = first_label.rsplit(":", 1)
-            cluster_label = ClusterLabel(
-                module_name=module_name,
-                original_index=int(original_index_str),
-            )
-        else:
-            cluster_label = ClusterLabel(module_name="unknown", original_index=idx)
+        components: list[dict[str, Any]] = cluster_components[idx]
+        assert components, f"Cluster {idx} has no components"
+
+        first_label: str = components[0]["label"]
+        module_name: str
+        original_index_str: str
+        module_name, original_index_str = first_label.rsplit(":", 1)
+        cluster_label: ClusterLabel = ClusterLabel(
+            module_name=module_name,
+            original_index=int(original_index_str),
+        )
 
         cluster_id_map[idx] = ClusterId(
             spd_run=spd_run,
@@ -127,7 +128,7 @@ def compute_max_activations(
         )
 
     # Define tracking criteria
-    criteria = [
+    criteria: list[TrackingCriterion] = [
         TrackingCriterion(
             property_name="max_activation",
             direction="max",
@@ -174,13 +175,13 @@ def compute_max_activations(
             if acts_2d.abs().max() == 0:
                 continue
 
-            cluster_id: ClusterId = cluster_id_map[cluster_idx]
-            cluster_hash: ClusterIdHash = cluster_id.to_string()
+            current_cluster_id: ClusterId = cluster_id_map[cluster_idx]
+            current_cluster_hash: ClusterIdHash = current_cluster_id.to_string()
 
             # Process each sample in batch
-            for batch_idx_i in range(batch_size):
+            for batch_sample_idx in range(batch_size):
                 # Extract tokens and create text sample
-                tokens: Int[Tensor, " n_ctx"] = batch[batch_idx_i].cpu()
+                tokens: Int[Tensor, " n_ctx"] = batch[batch_sample_idx].cpu()
                 tokens_list: list[int] = tokens.tolist()
                 text: str = tokenizer.decode(tokens)  # pyright: ignore[reportAttributeAccessIssue]
 
@@ -189,47 +190,49 @@ def compute_max_activations(
                     for tid in tokens_list
                 ]
 
-                text_sample = TextSample(
+                text_sample: TextSample = TextSample(
                     full_text=text,
                     tokens=token_strings,
                 )
 
                 # Store text sample (deduplicated by hash)
-                text_hash = text_sample.text_hash
+                text_hash: TextSampleHash = text_sample.text_hash
                 if text_hash not in text_samples:
                     text_samples[text_hash] = text_sample
 
                 # Store activations for this cluster
-                activations_np: Float[np.ndarray, " n_ctx"] = acts_2d[batch_idx_i].cpu().numpy()
-                cluster_activations[cluster_hash].append(activations_np)
-                cluster_text_hashes[cluster_hash].append(text_hash)
+                activations_np: Float[np.ndarray, " n_ctx"] = (
+                    acts_2d[batch_sample_idx].cpu().numpy()
+                )
+                cluster_activations[current_cluster_hash].append(activations_np)
+                cluster_text_hashes[current_cluster_hash].append(text_hash)
 
     # Build ClusterData for each cluster
     clusters: dict[ClusterIdHash, ClusterData] = {}
     all_activations_list: list[Float[np.ndarray, " n_ctx"]] = []
     all_text_hashes_list: list[TextSampleHash] = []
     activations_map: dict[ActivationSampleHash, int] = {}  # Maps activation hash to index
-    current_idx = 0
+    current_idx: int = 0
 
     for cluster_idx in unique_cluster_indices:
-        cluster_id = cluster_id_map[cluster_idx]
-        cluster_hash = cluster_id.to_string()
+        cluster_id: ClusterId = cluster_id_map[cluster_idx]
+        cluster_hash: ClusterIdHash = cluster_id.to_string()
 
         if not cluster_activations[cluster_hash]:
             continue
 
         # Stack activations into batch
         acts_array: Float[np.ndarray, "batch n_ctx"] = np.stack(cluster_activations[cluster_hash])
-        text_hashes_list = cluster_text_hashes[cluster_hash]
+        text_hashes_list: list[TextSampleHash] = cluster_text_hashes[cluster_hash]
 
-        activation_batch = ActivationSampleBatch(
+        activation_batch: ActivationSampleBatch = ActivationSampleBatch(
             cluster_id=cluster_id,
             text_hashes=text_hashes_list,
             activations=acts_array,
         )
 
         # Generate ClusterData with stats and top-k samples
-        cluster_data = ClusterData.generate(
+        cluster_data: ClusterData = ClusterData.generate(
             cluster_id=cluster_id,
             activation_samples=activation_batch,
             criteria=criteria,
@@ -238,48 +241,29 @@ def compute_max_activations(
         clusters[cluster_hash] = cluster_data
 
         # Add to global activations storage
+        act_hashes: list[ActivationSampleHash] = activation_batch.activation_hashes
         for i, (text_hash, acts) in enumerate(zip(text_hashes_list, acts_array, strict=True)):
-            act_hash = activation_batch.activation_hashes[i]
+            act_hash: ActivationSampleHash = act_hashes[i]
             activations_map[act_hash] = current_idx
             all_activations_list.append(acts)
             all_text_hashes_list.append(text_hash)
             current_idx += 1
 
-    # Create combined activations batch (using first cluster_id as placeholder)
-    if all_activations_list:
-        combined_activations = np.stack(all_activations_list)
-        # Use a dummy cluster_id since this is for all clusters
-        dummy_cluster_id = (
-            list(cluster_id_map.values())[0]
-            if cluster_id_map
-            else ClusterId(
-                spd_run=spd_run,
-                clustering_run=clustering_run,
-                iteration=iteration,
-                cluster_label=ClusterLabel(module_name="combined", original_index=0),
-            )
-        )
-        combined_batch = ActivationSampleBatch(
-            cluster_id=dummy_cluster_id,
-            text_hashes=all_text_hashes_list,
-            activations=combined_activations,
-        )
-    else:
-        # Empty case
-        dummy_cluster_id = ClusterId(
-            spd_run=spd_run,
-            clustering_run=clustering_run,
-            iteration=iteration,
-            cluster_label=ClusterLabel(module_name="combined", original_index=0),
-        )
-        combined_batch = ActivationSampleBatch(
-            cluster_id=dummy_cluster_id,
-            text_hashes=[],
-            activations=np.array([]).reshape(0, 0),
-        )
+    # Create combined activations batch
+    assert all_activations_list, "No activations collected"
+    assert cluster_id_map, "No clusters found"
+
+    combined_activations: Float[np.ndarray, "total_samples n_ctx"] = np.stack(all_activations_list)
+    # Use first cluster_id as placeholder since this is for all clusters
+    dummy_cluster_id: ClusterId = list(cluster_id_map.values())[0]
+    combined_batch: ActivationSampleBatch = ActivationSampleBatch(
+        cluster_id=dummy_cluster_id,
+        text_hashes=all_text_hashes_list,
+        activations=combined_activations,
+    )
 
     # Build DashboardData
-    dashboard_data = DashboardData(
+    dashboard_data: DashboardData = DashboardData(
         clusters=clusters,
         text_samples=text_samples,
         activations_map=activations_map,

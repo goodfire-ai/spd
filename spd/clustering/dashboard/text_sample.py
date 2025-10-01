@@ -175,7 +175,7 @@ class TrackingCriterion:
             raise ValueError(f"Invalid direction: {direction}")
         return cls(
             property_name=parts[0],
-            direction=direction,  # pyright: ignore[reportArgumentType]
+            direction=direction,  # type: ignore[arg-type]
             n_samples=int(parts[2]),
         )
 

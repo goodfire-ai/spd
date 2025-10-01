@@ -81,7 +81,7 @@ clustering-test:
 
 .PHONY: clustering-dashboard
 clustering-dashboard:
-	python spd/clustering/dashboard/lm_max_activations.py \
+	python spd/clustering/dashboard/run.py \
 		--wandb-run goodfire/spd-cluster/runs/j8dgvemf \
 		--iteration 4500 \
 		--n-samples 16 \
