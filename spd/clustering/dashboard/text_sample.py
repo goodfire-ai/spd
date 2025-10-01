@@ -3,25 +3,9 @@
 import hashlib
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, Literal, NewType
+from typing import Literal, NewType
 
 import numpy as np
-import torch
-from jaxtyping import Float, Int
-from torch import Tensor
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-from transformers import PreTrainedTokenizer
-
-from spd.clustering.activations import (
-    ProcessedActivations,
-    component_activations,
-    process_activations,
-)
-from spd.clustering.merge_history import MergeHistory
-from spd.models.component_model import ComponentModel
-from spd.models.sigmoids import SigmoidTypes
-from spd.utils.general_utils import extract_batch_data, get_module_device
 
 # Type aliases
 TextSampleHash = NewType("TextSampleHash", str)
@@ -188,13 +172,13 @@ class TrackingCriterion:
     def to_string(self) -> TrackingCriterionHash:
         """Convert to hash string representation."""
         parts = (self.property_name, self.direction, str(self.n_samples))
-        assert all(_SEPARATOR_2 not in part for part in parts), "Parts cannot contain separator"
-        return TrackingCriterionHash(_SEPARATOR_2.join(parts))
+        assert all(_SEPARATOR_1 not in part for part in parts), "Parts cannot contain separator"
+        return TrackingCriterionHash(_SEPARATOR_1.join(parts))
 
     @classmethod
     def from_string(cls, s: TrackingCriterionHash) -> "TrackingCriterion":
         """Create TrackingCriterion from its string representation."""
-        parts: list[str] = s.split(_SEPARATOR_2)
+        parts: list[str] = s.split(_SEPARATOR_1)
         if len(parts) != 3:
             raise ValueError(f"Invalid TrackingCriterion string: {s}")
         direction = parts[1]
@@ -207,384 +191,133 @@ class TrackingCriterion:
         )
 
 
+# input data looks like `(cluster, text) -> activation` which is unique
+# output data looks like:
+# cluster -> {
+#   {criterion -> texts}
+#   {various stats about the cluster}
+# }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @dataclass
 class ClusterCriterionTracker:
-    """Tracks top-k text samples per cluster across multiple criteria.
+    """Accumulates all stat values per cluster per criterion, then filters to top-k"""
 
-    This can work with multiple clusters and be parallelized.
-    Stores only references (text hashes) and can be joined with text/activation tables later.
-
-    Table:
-    - top_samples: {ClusterHash: {CriterionHash: [(TextHash, stat_value)]}}
-    """
-
-    top_samples: dict[ClusterIdHash, dict[TrackingCriterionHash, list[tuple[TextSampleHash, float]]]]
-    averages: dict[ClusterIdHash, dict[TrackingCriterionHash, float]]
-    averages_count: int
-
-    @property
-    def criteria(self) -> list[TrackingCriterion]:
-        """Get list of unique criteria being tracked.
-        
-        FOOTGUN: Assumes all clusters track the same criteria.
-        """
-        if not self.top_samples:
-            return []
-
-        # Get criteria from the first cluster's entries
-        first_cluster = next(iter(self.top_samples.values()))
-        return [
-            TrackingCriterion.from_string(crit_hash)
-            for crit_hash in first_cluster.keys()
-        ]
+    all_samples: dict[ClusterIdHash, dict[TrackingCriterionHash, list[tuple[TextSampleHash, float]]]]
 
     @classmethod
-    def create_empty(
-        cls, cluster_hashes: list[ClusterIdHash],
-        criteria_hashes: list[TrackingCriterionHash],
-    ) -> "ClusterCriterionTracker":
-        """Create an empty tracker for multiple clusters."""
-        top_samples: dict[ClusterIdHash, dict[TrackingCriterionHash, list[tuple[TextSampleHash, float]]]] = {}
-        for cluster_hash in cluster_hashes:
-            top_samples[cluster_hash] = {
-                crit_hash: [] for crit_hash in criteria_hashes
-            }
+    def create_empty(cls) -> "ClusterCriterionTracker":
+        """Create an empty tracker."""
+        return cls(all_samples={})
 
-        return cls(
-            top_samples=top_samples,
-            averages={cl: {ch: 0.0 for ch in criteria_hashes} for cl in cluster_hashes},
-            averages_count=0,
-        )
-
-    @classmethod
-    def generate(
-        cls,
-        clusters: list[ClusterId],
-        criteria: list[TrackingCriterion],
-        data: list[ActivationSample],
-    ) -> "ClusterCriterionTracker":
-        """Try to insert a text sample for all criteria in a specific cluster.
+    def add_sample(
+        self,
+        cluster_hash: ClusterIdHash,
+        text_hash: TextSampleHash,
+        stat_values: dict[TrackingCriterionHash, float],
+    ) -> None:
+        """Add a sample to the tracker.
 
         Args:
-            cluster_hash: Hash of the cluster to insert into
+            cluster_hash: Hash of the cluster
             text_hash: Hash of the text sample
-            stat_values: Dict mapping CriterionHash to its computed statistic value
-
-        Returns:
-            Dict mapping CriterionHash to True if inserted, False otherwise
+            stat_values: Dict mapping TrackingCriterionHash to computed stat values
         """
-        cluster_hashes: list[ClusterIdHash] = [c.to_string() for c in clusters]
-        criteria_hashes: list[TrackingCriterionHash] = [c.to_string() for c in criteria]
-        output: ClusterCriterionTracker = cls.create_empty(
-            cluster_hashes=cluster_hashes,
-            criteria_hashes=criteria_hashes,
-        )
-        for sample in data:
-            output._try_insert_activation(sample)
+        # Initialize cluster if needed
+        if cluster_hash not in self.all_samples:
+            self.all_samples[cluster_hash] = {}
 
+        # Add to each criterion
+        for crit_hash, stat_value in stat_values.items():
+            # Initialize criterion if needed
+            if crit_hash not in self.all_samples[cluster_hash]:
+                self.all_samples[cluster_hash][crit_hash] = []
 
+            # Add sample (allow duplicates for now, dedup can happen in filter_top_k)
+            self.all_samples[cluster_hash][crit_hash].append((text_hash, stat_value))
 
-    
-    def _try_insert_activation(self, act_sample: ActivationSample) -> None:
-        cluster_hash: ClusterIdHash = act_sample.cluster_id.to_string()
-        text_hash: TextSampleHash = act_sample.text_hash
-        for criterion in self.criteria:
-            crit_hash: TrackingCriterionHash = criterion.to_string()
-            stat_value: float = getattr(act_sample, criterion.property_name)
-
-            # update top samples
-            # ----------------------------------------------------------------------
-            top_list: list[tuple[TextSampleHash, float]] = self.top_samples[cluster_hash][crit_hash]
-
-            # skip if text_hash already in list
-            if any(th == text_hash for th, _ in top_list):
-                continue
-
-            # Find insertion point based on direction
-            insert_pos: int | None = None
-
-            for j, (_, existing_value) in enumerate(top_list):
-                if (criterion.direction == "max" and stat_value > existing_value) or (
-                    criterion.direction == "min" and stat_value < existing_value
-                ):
-                    insert_pos = j
-                    break
-
-            # Insert if we found a position or list not full
-            if insert_pos is not None:
-                top_list.insert(insert_pos, (text_hash, stat_value))
-                # Keep only top n_samples
-                if len(top_list) > criterion.n_samples:
-                    top_list.pop()
-            elif len(top_list) < criterion.n_samples:
-                top_list.append((text_hash, stat_value))
-
-
-            # update averages
-            # ----------------------------------------------------------------------
-            current_avg: float = self.averages[cluster_hash][crit_hash]
-            count: int = self.averages_count
-            # TODO: incremental average would be slower, but more memory efficient. later, figure out which one we are bounded by. we might also care abt other stats
-            new_avg: float = (current_avg * count + stat_value) / (count + 1)
-
-    def get_cluster_top_samples(self) -> dict[ClusterIdHash, dict[TrackingCriterionHash, list[TextSampleHash]]]:
-        """Get top text hashes for all clusters and criteria (without stat values)."""
-        return {
-            cluster_hash: {
-                crit_hash: [th for th, _ in self.top_samples[cluster_hash][crit_hash]]
-                for crit_hash in self.top_samples[cluster_hash]
-            }
-            for cluster_hash in self.top_samples
-        }
-
-
-@dataclass
-class ClusterActivationDatabase:
-    """Database for storing text samples and activations per cluster.
-
-    Database tables:
-    - text_samples: {TextHash: TextSample}
-    - cluster_top_samples: {ClusterHash: {CriterionHash: [TextHash]}}
-    - activation_samples: {(TextHash, ClusterHash): ActivationSample}
-    """
-
-    # Table: TextHash -> TextSample
-    text_samples: dict[TextSampleHash, TextSample]
-
-    # Table: ClusterHash -> {CriterionHash -> [TextHash]}
-    cluster_top_samples: dict[ClusterIdHash, dict[TrackingCriterionHash, list[TextSampleHash]]]
-
-    # Table: (TextHash, ClusterHash) -> ActivationSample
-    activation_samples: dict[tuple[TextSampleHash, ClusterIdHash], ActivationSample]
-
-    @classmethod
-    def from_tracker(
-        cls,
-        tracker: ClusterCriterionTracker,
-        text_samples: dict[TextSampleHash, TextSample],
-        activation_samples: dict[tuple[TextSampleHash, ClusterIdHash], ActivationSample],
-    ) -> "ClusterActivationDatabase":
-        """Create database from a tracker and sample tables.
+    def filter_top_k(
+        self, criteria: list[TrackingCriterion]
+    ) -> dict[ClusterIdHash, dict[TrackingCriterionHash, list[TextSampleHash]]]:
+        """Filter to top-k samples per cluster per criterion.
 
         Args:
-            tracker: ClusterTopSamplesTracker with all clusters
-            text_samples: Complete text samples table
-            activation_samples: Complete activation samples table
+            criteria: List of criteria specifying n_samples and direction
 
         Returns:
-            Complete ClusterActivationDatabase
+            Dict mapping cluster -> criterion -> list of top-k text hashes
         """
-        cluster_top_samples = tracker.get_cluster_top_samples()
-
-        return cls(
-            text_samples=text_samples,
-            cluster_top_samples=cluster_top_samples,
-            activation_samples=activation_samples,
-        )
-
-    @classmethod
-    def generate(
-        cls,
-        model: ComponentModel,
-        sigmoid_type: SigmoidTypes,
-        tokenizer: PreTrainedTokenizer,
-        dataloader: DataLoader[Any],
-        merge_history: MergeHistory,
-        iteration: int,
-        criteria: list[TrackingCriterion],
-        spd_run: str,
-        clustering_run: str,
-        n_batches: int,
-    ) -> "ClusterActivationDatabase":
-        """Generate database by computing activations from model and data.
-
-        Args:
-            model: ComponentModel to get activations from
-            sigmoid_type: Sigmoid type for activation computation
-            tokenizer: Tokenizer for decoding text
-            dataloader: DataLoader providing batches
-            merge_history: MergeHistory containing cluster information
-            iteration: Merge iteration to analyze
-            criteria: List of tracking criteria
-            spd_run: SPD run identifier
-            clustering_run: Clustering run identifier
-            n_batches: Number of batches to process
-
-        Returns:
-            Populated ClusterActivationDatabase
-        """
-        device: torch.device = get_module_device(model)
-
-        # Get unique cluster indices and component info
-        unique_cluster_indices: list[int] = merge_history.get_unique_clusters(iteration)
-        cluster_components: dict[int, list[dict[str, Any]]] = {
-            cid: merge_history.get_cluster_components_info(iteration, cid)
-            for cid in unique_cluster_indices
+        criteria_map: dict[TrackingCriterionHash, TrackingCriterion] = {
+            c.to_string(): c for c in criteria
         }
 
-        # Create ClusterId objects for each cluster
-        cluster_ids: list[ClusterId] = []
-        for idx in unique_cluster_indices:
-            # Get cluster label from first component
-            components = cluster_components[idx]
-            if components:
-                first_label = components[0]["label"]
-                module_name, original_index_str = first_label.rsplit(":", 1)
-                cluster_label = ClusterLabel(
-                    module_name=module_name, original_index=int(original_index_str)
-                )
-            else:
-                cluster_label = ClusterLabel(module_name="unknown", original_index=idx)
+        result: dict[ClusterIdHash, dict[TrackingCriterionHash, list[TextSampleHash]]] = {}
 
-            cluster_ids.append(
-                ClusterId(
-                    spd_run=spd_run,
-                    clustering_run=clustering_run,
-                    iteration=iteration,
-                    cluster_label=cluster_label,
-                )
-            )
+        for cluster_hash, cluster_data in self.all_samples.items():
+            result[cluster_hash] = {}
 
-        # Create mapping from cluster_index to ClusterId
-        cluster_id_map: dict[int, ClusterId] = {
-            unique_cluster_indices[i]: cluster_ids[i] for i in range(len(cluster_ids))
-        }
-
-        # Initialize empty database
-        db = cls.create_empty(cluster_ids=cluster_ids, criteria=criteria)
-
-        # Process batches
-        for batch_idx, batch_data in enumerate(tqdm(dataloader, total=n_batches)):
-            if batch_idx >= n_batches:
-                break
-
-            batch: Int[Tensor, "batch_size n_ctx"] = extract_batch_data(batch_data).to(device)
-            batch_size: int
-            seq_len: int
-            batch_size, seq_len = batch.shape
-
-            # Get activations
-            activations: dict[str, Float[Tensor, "n_steps C"]] = component_activations(
-                model,
-                device,
-                batch=batch,
-                sigmoid_type=sigmoid_type,
-            )
-            processed: ProcessedActivations = process_activations(activations, seq_mode="concat")
-
-            for cluster_idx in unique_cluster_indices:
-                # Compute cluster activations
-                acts_2d: Float[Tensor, "batch_size seq_len"] = _compute_cluster_activations(
-                    processed, cluster_components[cluster_idx], batch_size, seq_len
-                )
-
-                if acts_2d.abs().max() == 0:
+            for crit_hash, samples in cluster_data.items():
+                if crit_hash not in criteria_map:
                     continue
 
-                # Find top activations across all positions
-                flat_acts: Float[Tensor, " batch_size*seq_len"] = acts_2d.flatten()
-                # Get top k per criterion (max of n_samples across all criteria)
-                k: int = min(max(c.n_samples for c in criteria), len(flat_acts))
-                top_idx: Int[Tensor, " k"]
-                _, top_idx = torch.topk(flat_acts, k)
+                criterion = criteria_map[crit_hash]
 
-                # Get ClusterId for this cluster
-                cluster_id: ClusterId = cluster_id_map[cluster_idx]
+                # Deduplicate by text_hash (keep first occurrence)
+                seen: set[TextSampleHash] = set()
+                deduped: list[tuple[TextSampleHash, float]] = []
+                for text_hash, stat_value in samples:
+                    if text_hash not in seen:
+                        seen.add(text_hash)
+                        deduped.append((text_hash, stat_value))
 
-                # Create and insert samples
-                for idx in top_idx:
-                    batch_idx_i: int = int(idx // seq_len)
+                # Sort by stat value
+                reverse = criterion.direction == "max"
+                sorted_samples = sorted(deduped, key=lambda x: x[1], reverse=reverse)
 
-                    text_sample, act_sample = _create_samples(
-                        cluster_id=cluster_id,
-                        batch=batch,
-                        batch_idx=batch_idx_i,
-                        sequence_acts=acts_2d[batch_idx_i],
-                        tokenizer=tokenizer,
-                    )
+                # Take top k
+                top_k = sorted_samples[: criterion.n_samples]
 
-                    # Try to insert into database
-                    db._try_insert_activation(act_sample, text_sample)
+                # Extract just text hashes
+                result[cluster_hash][crit_hash] = [th for th, _ in top_k]
 
-        return db
-
-
-def _compute_cluster_activations(
-    processed: ProcessedActivations,
-    cluster_components: list[dict[str, Any]],
-    batch_size: int,
-    seq_len: int,
-) -> Float[Tensor, "batch_size seq_len"]:
-    """Compute average activations for a cluster across its components.
-
-    Args:
-        processed: ProcessedActivations containing all component activations
-        cluster_components: List of component info dicts for this cluster
-        batch_size: Batch size
-        seq_len: Sequence length
-
-    Returns:
-        2D tensor of cluster activations (batch_size x seq_len)
-    """
-    # Get indices for components in this cluster
-    comp_indices: list[int] = []
-    for component_info in cluster_components:
-        label: str = component_info["label"]
-        comp_idx: int | None = processed.get_label_index(label)
-        if comp_idx is not None:
-            comp_indices.append(comp_idx)
-
-    if not comp_indices:
-        # Return zeros if no valid components
-        return torch.zeros((batch_size, seq_len), device=processed.activations.device)
-
-    # Average activations across cluster components
-    cluster_acts: Float[Tensor, " n_steps"] = processed.activations[:, comp_indices].mean(dim=1)
-    return cluster_acts.view(batch_size, seq_len)
-
-
-def _create_samples(
-    cluster_id: ClusterId,
-    batch: Int[Tensor, "batch_size n_ctx"],
-    batch_idx: int,
-    sequence_acts: Float[Tensor, " seq_len"],
-    tokenizer: PreTrainedTokenizer,
-) -> tuple[TextSample, ActivationSample]:
-    """Create TextSample and ActivationSample from batch data.
-
-    Args:
-        cluster_id: ClusterId this sample belongs to
-        batch: Input token batch
-        batch_idx: Index within batch
-        sequence_acts: Activations for entire sequence
-        tokenizer: Tokenizer for decoding
-
-    Returns:
-        Tuple of (TextSample, ActivationSample)
-    """
-    # Extract full sequence data
-    tokens: Int[Tensor, " n_ctx"] = batch[batch_idx].cpu()
-    tokens_list: list[int] = tokens.tolist()
-    text: str = tokenizer.decode(tokens)  # pyright: ignore[reportAttributeAccessIssue]
-
-    # Convert token IDs to token strings
-    token_strings: list[str] = [
-        tokenizer.decode([tid])  # pyright: ignore[reportAttributeAccessIssue]
-        for tid in tokens_list
-    ]
-
-    # Create TextSample
-    text_sample = TextSample(
-        full_text=text,
-        tokens=token_strings,
-    )
-
-    # Create ActivationSample (with numpy array)
-    activations_np: np.ndarray = sequence_acts.cpu().numpy()
-    activation_sample = ActivationSample(
-        cluster_id=cluster_id,
-        text_hash=text_sample.text_hash,
-        activations=activations_np,
-    )
-
-    return text_sample, activation_sample
+        return result
