@@ -103,8 +103,8 @@ def optimize(
         target_model=target_model,
         target_module_patterns=config.all_module_patterns,
         C=config.C,
-        gate_type=config.gate_type,
-        gate_hidden_dims=config.gate_hidden_dims,
+        ci_fn_type=config.ci_fn_type,
+        ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
 
@@ -146,14 +146,14 @@ def optimize(
             tgt.V.data = src.U.data.T
 
     component_params: list[torch.nn.Parameter] = []
-    gate_params: list[torch.nn.Parameter] = []
+    ci_fn_params: list[torch.nn.Parameter] = []
     for name, component in component_model.components.items():
         component_params.extend(list(component.parameters()))
-        gate_params.extend(list(component_model.gates[name].parameters()))
+        ci_fn_params.extend(list(component_model.ci_fns[name].parameters()))
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
-    optimizer = optim.AdamW(component_params + gate_params, lr=config.lr, weight_decay=0)
+    optimizer = optim.AdamW(component_params + ci_fn_params, lr=config.lr, weight_decay=0)
 
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
@@ -253,7 +253,7 @@ def optimize(
                 microbatch_log_data[n_alive_key] = n_alive_count
 
             grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
-            for param in component_params + gate_params:
+            for param in component_params + ci_fn_params:
                 if param.grad is not None:
                     grad_norm += param.grad.data.flatten().pow(2).sum()
             microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()

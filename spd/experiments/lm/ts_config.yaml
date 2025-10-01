@@ -10,8 +10,8 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 100
 n_mask_samples: 1
-gate_type: "vector_mlp"
-gate_hidden_dims: [8]
+ci_fn_type: "vector_mlp"
+ci_fn_hidden_dims: [8]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["transformer.h.3.mlp.c_fc"]
 sampling: "continuous"

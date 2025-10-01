@@ -365,10 +365,10 @@ We thank Tom McGrath, Stefan Heimersheim, Daniel Filan, Bart Bussmann, Logan Smi
 
 ### Architecture of Causal Importance Function MLPs
 
-The MLPs $\gamma^l_c$ that are used in the causal importance function consist of a single hidden layer of GELU neurons with width $d_{\text{gate}}$, followed by a hard sigmoid function:
+The MLPs $\gamma^l_c$ that are used in the causal importance function consist of a single hidden layer of GELU neurons with width $d_{\text{ci_fn}}$, followed by a hard sigmoid function:
 
 $$
-g^l_c(x)=\sigma_H\left( W^{l,\text{gate out}}_{c}\text{GELU}\left(W^{l, \text{gate in}}_{c} h^l_c(x)+b^{l, \text{gate in}}_{c}\right)+b^{l, \text{gate out}}_{c}\right)
+g^l_c(x)=\sigma_H\left( W^{l,\text{ci_fn out}}_{c}\text{GELU}\left(W^{l, \text{ci_fn in}}_{c} h^l_c(x)+b^{l, \text{ci_fn in}}_{c}\right)+b^{l, \text{ci_fn out}}_{c}\right)
 $$
 
 $$
@@ -379,15 +379,15 @@ x &0\leq x\leq 1\\
 \end{cases}
 $$
 
-Here, $h^l_c(x):=\sum_j V^l_{c,j} a^l_j(x)$ is the inner activation of the component and $W^{l,\text{gate in}}_c\in\mathbb{R}^{d_{\text{gate}}\times 1} ,W^{l, \text{gate out}}\in\mathbb{R}^{1\times d_{\text{gate}}}, b^{l, \text{gate in}}\in\mathbb{R}^{d_{\text{gate}}}, b^{l, \text{gate out}}\in\mathbb{R}$ are trainable parameters.
+Here, $h^l_c(x):=\sum_j V^l_{c,j} a^l_j(x)$ is the inner activation of the component and $W^{l,\text{ci_fn in}}_c\in\mathbb{R}^{d_{\text{ci_fn}}\times 1} ,W^{l, \text{ci_fn out}}\in\mathbb{R}^{1\times d_{\text{ci_fn}}}, b^{l, \text{ci_fn in}}\in\mathbb{R}^{d_{\text{ci_fn}}}, b^{l, \text{ci_fn out}}\in\mathbb{R}$ are trainable parameters.
 
-Note that there is no sum over $c$ in the above expression: Every subcomponent has its own separate causal importance MLP. This keeps the computational costs of training the gates low compared to the cost of training the subcomponents themselves.
+Note that there is no sum over $c$ in the above expression: Every subcomponent has its own separate causal importance MLP. This keeps the computational costs of training the causal importance functions low compared to the cost of training the subcomponents themselves.
 
 It is important to note that this choice of causal importance function is only one of many possibilities. We chose it for its relative simplicity and low cost. In theory, SPD should be compatible with any method of predicting causal importance values $g^l_c(x)$ for the subcomponents. This is somewhat in contrast to sparse dictionary learning methods, where using arbitrarily expressive nonlinearities and optimization methods to determine dictionary activations raises concerns about whether a 'feature' is really represented by the network if it can only be identified in neural activations using a very complex nonlinear function versus a simple thresholded-linear function.
 
 ### Avoiding dead gradients with leaky hard sigmoids
 
-The flat regions in a hard sigmoid function can lead to dead gradients for inputs below $0$ or above $1$. To avoid this, we use leaky hard sigmoids instead, which introduce a small non-zero slope below $0$ or above $1$. Specifically, we use *lower-leaky* hard sigmoids $\sigma_{H,\text{lower}}(x)$ with slope $0.01$ below $0$ for the gates used in the forward pass for the $\mathcal{L}_{\text{stochastic-recon}}$ and $\mathcal{L}_{\text{stochastic-recon-layerwise}}$ losses. And we use *upper-leaky* hard sigmoids $\sigma_{H,\text{upper}}(x)$ with slope $0.01$ above $1$ in the causal importance loss $\mathcal{L}_{\text{importance-minimality}}$:
+The flat regions in a hard sigmoid function can lead to dead gradients for inputs below $0$ or above $1$. To avoid this, we use leaky hard sigmoids instead, which introduce a small non-zero slope below $0$ or above $1$. Specifically, we use *lower-leaky* hard sigmoids $\sigma_{H,\text{lower}}(x)$ with slope $0.01$ below $0$ for the causal importance functions used in the forward pass for the $\mathcal{L}_{\text{stochastic-recon}}$ and $\mathcal{L}_{\text{stochastic-recon-layerwise}}$ losses. And we use *upper-leaky* hard sigmoids $\sigma_{H,\text{upper}}(x)$ with slope $0.01$ above $1$ in the causal importance loss $\mathcal{L}_{\text{importance-minimality}}$:
 
 $$
 \sigma_{H,\text{lower}}(x):=\begin{cases}
@@ -437,7 +437,7 @@ All target models were trained for 10k steps using the AdamW optimizer [Loshchil
 - Data distribution: same as target model (feature probability 0.05)
 - Stochastic sampling: $S=1$ for $\mathcal{L}_{\text{stochastic-recon}}$ and $\mathcal{L}_{\text{stochastic-recon-layerwise}}$
 - Loss coefficients: $\mathcal{L}_{\text{faithfulness}}=1$, $\mathcal{L}_{\text{stochastic-recon}}=1$, $\mathcal{L}_{\text{stochastic-recon-layerwise}}=1$
-- Causal importance functions: One MLP per subcomponent, each with one hidden layer of $d_{\text{gate}}=16$ $\text{GELU}$ neurons.
+- Causal importance functions: One MLP per subcomponent, each with one hidden layer of $d_{\text{ci_fn}}=16$ $\text{GELU}$ neurons.
 
 **SPD training: Model-specific hyperparameters**
 - $\text{TMS}_{5-2}$ and $\text{TMS}_{5-2+\text{ID}}$: $\mathcal{L}_{\text{importance-minimality}}$ coefficient $3\times10^{-3}$, $p=1$
@@ -461,9 +461,9 @@ All models trained using AdamW [Loshchilov & Hutter, 2019] with weight decay 0.0
 - $p=2$ for $\mathcal{L}_{\text{importance-minimality}}$
 
 **SPD training: Model-specific hyperparameters**
-- 1-layer residual MLP: learning rate $2\times10^{-3}$, $\mathcal{L}_{\text{importance-minimality}}$ coefficient $1\times10^{-5}$, $C=100$ initial subcomponents, 30k training steps, causal importance function with $d_{\text{gate}}=16$ hidden neurons per subcomponent
-- 2-layer residual MLP: learning rate $1\times10^{-3}$, $\mathcal{L}_{\text{importance-minimality}}$ coefficient $1\times10^{-5}$, $C=400$ initial subcomponents, 50k training steps, causal importance function with $d_{\text{gate}}=16$ hidden $\text{GELU}$ neurons per subcomponent  
-- 3-layer residual MLP: learning rate $1\times10^{-3}$, $\mathcal{L}_{\text{importance-minimality}}$ coefficient $0.5\times10^{-5}$, $C=500$ initial subcomponents, 200k training steps (converges around 70k), causal importance function with $d_{\text{gate}}=128$ hidden $\text{GELU}$ neurons per subcomponent
+- 1-layer residual MLP: learning rate $2\times10^{-3}$, $\mathcal{L}_{\text{importance-minimality}}$ coefficient $1\times10^{-5}$, $C=100$ initial subcomponents, 30k training steps, causal importance function with $d_{\text{ci_fn}}=16$ hidden neurons per subcomponent
+- 2-layer residual MLP: learning rate $1\times10^{-3}$, $\mathcal{L}_{\text{importance-minimality}}$ coefficient $1\times10^{-5}$, $C=400$ initial subcomponents, 50k training steps, causal importance function with $d_{\text{ci_fn}}=16$ hidden $\text{GELU}$ neurons per subcomponent  
+- 3-layer residual MLP: learning rate $1\times10^{-3}$, $\mathcal{L}_{\text{importance-minimality}}$ coefficient $0.5\times10^{-5}$, $C=500$ initial subcomponents, 200k training steps (converges around 70k), causal importance function with $d_{\text{ci_fn}}=128$ hidden $\text{GELU}$ neurons per subcomponent
 
 ### SPD Pseudocode
 
