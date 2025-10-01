@@ -37,9 +37,11 @@ from spd.utils.distributed_utils import (
 )
 from spd.utils.general_utils import (
     extract_batch_data,
-    get_linear_annealed_p,
     get_lr_schedule_fn,
     get_lr_with_warmup,
+    get_linear_annealed_p,
+    get_noise_schedule_fn,
+    with_parameter_noise,
 )
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
@@ -169,6 +171,14 @@ def optimize(
     logger.info(f"Gate LR scheduler created: {config.gate_lr_schedule}")
     logger.info(f"Component LR scheduler created: {config.component_lr_schedule}")
 
+    # Create noise schedule function for component parameters
+    component_noise_schedule_fn = None
+    if config.component_noise_std is not None:
+        component_noise_schedule_fn = get_noise_schedule_fn(
+            config.component_noise_schedule, config.component_noise_exponential_halflife
+        )
+        logger.info(f"Component noise scheduler created: {config.component_noise_schedule}")
+
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
         module_names=list(component_model.components.keys()),
@@ -207,51 +217,72 @@ def optimize(
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
         current_p = config.pnorm  # Initialize with default value
+        current_noise_std = 0.0  # Initialize noise std
 
         for _ in range(config.gradient_accumulation_steps):
             weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
-            target_out, pre_weight_acts = wrapped_model(
-                batch,
-                mode="input_cache",
-                module_names=list(component_model.components.keys()),
-            )
-            # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
-            # through the parameters in calc_causal_importances below, the DDP hook will get called
-            # and gradients will be properly synced across ranks on the next backward pass.
-            causal_importances, causal_importances_upper_leaky = (
-                component_model.calc_causal_importances(
-                    pre_weight_acts=pre_weight_acts,
-                    sigmoid_type=config.sigmoid_type,
-                    detach_inputs=False,
-                    sampling=config.sampling,
+            # Calculate noise std for this step
+            if config.component_noise_std is not None and component_noise_schedule_fn is not None:
+                noise_multiplier = component_noise_schedule_fn(step, config.steps)
+                if config.component_noise_std_final is not None:
+                    # Interpolate between initial and final noise std
+                    current_noise_std = config.component_noise_std * noise_multiplier + config.component_noise_std_final * (1 - noise_multiplier)
+                else:
+                    current_noise_std = config.component_noise_std * noise_multiplier
+            else:
+                current_noise_std = 0.0
+            
+            if step < 3 and current_noise_std > 0:  # Only print for first few steps with noise
+                print(f"DEBUG: Step {step}, noise_std: {current_noise_std}, config.component_noise_std: {config.component_noise_std}")
+
+            # Use context manager for parameter noise injection
+            # Use both "components" and "module.components" patterns to handle wrapped models
+            # Also include "gates" and "module.gates" patterns for gate parameters
+            # Noise is permanently added to parameters and affects both inference and training
+            with with_parameter_noise(wrapped_model, current_noise_std, ["components", "module.components", "gates", "module.gates"]):
+                target_out, pre_weight_acts = wrapped_model(
+                    batch,
+                    mode="input_cache",
+                    module_names=list(component_model.components.keys()),
                 )
-            )
+                
+                # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
+                # through the parameters in calc_causal_importances below, the DDP hook will get called
+                # and gradients will be properly synced across ranks on the next backward pass.
+                causal_importances, causal_importances_upper_leaky = (
+                    component_model.calc_causal_importances(
+                        pre_weight_acts=pre_weight_acts,
+                        sigmoid_type=config.sigmoid_type,
+                        detach_inputs=False,
+                        sampling=config.sampling,
+                    )
+                )
 
-            alive_tracker.watch_batch(causal_importances)
+                alive_tracker.watch_batch(causal_importances)
 
-            # Calculate current p value with annealing
-            current_p = get_linear_annealed_p(
-                step=step,
-                steps=config.steps,
-                initial_p=config.pnorm,
-                p_anneal_start_frac=config.p_anneal_start_frac,
-                p_anneal_final_p=config.p_anneal_final_p,
-                p_anneal_end_frac=config.p_anneal_end_frac,
-            )
+                # Calculate current p value with annealing
+                current_p = get_linear_annealed_p(
+                    step=step,
+                    steps=config.steps,
+                    initial_p=config.pnorm,
+                    p_anneal_start_frac=config.p_anneal_start_frac,
+                    p_anneal_final_p=config.p_anneal_final_p,
+                    p_anneal_end_frac=config.p_anneal_end_frac,
+                )
 
-            microbatch_total_loss, microbatch_loss_terms = calculate_losses(
-                model=component_model,
-                batch=batch,
-                config=config,
-                causal_importances=causal_importances,
-                causal_importances_upper_leaky=causal_importances_upper_leaky,
-                target_out=target_out,
-                weight_deltas=weight_deltas,
-                device=device,
-                current_p=current_p,
-            )
+                microbatch_total_loss, microbatch_loss_terms = calculate_losses(
+                    model=component_model,
+                    batch=batch,
+                    config=config,
+                    causal_importances=causal_importances,
+                    causal_importances_upper_leaky=causal_importances_upper_leaky,
+                    target_out=target_out,
+                    weight_deltas=weight_deltas,
+                    device=device,
+                    current_p=current_p,
+                )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
@@ -284,6 +315,7 @@ def optimize(
             microbatch_log_data["train/misc/gate_lr"] = gate_step_lr
             microbatch_log_data["train/misc/component_lr"] = component_step_lr
             microbatch_log_data["train/misc/current_p"] = current_p
+            microbatch_log_data["train/misc/component_noise_std"] = current_noise_std
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")
