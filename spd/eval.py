@@ -767,6 +767,7 @@ def evaluate(
             pre_weight_acts,
             sigmoid_type=config.sigmoid_type,
             sampling=config.sampling,
+            gate_input_noise_std=config.gate_input_noise_std,
         )
 
         for eval in evals:

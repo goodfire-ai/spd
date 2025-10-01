@@ -491,6 +491,7 @@ class ComponentModel(LoadableModule):
         sigmoid_type: SigmoidTypes,
         sampling: Literal["continuous", "binomial"],
         detach_inputs: bool = False,
+        gate_input_noise_std: float = 0.0,
     ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
         """Calculate causal importances.
 
@@ -520,7 +521,11 @@ class ComponentModel(LoadableModule):
             if detach_inputs:
                 gate_input = gate_input.detach()
 
-            gate_output = gates(gate_input)
+            # Apply noise only to MLPGates
+            if isinstance(gates, MLPGates):
+                gate_output = gates(gate_input, noise_std=gate_input_noise_std)
+            else:
+                gate_output = gates(gate_input)
 
             if sigmoid_type == "leaky_hard":
                 lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]

@@ -660,6 +660,7 @@ def _process_batch_for_contexts(
             sigmoid_type=model_data.config.sigmoid_type,
             detach_inputs=True,
             sampling=model_data.config.sampling,
+            gate_input_noise_std=model_data.config.gate_input_noise_std,
         )
 
     # Calculate L0 scores
