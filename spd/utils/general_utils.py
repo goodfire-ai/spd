@@ -2,7 +2,8 @@ import copy
 import importlib
 import json
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -386,3 +387,106 @@ def get_linear_annealed_p(
         # Linear interpolation between start and end fractions
         progress = (cur_frac - p_anneal_start_frac) / (p_anneal_end_frac - p_anneal_start_frac)
         return initial_p + (p_anneal_final_p - initial_p) * progress
+
+
+def get_noise_schedule_fn(
+    schedule_type: Literal["constant", "linear", "cosine", "exponential"],
+    exponential_halflife: float | None = None,
+) -> Callable[[int, int], float]:
+    """Get a noise schedule function for component parameters.
+    
+    Args:
+        schedule_type: Type of schedule to use
+        exponential_halflife: Half-life for exponential schedule (required if schedule_type="exponential")
+        
+    Returns:
+        Function that takes (step, total_steps) and returns noise multiplier (0-1)
+    """
+    if schedule_type == "constant":
+        return lambda step, total_steps: 1.0
+    elif schedule_type == "linear":
+        return lambda step, total_steps: 1.0 - (step / total_steps)
+    elif schedule_type == "cosine":
+        return lambda step, total_steps: 0.5 * (1 + np.cos(np.pi * step / total_steps))
+    elif schedule_type == "exponential":
+        if exponential_halflife is None:
+            raise ValueError("exponential_halflife must be provided for exponential schedule")
+        return lambda step, total_steps: np.exp(-step / exponential_halflife)
+    else:
+        raise ValueError(f"Unknown schedule type: {schedule_type}")
+
+
+@contextmanager
+def with_parameter_noise(
+    model: nn.Module,
+    noise_std: float,
+    param_patterns: list[str] | None = None,
+) -> Generator[None, None, None]:
+    """Context manager that temporarily adds Gaussian noise to specified parameters during inference only.
+    
+    The noise only affects the forward pass - the actual parameters remain unchanged for training.
+    The noise is automatically removed when exiting the context, even if an exception occurs.
+    
+    Args:
+        model: The model containing parameters to add noise to
+        noise_std: Standard deviation of the Gaussian noise
+        param_patterns: List of parameter name patterns to match. If None, adds noise to all parameters.
+        
+    Example:
+        with with_parameter_noise(model, 0.01, ["components"]):
+            # Forward pass with noisy parameters (inference only)
+            output = model(input)
+    """
+    # Early return if no noise to add
+    if noise_std <= 0:
+        yield
+        return
+    
+    # Generate noise tensors
+    noise_tensors = {}
+    for name, param in model.named_parameters():
+        if param_patterns is None or any(pattern in name for pattern in param_patterns):
+            noise_tensors[name] = torch.randn_like(param) * noise_std
+    
+    # Create forward hooks that add noise to parameters during forward pass
+    handles = []
+    
+    def create_noise_hook(param_name, noise_tensor):
+        def hook(module, input, output):
+            # Add noise to the parameter during forward pass
+            if hasattr(module, 'weight') and module.weight is param:
+                with torch.no_grad():
+                    module.weight.data.add_(noise_tensor)
+        return hook
+    
+    def create_cleanup_hook(param_name, noise_tensor):
+        def hook(module, input, output):
+            # Remove noise from the parameter after forward pass
+            if hasattr(module, 'weight') and module.weight is param:
+                with torch.no_grad():
+                    module.weight.data.sub_(noise_tensor)
+        return hook
+    
+    # Register hooks for parameters that need noise
+    for name, param in model.named_parameters():
+        if name in noise_tensors:
+            # Find the module containing this parameter
+            for module_name, module in model.named_modules():
+                if hasattr(module, 'weight') and module.weight is param:
+                    # Hook to add noise before forward pass
+                    noise_hook = create_noise_hook(name, noise_tensors[name])
+                    noise_handle = module.register_forward_pre_hook(noise_hook)
+                    handles.append(noise_handle)
+                    
+                    # Hook to remove noise after forward pass
+                    cleanup_hook = create_cleanup_hook(name, noise_tensors[name])
+                    cleanup_handle = module.register_forward_hook(cleanup_hook)
+                    handles.append(cleanup_handle)
+                    break
+    
+    try:
+        yield
+    finally:
+        # Remove all hooks
+        for handle in handles:
+            handle.remove()
