@@ -254,7 +254,7 @@ def calc_kl_divergence_lm(
     log_q = torch.log_softmax(pred, dim=-1)  # log Q
     p = torch.softmax(target, dim=-1)  # P
     kl = F.kl_div(log_q, p, reduction="none")  # P · (log P − log Q)
-    return kl.sum(dim=-1).mean()  # Σ_vocab / (batch·seq)
+    return (((kl.sum(dim=-1)) ** 1.5).mean()) ** (2 / 3)  # Σ_vocab / (batch·seq)
 
 
 def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
