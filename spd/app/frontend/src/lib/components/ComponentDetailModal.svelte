@@ -1,9 +1,9 @@
 <script lang="ts">
-    import { popupData, ablationSubcomponentMask } from "$lib/stores/componentState";
-    import { api } from "$lib/api";
     import type { CosineSimilarityData } from "$lib/api";
+    import { api } from "$lib/api";
+    import { ablationComponentMask, popupData } from "$lib/stores/componentState";
     import CosineSimilarityPlot from "./CosineSimilarityPlot.svelte";
-    import ActivationContexts from "./ActivationContexts.svelte";
+    // import ActivationContexts from "./ActivationContexts.svelte";
 
     export let onClose: () => void;
     export let onToggleComponent: (
@@ -44,7 +44,7 @@
 
     function getAllComponentIndices(): number[] {
         if (!$popupData) return [];
-        return $popupData.tokenCis.indices;
+        return $popupData.matrixCis.component_agg_cis;
     }
 
     function areAllComponentsDisabled(): boolean {
@@ -78,7 +78,7 @@
     $: disabledComponentIndices = (() => {
         if (!$popupData) return [];
         // Access $runAblation to trigger reactivity
-        const ablations = $ablationSubcomponentMask;
+        const ablations = $ablationComponentMask;
         const allIndices = getAllComponentIndices();
         return allIndices.filter((idx) => {
             const layerAblations = ablations[$popupData.layer];
@@ -99,48 +99,64 @@
                         <strong>Token:</strong> "{$popupData.token}" (position {$popupData.tokenIdx})
                     </p>
                     <p><strong>Layer:</strong> {$popupData.layer}</p>
-                    <p><strong>L0 (Non-zero components):</strong> {$popupData.tokenCis.l0}</p>
                     <p>
-                        <strong>Vector Length:</strong>
-                        {$popupData.tokenCis.values.length}
+                        <strong>Subcomponents L0:</strong>
+                        {$popupData.matrixCis.subcomponent_cis.l0}
                     </p>
                 </div>
-                <div class="vector-display">
-                    <div class="vector-controls">
-                        <h4>Component Values:</h4>
+                <div class="components-section">
+                    <div class="section-header">
+                        <h4>Components</h4>
                         <label class="select-all-label">
                             <input
                                 type="checkbox"
                                 checked={areAllComponentsDisabled()}
                                 on:change={toggleAllComponents}
                             />
-                            Select All
+                            Ablate All
                         </label>
                     </div>
-                    <div class="vector-grid">
-                        {#each $popupData.tokenCis.values as value, idx}
+                    <div class="components-grid">
+                        {#each $popupData.matrixCis.components as component}
                             <div
-                                class="vector-item"
-                                style="--item-bg-color: {getColorFromCI(value / 3)}"
+                                class="component-card"
+                                style="--component-bg: {getColorFromCI(
+                                    $popupData.matrixCis.component_agg_cis[component.index] / 2
+                                )}"
                                 class:disabled={isComponentDisabled(
                                     $popupData.layer,
                                     $popupData.tokenIdx,
-                                    $popupData.tokenCis.indices[idx]
+                                    component.index
                                 )}
                                 on:click={() => {
                                     if ($popupData) {
                                         onToggleComponent(
                                             $popupData.layer,
                                             $popupData.tokenIdx,
-                                            $popupData.tokenCis.indices[idx]
+                                            component.index
                                         );
                                     }
                                 }}
                             >
-                                <span class="component-idx"
-                                    >{$popupData.tokenCis.indices[idx]}:</span
-                                >
-                                <span class="component-value">{value.toFixed(4)}</span>
+                                <div class="component-header">
+                                    <span class="component-index">#{component.index}</span>
+                                    <span class="component-ci"
+                                        >{$popupData.matrixCis.component_agg_cis[
+                                            component.index
+                                        ].toFixed(4)}</span
+                                    >
+                                    <span class="component-rank"
+                                        >{$popupData.matrixCis.components[component.index]
+                                            .subcomponent_indices.length}</span
+                                    >
+                                </div>
+                                <!-- {#if component.subcomponent_indices.length > 0}
+                                    <div class="subcomponents">
+                                        {#each component.subcomponent_indices as subIdx}
+                                            <span class="subcomponent-badge" >{subIdx}</span >
+                                        {/each}
+                                    </div>
+                                {/if} -->
                             </div>
                         {/each}
                     </div>
@@ -170,7 +186,7 @@
                 {/if}
 
                 <!-- Activation Contexts Section -->
-                {#if $popupData.tokenCis.indices.length > 0}
+                <!-- {#if $popupData.tokenCis.indices.length > 0}
                     <div class="activation-contexts-section">
                         <h3>Activation Examples</h3>
                         <p class="section-description">
@@ -187,7 +203,7 @@
                             </div>
                         {/each}
                     </div>
-                {/if}
+                {/if} -->
             </div>
         </div>
     </div>
@@ -210,22 +226,20 @@
     .popup-modal {
         background: white;
         border-radius: 8px;
-        padding: 0;
-        max-width: 600px;
+        padding: 1.5rem;
         max-height: 80vh;
         width: 90%;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        overflow: hidden;
+        overflow-y: auto;
     }
 
     .popup-content {
-        padding: 1.5rem;
-        overflow-y: auto;
-        max-height: calc(80vh - 80px);
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
     }
 
     .popup-info {
-        margin-bottom: 1.5rem;
         padding: 1rem;
         background-color: #f8f9fa;
         border-radius: 4px;
@@ -236,16 +250,17 @@
         color: #555;
     }
 
-    .vector-display h4 {
-        margin: 0 0 1rem 0;
-        color: #333;
-    }
 
-    .vector-controls {
+    .section-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 1rem;
+    }
+
+    .section-header h4 {
+        margin: 0;
+        color: #333;
     }
 
     .select-all-label {
@@ -261,45 +276,61 @@
         cursor: pointer;
     }
 
-    .vector-grid {
+    .components-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: 0.5rem;
-        max-height: 300px;
-        overflow-y: auto;
-        border: 1px solid #eee;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 0.75rem;
         padding: 1rem;
-        border-radius: 4px;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        background: #fafafa;
     }
 
-    .vector-item {
+    .component-card {
+        background-color: var(--component-bg);
+        border-radius: 6px;
+        padding: 0.75rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: 2px solid transparent;
+    }
+
+    .component-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        border-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .component-card.disabled {
+        background-color: #ff6b6b !important;
+        opacity: 0.8;
+    }
+
+    .component-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0.25rem 0.5rem;
-        border-radius: 3px;
+        margin-bottom: 0.5rem;
+    }
+
+    .component-index {
+        font-weight: 600;
+        color: #333;
+        font-size: 0.95rem;
+    }
+
+    .component-ci {
+        font-weight: 700;
+        color: #1a1a1a;
         font-size: 0.9rem;
-        cursor: pointer;
-        transition: background-color 0.2s ease;
-        background-color: var(--item-bg-color, #e5e2ff);
+        font-family: "Monaco", "Courier New", monospace;
     }
 
-    .vector-item.disabled {
-        background-color: #ff4444 !important;
-        opacity: 0.7;
-    }
-
-    .component-idx {
-        color: #666;
-        font-weight: bold;
-        flex-shrink: 0;
-    }
-
-    .component-value {
-        font-weight: bold;
-        text-align: right;
-        flex-grow: 1;
-        margin: 0 0.5rem;
+    .component-rank {
+        font-weight: 700;
+        color: #1a1a1a;
+        font-size: 0.9rem;
+        font-family: "Monaco", "Courier New", monospace;
     }
 
     .similarity-plots {

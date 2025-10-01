@@ -1,7 +1,7 @@
 <script lang="ts">
-    import type { LayerCIs, SparseVector } from "$lib/api";
+    import type { LayerCIs, MatrixCausalImportances } from "$lib/api";
     import {
-        ablationSubcomponentMask,
+        ablationComponentMask,
         multiSelectMode,
         selectedTokensForCombining
     } from "$lib/stores/componentState";
@@ -17,7 +17,7 @@
         tokenIdx: number,
         layer: string,
         layerIdx: number,
-        tokenCis: SparseVector
+        matrixCis: MatrixCausalImportances
     ) => void;
 
     function handleMaskCreated() {
@@ -29,7 +29,7 @@
         tokenIdx: number,
         layer: string,
         layerIdx: number,
-        tokenCis: SparseVector
+        matrixCis: MatrixCausalImportances
     ) {
         if ($multiSelectMode) {
             const existingIndex = $selectedTokensForCombining.findIndex(
@@ -50,7 +50,7 @@
             }
         } else {
             // Normal click behavior - open popup
-            onCellClick(token, tokenIdx, layer, layerIdx, tokenCis);
+            onCellClick(token, tokenIdx, layer, layerIdx, matrixCis);
         }
     }
 
@@ -71,7 +71,7 @@
     // Make this reactive so it updates when $runAblation changes
     $: getColorFroml0 = (l0: number, layerName: string, tokenIdx: number): string => {
         const intensity = Math.max(0, Math.min(1, l0 / globalMax));
-        const disabledComponents = $ablationSubcomponentMask[layerName]?.[tokenIdx]?.length ?? 0;
+        const disabledComponents = $ablationComponentMask[layerName]?.[tokenIdx]?.length ?? 0;
         const totalComponents = l0;
         const disabledRatio = totalComponents > 0 ? disabledComponents / totalComponents : 0;
 
@@ -120,7 +120,7 @@
                                         tokenIdx,
                                         layer.module,
                                         layerIdx,
-                                        layer.token_cis[tokenIdx].subcomponent_cis
+                                        layer.token_cis[tokenIdx]
                                     )}
                             ></div>
                         {/each}

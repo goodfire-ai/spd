@@ -127,14 +127,15 @@ class ComponentActivationContextsService:
         layer: str,
         component_idx: int,
     ) -> list[ActivationContext]:
-        if (layer_activations := self._get_activations()) == "loading":
+        if (activations_by_layer := self._get_activations()) == "loading":
             raise HTTPException(status_code=503, detail="Loading activation contexts")
 
-        layer_activations = layer_activations[layer]
+        layer_activations = activations_by_layer[layer]
 
         if component_idx not in layer_activations:
-            raise HTTPException(
-                status_code=404, detail=f"Component {component_idx} not found in layer {layer}"
+            logger.warning(
+                f"Component {component_idx} not found in layer {layer}. present keys: {list(layer_activations.keys())}"
             )
+            return []
 
         return layer_activations[component_idx]

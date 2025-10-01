@@ -102,23 +102,42 @@ def run_prompt_by_index(dataset_index: int) -> RunResponse:
     return ablation_service.run_prompt_by_index(dataset_index)
 
 
-class AblationRequest(BaseModel):
+class SubcomponentAblationRequest(BaseModel):
     prompt_id: str
     subcomponent_mask: dict[str, list[list[int]]]
 
 
-class AblationResponse(BaseModel):
+class SubcomponentAblationResponse(BaseModel):
     token_logits: list[list[OutputTokenLogit]]
 
 
 @app.post("/ablate_subcomponents")
 @handle_errors
-def ablate_subcomponents(request: AblationRequest) -> AblationResponse:
+def ablate_subcomponents(request: SubcomponentAblationRequest) -> SubcomponentAblationResponse:
     tokens_logits = ablation_service.ablate_subcomponents(
         request.prompt_id,
         request.subcomponent_mask,
     )
-    return AblationResponse(token_logits=tokens_logits)
+    return SubcomponentAblationResponse(token_logits=tokens_logits)
+
+
+class ComponentAblationRequest(BaseModel):
+    prompt_id: str
+    component_mask: dict[str, list[list[int]]]
+
+
+class InterventionResponse(BaseModel):
+    token_logits: list[list[OutputTokenLogit]]
+
+
+@app.post("/ablate_components")
+@handle_errors
+def ablate_components(request: ComponentAblationRequest) -> InterventionResponse:
+    tokens_logits = ablation_service.ablate_components(
+        request.prompt_id,
+        request.component_mask,
+    )
+    return InterventionResponse(token_logits=tokens_logits)
 
 
 class ApplyMaskRequest(BaseModel):
@@ -128,9 +147,9 @@ class ApplyMaskRequest(BaseModel):
 
 @app.post("/apply_mask")
 @handle_errors
-def apply_mask_as_ablation(request: ApplyMaskRequest) -> AblationResponse:
+def apply_mask_as_ablation(request: ApplyMaskRequest) -> InterventionResponse:
     """Apply a saved mask as an ablation to a specific prompt."""
-    return AblationResponse(
+    return InterventionResponse(
         token_logits=ablation_service.run_with_mask_override(
             request.prompt_id, request.mask_override_id
         )

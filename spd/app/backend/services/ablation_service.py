@@ -293,6 +293,29 @@ class AblationService:
         )
 
         return self._logits_to_token_logits(ci_masked_logits)
+    
+    def ablate_components(
+        self, prompt_id: str, component_mask: dict[str, list[list[int]]]
+    ) -> list[list[OutputTokenLogit]]:
+        assert (ctx := self.run_context_service.run_context) is not None
+        assert (prompt_context := self.prompt_contexts.get(prompt_id)) is not None
+
+        component_indices = self._mock_component_indices()
+        
+        masked_ci = prompt_context.subcomponent_causal_importances.copy()
+        for module, token_component_masks in component_mask.items():
+            for token_idx, token_component_mask in enumerate(token_component_masks):
+                for component_idx in token_component_mask:
+                    component_subcomponent_indices = torch.where(component_indices == component_idx)[0].tolist()
+                    masked_ci[module][token_idx][component_subcomponent_indices] = 0
+
+        ci_masked_logits = ctx.cm(
+            prompt_context.input_token_ids[None],
+            mode="components",
+            mask_infos=make_mask_infos(masked_ci),
+        )
+
+        return self._logits_to_token_logits(ci_masked_logits)
 
     TOP_K = 5
 

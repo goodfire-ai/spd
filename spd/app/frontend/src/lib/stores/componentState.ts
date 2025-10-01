@@ -1,5 +1,5 @@
 import { writable } from "svelte/store";
-import type { SubcomponentMask, OutputTokenLogit, SparseVector, RunPromptResponse, MaskOverrideDTO } from "$lib/api";
+import type { OutputTokenLogit, RunPromptResponse, MaskOverrideDTO, MatrixCausalImportances, ComponentMask } from "$lib/api";
 
 
 
@@ -8,12 +8,12 @@ export interface PopupData {
     tokenIdx: number;
     layer: string;
     layerIdx: number;
-    tokenCis: SparseVector;
+    matrixCis: MatrixCausalImportances;
 }
 
 export interface AblationResult {
     tokenLogits: OutputTokenLogit[][];
-    applied_mask: SubcomponentMask;
+    applied_mask: ComponentMask;
     id: number;
     maskOverride?: MaskOverrideDTO;
 }
@@ -42,10 +42,10 @@ export interface PromptWorkspace {
     promptId: string;
     promptData: RunPromptResponse;
     ablationResults: AblationResult[];
-    runAblation: SubcomponentMask;
+    runAblation: ComponentMask;
 }
 
-export const ablationSubcomponentMask = writable<SubcomponentMask>({});
+export const ablationComponentMask = writable<ComponentMask>({});
 export const popupData = writable<PopupData | null>(null);
 export const ablationResults = writable<AblationResult[]>([]);
 export const isScrolling = writable(false);

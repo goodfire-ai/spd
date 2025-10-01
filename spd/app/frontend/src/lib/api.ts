@@ -49,9 +49,17 @@ export type RunPromptResponse = {
     ci_masked_token_logits: OutputTokenLogit[][];
 };
 
-export type SubcomponentMask = Record<string, number[][]>;
+type Layer = string;
 
-export type ModifySubcomponentsResponse = {
+type TokenComponentMaskIndices = number[];
+export type ComponentMask = Record<Layer, TokenComponentMaskIndices[]>;
+
+export type ComponentAblationRequest = {
+    prompt_id: string;
+    component_mask: Record<Layer, TokenComponentMaskIndices[]>;
+};
+
+export type InterventionResponse = {
     token_logits: OutputTokenLogit[][];
 };
 
@@ -163,7 +171,7 @@ class ApiClient {
     async applyMaskAsAblation(
         promptId: string,
         maskOverrideId: string
-    ): Promise<ModifySubcomponentsResponse> {
+    ): Promise<InterventionResponse> {
         const response = await fetch(`${this.apiUrl}/apply_mask`, {
             method: "POST",
             headers: {
@@ -199,25 +207,26 @@ class ApiClient {
         return response.json();
     }
 
-    async ablateSubcomponents(
+    async ablateComponents(
         promptId: string,
-        subcomponentMask: SubcomponentMask
-    ): Promise<ModifySubcomponentsResponse> {
+        componentMask: ComponentMask
+    ): Promise<InterventionResponse> {
         console.log(
-            "ablateSubcomponents",
+            "ablateComponents",
             JSON.stringify({
                 prompt_id: promptId,
-                subcomponent_mask: subcomponentMask
+                component_mask: componentMask
             })
         );
-        const response = await fetch(`${this.apiUrl}/ablate_subcomponents`, {
+
+        const response = await fetch(`${this.apiUrl}/ablate_components`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
                 prompt_id: promptId,
-                subcomponent_mask: subcomponentMask
+                component_mask: componentMask
             })
         });
 
@@ -258,16 +267,14 @@ class ApiClient {
         layer: string,
         tokenIdx: number
     ): Promise<CosineSimilarityData> {
-        const response = await fetch(`${this.apiUrl}/cosine_similarities`, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                prompt_id: promptId,
-                layer,
-                token_idx: tokenIdx.toString()
-            })
+        const params = new URLSearchParams({
+            prompt_id: promptId,
+            layer,
+            token_idx: tokenIdx.toString()
+        });
+
+        const response = await fetch(`${this.apiUrl}/cosine_similarities?${params.toString()}`, {
+            method: "GET"
         });
 
         if (!response.ok) {
