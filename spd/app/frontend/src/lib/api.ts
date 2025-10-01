@@ -6,7 +6,7 @@ export type SparseVector = {
     values: number[];
 };
 
-export type StatusDTO = {
+export type Status = {
     loaded: boolean;
     run_id: string | null;
     prompt: string | null;
@@ -73,10 +73,24 @@ export type SimulateMergeResponse = {
     jacc: number;
 };
 
+export type ActivationContext = {
+    raw_text: string;
+    offset_mapping: [number, number][];
+    token_ci_values: number[];
+    active_position: number;
+    ci_value: number;
+};
+
+export type ComponentActivationContextsResponse = {
+    component_idx: number;
+    layer: string;
+    examples: ActivationContext[];
+};
+
 class ApiClient {
     constructor(private apiUrl: string = API_URL) {}
 
-    async getStatus(): Promise<StatusDTO> {
+    async getStatus(): Promise<Status> {
         const response = await fetch(`${this.apiUrl}/status`);
         return response.json();
     }
@@ -100,7 +114,7 @@ class ApiClient {
         return data;
     }
 
-    async getAvailablePrompts(): Promise<{index: number, text: string, full_text: string}[]> {
+    async getAvailablePrompts(): Promise<{ index: number; text: string; full_text: string }[]> {
         const response = await fetch(`${this.apiUrl}/available_prompts`, {
             method: "GET",
             headers: {
@@ -117,12 +131,8 @@ class ApiClient {
     }
 
     async runPromptByIndex(datasetIndex: number): Promise<RunPromptResponse> {
-        const response = await fetch(`${this.apiUrl}/run_prompt_by_index`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ dataset_index: datasetIndex })
+        const response = await fetch(`${this.apiUrl}/run_prompt/${datasetIndex}`, {
+            method: "POST"
         });
 
         if (!response.ok) {
@@ -133,7 +143,10 @@ class ApiClient {
         return response.json();
     }
 
-    async applyMaskAsAblation(promptId: string, maskOverrideId: string): Promise<ModifyComponentsResponse> {
+    async applyMaskAsAblation(
+        promptId: string,
+        maskOverrideId: string
+    ): Promise<ModifyComponentsResponse> {
         const response = await fetch(`${this.apiUrl}/apply_mask`, {
             method: "POST",
             headers: {
@@ -169,7 +182,10 @@ class ApiClient {
         return response.json();
     }
 
-    async ablateComponents(promptId: string, componentMask: ComponentMask): Promise<ModifyComponentsResponse> {
+    async ablateComponents(
+        promptId: string,
+        componentMask: ComponentMask
+    ): Promise<ModifyComponentsResponse> {
         console.log(
             "ablate",
             JSON.stringify({
@@ -197,12 +213,8 @@ class ApiClient {
     }
 
     async loadRun(wandbRunId: string): Promise<void> {
-        const response = await fetch(`${this.apiUrl}/load`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ wandb_run_id: wandbRunId })
+        const response = await fetch(`${this.apiUrl}/load/${wandbRunId}`, {
+            method: "POST"
         });
         if (!response.ok) {
             const error = await response.json();
@@ -210,7 +222,11 @@ class ApiClient {
         }
     }
 
-    async getCosineSimilarities(promptId: string, layer: string, tokenIdx: number): Promise<CosineSimilarityData> {
+    async getCosineSimilarities(
+        promptId: string,
+        layer: string,
+        tokenIdx: number
+    ): Promise<CosineSimilarityData> {
         const params = new URLSearchParams({
             prompt_id: promptId,
             layer,
@@ -231,7 +247,12 @@ class ApiClient {
         return response.json();
     }
 
-    async combineMasks(promptId: string, layer: string, tokenIndices: number[], description?: string): Promise<CombineMasksResponse> {
+    async combineMasks(
+        promptId: string,
+        layer: string,
+        tokenIndices: number[],
+        description?: string
+    ): Promise<CombineMasksResponse> {
         const response = await fetch(`${this.apiUrl}/combine_masks`, {
             method: "POST",
             headers: {
@@ -253,7 +274,11 @@ class ApiClient {
         return response.json();
     }
 
-    async simulateMerge(promptId: string, layer: string, tokenIndices: number[]): Promise<SimulateMergeResponse> {
+    async simulateMerge(
+        promptId: string,
+        layer: string,
+        tokenIndices: number[]
+    ): Promise<SimulateMergeResponse> {
         const response = await fetch(`${this.apiUrl}/simulate_merge`, {
             method: "POST",
             headers: {
@@ -269,6 +294,28 @@ class ApiClient {
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || "Failed to simulate merge");
+        }
+
+        return response.json();
+    }
+
+    async getComponentActivationContexts(
+        componentId: number,
+        layer: string
+    ): Promise<ComponentActivationContextsResponse> {
+        const response = await fetch(
+            `${this.apiUrl}/component_activation_contexts/${layer}/${componentId}`,
+            {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json"
+                }
+            }
+        );
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "Failed to get activation contexts");
         }
 
         return response.json();

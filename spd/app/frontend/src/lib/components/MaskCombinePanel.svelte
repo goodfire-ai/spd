@@ -15,12 +15,7 @@
 
     function toggleMultiSelectMode() {
         $multiSelectMode = !$multiSelectMode;
-        if (!$multiSelectMode) {
-            // Clear selections when exiting multi-select mode
-            $selectedTokensForCombining = [];
-            simulatedL0 = null;
-            simulatedJacc = null;
-        }
+        if (!$multiSelectMode) clearSelections();
     }
 
     function clearSelections() {
@@ -75,7 +70,6 @@
         $selectedTokensForCombining.forEach((token) => layers.add(token.layer));
         return Array.from(layers);
     })();
-
 
     async function combineMasks() {
         if (combining) return;

@@ -1,5 +1,5 @@
 import { writable } from "svelte/store";
-import type { ComponentMask, OutputTokenLogit, SparseVector, RunPromptResponse } from "$lib/api";
+import type { ComponentMask, OutputTokenLogit, SparseVector, RunPromptResponse, MaskOverrideDTO } from "$lib/api";
 
 
 
@@ -15,7 +15,7 @@ export interface AblationResult {
     tokenLogits: OutputTokenLogit[][];
     applied_mask: ComponentMask;
     id: number;
-    maskOverride?: any; // MaskOverrideDTO when a saved mask was applied
+    maskOverride?: MaskOverrideDTO;
 }
 
 export interface SelectedToken {

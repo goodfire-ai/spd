@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ast-grep": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/ast-grep/ast-grep-mcp",
+        "ast-grep-server"
+      ],
+      "env": {}
+    }
+  }
+}

@@ -8,17 +8,31 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from spd.app.backend.service import (
+from spd.app.backend.services.ablation_service import (
     AblationService,
-    AvailablePromptDTO,
-    LayerCIsDTO,
-    MaskOverrideDTO,
-    OutputTokenLogitDTO,
-    StatusDTO,
-    TokenLayerCosineSimilarityDataDTO,
+    LayerCIs,
+    MaskOverride,
+    OutputTokenLogit,
+    SparseVector,
+    TokenLayerCosineSimilarityData,
 )
+from spd.app.backend.services.component_activations_service import (
+    ActivationContext,
+    ComponentActivationContexts,
+    ComponentActivationContextsService,
+)
+from spd.app.backend.services.run_context_service import (
+    AvailablePrompt,
+    RunContextService,
+    Status,
+)
+from spd.app.backend.services.wandb_service import Run, WandBService
 
-service = AblationService()
+run_context_service = RunContextService()
+
+wandb_service = WandBService()
+ablation_service = AblationService(run_context_service)
+component_activations_service = ComponentActivationContextsService(run_context_service)
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
@@ -37,8 +51,8 @@ def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMi
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global service
-    service.load_run_from_wandb_id("ry05f67a")
+    global run_context_service
+    run_context_service.load_run_from_wandb_id("ry05f67a")
     try:
         yield
     finally:
@@ -69,9 +83,9 @@ class RunRequest(BaseModel):
 class RunResponse(BaseModel):
     prompt_id: str
     prompt_tokens: list[str]
-    layer_cis: list[LayerCIsDTO]
-    full_run_token_logits: list[list[OutputTokenLogitDTO]]
-    ci_masked_token_logits: list[list[OutputTokenLogitDTO]]
+    layer_cis: list[LayerCIs]
+    full_run_token_logits: list[list[OutputTokenLogit]]
+    ci_masked_token_logits: list[list[OutputTokenLogit]]
 
 
 @app.post("/run")
@@ -83,7 +97,7 @@ def run_prompt(request: RunRequest) -> RunResponse:
         layer_causal_importances,
         full_run_token_logits,
         ci_masked_token_logits,
-    ) = service.run_prompt(request.prompt)
+    ) = ablation_service.run_prompt(request.prompt)
 
     return RunResponse(
         prompt_id=prompt_id,
@@ -96,17 +110,13 @@ def run_prompt(request: RunRequest) -> RunResponse:
 
 @app.get("/available_prompts")
 @handle_errors
-def get_available_prompts() -> list[AvailablePromptDTO]:
-    return service.get_available_prompts()
+def get_available_prompts() -> list[AvailablePrompt]:
+    return run_context_service.get_available_prompts()
 
 
-class RunPromptByIndexRequest(BaseModel):
-    dataset_index: int
-
-
-@app.post("/run_prompt_by_index")
+@app.post("/run_prompt/{dataset_index}")
 @handle_errors
-def run_prompt_by_index(request: RunPromptByIndexRequest) -> RunResponse:
+def run_prompt_by_index(dataset_index: int) -> RunResponse:
     """Run a specific prompt from the dataset by index."""
     (
         prompt_id,
@@ -114,7 +124,7 @@ def run_prompt_by_index(request: RunPromptByIndexRequest) -> RunResponse:
         layer_causal_importances,
         full_run_token_logits,
         ci_masked_token_logits,
-    ) = service.run_prompt_by_index(request.dataset_index)
+    ) = ablation_service.run_prompt_by_index(dataset_index)
 
     return RunResponse(
         prompt_id=prompt_id,
@@ -139,7 +149,7 @@ def run_prompt_with_mask(request: RunWithMaskRequest) -> RunResponse:
         layer_causal_importances,
         full_run_token_logits,
         ci_masked_token_logits,
-    ) = service.run_prompt_with_mask_override(request.prompt, request.mask_override_id)
+    ) = ablation_service.run_prompt_with_mask_override(request.prompt, request.mask_override_id)
 
     return RunResponse(
         prompt_id=prompt_id,
@@ -150,17 +160,23 @@ def run_prompt_with_mask(request: RunWithMaskRequest) -> RunResponse:
     )
 
 
-class RunRandomWithMaskRequest(BaseModel):
-    mask_override_id: str
-
-
 class AblationRequest(BaseModel):
     prompt_id: str
     component_mask: dict[str, list[list[int]]]
 
 
 class AblationResponse(BaseModel):
-    token_logits: list[list[OutputTokenLogitDTO]]
+    token_logits: list[list[OutputTokenLogit]]
+
+
+@app.post("/ablate")
+@handle_errors
+def ablate_components(request: AblationRequest) -> AblationResponse:
+    tokens_logits = ablation_service.ablate_components(
+        request.prompt_id,
+        request.component_mask,
+    )
+    return AblationResponse(token_logits=tokens_logits)
 
 
 class ApplyMaskRequest(BaseModel):
@@ -168,47 +184,37 @@ class ApplyMaskRequest(BaseModel):
     mask_override_id: str
 
 
-@app.post("/ablate")
-@handle_errors
-def ablate_components(request: AblationRequest) -> AblationResponse:
-    tokens_logits = service.ablate_components(
-        request.prompt_id,
-        request.component_mask,
-    )
-    return AblationResponse(token_logits=tokens_logits)
-
-
 @app.post("/apply_mask")
 @handle_errors
 def apply_mask_as_ablation(request: ApplyMaskRequest) -> AblationResponse:
     """Apply a saved mask as an ablation to a specific prompt."""
-    tokens_logits = service.ablate_with_mask_override(request.prompt_id, request.mask_override_id)
+    tokens_logits = ablation_service.ablate_with_mask_override(
+        request.prompt_id, request.mask_override_id
+    )
     return AblationResponse(token_logits=tokens_logits)
 
 
-class LoadRequest(BaseModel):
-    wandb_run_id: str
-
-
-@app.post("/load")
+@app.post("/load/{wandb_run_id}")
 @handle_errors
-def load_run(request: LoadRequest):
-    global service
-    service.load_run_from_wandb_id(request.wandb_run_id)
+def load_run(wandb_run_id: str):
+    global ablation_service
+    run_context_service.load_run_from_wandb_id(wandb_run_id)
 
 
 @app.get("/status")
 @handle_errors
-def get_status() -> StatusDTO:
-    return service.get_status()
+def get_status() -> Status:
+    return run_context_service.get_status()
 
 
 @app.get("/cosine_similarities")
 @handle_errors
 def get_cosine_similarities(
     prompt_id: str, layer: str, token_idx: int
-) -> TokenLayerCosineSimilarityDataDTO:
-    return service.get_cosine_similarities(prompt_id, layer, token_idx)
+) -> TokenLayerCosineSimilarityData:
+    return ablation_service.get_cosine_similarities_of_active_components(
+        prompt_id, layer, token_idx
+    )
 
 
 class CombineMasksRequest(BaseModel):
@@ -216,6 +222,22 @@ class CombineMasksRequest(BaseModel):
     layer: str
     token_indices: list[int]  # List of token indices (positions) to combine
     description: str | None = None
+
+
+class MaskOverrideDTO(BaseModel):
+    id: str
+    layer: str
+    combined_mask: SparseVector
+    description: str | None
+
+    @classmethod
+    def from_mask_override(cls, mask_override: MaskOverride) -> "MaskOverrideDTO":
+        return MaskOverrideDTO(
+            id=mask_override.id,
+            description=mask_override.description,
+            layer=mask_override.layer,
+            combined_mask=SparseVector.from_tensor(mask_override.combined_mask),
+        )
 
 
 class CombineMasksResponse(BaseModel):
@@ -226,7 +248,7 @@ class CombineMasksResponse(BaseModel):
 @app.post("/combine_masks")
 @handle_errors
 def combine_masks(request: CombineMasksRequest) -> CombineMasksResponse:
-    mask_override = service.create_combined_mask(
+    mask_override = ablation_service.create_combined_mask(
         prompt_id=request.prompt_id,
         layer=request.layer,
         token_indices=request.token_indices,
@@ -235,7 +257,7 @@ def combine_masks(request: CombineMasksRequest) -> CombineMasksResponse:
 
     return CombineMasksResponse(
         mask_id=mask_override.id,
-        mask_override=mask_override.to_dto(),
+        mask_override=MaskOverrideDTO.from_mask_override(mask_override),
     )
 
 
@@ -254,7 +276,7 @@ class SimulateMergeResponse(BaseModel):
 @handle_errors
 def simulate_merge(request: SimulateMergeRequest) -> SimulateMergeResponse:
     """Simulate merging masks without persisting the result"""
-    l0, jacc = service.get_merge_l0(
+    l0, jacc = ablation_service.get_merge_l0(
         prompt_id=request.prompt_id, layer=request.layer, token_indices=request.token_indices
     )
     return SimulateMergeResponse(l0=l0, jacc=jacc)
@@ -263,7 +285,54 @@ def simulate_merge(request: SimulateMergeRequest) -> SimulateMergeResponse:
 @app.get("/mask_overrides")
 @handle_errors
 def get_mask_overrides() -> list[MaskOverrideDTO]:
-    return [mo.to_dto() for mo in service.mask_overrides.values()]
+    return [
+        MaskOverrideDTO.from_mask_override(mo) for mo in ablation_service.mask_overrides.values()
+    ]
+
+
+class GetLayerActivationContextsResponse(BaseModel):
+    layer: str
+    component_examples: list[ComponentActivationContexts]
+
+
+@app.get("/component_activation_contexts/{layer}")
+@handle_errors
+def get_layer_activation_contexts(
+    layer: str,
+) -> GetLayerActivationContextsResponse:
+    return GetLayerActivationContextsResponse(
+        layer=layer,
+        component_examples=component_activations_service.get_layer_activation_contexts(layer),
+    )
+
+
+class GetComponentActivationContextsResponse(BaseModel):
+    layer: str
+    component_idx: int
+    examples: list[ActivationContext]
+
+
+@app.get("/component_activation_contexts/{layer}/{component_idx}")
+@handle_errors
+def get_component_activation_contexts(
+    layer: str,
+    component_idx: int,
+) -> GetComponentActivationContextsResponse:
+    contexts = component_activations_service.get_component_activation_contexts(
+        component_idx=component_idx,
+        layer=layer,
+    )
+    return GetComponentActivationContextsResponse(
+        layer=layer,
+        component_idx=component_idx,
+        examples=contexts,
+    )
+
+
+@app.get("/wandb_runs")
+@handle_errors
+def get_wandb_runs() -> list[Run]:
+    return wandb_service.get_runs()
 
 
 if __name__ == "__main__":

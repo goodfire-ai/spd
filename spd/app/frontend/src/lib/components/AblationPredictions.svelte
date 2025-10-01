@@ -1,20 +1,15 @@
 <script lang="ts">
     import TokenPredictions from "./TokenPredictions.svelte";
-    import type { OutputTokenLogit, ComponentMask, MaskOverrideDTO } from "$lib/api";
+    import type { OutputTokenLogit, ComponentMask } from "$lib/api";
 
     export let tokenLogits: OutputTokenLogit[][];
     export let promptTokens: string[];
     export let appliedMask: ComponentMask;
-    export let maskOverride: any = undefined;
+    export let maskOverride: MaskOverrideDTO | undefined = undefined;
 </script>
 
 <div class="ablation-output-section">
-    <TokenPredictions
-        {tokenLogits}
-        {promptTokens}
-        containerClass=""
-        {appliedMask}
-    />
+    <TokenPredictions {tokenLogits} {promptTokens} containerClass="" {appliedMask} />
 
     <div class="ablation-summary">
         <h3>Applied ablations:</h3>
@@ -22,7 +17,9 @@
             {#if maskOverride}
                 <div class="mask-override-info">
                     <strong>Mask Override Applied:</strong>
-                    <span class="mask-description">{maskOverride.description || "Unnamed mask"}</span>
+                    <span class="mask-description"
+                        >{maskOverride.description || "Unnamed mask"}</span
+                    >
                     <span class="mask-details">
                         (Layer: {maskOverride.layer}, L0: {maskOverride.combined_mask.l0})
                     </span>
@@ -34,7 +31,9 @@
                             <div class="applied-ablation-item">
                                 <strong>{promptTokens[tokenIdx]}</strong>
                                 in
-                                <em>{layerName}</em>: disabled components {disabledComponents.join(", ")}
+                                <em>{layerName}</em>: disabled components {disabledComponents.join(
+                                    ", "
+                                )}
                             </div>
                         {/if}
                     {/each}

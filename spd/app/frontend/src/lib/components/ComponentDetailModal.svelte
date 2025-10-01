@@ -3,10 +3,19 @@
     import { api } from "$lib/api";
     import type { CosineSimilarityData } from "$lib/api";
     import CosineSimilarityPlot from "./CosineSimilarityPlot.svelte";
+    import ActivationContexts from "./ActivationContexts.svelte";
 
     export let onClose: () => void;
-    export let onToggleComponent: (layerName: string, tokenIdx: number, componentIdx: number) => void;
-    export let isComponentDisabled: (layerName: string, tokenIdx: number, componentIdx: number) => boolean;
+    export let onToggleComponent: (
+        layerName: string,
+        tokenIdx: number,
+        componentIdx: number
+    ) => void;
+    export let isComponentDisabled: (
+        layerName: string,
+        tokenIdx: number,
+        componentIdx: number
+    ) => boolean;
     export let promptId: string | null = null;
 
     let similarityData: CosineSimilarityData | null = null;
@@ -159,6 +168,26 @@
                         </div>
                     </div>
                 {/if}
+
+                <!-- Activation Contexts Section -->
+                {#if $popupData.tokenCis.indices.length > 0}
+                    <div class="activation-contexts-section">
+                        <h3>Activation Examples</h3>
+                        <p class="section-description">
+                            Examples of prompts where these components activate:
+                        </p>
+                        {#each $popupData.tokenCis.indices.slice(0, 3) as componentIdx}
+                            <div class="component-activation">
+                                <h4>Component {componentIdx}</h4>
+                                <ActivationContexts
+                                    componentId={componentIdx}
+                                    layer={$popupData.layer}
+                                    compact={true}
+                                />
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
             </div>
         </div>
     </div>
@@ -298,5 +327,38 @@
         text-align: center;
         color: #666;
         font-style: italic;
+    }
+
+    .activation-contexts-section {
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #eee;
+    }
+
+    .activation-contexts-section h3 {
+        margin: 0 0 0.5rem 0;
+        color: #333;
+        font-size: 1rem;
+    }
+
+    .section-description {
+        margin: 0 0 1rem 0;
+        color: #666;
+        font-size: 0.9rem;
+    }
+
+    .component-activation {
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        background: #f8f9fa;
+        border-radius: 6px;
+        border: 1px solid #e9ecef;
+    }
+
+    .component-activation h4 {
+        margin: 0 0 0.5rem 0;
+        font-size: 0.9rem;
+        color: #495057;
+        font-weight: 600;
     }
 </style>

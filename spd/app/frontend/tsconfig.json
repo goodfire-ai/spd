@@ -3,6 +3,8 @@
 	"compilerOptions": {
 		"allowJs": true,
 		"checkJs": true,
+		"target": "es2024",
+		// "lib": ["ES2024", "DOM"], // maybe add back in
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true,

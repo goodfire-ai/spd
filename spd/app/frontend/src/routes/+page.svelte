@@ -3,7 +3,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { api } from "$lib/api";
-    import type { RunPromptResponse, ComponentMask, StatusDTO, SparseVector } from "$lib/api";
+    import type { RunPromptResponse, ComponentMask, Status, SparseVector } from "$lib/api";
     import {
         runAblation,
         popupData,
@@ -20,6 +20,7 @@
     import OriginalPredictions from "$lib/components/OriginalPredictions.svelte";
     import AblationPredictions from "$lib/components/AblationPredictions.svelte";
     import SavedMasksPanel from "$lib/components/SavedMasksPanel.svelte";
+    import ActivationContextsTab from "$lib/components/ActivationContextsTab.svelte";
 
     let isLoading = false;
     let result: RunPromptResponse | null = null;
@@ -29,6 +30,7 @@
     let savedMasksPanel: SavedMasksPanel;
     let availablePrompts: { index: number; text: string; full_text: string }[] = [];
     let showAvailablePrompts = false;
+    let activeTab: "ablation" | "activation-contexts" = "ablation";
 
     async function loadAvailablePrompts() {
         try {
@@ -229,7 +231,7 @@
         initializeRunAblation();
     }
 
-    let status: StatusDTO | null = null;
+    let status: Status | null = null;
     async function getStatus() {
         status = await api.getStatus();
     }
@@ -310,7 +312,27 @@
             <SavedMasksPanel bind:this={savedMasksPanel} onApplyMask={applyMaskAsAblation} />
         </div>
 
-        <div class="main-layout">
+        <!-- Tab Navigation -->
+        {#if result}
+            <div class="tab-navigation">
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "ablation"}
+                    on:click={() => (activeTab = "ablation")}
+                >
+                    Component Ablation
+                </button>
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "activation-contexts"}
+                    on:click={() => (activeTab = "activation-contexts")}
+                >
+                    Activation Contexts
+                </button>
+            </div>
+        {/if}
+
+        <div class="main-layout" class:hidden={activeTab !== "ablation"}>
             <!-- Left side: Static heatmap and controls -->
             <div class="left-panel">
                 {#if result && currentPromptId}
@@ -360,6 +382,13 @@
                 {/if}
             </div>
         </div>
+
+        <!-- Activation Contexts Tab Content -->
+        {#if activeTab === "activation-contexts"}
+            <div class="activation-contexts-container">
+                <ActivationContextsTab {result} />
+            </div>
+        {/if}
 
         <ComponentDetailModal
             onClose={closePopup}
@@ -591,5 +620,48 @@
         text-align: center;
         color: #6c757d;
         font-style: italic;
+    }
+
+    .tab-navigation {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0 1rem;
+        background: #f8f9fa;
+        border-bottom: 2px solid #dee2e6;
+    }
+
+    .tab-button {
+        padding: 0.75rem 1.5rem;
+        background: transparent;
+        border: none;
+        border-bottom: 3px solid transparent;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 500;
+        color: #6c757d;
+        transition: all 0.2s;
+        position: relative;
+        top: 2px;
+    }
+
+    .tab-button:hover {
+        color: #007bff;
+    }
+
+    .tab-button.active {
+        color: #007bff;
+        border-bottom-color: #007bff;
+        background: white;
+    }
+
+    .main-layout.hidden {
+        display: none;
+    }
+
+    .activation-contexts-container {
+        padding: 1rem;
+        background: white;
+        border-radius: 8px;
+        min-height: 60vh;
     }
 </style>

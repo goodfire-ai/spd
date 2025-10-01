@@ -1,8 +1,12 @@
 <script lang="ts">
     import type { LayerCIs, SparseVector } from "$lib/api";
-    import { runAblation, multiSelectMode, selectedTokensForCombining, type SelectedToken } from "$lib/stores/componentState";
-    import MaskCombinePanel from "./MaskCombinePanel.svelte";
+    import {
+        runAblation,
+        multiSelectMode,
+        selectedTokensForCombining
+    } from "$lib/stores/componentState";
     import { createEventDispatcher } from "svelte";
+    import MaskCombinePanel from "./MaskCombinePanel.svelte";
 
     const dispatch = createEventDispatcher();
 
@@ -17,7 +21,7 @@
     ) => void;
 
     function handleMaskCreated() {
-        dispatch('maskCreated');
+        dispatch("maskCreated");
     }
 
     function handleCellClick(
@@ -28,7 +32,6 @@
         tokenCis: SparseVector
     ) {
         if ($multiSelectMode) {
-            // In multi-select mode, add/remove from selection
             const existingIndex = $selectedTokensForCombining.findIndex(
                 (t) => t.layer === layer && t.tokenIdx === tokenIdx
             );
@@ -52,7 +55,9 @@
     }
 
     function isTokenSelected(layer: string, tokenIdx: number): boolean {
-        return $selectedTokensForCombining.some((t) => t.layer === layer && t.tokenIdx === tokenIdx);
+        return $selectedTokensForCombining.some(
+            (t) => t.layer === layer && t.tokenIdx === tokenIdx
+        );
     }
 
     let globalMax = Math.max(
