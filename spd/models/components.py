@@ -31,12 +31,22 @@ class ParallelLinear(nn.Module):
 class Linear(nn.Module):
     """Linear layer with biases initialized to 0 and weights initialized using fan_val."""
 
-    def __init__(self, input_dim: int, output_dim: int, nonlinearity: _NonlinearityType):
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        nonlinearity: _NonlinearityType,
+        bias_fan: int | None = None,
+    ):
         super().__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.W = nn.Parameter(torch.empty(input_dim, output_dim))
-        self.b = nn.Parameter(torch.zeros(output_dim))
+        if bias_fan is not None:
+            self.b = nn.Parameter(torch.empty(output_dim))
+            init_param_(self.b, fan_val=bias_fan, nonlinearity=nonlinearity)
+        else:
+            self.b = nn.Parameter(torch.zeros(output_dim))
         init_param_(self.W, fan_val=input_dim, nonlinearity=nonlinearity)
 
     @override
@@ -102,7 +112,7 @@ class VectorSharedMLPGate(nn.Module):
         for i in range(len(hidden_dims)):
             in_dim = input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
-            self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
+            self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu", bias_fan=in_dim))
             self.layers.append(nn.GELU())
         final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else input_dim
         self.layers.append(Linear(final_dim, C, nonlinearity="linear"))
