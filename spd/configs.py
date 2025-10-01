@@ -227,6 +227,40 @@ class Config(BaseModel):
         description="Fraction of total steps to linearly warm up the learning rate",
     )
 
+    # Per-parameter-group LR overrides (optional)
+    component_lr: PositiveFloat | None = Field(
+        default=None,
+        description="Learning rate for component parameters (overrides lr if set)",
+    )
+    gate_lr: PositiveFloat | None = Field(
+        default=None,
+        description="Learning rate for gate parameters (overrides lr if set)",
+    )
+    component_lr_schedule: Literal["linear", "constant", "cosine", "exponential"] | None = Field(
+        default=None,
+        description="LR schedule for component parameters (overrides lr_schedule if set)",
+    )
+    gate_lr_schedule: Literal["linear", "constant", "cosine", "exponential"] | None = Field(
+        default=None,
+        description="LR schedule for gate parameters (overrides lr_schedule if set)",
+    )
+    component_lr_exponential_halflife: PositiveFloat | None = Field(
+        default=None,
+        description="Half-life for component LR when using exponential schedule",
+    )
+    gate_lr_exponential_halflife: PositiveFloat | None = Field(
+        default=None,
+        description="Half-life for gate LR when using exponential schedule",
+    )
+    component_lr_warmup_pct: Probability | None = Field(
+        default=None,
+        description="Warmup pct for component LR (overrides lr_warmup_pct if set)",
+    )
+    gate_lr_warmup_pct: Probability | None = Field(
+        default=None,
+        description="Warmup pct for gate LR (overrides lr_warmup_pct if set)",
+    )
+
     # --- Logging & Saving ---
     out_dir: Path | None = Field(
         default=None,
@@ -366,11 +400,20 @@ class Config(BaseModel):
         if self.faithfulness_coeff == 0:
             logger.warning(f"faithfulness_coeff {msg}")
 
-        # Check that lr_exponential_halflife is not None if lr_schedule is "exponential"
-        if self.lr_schedule == "exponential":
-            assert self.lr_exponential_halflife is not None, (
-                "lr_exponential_halflife must be set if lr_schedule is exponential"
-            )
+        # Check that halflife is provided for any group using an exponential schedule
+        for group_name in ("component", "gate"):
+            # Determine the effective schedule for this group
+            group_schedule = getattr(self, f"{group_name}_lr_schedule")
+            effective_schedule = group_schedule if group_schedule is not None else self.lr_schedule
+            if effective_schedule == "exponential":
+                group_halflife = getattr(self, f"{group_name}_lr_exponential_halflife")
+                has_effective_halflife = (
+                    group_halflife is not None or self.lr_exponential_halflife is not None
+                )
+                assert has_effective_halflife, (
+                    f"{group_name}_lr_exponential_halflife or lr_exponential_halflife must be set "
+                    f"if {group_name}_lr_schedule or lr_schedule is exponential"
+                )
 
         assert self.batch_size % self.gradient_accumulation_steps == 0, (
             "batch_size must be divisible by gradient_accumulation_steps"
@@ -384,3 +427,60 @@ class Config(BaseModel):
         )
 
         return self
+
+    # --- Effective per-group LR helpers ---
+    @property
+    def effective_component_lr(self) -> float:
+        return self.component_lr if self.component_lr is not None else self.lr
+
+    @property
+    def effective_gate_lr(self) -> float:
+        return self.gate_lr if self.gate_lr is not None else self.lr
+
+    @property
+    def effective_component_lr_schedule(
+        self,
+    ) -> Literal["linear", "constant", "cosine", "exponential"]:
+        return (
+            self.component_lr_schedule
+            if self.component_lr_schedule is not None
+            else self.lr_schedule
+        )
+
+    @property
+    def effective_gate_lr_schedule(self) -> Literal["linear", "constant", "cosine", "exponential"]:
+        return self.gate_lr_schedule if self.gate_lr_schedule is not None else self.lr_schedule
+
+    @property
+    def effective_component_lr_exponential_halflife(self) -> float | None:
+        if self.effective_component_lr_schedule == "exponential":
+            return (
+                self.component_lr_exponential_halflife
+                if self.component_lr_exponential_halflife is not None
+                else self.lr_exponential_halflife
+            )
+        return None
+
+    @property
+    def effective_gate_lr_exponential_halflife(self) -> float | None:
+        if self.effective_gate_lr_schedule == "exponential":
+            return (
+                self.gate_lr_exponential_halflife
+                if self.gate_lr_exponential_halflife is not None
+                else self.lr_exponential_halflife
+            )
+        return None
+
+    @property
+    def effective_component_lr_warmup_pct(self) -> float:
+        return (
+            self.component_lr_warmup_pct
+            if self.component_lr_warmup_pct is not None
+            else self.lr_warmup_pct
+        )
+
+    @property
+    def effective_gate_lr_warmup_pct(self) -> float:
+        return (
+            self.gate_lr_warmup_pct if self.gate_lr_warmup_pct is not None else self.lr_warmup_pct
+        )
