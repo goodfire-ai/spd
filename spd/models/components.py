@@ -52,7 +52,7 @@ class MLPGates(nn.Module):
 
         self.hidden_dims = hidden_dims
 
-        self.layers = nn.Sequential()
+        self.layers = nn.ModuleList()
         for i in range(len(hidden_dims)):
             input_dim = 1 if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
@@ -63,7 +63,8 @@ class MLPGates(nn.Module):
     @override
     def forward(self, x: Float[Tensor, "... C"]) -> Float[Tensor, "... C"]:
         x = einops.rearrange(x, "... C -> ... C 1")
-        x = self.layers(x)
+        for layer in self.layers:
+            x = layer(x)
         assert x.shape[-1] == 1, "Last dimension should be 1 after the final layer"
         return x[..., 0]
 
@@ -76,7 +77,8 @@ class VectorMLPGates(nn.Module):
 
         self.hidden_dims = hidden_dims
 
-        self.layers = nn.Sequential()
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.LayerNorm(input_dim))
         for i in range(len(hidden_dims)):
             input_dim = input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
@@ -88,7 +90,9 @@ class VectorMLPGates(nn.Module):
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
         # this 1 will broadcast out to actual C size, but no need to expand out yet
-        x = self.layers(einops.rearrange(x, "... d_in -> ... 1 d_in"))
+        x = einops.rearrange(x, "... d_in -> ... 1 d_in")
+        for layer in self.layers:
+            x = layer(x)
         assert x.shape[-1] == 1, "Last dimension should be 1 after the final layer"
         return x[..., 0]
 
@@ -98,7 +102,7 @@ class VectorSharedMLPGate(nn.Module):
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
         super().__init__()
-        self.layers = nn.Sequential()
+        self.layers = nn.ModuleList()
         for i in range(len(hidden_dims)):
             in_dim = input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
@@ -109,7 +113,9 @@ class VectorSharedMLPGate(nn.Module):
 
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
-        return self.layers(x)
+        for layer in self.layers:
+            x = layer(x)
+        return x
 
 
 WeightDeltaAndMask = tuple[Float[Tensor, " d_out d_in"], Float[Tensor, "..."]]
