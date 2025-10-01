@@ -14,6 +14,7 @@ TextSampleHash = NewType("TextSampleHash", str)
 ActivationSampleHash = NewType("ActivationSampleHash", str)
 ClusterIdHash = NewType("ClusterIdHash", str)
 TrackingCriterionHash = NewType("TrackingCriterionHash", str)
+ClusterLabel = NewType("ClusterLabel", int)  # Just a cluster index
 Direction = Literal["max", "min"]
 
 _SEPARATOR_1: str = "-"
@@ -21,50 +22,32 @@ _SEPARATOR_2: str = ":"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ClusterLabel:
-    """Label for a cluster component."""
+class ComponentInfo:
+    """Component information from merge history."""
 
-    module_name: str
-    original_index: int
+    module: str
+    index: int
 
-    def __str__(self) -> str:
-        """Format as 'module_name:original_index'."""
-        return f"{self.module_name}:{self.original_index}"
-
-    def as_tuple(self) -> tuple[str, int]:
-        """Return as a tuple (module_name, original_index)."""
-        return (self.module_name, self.original_index)
-
-    def string(self) -> str:
-        """Return as a string 'module_name-original_index'."""
-        return f"{self.module_name}{_SEPARATOR_1}{self.original_index}"
-
-    @staticmethod
-    def from_string(s: str) -> "ClusterLabel":
-        """Create ClusterLabel from its string representation."""
-        parts: list[str] = s.split(_SEPARATOR_1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid ClusterLabel string: {s}")
-        return ClusterLabel(module_name=parts[0], original_index=int(parts[1]))
+    @property
+    def label(self) -> str:
+        """Component label as 'module:index'."""
+        return f"{self.module}:{self.index}"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ClusterId:
     """Unique identifier for a cluster. This should uniquely identify a cluster *globally*"""
 
-    spd_run: str  # SPD run identifier
     clustering_run: str  # Clustering run identifier
     iteration: int  # Merge iteration number
-    cluster_label: ClusterLabel  # Component label
+    cluster_label: ClusterLabel  # Cluster index
 
-    def to_tuple(self) -> tuple[str, str, int, str, int]:
+    def to_tuple(self) -> tuple[str, int, int]:
         """Return as a tuple of identifying components."""
         return (
-            self.spd_run,
             self.clustering_run,
             self.iteration,
-            self.cluster_label.module_name,
-            self.cluster_label.original_index,
+            self.cluster_label,
         )
 
     def to_string(self) -> ClusterIdHash:
@@ -81,17 +64,16 @@ class ClusterId:
     def from_string(cls, s: ClusterIdHash) -> "ClusterId":
         """Create ClusterId from its string representation."""
         parts: list[str] = s.split(_SEPARATOR_1)
-        if len(parts) != 5:
+        if len(parts) != 3:
             raise ValueError(f"Invalid ClusterId string: {s}")
         return cls(
-            spd_run=parts[0],
-            clustering_run=parts[1],
-            iteration=int(parts[2]),
-            cluster_label=ClusterLabel(module_name=parts[3], original_index=int(parts[4])),
+            clustering_run=parts[0],
+            iteration=int(parts[1]),
+            cluster_label=ClusterLabel(int(parts[2])),
         )
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True)
 class TextSample:
     """Text content, with a reference to the dataset. depends on tokenizer used."""
 
@@ -108,7 +90,7 @@ class TextSample:
         return len(self.tokens)
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True)
 class ActivationSampleBatch:
     cluster_id: ClusterId
     text_hashes: list[TextSampleHash]
@@ -195,6 +177,7 @@ class BinnedData:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ClusterData:
     cluster_hash: ClusterIdHash
+    components: list[ComponentInfo]  # Component info: module, index, label
     criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]]
     stats: dict[str, Any]
 
@@ -204,6 +187,7 @@ class ClusterData:
         cluster_id: ClusterId,
         activation_samples: ActivationSampleBatch,
         criteria: list[TrackingCriterion],
+        components: list[ComponentInfo],
         hist_bins: int = 10,
     ) -> "ClusterData":
         cluster_hash: ClusterIdHash = cluster_id.to_string()
@@ -252,6 +236,7 @@ class ClusterData:
 
         return cls(
             cluster_hash=cluster_hash,
+            components=components,
             criterion_samples=criterion_samples,
             stats=stats,
         )
@@ -292,6 +277,10 @@ class ClusterData:
 
         return {
             "cluster_hash": self.cluster_hash,
+            "components": [
+                {"module": comp.module, "index": comp.index, "label": comp.label}
+                for comp in self.components
+            ],
             "criterion_samples": {
                 str(k): [str(h) for h in v] for k, v in self.criterion_samples.items()
             },
@@ -314,7 +303,7 @@ class DashboardData:
         """Save dashboard data to directory structure for efficient frontend access.
 
         Structure:
-        - clusters/{cluster_hash}.json - Individual cluster data
+        - clusters.json - All cluster data
         - text_samples.json - All text samples by hash
         - activations.npz - Numpy array with all activations
         - activations_map.json - Maps activation hashes to indices in activations array
@@ -324,14 +313,14 @@ class DashboardData:
 
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        clusters_path = output_path / "clusters"
-        clusters_path.mkdir(exist_ok=True)
 
-        # Save individual cluster data
-        for cluster_hash, cluster_data in self.clusters.items():
-            cluster_file = clusters_path / f"{cluster_hash}.json"
-            with open(cluster_file, "w") as f:
-                json.dump(cluster_data.serialize(), f, indent=2)
+        # Save all cluster data in one file
+        clusters_serialized = {
+            str(cluster_hash): cluster_data.serialize()
+            for cluster_hash, cluster_data in self.clusters.items()
+        }
+        with open(output_path / "clusters.json", "w") as f:
+            json.dump(clusters_serialized, f, indent=2)
 
         # Save text samples
         text_samples_serialized = {

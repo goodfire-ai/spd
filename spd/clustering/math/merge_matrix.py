@@ -43,7 +43,10 @@ class GroupMerge:
 
     def components_in_group(self, group_idx: int) -> list[int]:
         """Returns a list of component indices in the specified group."""
-        return (self.group_idxs == group_idx).nonzero(as_tuple=False).squeeze().tolist()
+        indices: Int[Tensor, " n_matches"] = (
+            (self.group_idxs == group_idx).nonzero(as_tuple=False).squeeze(-1)
+        )
+        return indices.tolist()
 
     def validate(self, *, require_nonempty: bool = True) -> None:
         v_min: int = int(self.group_idxs.min().item())

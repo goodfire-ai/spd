@@ -77,7 +77,6 @@ def main(
         iteration=iteration,
         n_samples=n_samples,
         n_batches=n_batches,
-        spd_run=run_config.get("spd_run", "unknown"),
         clustering_run=run_id,
     )
     logger.info(f"computed max activations: {len(dashboard_data.clusters) = }")

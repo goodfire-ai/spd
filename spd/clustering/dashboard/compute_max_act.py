@@ -22,6 +22,7 @@ from spd.clustering.dashboard.text_sample import (
     ClusterId,
     ClusterIdHash,
     ClusterLabel,
+    ComponentInfo,
     DashboardData,
     TextSample,
     TextSampleHash,
@@ -76,7 +77,6 @@ def compute_max_activations(
     iteration: int,
     n_samples: int,
     n_batches: int,
-    spd_run: str,
     clustering_run: str,
 ) -> DashboardData:
     """Compute max-activating text samples for each cluster.
@@ -90,7 +90,6 @@ def compute_max_activations(
         iteration: Merge iteration to analyze
         n_samples: Number of top samples to track per cluster
         n_batches: Number of batches to process
-        spd_run: SPD run identifier
         clustering_run: Clustering run identifier
 
     Returns:
@@ -111,17 +110,9 @@ def compute_max_activations(
         components: list[dict[str, Any]] = cluster_components[idx]
         assert components, f"Cluster {idx} has no components"
 
-        first_label: str = components[0]["label"]
-        module_name: str
-        original_index_str: str
-        module_name, original_index_str = first_label.rsplit(":", 1)
-        cluster_label: ClusterLabel = ClusterLabel(
-            module_name=module_name,
-            original_index=int(original_index_str),
-        )
+        cluster_label: ClusterLabel = ClusterLabel(idx)
 
         cluster_id_map[idx] = ClusterId(
-            spd_run=spd_run,
             clustering_run=clustering_run,
             iteration=iteration,
             cluster_label=cluster_label,
@@ -231,11 +222,18 @@ def compute_max_activations(
             activations=acts_array,
         )
 
+        # Convert component info to ComponentInfo objects
+        components_info: list[ComponentInfo] = [
+            ComponentInfo(module=comp["module"], index=comp["index"])
+            for comp in cluster_components[cluster_idx]
+        ]
+
         # Generate ClusterData with stats and top-k samples
         cluster_data: ClusterData = ClusterData.generate(
             cluster_id=cluster_id,
             activation_samples=activation_batch,
             criteria=criteria,
+            components=components_info,
         )
 
         clusters[cluster_hash] = cluster_data
