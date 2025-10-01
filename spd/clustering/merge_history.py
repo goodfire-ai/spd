@@ -160,9 +160,7 @@ class MergeHistory(SaveableObject):
         component_indices: list[int] = merge.components_in_group(cluster_id)
         return [self.labels[idx] for idx in component_indices]
 
-    def get_cluster_components_info(
-        self, iteration: int, cluster_id: int
-    ) -> list[dict[str, Any]]:
+    def get_cluster_components_info(self, iteration: int, cluster_id: int) -> list[dict[str, Any]]:
         """Get detailed component information for a cluster.
 
         Args:
