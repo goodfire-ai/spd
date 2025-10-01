@@ -334,13 +334,8 @@ class DashboardData:
         with open(output_path / "text_samples.json", "w") as f:
             json.dump(text_samples_serialized, f, indent=2)
 
-        # Save activations as numpy array
-        np.savez_compressed(
-            output_path / "activations.npz",
-            activations=self.activations.activations,
-            text_hashes=np.array([str(h) for h in self.activations.text_hashes]),
-            cluster_id=str(self.activations.cluster_id.to_string()),
-        )
+        # Save activations array as .npy for JavaScript
+        np.save(output_path / "activations.npy", self.activations.activations)
 
         # Save activations map
         activations_map_serialized = {

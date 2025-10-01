@@ -58,6 +58,8 @@ function getDefaultConfig() {
       clusterDataFile: "data/clusters.json",
       modelInfoFile: "data/model_info.json",
       textSamplesFile: "data/text_samples.json",
+      activationsFile: "data/activations.npy",
+      activationsMapFile: "data/activations_map.json",
       explanationsFile: "data/cluster_explanations.json"
     },
 

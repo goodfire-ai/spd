@@ -1,131 +1,88 @@
 let clusterData = null;
-let currentClusterId = null;
-
-// Create histogram bins from data
-function createHistogramBins(data, numBins = 10) {
-    if (!data || data.length === 0) {
-        return [];
-    }
-
-    const min = Math.min(...data);
-    const max = Math.max(...data);
-    const range = max - min;
-
-    if (range === 0) {
-        return [data.length]; // All values are the same
-    }
-
-    const binWidth = range / numBins;
-    const bins = Array(numBins).fill(0);
-
-    // Fill bins
-    data.forEach(value => {
-        let binIndex = Math.floor((value - min) / binWidth);
-        if (binIndex >= numBins) binIndex = numBins - 1;
-        if (binIndex < 0) binIndex = 0;
-        bins[binIndex]++;
-    });
-
-    return bins;
-}
-
-// Create activation histogram visualization
-function createActivationHistogram(activations) {
-    try {
-        if (!activations || activations.length === 0) {
-            return '<span style="color: #999; font-size: 11px;">No data</span>';
-        }
-
-        const container = document.createElement('div');
-        container.className = 'sparkline-cell';
-        container.style.width = '120px';
-        container.style.height = '50px';
-        container.style.display = 'flex';
-        container.style.alignItems = 'center';
-        container.style.justifyContent = 'center';
-
-        // Create histogram bins
-        const histogramCounts = createHistogramBins(activations, CONFIG.visualization.histogramBins);
-
-        // Use sparklines to render the histogram as a bar chart
-        const svg = sparkbars(histogramCounts, null, {
-            width: CONFIG.visualization.sparklineWidth,
-            height: CONFIG.visualization.sparklineHeight,
-            color: '#4169E1',
-            shading: true, // Solid fill for histogram bars
-            lineWidth: 0,  // No line, just bars
-            markers: '',   // No markers
-            margin: 2,
-            ylims: [0, null],
-            xAxis: {line: true, ticks: true, label_margin: 10},
-            yAxis: {line: true, ticks: true, label_margin: 20}
-        });
-
-        container.innerHTML = svg;
-
-        const min = Math.min(...activations);
-        const max = Math.max(...activations);
-        const mean = activations.reduce((a,b) => a+b, 0) / activations.length;
-        const maxBinCount = Math.max(...histogramCounts);
-
-        container.title = `Activation Histogram (n=${activations.length})\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMax bin: ${maxBinCount} samples`;
-
-        return container;
-    } catch (error) {
-        console.warn('Error creating histogram:', error);
-        return '<span style="color: #999; font-size: 11px;">Error</span>';
-    }
-}
+let textSamples = {};
+let activationsArray = null;
+let activationsMap = {};
+let currentClusterHash = null;
 
 async function init() {
-    // Get cluster ID from URL
+    // Get cluster hash from URL
     const urlParams = new URLSearchParams(window.location.search);
-    currentClusterId = urlParams.get('id');
-    
-    if (!currentClusterId) {
+    currentClusterHash = urlParams.get('id');
+
+    if (!currentClusterHash) {
         document.getElementById('loading').textContent = 'No cluster ID specified';
         return;
     }
-    
+
     await loadData();
 }
 
 async function loadData() {
     try {
-        const response = await fetch(CONFIG.data.clusterDataFile);
-        const allData = await response.json();
-        
-        if (!allData[currentClusterId]) {
+        // Load JSON data in parallel
+        console.log('Loading JSON files...');
+        const [clustersResponse, textSamplesResponse, activationsMapResponse] = await Promise.all([
+            fetch(CONFIG.data.clusterDataFile),
+            fetch(CONFIG.data.textSamplesFile),
+            fetch(CONFIG.data.activationsMapFile)
+        ]);
+
+        if (!clustersResponse.ok) {
+            throw new Error(`Failed to load clusters: ${clustersResponse.status}`);
+        }
+        if (!textSamplesResponse.ok) {
+            throw new Error(`Failed to load text samples: ${textSamplesResponse.status}`);
+        }
+        if (!activationsMapResponse.ok) {
+            throw new Error(`Failed to load activations map: ${activationsMapResponse.status}`);
+        }
+
+        console.log('Parsing clusters...');
+        const allClusters = await clustersResponse.json();
+
+        console.log('Parsing text samples...');
+        textSamples = await textSamplesResponse.json();
+
+        console.log('Parsing activations map...');
+        activationsMap = await activationsMapResponse.json();
+
+        if (!allClusters[currentClusterHash]) {
             document.getElementById('loading').textContent = 'Cluster not found';
             return;
         }
-        
-        clusterData = allData[currentClusterId];
+
+        clusterData = allClusters[currentClusterHash];
+
+        // Load activations .npy file
+        console.log('Loading activations array from:', CONFIG.data.activationsFile);
+        activationsArray = await NDArray.load(CONFIG.data.activationsFile);
+        console.log('Activations loaded:', activationsArray.shape);
+
         displayCluster();
         document.getElementById('loading').style.display = 'none';
     } catch (error) {
         document.getElementById('loading').textContent = 'Error loading data: ' + error.message;
+        console.error('Load error:', error);
+        console.error('Stack:', error.stack);
     }
 }
 
 function displayCluster() {
     // Update title
-    document.getElementById('clusterTitle').textContent = `Cluster ${currentClusterId}`;
-    
+    document.getElementById('clusterTitle').textContent = `Cluster ${currentClusterHash}`;
+
     // Display component count
     const componentCount = document.getElementById('componentCount');
     componentCount.textContent = clusterData.components.length;
-    
+
     // Setup components table
     setupComponentsTable();
-    
-    // Display samples (up to 32)
+
+    // Display samples
     displaySamples();
 }
 
 function setupComponentsTable() {
-    // TODO: Add activation histogram column for components
-    // This requires backend changes to save component-level activation data
     const tableData = clusterData.components.map(comp => ({
         module: comp.module,
         index: comp.index,
@@ -166,53 +123,76 @@ function displaySamples() {
     const tbody = document.getElementById('samplesTableBody');
     tbody.innerHTML = '';
 
-    const samplesToShow = Math.min(CONFIG.clusterPage.maxSamplesPerCluster, clusterData.samples.length);
-    
+    // Get the main criterion samples (max_activation)
+    const criterionKey = Object.keys(clusterData.criterion_samples)[0];
+    if (!criterionKey) {
+        tbody.innerHTML = '<tr><td colspan="2">No samples available</td></tr>';
+        return;
+    }
+
+    const sampleHashes = clusterData.criterion_samples[criterionKey];
+    const samplesToShow = Math.min(CONFIG.clusterPage.maxSamplesPerCluster, sampleHashes.length);
+
     for (let i = 0; i < samplesToShow; i++) {
-        const sample = clusterData.samples[i];
+        const textHash = sampleHashes[i];
+        const textSample = textSamples[textHash];
+
+        if (!textSample) {
+            console.warn(`Text sample not found for hash: ${textHash}`);
+            continue;
+        }
+
+        // Get activations for this sample
+        const activationHash = `${currentClusterHash}:${textHash}`;
+        const activationIdx = activationsMap[activationHash];
+
+        let tokenViz;
+        if (activationIdx !== undefined && activationsArray) {
+            // Get activation data from the NDArray
+            const activations = activationsArray.get(activationIdx);
+            const activationsData = Array.from(activations.data);
+
+            // Find max position
+            const maxPosition = activationsData.indexOf(Math.max(...activationsData));
+
+            // Use the proper token visualization with coloring and tooltips
+            tokenViz = createTokenVisualizationWithTooltip(
+                textSample.tokens,
+                activationsData,
+                maxPosition
+            );
+        } else {
+            // Fallback to simple visualization if no activations
+            console.warn(`No activations found for ${activationHash}`);
+            tokenViz = createSimpleTokenViz(textSample.tokens);
+        }
+
         const tr = document.createElement('tr');
-        
-        // Create token visualization with proper tooltips
-        const tokenViz = createTokenVisualizationWithTooltip(
-            sample.tokens,
-            sample.activations,
-            sample.max_position
-        );
-
-        // Create activation histogram
-        const histogram = createActivationHistogram(sample.activations);
-
         tr.innerHTML = `
             <td>${i + 1}</td>
-            <td>${sample.dataset_index}</td>
-            <td>${sample.max_activation.toFixed(4)}</td>
-            <td>${sample.max_position}</td>
-            <td>${sample.mean_activation.toFixed(4)}</td>
-            <td></td>
             <td></td>
         `;
 
-        // Add histogram to second-to-last cell
-        const histogramCell = tr.children[tr.children.length - 2];
-        if (typeof histogram === 'string') {
-            histogramCell.innerHTML = histogram;
-        } else {
-            histogramCell.appendChild(histogram);
-        }
-
         // Add token visualization to last cell
         tr.lastElementChild.appendChild(tokenViz);
-        
+
         tbody.appendChild(tr);
     }
-    
-    if (clusterData.samples.length > CONFIG.clusterPage.maxSamplesPerCluster) {
+
+    if (sampleHashes.length > CONFIG.clusterPage.maxSamplesPerCluster) {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td colspan="7" style="text-align: center;">
-            ... and ${clusterData.samples.length - CONFIG.clusterPage.maxSamplesPerCluster} more samples
+        tr.innerHTML = `<td colspan="2" style="text-align: center;">
+            ... and ${sampleHashes.length - CONFIG.clusterPage.maxSamplesPerCluster} more samples
         </td>`;
         tbody.appendChild(tr);
     }
+}
+
+function createSimpleTokenViz(tokens) {
+    const container = document.createElement('div');
+    container.className = 'token-container';
+    container.textContent = tokens.join(' ');
+    return container;
 }
 
 // Initialize config and load data on page load
