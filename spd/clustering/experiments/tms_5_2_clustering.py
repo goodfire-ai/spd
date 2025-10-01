@@ -1,4 +1,3 @@
-# spd/clustering/scripts/tms_5_2_clustering.py
 """
 Clustering pipeline for TMS 5-2 model.
 """
