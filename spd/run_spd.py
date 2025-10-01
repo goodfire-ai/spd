@@ -202,6 +202,7 @@ def optimize(
                     sigmoid_type=config.sigmoid_type,
                     detach_inputs=False,
                     sampling=config.sampling,
+                    gate_input_noise_std=config.gate_input_noise_std,
                 )
             )
 

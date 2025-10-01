@@ -111,6 +111,7 @@ def compute_causal_importances(
             detach_inputs=True,
             sigmoid_type=_model_data.config.sigmoid_type,
             sampling=_model_data.config.sampling,
+            gate_input_noise_std=_model_data.config.gate_input_noise_std,
         )
     return cis
 

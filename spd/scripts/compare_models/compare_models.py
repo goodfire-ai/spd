@@ -259,6 +259,7 @@ class ModelComparator:
                     pre_weight_acts,
                     sigmoid_type=model_config.sigmoid_type,
                     sampling=model_config.sampling,
+                    gate_input_noise_std=model_config.gate_input_noise_std,
                 )
 
                 n_tokens_batch = next(iter(ci.values())).shape[:-1].numel()
