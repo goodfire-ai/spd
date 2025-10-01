@@ -242,6 +242,24 @@ class Config(BaseModel):
         description="Fraction of total steps to linearly warm up the component learning rate",
     )
 
+    # --- Parameter Noise ---
+    component_noise_std: NonNegativeFloat | None = Field(
+        default=None,
+        description="Standard deviation of Gaussian noise to add to subcomponent parameters during training",
+    )
+    component_noise_schedule: Literal["constant", "linear", "cosine", "exponential"] = Field(
+        default="constant",
+        description="Type of noise schedule for component parameters",
+    )
+    component_noise_std_final: NonNegativeFloat | None = Field(
+        default=None,
+        description="Final noise standard deviation for linear/cosine schedules (None = 0)",
+    )
+    component_noise_exponential_halflife: PositiveFloat | None = Field(
+        default=None,
+        description="Half-life parameter for component noise exponential schedule",
+    )
+
     # --- Logging & Saving ---
     out_dir: Path | None = Field(
         default=None,
