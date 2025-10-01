@@ -11,7 +11,6 @@ The `Metric` base class provides:
 - Distributed synchronization via `sync_dist()`
 - Metric computation via `compute()`
 - Device management via `.to(device)`
-- State reset via `reset()`
 
 ### Key Methods
 
@@ -40,11 +39,6 @@ The `Metric` base class provides:
 - For "cat" reduction: concatenates local list, gathers from all ranks, then concatenates across ranks
 - No-op if not in distributed mode
 - **Must be called before `compute()` for evaluation to get global metrics**
-
-**`reset()`**
-- Resets all metric states to their default values
-- Useful for reusing metric instances across multiple evaluation runs
-
 **`.to(device)`**
 - Moves all registered tensor states to the specified device
 - For `Tensor` states: calls `.to(device)`

@@ -10,36 +10,7 @@ from typing import Any, Literal, cast
 import torch
 from torch import Tensor
 
-
-def _gather_all_tensors(tensor: Tensor, group: Any = None) -> list[Tensor]:
-    """Gather tensors from all distributed processes.
-
-    Requires all tensors to have identical shapes across all ranks.
-
-    Args:
-        tensor: The tensor to gather from all ranks
-        group: The process group (defaults to WORLD)
-
-    Returns:
-        List of tensors from all ranks (including local rank)
-    """
-    if not torch.distributed.is_available() or not torch.distributed.is_initialized():
-        return [tensor]
-
-    if group is None:
-        group = torch.distributed.group.WORLD
-
-    tensor = tensor.contiguous()
-    world_size = torch.distributed.get_world_size(group)
-    current_rank = torch.distributed.get_rank(group)
-
-    gathered = [torch.zeros_like(tensor) for _ in range(world_size)]
-    torch.distributed.all_gather(gathered, tensor, group=group)
-
-    # Replace our rank's entry with the original to preserve autograd
-    gathered[current_rank] = tensor
-
-    return gathered
+from spd.utils.distributed_utils import gather_all_tensors
 
 
 class Metric(ABC):
@@ -123,7 +94,9 @@ class Metric(ABC):
         match reduce_fn:
             case "sum":
                 assert isinstance(value, Tensor), "sum reduce requires Tensor value"
-                gathered = _gather_all_tensors(value)
+                # Note: all_reduce would be more efficient but using gather_all_tensors for
+                # consistency and because communication costs for evals shouldn't be large.
+                gathered = gather_all_tensors(value)
                 return cast(Tensor, sum(gathered))
             case "cat":
                 assert isinstance(value, list), "cat reduce requires list value"
@@ -131,7 +104,7 @@ class Metric(ABC):
                     return value
 
                 local_tensor = torch.cat(value, dim=0)
-                gathered = _gather_all_tensors(local_tensor)
+                gathered = gather_all_tensors(local_tensor)
                 return torch.cat(gathered, dim=0)
 
     def sync_dist(self) -> None:
@@ -168,15 +141,7 @@ class Metric(ABC):
     def _move_value_to_device(
         self, value: Tensor | list[Tensor], device: torch.device | str
     ) -> Tensor | list[Tensor]:
-        """Move a value to the specified device.
-
-        Args:
-            value: The value to move (Tensor, list, or other)
-            device: Target device
-
-        Returns:
-            The value moved to the device
-        """
+        """Move a value to the specified device."""
         assert isinstance(value, Tensor | list), "Value must be Tensor or list"
         match value:
             case Tensor():
@@ -206,17 +171,6 @@ class Metric(ABC):
             setattr(self, name, state)
 
         return self
-
-    def reset(self) -> None:
-        """Reset the metric state."""
-        for name in self._state_names:
-            reduce_fn = self._state_reduce_fns[name]
-            default = torch.tensor(0.0) if reduce_fn == "sum" else []
-
-            if name in self._dict_state_keys:
-                setattr(self, name, {key: default for key in self._dict_state_keys[name]})
-            else:
-                setattr(self, name, default)
 
     @abstractmethod
     def update(self, **kwargs: Any) -> None:

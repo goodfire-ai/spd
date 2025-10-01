@@ -4,10 +4,11 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import wraps
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import torch
 import torch.distributed as dist
+from torch import Tensor
 from torch.distributed import ReduceOp
 from torch.types import Number
 
@@ -232,3 +233,34 @@ def avg_metrics_across_ranks(
     assert world_size > 0, "World size must be greater than 0"
     sum_metrics = sum_metrics_across_ranks(metrics, device)
     return {k: v / world_size for k, v in sum_metrics.items()}
+
+
+def gather_all_tensors(tensor: Tensor, group: Any = None) -> list[Tensor]:
+    """Gather tensors from all distributed processes.
+
+    Requires all tensors to have identical shapes across all ranks.
+
+    Args:
+        tensor: The tensor to gather from all ranks
+        group: The process group (defaults to WORLD)
+
+    Returns:
+        List of tensors from all ranks (including local rank)
+    """
+    if not torch.distributed.is_available() or not torch.distributed.is_initialized():
+        return [tensor]
+
+    if group is None:
+        group = torch.distributed.group.WORLD
+
+    tensor = tensor.contiguous()
+    world_size = torch.distributed.get_world_size(group)
+    current_rank = torch.distributed.get_rank(group)
+
+    gathered = [torch.zeros_like(tensor) for _ in range(world_size)]
+    torch.distributed.all_gather(gathered, tensor, group=group)
+
+    # Replace our rank's entry with the original to preserve autograd
+    gathered[current_rank] = tensor
+
+    return gathered

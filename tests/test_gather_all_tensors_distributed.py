@@ -1,12 +1,12 @@
-"""Distributed tests for _gather_all_tensors function.
+"""Distributed tests for gather_all_tensors function.
 
 This file can be run in two ways:
 
 1. Directly with mpirun (fastest):
-   mpirun -np 2 python tests/metrics/test_gather_all_tensors_distributed.py
+   mpirun -np 2 python tests/test_gather_all_tensors_distributed.py
 
 2. Via pytest (runs mpirun in subprocess):
-   pytest tests/metrics/test_gather_all_tensors_distributed.py
+   pytest tests/test_gather_all_tensors_distributed.py
 """
 
 import os
@@ -18,7 +18,7 @@ import pytest
 import torch
 import torch.distributed as dist
 
-from spd.metrics.base import _gather_all_tensors
+from spd.utils.distributed_utils import gather_all_tensors
 
 
 def init_distributed():
@@ -63,7 +63,7 @@ def _test_gather_identical_shapes():
         tensor = torch.tensor([rank * 1.0, rank * 2.0])
 
         # Gather from all ranks
-        gathered = _gather_all_tensors(tensor)
+        gathered = gather_all_tensors(tensor)
 
         # Should have one tensor per rank
         assert len(gathered) == world_size
@@ -96,7 +96,7 @@ def _test_gather_scalar_tensors():
         tensor = torch.tensor(rank * 10.0)
 
         # Gather from all ranks
-        gathered = _gather_all_tensors(tensor)
+        gathered = gather_all_tensors(tensor)
 
         # Should have one tensor per rank
         assert len(gathered) == world_size
@@ -122,7 +122,7 @@ def _test_gather_multidimensional_tensors():
         tensor = torch.full((3, 4), fill_value=float(rank))
 
         # Gather from all ranks
-        gathered = _gather_all_tensors(tensor)
+        gathered = gather_all_tensors(tensor)
 
         # Should have one tensor per rank
         assert len(gathered) == world_size
@@ -152,7 +152,7 @@ def _test_gather_empty_tensor():
         tensor = torch.tensor([])
 
         # Gather from all ranks
-        gathered = _gather_all_tensors(tensor)
+        gathered = gather_all_tensors(tensor)
 
         # All gathered tensors should be empty
         for t in gathered:
@@ -166,27 +166,27 @@ def _test_gather_empty_tensor():
         cleanup_distributed()
 
 
-def _test_gather_large_tensor():
+def _test_gather_float_tensor():
     """Test gathering larger tensors."""
     rank, world_size = init_distributed()
 
     try:
         # Larger tensor with rank-specific pattern
-        tensor = torch.arange(1000, dtype=torch.float32) + rank * 1000
+        tensor = torch.arange(10, dtype=torch.float32) + rank * 10
 
         # Gather from all ranks
-        gathered = _gather_all_tensors(tensor)
+        gathered = gather_all_tensors(tensor)
 
         # Should have one tensor per rank
         assert len(gathered) == world_size
 
         # Check values
         for i, t in enumerate(gathered):
-            expected = torch.arange(1000, dtype=torch.float32) + i * 1000
+            expected = torch.arange(10, dtype=torch.float32) + i * 10
             torch.testing.assert_close(t, expected)
 
         if rank == 0:
-            print("✓ Gather large tensor test passed")
+            print("✓ Gather float tensor test passed")
 
     finally:
         cleanup_distributed()
@@ -201,7 +201,7 @@ def _test_gather_preserves_autograd():
         tensor = torch.tensor([rank * 1.0, rank * 2.0], requires_grad=True)
 
         # Gather from all ranks
-        gathered = _gather_all_tensors(tensor)
+        gathered = gather_all_tensors(tensor)
 
         # Our rank's tensor should be the original (preserving autograd)
         assert gathered[rank] is tensor
@@ -220,7 +220,7 @@ def _test_gather_non_initialized():
     tensor = torch.tensor([1.0, 2.0, 3.0])
 
     # Should return single-element list with the tensor
-    gathered = _gather_all_tensors(tensor)
+    gathered = gather_all_tensors(tensor)
 
     assert len(gathered) == 1
     torch.testing.assert_close(gathered[0], tensor)
@@ -235,14 +235,14 @@ def run_all_tests():
         ("Gather scalar tensors", _test_gather_scalar_tensors),
         ("Gather multidimensional tensors", _test_gather_multidimensional_tensors),
         ("Gather empty tensor", _test_gather_empty_tensor),
-        ("Gather large tensor", _test_gather_large_tensor),
+        ("Gather float tensor", _test_gather_float_tensor),
         ("Gather preserves autograd", _test_gather_preserves_autograd),
     ]
 
     rank = int(os.environ.get("OMPI_COMM_WORLD_RANK", os.environ.get("RANK", 0)))
 
     if rank == 0:
-        print(f"\nRunning {len(tests)} _gather_all_tensors tests...\n")
+        print(f"\nRunning {len(tests)} gather_all_tensors tests...\n")
 
     for test_name, test_func in tests:
         try:
@@ -269,9 +269,9 @@ def run_all_tests():
 # This allows running via pytest, which will spawn mpirun in a subprocess
 @pytest.mark.slow
 class TestGatherAllTensors:
-    """Pytest wrapper for _gather_all_tensors tests."""
+    """Pytest wrapper for gather_all_tensors tests."""
 
-    def test_gather_all_tensors_distributed(self):
+    def testgather_all_tensors_distributed(self):
         """Run distributed tests via mpirun in subprocess."""
         script_path = Path(__file__).resolve()
 

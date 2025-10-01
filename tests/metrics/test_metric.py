@@ -152,32 +152,6 @@ class TestMetricBasics:
         expected = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0])
         torch.testing.assert_close(result, expected)
 
-    def test_reset_sum(self):
-        """Test reset for sum reduction."""
-        metric = SumMetric()
-
-        # Update
-        metric.update(value=torch.tensor([1.0, 2.0]))
-        assert metric.total != 0.0
-        assert metric.count != 0
-
-        # Reset
-        metric.reset()
-        assert metric.total == 0.0
-        assert metric.count == 0
-
-    def test_reset_cat(self):
-        """Test reset for cat reduction."""
-        metric = CatMetric()
-
-        # Update
-        metric.update(value=torch.tensor([1.0, 2.0]))
-        assert len(metric.values) > 0
-
-        # Reset
-        metric.reset()
-        assert len(metric.values) == 0
-
     def test_to_device(self):
         """Test moving metric to CPU.
 
@@ -350,66 +324,6 @@ class TestMetricBasics:
         result = metric.compute()
         torch.testing.assert_close(result["a"], torch.tensor([1.0, 2.0, 3.0]))
         torch.testing.assert_close(result["b"], torch.tensor([10.0, 20.0, 30.0]))
-
-    def test_reset_dict_sum(self):
-        """Test reset for dictionary sum reduction."""
-
-        class DictSumMetric(Metric):
-            totals: dict[str, torch.Tensor]
-
-            def __init__(self):
-                super().__init__()
-                self.add_state(
-                    "totals",
-                    default={"a": torch.tensor(0.0), "b": torch.tensor(0.0)},
-                    dist_reduce_fx="sum",
-                )
-
-            @override
-            def update(self, **_: Any) -> None:
-                self.totals["a"] += torch.tensor(1.0)
-                self.totals["b"] += torch.tensor(2.0)
-
-            @override
-            def compute(self) -> dict[str, float]:
-                return {k: v.item() for k, v in self.totals.items()}
-
-        metric = DictSumMetric()
-        metric.update()
-        assert metric.totals["a"] != 0.0
-        assert metric.totals["b"] != 0.0
-
-        metric.reset()
-        assert metric.totals["a"] == 0.0
-        assert metric.totals["b"] == 0.0
-
-    def test_reset_dict_cat(self):
-        """Test reset for dictionary cat reduction."""
-
-        class DictCatMetric(Metric):
-            values: dict[str, list[torch.Tensor]]
-
-            def __init__(self):
-                super().__init__()
-                self.add_state("values", default={"a": [], "b": []}, dist_reduce_fx="cat")
-
-            @override
-            def update(self, *, value: torch.Tensor, **_: Any) -> None:
-                self.values["a"].append(value)
-                self.values["b"].append(value)
-
-            @override
-            def compute(self) -> dict[str, torch.Tensor]:
-                return {k: torch.cat(v, dim=0) for k, v in self.values.items()}
-
-        metric = DictCatMetric()
-        metric.update(value=torch.tensor([1.0]))
-        assert len(metric.values["a"]) > 0
-        assert len(metric.values["b"]) > 0
-
-        metric.reset()
-        assert len(metric.values["a"]) == 0
-        assert len(metric.values["b"]) == 0
 
     def test_to_device_dict(self):
         """Test moving dictionary metric states to device."""
