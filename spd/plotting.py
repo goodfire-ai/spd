@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 from PIL import Image
 from torch import Tensor
 
+from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import Components
 from spd.models.sigmoids import SigmoidTypes
@@ -212,6 +213,7 @@ def get_single_feature_causal_importances(
         sigmoid_type=sigmoid_type,
         detach_inputs=False,
         sampling=sampling,
+        gate_input_noise_std=0.0,  # No noise for plotting
     )
 
     return ci_raw, ci_upper_leaky_raw
@@ -484,4 +486,146 @@ def plot_ci_values_histograms(
     fig_img = _render_figure(fig)
     plt.close(fig)
 
+    return fig_img
+
+
+def plot_mlp_gate_shapes(
+    model: ComponentModel,
+    config: Config,
+    input_range: tuple[float, float] = (-3.0, 3.0),
+    n_points: int = 100,
+) -> Image.Image:
+    """Plot the shape of each MLP gate by evaluating it over a range of input values.
+    This plots the final causal importances (gate output + sigmoid), not just the raw gate output.
+    
+    Args:
+        model: The ComponentModel containing the gates
+        config: The Config object to check gate type and get sigmoid settings
+        input_range: Tuple of (min_input, max_input) for the x-axis range
+        n_points: Number of points to evaluate for each gate
+        
+    Returns:
+        Image showing the causal importance shapes for each component
+    """
+    # Check if the model uses MLP gates based on config
+    if config.gate_type != "mlp":
+        # Create a simple plot indicating no MLP gates found
+        fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+        ax.text(0.5, 0.5, f"No MLP gates found (gate_type: {config.gate_type})", 
+                ha='center', va='center', fontsize=16, transform=ax.transAxes)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis('off')
+        fig_img = _render_figure(fig)
+        plt.close(fig)
+        return fig_img
+    
+    # Get all gates (they should all be MLP gates)
+    mlp_gates = dict(model.gates)
+    
+    if not mlp_gates:
+        # Create a simple plot indicating no gates found
+        fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+        ax.text(0.5, 0.5, "No gates found in the model", 
+                ha='center', va='center', fontsize=16, transform=ax.transAxes)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis('off')
+        fig_img = _render_figure(fig)
+        plt.close(fig)
+        return fig_img
+    
+    # Create input range on the same device as the model
+    device = next(iter(mlp_gates.values())).parameters().__next__().device
+    x_vals = torch.linspace(input_range[0], input_range[1], n_points, device=device)
+    
+    # Get sigmoid function from config
+    from spd.models.sigmoids import SIGMOID_TYPES
+    if config.sigmoid_type == "leaky_hard":
+        sigmoid_fn = SIGMOID_TYPES["lower_leaky_hard"]
+    else:
+        sigmoid_fn = SIGMOID_TYPES[config.sigmoid_type]
+    
+    # Calculate grid dimensions for subplots - make it square-ish
+    n_gates = len(mlp_gates)
+    n_cols = int(np.ceil(np.sqrt(n_gates)))
+    n_rows = int(np.ceil(n_gates / n_cols))
+    
+    # Make it a large figure with high resolution for many gates
+    fig_width = max(20, 4 * n_cols)  # At least 20 inches wide
+    fig_height = max(20, 4 * n_rows)  # At least 20 inches tall
+    
+    fig, axs = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(fig_width, fig_height),
+        squeeze=False,
+        dpi=150,  # High DPI for detail
+    )
+    axs = np.array(axs)
+    
+    # Hide unused subplots
+    for i in range(n_gates, n_rows * n_cols):
+        row = i // n_cols
+        col = i % n_cols
+        axs[row, col].set_visible(False)
+    
+    # Plot each gate
+    for i, (gate_name, gate) in enumerate(mlp_gates.items()):
+        # Calculate position in grid
+        row = i // n_cols
+        col = i % n_cols
+        ax = axs[row, col]
+        
+        # Evaluate gate for each component
+        C = model.C
+        causal_importance_outputs = []
+        
+        # Get the input dimension for this component
+        component = model.components[gate_name]
+        if hasattr(component, 'd_in'):
+            d_in = component.d_in
+        else:
+            # For embedding components, we need to create one-hot vectors
+            d_in = component.vocab_size
+        
+        for c in range(C):
+            # Create input tensor with correct d_in dimension
+            if hasattr(component, 'd_in'):
+                # For linear components, create input with d_in features
+                x_input = torch.zeros(n_points, d_in, device=x_vals.device)
+                # Set one feature to the x_vals for this component
+                x_input[:, c % d_in] = x_vals
+            else:
+                # For embedding components, create one-hot vectors
+                x_input = torch.zeros(n_points, dtype=torch.long, device=x_vals.device)
+                # Use the x_vals as indices, but clamp to valid range
+                x_input = torch.clamp((x_vals * (d_in - 1) / 2 + d_in / 2).long(), 0, d_in - 1)
+            
+            with torch.no_grad():
+                # Get gate input (for MLPGates, this is the inner acts)
+                gate_input = component.get_inner_acts(x_input)
+                
+                # Apply gate to get raw output
+                gate_output = gate(gate_input, noise_std=config.gate_input_noise_std)
+                
+                # Apply sigmoid to get final causal importances
+                causal_importance = sigmoid_fn(gate_output)
+                causal_importance_outputs.append(causal_importance[:, c].cpu().numpy())
+        
+        # Plot each component's causal importance shape
+        x_np = x_vals.cpu().numpy()
+        for c in range(C):
+            ax.plot(x_np, causal_importance_outputs[c], alpha=0.7, linewidth=1.0)
+        
+        # Add x and y axis values
+        ax.tick_params(axis='both', which='major', labelsize=8)
+        ax.set_title(f'{gate_name.replace("-", ".")}', fontsize=10)
+        ax.grid(True, alpha=0.3)
+    
+    fig.tight_layout()
+    
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+    
     return fig_img

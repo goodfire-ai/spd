@@ -108,6 +108,10 @@ class Config(BaseModel):
         default=[8],
         description="Hidden dimensions for the gate used to calculate the causal importance",
     )
+    gate_input_noise_std: NonNegativeFloat = Field(
+        default=0.0,
+        description="Standard deviation of additive Gaussian noise applied to MLPGates input",
+    )
     sampling: Literal["continuous", "binomial"] = Field(
         default="continuous",
         description="Sampling mode for stochastic elements: 'continuous' (default) or 'binomial'",
