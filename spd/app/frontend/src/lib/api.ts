@@ -87,6 +87,11 @@ export type ComponentActivationContextsResponse = {
     examples: ActivationContext[];
 };
 
+export type Run = {
+    id: string;
+    url: string;
+};
+
 class ApiClient {
     constructor(private apiUrl: string = API_URL) {}
 
@@ -212,8 +217,22 @@ class ApiClient {
         return response.json();
     }
 
+    async getRuns(): Promise<Run[]> {
+        const response = await fetch(`${this.apiUrl}/runs`, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json"
+            }
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "Failed to get runs");
+        }
+        return response.json();
+    }
+
     async loadRun(wandbRunId: string): Promise<void> {
-        const response = await fetch(`${this.apiUrl}/load/${wandbRunId}`, {
+        const response = await fetch(`${this.apiUrl}/runs/load/${wandbRunId}`, {
             method: "POST"
         });
         if (!response.ok) {

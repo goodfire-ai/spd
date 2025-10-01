@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
+import wandb
 from pydantic import BaseModel
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizer
@@ -9,8 +10,11 @@ from transformers import PreTrainedTokenizer
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
+from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.general_utils import runtime_cast
+
+WANDB_PROJECT = "spd"
 
 
 @dataclass
@@ -34,9 +38,18 @@ class AvailablePrompt(BaseModel):
     full_text: str
 
 
+class Run(BaseModel):
+    id: str
+    url: str
+
+
 class RunContextService:
     def __init__(self):
         self.run_context: RunContext | None = None
+        self.api = wandb.Api()
+
+    def get_runs(self) -> list[Run]:
+        return [Run(id=run.id, url=run.url) for run in self.api.runs(WANDB_PROJECT)]
 
     def get_status(self) -> Status:
         if self.run_context is None:
@@ -52,6 +65,7 @@ class RunContextService:
         )
 
     def load_run_from_wandb_id(self, wandb_id: str):
+        logger.info(f"Loading run from wandb id: {wandb_id}")
         path = f"wandb:goodfire/spd/runs/{wandb_id}"
         run_info = SPDRunInfo.from_path(path)
 
@@ -71,6 +85,7 @@ class RunContextService:
 
         batch_size = 1
 
+        logger.info("Creating train loader from run info")
         train_loader, tokenizer = create_data_loader(
             dataset_config=train_data_config,
             batch_size=batch_size,
@@ -80,10 +95,13 @@ class RunContextService:
             ddp_world_size=0,
         )
 
+        logger.info("Creating component model from run info")
+        cm = ComponentModel.from_run_info(run_info)
+
         self.run_context = RunContext(
             wandb_id=wandb_id,
             config=run_info.config,
-            cm=ComponentModel.from_run_info(run_info),
+            cm=cm,
             tokenizer=tokenizer,
             train_loader=train_loader,
         )

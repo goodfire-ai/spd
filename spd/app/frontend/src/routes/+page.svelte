@@ -233,7 +233,9 @@
 
     let status: Status | null = null;
     async function getStatus() {
+        console.log("getting status");
         status = await api.getStatus();
+        console.log("status", status);
     }
 
     $: wandbRunId = status?.run_id ?? null;

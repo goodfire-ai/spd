@@ -23,14 +23,13 @@ from spd.app.backend.services.component_activations_service import (
 )
 from spd.app.backend.services.run_context_service import (
     AvailablePrompt,
+    Run,
     RunContextService,
     Status,
 )
-from spd.app.backend.services.wandb_service import Run, WandBService
 
 run_context_service = RunContextService()
 
-wandb_service = WandBService()
 ablation_service = AblationService(run_context_service)
 component_activations_service = ComponentActivationContextsService(run_context_service)
 
@@ -194,11 +193,17 @@ def apply_mask_as_ablation(request: ApplyMaskRequest) -> AblationResponse:
     return AblationResponse(token_logits=tokens_logits)
 
 
-@app.post("/load/{wandb_run_id}")
+@app.post("/runs/load/{wandb_run_id}")
 @handle_errors
 def load_run(wandb_run_id: str):
     global ablation_service
     run_context_service.load_run_from_wandb_id(wandb_run_id)
+
+
+@app.get("/runs")
+@handle_errors
+def get_wandb_runs() -> list[Run]:
+    return run_context_service.get_runs()
 
 
 @app.get("/status")
@@ -327,12 +332,6 @@ def get_component_activation_contexts(
         component_idx=component_idx,
         examples=contexts,
     )
-
-
-@app.get("/wandb_runs")
-@handle_errors
-def get_wandb_runs() -> list[Run]:
-    return wandb_service.get_runs()
 
 
 if __name__ == "__main__":

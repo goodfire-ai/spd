@@ -8,6 +8,7 @@ from transformers import PreTrainedTokenizer
 
 from spd.app.backend.services.run_context_service import RunContextService
 from spd.configs import Config
+from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import extract_batch_data
@@ -42,6 +43,7 @@ class ComponentActivationContextsService:
         return self._activations_by_module
 
     def _harvest_all_component_activation_contexts(self):
+        logger.info("Harvesting all component activation contexts")
         assert self.run_context_service.run_context is not None, "Run context not found"
         model = self.run_context_service.run_context.cm
         max_n_examples = 20
@@ -98,7 +100,8 @@ def find_component_activation_contexts(
 
     data_iter = iter(dataloader)
 
-    for _ in range(n_steps):
+    from tqdm import tqdm
+    for _ in tqdm(range(n_steps)):
         batch = extract_batch_data(next(data_iter))
         batch = batch.to(device)
 
