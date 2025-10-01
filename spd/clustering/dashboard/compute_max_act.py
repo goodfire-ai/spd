@@ -15,7 +15,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.dashboard.text_sample import (
+from spd.clustering.dashboard.core import (
     ActivationSampleBatch,
     ActivationSampleHash,
     ClusterData,
