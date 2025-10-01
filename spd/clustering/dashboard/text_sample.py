@@ -1,12 +1,13 @@
 """Data structures for tracking max-activating text samples."""
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, Callable, Literal, NewType
+from typing import Any, Literal, NewType
 
 import numpy as np
-from jaxtyping import Float, Int
+from jaxtyping import Float
 
 # Type aliases
 TextSampleHash = NewType("TextSampleHash", str)
@@ -71,12 +72,8 @@ class ClusterId:
         # Use all identifying information to create unique hash
         parts_tuple = self.to_tuple()
         parts_str = tuple(str(part) for part in parts_tuple)
-        assert all(_SEPARATOR_1 not in part for part in parts_str), (
-            "Parts cannot contain separator"
-        )
-        assert all(_SEPARATOR_2 not in part for part in parts_str), (
-            "Parts cannot contain separator"
-        )
+        assert all(_SEPARATOR_1 not in part for part in parts_str), "Parts cannot contain separator"
+        assert all(_SEPARATOR_2 not in part for part in parts_str), "Parts cannot contain separator"
 
         return ClusterIdHash(_SEPARATOR_1.join(parts_str))
 
@@ -110,26 +107,24 @@ class TextSample:
         """Return the number of tokens."""
         return len(self.tokens)
 
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ActivationSampleBatch:
     cluster_id: ClusterId
     text_hashes: list[TextSampleHash]
     activations: Float[np.ndarray, "batch n_ctx"]
 
-
     @cached_property
     def activation_hashes(self) -> list[ActivationSampleHash]:
         """Hashes uniquely identifying each activation sample (cluster_hash + text_hash)."""
         cluster_str = self.cluster_id.to_string()
-        return [
-            ActivationSampleHash(f"{cluster_str}{_SEPARATOR_2}{th}") for th in self.text_hashes
-        ]
-    
+        return [ActivationSampleHash(f"{cluster_str}{_SEPARATOR_2}{th}") for th in self.text_hashes]
+
     @property
     def shape(self) -> tuple[int, int]:
         """Return the shape of the activations array (batch_size, n_ctx)."""
         return self.activations.shape
-    
+
     def __len__(self) -> int:
         """Return the number of samples in the batch."""
         n_samples: int = self.activations.shape[0]
@@ -137,15 +132,15 @@ class ActivationSampleBatch:
         return n_samples
 
 
-ACTIVATION_SAMPLE_BATCH_STATS: dict[str, Callable[[ActivationSampleBatch], Float[np.ndarray, " batch"]]] = dict(
+ACTIVATION_SAMPLE_BATCH_STATS: dict[
+    str, Callable[[ActivationSampleBatch], Float[np.ndarray, " batch"]]
+] = dict(
     mean_activation=lambda batch: np.mean(batch.activations, axis=1),
     min_activation=lambda batch: np.min(batch.activations, axis=1),
     median_activation=lambda batch: np.median(batch.activations, axis=1),
     max_activation=lambda batch: np.max(batch.activations, axis=1),
     max_position=lambda batch: np.argmax(batch.activations, axis=1).astype(float),
 )
-
-
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -184,6 +179,7 @@ class TrackingCriterion:
             n_samples=int(parts[2]),
         )
 
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BinnedData:
     bin_edges: list[float]
@@ -194,7 +190,6 @@ class BinnedData:
         """Create BinnedData from a numpy array."""
         counts, edges = np.histogram(arr, bins=n_bins)
         return cls(bin_edges=edges.tolist(), bin_counts=counts.tolist())
-
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -215,11 +210,12 @@ class ClusterData:
         criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]] = {}
         stats: dict[str, Any] = dict()
 
-
         # filter out top-k samples per criterion
         for criterion in criteria:
             # Extract property values
-            prop_values: Float[np.ndarray, " batch"] = ACTIVATION_SAMPLE_BATCH_STATS[criterion.property_name](activation_samples)
+            prop_values: Float[np.ndarray, " batch"] = ACTIVATION_SAMPLE_BATCH_STATS[
+                criterion.property_name
+            ](activation_samples)
             # Sort by property value
             reverse: bool = criterion.direction == "max"
 
@@ -230,11 +226,10 @@ class ClusterData:
             samples_with_values.sort(key=lambda x: x[1], reverse=reverse)
 
             # Take top k
-            top_k: list[tuple[TextSampleHash, float]] = samples_with_values[:criterion.n_samples]
+            top_k: list[tuple[TextSampleHash, float]] = samples_with_values[: criterion.n_samples]
 
             # Extract just text hashes
             criterion_samples[criterion.to_string()] = [th for th, _ in top_k]
-
 
             # add stats
             stats[criterion.to_string()] = BinnedData.from_arr(
@@ -267,7 +262,7 @@ class ClusterData:
         for hashes in self.criterion_samples.values():
             unique_hashes.update(hashes)
         return unique_hashes
-    
+
     def get_unique_activation_hashes(self) -> set[ActivationSampleHash]:
         """Get all unique activation hashes across all criteria."""
         unique_hashes: set[ActivationSampleHash] = set()
@@ -277,7 +272,6 @@ class ClusterData:
                 ActivationSampleHash(f"{cluster_str}{_SEPARATOR_2}{th}") for th in hashes
             )
         return unique_hashes
-    
 
     def serialize(self) -> dict[str, Any]:
         """Serialize to a dictionary."""
@@ -289,8 +283,8 @@ class ClusterData:
                     "bin_edges": value.bin_edges,
                     "bin_counts": value.bin_counts,
                 }
-            elif isinstance(value, (np.integer, np.floating)):
-                serialized_stats[key] = float(value)
+            elif isinstance(value, int | float):
+                serialized_stats[key] = value
             elif isinstance(value, np.ndarray):
                 serialized_stats[key] = value.tolist()
             else:
@@ -299,11 +293,11 @@ class ClusterData:
         return {
             "cluster_hash": self.cluster_hash,
             "criterion_samples": {
-                str(k): [str(h) for h in v]
-                for k, v in self.criterion_samples.items()
+                str(k): [str(h) for h in v] for k, v in self.criterion_samples.items()
             },
             "stats": serialized_stats,
         }
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class DashboardData:
@@ -365,6 +359,3 @@ class DashboardData:
         }
         with open(output_path / "activations_map.json", "w") as f:
             json.dump(activations_map_serialized, f, indent=2)
-
-
-

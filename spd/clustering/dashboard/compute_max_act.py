@@ -145,7 +145,9 @@ def compute_max_activations(
     text_samples: dict[TextSampleHash, TextSample] = {}
 
     # Process batches
-    for batch_idx, batch_data in enumerate(tqdm(dataloader, total=n_batches, desc="Processing batches")):
+    for batch_idx, batch_data in enumerate(
+        tqdm(dataloader, total=n_batches, desc="Processing batches")
+    ):
         if batch_idx >= n_batches:
             break
 
@@ -247,11 +249,15 @@ def compute_max_activations(
     if all_activations_list:
         combined_activations = np.stack(all_activations_list)
         # Use a dummy cluster_id since this is for all clusters
-        dummy_cluster_id = list(cluster_id_map.values())[0] if cluster_id_map else ClusterId(
-            spd_run=spd_run,
-            clustering_run=clustering_run,
-            iteration=iteration,
-            cluster_label=ClusterLabel(module_name="combined", original_index=0),
+        dummy_cluster_id = (
+            list(cluster_id_map.values())[0]
+            if cluster_id_map
+            else ClusterId(
+                spd_run=spd_run,
+                clustering_run=clustering_run,
+                iteration=iteration,
+                cluster_label=ClusterLabel(module_name="combined", original_index=0),
+            )
         )
         combined_batch = ActivationSampleBatch(
             cluster_id=dummy_cluster_id,

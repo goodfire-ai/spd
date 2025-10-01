@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import wandb
-from torch.utils.data import DataLoader
 from wandb.apis.public import Run
 
 from spd.clustering.dashboard.compute_max_act import compute_max_activations
@@ -17,9 +16,7 @@ from spd.clustering.dashboard.dashboard_io import (
 )
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
-from spd.configs import Config
 from spd.log import logger
-from spd.models.component_model import ComponentModel
 from spd.settings import REPO_ROOT
 
 
