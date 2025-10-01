@@ -222,9 +222,15 @@ class ClusterData:
             prop_values: Float[np.ndarray, " batch"] = ACTIVATION_SAMPLE_BATCH_STATS[criterion.property_name](activation_samples)
             # Sort by property value
             reverse: bool = criterion.direction == "max"
-            # TODO
+
+            # Zip property values with text hashes and sort
+            samples_with_values: list[tuple[TextSampleHash, float]] = list(
+                zip(activation_samples.text_hashes, prop_values.tolist(), strict=True)
+            )
+            samples_with_values.sort(key=lambda x: x[1], reverse=reverse)
 
             # Take top k
+            top_k: list[tuple[TextSampleHash, float]] = samples_with_values[:criterion.n_samples]
 
             # Extract just text hashes
             criterion_samples[criterion.to_string()] = [th for th, _ in top_k]
@@ -275,8 +281,31 @@ class ClusterData:
 
     def serialize(self) -> dict[str, Any]:
         """Serialize to a dictionary."""
-        # TODO: implement, should be directly writeable to JSON in a reasonable way
+        # Convert stats to JSON-compatible format
+        serialized_stats: dict[str, Any] = {}
+        for key, value in self.stats.items():
+            if isinstance(value, BinnedData):
+                serialized_stats[key] = {
+                    "bin_edges": value.bin_edges,
+                    "bin_counts": value.bin_counts,
+                }
+            elif isinstance(value, (np.integer, np.floating)):
+                serialized_stats[key] = float(value)
+            elif isinstance(value, np.ndarray):
+                serialized_stats[key] = value.tolist()
+            else:
+                serialized_stats[key] = value
 
+        return {
+            "cluster_hash": self.cluster_hash,
+            "criterion_samples": {
+                str(k): [str(h) for h in v]
+                for k, v in self.criterion_samples.items()
+            },
+            "stats": serialized_stats,
+        }
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class DashboardData:
     """All data for the dashboard."""
 
@@ -287,8 +316,55 @@ class DashboardData:
 
     # activations_map maps ActivationSampleHash to index in `activations`
 
+    def save(self, output_dir: str) -> None:
+        """Save dashboard data to directory structure for efficient frontend access.
 
-    # TODO: a "save" method which saves this all into json (or numpy arrays) such that a frontend can read it and display it, without having to read too much data at a time (if we are looking at just one cluster)
+        Structure:
+        - clusters/{cluster_hash}.json - Individual cluster data
+        - text_samples.json - All text samples by hash
+        - activations.npz - Numpy array with all activations
+        - activations_map.json - Maps activation hashes to indices in activations array
+        """
+        import json
+        from pathlib import Path
+
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        clusters_path = output_path / "clusters"
+        clusters_path.mkdir(exist_ok=True)
+
+        # Save individual cluster data
+        for cluster_hash, cluster_data in self.clusters.items():
+            cluster_file = clusters_path / f"{cluster_hash}.json"
+            with open(cluster_file, "w") as f:
+                json.dump(cluster_data.serialize(), f, indent=2)
+
+        # Save text samples
+        text_samples_serialized = {
+            str(hash_): {
+                "full_text": sample.full_text,
+                "tokens": sample.tokens,
+                "text_hash": str(sample.text_hash),
+            }
+            for hash_, sample in self.text_samples.items()
+        }
+        with open(output_path / "text_samples.json", "w") as f:
+            json.dump(text_samples_serialized, f, indent=2)
+
+        # Save activations as numpy array
+        np.savez_compressed(
+            output_path / "activations.npz",
+            activations=self.activations.activations,
+            text_hashes=np.array([str(h) for h in self.activations.text_hashes]),
+            cluster_id=str(self.activations.cluster_id.to_string()),
+        )
+
+        # Save activations map
+        activations_map_serialized = {
+            str(hash_): idx for hash_, idx in self.activations_map.items()
+        }
+        with open(output_path / "activations_map.json", "w") as f:
+            json.dump(activations_map_serialized, f, indent=2)
 
 
 
