@@ -184,9 +184,9 @@ def compute_max_activations(
     )
 
     # Build text pool separately
-    from spd.clustering.dashboard.text_sample import TextHash
+    from spd.clustering.dashboard.text_sample import TextSampleHash
 
-    text_pool: dict[TextHash, TextSample] = {}
+    text_pool: dict[TextSampleHash, TextSample] = {}
     dataset_idx_counter: int = 0
 
     for batch_idx, batch_data in enumerate(tqdm(dataloader, total=n_batches)):
