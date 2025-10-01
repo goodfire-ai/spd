@@ -1,7 +1,7 @@
 import torch
 
 from spd.metrics import faithfulness_loss
-from tests.metrics.fixtures import make_one_layer_component_model, zero_components
+from tests.metrics.fixtures import make_one_layer_component_model
 
 
 class TestCalcWeightDeltas:
@@ -9,8 +9,9 @@ class TestCalcWeightDeltas:
         # fc weight 2x3 with known values
         fc_weight = torch.tensor([[1.0, 0.0, -1.0], [2.0, 3.0, -4.0]], dtype=torch.float32)
         model = make_one_layer_component_model(weight=fc_weight)
-        zero_components(model)
-
+        for cm in model.components.values():
+            cm.V.zero_()
+            cm.U.zero_()
         deltas = model.calc_weight_deltas()
 
         assert set(deltas.keys()) == {"fc"}
@@ -46,7 +47,9 @@ class TestCalcFaithfulnessLoss:
     def test_with_model_weight_deltas(self: object) -> None:
         fc_weight = torch.tensor([[1.0, 0.0, -1.0], [2.0, 3.0, -4.0]], dtype=torch.float32)
         model = make_one_layer_component_model(weight=fc_weight)
-        zero_components(model)
+        for cm in model.components.values():
+            cm.V.zero_()
+            cm.U.zero_()
         deltas = model.calc_weight_deltas()
 
         # Expected: mean of squared entries across both matrices

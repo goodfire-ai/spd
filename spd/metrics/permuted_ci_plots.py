@@ -11,7 +11,6 @@ from spd.plotting import plot_causal_importance_vals
 
 class PermutedCIPlots(Metric):
     is_differentiable: bool | None = False
-
     input_magnitude: float = 0.75
 
     def __init__(

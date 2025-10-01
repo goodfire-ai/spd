@@ -2,6 +2,7 @@ import re
 from collections import defaultdict
 from typing import Any, cast, override
 
+import torch
 import wandb
 from jaxtyping import Float
 from torch import Tensor
@@ -40,8 +41,6 @@ class CI_L0(Metric):
 
     @override
     def update(self, *, ci: dict[str, Float[Tensor, "... C"]], **_: Any) -> None:
-        import torch
-
         group_sums = defaultdict(float) if self.groups else {}
         for layer_name, layer_ci in ci.items():
             l0_val = calc_ci_l_zero(layer_ci, self.l0_threshold)
@@ -58,8 +57,6 @@ class CI_L0(Metric):
 
     @override
     def compute(self) -> dict[str, float | wandb.plot.CustomChart]:
-        import torch
-
         out = {}
         table_data = []
         for key, l0s in self.l0_values.items():

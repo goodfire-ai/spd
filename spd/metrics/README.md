@@ -60,7 +60,6 @@ Example:
 ```python
 class MyEvalMetric(Metric):
     is_differentiable = False
-    slow = False
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -96,7 +95,6 @@ Example:
 ```python
 class MyTrainingLoss(Metric):
     is_differentiable = True
-    slow = False
 
     def __init__(self, model, **kwargs):
         super().__init__(**kwargs)
@@ -124,16 +122,9 @@ loss.backward()  # DDP syncs gradients automatically
 
 All metrics can set these class attributes:
 - `is_differentiable: bool | None` - Whether the metric is differentiable (required for training losses)
-- `slow: bool` - Whether the metric is slow to compute (for logging purposes)
 
 ## Distributed Behavior
 
-### Shape Validation
-Unlike torchmetrics, our implementation requires all tensor shapes to match exactly across ranks:
-- If shapes don't match, an `AssertionError` is raised with detailed rank/shape information
-- No automatic padding or trimming - this ensures consistent metric computation
-
-### Non-Distributed Mode
 When not running in distributed mode (`torch.distributed.is_available()` or `is_initialized()` returns False):
 - `sync_dist()` becomes a no-op
 - Metrics work identically in single-GPU or CPU mode
@@ -147,6 +138,16 @@ self.add_state("my_values", default=[], dist_reduce_fx="cat")
 # Now you can access self.my_values like any other attribute
 self.my_values.append(some_tensor)
 ```
+
+You can also register a dictionary whose values are `Tensor` or `list`:
+```python
+self.add_state("my_dict", default={"sum": torch.tensor(0.0), "count": torch.tensor(0)}, dist_reduce_fx="sum")
+# Access nested values like any other attribute
+self.my_dict["sum"] += some_value
+self.my_dict["count"] += 1
+```
+- Each value in the dictionary is treated as a separate state with the same `dist_reduce_fx`
+- Useful for grouping related state variables together
 
 ### Concatenation States
 For states with `dist_reduce_fx="cat"`:

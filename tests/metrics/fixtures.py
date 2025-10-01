@@ -96,15 +96,3 @@ def make_two_layer_component_model(
     )
 
     return comp_model
-
-
-def zero_components(model: ComponentModel) -> None:
-    """Zero out all component U and V matrices for testing.
-
-    Args:
-        model: ComponentModel to modify
-    """
-    with torch.no_grad():
-        for cm in model.components.values():
-            cm.V.zero_()
-            cm.U.zero_()
