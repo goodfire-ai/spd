@@ -286,6 +286,19 @@ function plot(values, yvalues = null, options = {}) {
 		svg += dots;
 	}
 
+	// Format y-axis tick labels (use scientific notation for log scale)
+	const formatYTick = (value) => {
+		if (!opts.logScale) {
+			return value;
+		}
+		// For log scale, use scientific notation unless value is 0
+		if (value === 0) {
+			return '0';
+		}
+		// Convert to scientific notation with 1 decimal place
+		return value.toExponential(1);
+	};
+
 	// Add y-axis
 	if (opts.yAxis.line || opts.yAxis.ticks) {
 		// For bar charts, shift Y-axis left by 0.75 bar widths to avoid overlap
@@ -297,8 +310,8 @@ function plot(values, yvalues = null, options = {}) {
                       stroke="${opts.axis_style.color}" stroke-width="${opts.axis_style.width}"/>`;
 		}
 		if (opts.yAxis.ticks) {
-			svg += `<text x="${yAxisX - opts.yAxis.text_offset}" y="${opts.margin + opts.yAxis.text_y_offset + opts.axis_style.font_size}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="end">${ymax}</text>`;
-			svg += `<text x="${yAxisX - opts.yAxis.text_offset}" y="${opts.height - bottomMargin + opts.yAxis.text_offset}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="end">${ymin}</text>`;
+			svg += `<text x="${yAxisX - opts.yAxis.text_offset}" y="${opts.margin + opts.yAxis.text_y_offset + opts.axis_style.font_size}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="end">${formatYTick(ymaxForScale)}</text>`;
+			svg += `<text x="${yAxisX - opts.yAxis.text_offset}" y="${opts.height - bottomMargin + opts.yAxis.text_offset}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="end">${formatYTick(yminForScale)}</text>`;
 		}
 	}
 

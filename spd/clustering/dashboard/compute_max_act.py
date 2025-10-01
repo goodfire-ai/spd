@@ -122,7 +122,9 @@ def _compute_cluster_activations(
     # Vectorized: max activations across cluster components
     # processed.activations shape: [n_steps, C] where n_steps = batch_size * seq_len
     # Index into component dimension, then take max across components, then reshape
-    cluster_acts: Float[Tensor, " n_steps"] = processed.activations[:, comp_indices].max(dim=1).values
+    cluster_acts: Float[Tensor, " n_steps"] = (
+        processed.activations[:, comp_indices].max(dim=1).values
+    )
     return cluster_acts.view(batch_size, seq_len)
 
 
