@@ -7,7 +7,6 @@ from typing import Any
 
 import wandb
 from torch.utils.data import DataLoader
-from transformers import PreTrainedTokenizer
 from wandb.apis.public import Run
 
 from spd.clustering.dashboard.compute_max_act import compute_max_activations
@@ -66,17 +65,13 @@ def main(
     logger.info(f"Output directory: {final_output_dir}")
 
     # Setup model and data
-    model: ComponentModel
-    tokenizer: PreTrainedTokenizer
-    dataloader: DataLoader[Any]
-    config: Config
     model, tokenizer, dataloader, config = setup_model_and_data(
         run_config, context_length, batch_size
     )
 
     # Compute max activations
     logger.info("computing max activations")
-    result: dict[int, dict[str, list[dict[str, Any]]]] = compute_max_activations(
+    dashboard_data = compute_max_activations(
         model=model,
         sigmoid_type=config.sigmoid_type,
         tokenizer=tokenizer,
@@ -85,8 +80,10 @@ def main(
         iteration=iteration,
         n_samples=n_samples,
         n_batches=n_batches,
+        spd_run=run_config.get("spd_run", "unknown"),
+        clustering_run=run_id,
     )
-    logger.info(f"computed max activations: {len(result) = }")
+    logger.info(f"computed max activations: {len(dashboard_data.clusters) = }")
 
     # Get iteration for model info
     actual_iteration: int = (
@@ -107,12 +104,12 @@ def main(
         wandb_run_path=run_config["model_path"],
     )
 
-    # Save results
-    max_act_filename: str = f"max_activations_iter{iteration}_n{n_samples}.json"
-    max_act_path: Path = final_output_dir / max_act_filename
-    max_act_path.write_text(json.dumps(result, indent=2))
-    logger.info(f"Max activations saved to: {max_act_path}")
+    # Save dashboard data using new structure
+    logger.info("Saving dashboard data")
+    dashboard_data.save(str(final_output_dir))
+    logger.info(f"Dashboard data saved to: {final_output_dir}")
 
+    # Save model info
     model_info_path: Path = final_output_dir / "model_info.json"
     model_info_path.write_text(json.dumps(model_info, indent=2))
     logger.info(f"Model info saved to: {model_info_path}")
