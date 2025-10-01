@@ -44,13 +44,13 @@ function createActivationHistogram(activations) {
         container.style.alignItems = 'center';
         container.style.justifyContent = 'center';
 
-        // Create histogram bins (10 bins)
-        const histogramCounts = createHistogramBins(activations, 10);
+        // Create histogram bins
+        const histogramCounts = createHistogramBins(activations, CONFIG.visualization.histogramBins);
 
         // Use sparklines to render the histogram as a bar chart
         const svg = sparkbars(histogramCounts, null, {
-            width: 120,
-            height: 50,
+            width: CONFIG.visualization.sparklineWidth,
+            height: CONFIG.visualization.sparklineHeight,
             color: '#4169E1',
             shading: true, // Solid fill for histogram bars
             lineWidth: 0,  // No line, just bars
@@ -92,7 +92,7 @@ async function init() {
 
 async function loadData() {
     try {
-        const response = await fetch('data/max_activations_iter7375_n16.json');
+        const response = await fetch(CONFIG.data.clusterDataFile);
         const allData = await response.json();
         
         if (!allData[currentClusterId]) {
@@ -155,8 +155,8 @@ function setupComponentsTable() {
                 width: '300px'
             }
         ],
-        pageSize: 25,
-        showFilters: true
+        pageSize: CONFIG.clusterPage.pageSize,
+        showFilters: CONFIG.clusterPage.showFilters
     };
 
     new DataTable('#componentsTable', tableConfig);
@@ -165,8 +165,8 @@ function setupComponentsTable() {
 function displaySamples() {
     const tbody = document.getElementById('samplesTableBody');
     tbody.innerHTML = '';
-    
-    const samplesToShow = Math.min(32, clusterData.samples.length);
+
+    const samplesToShow = Math.min(CONFIG.clusterPage.maxSamplesPerCluster, clusterData.samples.length);
     
     for (let i = 0; i < samplesToShow; i++) {
         const sample = clusterData.samples[i];
@@ -206,14 +206,17 @@ function displaySamples() {
         tbody.appendChild(tr);
     }
     
-    if (clusterData.samples.length > 32) {
+    if (clusterData.samples.length > CONFIG.clusterPage.maxSamplesPerCluster) {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td colspan="7" style="text-align: center;">
-            ... and ${clusterData.samples.length - 32} more samples
+            ... and ${clusterData.samples.length - CONFIG.clusterPage.maxSamplesPerCluster} more samples
         </td>`;
         tbody.appendChild(tr);
     }
 }
 
-// Initialize on page load
-init();
+// Initialize config and load data on page load
+(async () => {
+    await initConfig();
+    init();
+})();

@@ -52,7 +52,7 @@ const columnRenderers = {
 
         try {
             // Create compact model architecture visualization
-            const architecture = renderModelArchitecture(clusterId, clusterData, modelInfo, 'blues');
+            const architecture = renderModelArchitecture(clusterId, clusterData, modelInfo, CONFIG.visualization.colormap);
             const html = renderToHTML(architecture);
 
             const container = document.createElement('div');
@@ -105,13 +105,13 @@ const columnRenderers = {
             const container = document.createElement('div');
             container.className = 'sparkline-cell';
 
-            // Create histogram bins (10 bins)
-            const histogramCounts = createHistogramBins(activations, 10);
+            // Create histogram bins
+            const histogramCounts = createHistogramBins(activations, CONFIG.visualization.histogramBins);
 
             // Use sparklines to render the histogram as a bar chart
             const svg = sparkbars(histogramCounts, null, {
-                width: 120,
-                height: 50,
+                width: CONFIG.visualization.sparklineWidth,
+                height: CONFIG.visualization.sparklineHeight,
                 color: '#4169E1',
                 shading: true, // Solid fill for histogram bars
                 lineWidth: 0,  // No line, just bars
@@ -148,13 +148,13 @@ const columnRenderers = {
             const container = document.createElement('div');
             container.className = 'sparkline-cell';
 
-            // Create histogram bins (10 bins) for the distribution of max activations
-            const histogramCounts = createHistogramBins(maxActivations, 10);
+            // Create histogram bins for the distribution of max activations
+            const histogramCounts = createHistogramBins(maxActivations, CONFIG.visualization.histogramBins);
 
             // Use sparkbars to render the histogram as a bar chart
             const svg = sparkbars(histogramCounts, null, {
-                width: 120,
-                height: 50,
+                width: CONFIG.visualization.sparklineWidth,
+                height: CONFIG.visualization.sparklineHeight,
                 color: '#DC143C', // Crimson red
                 shading: true, // Solid fill for histogram bars
                 lineWidth: 0,  // No line, just bars
@@ -191,13 +191,13 @@ const columnRenderers = {
             const container = document.createElement('div');
             container.className = 'sparkline-cell';
 
-            // Create histogram bins (10 bins) for the distribution of standard deviations
-            const histogramCounts = createHistogramBins(stdActivations, 10);
+            // Create histogram bins for the distribution of standard deviations
+            const histogramCounts = createHistogramBins(stdActivations, CONFIG.visualization.histogramBins);
 
             // Use sparkbars to render the histogram as a bar chart
             const svg = sparkbars(histogramCounts, null, {
-                width: 120,
-                height: 50,
+                width: CONFIG.visualization.sparklineWidth,
+                height: CONFIG.visualization.sparklineHeight,
                 color: '#228B22', // Forest green
                 shading: true, // Solid fill for histogram bars
                 lineWidth: 0,  // No line, just bars
@@ -262,7 +262,7 @@ function setupModelViewTooltips(container) {
 
 async function loadModelInfo() {
     try {
-        const response = await fetch('data/model_info.json');
+        const response = await fetch(CONFIG.data.modelInfoFile);
         modelInfo = await response.json();
         displayModelInfo();
     } catch (error) {
@@ -372,7 +372,7 @@ async function loadData() {
     try {
         // Load cluster data and model info in parallel
         const [clusterResponse] = await Promise.all([
-            fetch('data/max_activations_iter7375_n16.json'),
+            fetch(CONFIG.data.clusterDataFile),
             loadModelInfo()
         ]);
 
@@ -486,9 +486,9 @@ async function loadData() {
                     renderer: columnRenderers.clusterLink
                 }
             ],
-            pageSize: 25,
-            pageSizeOptions: [10, 25, 50, 100],
-            showFilters: true
+            pageSize: CONFIG.indexPage.pageSize,
+            pageSizeOptions: CONFIG.indexPage.pageSizeOptions,
+            showFilters: CONFIG.indexPage.showFilters
         };
 
         // Create table
@@ -501,5 +501,8 @@ async function loadData() {
     }
 }
 
-// Load data on page load
-document.addEventListener('DOMContentLoaded', loadData);
+// Initialize config and load data on page load
+document.addEventListener('DOMContentLoaded', async () => {
+    await initConfig();
+    loadData();
+});

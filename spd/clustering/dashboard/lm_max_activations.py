@@ -49,6 +49,260 @@ class TextSample:
         return asdict(self)
 
 
+class ClusterMaxTracker:
+    """Tracks top-k max-activating samples per cluster."""
+
+    def __init__(self, cluster_ids: list[int], n_samples: int, device: torch.device):
+        self.n_samples: int = n_samples
+        self.device: torch.device = device
+
+        # Initialize tracking structures
+        self.max_acts: dict[int, Float[Tensor, " n_samples"]] = {
+            cid: torch.full((n_samples,), -1e10, device=device) for cid in cluster_ids
+        }
+        self.max_texts: dict[int, list[TextSample | None]] = {
+            cid: [None] * n_samples for cid in cluster_ids
+        }
+        self.used_dataset_indices: dict[int, set[int]] = {cid: set() for cid in cluster_ids}
+
+    def try_insert_batch(
+        self,
+        cluster_id: int,
+        vals: Float[Tensor, " k"],
+        text_samples: list[TextSample],
+    ) -> int:
+        """Try to insert multiple text samples if they're in the top-k for the cluster.
+
+        Args:
+            cluster_id: Cluster ID
+            vals: Activation values (length k)
+            text_samples: TextSamples to insert (length k)
+
+        Returns:
+            Number of samples successfully inserted
+        """
+        assert len(vals) == len(text_samples), "vals and text_samples must have same length"
+
+        n_inserted: int = 0
+        for val, text_sample in zip(vals, text_samples, strict=True):
+            # Skip if we've already used this dataset index for this cluster
+            if text_sample.dataset_index in self.used_dataset_indices[cluster_id]:
+                continue
+
+            # Find insertion point
+            for j in range(self.n_samples):
+                if val > self.max_acts[cluster_id][j]:
+                    # Shift and insert
+                    if j < self.n_samples - 1:
+                        self.max_acts[cluster_id][j + 1 :] = self.max_acts[cluster_id][
+                            j:-1
+                        ].clone()
+                        self.max_texts[cluster_id][j + 1 :] = self.max_texts[cluster_id][j:-1]
+
+                    self.max_acts[cluster_id][j] = val
+                    self.max_texts[cluster_id][j] = text_sample
+                    self.used_dataset_indices[cluster_id].add(text_sample.dataset_index)
+                    n_inserted += 1
+                    break
+
+        return n_inserted
+
+    def to_result_dict(
+        self, cluster_components: dict[int, list[dict[str, Any]]]
+    ) -> dict[int, dict[str, list[dict[str, Any]]]]:
+        """Convert tracking state to final result dictionary.
+
+        Args:
+            cluster_components: Mapping from cluster_id to component info dicts
+
+        Returns:
+            Dict mapping cluster_id to dict with keys "components" and "samples"
+        """
+        result: dict[int, dict[str, list[dict[str, Any]]]] = {}
+        for cluster_id in self.max_texts:
+            samples: list[TextSample] = [s for s in self.max_texts[cluster_id] if s is not None]
+            result[cluster_id] = {
+                "components": cluster_components[cluster_id],
+                "samples": [s.serialize() for s in samples],
+            }
+        return result
+
+
+def _create_text_sample(
+    batch: Int[Tensor, "batch_size n_ctx"],
+    batch_idx: int,
+    pos_idx: int,
+    sequence_acts: Float[Tensor, " seq_len"],
+    val: float,
+    dataset_index: int,
+    tokenizer: PreTrainedTokenizer,
+) -> TextSample:
+    """Create a TextSample from batch data and activations.
+
+    Args:
+        batch: Input token batch
+        batch_idx: Index within batch
+        pos_idx: Position of max activation
+        sequence_acts: Activations for entire sequence
+        val: Max activation value
+        dataset_index: Index in original dataset
+        tokenizer: Tokenizer for decoding
+
+    Returns:
+        TextSample instance
+    """
+    # Extract full sequence data
+    tokens: Int[Tensor, " n_ctx"] = batch[batch_idx].cpu()
+    tokens_list: list[int] = tokens.tolist()
+    text: str = tokenizer.decode(tokens)  # pyright: ignore[reportAttributeAccessIssue]
+
+    # Convert token IDs to token strings
+    token_strings: list[str] = [
+        tokenizer.decode([tid])  # pyright: ignore[reportAttributeAccessIssue]
+        for tid in tokens_list
+    ]
+
+    # Get all activations for this sequence
+    activations_list: list[float] = sequence_acts.cpu().tolist()
+
+    # Compute statistics
+    mean_act: float = float(sequence_acts.mean().item())
+    median_act: float = float(sequence_acts.median().item())
+    max_act: float = float(val)
+
+    return TextSample(
+        full_text=text,
+        dataset_index=dataset_index,
+        tokens=token_strings,
+        activations=activations_list,
+        mean_activation=mean_act,
+        median_activation=median_act,
+        max_activation=max_act,
+        max_position=pos_idx,
+    )
+
+
+def _compute_cluster_activations(
+    processed: ProcessedActivations,
+    cluster_components: list[dict[str, Any]],
+    batch_size: int,
+    seq_len: int,
+) -> Float[Tensor, "batch_size seq_len"]:
+    """Compute average activations for a cluster across its components.
+
+    Args:
+        processed: ProcessedActivations containing all component activations
+        cluster_components: List of component info dicts for this cluster
+        batch_size: Batch size
+        seq_len: Sequence length
+
+    Returns:
+        2D tensor of cluster activations (batch_size x seq_len)
+    """
+    # Get indices for components in this cluster
+    comp_indices: list[int] = []
+    for component_info in cluster_components:
+        label: str = component_info["label"]
+        comp_idx: int | None = processed.get_label_index(label)
+        if comp_idx is not None:
+            comp_indices.append(comp_idx)
+
+    if not comp_indices:
+        # Return zeros if no valid components
+        return torch.zeros((batch_size, seq_len), device=processed.activations.device)
+
+    # Average activations across cluster components
+    cluster_acts: Float[Tensor, " n_steps"] = processed.activations[:, comp_indices].mean(dim=1)
+    return cluster_acts.view(batch_size, seq_len)
+
+
+def load_wandb_artifacts(wandb_path: str) -> tuple[MergeHistory, dict[str, Any]]:
+    """Download and load WandB artifacts.
+
+    Args:
+        wandb_path: WandB run path (e.g., entity/project/run_id)
+
+    Returns:
+        Tuple of (MergeHistory, run_config_dict)
+    """
+    api: wandb.Api = wandb.Api()
+    run: Run = api.run(wandb_path)
+    logger.info(f"Loaded WandB run: {run.name} ({run.id})")
+
+    # Download merge history artifact
+    logger.info("Downloading merge history artifact...")
+    artifacts: list[Any] = [a for a in run.logged_artifacts() if a.type == "merge_history"]
+    if not artifacts:
+        raise ValueError(f"No merge_history artifacts found in run {wandb_path}")
+    artifact: Any = artifacts[0]
+    logger.info(f"Found artifact: {artifact.name}")
+
+    artifact_dir: str = artifact.download()
+    merge_history_path: Path = Path(artifact_dir) / "merge_history.zip"
+    merge_history: MergeHistory = MergeHistory.read(merge_history_path)
+    logger.info(f"Loaded merge history: {merge_history}")
+
+    return merge_history, run.config
+
+
+def setup_model_and_data(
+    run_config: dict[str, Any],
+    context_length: int,
+    batch_size: int,
+) -> tuple[ComponentModel, PreTrainedTokenizer, DataLoader[Any], Config]:
+    """Set up model, tokenizer, and dataloader.
+
+    Args:
+        run_config: WandB run config dictionary
+        context_length: Context length for tokenization
+        batch_size: Batch size for data loading
+
+    Returns:
+        Tuple of (model, tokenizer, dataloader, spd_config)
+    """
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Load model
+    model_path: str = run_config["model_path"]
+    logger.info(f"Loading model from: {model_path}")
+    spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
+    model: ComponentModel = ComponentModel.from_run_info(spd_run)
+    model.to(device)
+    model.eval()
+    config: Config = spd_run.config
+    tokenizer_name: str = config.tokenizer_name  # pyright: ignore[reportAssignmentType]
+    logger.info(f"{tokenizer_name = }")
+
+    # Load tokenizer
+    tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    logger.info(f"Loaded: {tokenizer = }")
+
+    # Create dataloader
+    # TODO: read this from batches_config.json
+    dataset_config: DatasetConfig = DatasetConfig(
+        name="SimpleStories/SimpleStories",
+        hf_tokenizer_path=tokenizer_name,
+        split="train",
+        n_ctx=context_length,
+        is_tokenized=False,  # Text dataset
+        streaming=False,
+        column_name="story",
+    )
+    logger.info(f"Using {dataset_config = }")
+
+    dataloader: DataLoader[Any]
+    dataloader, _ = create_data_loader(
+        dataset_config=dataset_config,
+        batch_size=batch_size,
+        buffer_size=4,
+        ddp_rank=0,
+        ddp_world_size=1,
+    )
+    logger.info(f"Created {dataloader = }")
+
+    return model, tokenizer, dataloader, config
+
+
 def compute_max_activations(
     model: ComponentModel,
     sigmoid_type: SigmoidTypes,
@@ -61,43 +315,16 @@ def compute_max_activations(
 ) -> dict[int, dict[str, list[dict[str, Any]]]]:
     device: torch.device = get_module_device(model)
 
-    # Get the merge at specified iteration
-    if iteration < 0:
-        iteration = merge_history.n_iters_current + iteration
-    assert 0 <= iteration < merge_history.n_iters_current, (
-        f"Invalid iteration: {iteration = }, {merge_history.n_iters_current = }"
-    )
-    merge: GroupMerge = merge_history.merges[iteration]
-
-    # Get unique cluster IDs
-    unique_clusters: list[int] = torch.unique(merge.group_idxs).tolist()
-
-    # Initialize tracking
-    max_acts: dict[int, Float[Tensor, " n_samples"]] = {
-        cid: torch.full((n_samples,), -1e10, device=device) for cid in unique_clusters
+    # Get unique clusters and component info using MergeHistory methods
+    unique_clusters: list[int] = merge_history.get_unique_clusters(iteration)
+    cluster_components: dict[int, list[dict[str, Any]]] = {
+        cid: merge_history.get_cluster_components_info(iteration, cid)
+        for cid in unique_clusters
     }
-    max_texts: dict[int, list[TextSample | None]] = {
-        cid: [None] * n_samples for cid in unique_clusters
-    }
-    # Track used dataset indices to prevent duplicates
-    used_dataset_indices: dict[int, set[int]] = {cid: set() for cid in unique_clusters}
+
+    # Initialize tracker
+    tracker: ClusterMaxTracker = ClusterMaxTracker(unique_clusters, n_samples, device)
     dataset_idx_counter: int = 0
-
-    # Map clusters to component labels as dicts
-    cluster_components: dict[int, list[dict[str, Any]]] = {}
-    for cluster_id in unique_clusters:
-        component_indices: list[int] = (
-            (merge.group_idxs == cluster_id).nonzero().squeeze(-1).tolist()
-        )
-        cluster_components[cluster_id] = []
-        for comp_idx in component_indices:
-            label_comp: str = merge_history.labels[comp_idx]
-            module: str
-            idx_str: str
-            module, idx_str = label_comp.rsplit(":", 1)
-            cluster_components[cluster_id].append(
-                {"module": module, "index": int(idx_str), "label": label_comp}
-            )
 
     for batch_idx, batch_data in enumerate(tqdm(dataloader, total=n_batches)):
         if batch_idx >= n_batches:
@@ -118,22 +345,13 @@ def compute_max_activations(
         processed: ProcessedActivations = process_activations(activations, seq_mode="concat")
 
         for cluster_id in unique_clusters:
-            # Get indices for components in this cluster
-            comp_indices: list[int] = []
-            for component_info in cluster_components[cluster_id]:
-                label: str = component_info["label"]
-                comp_idx: int | None = processed.get_label_index(label)
-                if comp_idx is not None:
-                    comp_indices.append(comp_idx)
-
-            if not comp_indices:
-                continue
-
-            # Average activations across cluster components
-            cluster_acts: Float[Tensor, " n_steps"] = processed.activations[:, comp_indices].mean(
-                dim=1
+            # Compute cluster activations
+            acts_2d: Float[Tensor, "batch_size seq_len"] = _compute_cluster_activations(
+                processed, cluster_components[cluster_id], batch_size, seq_len
             )
-            acts_2d: Float[Tensor, "batch_size seq_len"] = cluster_acts.view(batch_size, seq_len)
+
+            if acts_2d.abs().max() == 0:
+                continue
 
             # Find top activations across all positions
             flat_acts: Float[Tensor, " batch_size*seq_len"] = acts_2d.flatten()
@@ -142,74 +360,30 @@ def compute_max_activations(
             top_idx: Int[Tensor, " k"]
             top_vals, top_idx = torch.topk(flat_acts, k)
 
+            # Create TextSamples for batch insertion
+            text_samples: list[TextSample] = []
             for val, idx in zip(top_vals, top_idx, strict=False):
                 batch_idx_i: int = int(idx // seq_len)
                 pos_idx: int = int(idx % seq_len)
-
-                # Calculate dataset index for this sample
                 current_dataset_idx: int = dataset_idx_counter + batch_idx_i
 
-                # Skip if we've already used this dataset index for this cluster
-                if current_dataset_idx in used_dataset_indices[cluster_id]:
-                    continue
+                text_sample: TextSample = _create_text_sample(
+                    batch=batch,
+                    batch_idx=batch_idx_i,
+                    pos_idx=pos_idx,
+                    sequence_acts=acts_2d[batch_idx_i],
+                    val=float(val),
+                    dataset_index=current_dataset_idx,
+                    tokenizer=tokenizer,
+                )
+                text_samples.append(text_sample)
 
-                # Insert in sorted order
-                for j in range(n_samples):
-                    if val > max_acts[cluster_id][j]:
-                        # Shift and insert
-                        if j < n_samples - 1:
-                            max_acts[cluster_id][j + 1 :] = max_acts[cluster_id][j:-1].clone()
-                            max_texts[cluster_id][j + 1 :] = max_texts[cluster_id][j:-1]
-
-                        max_acts[cluster_id][j] = val
-
-                        # Extract full sequence data
-                        tokens: Int[Tensor, " n_ctx"] = batch[batch_idx_i].cpu()
-                        tokens_list: list[int] = tokens.tolist()
-                        text: str = tokenizer.decode(tokens)  # pyright: ignore[reportAttributeAccessIssue]
-
-                        # Convert token IDs to token strings
-                        token_strings: list[str] = [
-                            tokenizer.decode([tid])  # pyright: ignore[reportAttributeAccessIssue]
-                            for tid in tokens_list
-                        ]
-
-                        # Get all activations for this sequence
-                        sequence_acts: Float[Tensor, " seq_len"] = acts_2d[batch_idx_i]
-                        activations_list: list[float] = sequence_acts.cpu().tolist()
-
-                        # Compute statistics
-                        mean_act: float = float(sequence_acts.mean().item())
-                        median_act: float = float(sequence_acts.median().item())
-                        max_act: float = float(val)
-
-                        max_texts[cluster_id][j] = TextSample(
-                            full_text=text,
-                            dataset_index=current_dataset_idx,
-                            tokens=token_strings,
-                            activations=activations_list,
-                            mean_activation=mean_act,
-                            median_activation=median_act,
-                            max_activation=max_act,
-                            max_position=pos_idx,
-                        )
-
-                        # Mark this dataset index as used for this cluster
-                        used_dataset_indices[cluster_id].add(current_dataset_idx)
-                        break
+            # Batch insert into tracker
+            tracker.try_insert_batch(cluster_id, top_vals, text_samples)
 
         dataset_idx_counter += batch_size
 
-    # Format output
-    result: dict[int, dict[str, list[dict[str, Any]]]] = {}
-    for cluster_id in unique_clusters:
-        samples: list[TextSample] = [s for s in max_texts[cluster_id] if s is not None]
-        result[cluster_id] = {
-            "components": cluster_components[cluster_id],
-            "samples": [s.serialize() for s in samples],
-        }
-
-    return result
+    return tracker.to_result_dict(cluster_components)
 
 
 def generate_model_info(
@@ -274,7 +448,100 @@ def generate_model_info(
     return model_info
 
 
-def main() -> None:
+def main(
+    wandb_run: str,
+    output_dir: Path | None,
+    iteration: int,
+    n_samples: int,
+    n_batches: int,
+    batch_size: int,
+    context_length: int,
+) -> None:
+    """Compute max-activating text samples for language model component clusters.
+
+    Args:
+        wandb_run: WandB clustering run path (e.g., entity/project/run_id)
+        output_dir: Output directory (default: REPO_ROOT/spd/clustering/dashboard/data/{run_id})
+        iteration: Merge iteration to analyze (negative indexes from end)
+        n_samples: Number of top-activating samples to collect per cluster
+        n_batches: Number of data batches to process
+        batch_size: Batch size for data loading
+        context_length: Context length for tokenization
+    """
+    # Parse wandb run path
+    wandb_path: str = wandb_run.removeprefix("wandb:")
+    logger.info(f"Loading WandB run: {wandb_path}")
+
+    # Load artifacts from WandB
+    merge_history: MergeHistory
+    run_config: dict[str, Any]
+    merge_history, run_config = load_wandb_artifacts(wandb_path)
+
+    # Extract run_id for output directory
+    api: wandb.Api = wandb.Api()
+    run: Run = api.run(wandb_path)
+    run_id: str = run.id
+
+    # Set up output directory
+    final_output_dir: Path = output_dir or (
+        REPO_ROOT / "spd" / "clustering" / "dashboard" / "data" / run_id
+    )
+    final_output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Output directory: {final_output_dir}")
+
+    # Setup model and data
+    model: ComponentModel
+    tokenizer: PreTrainedTokenizer
+    dataloader: DataLoader[Any]
+    config: Config
+    model, tokenizer, dataloader, config = setup_model_and_data(
+        run_config, context_length, batch_size
+    )
+
+    # Compute max activations
+    logger.info("computing max activations")
+    result: dict[int, dict[str, list[dict[str, Any]]]] = compute_max_activations(
+        model=model,
+        sigmoid_type=config.sigmoid_type,
+        tokenizer=tokenizer,
+        dataloader=dataloader,
+        merge_history=merge_history,
+        iteration=iteration,
+        n_samples=n_samples,
+        n_batches=n_batches,
+    )
+    logger.info(f"computed max activations: {len(result) = }")
+
+    # Get iteration for model info
+    actual_iteration: int = iteration if iteration >= 0 else merge_history.n_iters_current + iteration
+    merge: GroupMerge = merge_history.merges[actual_iteration]
+
+    # Generate model information
+    logger.info("Generating model information")
+    model_info: dict[str, Any] = generate_model_info(
+        model=model,
+        merge_history=merge_history,
+        merge=merge,
+        iteration=actual_iteration,
+        model_path=run_config["model_path"],
+        tokenizer_name=config.tokenizer_name,  # pyright: ignore[reportArgumentType]
+        config_dict=config.model_dump(mode="json"),
+        wandb_run_path=run_config["model_path"],
+    )
+
+    # Save results
+    max_act_filename: str = f"max_activations_iter{iteration}_n{n_samples}.json"
+    max_act_path: Path = final_output_dir / max_act_filename
+    max_act_path.write_text(json.dumps(result, indent=2))
+    logger.info(f"Max activations saved to: {max_act_path}")
+
+    model_info_path: Path = final_output_dir / "model_info.json"
+    model_info_path.write_text(json.dumps(model_info, indent=2))
+    logger.info(f"Model info saved to: {model_info_path}")
+
+
+def cli() -> None:
+    """CLI entry point with argument parsing."""
     logger.info("parsing args")
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Compute max-activating text samples for language model component clusters."
@@ -330,119 +597,16 @@ def main() -> None:
     )
     args: argparse.Namespace = parser.parse_args()
 
-    # Parse wandb run path
-    wandb_path: str = args.wandb_run
-    if wandb_path.startswith("wandb:"):
-        wandb_path = wandb_path.removeprefix("wandb:")
-    logger.info(f"Loading WandB run: {wandb_path}")
-
-    # Get WandB run
-    api: wandb.Api = wandb.Api()
-    run: Run = api.run(wandb_path)
-    logger.info(f"Loaded WandB run: {run.name} ({run.id})")
-
-    # Set up output directory
-    output_dir: Path = args.output_dir or (
-        REPO_ROOT / "spd" / "clustering" / "dashboard" / "data" / run.id
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Output directory: {output_dir}")
-
-    # Download merge history artifact
-    logger.info("Downloading merge history artifact...")
-    artifacts: list[Any] = [a for a in run.logged_artifacts() if a.type == "merge_history"]
-    if not artifacts:
-        raise ValueError(f"No merge_history artifacts found in run {wandb_path}")
-    artifact: Any = artifacts[0]
-    logger.info(f"Found artifact: {artifact.name}")
-
-    artifact_dir: str = artifact.download()
-    merge_history_path: Path = Path(artifact_dir) / "merge_history.zip"
-    merge_history: MergeHistory = MergeHistory.read(merge_history_path)
-    logger.info(f"Loaded merge history: {merge_history}")
-
-    # Get model path and load model
-    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_path: str = run.config["model_path"]
-    logger.info(f"Loading model from: {model_path}")
-
-    spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
-    model: ComponentModel = ComponentModel.from_run_info(spd_run)
-    model.to(device)
-    model.eval()
-    config: Config = spd_run.config
-    tokenizer_name: str = config.tokenizer_name  # pyright: ignore[reportAssignmentType]
-    logger.info(f"{tokenizer_name = }")
-
-    # Get the merge at specified iteration for component counts
-    if args.iteration < 0:
-        iteration = merge_history.n_iters_current + args.iteration
-    else:
-        iteration = args.iteration
-    merge: GroupMerge = merge_history.merges[iteration]
-
-    tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-    logger.info(f"Loaded: {tokenizer = }")
-
-    # TODO: read this from batches_config.json
-    dataset_config: DatasetConfig = DatasetConfig(
-        name="SimpleStories/SimpleStories",
-        hf_tokenizer_path=tokenizer_name,
-        split="train",
-        n_ctx=args.context_length,
-        is_tokenized=False,  # Text dataset
-        streaming=False,
-        column_name="story",
-    )
-    logger.info(f"Using {dataset_config = }")
-
-    dataloader: DataLoader[Any]
-    dataloader, _ = create_data_loader(
-        dataset_config=dataset_config,
-        batch_size=args.batch_size,
-        buffer_size=4,
-        ddp_rank=0,
-        ddp_world_size=1,
-    )
-    logger.info(f"Created {dataloader = }")
-
-    # Compute max activations
-    logger.info("computing max activations")
-    result: dict[int, dict[str, list[dict[str, Any]]]] = compute_max_activations(
-        model=model,
-        sigmoid_type=spd_run.config.sigmoid_type,
-        tokenizer=tokenizer,
-        dataloader=dataloader,
-        merge_history=merge_history,
+    main(
+        wandb_run=args.wandb_run,
+        output_dir=args.output_dir,
         iteration=args.iteration,
         n_samples=args.n_samples,
         n_batches=args.n_batches,
+        batch_size=args.batch_size,
+        context_length=args.context_length,
     )
-    logger.info(f"computed max activations: {len(result) = }")
-
-    # Generate model information
-    logger.info("Generating model information")
-    model_info: dict[str, Any] = generate_model_info(
-        model=model,
-        merge_history=merge_history,
-        merge=merge,
-        iteration=iteration,
-        model_path=model_path,
-        tokenizer_name=tokenizer_name,
-        config_dict=config.model_dump(mode="json"),
-        wandb_run_path=model_path,
-    )
-
-    # Save results to output directory
-    max_act_filename: str = f"max_activations_iter{args.iteration}_n{args.n_samples}.json"
-    max_act_path: Path = output_dir / max_act_filename
-    max_act_path.write_text(json.dumps(result, indent=2))
-    logger.info(f"Max activations saved to: {max_act_path}")
-
-    model_info_path: Path = output_dir / "model_info.json"
-    model_info_path.write_text(json.dumps(model_info, indent=2))
-    logger.info(f"Model info saved to: {model_info_path}")
 
 
 if __name__ == "__main__":
-    main()
+    cli()

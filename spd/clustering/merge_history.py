@@ -124,6 +124,63 @@ class MergeHistory(SaveableObject):
         latest_idx: int = self.n_iters_current - 1
         return self[latest_idx]
 
+    def get_unique_clusters(self, iteration: int) -> list[int]:
+        """Get unique cluster IDs at a given iteration.
+
+        Args:
+            iteration: Iteration index (negative indexes from end)
+
+        Returns:
+            List of unique cluster IDs
+        """
+        if iteration < 0:
+            iteration = self.n_iters_current + iteration
+        assert 0 <= iteration < self.n_iters_current, (
+            f"Invalid iteration: {iteration = }, {self.n_iters_current = }"
+        )
+        merge: GroupMerge = self.merges[iteration]
+        return torch.unique(merge.group_idxs).tolist()
+
+    def get_cluster_component_labels(self, iteration: int, cluster_id: int) -> list[str]:
+        """Get component labels for a specific cluster at a given iteration.
+
+        Args:
+            iteration: Iteration index (negative indexes from end)
+            cluster_id: Cluster ID to query
+
+        Returns:
+            List of component labels in the cluster
+        """
+        if iteration < 0:
+            iteration = self.n_iters_current + iteration
+        assert 0 <= iteration < self.n_iters_current, (
+            f"Invalid iteration: {iteration = }, {self.n_iters_current = }"
+        )
+        merge: GroupMerge = self.merges[iteration]
+        component_indices: list[int] = merge.components_in_group(cluster_id)
+        return [self.labels[idx] for idx in component_indices]
+
+    def get_cluster_components_info(
+        self, iteration: int, cluster_id: int
+    ) -> list[dict[str, Any]]:
+        """Get detailed component information for a cluster.
+
+        Args:
+            iteration: Iteration index (negative indexes from end)
+            cluster_id: Cluster ID to query
+
+        Returns:
+            List of dicts with keys: module, index, label
+        """
+        component_labels: list[str] = self.get_cluster_component_labels(iteration, cluster_id)
+        result: list[dict[str, Any]] = []
+        for label in component_labels:
+            module: str
+            idx_str: str
+            module, idx_str = label.rsplit(":", 1)
+            result.append({"module": module, "index": int(idx_str), "label": label})
+        return result
+
     # Convenience properties for sweep analysis
     @property
     def total_iterations(self) -> int:

@@ -53,7 +53,33 @@ let URL_UPDATE_TIMEOUT = null;
 function getDefaultConfig() {
   // the actual default configuration should be defined here
   let default_cfg = {
-    // TODO: Define your config structure and default configuration here
+    // Data paths
+    data: {
+      clusterDataFile: "data/max_activations_iter7375_n16.json",
+      modelInfoFile: "data/model_info.json"
+    },
+
+    // Index page (cluster list) display settings
+    indexPage: {
+      pageSize: 25,
+      pageSizeOptions: [10, 25, 50, 100],
+      showFilters: true
+    },
+
+    // Cluster detail page display settings
+    clusterPage: {
+      pageSize: 25,
+      maxSamplesPerCluster: 32,
+      showFilters: true
+    },
+
+    // Visualization settings
+    visualization: {
+      colormap: "blues",
+      histogramBins: 10,
+      sparklineWidth: 120,
+      sparklineHeight: 50
+    }
   };
 
   if (INLINE_CONFIG) {
@@ -195,7 +221,7 @@ function encodeForURL(value) {
  * @param {string} value - String value from URL parameter
  * @returns {any} Parsed value
 */
-function decodeFromURL(value) {
+function parseConfigValue(value) {
   // Boolean
   if (value === "true") return true;
   if (value === "false") return false;
@@ -203,6 +229,14 @@ function decodeFromURL(value) {
   // Number
   if (!isNaN(value) && !isNaN(parseFloat(value))) {
     return parseFloat(value);
+  }
+
+  // Array (comma-separated or tilde-separated)
+  if (value.includes(',')) {
+    return value.split(',').map(v => v.trim());
+  }
+  if (value.includes('~')) {
+    return value.split('~').map(v => v.trim());
   }
 
   // TODO: add custom decoding logic that reverses encodeForURL
