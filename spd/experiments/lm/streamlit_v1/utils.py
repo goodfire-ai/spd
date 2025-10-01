@@ -14,7 +14,7 @@ from transformers import AutoTokenizer, PreTrainedTokenizer
 from spd.configs import Config
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.models.components import EmbeddingComponents, LinearComponents, MLPFn, VectorMLPFn
+from spd.models.components import EmbeddingComponents, LinearComponents, MLPCiFn, VectorMLPCiFn
 
 DEFAULT_WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "spd")
 
@@ -26,7 +26,7 @@ class ModelData:
     model: ComponentModel
     tokenizer: PreTrainedTokenizer
     config: Config
-    ci_fns: dict[str, MLPFn | VectorMLPFn]
+    ci_fns: dict[str, MLPCiFn | VectorMLPCiFn]
     components: dict[str, LinearComponents | EmbeddingComponents]
     layer_names: list[str]
 
@@ -74,7 +74,7 @@ def load_model(model_path: str) -> ModelData:
 
     # Extract components and causal importance functions.
     ci_fns = {
-        k.removeprefix("ci_fns.").replace("-", "."): cast(MLPFn | VectorMLPFn, v)
+        k.removeprefix("ci_fns.").replace("-", "."): cast(MLPCiFn | VectorMLPCiFn, v)
         for k, v in model.ci_fns.items()
     }
     components = {

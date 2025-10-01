@@ -44,7 +44,7 @@ class Linear(nn.Module):
         return einops.einsum(x, self.W, "... d_in, d_in d_out -> ... d_out") + self.b
 
 
-class MLPFn(nn.Module):
+class MLPCiFn(nn.Module):
     """MLP-based function that map component 'inner acts' to a scalar output for each component."""
 
     def __init__(self, C: int, hidden_dims: list[int]):
@@ -68,7 +68,7 @@ class MLPFn(nn.Module):
         return x[..., 0]
 
 
-class VectorMLPFn(nn.Module):
+class VectorMLPCiFn(nn.Module):
     """Contains a separate network for each component and takes a module's input vector as input."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
@@ -93,7 +93,7 @@ class VectorMLPFn(nn.Module):
         return x[..., 0]
 
 
-class VectorSharedMLPFn(nn.Module):
+class VectorSharedMLPCiFn(nn.Module):
     """Maps a module's input vector to a scalar output for each component with a 'pure' MLP."""
 
     def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):

@@ -21,10 +21,10 @@ from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
     LinearComponents,
-    MLPFn,
+    MLPCiFn,
     ParallelLinear,
-    VectorMLPFn,
-    VectorSharedMLPFn,
+    VectorMLPCiFn,
+    VectorSharedMLPCiFn,
     make_mask_infos,
 )
 from spd.spd_types import ModelPath
@@ -229,7 +229,7 @@ def test_parallel_linear_shapes_and_forward():
 @pytest.mark.parametrize("hidden_dims", [[8], [4, 3]])
 def test_mlp_ci_fn_scalar_per_component(hidden_dims: list[int]):
     C = 5
-    ci_fns = MLPFn(C=C, hidden_dims=hidden_dims)
+    ci_fns = MLPCiFn(C=C, hidden_dims=hidden_dims)
     x = torch.randn(BATCH_SIZE, C)  # two items, C components
     y = ci_fns(x)
     assert y.shape == (BATCH_SIZE, C)
@@ -239,7 +239,7 @@ def test_mlp_ci_fn_scalar_per_component(hidden_dims: list[int]):
 def test_vector_mlp_ci_fns(hidden_dims: list[int]):
     C = 3
     d_in = 10
-    ci_fns = VectorMLPFn(C=C, input_dim=d_in, hidden_dims=hidden_dims)
+    ci_fns = VectorMLPCiFn(C=C, input_dim=d_in, hidden_dims=hidden_dims)
     x = torch.randn(BATCH_SIZE, d_in)
     y = ci_fns(x)
     assert y.shape == (BATCH_SIZE, C)
@@ -249,7 +249,7 @@ def test_vector_mlp_ci_fns(hidden_dims: list[int]):
 def test_vector_shared_mlp_fn(hidden_dims: list[int]):
     C = 3
     d_in = 10
-    ci_fn = VectorSharedMLPFn(C=C, input_dim=d_in, hidden_dims=hidden_dims)
+    ci_fn = VectorSharedMLPCiFn(C=C, input_dim=d_in, hidden_dims=hidden_dims)
     x = torch.randn(BATCH_SIZE, d_in)
     y = ci_fn(x)
     assert y.shape == (BATCH_SIZE, C)

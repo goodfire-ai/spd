@@ -24,9 +24,9 @@ from spd.models.components import (
     EmbeddingComponents,
     Identity,
     LinearComponents,
-    MLPFn,
-    VectorMLPFn,
-    VectorSharedMLPFn,
+    MLPCiFn,
+    VectorMLPCiFn,
+    VectorSharedMLPCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
@@ -208,7 +208,7 @@ class ComponentModel(LoadableModule):
             assert ci_fn_type == "mlp", "Embedding modules only supported for ci_fn_type='mlp'"
 
         if ci_fn_type == "mlp":
-            return MLPFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
+            return MLPCiFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
 
         match target_module:
             case nn.Linear():
@@ -222,11 +222,11 @@ class ComponentModel(LoadableModule):
 
         match ci_fn_type:
             case "vector_mlp":
-                return VectorMLPFn(
+                return VectorMLPCiFn(
                     C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
                 )
             case "shared_mlp":
-                return VectorSharedMLPFn(
+                return VectorSharedMLPCiFn(
                     C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
                 )
 
@@ -510,9 +510,9 @@ class ComponentModel(LoadableModule):
             ci_fns = self.ci_fns[param_name]
 
             match ci_fns:
-                case MLPFn():
+                case MLPCiFn():
                     ci_fn_input = self.components[param_name].get_inner_acts(acts)
-                case VectorMLPFn() | VectorSharedMLPFn():
+                case VectorMLPCiFn() | VectorSharedMLPCiFn():
                     ci_fn_input = acts
                 case _:
                     raise ValueError(f"Unknown ci_fn type: {type(ci_fns)}")
