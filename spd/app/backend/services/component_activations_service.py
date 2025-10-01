@@ -1,3 +1,4 @@
+# %%
 from collections import defaultdict
 from typing import Any
 
@@ -101,6 +102,7 @@ def find_component_activation_contexts(
     data_iter = iter(dataloader)
 
     from tqdm import tqdm
+
     for _ in tqdm(range(n_steps)):
         batch = extract_batch_data(next(data_iter))
         batch = batch.to(device)
@@ -278,3 +280,29 @@ def _extract_activation_context(
         active_position=seq_idx - start_idx,  # Position of main active token in context
         ci_value=ci_value,
     )
+
+
+# %%
+
+if __name__ == "__main__":
+    rcs = RunContextService()
+    rcs.load_run_from_wandb_id("ry05f67a")
+
+    # cas = ComponentActivationContextsService(rcs)
+    # cas.get_layer_activation_contexts("lm_head")
+    assert (rc := rcs.run_context) is not None, "Run context not found"
+
+    # %%
+
+    find_component_activation_contexts(
+        component_model=rc.cm,
+        dataloader=rc.train_loader,
+        run_config=rc.config,
+        tokenizer=rc.tokenizer,
+        causal_importance_threshold=0.01,
+        n_prompts=20,
+        n_tokens_either_side=10,
+        n_steps=20,
+    )
+
+# %%

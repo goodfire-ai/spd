@@ -10,6 +10,7 @@ from torch._tensor import Tensor
 
 from spd.app.backend.services.run_context_service import RunContextService
 from spd.models.components import make_mask_infos
+from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import runtime_cast
 
 
@@ -62,6 +63,9 @@ class MaskOverride:
     combined_mask: Float[Tensor, " C"]
 
 
+DEVICE = get_device()
+
+
 class AblationService:
     def __init__(self, run_context_service: RunContextService):
         self.run_context_service = run_context_service
@@ -98,6 +102,8 @@ class AblationService:
         prompt_tokens = cast(list[str], run.tokenizer.batch_decode(inputs[0]))  # pyright: ignore[reportAttributeAccessIssue]
         assert isinstance(prompt_tokens, list)
         assert isinstance(prompt_tokens[0], str)
+
+        inputs = inputs.to(DEVICE)
 
         target_logits_out, pre_weight_acts = run.cm.forward(
             inputs,

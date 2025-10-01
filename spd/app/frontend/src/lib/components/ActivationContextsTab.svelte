@@ -173,7 +173,6 @@
         display: flex;
         flex-direction: column;
         gap: 1.5rem;
-        max-height: calc(100vh - 400px);
         overflow-y: auto;
         padding: 0.5rem;
     }

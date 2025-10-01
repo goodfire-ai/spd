@@ -12,9 +12,12 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import runtime_cast
 
 WANDB_PROJECT = "spd"
+
+DEVICE = get_device()
 
 
 @dataclass
@@ -97,6 +100,7 @@ class RunContextService:
 
         logger.info("Creating component model from run info")
         cm = ComponentModel.from_run_info(run_info)
+        cm.to(DEVICE)
 
         self.run_context = RunContext(
             wandb_id=wandb_id,
