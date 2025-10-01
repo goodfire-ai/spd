@@ -1,4 +1,3 @@
-# spd/experiments/tms/tms_dataset.py
 """Dataset for Toy Model of Superposition (TMS) experiments."""
 
 import numpy as np
@@ -10,10 +9,8 @@ from typing import Optional, Literal
 class TMSDataset(Dataset):
     """
     Dataset for Toy Model of Superposition (TMS) experiments.
-    Compatible with the same interface as ResidMLPDataset.
 
-    Generates data according to the TMS specification from Elhage et al. 2022
-    and the SPD paper: sparse sums of one-hot features with random scaling.
+    Generates data according to the TMS specifications
     """
 
     def __init__(
@@ -72,7 +69,7 @@ class TMSDataset(Dataset):
         else:
             raise ValueError(f"Unknown data_generation_type: {data_generation_type}")
 
-        # Generate labels if requested (though typically not used for TMS)
+        # Generate labels if requested 
         if calc_labels:
             self.labels = self._generate_labels()
         else:
@@ -131,7 +128,6 @@ class TMSDataset(Dataset):
     def _generate_labels(self) -> torch.Tensor:
         """
         Generate labels for the dataset (if calc_labels=True).
-        For TMS, this could be the reconstruction target (same as input).
         """
         return self.data.clone()
 
@@ -150,10 +146,7 @@ class TMSDataset(Dataset):
 
     def generate_batch(self, batch_size: int) -> torch.Tensor:
         """
-        Generate a batch of data. Required by DatasetGeneratedDataLoader.
-
-        For TMS datasets, this returns the same as get_batch since we're using
-        pre-generated data rather than generating on-the-fly.
+        Generate a batch of data.
         """
         if batch_size >= len(self.data):
             return self.data
