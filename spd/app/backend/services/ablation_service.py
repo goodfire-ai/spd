@@ -49,6 +49,14 @@ class OutputTokenLogit(BaseModel):
     probability: float
 
 
+class RunResponse(BaseModel):
+    prompt_id: str
+    prompt_tokens: list[str]
+    layer_cis: list[LayerCIs]
+    full_run_token_logits: list[list[OutputTokenLogit]]
+    ci_masked_token_logits: list[list[OutputTokenLogit]]
+
+
 class TokenLayerCosineSimilarityData(BaseModel):
     input_singular_vectors: list[list[float]]
     output_singular_vectors: list[list[float]]
@@ -72,15 +80,7 @@ class AblationService:
         self.prompt_contexts: dict[str, PromptContext] = {}  # Multiple prompts by ID
         self.mask_overrides: dict[str, MaskOverride] = {}
 
-    def run_prompt(
-        self, prompt: str | torch.Tensor
-    ) -> tuple[
-        str,
-        list[str],
-        list[LayerCIs],
-        list[list[OutputTokenLogit]],
-        list[list[OutputTokenLogit]],
-    ]:
+    def run_prompt(self, prompt: str | torch.Tensor) -> RunResponse:
         assert self.run_context_service.run_context is not None, "Run context not found"
         run = self.run_context_service.run_context
 
@@ -134,7 +134,7 @@ class AblationService:
         )
         self.prompt_contexts[prompt_id] = prompt_context
 
-        layer_causal_importances = [
+        layer_cis = [
             LayerCIs(
                 module=module,
                 token_cis=[SparseVector.from_tensor(token_ci) for token_ci in ci],
@@ -142,12 +142,12 @@ class AblationService:
             for module, ci in prompt_context.causal_importances.items()
         ]
 
-        return (
-            prompt_id,  # Return the prompt ID first
-            prompt_tokens,
-            layer_causal_importances,
-            self.logits_to_token_logits(target_logits_out),
-            self.logits_to_token_logits(ci_masked_logits),
+        return RunResponse(
+            prompt_id=prompt_id,
+            prompt_tokens=prompt_tokens,
+            layer_cis=layer_cis,
+            full_run_token_logits=self.logits_to_token_logits(target_logits_out),
+            ci_masked_token_logits=self.logits_to_token_logits(ci_masked_logits),
         )
 
     def run_prompt_with_mask_override(self, prompt: str | torch.Tensor, mask_override_id: str):

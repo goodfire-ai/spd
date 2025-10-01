@@ -13,6 +13,7 @@ from spd.app.backend.services.ablation_service import (
     LayerCIs,
     MaskOverride,
     OutputTokenLogit,
+    RunResponse,
     SparseVector,
     TokenLayerCosineSimilarityData,
 )
@@ -81,32 +82,10 @@ class RunRequest(BaseModel):
     prompt: str
 
 
-class RunResponse(BaseModel):
-    prompt_id: str
-    prompt_tokens: list[str]
-    layer_cis: list[LayerCIs]
-    full_run_token_logits: list[list[OutputTokenLogit]]
-    ci_masked_token_logits: list[list[OutputTokenLogit]]
-
-
 @app.post("/run")
 @handle_errors
 def run_prompt(request: RunRequest) -> RunResponse:
-    (
-        prompt_id,
-        prompt_tokens,
-        layer_causal_importances,
-        full_run_token_logits,
-        ci_masked_token_logits,
-    ) = ablation_service.run_prompt(request.prompt)
-
-    return RunResponse(
-        prompt_id=prompt_id,
-        prompt_tokens=prompt_tokens,
-        layer_cis=layer_causal_importances,
-        full_run_token_logits=full_run_token_logits,
-        ci_masked_token_logits=ci_masked_token_logits,
-    )
+    return ablation_service.run_prompt(request.prompt)
 
 
 @app.get("/available_prompts")

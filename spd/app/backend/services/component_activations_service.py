@@ -9,11 +9,14 @@ from pydantic import BaseModel
 
 from spd.app.backend.services.run_context_service import RunContextService
 from spd.app.backend.workers.activation_contexts_worker import (
-    ActivationContext,
+    ActivationContext as ActivationContext,
+)
+from spd.app.backend.workers.activation_contexts_worker import (
     ActivationContextsByModule,
 )
-from spd.app.backend.workers.activation_contexts_worker import main as worker_main
-from spd.app.backend.workers.activation_contexts_worker_v2 import main as worker_main_v2
+
+# from spd.app.backend.workers.activation_contexts_worker import main as worker_main
+from spd.app.backend.workers.activation_contexts_worker_v2 import main as worker_main
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
 

@@ -246,16 +246,16 @@ class ApiClient {
         layer: string,
         tokenIdx: number
     ): Promise<CosineSimilarityData> {
-        const params = new URLSearchParams({
-            prompt_id: promptId,
-            layer,
-            token_idx: tokenIdx.toString()
-        });
-        const response = await fetch(`${this.apiUrl}/cosine_similarities?${params}`, {
+        const response = await fetch(`${this.apiUrl}/cosine_similarities`, {
             method: "GET",
             headers: {
                 "Content-Type": "application/json"
-            }
+            },
+            body: JSON.stringify({
+                prompt_id: promptId,
+                layer,
+                token_idx: tokenIdx.toString()
+            })
         });
 
         if (!response.ok) {
