@@ -82,14 +82,13 @@ def main(config: ClusteringRunConfig) -> None:
     )
 
     # Compute distances
-    # TODO: read distance method from config
-    method: DistancesMethod = "perm_invariant_hamming"
-    logger.info(f"Computing distances using method: {method}")
+    distances_method: DistancesMethod = config.distances_method
+    logger.info(f"Computing distances using method: {distances_method}")
     distances: DistancesArray = compute_distances(
         normalized_merge_array=normalized_merge_array,
-        method=method,
+        method=distances_method,
     )
-    storage.save_distances(distances=distances, method=method)
+    storage.save_distances(distances=distances, method=distances_method)
     logger.info(f"Distances computed and saved: shape={distances.shape}")
 
     # Create clustering report
@@ -97,7 +96,7 @@ def main(config: ClusteringRunConfig) -> None:
     logger.info(f"Creating clustering report with {len(wandb_urls)} WandB URLs")
     create_clustering_report(
         distances=distances,
-        method=method,
+        method=distances_method,
         wandb_urls=wandb_urls,
         config_identifier=config.config_identifier,
     )

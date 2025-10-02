@@ -1,5 +1,6 @@
 """Core computation logic for finding max-activating text samples."""
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -33,6 +34,19 @@ from spd.clustering.merge_history import MergeHistory
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data, get_module_device
+
+
+@dataclass
+class ClusterActivations:
+    """Vectorized cluster activations for all clusters.
+
+    Attributes:
+        activations: Tensor of shape [n_samples, n_clusters] containing cluster activations
+        cluster_indices: List mapping column index to cluster index
+    """
+
+    activations: Float[Tensor, "n_samples n_clusters"]
+    cluster_indices: list[int]
 
 
 def _compute_cluster_activations(
@@ -71,6 +85,55 @@ def _compute_cluster_activations(
         processed.activations[:, comp_indices].max(dim=1).values
     )
     return cluster_acts.view(batch_size, seq_len)
+
+
+def compute_all_cluster_activations(
+    processed: ProcessedActivations,
+    cluster_components: dict[int, list[dict[str, Any]]],
+    batch_size: int,
+    seq_len: int,
+) -> ClusterActivations:
+    """Compute activations for all clusters in a vectorized manner.
+
+    Args:
+        processed: ProcessedActivations containing all component activations
+        cluster_components: Dict mapping cluster_idx -> list of component info dicts
+        batch_size: Batch size
+        seq_len: Sequence length
+
+    Returns:
+        ClusterActivations with shape [batch_size * seq_len, n_clusters]
+    """
+    cluster_indices: list[int] = sorted(cluster_components.keys())
+    n_clusters: int = len(cluster_indices)
+    n_samples: int = batch_size * seq_len
+    device: torch.device = processed.activations.device
+
+    # Build cluster activation tensor: [n_samples, n_clusters]
+    cluster_acts: Float[Tensor, "n_samples n_clusters"] = torch.zeros(
+        (n_samples, n_clusters), device=device
+    )
+
+    # For each cluster, compute max activation across its components
+    for cluster_col_idx, cluster_idx in enumerate(cluster_indices):
+        components: list[dict[str, Any]] = cluster_components[cluster_idx]
+
+        # Get component indices for this cluster
+        comp_indices: list[int] = []
+        for component_info in components:
+            label: str = component_info["label"]
+            comp_idx: int | None = processed.get_label_index(label)
+            if comp_idx is not None:
+                comp_indices.append(comp_idx)
+
+        if not comp_indices:
+            continue
+
+        # Max activation across components for this cluster
+        # processed.activations: [n_samples, n_components]
+        cluster_acts[:, cluster_col_idx] = processed.activations[:, comp_indices].max(dim=1).values
+
+    return ClusterActivations(activations=cluster_acts, cluster_indices=cluster_indices)
 
 
 def compute_max_activations(
@@ -163,7 +226,9 @@ def compute_max_activations(
             batch=batch,
             sigmoid_type=sigmoid_type,
         )
-        processed: ProcessedActivations = process_activations(activations, seq_mode="concat")
+        processed: ProcessedActivations = process_activations(
+            activations, seq_mode="concat", filter_dead_threshold=0
+        )
 
         # Batch tokenize all samples once per batch (move to CPU first)
         batch_cpu: Int[Tensor, "batch_size n_ctx"] = batch.cpu()
@@ -187,29 +252,42 @@ def compute_max_activations(
                 text_samples[text_hash] = text_sample
             batch_text_samples.append(text_sample)
 
-        # TODO: no pbar here, outer loop has a pbar
-        for cluster_idx in unique_cluster_indices:
-            # Compute cluster activations
-            acts_2d: Float[Tensor, "batch_size seq_len"] = _compute_cluster_activations(
-                processed, cluster_components[cluster_idx], batch_size, seq_len
-            )
+        # Vectorized: compute all cluster activations at once
+        cluster_acts: ClusterActivations = compute_all_cluster_activations(
+            processed=processed,
+            cluster_components=cluster_components,
+            batch_size=batch_size,
+            seq_len=seq_len,
+        )
 
-            if acts_2d.abs().max() == 0:
+        # cluster_acts.activations shape: [n_samples, n_clusters] where n_samples = batch_size * seq_len
+        # Reshape to [batch_size, seq_len, n_clusters] for easier indexing
+        acts_3d: Float[Tensor, "batch_size seq_len n_clusters"] = cluster_acts.activations.view(
+            batch_size, seq_len, -1
+        )
+        acts_3d_cpu: Float[np.ndarray, "batch_size seq_len n_clusters"] = acts_3d.cpu().numpy()
+
+        # Store activations per cluster
+        for cluster_col_idx, cluster_idx in enumerate(cluster_acts.cluster_indices):
+            # Get activations for this cluster: [batch_size, seq_len]
+            cluster_acts_2d: Float[np.ndarray, "batch_size seq_len"] = acts_3d_cpu[
+                :, :, cluster_col_idx
+            ]
+
+            # Skip if no activations
+            if np.abs(cluster_acts_2d).max() == 0:
                 continue
 
             current_cluster_id: ClusterId = cluster_id_map[cluster_idx]
             current_cluster_hash: ClusterIdHash = current_cluster_id.to_string()
 
-            # Batch transfer activations to CPU and convert to numpy
-            acts_2d_cpu: Float[np.ndarray, "batch_size seq_len"] = acts_2d.cpu().numpy()
-
-            # Process each sample in batch
+            # Store activations for each sample in batch
             for batch_sample_idx in range(batch_size):
                 text_sample = batch_text_samples[batch_sample_idx]
                 text_hash = text_sample.text_hash
 
                 # Store activations for this cluster
-                activations_np: Float[np.ndarray, " n_ctx"] = acts_2d_cpu[batch_sample_idx]
+                activations_np: Float[np.ndarray, " n_ctx"] = cluster_acts_2d[batch_sample_idx]
                 cluster_activations[current_cluster_hash].append(activations_np)
                 cluster_text_hashes[current_cluster_hash].append(text_hash)
                 cluster_tokens[current_cluster_hash].append(text_sample.tokens)
