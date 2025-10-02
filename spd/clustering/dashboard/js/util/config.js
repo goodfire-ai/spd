@@ -60,7 +60,7 @@ function getDefaultConfig() {
         clusters: "clusters.json",
         modelInfo: "model_info.json",
         textSamples: "text_samples.json",
-        activations: "activations.npy",
+        activations: "activations.npz",
         activationsMap: "activations_map.json",
         explanations: "cluster_explanations.json"
       }

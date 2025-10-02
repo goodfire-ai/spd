@@ -21,6 +21,8 @@ _SEPARATOR_1: str = "-"
 _SEPARATOR_2: str = ":"
 
 
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ComponentInfo:
     """Component information from merge history."""
@@ -102,6 +104,12 @@ class ActivationSampleBatch:
         """Hashes uniquely identifying each activation sample (cluster_hash + text_hash)."""
         cluster_str = self.cluster_id.to_string()
         return [ActivationSampleHash(f"{cluster_str}{_SEPARATOR_2}{th}") for th in self.text_hashes]
+
+    @cached_property
+    def activation_hashes_short(self) -> list[str]:
+        """Short hashes for frontend (clusterLabel:textHash) without run ID and iteration."""
+        cluster_label = str(self.cluster_id.cluster_label)
+        return [f"{cluster_label}{_SEPARATOR_2}{th}" for th in self.text_hashes]
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -368,7 +376,7 @@ class DashboardData:
         Structure:
         - clusters.json - All cluster data
         - text_samples.json - All text samples by hash
-        - activations.npz - Numpy array with all activations
+        - activations.npz - Numpy array with all activations (float16, compressed)
         - activations_map.json - Maps activation hashes to indices in activations array
         """
         import json
@@ -397,12 +405,41 @@ class DashboardData:
         with open(output_path / "text_samples.json", "w") as f:
             json.dump(text_samples_serialized, f, indent=2)
 
-        # Save activations array as .npy for JavaScript
-        np.save(output_path / "activations.npy", self.activations.activations)
+        # Collect only activations that are referenced by clusters
+        referenced_hashes: set[ActivationSampleHash] = set()
+        for cluster_data in self.clusters.values():
+            referenced_hashes.update(cluster_data.get_unique_activation_hashes())
 
-        # Save activations map
-        activations_map_serialized = {
-            str(hash_): idx for hash_, idx in self.activations_map.items()
-        }
+        # Build compact activations array and map using short hashes
+        compact_activations_list: list[Float[np.ndarray, " n_ctx"]] = []
+        compact_map: dict[str, int] = {}
+
+        # Get short hashes directly from the activation batch
+        short_hashes: list[str] = self.activations.activation_hashes_short
+
+        for i, (act_hash, short_hash) in enumerate(
+            zip(self.activations.activation_hashes, short_hashes, strict=True)
+        ):
+            if act_hash in referenced_hashes:
+                new_idx = len(compact_activations_list)
+
+                # Get activation data using current index
+                activation = self.activations.activations[i]
+                compact_activations_list.append(activation)
+
+                # Use short hash from the batch
+                compact_map[short_hash] = new_idx
+
+        # Stack and convert to float16 for space savings
+        compact_activations: Float[np.ndarray, "n_samples n_ctx"] = np.stack(compact_activations_list)
+        activations_float16 = compact_activations.astype(np.float16)
+
+        # Save as npz (compressed)
+        np.savez_compressed(
+            output_path / "activations.npz",
+            activations=activations_float16
+        )
+
+        # Save compact activations map
         with open(output_path / "activations_map.json", "w") as f:
-            json.dump(activations_map_serialized, f, indent=2)
+            json.dump(compact_map, f, indent=2)

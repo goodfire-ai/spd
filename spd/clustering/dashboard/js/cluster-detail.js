@@ -62,7 +62,7 @@ async function loadData() {
 
         clusterData = allClusters[currentClusterHash];
 
-        // Load activations .npy file
+        // Load activations (float16 compressed npz)
         const activationsPath = CONFIG.getDataPath('activations');
         console.log('Loading activations array from:', activationsPath);
         activationsArray = await NDArray.load(activationsPath);
@@ -253,8 +253,10 @@ function displaySamples() {
         }
 
         // Get activations for this sample
-        const activationHash = `${currentClusterHash}:${textHash}`;
-        const activationIdx = activationsMap[activationHash];
+        // Extract just clusterLabel from full hash (format: "runid-iteration-clusterLabel")
+        const clusterLabel = currentClusterHash.split('-').pop();
+        const shortHash = `${clusterLabel}:${textHash}`;
+        const activationIdx = activationsMap[shortHash];
 
         let tokenViz;
         if (activationIdx !== undefined && activationsArray) {
@@ -273,7 +275,7 @@ function displaySamples() {
             );
         } else {
             // Fallback to simple visualization if no activations
-            console.warn(`No activations found for ${activationHash}`);
+            console.warn(`No activations found for ${shortHash}`);
             tokenViz = createSimpleTokenViz(textSample.tokens);
         }
 

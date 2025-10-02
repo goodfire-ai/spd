@@ -3,6 +3,55 @@
 <head>
     <title>Cluster Details</title>
     <link rel="stylesheet" href="css/styles.css">
+    <style>
+        .model-view-cell {
+            width: 200px;
+            min-height: 60px;
+        }
+
+        .model-view-cell .layer-block {
+            margin: 1px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+
+        .model-view-cell .module-group {
+            display: flex;
+            gap: 1px;
+            border: 1px solid #ddd;
+            padding: 1px;
+        }
+
+        .model-view-cell .module-cell {
+            width: 8px;
+            height: 8px;
+            border-radius: 1px;
+            cursor: pointer;
+        }
+
+        #modelView .layer-block {
+            margin: 2px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        #modelView .module-group {
+            display: flex;
+            gap: 2px;
+            border: 1px solid #ddd;
+            padding: 2px;
+            background: #fafafa;
+        }
+
+        #modelView .module-cell {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            cursor: pointer;
+        }
+    </style>
 </head>
 <body>
     <div>

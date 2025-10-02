@@ -6,11 +6,13 @@
 // https://github.com/aplbrain/npyjs
 // under Apache License
 // https://github.com/aplbrain/npyjs/blob/b0cd99b7f4c2bff791b4977e16dec3478519920b/LICENSE
-// removed float16 support for brevity -- we don't need it
+// Added float16 support and NPZ loading
 // ------------------------------------------------------------
 class npyjs {
 
-	constructor() {
+	constructor(opts) {
+		this.convertFloat16 = opts?.convertFloat16 ?? true;
+
 		this.dtypes = {
 			"<u1": {
 				name: "uint8",
@@ -67,13 +69,44 @@ class npyjs {
 				size: 64,
 				arrayConstructor: Float64Array
 			},
-			// "<f2": {
-			//     name: "float16",
-			//     size: 16,
-			//     arrayConstructor: Uint16Array,
-			//     converter: this.convertFloat16 ? this.float16ToFloat32Array : undefined
-			// },
+			"<f2": {
+				name: "float16",
+				size: 16,
+				arrayConstructor: Uint16Array,
+				converter: this.convertFloat16 ? this.float16ToFloat32Array.bind(this) : undefined
+			},
 		};
+	}
+
+	float16ToFloat32Array(float16Array) {
+		const length = float16Array.length;
+		const float32Array = new Float32Array(length);
+
+		for (let i = 0; i < length; i++) {
+			float32Array[i] = npyjs.float16ToFloat32(float16Array[i]);
+		}
+
+		return float32Array;
+	}
+
+	static float16ToFloat32(float16) {
+		const sign = (float16 >> 15) & 0x1;
+		const exponent = (float16 >> 10) & 0x1f;
+		const fraction = float16 & 0x3ff;
+
+		if (exponent === 0) {
+			if (fraction === 0) {
+				return sign ? -0 : 0;
+			}
+			return (sign ? -1 : 1) * Math.pow(2, -14) * (fraction / 0x400);
+		} else if (exponent === 0x1f) {
+			if (fraction === 0) {
+				return sign ? -Infinity : Infinity;
+			}
+			return NaN;
+		}
+
+		return (sign ? -1 : 1) * Math.pow(2, exponent - 15) * (1 + fraction / 0x400);
 	}
 
 	parse(arrayBufferContents) {
@@ -135,6 +168,50 @@ class npyjs {
 			return callback(result);
 		}
 		return result;
+	}
+
+	async loadNPZ(filename, fetchArgs) {
+		fetchArgs = fetchArgs || {};
+		const resp = await fetch(filename, { ...fetchArgs });
+		const arrayBuffer = await resp.arrayBuffer();
+		return this.parseZIP(arrayBuffer);
+	}
+
+	async parseZIP(arrayBuffer) {
+		// Simple ZIP parser for NPZ files
+		const view = new DataView(arrayBuffer);
+		const arrays = {};
+
+		let offset = 0;
+		while (offset < arrayBuffer.byteLength - 4) {
+			// Check for local file header signature (0x04034b50)
+			const signature = view.getUint32(offset, true);
+			if (signature !== 0x04034b50) {
+				offset++;
+				continue;
+			}
+
+			// Parse local file header
+			const filenameLength = view.getUint16(offset + 26, true);
+			const extraFieldLength = view.getUint16(offset + 28, true);
+			const compressedSize = view.getUint32(offset + 18, true);
+
+			// Get filename
+			const filenameBytes = new Uint8Array(arrayBuffer, offset + 30, filenameLength);
+			const filename = new TextDecoder().decode(filenameBytes);
+
+			// Get file data
+			const fileDataOffset = offset + 30 + filenameLength + extraFieldLength;
+			const fileData = arrayBuffer.slice(fileDataOffset, fileDataOffset + compressedSize);
+
+			// Parse NPY data
+			const arrayName = filename.replace('.npy', '');
+			arrays[arrayName] = this.parse(fileData);
+
+			offset = fileDataOffset + compressedSize;
+		}
+
+		return arrays;
 	}
 }
 
@@ -362,12 +439,25 @@ class NDArray {
 	}
 
 	static async load(filename, callback, fetchArgs) {
-		const npy = new npyjs();
-		const npyData = await npy.load(filename, null, fetchArgs);
-		if (!npyData) {
-			throw new Error('Failed to load NPY data');
+		const npy = new npyjs({ convertFloat16: true });
+
+		if (filename.endsWith('.npz')) {
+			// Load NPZ (ZIP archive with NPY files)
+			const arrays = await npy.loadNPZ(filename, fetchArgs);
+			// Return the first array as NDArray
+			const arrayName = Object.keys(arrays)[0];
+			const npyData = arrays[arrayName];
+			if (!npyData) {
+				throw new Error('Failed to load NPZ data');
+			}
+			return new NDArray(npyData.data, npyData.shape, npyData.dtype);
+		} else {
+			// Load regular NPY
+			const npyData = await npy.load(filename, null, fetchArgs);
+			if (!npyData) {
+				throw new Error('Failed to load NPY data');
+			}
+			return new NDArray(npyData.data, npyData.shape, npyData.dtype);
 		}
-		// Convert data to NDArray
-		return new NDArray(npyData.data, npyData.shape, npyData.dtype);
 	}
 }
