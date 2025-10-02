@@ -495,8 +495,9 @@ def plot_mlp_gate_shapes(
     n_points: int = 100,
     alive_components: dict[str, torch.Tensor] | None = None,
 ) -> Image.Image:
-    """Plot the shape of each MLP gate by evaluating it over a range of input values.
+    """Plot the shape of each gate by evaluating it over a range of input values.
     This plots the final causal importances (gate output + sigmoid), not just the raw gate output.
+    Supports MLP gates, linear gates, and exponential linear gates.
     Only supports linear components (not embedding components).
 
     Args:
@@ -509,14 +510,15 @@ def plot_mlp_gate_shapes(
     Returns:
         Image showing the causal importance shapes for each component
     """
-    # Check if the model uses MLP gates based on config
-    if config.gate_type != "mlp":
-        # Create a simple plot indicating no MLP gates found
+    # Check if the model uses plottable gates based on config
+    plottable_gate_types = {"mlp", "linear_gates", "exponential_linear_gates"}
+    if config.gate_type not in plottable_gate_types:
+        # Create a simple plot indicating no plottable gates found
         fig, ax = plt.subplots(1, 1, figsize=(8, 6))
         ax.text(
             0.5,
             0.5,
-            f"No MLP gates found (gate_type: {config.gate_type})",
+            f"No plottable gates found (gate_type: {config.gate_type})",
             ha="center",
             va="center",
             fontsize=16,
@@ -529,10 +531,10 @@ def plot_mlp_gate_shapes(
         plt.close(fig)
         return fig_img
 
-    # Get all gates (they should all be MLP gates)
-    mlp_gates = dict(model.gates)
+    # Get all gates (they should all be plottable gates)
+    plottable_gates = dict(model.gates)
 
-    if not mlp_gates:
+    if not plottable_gates:
         # Create a simple plot indicating no gates found
         fig, ax = plt.subplots(1, 1, figsize=(8, 6))
         ax.text(
@@ -552,7 +554,7 @@ def plot_mlp_gate_shapes(
         return fig_img
 
     # Create input range on the same device as the model
-    device = next(iter(mlp_gates.values())).parameters().__next__().device
+    device = next(iter(plottable_gates.values())).parameters().__next__().device
     x_vals = torch.linspace(input_range[0], input_range[1], n_points, device=device)
 
     # Get sigmoid function from config
@@ -564,7 +566,7 @@ def plot_mlp_gate_shapes(
         sigmoid_fn = SIGMOID_TYPES[config.sigmoid_type]
 
     # Calculate grid dimensions for subplots - make it square-ish
-    n_gates = len(mlp_gates)
+    n_gates = len(plottable_gates)
     n_cols = int(np.ceil(np.sqrt(n_gates)))
     n_rows = int(np.ceil(n_gates / n_cols))
 
@@ -588,7 +590,7 @@ def plot_mlp_gate_shapes(
         axs[row, col].set_visible(False)
 
     # Plot each gate
-    for i, (gate_name, gate) in enumerate(mlp_gates.items()):
+    for i, (gate_name, gate) in enumerate(plottable_gates.items()):
         # Calculate position in grid
         row = i // n_cols
         col = i % n_cols
@@ -618,7 +620,7 @@ def plot_mlp_gate_shapes(
             x_input[:, c % d_in] = x_vals
 
             with torch.no_grad():
-                # Get gate input (for MLPGates, this is the inner acts)
+                # Get gate input (for plottable gates, this is the inner acts)
                 gate_input = component.get_inner_acts(x_input)
 
                 # Apply gate to get raw output
