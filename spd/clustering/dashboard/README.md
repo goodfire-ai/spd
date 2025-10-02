@@ -1,3 +1,28 @@
+# 2025-10-02 15:17
+
+For cluster view:
+
+- SAE/logitlens/tunedlens decoding of read and write directions for each cluster
+- github comments interface
+- more plots
+- base frequency of each token in dataset
+- do some kind of clustering on tokens via embedding space, to label their groups. ideally so we can make a histogram of which groups of tokens this cluster activates on
+- measure of how "concentrated" the subcomponents are per module
+- measure of depth in the model
+- measure of how "attention-y" vs "MLP-y" the clusters subcomponents are
+- skewed vs uniform activation frequencies, skewed vs uniform max act position
+    - maybe not max act pos, but overall mass across positions
+
+For list view (or wandb view?):
+
+- stats of tok concentration, entropy, subcomp in module concentration, etc across all clusters
+- some kind of embedding of clusters, 3d view, click on pt to go to cluster view
+
+
+
+# old 
+
+
 # Design doc
 
 We have several interfaces:

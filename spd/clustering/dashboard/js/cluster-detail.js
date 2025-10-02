@@ -135,6 +135,12 @@ function displayCluster() {
     // Setup components table
     setupComponentsTable();
 
+    // Setup hover highlighting between model view and components table
+    setupModelViewHighlighting();
+
+    // Display histogram plots
+    displayHistograms();
+
     // Display token activation stats if available
     if (clusterData.stats && clusterData.stats.token_activations) {
         displayTokenActivations();
@@ -147,6 +153,88 @@ function displayCluster() {
 function displayModelVisualization() {
     const modelViewDiv = document.getElementById('modelView');
     renderModelView(modelViewDiv, currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap, CONFIG.visualization.modelViewCellSize);
+}
+
+function displayHistograms() {
+    const stats = clusterData.stats;
+    if (!stats) return;
+
+    const histogramPlots = document.getElementById('histogramPlots');
+    histogramPlots.innerHTML = '';
+
+    // Color mapping for different histogram types
+    const statColors = {
+        'all_activations': '#4169E1',
+        'max_activation-max-16': '#DC143C',
+        'max_activation-max-32': '#DC143C',
+        'mean_activation-max-16': '#228B22',
+        'median_activation-max-16': '#FF8C00',
+        'min_activation-max-16': '#9370DB',
+        'max_activation_position': '#FF6347'
+    };
+
+    // Discover all histogram stats
+    const histogramStats = [];
+    for (const [key, value] of Object.entries(stats)) {
+        if (value && typeof value === 'object' && 'bin_counts' in value && 'bin_edges' in value) {
+            histogramStats.push(key);
+        }
+    }
+
+    // Create a plot for each histogram stat
+    histogramStats.forEach(statKey => {
+        const histData = stats[statKey];
+        const color = statColors[statKey] || '#808080';
+        const label = statKey.replace(/-/g, ' ').replace(/_/g, ' ')
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+
+        // Create container for this plot
+        const plotContainer = document.createElement('div');
+        plotContainer.style.display = 'flex';
+        plotContainer.style.flexDirection = 'column';
+        plotContainer.style.alignItems = 'center';
+        plotContainer.style.minWidth = '250px';
+
+        // Add label
+        const plotLabel = document.createElement('div');
+        plotLabel.textContent = label;
+        plotLabel.style.fontSize = '12px';
+        plotLabel.style.fontWeight = 'bold';
+        plotLabel.style.marginBottom = '5px';
+        plotLabel.style.textAlign = 'center';
+        plotContainer.appendChild(plotLabel);
+
+        // Create sparkline
+        const sparklineContainer = document.createElement('div');
+        sparklineContainer.className = 'sparkline-cell';
+
+        const svg = sparkbars(histData.bin_counts, null, {
+            width: CONFIG.visualization.sparklineWidth || 200,
+            height: CONFIG.visualization.sparklineHeight || 60,
+            color: color,
+            shading: true,
+            lineWidth: 0,
+            markers: '',
+            margin: 2,
+            ylims: [0, null],
+            logScale: true,
+            xAxis: {line: true, ticks: true, label_margin: 10},
+            yAxis: {line: true, ticks: true, label_margin: CONFIG.visualization.sparklineYAxisMargin || 35}
+        });
+
+        sparklineContainer.innerHTML = svg;
+
+        // Add tooltip
+        const maxBinCount = Math.max(...histData.bin_counts);
+        const min = histData.bin_edges[0];
+        const max = histData.bin_edges[histData.bin_edges.length - 1];
+        sparklineContainer.title = `${label}\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMax bin: ${maxBinCount} values`;
+
+        plotContainer.appendChild(sparklineContainer);
+        histogramPlots.appendChild(plotContainer);
+    });
 }
 
 function displayTokenActivations() {
@@ -252,6 +340,42 @@ function setupComponentsTable() {
     };
 
     new DataTable('#componentsTable', tableConfig);
+}
+
+function setupModelViewHighlighting() {
+    // Get all model view cells
+    const modelViewCells = document.querySelectorAll('.modelview-module-cell');
+
+    // Get components table
+    const componentsTable = document.querySelector('#componentsTable');
+    if (!componentsTable) return;
+
+    modelViewCells.forEach(cell => {
+        cell.addEventListener('mouseenter', (e) => {
+            const moduleName = e.target.dataset.module;
+            if (!moduleName) return;
+
+            // Find and highlight all rows in the components table that match this module
+            const tableRows = componentsTable.querySelectorAll('.tablejs-data-row');
+            tableRows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length > 0) {
+                    const moduleCell = cells[0]; // First column is module name
+                    if (moduleCell && moduleCell.textContent === moduleName) {
+                        row.style.backgroundColor = '#fff3cd'; // Light yellow highlight
+                    }
+                }
+            });
+        });
+
+        cell.addEventListener('mouseleave', () => {
+            // Remove highlighting from all rows
+            const tableRows = componentsTable.querySelectorAll('.tablejs-data-row');
+            tableRows.forEach(row => {
+                row.style.backgroundColor = '';
+            });
+        });
+    });
 }
 
 function displaySamples() {

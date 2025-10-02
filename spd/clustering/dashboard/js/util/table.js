@@ -115,6 +115,23 @@ class DataTable {
         return 'string';
     }
 
+    getNestedValue(obj, key) {
+        // Support dot notation for nested keys (e.g., 'stats.entropy')
+        if (!key.includes('.')) {
+            return obj[key];
+        }
+
+        const keys = key.split('.');
+        let value = obj;
+        for (const k of keys) {
+            if (value === null || value === undefined) {
+                return undefined;
+            }
+            value = value[k];
+        }
+        return value;
+    }
+
     cssClass(className) {
         return _TABLE_CONSTS.CSS_PREFIX + className;
     }
@@ -611,9 +628,20 @@ class DataTable {
 
         // Apply sorting
         if (this.sortColumn) {
+            // Find the column config for custom sort function
+            const columnConfig = this.columns.find(col => col.key === this.sortColumn);
+            const sortFunction = columnConfig?.sortFunction;
+
             filtered.sort((a, b) => {
-                const aVal = a[this.sortColumn];
-                const bVal = b[this.sortColumn];
+                // Get values using nested key support
+                let aVal = this.getNestedValue(a, this.sortColumn);
+                let bVal = this.getNestedValue(b, this.sortColumn);
+
+                // Apply custom sort function if provided
+                if (sortFunction) {
+                    aVal = sortFunction(aVal, a);
+                    bVal = sortFunction(bVal, b);
+                }
 
                 // Handle nulls
                 if (aVal === null || aVal === undefined) return 1;
