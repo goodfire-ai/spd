@@ -155,7 +155,6 @@ def calc_masked_recon_loss(
             stochastic sources).
         target_out: Target model output
         output_recon_loss_type: Type of loss to calculate for output reconstruction
-        device: Device to run computations on
 
     Returns:
         The recon loss
