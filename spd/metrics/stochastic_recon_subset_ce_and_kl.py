@@ -46,7 +46,7 @@ class StochasticReconSubsetCEAndKL(Metric):
             )
 
         # Precompute which modules each subset will evaluate
-        all_modules: list[str] = list(self.model.components.keys())
+        all_modules: list[str] = model.module_paths
         self.subset_modules: dict[str, list[str]] = {}
 
         for subset_name, patterns in self.include_patterns.items():

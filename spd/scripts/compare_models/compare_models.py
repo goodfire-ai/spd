@@ -253,7 +253,7 @@ class ModelComparator:
                 batch = extract_batch_data(next(eval_iterator))
                 batch = batch.to(self.device)
                 _, pre_weight_acts = model(
-                    batch, mode="pre_forward_cache", module_names=list(model.components.keys())
+                    batch, mode="pre_forward_cache", module_names=model.module_paths
                 )
                 ci, _ = model.calc_causal_importances(
                     pre_weight_acts,

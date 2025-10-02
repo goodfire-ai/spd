@@ -155,7 +155,7 @@ def optimize(
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
-        module_paths=list(component_model.components.keys()),
+        module_paths=model.module_paths,
         C=config.C,
         n_examples_until_dead=config.n_examples_until_dead,
         ci_alive_threshold=config.ci_alive_threshold,
@@ -183,9 +183,7 @@ def optimize(
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(
-                batch,
-                mode="input_cache",
-                module_names=list(component_model.components.keys()),
+                batch, mode="input_cache", module_names=model.module_paths
             )
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
             # through the parameters in calc_causal_importances below, the DDP hook will get called

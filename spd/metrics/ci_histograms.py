@@ -23,7 +23,7 @@ class CIHistograms(Metric):
     ):
         super().__init__(**kwargs)
         self.n_batches_accum = n_batches_accum
-        self.module_names = list(model.components.keys())
+        self.module_names = model.module_paths
         self.batches_seen = 0
 
         self.add_state(
