@@ -19,7 +19,6 @@ from spd.configs import (
     CIMeanPerComponentConfig,
     ComponentActivationDensityConfig,
     Config,
-    EvalMetricConfig,
     EvalMetricConfigType,
     FaithfulnessLossTrainConfig,
     IdentityCIErrorConfig,
@@ -29,7 +28,6 @@ from spd.configs import (
     StochasticReconLossTrainConfig,
     StochasticReconSubsetCEAndKLConfig,
     StochasticReconSubsetLossTrainConfig,
-    TrainMetricConfig,
     TrainMetricConfigType,
     UVPlotsConfig,
 )
@@ -54,13 +52,6 @@ from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import extract_batch_data
-
-
-def _should_run_metric(cfg: EvalMetricConfig | TrainMetricConfig, slow_step: bool) -> bool:
-    if not slow_step or isinstance(cfg, TrainMetricConfig):
-        return True
-    return cfg.slow
-
 
 MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
 DistMetricOutType = dict[str, str | float | Image.Image | CustomChart]
@@ -240,7 +231,7 @@ def evaluate(
     for cfg in metric_configs:
         metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
         metrics.append(metric)
-        if not _should_run_metric(cfg=cfg, slow_step=slow_step):
+        if slow_step and not metric.slow:
             continue
 
     # Weight deltas can be computed once per eval since params are frozen

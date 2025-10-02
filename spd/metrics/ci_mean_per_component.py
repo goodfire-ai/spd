@@ -12,6 +12,8 @@ from spd.utils.distributed_utils import all_reduce
 
 
 class CIMeanPerComponent(Metric):
+    slow: bool = True
+
     def __init__(self, model: ComponentModel, device: str) -> None:
         self.components = model.components
         self.component_ci_sums: dict[str, Tensor] = {

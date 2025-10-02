@@ -10,6 +10,7 @@ from spd.plotting import plot_causal_importance_vals
 
 
 class PermutedCIPlots(Metric):
+    slow: bool = True
     input_magnitude: float = 0.75
 
     def __init__(

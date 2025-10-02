@@ -12,6 +12,8 @@ from spd.utils.distributed_utils import gather_all_tensors
 
 
 class CIHistograms(Metric):
+    slow: bool = True
+
     def __init__(
         self,
         model: ComponentModel,

@@ -22,19 +22,8 @@ from spd.models.components import GateType
 from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
 
+
 #### Train Metric Configs ####
-TrainMetricClassname = Literal[
-    "CIMaskedReconSubsetLoss",
-    "CIMaskedReconLayerwiseLoss",
-    "CIMaskedReconLoss",
-    "FaithfulnessLoss",
-    "ImportanceMinimalityLoss",
-    "StochasticReconLayerwiseLoss",
-    "StochasticReconLoss",
-    "StochasticReconSubsetLoss",
-]
-
-
 class TrainMetricConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
@@ -94,82 +83,61 @@ EvalMetricClassname = Literal[
 ]
 
 
-class EvalMetricConfig(BaseModel):
+class CEandKLLossesConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-
-    slow: bool = Field(
-        default=False,
-        description=("If True, only run this metric once every slow_eval_freq steps."),
-    )
-
-
-class CEandKLLossesConfig(EvalMetricConfig):
     classname: Literal["CEandKLLosses"] = "CEandKLLosses"
     rounding_threshold: float
 
 
-class CIHistogramsConfig(EvalMetricConfig):
+class CIHistogramsConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["CIHistograms"] = "CIHistograms"
     n_batches_accum: int | None
-    slow: bool = Field(
-        default=True,
-        description="If True, only run this metric once every slow_eval_freq steps.",
-    )
 
 
-class CI_L0Config(EvalMetricConfig):
+class CI_L0Config(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["CI_L0"] = "CI_L0"
     groups: dict[str, list[str]] | None
 
 
-class CIMeanPerComponentConfig(EvalMetricConfig):
+class CIMeanPerComponentConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["CIMeanPerComponent"] = "CIMeanPerComponent"
-    slow: bool = Field(
-        default=True,
-        description="If True, only run this metric once every slow_eval_freq steps.",
-    )
 
 
-class ComponentActivationDensityConfig(EvalMetricConfig):
+class ComponentActivationDensityConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["ComponentActivationDensity"] = "ComponentActivationDensity"
-    slow: bool = Field(
-        default=True,
-        description="If True, only run this metric once every slow_eval_freq steps.",
-    )
 
 
-class IdentityCIErrorConfig(EvalMetricConfig):
+class IdentityCIErrorConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["IdentityCIError"] = "IdentityCIError"
     identity_ci: list[dict[str, str | int]] | None
     dense_ci: list[dict[str, str | int]] | None
-    slow: bool = True
 
 
-class PermutedCIPlotsConfig(EvalMetricConfig):
+class PermutedCIPlotsConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["PermutedCIPlots"] = "PermutedCIPlots"
     sigmoid_type: SigmoidTypes
     identity_patterns: list[str] | None
     dense_patterns: list[str] | None
-    slow: bool = Field(
-        default=True,
-        description="If True, only run this metric once every slow_eval_freq steps.",
-    )
 
 
-class StochasticReconSubsetCEAndKLConfig(EvalMetricConfig):
+class StochasticReconSubsetCEAndKLConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
     include_patterns: dict[str, list[str]] | None
     exclude_patterns: dict[str, list[str]] | None
 
 
-class UVPlotsConfig(EvalMetricConfig):
+class UVPlotsConfig(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["UVPlots"] = "UVPlots"
     identity_patterns: list[str] | None
     dense_patterns: list[str] | None
-    slow: bool = Field(
-        default=True,
-        description="If True, only run this metric once every slow_eval_freq steps.",
-    )
 
 
 TrainMetricConfigType = (

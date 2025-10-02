@@ -14,6 +14,8 @@ from torch import Tensor
 class Metric(ABC):
     """Interface for metrics that can be used in training and evaluation."""
 
+    slow: bool = False
+
     @abstractmethod
     def update(
         self,
