@@ -31,7 +31,7 @@ class CI_L0(Metric):
         self.groups = groups
         self.device = device
 
-        all_keys = model.module_paths
+        all_keys = model.module_paths.copy()
         if groups:
             all_keys += list(groups.keys())
 
