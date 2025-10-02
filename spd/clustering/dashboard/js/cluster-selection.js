@@ -8,7 +8,7 @@ const columnRenderers = {
         const container = document.createElement('div');
         container.className = 'modelview-cell';
 
-        renderModelView(container, row.clusterHash, clusterData, modelInfo, CONFIG.visualization.colormap);
+        renderModelView(container, row.clusterHash, clusterData, modelInfo, CONFIG.visualization.colormap, CONFIG.visualization.modelViewCellSizeTable);
 
         return container;
     },

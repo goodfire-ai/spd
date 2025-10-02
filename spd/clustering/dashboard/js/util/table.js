@@ -150,10 +150,8 @@ class DataTable {
     createTableStructure() {
         this.container.innerHTML = '';
 
-        // Create wrapper with border
-        const wrapper = this.createStyledElement('div', 'wrapper', {
-            border: `${_TABLE_CONSTS.SPACING.BORDER_WIDTH} solid ${_TABLE_CONSTS.COLORS.BORDER}`
-        });
+        // Create wrapper
+        const wrapper = this.createStyledElement('div', 'wrapper', {});
 
         // Create table container
         const tableContainer = this.createStyledElement('div', 'container');

@@ -69,7 +69,7 @@ function getDefaultConfig() {
     // Index page (cluster list) display settings
     indexPage: {
       pageSize: 25,
-      pageSizeOptions: [10, 25, 50, 100],
+      pageSizeOptions: [5, 10, 25, 50, 100],
       showFilters: true
     },
 
@@ -86,7 +86,9 @@ function getDefaultConfig() {
       histogramBins: 10,
       sparklineWidth: 200,
       sparklineHeight: 70,
-      sparklineYAxisMargin: 35
+      sparklineYAxisMargin: 35,
+      modelViewCellSize: 16,  // Size of module cells in model visualization (default)
+      modelViewCellSizeTable: 12  // Size for table cells in index.html
     },
 
     // GitHub integration for cluster explanations

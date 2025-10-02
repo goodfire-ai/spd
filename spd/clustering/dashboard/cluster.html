@@ -12,42 +12,23 @@
         <h1 id="clusterTitle">Cluster Details</h1>
     </div>
     
-    <div id="components">
-        <h2>Components (<span id="componentCount">0</span>)</h2>
-
-        <div style="display: flex; gap: 20px; align-items: start;">
+    <div style="display: flex; gap: 20px; align-items: start; margin-bottom: 30px;">
+        <div>
+            <h2>Model View</h2>
             <div id="modelView" style="flex-shrink: 0;">
                 <!-- Model visualization will be inserted here -->
             </div>
-            <div id="componentsTable" style="flex-grow: 1;"></div>
-        </div>
-    </div>
-
-    <div id="tokenActivations" style="display: none;">
-        <h2>Token Activation Statistics</h2>
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-label">Total Unique Tokens</div>
-                <div class="stat-value" id="totalUniqueTokens">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Total Activations</div>
-                <div class="stat-value" id="totalActivations">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Entropy</div>
-                <div class="stat-value" id="entropy">-</div>
-                <div class="stat-help">Higher = more diverse token distribution</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Concentration Ratio</div>
-                <div class="stat-value" id="concentrationRatio">-</div>
-                <div class="stat-help">Fraction of activations in top 10% tokens</div>
-            </div>
         </div>
 
-        <h3>Most Frequently Activated Tokens</h3>
-        <div id="topTokensTable"></div>
+        <div style="flex-shrink: 0;">
+            <h2>Components (<span id="componentCount">0</span>)</h2>
+            <div id="componentsTable"></div>
+        </div>
+
+        <div id="tokenActivations" style="display: none; flex-shrink: 0;">
+            <h2>Top Tokens</h2>
+            <div id="topTokensTable"></div>
+        </div>
     </div>
 
     <div id="samples">

@@ -146,7 +146,7 @@ function displayCluster() {
 
 function displayModelVisualization() {
     const modelViewDiv = document.getElementById('modelView');
-    renderModelView(modelViewDiv, currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap);
+    renderModelView(modelViewDiv, currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap, CONFIG.visualization.modelViewCellSize);
 }
 
 function displayTokenActivations() {
@@ -155,65 +155,69 @@ function displayTokenActivations() {
     // Show the section
     document.getElementById('tokenActivations').style.display = 'block';
 
-    // Populate summary statistics
-    document.getElementById('totalUniqueTokens').textContent =
-        tokenStats.total_unique_tokens.toLocaleString();
-    document.getElementById('totalActivations').textContent =
-        tokenStats.total_activations.toLocaleString();
-    document.getElementById('entropy').textContent =
-        tokenStats.entropy.toFixed(2);
-    document.getElementById('concentrationRatio').textContent =
-        (tokenStats.concentration_ratio * 100).toFixed(1) + '%';
-
     // Setup top tokens table
     if (tokenStats.top_tokens && tokenStats.top_tokens.length > 0) {
         const tableData = tokenStats.top_tokens.map((item, idx) => ({
             rank: idx + 1,
             token: item.token,
             count: item.count,
-            percentage: ((item.count / tokenStats.total_activations) * 100).toFixed(1)
+            percentage: ((item.count / tokenStats.total_activations) * 100)
         }));
+
+        const maxPercentage = tableData.length > 0 ? tableData[0].percentage : 0;
 
         const tableConfig = {
             data: tableData,
             columns: [
                 {
                     key: 'rank',
-                    label: 'Rank',
+                    label: '#',
                     type: 'number',
-                    width: '60px',
+                    width: '40px',
                     align: 'right'
                 },
                 {
                     key: 'token',
                     label: 'Token',
                     type: 'string',
-                    width: '200px',
-                    render: (value) => {
+                    width: '120px',
+                    renderer: (value) => {
                         // Show token in a monospace box with visual formatting
                         const tokenDisplay = value.replace(/ /g, '·').replace(/\n/g, '↵');
                         return `<code class="token-display">${tokenDisplay}</code>`;
                     }
                 },
                 {
-                    key: 'count',
-                    label: 'Count',
-                    type: 'number',
-                    width: '100px',
-                    align: 'right',
-                    render: (value) => value.toLocaleString()
-                },
-                {
                     key: 'percentage',
                     label: '%',
                     type: 'number',
-                    width: '80px',
+                    width: '70px',
                     align: 'right',
-                    render: (value) => value + '%'
+                    renderer: (value) => {
+                        const percentageValue = value;
+                        const percentage = percentageValue.toFixed(1);
+
+                        // Color based on percentage (normalized by max percentage)
+                        const normalizedPct = maxPercentage > 0 ? percentageValue / maxPercentage : 0;
+                        const intensity = Math.floor((1 - normalizedPct) * 255);
+                        const bgColor = `rgb(255, ${intensity}, ${intensity})`;
+
+                        const span = document.createElement('span');
+                        span.textContent = `${percentage}%`;
+                        span.style.backgroundColor = bgColor;
+                        span.style.padding = '2px 4px';
+                        span.style.borderRadius = '2px';
+
+                        return span;
+                    },
+                    infoFunction: () => {
+                        return `Unique: ${tokenStats.total_unique_tokens.toLocaleString()} | Total: ${tokenStats.total_activations.toLocaleString()} | Entropy: ${tokenStats.entropy.toFixed(2)} | Conc: ${(tokenStats.concentration_ratio * 100).toFixed(1)}%`;
+                    }
                 }
             ],
-            pageSize: 20,
-            showFilters: false
+            pageSize: 10,
+            showFilters: false,
+            showInfo: true
         };
 
         new DataTable('#topTokensTable', tableConfig);
@@ -223,8 +227,7 @@ function displayTokenActivations() {
 function setupComponentsTable() {
     const tableData = clusterData.components.map(comp => ({
         module: comp.module,
-        index: comp.index,
-        label: comp.label
+        index: comp.index
     }));
 
     const tableConfig = {
@@ -234,7 +237,7 @@ function setupComponentsTable() {
                 key: 'module',
                 label: 'Module',
                 type: 'string',
-                width: '200px'
+                width: '250px'
             },
             {
                 key: 'index',
@@ -242,16 +245,10 @@ function setupComponentsTable() {
                 type: 'number',
                 width: '80px',
                 align: 'right'
-            },
-            {
-                key: 'label',
-                label: 'Label',
-                type: 'string',
-                width: '300px'
             }
         ],
         pageSize: CONFIG.clusterPage.pageSize,
-        showFilters: CONFIG.clusterPage.showFilters
+        showFilters: false
     };
 
     new DataTable('#componentsTable', tableConfig);

@@ -20,7 +20,6 @@
 .modelview-cell {
     width: 200px;
     height: 60px;
-    --modelview-cell-size: 8px;
     --modelview-layer-gap: 1px;
     --modelview-module-gap: 1px;
     --modelview-layer-margin: 1px;

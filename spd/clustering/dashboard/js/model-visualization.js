@@ -192,7 +192,7 @@ function setupTooltips(containerElement) {
 }
 
 // Consolidated render function - creates model visualization in a container
-function renderModelView(containerElement, clusterHash, clusterData, modelInfo, colormap = 'blues') {
+function renderModelView(containerElement, clusterHash, clusterData, modelInfo, colormap = 'blues', cellSize = null) {
     if (!modelInfo || !modelInfo.module_list) {
         containerElement.innerHTML = '<span style="color: #999; font-size: 11px;">Model info loading...</span>';
         return;
@@ -207,6 +207,11 @@ function renderModelView(containerElement, clusterHash, clusterData, modelInfo, 
         const architecture = renderModelArchitecture(clusterHash, clusterData, modelInfo, colormap);
         const html = renderToHTML(architecture);
         containerElement.innerHTML = html;
+
+        // Apply cell size from config if provided
+        if (cellSize !== null) {
+            containerElement.style.setProperty('--modelview-cell-size', cellSize + 'px');
+        }
 
         // Setup tooltips after a brief delay to ensure DOM is ready
         setTimeout(() => setupTooltips(containerElement), 0);
