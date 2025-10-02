@@ -10,7 +10,7 @@ from jaxtyping import Float, Int
 # Type definitions for merge arrays and distances
 MergesAtIterArray = Int[np.ndarray, "n_ens c_components"]
 MergesArray = Int[np.ndarray, "n_ens n_iters c_components"]
-DistancesMethod = Literal["perm_invariant_hamming"]
+DistancesMethod = Literal["perm_invariant_hamming", "jaccard"]
 DistancesArray = Float[np.ndarray, "n_iters n_ens n_ens"]
 
 
