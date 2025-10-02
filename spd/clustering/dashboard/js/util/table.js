@@ -754,7 +754,7 @@ class DataTable {
                 }
 
                 const td = this.createStyledElement('td', 'data-cell', tdStyles);
-                const value = row[col.key];
+                const value = this.getNestedValue(row, col.key);
 
                 // Check for custom renderer in column definition
                 if (col.renderer) {
