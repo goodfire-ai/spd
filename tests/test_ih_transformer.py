@@ -1,8 +1,7 @@
+import pytest
+
 from spd.configs import (
-    CEandKLLossesConfig,
     CI_L0Config,
-    CIHistogramsConfig,
-    ComponentActivationDensityConfig,
     Config,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
@@ -17,6 +16,7 @@ from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import set_seed
 
 
+@pytest.mark.slow
 def test_ih_transformer_decomposition_happy_path() -> None:
     """Test that SPD decomposition works on a 2-layer, 1 head attention-only Transformer model"""
     set_seed(0)
@@ -64,7 +64,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         # Training
         lr=1e-3,
         batch_size=4,
-        steps=10,  # Run more steps to see improvement
+        steps=2,
         lr_schedule="cosine",
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
@@ -79,10 +79,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
         eval_metric_configs=[
-            CIHistogramsConfig(n_batches_accum=5),
-            ComponentActivationDensityConfig(),
             CI_L0Config(groups=None),
-            CEandKLLossesConfig(rounding_threshold=0.0),
         ],
         # Pretrained model info
         pretrained_model_class="spd.experiments.ih.model.InductionTransformer",

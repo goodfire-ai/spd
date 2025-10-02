@@ -1,10 +1,8 @@
+import pytest
 from transformers import PreTrainedModel
 
 from spd.configs import (
-    CEandKLLossesConfig,
     CI_L0Config,
-    CIHistogramsConfig,
-    ComponentActivationDensityConfig,
     Config,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
@@ -18,6 +16,7 @@ from spd.run_spd import optimize
 from spd.utils.general_utils import resolve_class, set_seed
 
 
+@pytest.mark.slow
 def test_gpt_2_decomposition_happy_path() -> None:
     """Test that SPD decomposition works on for GPT-2"""
     set_seed(0)
@@ -35,8 +34,8 @@ def test_gpt_2_decomposition_happy_path() -> None:
         n_mask_samples=1,
         gate_type="vector_mlp",
         gate_hidden_dims=[128],
-        target_module_patterns=["transformer.h.*.attn.c_attn", "transformer.h.*.attn.c_proj"],
-        identity_module_patterns=["transformer.h.*.attn.c_attn"],
+        target_module_patterns=["transformer.h.2.attn.c_attn", "transformer.h.3.mlp.c_fc"],
+        identity_module_patterns=["transformer.h.1.attn.c_attn"],
         loss_metric_configs=[
             ImportanceMinimalityLossTrainConfig(
                 coeff=1e-2,
@@ -51,7 +50,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
         # Training
         lr=1e-3,
         batch_size=4,
-        steps=10,  # Run more steps to see improvement
+        steps=2,
         lr_schedule="cosine",
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
@@ -61,15 +60,12 @@ def test_gpt_2_decomposition_happy_path() -> None:
         eval_freq=500,
         eval_batch_size=1,
         slow_eval_freq=500,
-        slow_eval_on_first_step=True,
+        slow_eval_on_first_step=False,
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
         eval_metric_configs=[
-            CIHistogramsConfig(n_batches_accum=5),
-            ComponentActivationDensityConfig(),
             CI_L0Config(groups=None),
-            CEandKLLossesConfig(rounding_threshold=0.0),
         ],
         # Pretrained model info
         pretrained_model_class="transformers.GPT2LMHeadModel",

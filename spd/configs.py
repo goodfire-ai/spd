@@ -293,7 +293,7 @@ class Config(BaseModel):
     )
     eval_batch_size: PositiveInt = Field(
         ...,
-        description="Batch size used for evaluation",
+        description="Batch size used for evaluation. If None, uses the same as `batch_size`.",
     )
     slow_eval_freq: PositiveInt = Field(
         ...,
