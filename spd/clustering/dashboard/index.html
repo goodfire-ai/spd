@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cluster Selection</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/notif.css">
+    <link rel="stylesheet" href="css/model-view.css">
+    <style>
+        .sparkline-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sparkline-cell svg {
+            border: none;
+            border-radius: 2px;
+        }
+
+        .module-summary {
+            max-width: 150px;
+            font-size: 11px;
+        }
+
+        .datatable {
+            font-size: 12px;
+        }
+
+        .datatable td {
+            padding: 8px;
+            vertical-align: middle;
+        }
+
+        #tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 4px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            white-space: pre-line;
+            z-index: 100;
+            pointer-events: none;
+            display: none;
+        }
+
+        .datatable-wrapper {
+            margin: 20px 0;
+        }
+
+        .datatable th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            text-align: left;
+            padding: 10px 8px;
+        }
+
+        .datatable-filter-cell input {
+            font-size: 11px;
+            padding: 4px 6px;
+        }
+
+        .datatable tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <h1>Cluster Selection Dashboard</h1>
+
+    <div id="modelInfo" style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px; display: none;">
+        <h2 style="margin-top: 0;">Model Information</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div>
+                <strong>Total Modules:</strong> <span id="totalModules">-</span>
+            </div>
+            <div>
+                <strong>Total Components:</strong> <span id="totalComponents">-</span>
+            </div>
+            <div>
+                <strong>Total Clusters:</strong> <span id="totalClusters">-</span>
+            </div>
+            <div>
+                <strong>Model Parameters:</strong> <span id="totalParameters">-</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="clusterTableContainer"></div>
+    <div id="loading">Loading data...</div>
+    <div id="tooltip"></div>
+
+    <script src="js/util/notif.js"></script>
+    <script src="js/util/config.js"></script>
+    <script src="js/util/ColorUtil.js"></script>
+    <script src="js/util/sparklines.js"></script>
+    <script src="js/pkg/jszip.min.js"></script>
+    <script src="js/util/table.js"></script>
+    <script src="js/model-visualization.js"></script>
+    <script src="js/cluster-selection.js"></script>
+</body>
+</html>
