@@ -45,10 +45,7 @@ class CIHistograms(MetricInterface):
         cis: dict[str, Float[Tensor, "... C"]] = {}
         for module_name in self.module_names:
             ci_list = self.causal_importances[module_name]
-            # Concat locally, gather from all ranks, then concat across ranks
-            local_tensor = torch.cat(ci_list, dim=0)
-            gathered = gather_all_tensors(local_tensor)
-            cis[module_name] = torch.cat(gathered, dim=0)
+            cis[module_name] = torch.cat(gather_all_tensors(torch.cat(ci_list, dim=0)), dim=0)
 
         fig = plot_ci_values_histograms(causal_importances=cis)
         return {"figures/causal_importance_values": fig}

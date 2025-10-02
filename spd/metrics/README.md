@@ -93,32 +93,45 @@ Examples: `CEandKLLosses`, `CIMeanPerComponent`
 
 ### Cat Reduction Metrics
 
-For metrics that collect samples across batches:
+For metrics that collect samples across batches, choose the appropriate reduction:
+
+**If you need all raw data** (e.g., for plotting), use `all_cat()`:
 
 ```python
 class MyCatMetric(MetricInterface):
     def __init__(self, model: ComponentModel, ...):
-        self.model = model
-        self.module_names = list(model.components.keys())
-        self.causal_importances: dict[str, list[Tensor]] = {
-            name: [] for name in self.module_names
-        }
+        self.samples: list[Tensor] = []
 
     def update(self, batch, target_out, ci, ...):
-        for module_name in self.module_names:
-            self.causal_importances[module_name].append(ci[module_name])
+        self.samples.append(ci["layer"])
 
     def compute(self):
-        cis: dict[str, Tensor] = {}
-        for module_name in self.module_names:
-            ci_list = self.causal_importances[module_name]
-            local_tensor = torch.cat(ci_list, dim=0)
-            gathered = gather_all_tensors(local_tensor)
-            cis[module_name] = torch.cat(gathered, dim=0)
-        return process_cis(cis)
+        all_samples = all_cat(self.samples)  # Gathers all data from all ranks
+        return plot_histogram(all_samples)
 ```
 
-Examples: `CIHistograms`, `CI_L0`
+Example: `CIHistograms`
+
+**If you only need aggregate statistics** (e.g., mean), use sum+count reduction (more efficient):
+
+```python
+class MyStatMetric(MetricInterface):
+    def __init__(self, model: ComponentModel, ...):
+        self.samples: list[Tensor] = []
+
+    def update(self, batch, target_out, ci, ...):
+        self.samples.append(ci["layer"])
+
+    def compute(self):
+        local_tensor = torch.cat(self.samples, dim=0)
+        local_sum = local_tensor.sum()
+        local_count = torch.tensor(local_tensor.numel(), device=get_device())
+        global_sum = all_reduce(local_sum, op=ReduceOp.SUM)
+        global_count = all_reduce(local_count, op=ReduceOp.SUM)
+        return (global_sum / global_count).item()
+```
+
+Example: `CI_L0`
 
 ### Dynamic State Metrics
 
@@ -179,7 +192,7 @@ result = metric.compute()
 ### Reduction Operations
 
 - Use `ReduceOp.SUM` for accumulating values across ranks (never use `ReduceOp.AVG` - it gives incorrect results when ranks have different sample counts)
-- Use `gather_all_tensors()` for concatenating tensors across ranks
+- Use `all_cat(tensors)` for concatenating tensors locally and across ranks (replaces the `cat -> gather -> cat` pattern)
 - Always reduce both the sum and count separately, then divide
 
 ## Usage in Evaluation
