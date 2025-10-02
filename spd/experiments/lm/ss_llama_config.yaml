@@ -1,5 +1,5 @@
 C: 1000
-batch_size: 64
+batch_size: 32
 ci_alive_threshold: 0.0
 ci_masked_recon_subset_coeff: null
 ci_recon_coeff: null
@@ -66,16 +66,16 @@ eval_metrics:
     n_mask_samples: 1
 - classname: FaithfulnessLoss
   extra_init_kwargs: {}
-faithfulness_coeff: 1.0
+faithfulness_coeff: null
 gate_hidden_dims:
 - 500
 gate_type: shared_mlp
 gradient_accumulation_steps: 1
 identity_module_patterns:
-- model.layers.0.mlp.gate_proj
-- model.layers.0.mlp.down_proj
-importance_minimality_coeff: 0.01
-lr: 0.0005
+# - model.layers.0.mlp.gate_proj
+# - model.layers.0.mlp.down_proj
+importance_minimality_coeff: 0.0005
+lr: 0.001
 lr_exponential_halflife: null
 lr_schedule: cosine
 lr_warmup_pct: 0.0
@@ -87,7 +87,7 @@ output_loss_type: kl
 # p_anneal_end_frac: 0.1
 # p_anneal_final_p: 0.9
 # p_anneal_start_frac: 0.02
-pnorm: 2.0
+pnorm: 1.0
 pgd_mask_enabled: true
 pgd_mask_steps: 2
 pgd_mask_step_size: 0.1
