@@ -61,6 +61,9 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["spd*"]
 
+[tool.setuptools.package-data]
+"spd.clustering.dashboard._bundled" = ["*.html"]
+
 [tool.ruff]
 line-length = 100
 fix = true

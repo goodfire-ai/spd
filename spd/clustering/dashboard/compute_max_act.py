@@ -272,7 +272,9 @@ def compute_max_activations(
         assert all_activations_list, "No activations collected"
         assert cluster_id_map, "No clusters found"
 
-        combined_activations: Float[np.ndarray, "total_samples n_ctx"] = np.stack(all_activations_list)
+        combined_activations: Float[np.ndarray, "total_samples n_ctx"] = np.stack(
+            all_activations_list
+        )
         # Use first cluster_id as placeholder since this is for all clusters
         dummy_cluster_id: ClusterId = list(cluster_id_map.values())[0]
         combined_batch: ActivationSampleBatch = ActivationSampleBatch(

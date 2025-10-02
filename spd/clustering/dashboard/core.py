@@ -21,8 +21,6 @@ _SEPARATOR_1: str = "-"
 _SEPARATOR_2: str = ":"
 
 
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ComponentInfo:
     """Component information from merge history."""
@@ -422,14 +420,13 @@ class DashboardData:
                 compact_map[act_hash] = new_idx
 
         # Stack and convert to float16 for space savings
-        compact_activations: Float[np.ndarray, "n_samples n_ctx"] = np.stack(compact_activations_list)
+        compact_activations: Float[np.ndarray, "n_samples n_ctx"] = np.stack(
+            compact_activations_list
+        )
         activations_float16 = compact_activations.astype(np.float16)
 
         # Save as npz (compressed)
-        np.savez_compressed(
-            output_path / "activations.npz",
-            activations=activations_float16
-        )
+        np.savez_compressed(output_path / "activations.npz", activations=activations_float16)
 
         # Save compact activations map
         with open(output_path / "activations_map.json", "w") as f:
