@@ -23,7 +23,7 @@ stochastic_recon_coeff: 1.0
 ci_recon_layerwise_coeff: null
 stochastic_recon_layerwise_coeff: 1.0
 importance_minimality_coeff: 3e-5
-pnorm: 2
+pnorm: 1.0
 output_recon_loss_type: mse
 hidden_act_recon_coeff: 0.0
 
