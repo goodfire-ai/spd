@@ -1,23 +1,25 @@
+from collections import defaultdict
 from fnmatch import fnmatch
-from typing import Any, Literal, override
+from typing import Literal, override
 
 import einops
 import torch
 import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
+from torch.distributed import ReduceOp
 
-from spd.metrics.base import Metric
+from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
+from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
-class StochasticReconSubsetCEAndKL(Metric):
-    """Compute reconstruction loss for specific subsets of components.
-
-    NOTE: Assumes all batches and sequences are the same size.
+class StochasticReconSubsetCEAndKL(MetricInterface):
+    """A simpler version of StochasticReconSubsetCEAndKL that doesn't use the Metric base class to
+    handle distributed functionality.
     """
 
     def __init__(
@@ -28,20 +30,18 @@ class StochasticReconSubsetCEAndKL(Metric):
         n_mask_samples: int,
         include_patterns: dict[str, list[str]] | None = None,
         exclude_patterns: dict[str, list[str]] | None = None,
-        **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
         self.model = model
         self.sampling: Literal["continuous", "binomial"] = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples = n_mask_samples
-        self.include_patterns = include_patterns or {}
-        self.exclude_patterns = exclude_patterns or {}
 
-        if not self.include_patterns and not self.exclude_patterns:
+        if not include_patterns and not exclude_patterns:
             raise ValueError(
                 "At least one of include_patterns or exclude_patterns must be provided"
             )
+        self.include_patterns = include_patterns or {}
+        self.exclude_patterns = exclude_patterns or {}
 
         # Precompute which modules each subset will evaluate
         all_modules: list[str] = list(self.model.components.keys())
@@ -65,28 +65,17 @@ class StochasticReconSubsetCEAndKL(Metric):
                 )
             self.subset_modules[subset_name] = remaining
 
-        # Avoid using e.g. "layers.*.mlp_in" as an attribute
-        self.key_to_sanitized: dict[str, str] = {}
-        self.sanitized_to_key: dict[str, str] = {}
-
-        for subset_name in self.subset_modules:
-            sanitized_key_raw = subset_name.replace(".", "-").replace("*", "all")
-            for suffix in ["_kl", "_ce", "_ce_unrec"]:
-                raw_metric_key = f"{subset_name}{suffix}"
-                sanitized_metric_key = f"{sanitized_key_raw}{suffix}"
-                self.key_to_sanitized[raw_metric_key] = sanitized_metric_key
-                self.sanitized_to_key[sanitized_metric_key] = raw_metric_key
-                self.add_state(sanitized_metric_key, default=[], dist_reduce_fx="cat")
+        self.states = defaultdict[str, list[float]](list)
 
     @override
     def update(
         self,
-        *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
-        **_: Any,
+        current_frac_of_training: float,
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
+        weight_deltas: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         losses = self._calc_subset_losses(
             batch=batch,
@@ -98,16 +87,16 @@ class StochasticReconSubsetCEAndKL(Metric):
             n_mask_samples=self.n_mask_samples,
         )
         for key, value in losses.items():
-            sanitized_key = self.key_to_sanitized[key]
-            getattr(self, sanitized_key).append(value)
+            self.states[key].append(value)
 
     @override
     def compute(self) -> dict[str, float | str]:
         results: dict[str, float | str] = {}
-        for sanitized_key, key in self.sanitized_to_key.items():
-            vals: list[float] = getattr(self, sanitized_key)
-            mean_val = sum(vals) / len(vals)  # Assume all batches are the same size
-            results[key] = mean_val
+
+        for key, vals in self.states.items():
+            total_sum = all_reduce(torch.tensor(sum(vals)), op=ReduceOp.SUM).item()
+            total_count = all_reduce(torch.tensor(len(vals)), op=ReduceOp.SUM).item()
+            results[key] = total_sum / total_count
 
         # Get the worst subset for each metric type
         for metric_type in ["kl", "ce", "ce_unrec"]:

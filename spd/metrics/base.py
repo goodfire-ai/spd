@@ -7,6 +7,7 @@ supports distributed training with synchronized state across ranks.
 from abc import ABC, abstractmethod
 from typing import Any, Literal, cast
 
+from jaxtyping import Float, Int
 import torch
 from torch import Tensor
 
@@ -189,4 +190,26 @@ class Metric(ABC):
         For training with DDP: call `compute()` directly to get per-rank metrics
         For evaluation: call `sync_dist()` then `compute()` to get global metrics
         """
+        pass
+
+
+class MetricInterface(ABC):
+    """Interface for metrics that can be used in training and evaluation."""
+
+    @abstractmethod
+    def update(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+        current_frac_of_training: float,
+        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
+        weight_deltas: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        """Update metric state with a batch of data."""
+        pass
+
+    @abstractmethod
+    def compute(self) -> Any:
+        """Compute the final metric value(s)."""
         pass
