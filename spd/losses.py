@@ -274,35 +274,19 @@ def _optimize_adversarial_stochastic_masks(
         grads = cast(tuple[Tensor | None, ...], raw_grads)
 
         with torch.no_grad():
-            # Update rand_tensors
-            offset = 0
-            for (_layer, v), g in zip(
-                rand_tensors.items(), grads[: len(rand_tensors)], strict=True
-            ):
+            # Update all adversarial variables in the same order they were passed to autograd
+            for v, g in zip(adv_vars, grads, strict=True):
                 if g is not None:
                     v.add_(step_size * g.sign())
                 v.clamp_(0.0, 1.0)
-                offset += 1
-            # Update weight delta masks if present
-            if weight_delta_rand_masks is not None:
-                for (_layer, v), g in zip(
-                    weight_delta_rand_masks.items(),
-                    grads[offset : offset + len(weight_delta_rand_masks)],
-                    strict=True,
-                ):
-                    if g is not None:
-                        v.add_(step_size * g.sign())
-                    v.clamp_(0.0, 1.0)
 
     # Detach to avoid tracking grads in the outer loss backward
     with torch.no_grad():
         for layer in list(rand_tensors.keys()):
-            rand_tensors[layer] = rand_tensors[layer].detach().clamp(0.0, 1.0)
+            rand_tensors[layer].detach_().clamp_(0.0, 1.0)
         if weight_delta_rand_masks is not None:
             for layer in list(weight_delta_rand_masks.keys()):
-                weight_delta_rand_masks[layer] = (
-                    weight_delta_rand_masks[layer].detach().clamp(0.0, 1.0)
-                )
+                weight_delta_rand_masks[layer].detach_().clamp_(0.0, 1.0)
 
     return rand_tensors, weight_delta_rand_masks
 
