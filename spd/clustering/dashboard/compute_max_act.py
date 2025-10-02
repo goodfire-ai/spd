@@ -153,7 +153,7 @@ def compute_cluster_coactivations(
 
     # All batches should have same cluster indices
     cluster_indices: list[int] = cluster_activations_list[0].cluster_indices
-    n_clusters: int = len(cluster_indices)
+    _n_clusters: int = len(cluster_indices)
 
     # Concatenate all batch activations: [total_samples, n_clusters]
     all_acts: Float[Tensor, "total_samples n_clusters"] = torch.cat(
