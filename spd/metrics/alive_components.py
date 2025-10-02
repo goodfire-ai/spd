@@ -3,12 +3,13 @@
 from typing import Any, override
 
 import torch
-import torch.distributed as dist
 from einops import reduce
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
+from spd.utils.distributed_utils import all_reduce
 
 
 class AliveComponentsTracker(Metric):
@@ -18,38 +19,33 @@ class AliveComponentsTracker(Metric):
     the last n_examples_until_dead examples.
     """
 
-    is_differentiable: bool | None = False
-
-    n_batches_since_fired: dict[str, Int[Tensor, " C"]]
-    n_batches_until_dead: int
-
     def __init__(
         self,
         module_paths: list[str],
         C: int,
+        device: str,
         n_examples_until_dead: int,
         ci_alive_threshold: float,
-        **kwargs: Any,
+        global_n_examples_per_batch: int,
     ) -> None:
         """Initialize the tracker.
 
         Args:
             module_paths: List of module names to track
             C: Number of components per module
+            device: Device to store tensors on
             n_examples_until_dead: Number of examples without firing before component is considered dead
             ci_alive_threshold: Causal importance threshold above which a component is considered 'firing'
+            global_n_examples_per_batch: Number of examples per batch across all ranks (including
+                batch and sequence dimensions)
         """
-        super().__init__(**kwargs)
         self.n_examples_until_dead = n_examples_until_dead
         self.ci_alive_threshold = ci_alive_threshold
+        self.n_batches_until_dead = self.n_examples_until_dead // global_n_examples_per_batch
 
-        self.n_batches_until_dead = -1
-
-        self.add_state(
-            "n_batches_since_fired",
-            default={m: torch.zeros(C, dtype=torch.int64) for m in module_paths},
-            dist_reduce_fx="min",
-        )
+        self.n_batches_since_fired: dict[str, Int[Tensor, " C"]] = {
+            m: torch.zeros(C, dtype=torch.int64, device=device) for m in module_paths
+        }
 
     @override
     def update(self, *, ci: dict[str, Float[Tensor, "... C"]], **_: Any) -> None:
@@ -58,14 +54,6 @@ class AliveComponentsTracker(Metric):
         Args:
             ci: Dict mapping module names to causal importance tensors with shape (..., C)
         """
-        if self.n_batches_until_dead == -1:
-            # Get shape from any CI tensor (they all have the same batch dimensions)
-            local_n_examples = next(iter(ci.values())).shape[:-1].numel()  # All dims except C
-            # Get world size directly from torch.distributed to avoid needing init_distributed()
-            world_size = dist.get_world_size() if dist.is_initialized() else 1
-            global_n_examples = local_n_examples * world_size
-            self.n_batches_until_dead = self.n_examples_until_dead // global_n_examples
-
         for module_name, importance_vals in ci.items():
             firing: Bool[Tensor, " C"] = reduce(
                 importance_vals > self.ci_alive_threshold, "... C -> C", torch.any
@@ -80,15 +68,17 @@ class AliveComponentsTracker(Metric):
     def compute(self) -> dict[str, int]:
         """Compute the number of alive components per module.
 
-        Should be called after sync_dist() in distributed settings to count firing across all ranks.
-
         Returns:
             Dict mapping module names to number of alive components,
             with keys formatted as "n_alive/{module_name}"
         """
         out: dict[str, int] = {}
         for module_name in self.n_batches_since_fired:
+            # Use MIN reduction so that a component is alive if it fired on ANY rank
+            batches_since_fired_reduced = all_reduce(
+                self.n_batches_since_fired[module_name], op=ReduceOp.MIN
+            )
             out[f"n_alive/{module_name}"] = int(
-                (self.n_batches_since_fired[module_name] < self.n_batches_until_dead).sum().item()
+                (batches_since_fired_reduced < self.n_batches_until_dead).sum().item()
             )
         return out

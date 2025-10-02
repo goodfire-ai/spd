@@ -183,7 +183,7 @@ def all_reduce(
     Returns:
         Reduced tensor
     """
-    if is_distributed():
+    if dist.is_initialized():
         dist.all_reduce(tensor, op=op)
     return tensor
 

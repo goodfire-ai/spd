@@ -3,32 +3,23 @@ from typing import Any, override
 import torch
 from PIL import Image
 from torch import Tensor
+from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_mean_component_cis_both_scales
+from spd.utils.distributed_utils import all_reduce
 
 
 class CIMeanPerComponent(Metric):
-    is_differentiable: bool | None = False
-
-    component_ci_sums: dict[str, Tensor]
-    examples_seen: dict[str, Tensor]
-
-    def __init__(self, model: ComponentModel, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, model: ComponentModel, device: str) -> None:
         self.components = model.components
-
-        self.add_state(
-            "component_ci_sums",
-            default={module_name: torch.zeros(model.C) for module_name in self.components},
-            dist_reduce_fx="sum",
-        )
-        self.add_state(
-            "examples_seen",
-            default={module_name: torch.tensor(0) for module_name in self.components},
-            dist_reduce_fx="sum",
-        )
+        self.component_ci_sums: dict[str, Tensor] = {
+            module_name: torch.zeros(model.C, device=device) for module_name in self.components
+        }
+        self.examples_seen: dict[str, Tensor] = {
+            module_name: torch.tensor(0, device=device) for module_name in self.components
+        }
 
     @override
     def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
@@ -45,9 +36,9 @@ class CIMeanPerComponent(Metric):
     def compute(self) -> dict[str, Image.Image]:
         mean_component_cis = {}
         for module_name in self.components:
-            mean_component_cis[module_name] = (
-                self.component_ci_sums[module_name] / self.examples_seen[module_name]
-            )
+            summed_ci = all_reduce(self.component_ci_sums[module_name], op=ReduceOp.SUM)
+            examples_reduced = all_reduce(self.examples_seen[module_name], op=ReduceOp.SUM)
+            mean_component_cis[module_name] = summed_ci / examples_reduced
 
         img_linear, img_log = plot_mean_component_cis_both_scales(mean_component_cis)
 

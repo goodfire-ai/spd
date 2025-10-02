@@ -157,10 +157,11 @@ def optimize(
     alive_tracker = AliveComponentsTracker(
         module_paths=model.module_paths,
         C=config.C,
+        device=device,
         n_examples_until_dead=config.n_examples_until_dead,
         ci_alive_threshold=config.ci_alive_threshold,
+        global_n_examples_per_batch=extract_batch_data(next(train_iterator)).shape[:-1].numel(),
     )
-    alive_tracker.to(device)
 
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
@@ -232,8 +233,6 @@ def optimize(
                 avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
                 microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
-            # Sync alive tracker state across ranks and compute alive counts
-            alive_tracker.sync_dist()
             alive_counts = alive_tracker.compute()
             for metric_name, n_alive_count in alive_counts.items():
                 n_alive_key = f"train/{metric_name}_{alive_tracker.ci_alive_threshold}"

@@ -3,9 +3,11 @@ from typing import Any, override
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
+from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
+from spd.utils.distributed_utils import all_reduce
 
 
 def _faithfulness_loss_update(
@@ -35,16 +37,10 @@ def faithfulness_loss(weight_deltas: dict[str, Float[Tensor, "d_out d_in"]]) -> 
 class FaithfulnessLoss(Metric):
     """MSE between the target weights and the sum of the components."""
 
-    is_differentiable: bool | None = True
-
-    sum_loss: Float[Tensor, ""]
-    total_params: Int[Tensor, ""]
-
-    def __init__(self, model: ComponentModel, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, model: ComponentModel, device: str) -> None:
         self.model = model
-        self.add_state("sum_loss", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("total_params", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.sum_loss = torch.tensor(0.0, device=device)
+        self.total_params = torch.tensor(0, device=device)
 
     @override
     def update(self, *, weight_deltas: dict[str, Float[Tensor, "d_out d_in"]], **_: Any) -> None:
@@ -54,4 +50,6 @@ class FaithfulnessLoss(Metric):
 
     @override
     def compute(self) -> Float[Tensor, ""]:
-        return _faithfulness_loss_compute(self.sum_loss, self.total_params)
+        sum_loss = all_reduce(self.sum_loss, op=ReduceOp.SUM)
+        total_params = all_reduce(self.total_params, op=ReduceOp.SUM)
+        return _faithfulness_loss_compute(sum_loss, total_params)

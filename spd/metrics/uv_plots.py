@@ -10,8 +10,6 @@ from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
 
 
 class UVPlots(Metric):
-    is_differentiable: bool | None = False
-
     input_magnitude: float = 0.75
 
     def __init__(
@@ -21,9 +19,7 @@ class UVPlots(Metric):
         sigmoid_type: SigmoidTypes,
         identity_patterns: list[str] | None = None,
         dense_patterns: list[str] | None = None,
-        **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
         self.model = model
         self.sampling: Literal["continuous", "binomial"] = sampling
         self.sigmoid_type: SigmoidTypes = sigmoid_type

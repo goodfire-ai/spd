@@ -6,11 +6,13 @@ import torch
 import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
+from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
+from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -20,20 +22,18 @@ class StochasticReconSubsetCEAndKL(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
-    is_differentiable: bool | None = False
-
     def __init__(
         self,
         model: ComponentModel,
+        device: str,
         sampling: Literal["continuous", "binomial"],
         use_delta_component: bool,
         n_mask_samples: int,
         include_patterns: dict[str, list[str]] | None = None,
         exclude_patterns: dict[str, list[str]] | None = None,
-        **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
         self.model = model
+        self.device = device
         self.sampling: Literal["continuous", "binomial"] = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples = n_mask_samples
@@ -78,7 +78,7 @@ class StochasticReconSubsetCEAndKL(Metric):
                 sanitized_metric_key = f"{sanitized_key_raw}{suffix}"
                 self.key_to_sanitized[raw_metric_key] = sanitized_metric_key
                 self.sanitized_to_key[sanitized_metric_key] = raw_metric_key
-                self.add_state(sanitized_metric_key, default=[], dist_reduce_fx="cat")
+                setattr(self, sanitized_metric_key, [])
 
     @override
     def update(
@@ -108,7 +108,12 @@ class StochasticReconSubsetCEAndKL(Metric):
         results: dict[str, float | str] = {}
         for sanitized_key, key in self.sanitized_to_key.items():
             vals: list[float] = getattr(self, sanitized_key)
-            mean_val = sum(vals) / len(vals)  # Assume all batches are the same size
+            # Convert list to tensor, sum locally, then reduce across ranks
+            local_sum = torch.tensor(sum(vals), device=self.device)
+            local_count = torch.tensor(len(vals), device=self.device)
+            global_sum = all_reduce(local_sum, op=ReduceOp.SUM).item()
+            global_count = all_reduce(local_count, op=ReduceOp.SUM).item()
+            mean_val = global_sum / global_count
             results[key] = mean_val
 
         # Get the worst subset for each metric type

@@ -3,9 +3,11 @@ from typing import Any, override
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
+from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
+from spd.utils.distributed_utils import all_reduce
 
 
 def _get_linear_annealed_p(
@@ -123,29 +125,23 @@ class ImportanceMinimalityLoss(Metric):
         eps: The epsilon value for numerical stability.
     """
 
-    is_differentiable: bool | None = True
-
-    sum_loss: Float[Tensor, " C"]
-    n_examples: Int[Tensor, ""]
-
     def __init__(
         self,
         model: ComponentModel,
+        device: str,
         pnorm: float,
         p_anneal_start_frac: float = 1.0,
         p_anneal_final_p: float | None = None,
         p_anneal_end_frac: float = 1.0,
         eps: float = 1e-12,
-        **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
         self.pnorm = pnorm
         self.eps = eps
         self.p_anneal_start_frac = p_anneal_start_frac
         self.p_anneal_final_p = p_anneal_final_p if p_anneal_final_p is not None else None
         self.p_anneal_end_frac = p_anneal_end_frac
-        self.add_state("sum_loss", torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("n_examples", torch.tensor(0), dist_reduce_fx="sum")
+        self.sum_loss = torch.tensor(0.0, device=device)
+        self.n_examples = torch.tensor(0, device=device)
 
     @override
     def update(
@@ -169,4 +165,6 @@ class ImportanceMinimalityLoss(Metric):
 
     @override
     def compute(self) -> Float[Tensor, ""]:
-        return _importance_minimality_loss_compute(self.sum_loss, self.n_examples)
+        sum_loss = all_reduce(self.sum_loss, op=ReduceOp.SUM)
+        n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM)
+        return _importance_minimality_loss_compute(sum_loss, n_examples)

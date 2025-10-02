@@ -10,13 +10,15 @@ def test_initialization():
     metric = AliveComponentsTracker(
         module_paths=["layer1", "layer2"],
         C=5,
+        device="cpu",
         n_examples_until_dead=100,
         ci_alive_threshold=0.1,
+        global_n_examples_per_batch=2,
     )
 
     assert metric.n_examples_until_dead == 100
     assert metric.ci_alive_threshold == 0.1
-    assert metric.n_batches_until_dead == -1  # Not yet initialized
+    assert metric.n_batches_until_dead == 50
     assert "layer1" in metric.n_batches_since_fired
     assert "layer2" in metric.n_batches_since_fired
     assert metric.n_batches_since_fired["layer1"].shape == (5,)
@@ -28,8 +30,10 @@ def test_update_counter_mechanics():
     metric = AliveComponentsTracker(
         module_paths=["layer1"],
         C=3,
+        device="cpu",
         n_examples_until_dead=50,
         ci_alive_threshold=0.1,
+        global_n_examples_per_batch=1,
     )
 
     # Component 0 fires, components 1 and 2 don't
@@ -62,8 +66,10 @@ def test_update_with_multidimensional_input():
     metric = AliveComponentsTracker(
         module_paths=["layer1"],
         C=3,
+        device="cpu",
         n_examples_until_dead=50,
         ci_alive_threshold=0.1,
+        global_n_examples_per_batch=6,
     )
 
     # Shape: (batch=2, seq=3, C=3)
@@ -91,12 +97,13 @@ def test_compute_alive_counts():
     metric = AliveComponentsTracker(
         module_paths=["layer1", "layer2"],
         C=4,
+        device="cpu",
         n_examples_until_dead=50,
         ci_alive_threshold=0.1,
+        global_n_examples_per_batch=10,
     )
 
-    # Manually set n_batches_until_dead = 5
-    metric.n_batches_until_dead = 5
+    # n_batches_until_dead = 50 // 10 = 5
     # Manually set counter values
     metric.n_batches_since_fired["layer1"] = torch.tensor([0, 3, 5, 10])
     metric.n_batches_since_fired["layer2"] = torch.tensor([4, 4, 6, 0])
@@ -114,8 +121,10 @@ def test_multiple_modules():
     metric = AliveComponentsTracker(
         module_paths=["layer1", "layer2"],
         C=3,
+        device="cpu",
         n_examples_until_dead=50,
         ci_alive_threshold=0.1,
+        global_n_examples_per_batch=1,
     )
 
     ci = {
@@ -139,12 +148,12 @@ def test_boundary_conditions():
     metric = AliveComponentsTracker(
         module_paths=["layer1"],
         C=3,
+        device="cpu",
         n_examples_until_dead=50,
         ci_alive_threshold=0.1,
+        global_n_examples_per_batch=10,
     )
-
-    # Manually set n_batches_until_dead = 5
-    metric.n_batches_until_dead = 5
+    # n_batches_until_dead = 50 // 10 = 5
     # Test boundary: 4 < 5 (alive), 5 >= 5 (dead)
     metric.n_batches_since_fired["layer1"] = torch.tensor([4, 5, 6])
 
@@ -157,8 +166,10 @@ def test_threshold_boundary():
     metric = AliveComponentsTracker(
         module_paths=["layer1"],
         C=3,
+        device="cpu",
         n_examples_until_dead=50,
         ci_alive_threshold=0.1,
+        global_n_examples_per_batch=10,
     )
 
     # Test boundary: 0.1 > 0.1 is False, so exactly 0.1 doesn't count as firing
@@ -168,28 +179,3 @@ def test_threshold_boundary():
     assert metric.n_batches_since_fired["layer1"][0] == 1  # 0.09 not > 0.1
     assert metric.n_batches_since_fired["layer1"][1] == 1  # 0.1 not > 0.1
     assert metric.n_batches_since_fired["layer1"][2] == 0  # 0.11 > 0.1
-
-
-def test_lazy_initialization():
-    """Test that global_n_examples_per_batch can be inferred from CI tensor."""
-    # Don't provide global_n_examples_per_batch
-    metric = AliveComponentsTracker(
-        module_paths=["layer1"],
-        C=3,
-        n_examples_until_dead=50,
-        ci_alive_threshold=0.1,
-    )
-
-    # n_batches_until_dead should be -1 (uninitialized)
-    assert metric.n_batches_until_dead == -1
-
-    # CI tensor with shape (batch=2, seq=5, C=3) -> 10 local examples
-    ci = {"layer1": torch.rand(2, 5, 3)}
-    metric.update(ci=ci)
-
-    # After first update, should compute: n_batches_until_dead = 50 // 10 = 5
-    assert metric.n_batches_until_dead == 5
-
-    # Second update should not recompute
-    metric.update(ci=ci)
-    assert metric.n_batches_until_dead == 5

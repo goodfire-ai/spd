@@ -118,6 +118,7 @@ def init_metric(
         case ImportanceMinimalityLossTrainConfig():
             metric = ImportanceMinimalityLoss(
                 model=model,
+                device=device,
                 pnorm=cfg.pnorm,
                 p_anneal_start_frac=cfg.p_anneal_start_frac,
                 p_anneal_final_p=cfg.p_anneal_final_p,
@@ -125,32 +126,40 @@ def init_metric(
             )
         case CEandKLLossesConfig():
             metric = CEandKLLosses(
-                model=model, sampling=run_config.sampling, rounding_threshold=cfg.rounding_threshold
+                model=model,
+                device=device,
+                sampling=run_config.sampling,
+                rounding_threshold=cfg.rounding_threshold,
             )
         case CIHistogramsConfig():
             metric = CIHistograms(model=model, n_batches_accum=cfg.n_batches_accum)
         case CI_L0Config():
             metric = CI_L0(
-                model=model, ci_alive_threshold=run_config.ci_alive_threshold, groups=cfg.groups
+                model=model,
+                device=device,
+                ci_alive_threshold=run_config.ci_alive_threshold,
+                groups=cfg.groups,
             )
         case CIMaskedReconSubsetLossTrainConfig():
             metric = CIMaskedReconSubsetLoss(
-                model=model, output_loss_type=run_config.output_loss_type
+                model=model, device=device, output_loss_type=run_config.output_loss_type
             )
         case CIMaskedReconLayerwiseLossTrainConfig():
             metric = CIMaskedReconLayerwiseLoss(
-                model=model, output_loss_type=run_config.output_loss_type
+                model=model, device=device, output_loss_type=run_config.output_loss_type
             )
         case CIMaskedReconLossTrainConfig():
-            metric = CIMaskedReconLoss(model=model, output_loss_type=run_config.output_loss_type)
+            metric = CIMaskedReconLoss(
+                model=model, device=device, output_loss_type=run_config.output_loss_type
+            )
         case CIMeanPerComponentConfig():
-            metric = CIMeanPerComponent(model=model)
+            metric = CIMeanPerComponent(model=model, device=device)
         case ComponentActivationDensityConfig():
             metric = ComponentActivationDensity(
-                model=model, ci_alive_threshold=run_config.ci_alive_threshold
+                model=model, device=device, ci_alive_threshold=run_config.ci_alive_threshold
             )
         case FaithfulnessLossTrainConfig():
-            metric = FaithfulnessLoss(model=model)
+            metric = FaithfulnessLoss(model=model, device=device)
         case IdentityCIErrorConfig():
             metric = IdentityCIError(
                 model=model,
@@ -170,6 +179,7 @@ def init_metric(
         case StochasticReconLayerwiseLossTrainConfig():
             metric = StochasticReconLayerwiseLoss(
                 model=model,
+                device=device,
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
@@ -178,6 +188,7 @@ def init_metric(
         case StochasticReconLossTrainConfig():
             metric = StochasticReconLoss(
                 model=model,
+                device=device,
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
@@ -186,6 +197,7 @@ def init_metric(
         case StochasticReconSubsetLossTrainConfig():
             metric = StochasticReconSubsetLoss(
                 model=model,
+                device=device,
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
@@ -194,6 +206,7 @@ def init_metric(
         case StochasticReconSubsetCEAndKLConfig():
             metric = StochasticReconSubsetCEAndKL(
                 model=model,
+                device=device,
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
@@ -208,7 +221,6 @@ def init_metric(
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
             )
-    metric.to(device)
     return metric
 
 
@@ -260,8 +272,6 @@ def evaluate(
 
     outputs: MetricOutType = {}
     for metric in metrics:
-        # Combine metric states across all data-parallel processes
-        metric.sync_dist()
         computed_raw: Any = metric.compute()
         computed = clean_metric_output(metric_name=type(metric).__name__, computed_raw=computed_raw)
         outputs.update(computed)

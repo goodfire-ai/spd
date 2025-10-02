@@ -5,11 +5,13 @@ import torch
 import torch.nn.functional as F
 from jaxtyping import Int
 from torch import Tensor
+from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
+from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -18,10 +20,6 @@ class CEandKLLosses(Metric):
 
     NOTE: Assumes all batches and sequences are the same size.
     """
-
-    is_differentiable: bool | None = False
-
-    loss_sums: dict[str, Tensor]
 
     # NOTE: Gross that we have to hardcode these here. Open to other ideas.
     loss_keys: list[str] = [
@@ -43,26 +41,21 @@ class CEandKLLosses(Metric):
         "ce_unrecovered/rounded_masked",
     ]
 
-    n_positions: Int[Tensor, ""]  # batch_size * seq_len * n_batches_seen
-
     def __init__(
         self,
         model: ComponentModel,
+        device: str,
         sampling: Literal["continuous", "binomial"],
         rounding_threshold: float,
-        **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
         self.model = model
         self.sampling: Literal["continuous", "binomial"] = sampling
         self.rounding_threshold = rounding_threshold
 
-        self.add_state(
-            "loss_sums",
-            default={key: torch.tensor(0.0) for key in self.loss_keys},
-            dist_reduce_fx="sum",
-        )
-        self.add_state("n_positions", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.loss_sums: dict[str, Tensor] = {
+            key: torch.tensor(0.0, device=device) for key in self.loss_keys
+        }
+        self.n_positions: Int[Tensor, ""] = torch.tensor(0, device=device)
 
     @override
     def update(
@@ -85,8 +78,10 @@ class CEandKLLosses(Metric):
     @override
     def compute(self) -> dict[str, float]:
         losses = {}
+        n_positions_reduced = all_reduce(self.n_positions, op=ReduceOp.SUM).item()
         for key in self.loss_keys:
-            losses[key] = self.loss_sums[key] / self.n_positions
+            summed_loss = all_reduce(self.loss_sums[key], op=ReduceOp.SUM).item()
+            losses[key] = summed_loss / n_positions_reduced
         return losses
 
     def _calc_ce_and_kl_losses(

@@ -5,31 +5,25 @@ from einops import reduce
 from jaxtyping import Int
 from PIL import Image
 from torch import Tensor
+from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_component_activation_density
+from spd.utils.distributed_utils import all_reduce
 
 
 class ComponentActivationDensity(Metric):
     """Activation density for each component."""
 
-    is_differentiable: bool | None = False
-
-    n_examples: Int[Tensor, ""]
-    component_activation_counts: dict[str, Tensor]
-
-    def __init__(self, model: ComponentModel, ci_alive_threshold: float, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, model: ComponentModel, device: str, ci_alive_threshold: float) -> None:
         self.model = model
         self.ci_alive_threshold = ci_alive_threshold
 
-        self.add_state("n_examples", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state(
-            "component_activation_counts",
-            default={module_name: torch.zeros(model.C) for module_name in model.components},
-            dist_reduce_fx="sum",
-        )
+        self.n_examples: Int[Tensor, ""] = torch.tensor(0.0, device=device)
+        self.component_activation_counts: dict[str, Tensor] = {
+            module_name: torch.zeros(model.C, device=device) for module_name in model.components
+        }
 
     @override
     def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
@@ -46,10 +40,12 @@ class ComponentActivationDensity(Metric):
     @override
     def compute(self) -> dict[str, Image.Image]:
         activation_densities = {}
+        n_examples_reduced = all_reduce(self.n_examples, op=ReduceOp.SUM)
         for module_name in self.model.components:
-            activation_densities[module_name] = (
-                self.component_activation_counts[module_name] / self.n_examples
+            counts_reduced = all_reduce(
+                self.component_activation_counts[module_name], op=ReduceOp.SUM
             )
+            activation_densities[module_name] = counts_reduced / n_examples_reduced
 
         fig = plot_component_activation_density(activation_densities)
         return {"figures/component_activation_density": fig}

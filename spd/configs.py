@@ -431,35 +431,10 @@ class Config(BaseModel):
 
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
-        """Remove deprecated config keys and change names of any keys that have been renamed.
+        """Remove deprecated config keys and change names of any keys that have been renamed."""
 
-        We delete loss information that exists as top-level keys rather than inside
-        loss_metric_configs. This is done by DEPRECATED_CONFIG_KEYS. This means that old runs which
-        have these keys will not be able to be used for e.g. finetuning, but the raw model will be
-        the same.
-        """
-
-        # We don't bother doing the complex mapping from an old structure with the ``eval_metrics``
-        # key to the new structure with the ``eval_metric_configs`` key.
+        # We don't bother mapping the old ``eval_metrics`` to the new ``eval_metric_configs``.
         config_dict.pop("eval_metrics", None)
-
-        # Remove SubsetReconstructionLoss if it appears
-        if "loss_metric_configs" in config_dict:
-            filtered_configs = []
-            found_deprecated = False
-            for cfg in config_dict["loss_metric_configs"]:
-                assert isinstance(cfg, dict | TrainMetricConfigType)
-                classname = cfg["classname"] if isinstance(cfg, dict) else cfg.classname
-                if classname == "SubsetReconstructionLoss":
-                    found_deprecated = True
-                    logger.warning(
-                        "SubsetReconstructionLoss is deprecated, replacing with SubsetReconCEAndKL"
-                    )
-                else:
-                    filtered_configs.append(cfg)
-
-            if found_deprecated:
-                del config_dict["loss_metric_configs"]["SubsetReconstructionLoss"]
 
         for key in list(config_dict.keys()):
             val = config_dict[key]
