@@ -101,14 +101,14 @@ export type ActivationContext = {
     ci_value: number;
 };
 
-export type ComponentActivationContexts = {
-    component_idx: number;
+export type SubcomponentActivationContexts = {
+    subcomponent_idx: number;
     examples: ActivationContext[];
 };
 
 export type GetLayerActivationContextsResponse = {
     layer: string;
-    component_example_sets: ComponentActivationContexts[];
+    subcomponent_example_sets: SubcomponentActivationContexts[];
 };
 
 export type ComponentActivationContextsResponse = {

@@ -64,34 +64,28 @@ class _TopKExamples:
         return [ex for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)]
 
 
-def _default_output_path(wandb_id: str) -> Path:
-    run_dir: Path = SPD_CACHE_DIR / "runs" / f"spd-{wandb_id}"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    # Emit in v1-compatible filename
-    return run_dir / "component_activation_contexts.json"
 
 
 def _write_json_atomic(path: Path, payload: Any) -> None:
-    tmp_path: Path = path.with_name(path.name + ".tmp")
+    tmp_path = path.with_name(path.name + ".tmp")
     with open(tmp_path, "w") as f:
         json.dump(payload, f)
     os.replace(tmp_path, path)
 
 
 @dataclass
-class Ctx:
+class WorkerArgs:
     wandb_id: str
-    out: Path | None
     importance_threshold: float
     separation_threshold_tokens: int
     max_examples_per_component: int
     n_steps: int
     n_tokens_either_side: int
+    out_path: Path
 
 
-def main(ctx: Ctx) -> Path | None:
-    out_path: Path = ctx.out or _default_output_path(ctx.wandb_id)
-    lock_path: Path = out_path.with_suffix(out_path.suffix + ".lock")
+def main(ctx: WorkerArgs) -> Path | None:
+    lock_path = ctx.out_path.with_suffix(ctx.out_path.suffix + ".lock")
 
     # Try to obtain a simple lock to avoid duplicate computation.
     try:
@@ -110,10 +104,9 @@ def main(ctx: Ctx) -> Path | None:
             ctx.n_steps,
             ctx.n_tokens_either_side,
         )
-        _write_json_atomic(out_path, activations_json)
-        logger.info(f"Wrote v1-compatible activation contexts to {out_path}")
-        return out_path
-    except Exception as e:  # pylint: disable=broad-except
+        _write_json_atomic(ctx.out_path, activations_json)
+        logger.info(f"Wrote subcomponent activation contexts to {ctx.out_path}")
+    except Exception as e:
         logger.warning(f"Activation contexts worker v2 failed: {e}")
         return None
     finally:

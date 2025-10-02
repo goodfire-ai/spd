@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { api, type ComponentActivationContexts } from "$lib/api";
+    import { api, type SubcomponentActivationContexts } from "$lib/api";
     import { onMount } from "svelte";
     import ActivationContext from "./ActivationContext.svelte";
 
@@ -7,7 +7,7 @@
 
     let selectedLayer: string = availableComponentLayers[0];
 
-    let exampleSets: ComponentActivationContexts[] | null = null;
+    let exampleSets: SubcomponentActivationContexts[] | null = null;
 
     let loading = false;
 
@@ -16,7 +16,7 @@
         console.log(`loading contexts for layer ${selectedLayer}`);
         const result = await api.getLayerActivationContexts(selectedLayer);
         console.log(result);
-        exampleSets = result.component_example_sets;
+        exampleSets = result.subcomponent_example_sets;
         console.log(`loaded ${exampleSets.length} contexts`);
         loading = false;
     }
@@ -44,7 +44,7 @@
         <div class="components-list">
             {#each exampleSets as exampleSet}
                 <div class="component-section-header">
-                    <h4>Component {exampleSet.component_idx}</h4>
+                    <h4>Component {exampleSet.subcomponent_idx}</h4>
                     <div class="component-section">
                         {#each exampleSet.examples as example}
                             <ActivationContext {example} />

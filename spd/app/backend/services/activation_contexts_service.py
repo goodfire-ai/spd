@@ -14,9 +14,7 @@ from spd.app.backend.workers.activation_contexts_worker import (
 from spd.app.backend.workers.activation_contexts_worker import (
     ActivationContextsByModule,
 )
-
-# from spd.app.backend.workers.activation_contexts_worker import main as worker_main
-from spd.app.backend.workers.activation_contexts_worker_v2 import Ctx
+from spd.app.backend.workers.activation_contexts_worker_v2 import WorkerArgs
 from spd.app.backend.workers.activation_contexts_worker_v2 import main as worker_main
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
@@ -24,15 +22,15 @@ from spd.settings import SPD_CACHE_DIR
 
 class LayerActivationContexts(BaseModel):
     layer: str
-    components: list["ComponentActivationContexts"]
+    subcomponents: list["SubcomponentActivationContexts"]
 
 
-class ComponentActivationContexts(BaseModel):
-    component_idx: int
+class SubcomponentActivationContexts(BaseModel):
+    subcomponent_idx: int
     examples: list["ActivationContext"]
 
 
-class ComponentActivationContextsService:
+class ActivationContextsService:
     def __init__(self, run_context_service: RunContextService):
         self.run_context_service = run_context_service
         self._activations_by_module: ActivationContextsByModule | None = None
@@ -51,18 +49,18 @@ class ComponentActivationContextsService:
         logger.info("returning activations")
         return self._activations_by_module
 
-    def _cache_path(self) -> Path:
-        assert self.run_context_service.run_context is not None, "Run context not found"
-        wandb_id = self.run_context_service.run_context.wandb_id
-        run_dir = SPD_CACHE_DIR / "runs" / f"spd-{wandb_id}"
+    def _cache_path(self, wandb_id: str) -> Path:
+        run_dir: Path = SPD_CACHE_DIR / "subcomponent_activation_contexts" / f"{wandb_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
-        return run_dir / "component_activation_contexts.json"
+        return run_dir / "data.json"
 
-    def _lock_path(self) -> Path:
-        return self._cache_path().with_suffix(self._cache_path().suffix + ".lock")
+    def _lock_path(self, wandb_id: str) -> Path:
+        output = self._cache_path(wandb_id)
+        return output.with_suffix(output.suffix + ".lock")
 
     def _try_load_from_cache(self) -> ActivationContextsByModule | None:
-        cache_path = self._cache_path()
+        assert (ctx := self.run_context_service.run_context) is not None, "Run context not found"
+        cache_path = self._cache_path(ctx.wandb_id)
         if not cache_path.exists():
             return None
         try:
@@ -81,26 +79,27 @@ class ComponentActivationContextsService:
             return None
 
     def _ensure_worker_running(self) -> None:
+        assert (ctx := self.run_context_service.run_context) is not None, "Run context not found"
+
         # If already building (lock present), do nothing. Otherwise spawn worker.
-        lock_path = self._lock_path()
+        lock_path = self._lock_path(ctx.wandb_id)
         if lock_path.exists():
             return
-        assert self.run_context_service.run_context is not None, "Run context not found"
-        wandb_id = self.run_context_service.run_context.wandb_id
+
         try:
             # Use multiprocessing with 'spawn' to avoid CUDA/torch fork issues
-            ctx = mp.get_context("spawn")
-            process = ctx.Process(
+            mp_ctx = mp.get_context("spawn")
+            process = mp_ctx.Process(
                 target=worker_main,
                 args=(
-                    Ctx(
-                        wandb_id=wandb_id,
+                    WorkerArgs(
+                        wandb_id=ctx.wandb_id,
                         importance_threshold=0.01,
                         separation_threshold_tokens=10,
                         max_examples_per_component=10,
                         n_steps=4,
                         n_tokens_either_side=10,
-                        out=None,
+                        out_path=self._cache_path(ctx.wandb_id),
                     ),
                 ),
                 daemon=True,
@@ -113,7 +112,7 @@ class ComponentActivationContextsService:
     def get_layer_activation_contexts(
         self,
         layer: str,
-    ) -> list[ComponentActivationContexts]:
+    ) -> list[SubcomponentActivationContexts]:
         if (layer_activations := self._get_activations()) == "loading":
             raise HTTPException(
                 status_code=503, detail="Loading activation contexts"
@@ -122,7 +121,7 @@ class ComponentActivationContextsService:
         layer_activations = layer_activations[layer]
 
         return [
-            ComponentActivationContexts(component_idx=component_idx, examples=examples)
+            SubcomponentActivationContexts(subcomponent_idx=component_idx, examples=examples)
             for component_idx, examples in layer_activations.items()
         ]
 

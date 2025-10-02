@@ -16,10 +16,10 @@ from spd.app.backend.services.ablation_service import (
     SparseVector,
     TokenLayerCosineSimilarityData,
 )
-from spd.app.backend.services.component_activations_service import (
+from spd.app.backend.services.activation_contexts_service import (
     ActivationContext,
-    ComponentActivationContexts,
-    ComponentActivationContextsService,
+    ActivationContextsService,
+    SubcomponentActivationContexts,
 )
 from spd.app.backend.services.run_context_service import (
     AvailablePrompt,
@@ -31,7 +31,7 @@ from spd.app.backend.services.run_context_service import (
 run_context_service = RunContextService()
 
 ablation_service = AblationService(run_context_service)
-component_activations_service = ComponentActivationContextsService(run_context_service)
+component_activations_service = ActivationContextsService(run_context_service)
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
@@ -64,14 +64,15 @@ app = FastAPI(lifespan=lifespan, debug=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        #
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        #
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
+        "*",
+        # "http://localhost:5173",
+        # "http://127.0.0.1:5173",
+        # #
+        # "http://localhost:5174",
+        # "http://127.0.0.1:5174",
+        # #
+        # "http://localhost:3000",
+        # "http://127.0.0.1:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -256,7 +257,7 @@ def get_mask_overrides() -> list[MaskOverrideDTO]:
 
 class GetLayerActivationContextsResponse(BaseModel):
     layer: str
-    component_example_sets: list[ComponentActivationContexts]
+    component_example_sets: list[SubcomponentActivationContexts]
 
 
 @app.get("/component_activation_contexts/{layer}")
