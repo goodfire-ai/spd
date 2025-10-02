@@ -1,6 +1,8 @@
 # %%
+import asyncio
 import json
 import multiprocessing as mp
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Literal
 
@@ -109,36 +111,113 @@ class ActivationContextsService:
         except Exception as e:
             logger.warning(f"Failed to spawn activation contexts worker: {e}")
 
-    def get_layer_activation_contexts(
+    async def wait_until_ready(
+        self,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
+        poll_interval_seconds: float = 0.5,
+    ) -> None:
+        """Wait until the activation contexts cache file is present and unlocked.
+
+        Spawns the worker if not already running (based on lock file). Optionally supports
+        cooperative cancellation via an async cancel_check function returning True when cancelled.
+        """
+        assert (ctx := self.run_context_service.run_context) is not None, "Run context not found"
+        out_path = self._cache_path(ctx.wandb_id)
+        lock_path = self._lock_path(ctx.wandb_id)
+
+        # Ensure a worker is running (deduped by lock presence)
+        self._ensure_worker_running()
+
+        seen_lock = lock_path.exists()
+        while True:
+            if cancel_check is not None and await cancel_check():
+                raise HTTPException(status_code=499, detail="Client disconnected")
+
+            if out_path.exists() and not lock_path.exists():
+                break
+
+            # If we observed a lock earlier, and it's gone now, but no file exists,
+            # assume the worker failed and abort.
+            if seen_lock and (not lock_path.exists()) and (not out_path.exists()):
+                raise HTTPException(
+                    status_code=500, detail="Activation contexts computation failed"
+                )
+
+            if lock_path.exists():
+                seen_lock = True
+
+            await asyncio.sleep(poll_interval_seconds)
+
+        # Refresh in-memory cache once ready
+        try:
+            cached = self._try_load_from_cache()
+            if cached is not None:
+                self._activations_by_module = cached
+        except Exception:
+            # If loading fails here, the controller will surface errors on next access
+            pass
+
+    # def get_layer_activation_contexts(
+    #     self,
+    #     layer: str,
+    # ) -> list[SubcomponentActivationContexts]:
+    #     if (layer_activations := self._get_activations()) == "loading":
+    #         raise HTTPException(
+    #             status_code=503, detail="Loading activation contexts"
+    #         )  # 503 meaning service unavailable
+
+    #     layer_activations = layer_activations[layer]
+
+    #     return [
+    #         SubcomponentActivationContexts(subcomponent_idx=component_idx, examples=examples)
+    #         for component_idx, examples in layer_activations.items()
+    #     ]
+
+    async def get_layer_activation_contexts_async(
         self,
         layer: str,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> list[SubcomponentActivationContexts]:
         if (layer_activations := self._get_activations()) == "loading":
-            raise HTTPException(
-                status_code=503, detail="Loading activation contexts"
-            )  # 503 meaning service unavailable
-
+            await self.wait_until_ready(cancel_check=cancel_check)
+            layer_activations = self._get_activations()
+            assert layer_activations != "loading"
         layer_activations = layer_activations[layer]
-
         return [
             SubcomponentActivationContexts(subcomponent_idx=component_idx, examples=examples)
             for component_idx, examples in layer_activations.items()
         ]
 
-    def get_component_activation_contexts(
+    # def get_component_activation_contexts(
+    #     self,
+    #     layer: str,
+    #     component_idx: int,
+    # ) -> list[ActivationContext]:
+    #     if (activations_by_layer := self._get_activations()) == "loading":
+    #         raise HTTPException(status_code=503, detail="Loading activation contexts")
+
+    #     layer_activations = activations_by_layer[layer]
+
+    #     if component_idx not in layer_activations:
+    #         logger.warning(f"Component {component_idx} not found in layer {layer}")
+    #         return []
+
+    #     return layer_activations[component_idx]
+
+    async def get_component_activation_contexts_async(
         self,
         layer: str,
         component_idx: int,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> list[ActivationContext]:
         if (activations_by_layer := self._get_activations()) == "loading":
-            raise HTTPException(status_code=503, detail="Loading activation contexts")
-
+            await self.wait_until_ready(cancel_check=cancel_check)
+            activations_by_layer = self._get_activations()
+            assert activations_by_layer != "loading"
         layer_activations = activations_by_layer[layer]
-
         if component_idx not in layer_activations:
             logger.warning(
                 f"Component {component_idx} not found in layer {layer}. present keys: {list(layer_activations.keys())}"
             )
             return []
-
         return layer_activations[component_idx]

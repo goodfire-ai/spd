@@ -40,7 +40,6 @@ class Status(BaseModel):
 
 class AvailablePrompt(BaseModel):
     index: int
-    text: str
     full_text: str
 
 
@@ -137,7 +136,6 @@ class RunContextService:
             prompts.append(
                 AvailablePrompt(
                     index=idx,
-                    text=text[:200] + "..." if len(text) > 200 else text,  # Truncate for display
                     full_text=text,
                 )
             )

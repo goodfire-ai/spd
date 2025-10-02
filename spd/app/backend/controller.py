@@ -1,11 +1,14 @@
 # %%
+import asyncio
 import traceback
 from contextlib import asynccontextmanager
 from functools import wraps
+from multiprocessing import get_context
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from spd.app.backend.services.ablation_service import (
@@ -27,6 +30,13 @@ from spd.app.backend.services.run_context_service import (
     RunContextService,
     Status,
 )
+from spd.app.backend.workers.activation_contexts_worker_v2 import (
+    WorkerArgs,
+)
+from spd.app.backend.workers.activation_contexts_worker_v2 import (
+    main as activation_contexts_worker_v2_main,
+)
+from spd.settings import SPD_CACHE_DIR
 
 run_context_service = RunContextService()
 
@@ -35,17 +45,32 @@ component_activations_service = ActivationContextsService(run_context_service)
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
-    """Decorator to add error handling with traceback to endpoints."""
+    """Decorator to add error handling with traceback to endpoints.
+
+    Supports both sync and async route handlers.
+    """
+
+    if asyncio.iscoroutinefunction(func):
+
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                traceback.print_exc()
+                raise HTTPException(status_code=500, detail=str(e)) from e
+
+        return async_wrapper
 
     @wraps(func)
-    def wrapper(*args, **kwargs):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
+    def sync_wrapper(*args, **kwargs):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
         try:
             return func(*args, **kwargs)
         except Exception as e:
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=str(e)) from e
 
-    return wrapper
+    return sync_wrapper
 
 
 @asynccontextmanager
@@ -255,45 +280,81 @@ def get_mask_overrides() -> list[MaskOverrideDTO]:
     ]
 
 
-class GetLayerActivationContextsResponse(BaseModel):
-    layer: str
-    component_example_sets: list[SubcomponentActivationContexts]
-
-
 @app.get("/component_activation_contexts/{layer}")
 @handle_errors
-def get_layer_activation_contexts(
+async def get_layer_activation_contexts(
     layer: str,
-) -> GetLayerActivationContextsResponse:
-    res = GetLayerActivationContextsResponse(
+    request: Request,
+) -> list[SubcomponentActivationContexts]:
+    return await component_activations_service.get_layer_activation_contexts_async(
         layer=layer,
-        component_example_sets=component_activations_service.get_layer_activation_contexts(layer),
+        cancel_check=request.is_disconnected,
     )
-    print(type(res))
-    return res
-
-
-class GetComponentActivationContextsResponse(BaseModel):
-    layer: str
-    component_idx: int
-    examples: list[ActivationContext]
 
 
 @app.get("/component_activation_contexts/{layer}/{component_idx}")
 @handle_errors
-def get_component_activation_contexts(
+async def get_component_activation_contexts(
     layer: str,
     component_idx: int,
-) -> GetComponentActivationContextsResponse:
-    contexts = component_activations_service.get_component_activation_contexts(
-        component_idx=component_idx,
-        layer=layer,
-    )
-    return GetComponentActivationContextsResponse(
+    request: Request,
+) -> list[ActivationContext]:
+    return await component_activations_service.get_component_activation_contexts_async(
         layer=layer,
         component_idx=component_idx,
-        examples=contexts,
+        cancel_check=request.is_disconnected,
     )
+
+
+@app.get("/activation_contexts/compute")
+@handle_errors
+async def compute_activation_contexts(request: Request):
+    """Spawn the activation contexts worker and keep the connection open until ready.
+
+    Non-blocking: yields to other requests via asyncio sleep; returns JSON when done.
+    """
+    if (rc := run_context_service.run_context) is None:
+        raise HTTPException(status_code=400, detail="Run context not loaded")
+
+    out_path = SPD_CACHE_DIR / "subcomponent_activation_contexts" / f"{rc.wandb_id}" / "data.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = out_path.with_suffix(out_path.suffix + ".lock")
+
+    proc = None
+    try:
+        if not lock_path.exists():
+            mp_ctx = get_context("spawn")
+            proc = mp_ctx.Process(
+                target=activation_contexts_worker_v2_main,
+                args=(
+                    WorkerArgs(
+                        wandb_id=rc.wandb_id,
+                        importance_threshold=0.01,
+                        separation_threshold_tokens=10,
+                        max_examples_per_component=10,
+                        n_steps=4,
+                        n_tokens_either_side=10,
+                        out_path=out_path,
+                    ),
+                ),
+                daemon=True,
+            )
+            proc.start()
+
+        while True:
+            if await request.is_disconnected():
+                if proc is not None and proc.is_alive():
+                    proc.terminate()
+                raise HTTPException(status_code=499, detail="Client disconnected")
+
+            if out_path.exists() and not lock_path.exists():
+                data = out_path.read_bytes()
+                return Response(content=data, media_type="application/json")
+
+            await asyncio.sleep(0.5)
+    finally:
+        if proc is not None and proc.is_alive():
+            proc.terminate()
 
 
 if __name__ == "__main__":
