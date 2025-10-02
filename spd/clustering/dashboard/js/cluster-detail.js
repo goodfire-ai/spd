@@ -145,24 +145,8 @@ function displayCluster() {
 }
 
 function displayModelVisualization() {
-    if (!modelInfo || !modelInfo.module_list) {
-        console.warn('Model info not loaded');
-        return;
-    }
-
     const modelViewDiv = document.getElementById('modelView');
-
-    try {
-        const architecture = renderModelArchitecture(currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap);
-        const html = renderToHTML(architecture);
-        modelViewDiv.innerHTML = html;
-
-        // Setup tooltips after rendering
-        setTimeout(() => setupTooltips(modelViewDiv), 0);
-    } catch (error) {
-        console.error('Failed to render model visualization:', error);
-        modelViewDiv.innerHTML = '<span style="color: #999; font-size: 11px;">Model visualization unavailable</span>';
-    }
+    renderModelView(modelViewDiv, currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap);
 }
 
 function displayTokenActivations() {

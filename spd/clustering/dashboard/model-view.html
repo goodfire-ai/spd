@@ -2,43 +2,10 @@
 <html>
 <head>
     <title>Cluster Component Distribution</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/notif.css">
+    <link rel="stylesheet" href="css/model-view.css">
     <style>
-        #modelContainer {
-            margin: 10px;
-            padding: 10px;
-        }
-
-        .layer-block {
-            margin: 2px 0;
-            display: flex;
-            align-items: center;
-            gap: 2px;
-        }
-
-        .layer-label {
-            width: 30px;
-            font-size: 10px;
-            color: #666;
-            text-align: center;
-        }
-
-        .module-group {
-            display: flex;
-            gap: 1px;
-            border: 1px solid #ddd;
-            padding: 1px;
-        }
-
-        .module-cell {
-            width: 12px;
-            height: 12px;
-            background: #f0f0f0;
-            border-radius: 1px;
-            cursor: pointer;
-        }
-
-
         #controls {
             margin: 10px;
             padding: 8px;
@@ -71,14 +38,7 @@
     <h1>Cluster Component Distribution</h1>
 
     <div id="controls">
-        <label>Cluster ID: <input type="number" id="clusterInput" placeholder="0" min="0"></label>
-        <label>Data File:
-            <select id="dataFile">
-                <option value="max_activations_iter-1_n4.json">Iteration 1 (n=4)</option>
-                <option value="max_activations_iter7375_n4.json">Iteration 7375 (n=4)</option>
-                <option value="max_activations_iter7375_n16.json" selected>Iteration 7375 (n=16)</option>
-            </select>
-        </label>
+        <label>Cluster Hash: <input type="text" id="clusterInput" placeholder="cluster-hash"></label>
         <label>Colormap:
             <select id="colormapSelect">
                 <option value="blues">Blues</option>
@@ -89,10 +49,8 @@
         </label>
     </div>
 
-
-    <div id="modelContainer">
-        <div id="loading">Loading model data...</div>
-    </div>
+    <div id="loading">Loading model data...</div>
+    <div id="modelContainer" class="modelview-container"></div>
 
     <div id="tooltip"></div>
 
@@ -100,60 +58,71 @@
         <a href="index.html">← Back to Cluster Selection</a>
     </div>
 
+    <script src="js/util/notif.js"></script>
+    <script src="js/util/config.js"></script>
     <script src="js/util/ColorUtil.js"></script>
+    <script src="js/pkg/jszip.min.js"></script>
     <script src="js/model-visualization.js"></script>
     <script>
         let clusterData = {};
         let modelInfo = {};
-        let currentClusterId = null;
+        let currentClusterHash = null;
         let currentColormap = 'blues';
 
-        async function loadData(filename = 'max_activations_iter7375_n16.json') {
+        async function loadData() {
+            const progressBar = NOTIF.pbar('Loading data...');
             try {
-                const [clusterResponse, modelResponse] = await Promise.all([
-                    fetch('data/' + filename),
-                    fetch('data/model_info.json')
+                await initConfig();
+                progressBar.progress(0.2);
+
+                const [clusters, modelInfoResponse] = await Promise.all([
+                    loadJSONL(CONFIG.getDataPath('clusters'), 'cluster_hash'),
+                    fetch(CONFIG.getDataPath('modelInfo'))
                 ]);
 
-                clusterData = await clusterResponse.json();
-                modelInfo = await modelResponse.json();
+                progressBar.progress(0.6);
+
+                if (!modelInfoResponse.ok) {
+                    throw new Error(`Failed to load model info: ${modelInfoResponse.status}`);
+                }
+
+                clusterData = clusters;
+                modelInfo = await modelInfoResponse.json();
+
+                progressBar.progress(0.9);
 
                 // Set default cluster to first available
-                const clusterIds = Object.keys(clusterData);
-                if (clusterIds.length > 0 && currentClusterId === null) {
-                    currentClusterId = clusterIds[0];
-                    document.getElementById('clusterInput').value = currentClusterId;
+                const clusterHashes = Object.keys(clusterData);
+                if (clusterHashes.length > 0 && currentClusterHash === null) {
+                    currentClusterHash = clusterHashes[0];
+                    document.getElementById('clusterInput').value = currentClusterHash;
                 }
 
                 renderView();
+                progressBar.complete();
                 document.getElementById('loading').style.display = 'none';
             } catch (error) {
+                progressBar.complete();
+                NOTIF.error('Error loading data', error, null);
                 document.getElementById('loading').textContent = 'Error loading data: ' + error.message;
             }
         }
 
         function renderView() {
-            if (currentClusterId === null) return;
+            if (currentClusterHash === null || !clusterData[currentClusterHash]) {
+                document.getElementById('modelContainer').innerHTML = '<div>No cluster selected or cluster not found</div>';
+                return;
+            }
 
             const container = document.getElementById('modelContainer');
-            const architecture = renderModelArchitecture(currentClusterId, clusterData, modelInfo, currentColormap);
-            const html = renderToHTML(architecture);
-            container.innerHTML = html;
-
-            // Add tooltip event listeners
-            setupTooltips(container);
+            renderModelView(container, currentClusterHash, clusterData, modelInfo, currentColormap);
         }
 
         // Event listeners
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('clusterInput').addEventListener('change', (e) => {
-                currentClusterId = e.target.value;
+                currentClusterHash = e.target.value;
                 renderView();
-            });
-
-            document.getElementById('dataFile').addEventListener('change', (e) => {
-                document.getElementById('loading').style.display = 'block';
-                loadData(e.target.value);
             });
 
             document.getElementById('colormapSelect').addEventListener('change', (e) => {
@@ -161,7 +130,6 @@
                 renderView();
             });
 
-            // Load initial data
             loadData();
         });
     </script>

@@ -145,11 +145,11 @@ function renderToHTML(architecture) {
     let html = '';
 
     architecture.elements.forEach(layer => {
-        html += '<div class="layer-block">';
+        html += '<div class="modelview-layer-block">';
         layer.rows.forEach(row => {
-            html += '<div class="module-group">';
+            html += '<div class="modelview-module-group">';
             row.cells.forEach(cell => {
-                html += `<div class="module-cell" style="background-color: ${cell.color}; width: ${cell.size}px; height: ${cell.size}px;" data-module="${cell.module}" data-count="${cell.count}" data-components="${cell.components}"></div>`;
+                html += `<div class="modelview-module-cell" style="background-color: ${cell.color};" data-module="${cell.module}" data-count="${cell.count}" data-components="${cell.components}"></div>`;
             });
             html += '</div>';
         });
@@ -159,11 +159,12 @@ function renderToHTML(architecture) {
     return html;
 }
 
+// Consolidated tooltip setup - works for all model visualizations
 function setupTooltips(containerElement) {
     const tooltip = document.getElementById('tooltip');
     if (!tooltip) return;
 
-    const cells = containerElement.querySelectorAll('.module-cell');
+    const cells = containerElement.querySelectorAll('.modelview-module-cell');
 
     cells.forEach(cell => {
         cell.addEventListener('mouseenter', (e) => {
@@ -171,10 +172,12 @@ function setupTooltips(containerElement) {
             const count = e.target.dataset.count;
             const components = e.target.dataset.components;
 
-            tooltip.textContent = `${module}\nComponents: ${count}\nIndices: ${components || 'none'}`;
-            tooltip.style.display = 'block';
-            tooltip.style.left = (e.pageX + 10) + 'px';
-            tooltip.style.top = (e.pageY + 10) + 'px';
+            if (module) {
+                tooltip.textContent = `${module}\nComponents: ${count}\nIndices: ${components || 'none'}`;
+                tooltip.style.display = 'block';
+                tooltip.style.left = (e.pageX + 10) + 'px';
+                tooltip.style.top = (e.pageY + 10) + 'px';
+            }
         });
 
         cell.addEventListener('mouseleave', () => {
@@ -186,4 +189,29 @@ function setupTooltips(containerElement) {
             tooltip.style.top = (e.pageY + 10) + 'px';
         });
     });
+}
+
+// Consolidated render function - creates model visualization in a container
+function renderModelView(containerElement, clusterHash, clusterData, modelInfo, colormap = 'blues') {
+    if (!modelInfo || !modelInfo.module_list) {
+        containerElement.innerHTML = '<span style="color: #999; font-size: 11px;">Model info loading...</span>';
+        return;
+    }
+
+    if (!clusterData || !clusterData[clusterHash]) {
+        containerElement.innerHTML = '<span style="color: #999; font-size: 11px;">Cluster data missing</span>';
+        return;
+    }
+
+    try {
+        const architecture = renderModelArchitecture(clusterHash, clusterData, modelInfo, colormap);
+        const html = renderToHTML(architecture);
+        containerElement.innerHTML = html;
+
+        // Setup tooltips after a brief delay to ensure DOM is ready
+        setTimeout(() => setupTooltips(containerElement), 0);
+    } catch (error) {
+        console.error('Failed to render model visualization:', error);
+        containerElement.innerHTML = '<span style="color: #999; font-size: 11px;">Model visualization error</span>';
+    }
 }

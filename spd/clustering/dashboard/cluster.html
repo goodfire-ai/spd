@@ -4,61 +4,7 @@
     <title>Cluster Details</title>
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/notif.css">
-    <style>
-        .model-view-cell {
-            width: 200px;
-            min-height: 60px;
-        }
-
-        .model-view-cell .layer-block {
-            margin: 1px 0;
-            display: flex;
-            flex-direction: column;
-            gap: 1px;
-        }
-
-        .model-view-cell .module-group {
-            display: flex;
-            gap: 1px;
-            border: 1px solid #ddd;
-            padding: 1px;
-        }
-
-        .model-view-cell .module-cell {
-            width: 8px;
-            height: 8px;
-            border-radius: 1px;
-            cursor: pointer;
-        }
-
-        #modelView {
-            display: flex;
-            flex-direction: row;
-            gap: 2px;
-            align-items: start;
-        }
-
-        #modelView .layer-block {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        #modelView .module-group {
-            display: flex;
-            gap: 2px;
-            border: 1px solid #ddd;
-            padding: 2px;
-            background: #fafafa;
-        }
-
-        #modelView .module-cell {
-            width: 12px;
-            height: 12px;
-            border-radius: 2px;
-            cursor: pointer;
-        }
-    </style>
+    <link rel="stylesheet" href="css/model-view.css">
 </head>
 <body>
     <div>
@@ -70,7 +16,7 @@
         <h2>Components (<span id="componentCount">0</span>)</h2>
 
         <div style="display: flex; gap: 20px; align-items: start;">
-            <div id="modelView" style="flex-shrink: 0;">
+            <div id="modelView" class="modelview-detail" style="flex-shrink: 0;">
                 <!-- Model visualization will be inserted here -->
             </div>
             <div id="componentsTable" style="flex-grow: 1;"></div>

@@ -5,24 +5,10 @@ let dataTable = null;
 // Custom column renderers
 const columnRenderers = {
     modelView: function(value, row, col) {
-        const clusterId = row.id;
-
-        if (!modelInfo || !modelInfo.module_list) {
-            return '<span style="color: #999; font-size: 11px;">Model info loading...</span>';
-        }
-
-        if (!clusterData[row.clusterHash]) {
-            return '<span style="color: #999; font-size: 11px;">Cluster data missing</span>';
-        }
-
-        const architecture = renderModelArchitecture(row.clusterHash, clusterData, modelInfo, CONFIG.visualization.colormap);
-        const html = renderToHTML(architecture);
-
         const container = document.createElement('div');
-        container.className = 'model-view-cell';
-        container.innerHTML = html;
+        container.className = 'modelview-cell';
 
-        setTimeout(() => setupModelViewTooltips(container), 0);
+        renderModelView(container, row.clusterHash, clusterData, modelInfo, CONFIG.visualization.colormap);
 
         return container;
     },
@@ -227,37 +213,6 @@ const columnRenderers = {
         };
     }
 };
-
-function setupModelViewTooltips(container) {
-    const tooltip = document.getElementById('tooltip');
-    if (!tooltip) return;
-
-    const cells = container.querySelectorAll('.module-cell');
-
-    cells.forEach(cell => {
-        cell.addEventListener('mouseenter', (e) => {
-            const module = e.target.dataset.module;
-            const count = e.target.dataset.count;
-            const components = e.target.dataset.components;
-
-            if (module) {
-                tooltip.textContent = `${module}\nComponents: ${count}\nIndices: ${components || 'none'}`;
-                tooltip.style.display = 'block';
-                tooltip.style.left = (e.pageX + 10) + 'px';
-                tooltip.style.top = (e.pageY + 10) + 'px';
-            }
-        });
-
-        cell.addEventListener('mouseleave', () => {
-            tooltip.style.display = 'none';
-        });
-
-        cell.addEventListener('mousemove', (e) => {
-            tooltip.style.left = (e.pageX + 10) + 'px';
-            tooltip.style.top = (e.pageY + 10) + 'px';
-        });
-    });
-}
 
 async function loadModelInfo() {
     const response = await fetch(CONFIG.getDataPath('modelInfo'));
