@@ -29,7 +29,7 @@
     let result: RunPromptResponse | null = null;
     let currentPromptId: string | null = null;
     let savedMasksPanel: SavedMasksPanel;
-    let availablePrompts: { index: number; text: string; full_text: string }[] = [];
+    let availablePrompts: { index: number; text: string; full_text: string }[] | null = null;
     let showAvailablePrompts = false;
 
     async function loadAvailablePrompts() {
@@ -42,9 +42,6 @@
 
     function toggleAvailablePrompts() {
         showAvailablePrompts = !showAvailablePrompts;
-        if (showAvailablePrompts && availablePrompts.length === 0) {
-            loadAvailablePrompts();
-        }
     }
 
     // Helper functions for workspace management
@@ -199,6 +196,14 @@
         isLoading = false;
     }
 
+    async function runRandomPrompt() {
+        if (!availablePrompts) {
+            console.error("No prompts available");
+            return;
+        }
+        runPromptByIndex(Math.floor(Math.random() * availablePrompts.length));
+    }
+
     function openPopup(
         token: string,
         tokenIdx: number,
@@ -237,14 +242,19 @@
     <div class="workspace-navigation">
         <div class="workspace-header">
             <h3>Prompt Workspaces</h3>
-            <button class="add-prompt-btn" on:click={toggleAvailablePrompts}>
-                {showAvailablePrompts ? "Cancel" : "+ Add Prompt"}
-            </button>
+            {#if showAvailablePrompts}
+                <button class="add-prompt-btn" on:click={toggleAvailablePrompts}>Cancel</button>
+            {:else}
+                <button class="add-prompt-btn" on:click={runRandomPrompt}>+ Random Prompt</button>
+                <button class="add-prompt-btn" on:click={toggleAvailablePrompts}
+                    >+ Add Prompt</button
+                >
+            {/if}
         </div>
 
         {#if showAvailablePrompts}
             <div class="available-prompts-dropdown">
-                {#if availablePrompts.length === 0}
+                {#if availablePrompts == null}
                     <p>Loading prompts...</p>
                 {:else}
                     <div class="prompt-list">
@@ -299,7 +309,6 @@
                     onCellClick={openPopup}
                     on:maskCreated={refreshSavedMasks}
                 />
-
                 <DisabledComponentsPanel
                     promptTokens={result.prompt_tokens}
                     {isLoading}

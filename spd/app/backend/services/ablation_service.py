@@ -49,7 +49,8 @@ class Component(BaseModel):
 
 
 class MatrixCausalImportances(BaseModel):
-    subcomponent_cis: SparseVector
+    subcomponent_cis_sparse: SparseVector
+    subcomponent_cis: list[float]
     """the CI values for each subcomponent"""
 
     # component_indices: list[int]
@@ -251,7 +252,8 @@ class AblationService:
 
                 token_cis.append(
                     MatrixCausalImportances(
-                        subcomponent_cis=SparseVector.from_tensor(tok_layer_ci),
+                        subcomponent_cis_sparse=SparseVector.from_tensor(tok_layer_ci),
+                        subcomponent_cis=tok_layer_ci.tolist(),
                         # component_indices=tok_component_indices.tolist(),
                         component_agg_cis=tok_component_agg_ci.tolist(),
                         components=components,

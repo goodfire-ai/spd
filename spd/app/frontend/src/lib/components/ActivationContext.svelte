@@ -1,8 +1,7 @@
 <script lang="ts">
     import type { ActivationContext } from "$lib/api";
 
-    export let componentIdx: number;
-    export let examples: ActivationContext[];
+    export let example: ActivationContext;
 
     function getHighlightColor(importance: number): string {
         const importanceNorm = Math.min(Math.max(importance, 0), 1);
@@ -59,63 +58,16 @@
     }
 </script>
 
-<div class="activation-contexts">
-    <div class="header">
-        <h4>Component {componentIdx}</h4>
-        <span class="example-count">{examples.length} examples</span>
-    </div>
-
-    <div class="examples-container">
-        {#each examples as context, i}
-            <div class="example-item">
-                <strong>{i + 1}.</strong>
-                {@html renderTokenWithHighlight(
-                    context.raw_text,
-                    context.offset_mapping,
-                    context.token_ci_values,
-                    context.active_position
-                )}
-            </div>
-        {/each}
-    </div>
+<div class="example-item">
+    {@html renderTokenWithHighlight(
+        example.raw_text,
+        example.offset_mapping,
+        example.token_ci_values,
+        example.active_position
+    )}
 </div>
 
 <style>
-    .activation-contexts {
-        padding: 1rem;
-        background: var(--background-color, #fff);
-        border-radius: 6px;
-        border: 1px solid #e0e0e0;
-    }
-
-    .header {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 0.75rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 1px solid #e0e0e0;
-    }
-
-    .header h4 {
-        margin: 0;
-        font-size: 1rem;
-        color: #333;
-    }
-
-    .example-count {
-        font-size: 0.85rem;
-        color: #999;
-        margin-left: auto;
-    }
-
-    .examples-container {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-        overflow-y: auto;
-    }
-
     .example-item {
         font-family: monospace;
         font-size: 14px;

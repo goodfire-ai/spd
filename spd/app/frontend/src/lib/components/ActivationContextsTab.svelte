@@ -1,7 +1,7 @@
 <script lang="ts">
     import { api, type ComponentActivationContexts } from "$lib/api";
     import { onMount } from "svelte";
-    import ActivationContexts from "./ActivationContexts.svelte";
+    import ActivationContext from "./ActivationContext.svelte";
 
     export let availableComponentLayers: string[];
 
@@ -43,11 +43,13 @@
     {#if exampleSets}
         <div class="components-list">
             {#each exampleSets as exampleSet}
-                <div class="component-section">
-                    <ActivationContexts
-                        component_idx={exampleSet.component_idx}
-                        examples={exampleSet.examples}
-                    />
+                <div class="component-section-header">
+                    <h4>Component {exampleSet.component_idx}</h4>
+                    <div class="component-section">
+                        {#each exampleSet.examples as example}
+                            <ActivationContext {example} />
+                        {/each}
+                    </div>
                 </div>
             {/each}
         </div>

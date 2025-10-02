@@ -1,7 +1,6 @@
 <script lang="ts">
-    import { ablationComponentMask, popupData } from "$lib/stores/componentState";
+    import { popupData } from "$lib/stores/componentState";
     import ComponentCard from "./ComponentCard.svelte";
-    // import ActivationContexts from "./ActivationContexts.svelte";
 
     export let onClose: () => void;
     export let onToggleComponent: (
@@ -46,19 +45,6 @@
             }
         }
     }
-
-    // Make this reactive to $runAblation changes
-    $: disabledComponentIndices = (() => {
-        if (!$popupData) return [];
-        // Access $runAblation to trigger reactivity
-        const ablations = $ablationComponentMask;
-        const allIndices = getAllComponentIndices();
-        return allIndices.filter((idx) => {
-            const layerAblations = ablations[$popupData.layer];
-            if (!layerAblations || !layerAblations[$popupData.tokenIdx]) return false;
-            return layerAblations[$popupData.tokenIdx].includes(idx);
-        });
-    })();
 </script>
 
 {#if $popupData}
@@ -74,7 +60,7 @@
                     <p><strong>Layer:</strong> {$popupData.layer}</p>
                     <p>
                         <strong>Subcomponents L0:</strong>
-                        {$popupData.matrixCis.subcomponent_cis.l0}
+                        {$popupData.matrixCis.subcomponent_cis_sparse.l0}
                     </p>
                 </div>
                 <div class="components-section">
@@ -90,12 +76,21 @@
                         </label>
                     </div>
                     <div class="components-grid">
-                        {#each $popupData.matrixCis.components as component}
+                        {#each $popupData.matrixCis.components
+                            .map( (component) => ({ component, aggCi: $popupData.matrixCis.component_agg_cis[component.index] }) )
+                            .sort((a, b) => b.aggCi - a.aggCi) as { component, aggCi }}
                             <ComponentCard
                                 {component}
-                                componentAggCi={$popupData.matrixCis.component_agg_cis[
-                                    component.index
-                                ]}
+                                componentAggCi={aggCi}
+                                subcomponentCis={component.subcomponent_indices.map((idx) => {
+                                    const val = $popupData.matrixCis.subcomponent_cis[idx];
+                                    if (typeof val !== "number") {
+                                        throw new Error(
+                                            `Expected number, got ${val} for index ${idx} (len: ${$popupData.matrixCis.subcomponent_cis_sparse.values.length})`
+                                        );
+                                    }
+                                    return val;
+                                })}
                                 layer={$popupData.layer}
                                 tokenIdx={$popupData.tokenIdx}
                                 onToggle={() => {
@@ -111,25 +106,6 @@
                         {/each}
                     </div>
                 </div>
-                <!-- Activation Contexts Section -->
-                <!-- {#if $popupData.tokenCis.indices.length > 0}
-                    <div class="activation-contexts-section">
-                        <h3>Activation Examples</h3>
-                        <p class="section-description">
-                            Examples of prompts where these components activate:
-                        </p>
-                        {#each $popupData.tokenCis.indices.slice(0, 3) as componentIdx}
-                            <div class="component-activation">
-                                <h4>Component {componentIdx}</h4>
-                                <ActivationContexts
-                                    componentId={componentIdx}
-                                    layer={$popupData.layer}
-                                    compact={true}
-                                />
-                            </div>
-                        {/each}
-                    </div>
-                {/if} -->
             </div>
         </div>
     </div>
@@ -202,13 +178,13 @@
     }
 
     .components-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-        gap: 0.75rem;
+        display: flex;
+        gap: 1rem;
         padding: 1rem;
         border: 1px solid #e0e0e0;
         border-radius: 6px;
         background: #fafafa;
+        overflow-x: auto;
     }
 
     .activation-contexts-section {

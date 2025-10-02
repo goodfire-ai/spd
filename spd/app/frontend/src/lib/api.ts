@@ -30,7 +30,8 @@ export type Component = {
 };
 
 export type MatrixCausalImportances = {
-    subcomponent_cis: SparseVector;
+    subcomponent_cis_sparse: SparseVector;
+    subcomponent_cis: number[];
     component_agg_cis: number[];
     components: Component[];
 };

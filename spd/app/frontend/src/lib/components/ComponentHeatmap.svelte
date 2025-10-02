@@ -62,7 +62,7 @@
 
     let globalMax = Math.max(
         ...result.layer_cis.flatMap((layer) =>
-            layer.token_cis.map((tokenCIs) => tokenCIs.subcomponent_cis.l0)
+            layer.token_cis.map((tokenCIs) => tokenCIs.subcomponent_cis_sparse.l0)
         )
     );
 
@@ -109,11 +109,11 @@
                                 class:selected={isTokenSelected(layer.module, tokenIdx)}
                                 class:multi-select-mode={$multiSelectMode}
                                 style="background: {getColorFroml0(
-                                    layer.token_cis[tokenIdx].subcomponent_cis.l0,
+                                    layer.token_cis[tokenIdx].subcomponent_cis_sparse.l0,
                                     layer.module,
                                     tokenIdx
                                 )}"
-                                title="L0={layer.token_cis[tokenIdx].subcomponent_cis.l0}"
+                                title="L0={layer.token_cis[tokenIdx].subcomponent_cis_sparse.l0}"
                                 on:click={() =>
                                     handleCellClick(
                                         token,
