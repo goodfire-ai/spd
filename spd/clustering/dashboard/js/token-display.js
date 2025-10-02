@@ -77,13 +77,22 @@ function createTokenVisualizationWithTooltip(tokens, activations, maxPosition) {
         tooltip.textContent = `${token}: ${activation.toFixed(6)}`;
         tooltip.style.display = 'none';
         span.appendChild(tooltip);
-        
-        // Show/hide tooltip on hover
-        span.addEventListener('mouseenter', () => {
+
+        // Show/hide tooltip on hover with dynamic positioning
+        span.addEventListener('mouseenter', (e) => {
+            const rect = span.getBoundingClientRect();
             tooltip.style.display = 'block';
+            tooltip.style.left = rect.left + (rect.width / 2) + 'px';
+            tooltip.style.top = rect.top - 5 + 'px';
+            tooltip.style.transform = 'translate(-50%, -100%)';
         });
         span.addEventListener('mouseleave', () => {
             tooltip.style.display = 'none';
+        });
+        span.addEventListener('mousemove', (e) => {
+            const rect = span.getBoundingClientRect();
+            tooltip.style.left = rect.left + (rect.width / 2) + 'px';
+            tooltip.style.top = rect.top - 5 + 'px';
         });
         
         tokenContainer.appendChild(span);

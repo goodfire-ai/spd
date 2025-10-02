@@ -311,7 +311,9 @@ function plot(values, yvalues = null, options = {}) {
 		}
 		if (opts.yAxis.ticks) {
 			svg += `<text x="${yAxisX - opts.yAxis.text_offset}" y="${opts.margin + opts.yAxis.text_y_offset + opts.axis_style.font_size}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="end">${formatYTick(ymaxForScale)}</text>`;
-			svg += `<text x="${yAxisX - opts.yAxis.text_offset}" y="${opts.height - bottomMargin + opts.yAxis.text_offset}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="end">${formatYTick(yminForScale)}</text>`;
+			// For log scale with ymin=0, always show "0" for the lower bound
+			const lowerLabel = (opts.logScale && ymin === 0) ? '0' : formatYTick(yminForScale);
+			svg += `<text x="${yAxisX - opts.yAxis.text_offset}" y="${opts.height - bottomMargin + opts.yAxis.text_offset}" font-size="${opts.axis_style.font_size}" fill="${opts.axis_style.text_color}" text-anchor="end">${lowerLabel}</text>`;
 		}
 	}
 

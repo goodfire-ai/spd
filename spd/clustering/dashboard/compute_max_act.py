@@ -138,6 +138,9 @@ def compute_max_activations(
     cluster_text_hashes: dict[ClusterIdHash, list[TextSampleHash]] = {
         cluster_id_map[idx].to_string(): [] for idx in unique_cluster_indices
     }
+    cluster_tokens: dict[ClusterIdHash, list[list[str]]] = {
+        cluster_id_map[idx].to_string(): [] for idx in unique_cluster_indices
+    }
     text_samples: dict[TextSampleHash, TextSample] = {}
 
     # Process batches
@@ -207,6 +210,7 @@ def compute_max_activations(
                 activations_np: Float[np.ndarray, " n_ctx"] = acts_2d_cpu[batch_sample_idx]
                 cluster_activations[current_cluster_hash].append(activations_np)
                 cluster_text_hashes[current_cluster_hash].append(text_hash)
+                cluster_tokens[current_cluster_hash].append(text_sample.tokens)
 
     # Build ClusterData for each cluster
     clusters: dict[ClusterIdHash, ClusterData] = {}
@@ -225,11 +229,13 @@ def compute_max_activations(
         # Stack activations into batch
         acts_array: Float[np.ndarray, "batch n_ctx"] = np.stack(cluster_activations[cluster_hash])
         text_hashes_list: list[TextSampleHash] = cluster_text_hashes[cluster_hash]
+        tokens_list: list[list[str]] = cluster_tokens[cluster_hash]
 
         activation_batch: ActivationSampleBatch = ActivationSampleBatch(
             cluster_id=cluster_id,
             text_hashes=text_hashes_list,
             activations=acts_array,
+            tokens=tokens_list,
         )
 
         # Convert component info to ComponentInfo objects

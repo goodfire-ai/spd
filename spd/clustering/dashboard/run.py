@@ -33,7 +33,7 @@ def main(
 
     Args:
         wandb_run: WandB clustering run path (e.g., entity/project/run_id)
-        output_dir: Output directory (default: REPO_ROOT/spd/clustering/dashboard/data/{run_id})
+        output_dir: Output directory (default: REPO_ROOT/spd/clustering/dashboard/data/{run_id}-i{iteration})
         iteration: Merge iteration to analyze (negative indexes from end)
         n_samples: Number of top-activating samples to collect per cluster
         n_batches: Number of data batches to process
@@ -54,9 +54,15 @@ def main(
     run: Run = api.run(wandb_path)
     run_id: str = run.id
 
-    # Set up output directory
+    # Get actual iteration number (handle negative indexing)
+    actual_iteration: int = (
+        iteration if iteration >= 0 else merge_history.n_iters_current + iteration
+    )
+
+    # Set up output directory with iteration count
+    dir_name: str = f"{run_id}-i{actual_iteration}"
     final_output_dir: Path = output_dir or (
-        REPO_ROOT / "spd" / "clustering" / "dashboard" / "data" / run_id
+        REPO_ROOT / "spd" / "clustering" / "dashboard" / "data" / dir_name
     )
     final_output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Output directory: {final_output_dir}")
@@ -80,11 +86,6 @@ def main(
         clustering_run=run_id,
     )
     logger.info(f"computed max activations: {len(dashboard_data.clusters) = }")
-
-    # Get iteration for model info
-    actual_iteration: int = (
-        iteration if iteration >= 0 else merge_history.n_iters_current + iteration
-    )
     merge: GroupMerge = merge_history.merges[actual_iteration]
 
     # Generate model information
@@ -128,7 +129,7 @@ def cli() -> None:
         "--output-dir",
         "-o",
         type=Path,
-        help="Output directory (default: REPO_ROOT/spd/clustering/dashboard/data/{run_id})",
+        help="Output directory (default: REPO_ROOT/spd/clustering/dashboard/data/{run_id}-i{iteration})",
         default=None,
     )
     parser.add_argument(

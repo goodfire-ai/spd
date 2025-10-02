@@ -78,8 +78,84 @@ function displayCluster() {
     // Setup components table
     setupComponentsTable();
 
+    // Display token activation stats if available
+    if (clusterData.stats && clusterData.stats.token_activations) {
+        displayTokenActivations();
+    }
+
     // Display samples
     displaySamples();
+}
+
+function displayTokenActivations() {
+    const tokenStats = clusterData.stats.token_activations;
+
+    // Show the section
+    document.getElementById('tokenActivations').style.display = 'block';
+
+    // Populate summary statistics
+    document.getElementById('totalUniqueTokens').textContent =
+        tokenStats.total_unique_tokens.toLocaleString();
+    document.getElementById('totalActivations').textContent =
+        tokenStats.total_activations.toLocaleString();
+    document.getElementById('entropy').textContent =
+        tokenStats.entropy.toFixed(2);
+    document.getElementById('concentrationRatio').textContent =
+        (tokenStats.concentration_ratio * 100).toFixed(1) + '%';
+
+    // Setup top tokens table
+    if (tokenStats.top_tokens && tokenStats.top_tokens.length > 0) {
+        const tableData = tokenStats.top_tokens.map((item, idx) => ({
+            rank: idx + 1,
+            token: item.token,
+            count: item.count,
+            percentage: ((item.count / tokenStats.total_activations) * 100).toFixed(1)
+        }));
+
+        const tableConfig = {
+            data: tableData,
+            columns: [
+                {
+                    key: 'rank',
+                    label: 'Rank',
+                    type: 'number',
+                    width: '60px',
+                    align: 'right'
+                },
+                {
+                    key: 'token',
+                    label: 'Token',
+                    type: 'string',
+                    width: '200px',
+                    render: (value) => {
+                        // Show token in a monospace box with visual formatting
+                        const tokenDisplay = value.replace(/ /g, '·').replace(/\n/g, '↵');
+                        return `<code class="token-display">${tokenDisplay}</code>`;
+                    }
+                },
+                {
+                    key: 'count',
+                    label: 'Count',
+                    type: 'number',
+                    width: '100px',
+                    align: 'right',
+                    render: (value) => value.toLocaleString()
+                },
+                {
+                    key: 'percentage',
+                    label: '%',
+                    type: 'number',
+                    width: '80px',
+                    align: 'right',
+                    render: (value) => value + '%'
+                }
+            ],
+            pageSize: 20,
+            showFilters: false
+        };
+
+        new DataTable('#topTokensTable', tableConfig);
+    }
 }
 
 function setupComponentsTable() {

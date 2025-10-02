@@ -84,8 +84,8 @@ clustering-dashboard:
 	python spd/clustering/dashboard/run.py \
 		--wandb-run goodfire/spd-cluster/runs/j8dgvemf \
 		--iteration 7000 \
-		--n-samples 4 \
-		--n-batches 2
+		--n-samples 32 \
+		--n-batches 4
 
 # --iteration 4500 \
 # --n-samples 16 \

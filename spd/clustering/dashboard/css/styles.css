@@ -3,7 +3,7 @@ body {
     margin: 20px;
 }
 
-h1, h2 {
+h1, h2, h3 {
     font-weight: normal;
 }
 
@@ -66,19 +66,16 @@ a {
 }
 
 .token-tooltip {
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed;
     background: #333;
     color: white;
     padding: 5px 8px;
     border-radius: 3px;
     white-space: nowrap;
-    z-index: 1000;
-    margin-bottom: 5px;
+    z-index: 999999;
     font-size: 12px;
     pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 #samplesTable {
@@ -88,4 +85,51 @@ a {
 
 #samplesTable td:last-child {
     min-width: 500px;
+}
+
+/* Token activation statistics */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.stat-card {
+    border: 1px solid #ccc;
+    padding: 15px;
+    background: #f9f9f9;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #333;
+}
+
+.stat-help {
+    font-size: 11px;
+    color: #999;
+    margin-top: 5px;
+}
+
+.token-display {
+    background: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 13px;
+    border: 1px solid #ddd;
+}
+
+#tokenActivations {
+    margin: 30px 0;
+    padding-top: 20px;
+    border-top: 2px solid #ddd;
 }

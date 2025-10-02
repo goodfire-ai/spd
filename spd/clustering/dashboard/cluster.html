@@ -15,7 +15,34 @@
 
         <div id="componentsTable"></div>
     </div>
-    
+
+    <div id="tokenActivations" style="display: none;">
+        <h2>Token Activation Statistics</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Unique Tokens</div>
+                <div class="stat-value" id="totalUniqueTokens">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Activations</div>
+                <div class="stat-value" id="totalActivations">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Entropy</div>
+                <div class="stat-value" id="entropy">-</div>
+                <div class="stat-help">Higher = more diverse token distribution</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Concentration Ratio</div>
+                <div class="stat-value" id="concentrationRatio">-</div>
+                <div class="stat-help">Fraction of activations in top 10% tokens</div>
+            </div>
+        </div>
+
+        <h3>Most Frequently Activated Tokens</h3>
+        <div id="topTokensTable"></div>
+    </div>
+
     <div id="samples">
         <h2>Top Text Samples</h2>
         <table id="samplesTable">

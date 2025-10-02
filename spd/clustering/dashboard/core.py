@@ -95,6 +95,7 @@ class ActivationSampleBatch:
     cluster_id: ClusterId
     text_hashes: list[TextSampleHash]
     activations: Float[np.ndarray, "batch n_ctx"]
+    tokens: list[list[str]] | None = None  # Token strings for each sample
 
     @cached_property
     def activation_hashes(self) -> list[ActivationSampleHash]:
@@ -189,6 +190,8 @@ class ClusterData:
         criteria: list[TrackingCriterion],
         components: list[ComponentInfo],
         hist_bins: int = 10,
+        activation_threshold: float = 0.5,
+        top_n_tokens: int = 50,
     ) -> "ClusterData":
         cluster_hash: ClusterIdHash = cluster_id.to_string()
         criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]] = {}
@@ -233,6 +236,55 @@ class ClusterData:
         stats["min_activation"] = float(np.min(all_activations))
         stats["max_activation"] = float(np.max(all_activations))
         stats["median_activation"] = float(np.median(all_activations))
+
+        # Token-level activation statistics
+        if activation_samples.tokens is not None:
+            from collections import Counter
+
+            # Count activations per token above threshold
+            token_activation_counts: Counter[str] = Counter()
+
+            for sample_idx, token_list in enumerate(activation_samples.tokens):
+                sample_activations = all_activations[sample_idx]  # shape: (n_ctx,)
+
+                for token_idx, token in enumerate(token_list):
+                    if sample_activations[token_idx] > activation_threshold:
+                        token_activation_counts[token] += 1
+
+            # Get top N most frequently activated tokens
+            top_tokens: list[tuple[str, int]] = token_activation_counts.most_common(top_n_tokens)
+
+            # Distribution statistics
+            total_unique_tokens: int = len(token_activation_counts)
+            total_activations: int = sum(token_activation_counts.values())
+
+            # Compute concentration metrics
+            if total_activations > 0 and total_unique_tokens > 0:
+                # Entropy: measures how evenly distributed activations are across tokens
+                counts_array: np.ndarray = np.array(list(token_activation_counts.values()))
+                probs: np.ndarray = counts_array / total_activations
+                entropy: float = float(-np.sum(probs * np.log(probs + 1e-10)))
+
+                # Concentration ratio: fraction of activations in top 10% of tokens
+                top_10pct_count: int = max(1, total_unique_tokens // 10)
+                top_10pct_activations: int = sum(
+                    count for _, count in token_activation_counts.most_common(top_10pct_count)
+                )
+                concentration_ratio: float = (
+                    top_10pct_activations / total_activations if total_activations > 0 else 0.0
+                )
+            else:
+                entropy = 0.0
+                concentration_ratio = 0.0
+
+            stats["token_activations"] = {
+                "top_tokens": [{"token": token, "count": count} for token, count in top_tokens],
+                "total_unique_tokens": total_unique_tokens,
+                "total_activations": total_activations,
+                "entropy": entropy,
+                "concentration_ratio": concentration_ratio,
+                "activation_threshold": activation_threshold,
+            }
 
         return cls(
             cluster_hash=cluster_hash,

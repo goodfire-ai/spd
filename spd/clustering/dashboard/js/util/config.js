@@ -81,8 +81,9 @@ function getDefaultConfig() {
     visualization: {
       colormap: "blues",
       histogramBins: 10,
-      sparklineWidth: 120,
-      sparklineHeight: 50
+      sparklineWidth: 200,
+      sparklineHeight: 70,
+      sparklineYAxisMargin: 35
     },
 
     // GitHub integration for cluster explanations

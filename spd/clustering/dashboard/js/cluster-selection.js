@@ -68,7 +68,7 @@ const columnRenderers = {
             ylims: [0, null],
             logScale: true,
             xAxis: {line: true, ticks: true, label_margin: 10},
-            yAxis: {line: true, ticks: true, label_margin: 20}
+            yAxis: {line: true, ticks: true, label_margin: CONFIG.visualization.sparklineYAxisMargin}
         });
 
         container.innerHTML = svg;
@@ -104,7 +104,7 @@ const columnRenderers = {
             ylims: [0, null],
             logScale: true,
             xAxis: {line: true, ticks: true, label_margin: 10},
-            yAxis: {line: true, ticks: true, label_margin: 20}
+            yAxis: {line: true, ticks: true, label_margin: CONFIG.visualization.sparklineYAxisMargin}
         });
 
         container.innerHTML = svg;
@@ -145,7 +145,7 @@ const columnRenderers = {
                 ylims: [0, null],
                 logScale: true,
                 xAxis: {line: true, ticks: true, label_margin: 10},
-                yAxis: {line: true, ticks: true, label_margin: 20}
+                yAxis: {line: true, ticks: true, label_margin: CONFIG.visualization.sparklineYAxisMargin}
             });
 
             container.innerHTML = svg;
@@ -278,14 +278,14 @@ async function loadData() {
             key: 'componentCount',
             label: 'Comps',
             type: 'number',
-            width: '50px',
+            width: '10px',
             align: 'right'
         },
         {
             key: 'componentCount',
             label: 'Model View',
             type: 'number',
-            width: '160px',
+            width: '21px',
             align: 'center',
             renderer: columnRenderers.modelView
         },
@@ -293,7 +293,7 @@ async function loadData() {
             key: 'modules',
             label: 'Modules',
             type: 'string',
-            width: '100px',
+            width: '10px',
             renderer: columnRenderers.modulesSummary
         }
     ];
@@ -318,7 +318,7 @@ async function loadData() {
             key: 'stats',
             label: label,
             type: 'string',
-            width: '100px',
+            width: '200px',
             align: 'center',
             renderer: columnRenderers.genericHistogram(statKey, color, label)
         });

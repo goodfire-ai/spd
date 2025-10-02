@@ -19,8 +19,6 @@
   },
   "visualization": {
     "colormap": "blues",
-    "histogramBins": 10,
-    "sparklineWidth": 120,
-    "sparklineHeight": 50
+    "histogramBins": 10
   }
 }
