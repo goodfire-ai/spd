@@ -22,9 +22,9 @@ async function loadData() {
         // Load JSON data in parallel
         console.log('Loading JSON files...');
         const [clustersResponse, textSamplesResponse, activationsMapResponse] = await Promise.all([
-            fetch(CONFIG.data.clusterDataFile),
-            fetch(CONFIG.data.textSamplesFile),
-            fetch(CONFIG.data.activationsMapFile)
+            fetch(CONFIG.getDataPath('clusters')),
+            fetch(CONFIG.getDataPath('textSamples')),
+            fetch(CONFIG.getDataPath('activationsMap'))
         ]);
 
         if (!clustersResponse.ok) {
@@ -54,8 +54,9 @@ async function loadData() {
         clusterData = allClusters[currentClusterHash];
 
         // Load activations .npy file
-        console.log('Loading activations array from:', CONFIG.data.activationsFile);
-        activationsArray = await NDArray.load(CONFIG.data.activationsFile);
+        const activationsPath = CONFIG.getDataPath('activations');
+        console.log('Loading activations array from:', activationsPath);
+        activationsArray = await NDArray.load(activationsPath);
         console.log('Activations loaded:', activationsArray.shape);
 
         displayCluster();

@@ -193,7 +193,7 @@ function setupModelViewTooltips(container) {
 }
 
 async function loadModelInfo() {
-    const response = await fetch(CONFIG.data.modelInfoFile);
+    const response = await fetch(CONFIG.getDataPath('modelInfo'));
     modelInfo = await response.json();
     displayModelInfo();
 }
@@ -246,7 +246,7 @@ function processClusterData() {
 
 async function loadData() {
     const [clusterResponse] = await Promise.all([
-        fetch(CONFIG.data.clusterDataFile),
+        fetch(CONFIG.getDataPath('clusters')),
         loadModelInfo()
     ]);
 

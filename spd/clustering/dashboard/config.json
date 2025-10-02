@@ -1,11 +1,6 @@
 {
   "data": {
-    "clusterDataFile": "data/j8dgvemf/clusters.json",
-    "modelInfoFile": "data/j8dgvemf/model_info.json",
-    "textSamplesFile": "data/j8dgvemf/text_samples.json",
-    "activationsFile": "data/j8dgvemf/activations.npy",
-    "activationsMapFile": "data/j8dgvemf/activations_map.json",
-    "explanationsFile": "data/cluster_explanations.json"
+    "dataDir": "data/j8dgvemf-i7000"
   },
   "indexPage": {
     "pageSize": 25,

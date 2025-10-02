@@ -237,6 +237,17 @@ class ClusterData:
         stats["max_activation"] = float(np.max(all_activations))
         stats["median_activation"] = float(np.median(all_activations))
 
+        # Compute max activation position distribution (how concentrated are the max activations)
+        # For each sample, find the position (index) where max activation occurs
+        max_positions: np.ndarray = np.argmax(all_activations, axis=1)  # shape: (batch,)
+        # Normalize positions to [0, 1] range
+        n_ctx: int = all_activations.shape[1]
+        normalized_positions: np.ndarray = max_positions.astype(float) / max(1, n_ctx - 1)
+        stats["max_activation_position"] = BinnedData.from_arr(
+            normalized_positions,
+            n_bins=hist_bins,
+        )
+
         # Token-level activation statistics
         if activation_samples.tokens is not None:
             from collections import Counter

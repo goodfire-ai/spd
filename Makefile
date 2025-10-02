@@ -85,7 +85,8 @@ clustering-dashboard:
 		--wandb-run goodfire/spd-cluster/runs/j8dgvemf \
 		--iteration 7000 \
 		--n-samples 32 \
-		--n-batches 4
+		--n-batches 4 \
+		--batch-size 64
 
 # --iteration 4500 \
 # --n-samples 16 \

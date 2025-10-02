@@ -55,12 +55,15 @@ function getDefaultConfig() {
   let default_cfg = {
     // Data paths
     data: {
-      clusterDataFile: "data/clusters.json",
-      modelInfoFile: "data/model_info.json",
-      textSamplesFile: "data/text_samples.json",
-      activationsFile: "data/activations.npy",
-      activationsMapFile: "data/activations_map.json",
-      explanationsFile: "data/cluster_explanations.json"
+      dataDir: "data",
+      files: {
+        clusters: "clusters.json",
+        modelInfo: "model_info.json",
+        textSamples: "text_samples.json",
+        activations: "activations.npy",
+        activationsMap: "activations_map.json",
+        explanations: "cluster_explanations.json"
+      }
     },
 
     // Index page (cluster list) display settings
@@ -553,6 +556,7 @@ function setConfigValue(path, value, updateUrl = true) {
   }
 }
 
+
 /**
  * Initialize the configuration system
  * Call this once when your application starts
@@ -560,11 +564,25 @@ function setConfigValue(path, value, updateUrl = true) {
  */
 async function initConfig() {
   try {
-    return await getConfig();
+    const config = await getConfig();
+    // Add getDataPath method to CONFIG
+    config.getDataPath = function(fileKey) {
+      if (!this.data.files[fileKey]) {
+        throw new Error(`Unknown data file key: ${fileKey}`);
+      }
+      return `${this.data.dataDir}/${this.data.files[fileKey]}`;
+    };
+    return config;
   } catch (error) {
     console.error("Failed to initialize configuration:", error);
     // Fallback to defaults
     CONFIG = getDefaultConfig();
+    CONFIG.getDataPath = function(fileKey) {
+      if (!this.data.files[fileKey]) {
+        throw new Error(`Unknown data file key: ${fileKey}`);
+      }
+      return `${this.data.dataDir}/${this.data.files[fileKey]}`;
+    };
     LOADED_CONFIG = JSON.parse(JSON.stringify(CONFIG));
     return CONFIG;
   }
