@@ -11,7 +11,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 
-class MetricInterface(ABC):
+class Metric(ABC):
     """Interface for metrics that can be used in training and evaluation."""
 
     @abstractmethod

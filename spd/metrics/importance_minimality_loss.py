@@ -5,7 +5,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.utils.distributed_utils import all_reduce
 
@@ -108,7 +108,7 @@ def importance_minimality_loss(
     return _importance_minimality_loss_compute(sum_loss, total_params)
 
 
-class ImportanceMinimalityLoss(MetricInterface):
+class ImportanceMinimalityLoss(Metric):
     """L_p loss on the sum of CI values.
 
     NOTE: We don't normalize over the number of layers because a change in the number of layers
@@ -140,7 +140,6 @@ class ImportanceMinimalityLoss(MetricInterface):
         self.p_anneal_start_frac = p_anneal_start_frac
         self.p_anneal_final_p = p_anneal_final_p if p_anneal_final_p is not None else None
         self.p_anneal_end_frac = p_anneal_end_frac
-        device = device
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -148,8 +147,8 @@ class ImportanceMinimalityLoss(MetricInterface):
     def update(
         self,
         *,
-        current_frac_of_training: float,
         ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
+        current_frac_of_training: float,
         **_: Any,
     ) -> None:
         sum_loss, total_params = _importance_minimality_loss_update(

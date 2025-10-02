@@ -9,7 +9,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
@@ -17,7 +17,7 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
-class StochasticReconSubsetCEAndKL(MetricInterface):
+class StochasticReconSubsetCEAndKL(Metric):
     """A simpler version of StochasticReconSubsetCEAndKL that doesn't use the Metric base class to
     handle distributed functionality.
     """

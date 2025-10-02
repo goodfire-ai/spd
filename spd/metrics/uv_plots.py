@@ -3,13 +3,13 @@ from typing import Any, Literal, override
 from PIL import Image
 from torch import Tensor
 
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
 
 
-class UVPlots(MetricInterface):
+class UVPlots(Metric):
     input_magnitude: float = 0.75
 
     def __init__(
@@ -29,12 +29,7 @@ class UVPlots(MetricInterface):
         self.batch_shape: tuple[int, ...] | None = None
 
     @override
-    def update(
-        self,
-        *,
-        batch: Tensor,
-        **_: Any,
-    ) -> None:
+    def update(self, *, batch: Tensor, **_: Any) -> None:
         if self.batch_shape is None:
             self.batch_shape = tuple(batch.shape)
 

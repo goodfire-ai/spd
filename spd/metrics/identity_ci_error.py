@@ -2,14 +2,14 @@ from typing import Any, Literal, override
 
 from torch import Tensor
 
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.plotting import get_single_feature_causal_importances
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
 
-class IdentityCIError(MetricInterface):
+class IdentityCIError(Metric):
     """Error between the CI values and an Identity or Dense CI pattern."""
 
     input_magnitude: float = 0.75
@@ -31,12 +31,7 @@ class IdentityCIError(MetricInterface):
         self.batch_shape: tuple[int, ...] | None = None
 
     @override
-    def update(
-        self,
-        *,
-        batch: Tensor,
-        **_: Any,
-    ) -> None:
+    def update(self, *, batch: Tensor, **_: Any) -> None:
         if self.batch_shape is None:
             self.batch_shape = tuple(batch.shape)
 

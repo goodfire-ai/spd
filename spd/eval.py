@@ -33,7 +33,7 @@ from spd.configs import (
     TrainMetricConfigType,
     UVPlotsConfig,
 )
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
 from spd.metrics.ci_l0 import CI_L0
@@ -113,7 +113,7 @@ def init_metric(
     model: ComponentModel,
     run_config: Config,
     device: str,
-) -> MetricInterface:
+) -> Metric:
     match cfg:
         case ImportanceMinimalityLossTrainConfig():
             metric = ImportanceMinimalityLoss(
@@ -132,10 +132,7 @@ def init_metric(
                 device=device,
             )
         case CIHistogramsConfig():
-            metric = CIHistograms(
-                model=model,
-                n_batches_accum=cfg.n_batches_accum,
-            )
+            metric = CIHistograms(model=model, n_batches_accum=cfg.n_batches_accum)
         case CI_L0Config():
             metric = CI_L0(
                 model=model,
@@ -145,32 +142,21 @@ def init_metric(
             )
         case CIMaskedReconSubsetLossTrainConfig():
             metric = CIMaskedReconSubsetLoss(
-                model=model,
-                output_loss_type=run_config.output_loss_type,
-                device=device,
+                model=model, output_loss_type=run_config.output_loss_type, device=device
             )
         case CIMaskedReconLayerwiseLossTrainConfig():
             metric = CIMaskedReconLayerwiseLoss(
-                model=model,
-                output_loss_type=run_config.output_loss_type,
-                device=device,
+                model=model, output_loss_type=run_config.output_loss_type, device=device
             )
         case CIMaskedReconLossTrainConfig():
             metric = CIMaskedReconLoss(
-                model=model,
-                output_loss_type=run_config.output_loss_type,
-                device=device,
+                model=model, output_loss_type=run_config.output_loss_type, device=device
             )
         case CIMeanPerComponentConfig():
-            metric = CIMeanPerComponent(
-                model=model,
-                device=device,
-            )
+            metric = CIMeanPerComponent(model=model, device=device)
         case ComponentActivationDensityConfig():
             metric = ComponentActivationDensity(
-                model=model,
-                ci_alive_threshold=run_config.ci_alive_threshold,
-                device=device,
+                model=model, ci_alive_threshold=run_config.ci_alive_threshold, device=device
             )
         case FaithfulnessLossTrainConfig():
             metric = FaithfulnessLoss(model=model, device=device)
@@ -249,7 +235,7 @@ def evaluate(
 ) -> MetricOutType:
     """Run evaluation and return a mapping of metric names to values/images."""
 
-    metrics: list[MetricInterface] = []
+    metrics: list[Metric] = []
     for cfg in metric_configs:
         metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
         metrics.append(metric)

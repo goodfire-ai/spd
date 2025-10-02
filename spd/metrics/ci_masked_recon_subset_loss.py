@@ -5,7 +5,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import sample_uniform_k_subset_routing_masks
@@ -59,7 +59,7 @@ def ci_masked_recon_subset_loss(
     return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)
 
 
-class CIMaskedReconSubsetLoss(MetricInterface):
+class CIMaskedReconSubsetLoss(Metric):
     """Recon loss when masking with raw CI values and routing to subsets of component layers."""
 
     def __init__(
@@ -70,7 +70,6 @@ class CIMaskedReconSubsetLoss(MetricInterface):
     ) -> None:
         self.model = model
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        device = device
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 

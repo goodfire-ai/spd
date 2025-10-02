@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
@@ -14,7 +14,7 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
-class CEandKLLosses(MetricInterface):
+class CEandKLLosses(Metric):
     """CE and KL losses for different masking strategies.
 
     NOTE: Assumes all batches and sequences are the same size.
@@ -50,8 +50,6 @@ class CEandKLLosses(MetricInterface):
         self.model = model
         self.sampling: Literal["continuous", "binomial"] = sampling
         self.rounding_threshold = rounding_threshold
-
-        device = device
         self.loss_sums: dict[str, Tensor] = {
             key: torch.tensor(0.0, device=device) for key in self.loss_keys
         }
@@ -78,12 +76,14 @@ class CEandKLLosses(MetricInterface):
     @override
     def compute(self) -> dict[str, float]:
         # Reduce the dict of sums and the count across ranks
-        loss_sums_reduced = {
-            key: all_reduce(val, op=ReduceOp.SUM).item() for key, val in self.loss_sums.items()
-        }
         n_positions_reduced = all_reduce(self.n_positions, op=ReduceOp.SUM).item()
 
-        return {key: val / n_positions_reduced for key, val in loss_sums_reduced.items()}
+        out: dict[str, float] = {}
+        for key, val in self.loss_sums.items():
+            summed_loss = all_reduce(val, op=ReduceOp.SUM).item()
+            out[key] = summed_loss / n_positions_reduced
+
+        return out
 
     def _calc_ce_and_kl_losses(
         self, batch: Tensor, target_out: Tensor, ci: dict[str, Tensor]

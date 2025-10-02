@@ -5,7 +5,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
@@ -81,7 +81,7 @@ def stochastic_recon_layerwise_loss(
     return _stochastic_recon_layerwise_loss_compute(sum_loss, n_examples)
 
 
-class StochasticReconLayerwiseLoss(MetricInterface):
+class StochasticReconLayerwiseLoss(Metric):
     """Recon loss when sampling with stochastic masks one layer at a time."""
 
     def __init__(
@@ -98,7 +98,6 @@ class StochasticReconLayerwiseLoss(MetricInterface):
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        device = device
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 

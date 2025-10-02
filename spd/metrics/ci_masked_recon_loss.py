@@ -5,7 +5,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
@@ -49,7 +49,7 @@ def ci_masked_recon_loss(
     return _ci_masked_recon_loss_compute(sum_loss, n_examples)
 
 
-class CIMaskedReconLoss(MetricInterface):
+class CIMaskedReconLoss(Metric):
     """Recon loss when masking with CI values directly on all component layers."""
 
     def __init__(
@@ -60,7 +60,6 @@ class CIMaskedReconLoss(MetricInterface):
     ) -> None:
         self.model = model
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        self.device = device
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 

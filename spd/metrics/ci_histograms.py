@@ -5,13 +5,13 @@ from jaxtyping import Float
 from PIL import Image
 from torch import Tensor
 
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_ci_values_histograms
 from spd.utils.distributed_utils import gather_all_tensors
 
 
-class CIHistograms(MetricInterface):
+class CIHistograms(Metric):
     def __init__(
         self,
         model: ComponentModel,
@@ -25,12 +25,7 @@ class CIHistograms(MetricInterface):
         }
 
     @override
-    def update(
-        self,
-        *,
-        ci: dict[str, Tensor],
-        **_: Any,
-    ) -> None:
+    def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
         if self.n_batches_accum is not None and self.batches_seen >= self.n_batches_accum:
             return
         self.batches_seen += 1

@@ -8,13 +8,13 @@ from jaxtyping import Float
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.metrics.base import MetricInterface
+from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import all_reduce
 
 
-class CI_L0(MetricInterface):
+class CI_L0(Metric):
     """L0 metric for CI values.
 
     NOTE: Assumes all batches and sequences are the same size.
@@ -38,12 +38,7 @@ class CI_L0(MetricInterface):
         self.l0_values = defaultdict[str, list[float]](list)
 
     @override
-    def update(
-        self,
-        *,
-        ci: dict[str, Float[Tensor, "... C"]],
-        **_: Any,
-    ) -> None:
+    def update(self, *, ci: dict[str, Float[Tensor, "... C"]], **_: Any) -> None:
         group_sums = defaultdict(float) if self.groups else {}
         for layer_name, layer_ci in ci.items():
             l0_val = calc_ci_l_zero(layer_ci, self.l0_threshold)
