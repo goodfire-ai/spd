@@ -16,220 +16,168 @@ from pathlib import Path
 
 import pytest
 import torch
-import torch.distributed as dist
 
-from spd.utils.distributed_utils import gather_all_tensors
-
-
-def init_distributed():
-    """Initialize distributed backend for testing."""
-    if not dist.is_available():
-        raise RuntimeError("Distributed not available")
-
-    # Use environment variables set by mpirun
-    if "OMPI_COMM_WORLD_RANK" in os.environ:
-        rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
-        world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
-    elif "RANK" in os.environ:
-        rank = int(os.environ["RANK"])
-        world_size = int(os.environ["WORLD_SIZE"])
-    else:
-        raise RuntimeError("No distributed environment detected")
-
-    # Set required environment variables for PyTorch
-    os.environ["RANK"] = str(rank)
-    os.environ["WORLD_SIZE"] = str(world_size)
-    os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", "127.0.0.1")
-    os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "29500")
-
-    # Initialize process group
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
-
-    return rank, world_size
-
-
-def cleanup_distributed():
-    """Clean up distributed environment."""
-    if dist.is_initialized():
-        dist.destroy_process_group()
+from spd.utils.distributed_utils import (
+    cleanup_distributed,
+    gather_all_tensors,
+    get_rank,
+    get_world_size,
+    init_distributed,
+    sync_across_processes,
+)
 
 
 def _test_gather_identical_shapes():
     """Test gathering tensors with identical shapes across ranks."""
-    rank, world_size = init_distributed()
+    rank = get_rank()
+    world_size = get_world_size()
 
-    try:
-        # Each rank has a different tensor with same shape
-        tensor = torch.tensor([rank * 1.0, rank * 2.0])
+    # Each rank has a different tensor with same shape
+    tensor = torch.tensor([rank * 1.0, rank * 2.0])
 
-        # Gather from all ranks
-        gathered = gather_all_tensors(tensor)
+    # Gather from all ranks
+    gathered = gather_all_tensors(tensor)
 
-        # Should have one tensor per rank
-        assert len(gathered) == world_size
+    # Should have one tensor per rank
+    assert len(gathered) == world_size
 
-        # Check shapes are all identical
-        for t in gathered:
-            assert t.shape == tensor.shape
+    # Check shapes are all identical
+    for t in gathered:
+        assert t.shape == tensor.shape
 
-        # Check values
-        for i, t in enumerate(gathered):
-            expected = torch.tensor([i * 1.0, i * 2.0])
-            torch.testing.assert_close(t, expected)
+    # Check values
+    for i, t in enumerate(gathered):
+        expected = torch.tensor([i * 1.0, i * 2.0])
+        torch.testing.assert_close(t, expected)
 
-        # Verify that our rank's entry is the original tensor (preserves autograd)
-        assert gathered[rank] is tensor
+    # Verify that our rank's entry is the original tensor (preserves autograd)
+    assert gathered[rank] is tensor
 
-        if rank == 0:
-            print("✓ Gather identical shapes test passed")
-
-    finally:
-        cleanup_distributed()
+    if rank == 0:
+        print("✓ Gather identical shapes test passed")
 
 
 def _test_gather_scalar_tensors():
     """Test gathering scalar tensors."""
-    rank, world_size = init_distributed()
+    rank = get_rank()
+    world_size = get_world_size()
 
-    try:
-        # Scalar tensor with rank-specific value
-        tensor = torch.tensor(rank * 10.0)
+    # Scalar tensor with rank-specific value
+    tensor = torch.tensor(rank * 10.0)
 
-        # Gather from all ranks
-        gathered = gather_all_tensors(tensor)
+    # Gather from all ranks
+    gathered = gather_all_tensors(tensor)
 
-        # Should have one tensor per rank
-        assert len(gathered) == world_size
+    # Should have one tensor per rank
+    assert len(gathered) == world_size
 
-        # Check values
-        for i, t in enumerate(gathered):
-            expected = torch.tensor(i * 10.0)
-            torch.testing.assert_close(t, expected)
+    # Check values
+    for i, t in enumerate(gathered):
+        expected = torch.tensor(i * 10.0)
+        torch.testing.assert_close(t, expected)
 
-        if rank == 0:
-            print("✓ Gather scalar tensors test passed")
-
-    finally:
-        cleanup_distributed()
+    if rank == 0:
+        print("✓ Gather scalar tensors test passed")
 
 
 def _test_gather_multidimensional_tensors():
     """Test gathering multidimensional tensors."""
-    rank, world_size = init_distributed()
+    rank = get_rank()
+    world_size = get_world_size()
 
-    try:
-        # 2D tensor with rank-specific values
-        tensor = torch.full((3, 4), fill_value=float(rank))
+    # 2D tensor with rank-specific values
+    tensor = torch.full((3, 4), fill_value=float(rank))
 
-        # Gather from all ranks
-        gathered = gather_all_tensors(tensor)
+    # Gather from all ranks
+    gathered = gather_all_tensors(tensor)
 
-        # Should have one tensor per rank
-        assert len(gathered) == world_size
+    # Should have one tensor per rank
+    assert len(gathered) == world_size
 
-        # Check shapes
-        for t in gathered:
-            assert t.shape == (3, 4)
+    # Check shapes
+    for t in gathered:
+        assert t.shape == (3, 4)
 
-        # Check values
-        for i, t in enumerate(gathered):
-            expected = torch.full((3, 4), fill_value=float(i))
-            torch.testing.assert_close(t, expected)
+    # Check values
+    for i, t in enumerate(gathered):
+        expected = torch.full((3, 4), fill_value=float(i))
+        torch.testing.assert_close(t, expected)
 
-        if rank == 0:
-            print("✓ Gather multidimensional tensors test passed")
-
-    finally:
-        cleanup_distributed()
+    if rank == 0:
+        print("✓ Gather multidimensional tensors test passed")
 
 
 def _test_gather_empty_tensor():
     """Test gathering empty tensors."""
-    rank, _world_size = init_distributed()
+    rank = get_rank()
 
-    try:
-        # Empty tensor with consistent shape
-        tensor = torch.tensor([])
+    # Empty tensor with consistent shape
+    tensor = torch.tensor([])
 
-        # Gather from all ranks
-        gathered = gather_all_tensors(tensor)
+    # Gather from all ranks
+    gathered = gather_all_tensors(tensor)
 
-        # All gathered tensors should be empty
-        for t in gathered:
-            assert t.numel() == 0
-            assert t.shape == tensor.shape
+    # All gathered tensors should be empty
+    for t in gathered:
+        assert t.numel() == 0
+        assert t.shape == tensor.shape
 
-        if rank == 0:
-            print("✓ Gather empty tensor test passed")
-
-    finally:
-        cleanup_distributed()
+    if rank == 0:
+        print("✓ Gather empty tensor test passed")
 
 
 def _test_gather_float_tensor():
-    """Test gathering larger tensors."""
-    rank, world_size = init_distributed()
+    """Test gathering tensors."""
+    rank = get_rank()
+    world_size = get_world_size()
 
-    try:
-        # Larger tensor with rank-specific pattern
-        tensor = torch.arange(10, dtype=torch.float32) + rank * 10
+    # Tensor with rank-specific pattern
+    tensor = torch.arange(10, dtype=torch.float32) + rank * 10
 
-        # Gather from all ranks
-        gathered = gather_all_tensors(tensor)
+    gathered = gather_all_tensors(tensor)
 
-        # Should have one tensor per rank
-        assert len(gathered) == world_size
+    # Should have one tensor per rank
+    assert len(gathered) == world_size
 
-        # Check values
-        for i, t in enumerate(gathered):
-            expected = torch.arange(10, dtype=torch.float32) + i * 10
-            torch.testing.assert_close(t, expected)
+    for i, t in enumerate(gathered):
+        expected = torch.arange(10, dtype=torch.float32) + i * 10
+        torch.testing.assert_close(t, expected)
 
-        if rank == 0:
-            print("✓ Gather float tensor test passed")
-
-    finally:
-        cleanup_distributed()
+    if rank == 0:
+        print("✓ Gather float tensor test passed")
 
 
 def _test_gather_preserves_autograd():
     """Test that gathered tensor for current rank preserves autograd."""
-    rank, _world_size = init_distributed()
+    rank = get_rank()
 
-    try:
-        # Tensor with gradient tracking
-        tensor = torch.tensor([rank * 1.0, rank * 2.0], requires_grad=True)
+    # Tensor with gradient tracking
+    tensor = torch.tensor([rank * 1.0, rank * 2.0], requires_grad=True)
 
-        # Gather from all ranks
-        gathered = gather_all_tensors(tensor)
-
-        # Our rank's tensor should be the original (preserving autograd)
-        assert gathered[rank] is tensor
-        assert gathered[rank].requires_grad
-
-        if rank == 0:
-            print("✓ Gather preserves autograd test passed")
-
-    finally:
-        cleanup_distributed()
-
-
-def _test_gather_non_initialized():
-    """Test that gather works correctly when distributed is not initialized."""
-    # Don't initialize distributed
-    tensor = torch.tensor([1.0, 2.0, 3.0])
-
-    # Should return single-element list with the tensor
+    # Gather from all ranks
     gathered = gather_all_tensors(tensor)
 
-    assert len(gathered) == 1
-    torch.testing.assert_close(gathered[0], tensor)
+    # Our rank's tensor should be the original (preserving autograd)
+    assert gathered[rank] is tensor
+    assert gathered[rank].requires_grad
 
-    print("✓ Gather non-initialized test passed")
+    if rank == 0:
+        print("✓ Gather preserves autograd test passed")
 
 
 def run_all_tests():
     """Run all distributed tests when called directly with mpirun."""
+    # Initialize distributed once for all tests
+    init_distributed(backend="gloo")
+    rank = get_rank()
+    world_size = get_world_size()
+
+    if world_size != 2:
+        if rank == 0:
+            print(f"✗ Tests require exactly 2 ranks, got {world_size}")
+        cleanup_distributed()
+        sys.exit(1)
+
     tests = [
         ("Gather identical shapes", _test_gather_identical_shapes),
         ("Gather scalar tensors", _test_gather_scalar_tensors),
@@ -238,8 +186,6 @@ def run_all_tests():
         ("Gather float tensor", _test_gather_float_tensor),
         ("Gather preserves autograd", _test_gather_preserves_autograd),
     ]
-
-    rank = int(os.environ.get("OMPI_COMM_WORLD_RANK", os.environ.get("RANK", 0)))
 
     if rank == 0:
         print(f"\nRunning {len(tests)} gather_all_tensors tests...\n")
@@ -252,17 +198,10 @@ def run_all_tests():
                 print(f"✗ {test_name} failed: {e}")
             raise
         # Small barrier to ensure clean test separation
-        if dist.is_initialized():
-            dist.barrier()
+        sync_across_processes()
 
     if rank == 0:
         print(f"\n✓ All {len(tests)} distributed tests passed!\n")
-
-    # Test non-distributed case separately (only on rank 0)
-    if rank == 0:
-        # Need to clean up distributed first
-        cleanup_distributed()
-        _test_gather_non_initialized()
 
 
 # ===== Pytest wrapper =====

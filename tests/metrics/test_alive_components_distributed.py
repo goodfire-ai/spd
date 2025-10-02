@@ -11,47 +11,20 @@ from pathlib import Path
 
 import pytest
 import torch
-import torch.distributed as dist
 
 from spd.metrics.alive_components import AliveComponentsTracker
-
-
-def init_distributed():
-    """Initialize distributed backend for testing."""
-    if not dist.is_available():
-        raise RuntimeError("Distributed not available")
-
-    # Use environment variables set by mpirun
-    if "OMPI_COMM_WORLD_RANK" in os.environ:
-        rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
-        world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
-    elif "RANK" in os.environ:
-        rank = int(os.environ["RANK"])
-        world_size = int(os.environ["WORLD_SIZE"])
-    else:
-        raise RuntimeError("No distributed environment detected")
-
-    # Set required environment variables for PyTorch
-    os.environ["RANK"] = str(rank)
-    os.environ["WORLD_SIZE"] = str(world_size)
-    os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", "127.0.0.1")
-    os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "29500")
-
-    # Initialize process group
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
-
-    return rank, world_size
-
-
-def cleanup_distributed():
-    """Clean up distributed environment."""
-    if dist.is_initialized():
-        dist.destroy_process_group()
+from spd.utils.distributed_utils import (
+    cleanup_distributed,
+    get_rank,
+    get_world_size,
+    init_distributed,
+    sync_across_processes,
+)
 
 
 def _test_min_reduction():
     """Test that compute() uses min reduction correctly."""
-    rank = dist.get_rank()
+    rank = get_rank()
 
     metric = AliveComponentsTracker(
         module_paths=["layer1"],
@@ -85,7 +58,7 @@ def _test_min_reduction():
 
 def _test_different_firing_patterns():
     """Test that components firing on any rank are considered alive globally."""
-    rank = dist.get_rank()
+    rank = get_rank()
 
     metric = AliveComponentsTracker(
         module_paths=["layer1"],
@@ -131,21 +104,21 @@ def _test_different_firing_patterns():
 
 def _test_dead_components():
     """Test that components are correctly marked as dead after threshold."""
-    rank = dist.get_rank()
+    rank = get_rank()
 
     metric = AliveComponentsTracker(
         module_paths=["layer1"],
         C=3,
         device="cpu",
-        n_examples_until_dead=50,
+        n_examples_until_dead=5,
         ci_alive_threshold=0.1,
         global_n_examples_per_batch=2,
     )
 
     # Run batches where component 2 never fires
     # CI shape is (3,) which is [C], so 1 local example * 2 ranks = 2 global examples per batch
-    # n_batches_until_dead = 50 // 2 = 25
-    for _ in range(26):  # Need 26 batches to exceed threshold (26*2=52 > 50)
+    # n_batches_until_dead = 5 // 2 = 2
+    for _ in range(3):  # Need 3 batches to exceed threshold (3*2=6 > 5)
         if rank == 0:
             ci = {"layer1": torch.tensor([0.2, 0.0, 0.0])}
         else:
@@ -153,9 +126,9 @@ def _test_dead_components():
         metric.update(ci=ci)
 
     # compute() will sync with min reduction:
-    # Component 0: min(0, 26) = 0 (alive)
-    # Component 1: min(26, 0) = 0 (alive)
-    # Component 2: min(26, 26) = 26 (dead, >= 25)
+    # Component 0: min(0, 3) = 0 (alive)
+    # Component 1: min(3, 0) = 0 (alive)
+    # Component 2: min(3, 3) = 3 (dead, >= 2)
     print(f"Rank {rank} n_batches_since_fired: {metric.n_batches_since_fired['layer1']}")
     result = metric.compute()
     # only components 0 and 1 alive
@@ -169,7 +142,7 @@ def _test_dead_components():
 
 def _test_multiple_modules():
     """Test tracking across multiple modules in distributed setting."""
-    rank = dist.get_rank()
+    rank = get_rank()
 
     metric = AliveComponentsTracker(
         module_paths=["layer1", "layer2"],
@@ -212,7 +185,9 @@ def _test_multiple_modules():
 
 def run_all_tests():
     """Run all distributed tests when called directly with mpirun."""
-    rank, world_size = init_distributed()
+    init_distributed(backend="gloo")
+    rank = get_rank()
+    world_size = get_world_size()
 
     if world_size != 2:
         if rank == 0:
@@ -237,9 +212,8 @@ def run_all_tests():
             if rank == 0:
                 print(f"✗ {test_name} failed: {e}")
             raise
-        # Small barrier to ensure clean test separation
-        if dist.is_initialized():
-            dist.barrier()
+        # Barrier to ensure clean test separation
+        sync_across_processes()
 
     if rank == 0:
         print(f"\n✓ All {len(tests)} distributed tests passed!\n")

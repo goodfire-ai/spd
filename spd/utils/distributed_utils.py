@@ -98,8 +98,8 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
             device_id=local_device,
         )
 
-    # Set the default cuda device for this process
-    if torch.cuda.is_available():
+    # Set the default cuda device for this process (only for NCCL backend)
+    if backend == "nccl" and torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
 
     _state = DistributedState(
@@ -111,7 +111,7 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
 def cleanup_distributed() -> None:
     """Clean up distributed process group and reset cached state."""
     global _state
-    if dist.is_initialized():
+    if is_distributed():
         dist.destroy_process_group()
     _state = _init_default_state()
 
@@ -167,7 +167,7 @@ def get_device() -> str:
 
 def sync_across_processes() -> None:
     """Synchronize all processes."""
-    if dist.is_initialized():
+    if is_distributed():
         dist.barrier()
 
 
@@ -183,14 +183,14 @@ def all_reduce(
     Returns:
         Reduced tensor
     """
-    if dist.is_initialized():
+    if is_distributed():
         dist.all_reduce(tensor, op=op)
     return tensor
 
 
 def broadcast_obj[T](value: T) -> T:
     """Broadcast an object from rank 0 to all ranks."""
-    assert dist.is_initialized()
+    assert is_distributed()
     payload: list[object] = [value if is_main_process() else None]
     dist.broadcast_object_list(payload, src=0)
     return cast(T, payload[0])
@@ -247,7 +247,7 @@ def gather_all_tensors(tensor: Tensor, group: Any = None) -> list[Tensor]:
     Returns:
         List of tensors from all ranks (including local rank)
     """
-    if not torch.distributed.is_available() or not torch.distributed.is_initialized():
+    if not is_distributed():
         return [tensor]
 
     if group is None:
