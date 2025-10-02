@@ -385,50 +385,41 @@ class DashboardData:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Save all cluster data in one file
-        clusters_serialized = {
-            str(cluster_hash): cluster_data.serialize()
-            for cluster_hash, cluster_data in self.clusters.items()
-        }
-        with open(output_path / "clusters.json", "w") as f:
-            json.dump(clusters_serialized, f, indent=2)
+        # Save all cluster data as JSONL (one cluster per line)
+        with open(output_path / "clusters.jsonl", "w") as f:
+            for cluster_data in self.clusters.values():
+                f.write(json.dumps(cluster_data.serialize()) + "\n")
 
-        # Save text samples
-        text_samples_serialized = {
-            str(hash_): {
-                "full_text": sample.full_text,
-                "tokens": sample.tokens,
-                "text_hash": str(sample.text_hash),
-            }
-            for hash_, sample in self.text_samples.items()
-        }
-        with open(output_path / "text_samples.json", "w") as f:
-            json.dump(text_samples_serialized, f, indent=2)
+        # Save text samples as JSONL (one sample per line)
+        with open(output_path / "text_samples.jsonl", "w") as f:
+            for hash_, sample in self.text_samples.items():
+                sample_obj = {
+                    "text_hash": str(hash_),
+                    "full_text": sample.full_text,
+                    "tokens": sample.tokens,
+                }
+                f.write(json.dumps(sample_obj) + "\n")
 
         # Collect only activations that are referenced by clusters
         referenced_hashes: set[ActivationSampleHash] = set()
         for cluster_data in self.clusters.values():
             referenced_hashes.update(cluster_data.get_unique_activation_hashes())
 
-        # Build compact activations array and map using short hashes
+        # Build compact activations array and map using full hashes
         compact_activations_list: list[Float[np.ndarray, " n_ctx"]] = []
         compact_map: dict[str, int] = {}
 
-        # Get short hashes directly from the activation batch
-        short_hashes: list[str] = self.activations.activation_hashes_short
-
-        for i, (act_hash, short_hash) in enumerate(
-            zip(self.activations.activation_hashes, short_hashes, strict=True)
-        ):
+        # Use activations_map which has correct cluster IDs for each activation
+        for act_hash, old_idx in self.activations_map.items():
             if act_hash in referenced_hashes:
                 new_idx = len(compact_activations_list)
 
-                # Get activation data using current index
-                activation = self.activations.activations[i]
+                # Get activation data using old index
+                activation = self.activations.activations[old_idx]
                 compact_activations_list.append(activation)
 
-                # Use short hash from the batch
-                compact_map[short_hash] = new_idx
+                # Use full hash
+                compact_map[act_hash] = new_idx
 
         # Stack and convert to float16 for space savings
         compact_activations: Float[np.ndarray, "n_samples n_ctx"] = np.stack(compact_activations_list)

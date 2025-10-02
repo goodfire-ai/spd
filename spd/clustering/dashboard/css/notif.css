@@ -22,7 +22,7 @@
     display: block;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     border: 1px solid #00ff00;
-    min-width: 200px;
+    min-width: 500px;
     text-align: center;
     transition: all 0.3s ease;
     opacity: 1;

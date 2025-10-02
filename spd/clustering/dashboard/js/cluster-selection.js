@@ -312,12 +312,12 @@ function processClusterData() {
 }
 
 async function loadData() {
-    const [clusterResponse] = await Promise.all([
-        fetch(CONFIG.getDataPath('clusters')),
+    const [clusters] = await Promise.all([
+        loadJSONL(CONFIG.getDataPath('clusters'), 'cluster_hash'),
         loadModelInfo()
     ]);
 
-    clusterData = await clusterResponse.json();
+    clusterData = clusters;
 
     const tableData = processClusterData();
 

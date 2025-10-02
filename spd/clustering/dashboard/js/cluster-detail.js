@@ -20,43 +20,80 @@ async function init() {
 }
 
 async function loadData() {
-    try {
-        // Load JSON data in parallel
-        console.log('Loading JSON files...');
-        const [clustersResponse, textSamplesResponse, activationsMapResponse, modelInfoResponse] = await Promise.all([
-            fetch(CONFIG.getDataPath('clusters')),
-            fetch(CONFIG.getDataPath('textSamples')),
-            fetch(CONFIG.getDataPath('activationsMap')),
-            fetch(CONFIG.getDataPath('modelInfo'))
-        ]);
+    const progressBar = NOTIF.pbar('Loading cluster data...');
 
-        if (!clustersResponse.ok) {
-            throw new Error(`Failed to load clusters: ${clustersResponse.status}`);
+    try {
+        progressBar.progress(0.1);
+
+        // Load data in parallel
+        let clusters, samples, activationsMapResponse, modelInfoResponse;
+
+        const clustersPath = CONFIG.getDataPath('clusters');
+        const textSamplesPath = CONFIG.getDataPath('textSamples');
+        const activationsMapPath = CONFIG.getDataPath('activationsMap');
+        const modelInfoPath = CONFIG.getDataPath('modelInfo');
+
+        try {
+            [clusters, samples, activationsMapResponse, modelInfoResponse] = await Promise.all([
+                loadJSONL(clustersPath, 'cluster_hash').catch(e => {
+                    throw new Error(`Failed to load ${clustersPath}: ${e.message}`);
+                }),
+                loadJSONL(textSamplesPath, 'text_hash').catch(e => {
+                    throw new Error(`Failed to load ${textSamplesPath}: ${e.message}`);
+                }),
+                fetch(activationsMapPath).catch(e => {
+                    throw new Error(`Failed to load ${activationsMapPath}: ${e.message}`);
+                }),
+                fetch(modelInfoPath).catch(e => {
+                    throw new Error(`Failed to load ${modelInfoPath}: ${e.message}`);
+                })
+            ]);
+        } catch (error) {
+            progressBar.complete();
+            NOTIF.error(error.message, error, null);
+            document.getElementById('loading').textContent = error.message;
+            throw error;
         }
-        if (!textSamplesResponse.ok) {
-            throw new Error(`Failed to load text samples: ${textSamplesResponse.status}`);
-        }
+
+        progressBar.progress(0.4);
+
         if (!activationsMapResponse.ok) {
-            throw new Error(`Failed to load activations map: ${activationsMapResponse.status}`);
+            const msg = `Failed to load ${activationsMapPath} (HTTP ${activationsMapResponse.status})`;
+            NOTIF.error(msg, null, null);
+            throw new Error(msg);
         }
         if (!modelInfoResponse.ok) {
-            throw new Error(`Failed to load model info: ${modelInfoResponse.status}`);
+            const msg = `Failed to load ${modelInfoPath} (HTTP ${modelInfoResponse.status})`;
+            NOTIF.error(msg, null, null);
+            throw new Error(msg);
         }
 
-        console.log('Parsing clusters...');
-        allClusters = await clustersResponse.json();
+        allClusters = clusters;
+        textSamples = samples;
 
-        console.log('Parsing text samples...');
-        textSamples = await textSamplesResponse.json();
+        try {
+            activationsMap = await activationsMapResponse.json();
+        } catch (error) {
+            const msg = `Failed to parse ${activationsMapPath} (invalid JSON)`;
+            NOTIF.error(msg, error, null);
+            throw new Error(msg);
+        }
 
-        console.log('Parsing activations map...');
-        activationsMap = await activationsMapResponse.json();
+        try {
+            modelInfo = await modelInfoResponse.json();
+        } catch (error) {
+            const msg = `Failed to parse ${modelInfoPath} (invalid JSON)`;
+            NOTIF.error(msg, error, null);
+            throw new Error(msg);
+        }
 
-        console.log('Parsing model info...');
-        modelInfo = await modelInfoResponse.json();
+        progressBar.progress(0.6);
 
         if (!allClusters[currentClusterHash]) {
-            document.getElementById('loading').textContent = 'Cluster not found';
+            const msg = 'Cluster not found';
+            NOTIF.error(msg, null, null);
+            document.getElementById('loading').textContent = msg;
+            progressBar.complete();
             return;
         }
 
@@ -64,14 +101,21 @@ async function loadData() {
 
         // Load activations (float16 compressed npz)
         const activationsPath = CONFIG.getDataPath('activations');
-        console.log('Loading activations array from:', activationsPath);
-        activationsArray = await NDArray.load(activationsPath);
-        console.log('Activations loaded:', activationsArray.shape);
+        try {
+            activationsArray = await NDArray.load(activationsPath);
+        } catch (error) {
+            const msg = `Failed to load ${activationsPath}`;
+            NOTIF.error(msg, error, null);
+            throw new Error(msg);
+        }
+
+        progressBar.progress(0.9);
 
         displayCluster();
+        progressBar.complete();
         document.getElementById('loading').style.display = 'none';
     } catch (error) {
-        document.getElementById('loading').textContent = 'Error loading data: ' + error.message;
+        progressBar.complete();
         console.error('Load error:', error);
         console.error('Stack:', error.stack);
     }
@@ -252,11 +296,9 @@ function displaySamples() {
             continue;
         }
 
-        // Get activations for this sample
-        // Extract just clusterLabel from full hash (format: "runid-iteration-clusterLabel")
-        const clusterLabel = currentClusterHash.split('-').pop();
-        const shortHash = `${clusterLabel}:${textHash}`;
-        const activationIdx = activationsMap[shortHash];
+        // Get activations for this sample using full hash
+        const fullHash = `${currentClusterHash}:${textHash}`;
+        const activationIdx = activationsMap[fullHash];
 
         let tokenViz;
         if (activationIdx !== undefined && activationsArray) {

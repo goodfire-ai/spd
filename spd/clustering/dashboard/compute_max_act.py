@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 import torch
 from jaxtyping import Float, Int
+from muutils.spinner import SpinnerContext
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -186,7 +187,8 @@ def compute_max_activations(
                 text_samples[text_hash] = text_sample
             batch_text_samples.append(text_sample)
 
-        for cluster_idx in unique_cluster_indices:
+        # TODO: no pbar here, outer loop has a pbar
+        for cluster_idx in tqdm(unique_cluster_indices, desc="Processing clusters", leave=False):
             # Compute cluster activations
             acts_2d: Float[Tensor, "batch_size seq_len"] = _compute_cluster_activations(
                 processed, cluster_components[cluster_idx], batch_size, seq_len
@@ -219,6 +221,7 @@ def compute_max_activations(
     activations_map: dict[ActivationSampleHash, int] = {}
     current_idx: int = 0
 
+    # TODO: pbar here
     for cluster_idx in unique_cluster_indices:
         cluster_id: ClusterId = cluster_id_map[cluster_idx]
         cluster_hash: ClusterIdHash = cluster_id.to_string()
@@ -263,6 +266,7 @@ def compute_max_activations(
             all_text_hashes_list.append(text_hash)
             current_idx += 1
 
+    # TODO: spinner here
     # Create combined activations batch
     assert all_activations_list, "No activations collected"
     assert cluster_id_map, "No clusters found"

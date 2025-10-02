@@ -57,9 +57,9 @@ function getDefaultConfig() {
     data: {
       dataDir: "data",
       files: {
-        clusters: "clusters.json",
+        clusters: "clusters.jsonl",
         modelInfo: "model_info.json",
-        textSamples: "text_samples.json",
+        textSamples: "text_samples.jsonl",
         activations: "activations.npz",
         activationsMap: "activations_map.json",
         explanations: "cluster_explanations.json"
@@ -556,6 +556,27 @@ function setConfigValue(path, value, updateUrl = true) {
   }
 }
 
+
+/**
+ * Load and parse JSONL file, building an index by a key field
+ * @param {string} url - URL to fetch JSONL from
+ * @param {string} keyField - Field name to use as index key
+ * @returns {Promise<object>} Object indexed by keyField
+ */
+async function loadJSONL(url, keyField) {
+  const response = await fetch(url);
+  const text = await response.text();
+  const index = {};
+
+  for (const line of text.trim().split('\n')) {
+    if (line) {
+      const obj = JSON.parse(line);
+      index[obj[keyField]] = obj;
+    }
+  }
+
+  return index;
+}
 
 /**
  * Initialize the configuration system

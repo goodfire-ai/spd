@@ -219,9 +219,9 @@ class NotificationManager {
      * Show error message
      * @param {string} message - Error message
      * @param {Error} err - Error object to log
-     * @param {number} timeout - Auto-hide timeout in ms (default from constructor)
+     * @param {number} timeout - Auto-hide timeout in ms (null for persistent, default 9999000ms)
      */
-    error(message, err = null, timeout = null) {
+    error(message, err = null, timeout = 9999000) {
         if (err) {
             console.error(err);
         } else {
@@ -231,10 +231,12 @@ class NotificationManager {
         const id = this.nextId++;
         const element = this._createNotificationElement(id, 'error', message);
 
-        const hideTimeout = timeout || this.defaultTimeout;
-        const timeoutId = setTimeout(() => {
-            this._removeNotification(id);
-        }, hideTimeout);
+        let timeoutId = null;
+        if (timeout !== null) {
+            timeoutId = setTimeout(() => {
+                this._removeNotification(id);
+            }, timeout);
+        }
 
         this.notifications.set(id, {
             element,

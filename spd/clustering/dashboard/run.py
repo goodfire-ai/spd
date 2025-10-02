@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import wandb
+from muutils.spinner import SpinnerContext
 from wandb.apis.public import Run
 
 from spd.clustering.dashboard.compute_max_act import compute_max_activations
@@ -47,7 +48,8 @@ def main(
     # Load artifacts from WandB
     merge_history: MergeHistory
     run_config: dict[str, Any]
-    merge_history, run_config = load_wandb_artifacts(wandb_path)
+    with SpinnerContext(message="Loading WandB artifacts"):
+        merge_history, run_config = load_wandb_artifacts(wandb_path)
 
     # Extract run_id for output directory
     api: wandb.Api = wandb.Api()
