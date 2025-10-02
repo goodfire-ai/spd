@@ -33,14 +33,17 @@ class Metric(ABC):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__()
         self._state_names: list[str] = []
-        self._state_reduce_fns: dict[str, Literal["sum", "cat"]] = {}
+        self._state_reduce_fns: dict[str, Literal["sum", "min", "cat"]] = {}
         self._dict_state_keys: dict[str, list[str]] = {}  # Maps dict state names to their keys
 
     def _validate_state_value(
-        self, value: Tensor | list[Any], dist_reduce_fx: Literal["sum", "cat"], context: str = ""
+        self,
+        value: Tensor | list[Any],
+        dist_reduce_fx: Literal["sum", "min", "cat"],
+        context: str = "",
     ) -> None:
         match dist_reduce_fx:
-            case "sum":
+            case "sum" | "min":
                 assert isinstance(value, Tensor), (
                     f"sum reduce requires Tensor{context}, got {type(value)}"
                 )
@@ -53,19 +56,19 @@ class Metric(ABC):
         self,
         name: str,
         default: Tensor | list[Any] | dict[str, Tensor] | dict[str, list[Any]],
-        dist_reduce_fx: Literal["sum", "cat"],
+        dist_reduce_fx: Literal["sum", "min", "cat"],
     ) -> None:
         """Register a state variable that should be synchronized across ranks.
 
         Args:
             name: Name of the state variable
             default: Default value (Tensor for "sum", empty list for "cat", or dict of these)
-            dist_reduce_fx: How to reduce across ranks ("sum" or "cat")
+            dist_reduce_fx: How to reduce across ranks ("sum", "min", or "cat")
 
         Raises:
             AssertionError: If default value doesn't match reduce function
         """
-        assert dist_reduce_fx in ["sum", "cat"], f"Invalid reduce function: {dist_reduce_fx}"
+        assert dist_reduce_fx in ["sum", "min", "cat"], f"Invalid reduce function: {dist_reduce_fx}"
 
         if isinstance(default, dict):
             self._dict_state_keys[name] = list(default.keys())
@@ -79,7 +82,7 @@ class Metric(ABC):
         self._state_reduce_fns[name] = dist_reduce_fx
 
     def _reduce_state_value(
-        self, value: Tensor | list[Tensor], reduce_fn: Literal["sum", "cat"]
+        self, value: Tensor | list[Tensor], reduce_fn: Literal["sum", "min", "cat"]
     ) -> Tensor | list[Tensor]:
         """Reduce a single state value across distributed ranks.
 
@@ -90,7 +93,8 @@ class Metric(ABC):
         Returns:
             The reduced value as a Tensor, or empty list if input was empty list
         """
-        assert reduce_fn in ["sum", "cat"], f"Invalid reduce function: {reduce_fn}"
+        assert reduce_fn in ["sum", "min", "cat"], f"Invalid reduce function: {reduce_fn}"
+        gathered: list[Tensor]
         match reduce_fn:
             case "sum":
                 assert isinstance(value, Tensor), "sum reduce requires Tensor value"
@@ -98,6 +102,10 @@ class Metric(ABC):
                 # consistency and because communication costs for evals shouldn't be large.
                 gathered = gather_all_tensors(value)
                 return cast(Tensor, sum(gathered))
+            case "min":
+                assert isinstance(value, Tensor), "min reduce requires Tensor value"
+                gathered = gather_all_tensors(value)
+                return torch.stack(gathered).min(dim=0).values
             case "cat":
                 assert isinstance(value, list), "cat reduce requires list value"
                 if len(value) == 0:

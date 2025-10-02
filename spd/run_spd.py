@@ -23,8 +23,8 @@ from spd.eval import avg_eval_metrics_across_ranks, evaluate
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_total_loss
+from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel
-from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -155,12 +155,12 @@ def optimize(
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
-        module_names=list(component_model.components.keys()),
+        module_paths=list(component_model.components.keys()),
         C=config.C,
         n_examples_until_dead=config.n_examples_until_dead,
-        device=device,
         ci_alive_threshold=config.ci_alive_threshold,
     )
+    alive_tracker.to(device)
 
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
@@ -199,7 +199,7 @@ def optimize(
                 )
             )
 
-            alive_tracker.watch_batch(causal_importances)
+            alive_tracker.update(ci=causal_importances)
 
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
                 loss_metric_configs=config.loss_metric_configs,
@@ -234,9 +234,11 @@ def optimize(
                 avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
                 microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
-            # Already reduced alive counts across ranks, so no need to reduce again
-            for layer_name, n_alive_count in alive_tracker.n_alive().items():
-                n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
+            # Sync alive tracker state across ranks and compute alive counts
+            alive_tracker.sync_dist()
+            alive_counts = alive_tracker.compute()
+            for metric_name, n_alive_count in alive_counts.items():
+                n_alive_key = f"train/{metric_name}_{alive_tracker.ci_alive_threshold}"
                 microbatch_log_data[n_alive_key] = n_alive_count
 
             grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
