@@ -1,5 +1,5 @@
-C: 1000
-batch_size: 64
+C: 4200
+batch_size: 640
 ci_alive_threshold: 0.0
 ci_masked_recon_subset_coeff: null
 ci_recon_coeff: null
@@ -13,11 +13,11 @@ eval_metrics:
     n_batches_accum: 5
 - classname: ComponentActivationDensity
   extra_init_kwargs: {}
-- classname: CI_L0
-  extra_init_kwargs:
-    groups:
-      layer_0:
-      - model.layers.0.*
+# - classname: CI_L0
+#   extra_init_kwargs:
+    # groups:
+    #   layer_0:
+    #   - model.layers.0.*
       # layer_1:
       # - model.layers.1.*
       # layer_2:
@@ -31,9 +31,9 @@ eval_metrics:
     rounding_threshold: 0.0
 - classname: CIMeanPerComponent
   extra_init_kwargs: {}
-- classname: SubsetReconstructionLoss
-  extra_init_kwargs:
-    exclude_patterns:
+# - classname: SubsetReconstructionLoss
+#   extra_init_kwargs:
+#     exclude_patterns:
       # all_but_layer_0:
       # - model.layers.0.*
       # all_but_layer_1:
@@ -42,13 +42,13 @@ eval_metrics:
       # - model.layers.2.*
       # all_but_layer_3:
       # - model.layers.3.*
-    include_patterns:
+    # include_patterns:
       # attention_only:
       # - '*.self_attn.*'
       # key_only:
       # - '*.self_attn.k_proj'
-      layer_0_only:
-      - model.layers.0.*
+      # layer_0_only:
+      # - model.layers.0.*
       # layer_1_only:
       # - model.layers.1.*
       # layer_2_only:
@@ -63,19 +63,19 @@ eval_metrics:
       # - '*.self_attn.q_proj'
       # value_only:
       # - '*.self_attn.v_proj'
-    n_mask_samples: 1
+    # n_mask_samples: 1
 - classname: FaithfulnessLoss
   extra_init_kwargs: {}
-faithfulness_coeff: 1.0
+faithfulness_coeff: null
 gate_hidden_dims:
-- 500
-gate_type: shared_mlp
+- 8
+gate_type: mlp
 gradient_accumulation_steps: 1
 identity_module_patterns:
-- model.layers.0.mlp.gate_proj
-- model.layers.0.mlp.down_proj
-importance_minimality_coeff: 0.01
-lr: 0.0005
+# - model.layers.0.mlp.gate_proj
+# - model.layers.0.mlp.down_proj
+importance_minimality_coeff: 0.05
+lr: 0.001
 lr_exponential_halflife: null
 lr_schedule: cosine
 lr_warmup_pct: 0.0
@@ -87,9 +87,9 @@ output_loss_type: kl
 # p_anneal_end_frac: 0.1
 # p_anneal_final_p: 0.9
 # p_anneal_start_frac: 0.02
-pnorm: 2.0
+pnorm: 1.0
 pgd_mask_enabled: true
-pgd_mask_steps: 2
+pgd_mask_steps: 1
 pgd_mask_step_size: 0.1
 pretrained_model_class: transformers.LlamaForCausalLM
 pretrained_model_name: SimpleStories/SimpleStories-1.25M
@@ -106,13 +106,14 @@ stochastic_recon_coeff: null
 stochastic_recon_layerwise_coeff: null
 stochastic_recon_subset_coeff: 1.0
 target_module_patterns:
-- model.layers.0.mlp.gate_proj
-- model.layers.0.mlp.down_proj
-- model.layers.0.mlp.up_proj
-- model.layers.0.self_attn.q_proj
-- model.layers.0.self_attn.k_proj
-- model.layers.0.self_attn.v_proj
-- model.layers.0.self_attn.o_proj
+- model.embed_tokens
+# - model.layers.0.mlp.gate_proj
+# - model.layers.0.mlp.down_proj
+# - model.layers.0.mlp.up_proj
+# - model.layers.0.self_attn.q_proj
+# - model.layers.0.self_attn.k_proj
+# - model.layers.0.self_attn.v_proj
+# - model.layers.0.self_attn.o_proj
 task_config:
   buffer_size: 1000
   column_name: story
