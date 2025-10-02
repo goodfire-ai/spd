@@ -123,6 +123,73 @@ const columnRenderers = {
         return `<a href="cluster.html?id=${row.clusterHash}">View →</a>`;
     },
 
+    tokenEntropy: function(value, row, col) {
+        const tokenStats = row.stats.token_activations;
+        if (!tokenStats) {
+            return '<span style="color: #999; font-size: 11px;">N/A</span>';
+        }
+        return tokenStats.entropy.toFixed(2);
+    },
+
+    tokenConcentration: function(value, row, col) {
+        const tokenStats = row.stats.token_activations;
+        if (!tokenStats) {
+            return '<span style="color: #999; font-size: 11px;">N/A</span>';
+        }
+        return (tokenStats.concentration_ratio * 100).toFixed(1) + '%';
+    },
+
+    topToken: function(value, row, col) {
+        const tokenStats = row.stats.token_activations;
+        if (!tokenStats || !tokenStats.top_tokens || tokenStats.top_tokens.length === 0) {
+            return '<span style="color: #999; font-size: 11px;">N/A</span>';
+        }
+
+        const container = document.createElement('div');
+        container.style.fontFamily = 'monospace';
+        container.style.fontSize = '11px';
+        container.style.lineHeight = '1.4';
+
+        const topN = Math.min(5, tokenStats.top_tokens.length);
+        const maxPercentage = tokenStats.top_tokens.length > 0
+            ? ((tokenStats.top_tokens[0].count / tokenStats.total_activations) * 100)
+            : 0;
+
+        for (let i = 0; i < topN; i++) {
+            const token = tokenStats.top_tokens[i];
+            const tokenDisplay = token.token.replace(/ /g, '·').replace(/\n/g, '↵');
+            const percentageValue = ((token.count / tokenStats.total_activations) * 100);
+            const percentage = percentageValue.toFixed(1);
+
+            // Color based on percentage (normalized by max percentage)
+            const normalizedPct = maxPercentage > 0 ? percentageValue / maxPercentage : 0;
+            const intensity = Math.floor((1 - normalizedPct) * 255);
+            const bgColor = `rgb(255, ${intensity}, ${intensity})`;
+
+            const line = document.createElement('div');
+            line.style.display = 'flex';
+            line.style.justifyContent = 'space-between';
+            line.style.gap = '8px';
+
+            const tokenSpan = document.createElement('span');
+            tokenSpan.innerHTML = `<code class="token-display">${tokenDisplay}</code>`;
+            tokenSpan.style.textAlign = 'left';
+
+            const pctSpan = document.createElement('span');
+            pctSpan.textContent = `${percentage}%`;
+            pctSpan.style.textAlign = 'right';
+            pctSpan.style.backgroundColor = bgColor;
+            pctSpan.style.padding = '2px 4px';
+            pctSpan.style.borderRadius = '2px';
+
+            line.appendChild(tokenSpan);
+            line.appendChild(pctSpan);
+            container.appendChild(line);
+        }
+
+        return container;
+    },
+
     // Generic histogram renderer for any BinnedData stat
     genericHistogram: function(statKey, color, title) {
         return function(value, row, col) {
@@ -302,9 +369,11 @@ async function loadData() {
     const statColors = {
         'all_activations': '#4169E1',
         'max_activation-max-16': '#DC143C',
+        'max_activation-max-32': '#DC143C',
         'mean_activation-max-16': '#228B22',
         'median_activation-max-16': '#FF8C00',
-        'min_activation-max-16': '#9370DB'
+        'min_activation-max-16': '#9370DB',
+        'max_activation_position': '#FF6347'
     };
 
     histogramStats.forEach(statKey => {
@@ -322,6 +391,34 @@ async function loadData() {
             align: 'center',
             renderer: columnRenderers.genericHistogram(statKey, color, label)
         });
+    });
+
+    // Token activation columns
+    columns.push({
+        key: 'stats',
+        label: 'Top Tokens',
+        type: 'string',
+        width: '150px',
+        align: 'left',
+        renderer: columnRenderers.topToken
+    });
+
+    columns.push({
+        key: 'stats',
+        label: 'Token Entropy',
+        type: 'number',
+        width: '60px',
+        align: 'right',
+        renderer: columnRenderers.tokenEntropy
+    });
+
+    columns.push({
+        key: 'stats',
+        label: 'Token Conc.',
+        type: 'string',
+        width: '60px',
+        align: 'right',
+        renderer: columnRenderers.tokenConcentration
     });
 
     // Actions column

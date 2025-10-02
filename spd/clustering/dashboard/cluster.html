@@ -13,7 +13,12 @@
     <div id="components">
         <h2>Components (<span id="componentCount">0</span>)</h2>
 
-        <div id="componentsTable"></div>
+        <div style="display: flex; gap: 20px; align-items: start;">
+            <div id="modelView" style="flex-shrink: 0;">
+                <!-- Model visualization will be inserted here -->
+            </div>
+            <div id="componentsTable" style="flex-grow: 1;"></div>
+        </div>
     </div>
 
     <div id="tokenActivations" style="display: none;">
@@ -58,11 +63,14 @@
     </div>
     
     <div id="loading">Loading cluster data...</div>
+    <div id="tooltip" style="display: none; position: absolute; background: #333; color: white; padding: 8px; border-radius: 4px; white-space: pre; z-index: 1000; pointer-events: none;"></div>
 
     <script src="js/util/config.js"></script>
     <script src="js/util/table.js"></script>
     <script src="js/util/sparklines.js"></script>
     <script src="js/util/array.js"></script>
+    <script src="js/util/ColorUtil.js"></script>
+    <script src="js/model-visualization.js"></script>
     <script src="js/token-display.js"></script>
     <script src="js/cluster-detail.js"></script>
 </body>

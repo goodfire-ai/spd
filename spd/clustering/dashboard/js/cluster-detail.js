@@ -1,8 +1,10 @@
 let clusterData = null;
+let allClusters = null;
 let textSamples = {};
 let activationsArray = null;
 let activationsMap = {};
 let currentClusterHash = null;
+let modelInfo = {};
 
 async function init() {
     // Get cluster hash from URL
@@ -21,10 +23,11 @@ async function loadData() {
     try {
         // Load JSON data in parallel
         console.log('Loading JSON files...');
-        const [clustersResponse, textSamplesResponse, activationsMapResponse] = await Promise.all([
+        const [clustersResponse, textSamplesResponse, activationsMapResponse, modelInfoResponse] = await Promise.all([
             fetch(CONFIG.getDataPath('clusters')),
             fetch(CONFIG.getDataPath('textSamples')),
-            fetch(CONFIG.getDataPath('activationsMap'))
+            fetch(CONFIG.getDataPath('activationsMap')),
+            fetch(CONFIG.getDataPath('modelInfo'))
         ]);
 
         if (!clustersResponse.ok) {
@@ -36,15 +39,21 @@ async function loadData() {
         if (!activationsMapResponse.ok) {
             throw new Error(`Failed to load activations map: ${activationsMapResponse.status}`);
         }
+        if (!modelInfoResponse.ok) {
+            throw new Error(`Failed to load model info: ${modelInfoResponse.status}`);
+        }
 
         console.log('Parsing clusters...');
-        const allClusters = await clustersResponse.json();
+        allClusters = await clustersResponse.json();
 
         console.log('Parsing text samples...');
         textSamples = await textSamplesResponse.json();
 
         console.log('Parsing activations map...');
         activationsMap = await activationsMapResponse.json();
+
+        console.log('Parsing model info...');
+        modelInfo = await modelInfoResponse.json();
 
         if (!allClusters[currentClusterHash]) {
             document.getElementById('loading').textContent = 'Cluster not found';
@@ -76,6 +85,9 @@ function displayCluster() {
     const componentCount = document.getElementById('componentCount');
     componentCount.textContent = clusterData.components.length;
 
+    // Display model visualization
+    displayModelVisualization();
+
     // Setup components table
     setupComponentsTable();
 
@@ -86,6 +98,27 @@ function displayCluster() {
 
     // Display samples
     displaySamples();
+}
+
+function displayModelVisualization() {
+    if (!modelInfo || !modelInfo.module_list) {
+        console.warn('Model info not loaded');
+        return;
+    }
+
+    const modelViewDiv = document.getElementById('modelView');
+
+    try {
+        const architecture = renderModelArchitecture(currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap);
+        const html = renderToHTML(architecture);
+        modelViewDiv.innerHTML = html;
+
+        // Setup tooltips after rendering
+        setTimeout(() => setupTooltips(modelViewDiv), 0);
+    } catch (error) {
+        console.error('Failed to render model visualization:', error);
+        modelViewDiv.innerHTML = '<span style="color: #999; font-size: 11px;">Model visualization unavailable</span>';
+    }
 }
 
 function displayTokenActivations() {
