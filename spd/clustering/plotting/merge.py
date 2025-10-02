@@ -273,7 +273,7 @@ def plot_dists_distribution(
         ax_.fill_between(iterations, q1s, q3s, color=color, alpha=0.2)
 
     ax_.set_xlabel("Iteration #")
-    ax_.set_ylabel("permutation invariant hamming distance")
+    ax_.set_ylabel("distance")
     ax_.set_title("Distribution of pairwise distances between group merges in an ensemble")
 
     return ax_
