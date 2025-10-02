@@ -52,7 +52,10 @@ def replace_std_values_in_layernorm(
     component_model: nn.Module, std_values: dict[str, float]
 ) -> None:
     for name, std in std_values.items():
-        module = component_model.get_submodule("patched_model." + name)
+        # In the new architecture, we access the target model directly
+        # component_model is expected to be a ComponentModel instance
+        target_model = getattr(component_model, "target_model", component_model)
+        module = target_model.get_submodule(name)
         assert isinstance(module, SSLayerNorm), (
             f"Expected {name} to be a simple_stories_train LayerNorm instance, got {type(module)}"
         )
