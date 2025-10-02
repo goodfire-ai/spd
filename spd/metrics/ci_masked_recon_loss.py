@@ -20,7 +20,7 @@ def _ci_masked_recon_loss_update(
     ci: dict[str, Float[Tensor, "... C"]],
 ) -> tuple[Float[Tensor, ""], int]:
     mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
-    out = model(batch, mode="components", mask_infos=mask_infos)
+    out = model(batch, mask_infos=mask_infos)[0]
     loss_type = output_loss_type
     loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
     return loss, out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()

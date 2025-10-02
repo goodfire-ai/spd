@@ -183,9 +183,7 @@ def optimize(
             weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
-            target_out, pre_weight_acts = wrapped_model(
-                batch, mode="input_cache", module_names=model.module_paths
-            )
+            target_out, pre_weight_acts = wrapped_model(batch, cache_type="input")
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
             # through the parameters in calc_causal_importances below, the DDP hook will get called
             # and gradients will be properly synced across ranks on the next backward pass.
