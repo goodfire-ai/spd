@@ -33,7 +33,7 @@ from spd.configs import (
     TrainMetricConfigType,
     UVPlotsConfig,
 )
-from spd.metrics.base import Metric
+from spd.metrics.base import MetricInterface
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
 from spd.metrics.ci_l0 import CI_L0
@@ -113,7 +113,7 @@ def init_metric(
     model: ComponentModel,
     run_config: Config,
     device: str,
-) -> Metric:
+) -> MetricInterface:
     match cfg:
         case ImportanceMinimalityLossTrainConfig():
             metric = ImportanceMinimalityLoss(
@@ -208,7 +208,7 @@ def init_metric(
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
             )
-    metric.to(device)
+    # metric.to(device)
     return metric
 
 
@@ -224,7 +224,7 @@ def evaluate(
 ) -> MetricOutType:
     """Run evaluation and return a mapping of metric names to values/images."""
 
-    metrics: list[Metric] = []
+    metrics: list[MetricInterface] = []
     for cfg in metric_configs:
         metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
         metrics.append(metric)
@@ -260,8 +260,7 @@ def evaluate(
 
     outputs: MetricOutType = {}
     for metric in metrics:
-        # Combine metric states across all data-parallel processes
-        metric.sync_dist()
+        # Metrics handle distributed reduction directly in compute()
         computed_raw: Any = metric.compute()
         computed = clean_metric_output(metric_name=type(metric).__name__, computed_raw=computed_raw)
         outputs.update(computed)

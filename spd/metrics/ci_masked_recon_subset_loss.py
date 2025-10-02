@@ -1,13 +1,15 @@
-from typing import Any, Literal, override
+from typing import Literal, override
 
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
+from torch.distributed import ReduceOp
 
-from spd.metrics.base import Metric
+from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import sample_uniform_k_subset_routing_masks
+from spd.utils.distributed_utils import all_reduce, get_device
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
@@ -57,29 +59,27 @@ def ci_masked_recon_subset_loss(
     return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)
 
 
-class CIMaskedReconSubsetLoss(Metric):
+class CIMaskedReconSubsetLoss(MetricInterface):
     """Recon loss when masking with raw CI values and routing to subsets of component layers."""
 
-    sum_loss: Float[Tensor, ""]
-    n_examples: Int[Tensor, ""]
-
     def __init__(
-        self, model: ComponentModel, output_loss_type: Literal["mse", "kl"], **kwargs: Any
+        self, model: ComponentModel, output_loss_type: Literal["mse", "kl"]
     ) -> None:
-        super().__init__(**kwargs)
         self.model = model
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        self.add_state("sum_loss", torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("n_examples", torch.tensor(0), dist_reduce_fx="sum")
+        device = get_device()
+        self.sum_loss = torch.tensor(0.0, device=device)
+        self.n_examples = torch.tensor(0, device=device)
 
     @override
     def update(
         self,
-        *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        **_: Any,
+        current_frac_of_training: float,
+        ci_upper_leaky: dict[str, Tensor],
+        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
     ) -> None:
         sum_loss, n_examples = _ci_masked_recon_subset_loss_update(
             model=self.model,
@@ -93,4 +93,6 @@ class CIMaskedReconSubsetLoss(Metric):
 
     @override
     def compute(self) -> Float[Tensor, ""]:
-        return _ci_masked_recon_subset_loss_compute(self.sum_loss, self.n_examples)
+        sum_loss = all_reduce(self.sum_loss, op=ReduceOp.SUM)
+        n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM)
+        return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)

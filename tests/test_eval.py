@@ -47,11 +47,17 @@ class TestCIHistograms:
         # Create dummy batch and target_out
         batch = torch.randn(4, 8)
         target_out = torch.randn(4, 8, 100)
+        weight_deltas = {"layer1": torch.randn(10, 10), "layer2": torch.randn(10, 10)}
 
         # Watch more batches than n_batches_accum
         for _ in range(n_batches_accum + 2):
             ci_hist.update(
-                batch=batch, target_out=target_out, ci=sample_ci, ci_upper_leaky=sample_ci
+                batch=batch,
+                target_out=target_out,
+                ci=sample_ci,
+                current_frac_of_training=0.5,
+                ci_upper_leaky=sample_ci,
+                weight_deltas=weight_deltas,
             )
 
         # Check that only n_batches_accum were accumulated
@@ -65,12 +71,18 @@ class TestCIHistograms:
 
         batch = torch.randn(4, 8)
         target_out = torch.randn(4, 8, 100)
+        weight_deltas = {"layer1": torch.randn(10, 10), "layer2": torch.randn(10, 10)}
 
         # Watch many batches
         num_batches = 10
         for _ in range(num_batches):
             ci_hist.update(
-                batch=batch, target_out=target_out, ci=sample_ci, ci_upper_leaky=sample_ci
+                batch=batch,
+                target_out=target_out,
+                ci=sample_ci,
+                current_frac_of_training=0.5,
+                ci_upper_leaky=sample_ci,
+                weight_deltas=weight_deltas,
             )
 
         # All batches should be accumulated

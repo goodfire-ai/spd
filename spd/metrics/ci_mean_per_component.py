@@ -1,35 +1,37 @@
-from typing import Any, override
+from typing import override
 
 import torch
 from PIL import Image
 from torch import Tensor
+from torch.distributed import ReduceOp
 
-from spd.metrics.base import Metric
+from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_mean_component_cis_both_scales
+from spd.utils.distributed_utils import all_reduce, get_device
 
 
-class CIMeanPerComponent(Metric):
-    component_ci_sums: dict[str, Tensor]
-    examples_seen: dict[str, Tensor]
-
-    def __init__(self, model: ComponentModel, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+class CIMeanPerComponent(MetricInterface):
+    def __init__(self, model: ComponentModel) -> None:
         self.components = model.components
-
-        self.add_state(
-            "component_ci_sums",
-            default={module_name: torch.zeros(model.C) for module_name in self.components},
-            dist_reduce_fx="sum",
-        )
-        self.add_state(
-            "examples_seen",
-            default={module_name: torch.tensor(0) for module_name in self.components},
-            dist_reduce_fx="sum",
-        )
+        device = get_device()
+        self.component_ci_sums: dict[str, Tensor] = {
+            module_name: torch.zeros(model.C, device=device) for module_name in self.components
+        }
+        self.examples_seen: dict[str, Tensor] = {
+            module_name: torch.tensor(0, device=device) for module_name in self.components
+        }
 
     @override
-    def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
+    def update(
+        self,
+        batch: Tensor,
+        target_out: Tensor,
+        ci: dict[str, Tensor],
+        current_frac_of_training: float,
+        ci_upper_leaky: dict[str, Tensor],
+        weight_deltas: dict[str, Tensor],
+    ) -> None:
         for module_name, ci_vals in ci.items():
             n_leading_dims = ci_vals.ndim - 1
             n_examples = ci_vals.shape[:n_leading_dims].numel()
@@ -43,9 +45,9 @@ class CIMeanPerComponent(Metric):
     def compute(self) -> dict[str, Image.Image]:
         mean_component_cis = {}
         for module_name in self.components:
-            mean_component_cis[module_name] = (
-                self.component_ci_sums[module_name] / self.examples_seen[module_name]
-            )
+            mean_component_cis[module_name] = all_reduce(
+                self.component_ci_sums[module_name], op=ReduceOp.SUM
+            ) / all_reduce(self.examples_seen[module_name], op=ReduceOp.SUM)
 
         img_linear, img_log = plot_mean_component_cis_both_scales(mean_component_cis)
 

@@ -1,52 +1,64 @@
-from typing import Any, override
+from typing import override
 
 import torch
 from einops import reduce
-from jaxtyping import Int
 from PIL import Image
 from torch import Tensor
+from torch.distributed import ReduceOp
 
-from spd.metrics.base import Metric
+from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_component_activation_density
+from spd.utils.distributed_utils import all_reduce, get_device
 
 
-class ComponentActivationDensity(Metric):
+class ComponentActivationDensity(MetricInterface):
     """Activation density for each component."""
 
-    n_examples: Int[Tensor, ""]
-    component_activation_counts: dict[str, Tensor]
-
-    def __init__(self, model: ComponentModel, ci_alive_threshold: float, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, model: ComponentModel, ci_alive_threshold: float) -> None:
         self.model = model
         self.ci_alive_threshold = ci_alive_threshold
-
-        self.add_state("n_examples", default=torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state(
-            "component_activation_counts",
-            default={module_name: torch.zeros(model.C) for module_name in model.components},
-            dist_reduce_fx="sum",
-        )
+        device = get_device()
+        self.n_examples = torch.tensor(0.0, device=device)
+        self.component_activation_counts: dict[str, Tensor] = {
+            module_name: torch.zeros(model.C, device=device) for module_name in model.components
+        }
 
     @override
-    def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
+    def update(
+        self,
+        batch: Tensor,
+        target_out: Tensor,
+        ci: dict[str, Tensor],
+        current_frac_of_training: float,
+        ci_upper_leaky: dict[str, Tensor],
+        weight_deltas: dict[str, Tensor],
+    ) -> None:
         n_examples_this_batch = next(iter(ci.values())).shape[:-1].numel()
         self.n_examples += n_examples_this_batch
 
         for module_name, ci_vals in ci.items():
             active_components = ci_vals > self.ci_alive_threshold
             n_activations_per_component = reduce(active_components, "... C -> C", "sum")
+            # NOTE: Preserving existing behavior which multiplies by n_examples_this_batch
+            # This seems like it might be a bug (double counting) but keeping for now
             self.component_activation_counts[module_name] += (
                 n_activations_per_component * n_examples_this_batch
             )
 
     @override
     def compute(self) -> dict[str, Image.Image]:
+        # Reduce across ranks
+        n_examples_reduced = all_reduce(self.n_examples, op=ReduceOp.SUM)
+        component_activation_counts_reduced = {
+            name: all_reduce(val, op=ReduceOp.SUM)
+            for name, val in self.component_activation_counts.items()
+        }
+
         activation_densities = {}
         for module_name in self.model.components:
             activation_densities[module_name] = (
-                self.component_activation_counts[module_name] / self.n_examples
+                component_activation_counts_reduced[module_name] / n_examples_reduced
             )
 
         fig = plot_component_activation_density(activation_densities)

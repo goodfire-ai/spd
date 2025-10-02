@@ -1,15 +1,15 @@
-from typing import Any, Literal, override
+from typing import Literal, override
 
 from PIL import Image
 from torch import Tensor
 
-from spd.metrics.base import Metric
+from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.plotting import plot_causal_importance_vals
 
 
-class PermutedCIPlots(Metric):
+class PermutedCIPlots(MetricInterface):
     input_magnitude: float = 0.75
 
     def __init__(
@@ -19,9 +19,7 @@ class PermutedCIPlots(Metric):
         sigmoid_type: SigmoidTypes,
         identity_patterns: list[str] | None = None,
         dense_patterns: list[str] | None = None,
-        **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
         self.model = model
         self.model_device = next(iter(model.parameters())).device
         self.sampling: Literal["continuous", "binomial"] = sampling
@@ -32,7 +30,15 @@ class PermutedCIPlots(Metric):
         self.batch_shape: tuple[int, ...] | None = None
 
     @override
-    def update(self, *, batch: Tensor, **_: Any) -> None:
+    def update(
+        self,
+        batch: Tensor,
+        target_out: Tensor,
+        ci: dict[str, Tensor],
+        current_frac_of_training: float,
+        ci_upper_leaky: dict[str, Tensor],
+        weight_deltas: dict[str, Tensor],
+    ) -> None:
         if self.batch_shape is None:
             self.batch_shape = tuple(batch.shape)
 

@@ -2,158 +2,202 @@
 
 ## Overview
 
-This module implements a custom `Metric` base class (in `base.py`) that provides distributed metric computation without the complexity of torchmetrics (although it still uses much of the same API). All metrics inherit from this base class.
+This module implements metrics for training and evaluation. All metrics implement the `MetricInterface` and handle distributed synchronization directly in their implementation using `all_reduce()` or `gather_all_tensors()`.
 
-## Base Metric Class
+## MetricInterface
 
-The `Metric` base class provides:
-- State registration via `add_state(name, default, dist_reduce_fx)`
-- Distributed synchronization via `sync_dist()`
-- Metric computation via `compute()`
-- Device management via `.to(device)`
+The `MetricInterface` (in `base.py`) provides a simple interface:
 
-### Key Methods
-
-**`add_state(name, default, dist_reduce_fx)`**
-- Registers a state variable that will be synchronized across ranks
-- `dist_reduce_fx` can be:
-  - `"sum"`: Gathers tensors from all ranks and sums them (for scalar metrics)
-  - `"cat"`: Concatenates tensors from all ranks (for collecting samples)
-- `default` must be a `Tensor` for "sum" or an empty `list` for "cat"
-
-**`update(**kwargs)`**
-- Accumulates metric state for each batch
-- Called once per batch during training/evaluation
-- Must be implemented by subclasses
-
-**`compute()`**
-- Computes the final metric value from current state
-- Works on whatever state is available (local or synchronized)
-- Must be implemented by subclasses
-- **For training with DDP:** Call directly after updates to get per-rank metrics
-- **For evaluation:** Call after `sync_dist()` to get global metrics
-
-**`sync_dist()`**
-- Synchronizes all registered states across distributed ranks
-- For "sum" reduction: gathers and sums tensors from all ranks
-- For "cat" reduction: concatenates local list, gathers from all ranks, then concatenates across ranks
-- No-op if not in distributed mode
-- **Must be called before `compute()` for evaluation to get global metrics**
-**`.to(device)`**
-- Moves all registered tensor states to the specified device
-- For `Tensor` states: calls `.to(device)`
-- For `list` states: moves all tensor elements in the list
-- Returns `self` for method chaining
-
-## Usage Patterns
-
-### Evaluation Metrics
-
-For evaluation metrics (in `eval.py`):
-1. Call `update()` for each batch to accumulate state
-2. Call `sync_dist()` to synchronize state across all ranks
-3. Call `compute()` to get the final metric value
-
-The framework automatically calls `sync_dist()` before `compute()` in evaluation mode.
-
-Example:
 ```python
-class MyEvalMetric(Metric):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Register states that will be synchronized
-        self.add_state("sum_value", torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("n_samples", torch.tensor(0), dist_reduce_fx="sum")
+class MetricInterface(ABC):
+    @abstractmethod
+    def update(
+        self,
+        batch: Tensor,
+        target_out: Tensor,
+        ci: dict[str, Tensor],
+        current_frac_of_training: float,
+        ci_upper_leaky: dict[str, Tensor],
+        weight_deltas: dict[str, Tensor],
+    ) -> None:
+        """Update metric state with a batch of data."""
+        pass
 
-    def update(self, batch, **kwargs):
-        # Accumulate per-batch statistics
-        self.sum_value += batch.sum()
-        self.n_samples += batch.numel()
-
-    def compute(self):
-        # Compute final metric (works on local or synced state)
-        return self.sum_value / self.n_samples
-
-# Usage in evaluation:
-metric = MyEvalMetric()
-for batch in dataloader:
-    metric.update(batch=batch)
-metric.sync_dist()  # Synchronize across ranks
-result = metric.compute()  # Get global metric
+    @abstractmethod
+    def compute(self) -> Any:
+        """Compute the final metric value(s)."""
+        pass
 ```
 
-### Training Loss Metrics
+## Implementation Pattern
 
-For metrics used in training losses:
-- Call `compute()` directly (without `sync_dist()`) to get per-rank loss
-- DistributedDataParallel automatically syncs gradients during `loss.backward()`
+All metrics follow a "flat" pattern where distributed logic is inlined directly in the metric implementation. This makes the distributed behavior explicit and easy to understand.
 
-Example:
+### Training Loss Metrics (2-Scalar Pattern)
+
+For metrics that accumulate a sum and count:
+
 ```python
-class MyTrainingLoss(Metric):
-    def __init__(self, model, **kwargs):
-        super().__init__(**kwargs)
+class MyTrainingLoss(MetricInterface):
+    def __init__(self, model: ComponentModel, ...):
         self.model = model
-        self.add_state("sum_loss", torch.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("n_examples", torch.tensor(0), dist_reduce_fx="sum")
+        device = get_device()
+        self.sum_loss = torch.tensor(0.0, device=device)
+        self.n_examples = torch.tensor(0, device=device)
 
-    def update(self, batch, target, **kwargs):
-        loss = some_differentiable_computation(batch, target)
+    def update(self, batch, target_out, ci, ...):
+        loss, n_examples = _my_loss_update(...)
         self.sum_loss += loss
+        self.n_examples += n_examples
+
+    def compute(self):
+        # Synchronize across ranks
+        sum_loss = all_reduce(self.sum_loss, op=ReduceOp.SUM)
+        n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM)
+        return sum_loss / n_examples
+```
+
+Examples: `FaithfulnessLoss`, `StochasticReconLoss`, `CIMaskedReconLoss`
+
+### Dict State Metrics
+
+For metrics that track multiple values in a dictionary:
+
+```python
+class MyDictMetric(MetricInterface):
+    def __init__(self, model: ComponentModel, ...):
+        self.model = model
+        device = get_device()
+        self.loss_sums = {
+            "loss_a": torch.tensor(0.0, device=device),
+            "loss_b": torch.tensor(0.0, device=device),
+        }
+        self.n_examples = torch.tensor(0, device=device)
+
+    def update(self, batch, target_out, ci, ...):
+        self.loss_sums["loss_a"] += compute_loss_a(...)
+        self.loss_sums["loss_b"] += compute_loss_b(...)
         self.n_examples += batch.shape[0]
 
     def compute(self):
-        # Returns differentiable tensor for backward pass
-        return self.sum_loss / self.n_examples
-
-# Usage in training:
-metric = MyTrainingLoss(model)
-metric.update(batch=batch, target=target)
-loss = metric.compute()  # Get per-rank loss (no sync needed as DDP will sync gradients itself)
-loss.backward()  # DDP syncs gradients automatically
+        # Reduce all dict values
+        reduced = {
+            key: all_reduce(val, op=ReduceOp.SUM).item()
+            for key, val in self.loss_sums.items()
+        }
+        n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM).item()
+        return {key: val / n_examples for key, val in reduced.items()}
 ```
+
+Examples: `CEandKLLosses`, `CIMeanPerComponent`
+
+### Cat Reduction Metrics
+
+For metrics that collect samples across batches:
+
+```python
+class MyCatMetric(MetricInterface):
+    def __init__(self, model: ComponentModel, ...):
+        self.model = model
+        self.module_names = list(model.components.keys())
+        self.causal_importances: dict[str, list[Tensor]] = {
+            name: [] for name in self.module_names
+        }
+
+    def update(self, batch, target_out, ci, ...):
+        for module_name in self.module_names:
+            self.causal_importances[module_name].append(ci[module_name])
+
+    def compute(self):
+        cis: dict[str, Tensor] = {}
+        for module_name in self.module_names:
+            ci_list = self.causal_importances[module_name]
+            local_tensor = torch.cat(ci_list, dim=0)
+            gathered = gather_all_tensors(local_tensor)
+            cis[module_name] = torch.cat(gathered, dim=0)
+        return process_cis(cis)
+```
+
+Examples: `CIHistograms`, `CI_L0`
+
+### Dynamic State Metrics
+
+For metrics with dynamically-keyed state:
+
+```python
+class MyDynamicMetric(MetricInterface):
+    def __init__(self, ...):
+        self.states: defaultdict[str, list[float]] = defaultdict(list)
+
+    def update(self, batch, target_out, ci, ...):
+        for key, value in compute_values(...).items():
+            self.states[key].append(value)
+
+    def compute(self):
+        results: dict[str, float] = {}
+        for key, vals in self.states.items():
+            total_sum = all_reduce(torch.tensor(sum(vals)), op=ReduceOp.SUM).item()
+            total_count = all_reduce(torch.tensor(len(vals)), op=ReduceOp.SUM).item()
+            results[key] = total_sum / total_count
+        return results
+```
+
+Examples: `StochasticReconSubsetCEAndKL`
 
 ## Distributed Behavior
 
-When not running in distributed mode (`torch.distributed.is_available()` or `is_initialized()` returns False):
-- `sync_dist()` becomes a no-op
+When not running in distributed mode:
+- `all_reduce()` and `gather_all_tensors()` return the input unchanged
 - Metrics work identically in single-GPU or CPU mode
 
 ## Implementation Notes
 
-### State Registration
-States registered with `add_state()` are stored as instance attributes and tracked internally:
+### State Initialization
+
+Always use `get_device()` to ensure tensors are on the correct device:
+
 ```python
-self.add_state("my_values", default=[], dist_reduce_fx="cat")
-# Now you can access self.my_values like any other attribute
-self.my_values.append(some_tensor)
+device = get_device()
+self.sum_loss = torch.tensor(0.0, device=device)
+self.n_examples = torch.tensor(0, device=device)
 ```
 
-You can also register a dictionary whose values are `Tensor` or `list`:
-```python
-self.add_state("my_dict", default={"sum": torch.tensor(0.0), "count": torch.tensor(0)}, dist_reduce_fx="sum")
-# Access nested values like any other attribute
-self.my_dict["sum"] += some_value
-self.my_dict["count"] += 1
-```
-- Each value in the dictionary is treated as a separate state with the same `dist_reduce_fx`
-- Useful for grouping related state variables together
+### Functional Forms
 
-### Concatenation States
-For states with `dist_reduce_fx="cat"`:
-- Store as a list during `update()`: `self.my_state.append(tensor)`
-- After `sync_dist()`, the state becomes a concatenated tensor
-- `compute()` should handle both list and tensor cases (see `ci_histograms.py` for example)
+Most metrics also provide functional forms (non-class versions) for one-off computations:
 
-Example:
 ```python
-def compute(self):
-    # Handle both list (before sync) and tensor (after sync)
-    if isinstance(self.my_state, list):
-        if len(self.my_state) == 0:
-            raise ValueError("No samples collected")
-        values = torch.cat(self.my_state, dim=0)
-    else:
-        values = self.my_state
-    return values.mean()
+# Functional form
+loss = my_loss(model=model, batch=batch, ...)
+
+# Class form (for accumulation across batches)
+metric = MyLoss(model=model, ...)
+metric.update(batch=batch, ...)
+result = metric.compute()
 ```
+
+### Reduction Operations
+
+- Use `ReduceOp.SUM` for accumulating values across ranks (never use `ReduceOp.AVG` - it gives incorrect results when ranks have different sample counts)
+- Use `gather_all_tensors()` for concatenating tensors across ranks
+- Always reduce both the sum and count separately, then divide
+
+## Usage in Evaluation
+
+The evaluation framework (`eval.py`) calls metrics as follows:
+
+```python
+# Initialize metrics
+metrics = [init_metric(cfg, model, ...) for cfg in metric_configs]
+
+# Accumulate over batches
+for batch in eval_iterator:
+    for metric in metrics:
+        metric.update(batch=batch, ...)
+
+# Compute results (distributed reduction happens here)
+for metric in metrics:
+    result = metric.compute()  # Handles all_reduce internally
+```
+
+Note: The old `sync_dist()` pattern is no longer used. All distributed synchronization happens directly in `compute()`.
