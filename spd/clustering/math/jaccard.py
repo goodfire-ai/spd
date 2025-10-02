@@ -1,5 +1,5 @@
 import numpy as np
-from jaxtyping import Int, Float
+from jaxtyping import Float, Int
 
 
 def _sum_combinations2(counts: Int[np.ndarray, "..."]) -> int:
