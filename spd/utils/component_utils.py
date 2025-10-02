@@ -10,6 +10,7 @@ from spd.models.components import ComponentsMaskInfo, WeightDeltaAndMask, make_m
 def _sample_stochastic_mask(
     causal_importances: Float[Tensor, "... C"],
     sampling: Literal["continuous", "binomial"],
+    rand_tensor: Float[Tensor, "... C"] | None = None,
 ) -> Float[Tensor, "... C"]:
     match sampling:
         case "binomial":
@@ -17,7 +18,11 @@ def _sample_stochastic_mask(
                 0, 2, causal_importances.shape, device=causal_importances.device
             ).float()
         case "continuous":
-            rand_tensor = torch.rand_like(causal_importances)
+            rand_tensor = (
+                torch.rand_like(causal_importances)
+                if rand_tensor is None
+                else rand_tensor.clamp(0.0, 1.0)
+            )
 
     return causal_importances + (1 - causal_importances) * rand_tensor
 
@@ -101,6 +106,8 @@ def calc_stochastic_component_mask_info(
     sampling: Literal["continuous", "binomial"],
     routing: RoutingType,
     weight_deltas: dict[str, Tensor] | None,
+    rand_tensors: dict[str, Float[Tensor, "... C"]] | None = None,
+    weight_delta_rand_mask: dict[str, Float[Tensor, "..."]] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
     ci_sample = next(iter(causal_importances.values()))
     leading_dims = ci_sample.shape[:-1]
@@ -109,12 +116,20 @@ def calc_stochastic_component_mask_info(
 
     component_masks: dict[str, Float[Tensor, "... C"]] = {}
     for layer, ci in causal_importances.items():
-        component_masks[layer] = _sample_stochastic_mask(ci, sampling)
+        provided_rand = None if rand_tensors is None else rand_tensors[layer]
+        component_masks[layer] = _sample_stochastic_mask(ci, sampling, provided_rand)
 
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None
     if weight_deltas is not None:
         weight_deltas_and_masks = {
-            layer: (weight_deltas[layer], torch.rand(leading_dims, device=device, dtype=dtype))
+            layer: (
+                weight_deltas[layer],
+                (
+                    weight_delta_rand_mask[layer]
+                    if weight_delta_rand_mask is not None
+                    else torch.rand(leading_dims, device=device, dtype=dtype)
+                ),
+            )
             for layer in causal_importances
         }
     else:
