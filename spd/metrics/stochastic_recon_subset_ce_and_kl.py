@@ -67,18 +67,11 @@ class StochasticReconSubsetCEAndKL(Metric):
                 )
             self.subset_modules[subset_name] = remaining
 
-        # Avoid using e.g. "layers.*.mlp_in" as an attribute
-        self.key_to_sanitized: dict[str, str] = {}
-        self.sanitized_to_key: dict[str, str] = {}
-
+        self.metric_values: dict[str, list[float]] = {}
         for subset_name in self.subset_modules:
-            sanitized_key_raw = subset_name.replace(".", "-").replace("*", "all")
             for suffix in ["_kl", "_ce", "_ce_unrec"]:
-                raw_metric_key = f"{subset_name}{suffix}"
-                sanitized_metric_key = f"{sanitized_key_raw}{suffix}"
-                self.key_to_sanitized[raw_metric_key] = sanitized_metric_key
-                self.sanitized_to_key[sanitized_metric_key] = raw_metric_key
-                setattr(self, sanitized_metric_key, [])
+                metric_key = f"{subset_name}{suffix}"
+                self.metric_values[metric_key] = []
 
     @override
     def update(
@@ -100,14 +93,12 @@ class StochasticReconSubsetCEAndKL(Metric):
             n_mask_samples=self.n_mask_samples,
         )
         for key, value in losses.items():
-            sanitized_key = self.key_to_sanitized[key]
-            getattr(self, sanitized_key).append(value)
+            self.metric_values[key].append(value)
 
     @override
     def compute(self) -> dict[str, float | str]:
         results: dict[str, float | str] = {}
-        for sanitized_key, key in self.sanitized_to_key.items():
-            vals: list[float] = getattr(self, sanitized_key)
+        for key, vals in self.metric_values.items():
             # Convert list to tensor, sum locally, then reduce across ranks
             local_sum = torch.tensor(sum(vals), device=self.device)
             local_count = torch.tensor(len(vals), device=self.device)
