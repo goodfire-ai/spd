@@ -125,6 +125,14 @@ class Config(BaseModel):
         description="List of fnmatch-style patterns that select modules in which an identity "
         "matrix should be inserted and decomposed beforehand",
     )
+
+    @property
+    def all_module_patterns(self):
+        if self.identity_module_patterns is None:
+            return self.target_module_patterns
+        identity_final_patterns = [f"{p}.pre_identity" for p in self.identity_module_patterns]
+        return self.target_module_patterns + identity_final_patterns
+
     use_delta_component: bool = Field(
         default=True,
         description="If True, use an extra component containing the difference between the target "
@@ -152,6 +160,14 @@ class Config(BaseModel):
         default=None,
         description="Coefficient for recon loss with stochastically sampled masks on one layer at "
         "a time",
+    )
+    ci_masked_recon_subset_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for recon loss with causal importance mask and routed components",
+    )
+    stochastic_recon_subset_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for recon loss with stochastically sampled masks and routed components",
     )
     importance_minimality_coeff: NonNegativeFloat = Field(
         ...,
