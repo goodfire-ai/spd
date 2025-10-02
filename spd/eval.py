@@ -230,9 +230,9 @@ def evaluate(
     metrics: list[Metric] = []
     for cfg in metric_configs:
         metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
-        metrics.append(metric)
         if slow_step and not metric.slow:
             continue
+        metrics.append(metric)
 
     # Weight deltas can be computed once per eval since params are frozen
     weight_deltas = model.calc_weight_deltas()
