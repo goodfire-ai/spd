@@ -2,18 +2,14 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
-import einops
 import torch
-import torch.nn as nn
 from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.models.components import (
-    Components,
     ComponentsMaskInfo,
-    EmbeddingComponents,
     make_mask_infos,
 )
 from spd.utils.component_utils import (
@@ -76,99 +72,6 @@ def hidden_recon_losses_from_cache(
         ).mean()
         for layer_name, layer_acts in cache.hidden_acts_by_layer.items()
     }
-
-
-def calc_embedding_recon_loss(
-    model: ComponentModel,
-    batch: Int[Tensor, "..."],
-    masks: list[dict[str, Float[Tensor, "... C"]]],
-    unembed: bool,
-    device: str,
-) -> Float[Tensor, ""]:
-    """
-    recon loss that directly compares the outputs of the (optionally masked)
-    ``EmbeddingComponents``(s) to the outputs of the original ``nn.Embedding`` modules.
-
-    If ``unembed`` is ``True``, both the masked embedding output and the target embedding
-    output are unembedded using the ``lm_head`` module, and the KL divergence is used as the loss.
-
-    If ``unembed`` is ``False``, the loss is the MSE between the masked embedding output
-    and the target embedding output is used as the loss.
-    """
-
-    assert len(model.components) == 1, "Only one embedding component is supported"
-    components = next(iter(model.components.values()))
-    assert isinstance(components, EmbeddingComponents)
-
-    # --- original embedding output --------------------------------------------------------- #
-    # Get the target model's embedding layer
-    target_model = model.target_model
-    embedding_layer = None
-    for _, module in target_model.named_modules():
-        if isinstance(module, nn.Embedding):
-            embedding_layer = module
-            break
-    assert embedding_layer is not None, "No embedding layer found in target model"
-    target_out: Float[Tensor, "... d_emb"] = embedding_layer(batch)
-
-    # --- masked embedding output ----------------------------------------------------------- #
-    loss = torch.tensor(0.0, device=device)
-    for mask_info in masks:
-        assert len(mask_info) == 1, "Only one embedding component is supported"
-        mask = next(iter(mask_info.values()))
-        masked_out: Float[Tensor, "... d_emb"] = components(batch, mask=mask)
-
-        if unembed:
-            assert hasattr(model.target_model, "lm_head"), "Only supports unembedding named lm_head"
-            assert isinstance(model.target_model.lm_head, nn.Module)
-            target_out_unembed = model.target_model.lm_head(target_out)
-            masked_out_unembed = model.target_model.lm_head(masked_out)
-            loss += calc_kl_divergence_lm(pred=masked_out_unembed, target=target_out_unembed)
-        else:
-            loss += ((masked_out - target_out) ** 2).sum(dim=-1).mean()
-
-    loss /= len(masks)
-
-    return loss
-
-
-def calc_schatten_loss(
-    ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-    pnorm: float,
-    components: dict[str, Components],
-    device: str,
-) -> Float[Tensor, ""]:
-    """Calculate the Schatten loss on the active components.
-
-    The Schatten loss is calculated as:
-        L = Σ_{components} mean(ci_upper_leaky^pnorm · (||V||_2^2 + ||U||_2^2))
-
-    where:
-        - ci_upper_leaky are the upper leaky relu causal importances for each component
-        - pnorm is the power to raise the mask to
-        - V and U are the component matrices
-        - ||·||_2 is the L2 norm
-
-    Args:
-        ci_upper_leaky: Dictionary of upper leaky relu causal importances for each layer.
-        pnorm: The pnorm to use for the importance minimality loss. Must be positive.
-        components: Dictionary of components for each layer.
-        device: The device to compute the loss on.
-
-    Returns:
-        The Schatten loss as a scalar tensor.
-    """
-
-    total_loss = torch.tensor(0.0, device=device)
-    for component_name, component in components.items():
-        V_norms = component.V.square().sum(dim=-2)
-        U_norms = component.U.square().sum(dim=-1)
-        schatten_norms = V_norms + U_norms
-        loss = einops.einsum(
-            ci_upper_leaky[component_name] ** pnorm, schatten_norms, "... C, C -> ..."
-        )
-        total_loss += loss.mean()
-    return total_loss
 
 
 def calc_importance_minimality_loss(
