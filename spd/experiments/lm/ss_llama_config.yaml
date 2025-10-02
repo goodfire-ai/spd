@@ -1,5 +1,5 @@
-C: 1000
-batch_size: 64
+C: 2000
+batch_size: 32
 ci_alive_threshold: 0.0
 ci_masked_recon_subset_coeff: null
 ci_recon_coeff: null
@@ -72,9 +72,9 @@ gate_hidden_dims:
 gate_type: shared_mlp
 gradient_accumulation_steps: 1
 identity_module_patterns:
-- model.layers.0.mlp.gate_proj
-- model.layers.0.mlp.down_proj
-importance_minimality_coeff: 0.01
+# - model.layers.0.mlp.gate_proj
+# - model.layers.0.mlp.down_proj
+importance_minimality_coeff: 0.001
 lr: 0.0005
 lr_exponential_halflife: null
 lr_schedule: cosine
