@@ -1,4 +1,4 @@
-from typing import override
+from typing import Any, override
 
 import torch
 from jaxtyping import Float, Int
@@ -7,7 +7,7 @@ from torch.distributed import ReduceOp
 
 from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
-from spd.utils.distributed_utils import all_reduce, get_device
+from spd.utils.distributed_utils import all_reduce
 
 
 def _faithfulness_loss_update(
@@ -37,21 +37,18 @@ def faithfulness_loss(weight_deltas: dict[str, Float[Tensor, "d_out d_in"]]) -> 
 class FaithfulnessLoss(MetricInterface):
     """MSE between the target weights and the sum of the components."""
 
-    def __init__(self, model: ComponentModel) -> None:
+    def __init__(self, model: ComponentModel, device: str) -> None:
         self.model = model
-        device = get_device()
+        self.device = device
         self.sum_loss = torch.tensor(0.0, device=device)
         self.total_params = torch.tensor(0, device=device)
 
     @override
     def update(
         self,
-        batch: Tensor,
-        target_out: Tensor,
-        ci: dict[str, Tensor],
-        current_frac_of_training: float,
-        ci_upper_leaky: dict[str, Tensor],
+        *,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
+        **_: Any,
     ) -> None:
         sum_loss, total_params = _faithfulness_loss_update(weight_deltas)
         self.sum_loss += sum_loss

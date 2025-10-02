@@ -39,11 +39,10 @@ For metrics that accumulate a sum and count:
 
 ```python
 class MyTrainingLoss(MetricInterface):
-    def __init__(self, model: ComponentModel, ...):
+    def __init__(self, model: ComponentModel, device: str, ...):
         self.model = model
-        device = get_device()
-        self.sum_loss = torch.tensor(0.0, device=device)
-        self.n_examples = torch.tensor(0, device=device)
+        self.sum_loss = torch.tensor(0.0, device=self.device)
+        self.n_examples = torch.tensor(0, device=self.device)
 
     def update(self, batch, target_out, ci, ...):
         loss, n_examples = _my_loss_update(...)
@@ -58,38 +57,6 @@ class MyTrainingLoss(MetricInterface):
 ```
 
 Examples: `FaithfulnessLoss`, `StochasticReconLoss`, `CIMaskedReconLoss`
-
-### Dict State Metrics
-
-For metrics that track multiple values in a dictionary:
-
-```python
-class MyDictMetric(MetricInterface):
-    def __init__(self, model: ComponentModel, ...):
-        self.model = model
-        device = get_device()
-        self.loss_sums = {
-            "loss_a": torch.tensor(0.0, device=device),
-            "loss_b": torch.tensor(0.0, device=device),
-        }
-        self.n_examples = torch.tensor(0, device=device)
-
-    def update(self, batch, target_out, ci, ...):
-        self.loss_sums["loss_a"] += compute_loss_a(...)
-        self.loss_sums["loss_b"] += compute_loss_b(...)
-        self.n_examples += batch.shape[0]
-
-    def compute(self):
-        # Reduce all dict values
-        reduced = {
-            key: all_reduce(val, op=ReduceOp.SUM).item()
-            for key, val in self.loss_sums.items()
-        }
-        n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM).item()
-        return {key: val / n_examples for key, val in reduced.items()}
-```
-
-Examples: `CEandKLLosses`, `CIMeanPerComponent`
 
 ### Cat Reduction Metrics
 
@@ -125,7 +92,7 @@ class MyStatMetric(MetricInterface):
     def compute(self):
         local_tensor = torch.cat(self.samples, dim=0)
         local_sum = local_tensor.sum()
-        local_count = torch.tensor(local_tensor.numel(), device=get_device())
+        local_count = torch.tensor(local_tensor.numel(), device=self.device)
         global_sum = all_reduce(local_sum, op=ReduceOp.SUM)
         global_count = all_reduce(local_count, op=ReduceOp.SUM)
         return (global_sum / global_count).item()
@@ -160,20 +127,11 @@ Examples: `StochasticReconSubsetCEAndKL`
 ## Distributed Behavior
 
 When not running in distributed mode:
+
 - `all_reduce()` and `gather_all_tensors()` return the input unchanged
 - Metrics work identically in single-GPU or CPU mode
 
 ## Implementation Notes
-
-### State Initialization
-
-Always use `get_device()` to ensure tensors are on the correct device:
-
-```python
-device = get_device()
-self.sum_loss = torch.tensor(0.0, device=device)
-self.n_examples = torch.tensor(0, device=device)
-```
 
 ### Functional Forms
 

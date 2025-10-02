@@ -1,6 +1,6 @@
 import re
 from collections import defaultdict
-from typing import override
+from typing import Any, override
 
 import torch
 import wandb
@@ -11,7 +11,7 @@ from torch.distributed import ReduceOp
 from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_ci_l_zero
-from spd.utils.distributed_utils import all_reduce, get_device
+from spd.utils.distributed_utils import all_reduce
 
 
 class CI_L0(MetricInterface):
@@ -24,10 +24,12 @@ class CI_L0(MetricInterface):
         self,
         model: ComponentModel,
         ci_alive_threshold: float,
+        device: str,
         groups: dict[str, list[str]] | None = None,
     ) -> None:
         self.l0_threshold = ci_alive_threshold
         self.groups = groups
+        self.device = device
 
         all_keys = model.module_paths
         if groups:
@@ -38,12 +40,9 @@ class CI_L0(MetricInterface):
     @override
     def update(
         self,
-        batch: Tensor,
-        target_out: Tensor,
+        *,
         ci: dict[str, Float[Tensor, "... C"]],
-        current_frac_of_training: float,
-        ci_upper_leaky: dict[str, Tensor],
-        weight_deltas: dict[str, Tensor],
+        **_: Any,
     ) -> None:
         group_sums = defaultdict(float) if self.groups else {}
         for layer_name, layer_ci in ci.items():
@@ -63,11 +62,10 @@ class CI_L0(MetricInterface):
     def compute(self) -> dict[str, float | wandb.plot.CustomChart]:
         out = {}
         table_data = []
-        device = get_device()
         for key, l0s in self.l0_values.items():
             # More efficient: sum+count reduction instead of gathering all data
-            global_sum = all_reduce(torch.tensor(l0s, device=device).sum(), op=ReduceOp.SUM)
-            global_count = all_reduce(torch.tensor(len(l0s), device=device), op=ReduceOp.SUM)
+            global_sum = all_reduce(torch.tensor(l0s, device=self.device).sum(), op=ReduceOp.SUM)
+            global_count = all_reduce(torch.tensor(len(l0s), device=self.device), op=ReduceOp.SUM)
             avg_l0 = (global_sum / global_count).item()
             out[f"l0_{self.l0_threshold}/{key}"] = avg_l0
             table_data.append((key, avg_l0))

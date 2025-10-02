@@ -1,4 +1,4 @@
-from typing import Literal, override
+from typing import Any, Literal, override
 
 from PIL import Image
 from torch import Tensor
@@ -31,12 +31,9 @@ class UVPlots(MetricInterface):
     @override
     def update(
         self,
+        *,
         batch: Tensor,
-        target_out: Tensor,
-        ci: dict[str, Tensor],
-        current_frac_of_training: float,
-        ci_upper_leaky: dict[str, Tensor],
-        weight_deltas: dict[str, Tensor],
+        **_: Any,
     ) -> None:
         if self.batch_shape is None:
             self.batch_shape = tuple(batch.shape)

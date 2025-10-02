@@ -1,4 +1,4 @@
-from typing import override
+from typing import Any, override
 
 import torch
 from jaxtyping import Float, Int
@@ -7,7 +7,7 @@ from torch.distributed import ReduceOp
 
 from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
-from spd.utils.distributed_utils import all_reduce, get_device
+from spd.utils.distributed_utils import all_reduce
 
 
 def _get_linear_annealed_p(
@@ -129,6 +129,7 @@ class ImportanceMinimalityLoss(MetricInterface):
         self,
         model: ComponentModel,
         pnorm: float,
+        device: str,
         p_anneal_start_frac: float = 1.0,
         p_anneal_final_p: float | None = None,
         p_anneal_end_frac: float = 1.0,
@@ -139,19 +140,17 @@ class ImportanceMinimalityLoss(MetricInterface):
         self.p_anneal_start_frac = p_anneal_start_frac
         self.p_anneal_final_p = p_anneal_final_p if p_anneal_final_p is not None else None
         self.p_anneal_end_frac = p_anneal_end_frac
-        device = get_device()
+        device = device
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
     @override
     def update(
         self,
-        batch: Tensor,
-        target_out: Tensor,
-        ci: dict[str, Tensor],
+        *,
         current_frac_of_training: float,
         ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-        weight_deltas: dict[str, Tensor],
+        **_: Any,
     ) -> None:
         sum_loss, total_params = _importance_minimality_loss_update(
             ci_upper_leaky=ci_upper_leaky,

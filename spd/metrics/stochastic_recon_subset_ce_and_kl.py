@@ -1,6 +1,6 @@
 from collections import defaultdict
 from fnmatch import fnmatch
-from typing import Literal, override
+from typing import Any, Literal, override
 
 import einops
 import torch
@@ -70,12 +70,12 @@ class StochasticReconSubsetCEAndKL(MetricInterface):
     @override
     def update(
         self,
+        *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        current_frac_of_training: float,
-        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
         weight_deltas: dict[str, Float[Tensor, "... C"]],
+        **_: Any,
     ) -> None:
         losses = self._calc_subset_losses(
             batch=batch,

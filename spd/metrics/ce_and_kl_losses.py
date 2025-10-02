@@ -1,4 +1,4 @@
-from typing import Literal, override
+from typing import Any, Literal, override
 
 import einops
 import torch
@@ -10,7 +10,7 @@ from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
-from spd.utils.distributed_utils import all_reduce, get_device
+from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
@@ -45,12 +45,13 @@ class CEandKLLosses(MetricInterface):
         model: ComponentModel,
         sampling: Literal["continuous", "binomial"],
         rounding_threshold: float,
+        device: str,
     ) -> None:
         self.model = model
         self.sampling: Literal["continuous", "binomial"] = sampling
         self.rounding_threshold = rounding_threshold
 
-        device = get_device()
+        device = device
         self.loss_sums: dict[str, Tensor] = {
             key: torch.tensor(0.0, device=device) for key in self.loss_keys
         }
@@ -59,12 +60,11 @@ class CEandKLLosses(MetricInterface):
     @override
     def update(
         self,
+        *,
         batch: Tensor,
         target_out: Tensor,
         ci: dict[str, Tensor],
-        current_frac_of_training: float,
-        ci_upper_leaky: dict[str, Tensor],
-        weight_deltas: dict[str, Tensor],
+        **_: Any,
     ) -> None:
         ce_losses = self._calc_ce_and_kl_losses(batch=batch, target_out=target_out, ci=ci)
 

@@ -1,4 +1,4 @@
-from typing import override
+from typing import Any, override
 
 import torch
 from jaxtyping import Float
@@ -27,12 +27,9 @@ class CIHistograms(MetricInterface):
     @override
     def update(
         self,
-        batch: Tensor,
-        target_out: Tensor,
+        *,
         ci: dict[str, Tensor],
-        current_frac_of_training: float,
-        ci_upper_leaky: dict[str, Tensor],
-        weight_deltas: dict[str, Tensor],
+        **_: Any,
     ) -> None:
         if self.n_batches_accum is not None and self.batches_seen >= self.n_batches_accum:
             return

@@ -17,6 +17,7 @@ class MetricInterface(ABC):
     @abstractmethod
     def update(
         self,
+        *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],

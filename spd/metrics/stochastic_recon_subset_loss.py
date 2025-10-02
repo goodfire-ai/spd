@@ -1,4 +1,4 @@
-from typing import Literal, override
+from typing import Any, Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -7,8 +7,8 @@ from torch.distributed import ReduceOp
 
 from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
-from spd.utils.distributed_utils import all_reduce, get_device
 from spd.utils.component_utils import calc_stochastic_component_mask_info
+from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
@@ -89,25 +89,26 @@ class StochasticReconSubsetLoss(MetricInterface):
         use_delta_component: bool,
         n_mask_samples: int,
         output_loss_type: Literal["mse", "kl"],
+        device: str,
     ) -> None:
         self.model = model
         self.sampling: Literal["continuous", "binomial"] = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        device = get_device()
+        device = device
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
     @override
     def update(
         self,
+        *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        current_frac_of_training: float,
-        ci_upper_leaky: dict[str, Tensor],
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+        **_: Any,
     ) -> None:
         sum_loss, n_examples = _stochastic_recon_subset_loss_update(
             model=self.model,

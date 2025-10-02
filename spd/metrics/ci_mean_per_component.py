@@ -1,4 +1,4 @@
-from typing import override
+from typing import Any, override
 
 import torch
 from PIL import Image
@@ -8,13 +8,13 @@ from torch.distributed import ReduceOp
 from spd.metrics.base import MetricInterface
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_mean_component_cis_both_scales
-from spd.utils.distributed_utils import all_reduce, get_device
+from spd.utils.distributed_utils import all_reduce
 
 
 class CIMeanPerComponent(MetricInterface):
-    def __init__(self, model: ComponentModel) -> None:
+    def __init__(self, model: ComponentModel, device: str) -> None:
         self.components = model.components
-        device = get_device()
+        device = device
         self.component_ci_sums: dict[str, Tensor] = {
             module_name: torch.zeros(model.C, device=device) for module_name in self.components
         }
@@ -25,12 +25,9 @@ class CIMeanPerComponent(MetricInterface):
     @override
     def update(
         self,
-        batch: Tensor,
-        target_out: Tensor,
+        *,
         ci: dict[str, Tensor],
-        current_frac_of_training: float,
-        ci_upper_leaky: dict[str, Tensor],
-        weight_deltas: dict[str, Tensor],
+        **_: Any,
     ) -> None:
         for module_name, ci_vals in ci.items():
             n_leading_dims = ci_vals.ndim - 1
