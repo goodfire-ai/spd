@@ -79,8 +79,21 @@ clustering-test:
 	pytest tests/clustering/test_clustering_experiments.py --runslow -vvv --durations 10 --numprocesses $(NUM_PROCESSES)
 
 
+.PHONY: bundle-dashboard
+bundle-dashboard:
+	@mkdir -p spd/clustering/dashboard/_bundled
+	python -m muutils.web.bundle_html \
+		spd/clustering/dashboard/index.html \
+		--output spd/clustering/dashboard/_bundled/index.html \
+		--source-dir spd/clustering/dashboard
+	python -m muutils.web.bundle_html \
+		spd/clustering/dashboard/cluster.html \
+		--output spd/clustering/dashboard/_bundled/cluster.html \
+		--source-dir spd/clustering/dashboard
+	@echo "Bundled HTML files to spd/clustering/dashboard/_bundled/"
+
 .PHONY: clustering-dashboard
-clustering-dashboard:
+clustering-dashboard: bundle-dashboard
 	python spd/clustering/dashboard/run.py \
 		--wandb-run goodfire/spd-cluster/runs/j8dgvemf \
 		--iteration 7000 \

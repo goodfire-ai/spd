@@ -21,6 +21,27 @@ from spd.log import logger
 from spd.settings import REPO_ROOT
 
 
+def write_html_files(output_dir: Path) -> None:
+    """Write bundled HTML files from _bundled to output directory.
+
+    Args:
+        output_dir: Directory to write HTML files to
+    """
+    import importlib.resources
+
+    # Read bundled HTML files from the _bundled package
+    bundled_package = "spd.clustering.dashboard._bundled"
+
+    index_html = importlib.resources.files(bundled_package).joinpath("index.html").read_text()
+    cluster_html = importlib.resources.files(bundled_package).joinpath("cluster.html").read_text()
+
+    # Write to output directory
+    (output_dir / "index.html").write_text(index_html)
+    (output_dir / "cluster.html").write_text(cluster_html)
+
+    logger.info(f"HTML files written to: {output_dir}")
+
+
 def main(
     wandb_run: str,
     output_dir: Path | None,
@@ -171,7 +192,18 @@ def cli() -> None:
         default=64,
         help="Context length for tokenization (default: 64)",
     )
+    parser.add_argument(
+        "--write-html",
+        action="store_true",
+        default=False,
+        help="Write bundled HTML files to output directory (default: False)",
+    )
     args: argparse.Namespace = parser.parse_args()
+
+    # Write HTML files before running main if requested
+    if args.write_html and args.output_dir:
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        write_html_files(args.output_dir)
 
     main(
         wandb_run=args.wandb_run,
