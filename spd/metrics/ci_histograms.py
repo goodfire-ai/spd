@@ -11,8 +11,6 @@ from spd.plotting import plot_ci_values_histograms
 
 
 class CIHistograms(Metric):
-    is_differentiable: bool | None = False
-
     causal_importances: dict[str, list[Tensor] | Tensor]
 
     def __init__(

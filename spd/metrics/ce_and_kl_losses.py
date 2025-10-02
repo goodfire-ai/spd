@@ -19,8 +19,6 @@ class CEandKLLosses(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
-    is_differentiable: bool | None = False
-
     loss_sums: dict[str, Tensor]
 
     # NOTE: Gross that we have to hardcode these here. Open to other ideas.

@@ -28,8 +28,6 @@ class Metric(ABC):
     - This gives you explicit control over when synchronization happens
     """
 
-    is_differentiable: bool | None = None
-
     def __init__(self, **kwargs: Any) -> None:
         super().__init__()
         self._state_names: list[str] = []

@@ -14,8 +14,6 @@ from spd.plotting import plot_component_activation_density
 class ComponentActivationDensity(Metric):
     """Activation density for each component."""
 
-    is_differentiable: bool | None = False
-
     n_examples: Int[Tensor, ""]
     component_activation_counts: dict[str, Tensor]
 

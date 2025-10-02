@@ -12,7 +12,6 @@ from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci
 class IdentityCIError(Metric):
     """Error between the CI values and an Identity or Dense CI pattern."""
 
-    is_differentiable: bool | None = False
     input_magnitude: float = 0.75
 
     def __init__(

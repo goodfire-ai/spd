@@ -35,8 +35,6 @@ def faithfulness_loss(weight_deltas: dict[str, Float[Tensor, "d_out d_in"]]) -> 
 class FaithfulnessLoss(Metric):
     """MSE between the target weights and the sum of the components."""
 
-    is_differentiable: bool | None = True
-
     sum_loss: Float[Tensor, ""]
     total_params: Int[Tensor, ""]
 

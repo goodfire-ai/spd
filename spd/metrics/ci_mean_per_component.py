@@ -10,8 +10,6 @@ from spd.plotting import plot_mean_component_cis_both_scales
 
 
 class CIMeanPerComponent(Metric):
-    is_differentiable: bool | None = False
-
     component_ci_sums: dict[str, Tensor]
     examples_seen: dict[str, Tensor]
 

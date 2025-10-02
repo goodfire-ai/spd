@@ -59,8 +59,6 @@ The framework automatically calls `sync_dist()` before `compute()` in evaluation
 Example:
 ```python
 class MyEvalMetric(Metric):
-    is_differentiable = False
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Register states that will be synchronized
@@ -87,15 +85,12 @@ result = metric.compute()  # Get global metric
 ### Training Loss Metrics
 
 For metrics used in training losses:
-- Set `is_differentiable=True` to allow gradients to flow through
 - Call `compute()` directly (without `sync_dist()`) to get per-rank loss
 - DistributedDataParallel automatically syncs gradients during `loss.backward()`
 
 Example:
 ```python
 class MyTrainingLoss(Metric):
-    is_differentiable = True
-
     def __init__(self, model, **kwargs):
         super().__init__(**kwargs)
         self.model = model
@@ -117,11 +112,6 @@ metric.update(batch=batch, target=target)
 loss = metric.compute()  # Get per-rank loss (no sync needed as DDP will sync gradients itself)
 loss.backward()  # DDP syncs gradients automatically
 ```
-
-## Metric Class Attributes
-
-All metrics can set these class attributes:
-- `is_differentiable: bool | None` - Whether the metric is differentiable (required for training losses)
 
 ## Distributed Behavior
 

@@ -18,8 +18,6 @@ class CI_L0(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
-    is_differentiable: bool | None = False
-
     l0_values: dict[str, list[Tensor] | Tensor]
 
     def __init__(

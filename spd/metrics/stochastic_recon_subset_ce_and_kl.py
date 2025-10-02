@@ -20,8 +20,6 @@ class StochasticReconSubsetCEAndKL(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
-    is_differentiable: bool | None = False
-
     def __init__(
         self,
         model: ComponentModel,
