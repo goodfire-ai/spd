@@ -188,7 +188,7 @@ def compute_max_activations(
             batch_text_samples.append(text_sample)
 
         # TODO: no pbar here, outer loop has a pbar
-        for cluster_idx in tqdm(unique_cluster_indices, desc="Processing clusters", leave=False):
+        for cluster_idx in unique_cluster_indices:
             # Compute cluster activations
             acts_2d: Float[Tensor, "batch_size seq_len"] = _compute_cluster_activations(
                 processed, cluster_components[cluster_idx], batch_size, seq_len
@@ -222,7 +222,7 @@ def compute_max_activations(
     current_idx: int = 0
 
     # TODO: pbar here
-    for cluster_idx in unique_cluster_indices:
+    for cluster_idx in tqdm(unique_cluster_indices, desc="Building cluster data"):
         cluster_id: ClusterId = cluster_id_map[cluster_idx]
         cluster_hash: ClusterIdHash = cluster_id.to_string()
 
@@ -267,25 +267,26 @@ def compute_max_activations(
             current_idx += 1
 
     # TODO: spinner here
-    # Create combined activations batch
-    assert all_activations_list, "No activations collected"
-    assert cluster_id_map, "No clusters found"
+    with SpinnerContext(message="Creating combined activations and dashboard data"):
+        # Create combined activations batch
+        assert all_activations_list, "No activations collected"
+        assert cluster_id_map, "No clusters found"
 
-    combined_activations: Float[np.ndarray, "total_samples n_ctx"] = np.stack(all_activations_list)
-    # Use first cluster_id as placeholder since this is for all clusters
-    dummy_cluster_id: ClusterId = list(cluster_id_map.values())[0]
-    combined_batch: ActivationSampleBatch = ActivationSampleBatch(
-        cluster_id=dummy_cluster_id,
-        text_hashes=all_text_hashes_list,
-        activations=combined_activations,
-    )
+        combined_activations: Float[np.ndarray, "total_samples n_ctx"] = np.stack(all_activations_list)
+        # Use first cluster_id as placeholder since this is for all clusters
+        dummy_cluster_id: ClusterId = list(cluster_id_map.values())[0]
+        combined_batch: ActivationSampleBatch = ActivationSampleBatch(
+            cluster_id=dummy_cluster_id,
+            text_hashes=all_text_hashes_list,
+            activations=combined_activations,
+        )
 
-    # Build DashboardData
-    dashboard_data: DashboardData = DashboardData(
-        clusters=clusters,
-        text_samples=text_samples,
-        activations_map=activations_map,
-        activations=combined_batch,
-    )
+        # Build DashboardData
+        dashboard_data: DashboardData = DashboardData(
+            clusters=clusters,
+            text_samples=text_samples,
+            activations_map=activations_map,
+            activations=combined_batch,
+        )
 
     return dashboard_data

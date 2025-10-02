@@ -70,9 +70,10 @@ def main(
     logger.info(f"Output directory: {final_output_dir}")
 
     # Setup model and data
-    model, tokenizer, dataloader, config = setup_model_and_data(
-        run_config, context_length, batch_size
-    )
+    with SpinnerContext(message="Setting up model and data"):
+        model, tokenizer, dataloader, config = setup_model_and_data(
+            run_config, context_length, batch_size
+        )
 
     # Compute max activations
     logger.info("computing max activations")
@@ -90,28 +91,29 @@ def main(
     logger.info(f"computed max activations: {len(dashboard_data.clusters) = }")
     merge: GroupMerge = merge_history.merges[actual_iteration]
 
-    # Generate model information
-    logger.info("Generating model information")
-    model_info: dict[str, Any] = generate_model_info(
-        model=model,
-        merge_history=merge_history,
-        merge=merge,
-        iteration=actual_iteration,
-        model_path=run_config["model_path"],
-        tokenizer_name=config.tokenizer_name,  # pyright: ignore[reportArgumentType]
-        config_dict=config.model_dump(mode="json"),
-        wandb_run_path=run_config["model_path"],
-    )
+    # Generate model information and save
+    with SpinnerContext(message="Generating and saving dashboard data"):
+        logger.info("Generating model information")
+        model_info: dict[str, Any] = generate_model_info(
+            model=model,
+            merge_history=merge_history,
+            merge=merge,
+            iteration=actual_iteration,
+            model_path=run_config["model_path"],
+            tokenizer_name=config.tokenizer_name,  # pyright: ignore[reportArgumentType]
+            config_dict=config.model_dump(mode="json"),
+            wandb_run_path=run_config["model_path"],
+        )
 
-    # Save dashboard data using new structure
-    logger.info("Saving dashboard data")
-    dashboard_data.save(str(final_output_dir))
-    logger.info(f"Dashboard data saved to: {final_output_dir}")
+        # Save dashboard data using new structure
+        logger.info("Saving dashboard data")
+        dashboard_data.save(str(final_output_dir))
+        logger.info(f"Dashboard data saved to: {final_output_dir}")
 
-    # Save model info
-    model_info_path: Path = final_output_dir / "model_info.json"
-    model_info_path.write_text(json.dumps(model_info, indent=2))
-    logger.info(f"Model info saved to: {model_info_path}")
+        # Save model info
+        model_info_path: Path = final_output_dir / "model_info.json"
+        model_info_path.write_text(json.dumps(model_info, indent=2))
+        logger.info(f"Model info saved to: {model_info_path}")
 
 
 def cli() -> None:

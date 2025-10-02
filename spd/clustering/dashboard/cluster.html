@@ -31,8 +31,14 @@
             cursor: pointer;
         }
 
+        #modelView {
+            display: flex;
+            flex-direction: row;
+            gap: 2px;
+            align-items: start;
+        }
+
         #modelView .layer-block {
-            margin: 2px 0;
             display: flex;
             flex-direction: column;
             gap: 2px;
@@ -119,6 +125,7 @@
     <script src="js/util/config.js"></script>
     <script src="js/util/table.js"></script>
     <script src="js/util/sparklines.js"></script>
+    <script src="js/pkg/jszip.min.js"></script>
     <script src="js/util/array.js"></script>
     <script src="js/util/ColorUtil.js"></script>
     <script src="js/model-visualization.js"></script>

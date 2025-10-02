@@ -178,37 +178,21 @@ class npyjs {
 	}
 
 	async parseZIP(arrayBuffer) {
-		// Simple ZIP parser for NPZ files
-		const view = new DataView(arrayBuffer);
+		// Use JSZip to properly decompress NPZ files
+		const zip = new JSZip();
+		const zipFile = await zip.loadAsync(arrayBuffer);
 		const arrays = {};
 
-		let offset = 0;
-		while (offset < arrayBuffer.byteLength - 4) {
-			// Check for local file header signature (0x04034b50)
-			const signature = view.getUint32(offset, true);
-			if (signature !== 0x04034b50) {
-				offset++;
-				continue;
-			}
+		// Iterate through all files in the ZIP
+		for (const [filename, file] of Object.entries(zipFile.files)) {
+			if (file.dir) continue;
 
-			// Parse local file header
-			const filenameLength = view.getUint16(offset + 26, true);
-			const extraFieldLength = view.getUint16(offset + 28, true);
-			const compressedSize = view.getUint32(offset + 18, true);
-
-			// Get filename
-			const filenameBytes = new Uint8Array(arrayBuffer, offset + 30, filenameLength);
-			const filename = new TextDecoder().decode(filenameBytes);
-
-			// Get file data
-			const fileDataOffset = offset + 30 + filenameLength + extraFieldLength;
-			const fileData = arrayBuffer.slice(fileDataOffset, fileDataOffset + compressedSize);
+			// Get decompressed ArrayBuffer
+			const decompressedData = await file.async('arraybuffer');
 
 			// Parse NPY data
 			const arrayName = filename.replace('.npy', '');
-			arrays[arrayName] = this.parse(fileData);
-
-			offset = fileDataOffset + compressedSize;
+			arrays[arrayName] = this.parse(decompressedData);
 		}
 
 		return arrays;
