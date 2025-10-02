@@ -39,12 +39,11 @@ def run_masked_forward(
     hidden_acts_cache: dict[str, list[Tensor]] = {m: [] for m in (hidden_module_names or [])}
     for mask_infos in mask_infos_list:
         if hidden_module_names:
-            # First run with components to get the output
-            output = model(batch, mode="components", mask_infos=mask_infos)
-            # Then run with input cache to get the hidden activations
-            _, hidden_acts = model(
+            # Run with both components and input cache to get hidden activations from the model WITH components
+            output, hidden_acts = model(
                 batch,
-                mode="input_cache",
+                mode="components_input_cache",
+                mask_infos=mask_infos,
                 module_names=list(hidden_module_names),
             )
             for name in hidden_acts_cache:

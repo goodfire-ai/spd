@@ -281,7 +281,8 @@ class ComponentModel(LoadableModule):
     def forward(
         self,
         *args: Any,
-        mode: Literal["target", "components", "input_cache"] | None = "target",
+        mode: Literal["target", "components", "input_cache", "components_input_cache"]
+        | None = "target",
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         module_names: list[str] | None = None,
         **kwargs: Any,
@@ -296,10 +297,11 @@ class ComponentModel(LoadableModule):
                 - 'target': Standard forward pass of the target model
                 - 'components': Forward with component replacements (requires masks)
                 - 'input_cache': Forward with input caching (requires module_names)
+                - 'components_input_cache': Forward with both component replacements and input caching
             mask_infos: Dictionary mapping module names to ComponentsMaskInfo
-                (required for mode='components').
+                (required for mode='components' or 'components_input_cache').
             module_names: List of module names to cache inputs for
-                (required for mode='input_cache')
+                (required for mode='input_cache' or 'components_input_cache')
 
         If `pretrained_model_output_attr` is set, return the attribute of the model's output.
         """
@@ -312,6 +314,16 @@ class ComponentModel(LoadableModule):
                     "module_names parameter is required for mode='input_cache'"
                 )
                 return self._forward_with_input_cache(*args, module_names=module_names, **kwargs)
+            case "components_input_cache":
+                assert mask_infos is not None, (
+                    "mask_infos are required for mode='components_input_cache'"
+                )
+                assert module_names is not None, (
+                    "module_names parameter is required for mode='components_input_cache'"
+                )
+                return self._forward_with_components_and_input_cache(
+                    *args, mask_infos=mask_infos, module_names=module_names, **kwargs
+                )
             case "target" | None:
                 return self._extract_output(self.target_model(*args, **kwargs))
 
@@ -408,6 +420,98 @@ class ComponentModel(LoadableModule):
             module_name: partial(cache_hook, param_name=module_name) for module_name in module_names
         }
         with self._attach_forward_hooks(hooks):
+            raw_out = self.target_model(*args, **kwargs)
+
+        out = self._extract_output(raw_out)
+        return out, cache
+
+    def _forward_with_components_and_input_cache(
+        self,
+        *args: Any,
+        mask_infos: dict[str, ComponentsMaskInfo],
+        module_names: list[str],
+        **kwargs: Any,
+    ) -> tuple[Any, dict[str, Tensor]]:
+        """Forward pass with both component replacements and input caching.
+
+        This combines the functionality of _forward_with_components and _forward_with_input_cache
+        to capture hidden activations from the model WITH components applied.
+
+        Args:
+            mask_infos: Dictionary mapping module names to ComponentsMaskInfo
+            module_names: List of module names to cache inputs for
+
+        Returns:
+            Tuple of (model output, input cache dictionary)
+        """
+        cache = {}
+
+        def component_and_cache_hook(
+            _module: nn.Module,
+            args: list[Any],
+            kwargs: dict[Any, Any],
+            output: Any,
+            components: Components,
+            mask_info: ComponentsMaskInfo,
+            module_name: str,
+        ) -> None | Any:
+            assert len(args) == 1, "Expected 1 argument"
+            assert len(kwargs) == 0, "Expected no keyword arguments"
+            x = args[0]
+            assert isinstance(x, Tensor), "Expected input tensor"
+            assert isinstance(output, Tensor), (
+                "Only supports single-tensor outputs, got type(output)"
+            )
+
+            # Cache the input to the component
+            if module_name in module_names:
+                cache[module_name] = x
+
+            # Apply component transformation
+            components_out = components(
+                x,
+                mask=mask_info.component_mask,
+                weight_delta_and_mask=mask_info.weight_delta_and_mask,
+            )
+            if mask_info.routing_mask is not None:
+                return torch.where(mask_info.routing_mask[..., None], components_out, output)
+
+            return components_out
+
+        def cache_only_hook(
+            _module: nn.Module,
+            args: list[Any],
+            kwargs: dict[Any, Any],
+            _output: Any,
+            param_name: str,
+        ) -> None:
+            assert len(args) == 1, "Expected 1 argument"
+            assert len(kwargs) == 0, "Expected no keyword arguments"
+            x = args[0]
+            assert isinstance(x, Tensor), "Expected x to be a tensor"
+            cache[param_name] = x
+
+        # Create hooks for modules that have both components and need caching
+        component_hooks: dict[str, Callable[..., Any]] = {}
+        for module_name, mask_info in mask_infos.items():
+            components = self.components[module_name]
+            component_hooks[module_name] = partial(
+                component_and_cache_hook,
+                components=components,
+                mask_info=mask_info,
+                module_name=module_name,
+            )
+
+        # Create hooks for modules that only need caching (no components)
+        cache_only_hooks: dict[str, Callable[..., Any]] = {}
+        for module_name in module_names:
+            if module_name not in mask_infos:  # Only if not already handled by component hooks
+                cache_only_hooks[module_name] = partial(cache_only_hook, param_name=module_name)
+
+        # Combine both types of hooks
+        all_hooks = {**component_hooks, **cache_only_hooks}
+
+        with self._attach_forward_hooks(all_hooks):
             raw_out = self.target_model(*args, **kwargs)
 
         out = self._extract_output(raw_out)
