@@ -24,6 +24,7 @@ from spd.configs import (
     ImportanceMinimalityLossTrainConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
+    StochasticHiddenActsMSEConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
     StochasticReconSubsetCEAndKLConfig,
@@ -43,6 +44,7 @@ from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
 from spd.metrics.permuted_ci_plots import PermutedCIPlots
+from spd.metrics.stochastic_hidden_acts_mse import StochasticHiddenActsMSE
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
 from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
@@ -203,6 +205,14 @@ def init_metric(
                 include_patterns=cfg.include_patterns,
                 exclude_patterns=cfg.exclude_patterns,
             )
+        case StochasticHiddenActsMSEConfig():
+            metric = StochasticHiddenActsMSE(
+                model=model,
+                device=device,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+            )
         case UVPlotsConfig():
             metric = UVPlots(
                 model=model,
@@ -252,6 +262,7 @@ def evaluate(
             metric.update(
                 batch=batch,
                 target_out=target_out,
+                pre_weight_acts=pre_weight_acts,
                 ci=ci,
                 current_frac_of_training=current_frac_of_training,
                 ci_upper_leaky=ci_upper_leaky,
