@@ -210,6 +210,20 @@ class Config(BaseModel):
         description="Number of steps to accumulate gradients over before updating parameters",
     )
 
+    # --- Faithfulness Warmup ---
+    faithfulness_warmup_steps: NonNegativeInt = Field(
+        default=0,
+        description="Number of warmup steps to optimize faithfulness loss before main training",
+    )
+    faithfulness_warmup_lr: PositiveFloat = Field(
+        default=0.001,
+        description="Learning rate for warmup phase (optimizing faithfulness loss only)",
+    )
+    faithfulness_warmup_weight_decay: NonNegativeFloat = Field(
+        default=0.0,
+        description="Weight decay for warmup phase optimizer",
+    )
+
     @property
     def microbatch_size(self) -> PositiveInt:
         return self.batch_size // self.gradient_accumulation_steps
