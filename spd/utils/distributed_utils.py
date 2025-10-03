@@ -4,12 +4,13 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import wraps
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import torch
 import torch.distributed as dist
-from PIL import Image
+from torch import Tensor
 from torch.distributed import ReduceOp
+from torch.types import Number
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,23 +84,17 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
 
     # Initialize PyTorch distributed
     if not dist.is_initialized():
+        assert backend in ["nccl", "gloo"]
         if backend == "nccl":
             assert torch.cuda.is_available(), "CUDA is required for NCCL ddp backend"
-            local_device = torch.device(f"cuda:{local_rank}")
-        else:
-            local_device = None
-
+            torch.cuda.set_device(local_rank)
         dist.init_process_group(
             backend=backend,
             init_method="env://",
             world_size=world_size,
             rank=rank,
-            device_id=local_device,
+            device_id=None if backend == "gloo" else torch.device(f"cuda:{local_rank}"),
         )
-
-    # Set the default cuda device for this process
-    if torch.cuda.is_available():
-        torch.cuda.set_device(local_rank)
 
     _state = DistributedState(
         rank=rank, world_size=world_size, local_rank=local_rank, backend=backend
@@ -110,7 +105,7 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
 def cleanup_distributed() -> None:
     """Clean up distributed process group and reset cached state."""
     global _state
-    if dist.is_initialized():
+    if is_distributed():
         dist.destroy_process_group()
     _state = _init_default_state()
 
@@ -156,6 +151,13 @@ def is_main_process() -> bool:
 
 def get_device() -> str:
     """Get device for current process in distributed setting."""
+    state = get_distributed_state()
+
+    # We use gloo for distributed tests, regardless of whether CUDA is available
+    if state.backend == "gloo":
+        return "cpu"
+
+    # For nccl backend or non-distributed, use CUDA if available
     if torch.cuda.is_available():
         if is_distributed():
             local_rank = get_local_rank()
@@ -166,7 +168,7 @@ def get_device() -> str:
 
 def sync_across_processes() -> None:
     """Synchronize all processes."""
-    if dist.is_initialized():
+    if is_distributed():
         dist.barrier()
 
 
@@ -189,7 +191,7 @@ def all_reduce(
 
 def broadcast_obj[T](value: T) -> T:
     """Broadcast an object from rank 0 to all ranks."""
-    assert dist.is_initialized()
+    assert is_distributed()
     payload: list[object] = [value if is_main_process() else None]
     dist.broadcast_object_list(payload, src=0)
     return cast(T, payload[0])
@@ -217,7 +219,7 @@ def ensure_cached_and_call[**P, T](fn: Callable[P, T], *args: P.args, **kwargs: 
 
 
 def sum_metrics_across_ranks(
-    metrics: Mapping[str, int | float], device: str | torch.device
+    metrics: Mapping[str, Number], device: str | torch.device
 ) -> Mapping[str, float]:
     assert is_distributed(), "Can only sum metrics across ranks if running in distributed mode"
     metric_values = torch.tensor([metrics[k] for k in metrics], device=device)
@@ -226,7 +228,7 @@ def sum_metrics_across_ranks(
 
 
 def avg_metrics_across_ranks(
-    metrics: Mapping[str, int | float], device: str | torch.device
+    metrics: Mapping[str, Number], device: str | torch.device
 ) -> Mapping[str, float]:
     world_size = get_world_size()
     assert world_size > 0, "World size must be greater than 0"
@@ -234,19 +236,32 @@ def avg_metrics_across_ranks(
     return {k: v / world_size for k, v in sum_metrics.items()}
 
 
-def avg_eval_metrics_across_ranks(
-    metrics: Mapping[str, float | Image.Image], device: str
-) -> Mapping[str, float | Image.Image]:
-    """Get the average of eval metrics across ranks.
+def gather_all_tensors(tensor: Tensor, group: Any = None) -> list[Tensor]:
+    """Gather tensors from all distributed processes.
 
-    Ignores any metrics that are not floats or ints. Currently, the image metrics do not need to be
-    averaged. If this changes for future metrics, we will need to do a reduce during calculcation
-    of the metric.
+    Requires all tensors to have identical shapes across all ranks.
+
+    Args:
+        tensor: The tensor to gather from all ranks
+        group: The process group (defaults to WORLD)
+
+    Returns:
+        List of tensors from all ranks (including local rank)
     """
-    assert is_distributed(), "Can only average metrics across ranks if running in distributed mode"
-    metrics_keys_to_avg = {k: v for k, v in metrics.items() if isinstance(v, float | int)}
-    if metrics_keys_to_avg:
-        avg_metrics = avg_metrics_across_ranks(metrics_keys_to_avg, device)
-    else:
-        avg_metrics = {}
-    return {**metrics, **avg_metrics}
+    if not is_distributed():
+        return [tensor]
+
+    if group is None:
+        group = torch.distributed.group.WORLD
+
+    tensor = tensor.contiguous()
+    world_size = torch.distributed.get_world_size(group)
+    current_rank = torch.distributed.get_rank(group)
+
+    gathered = [torch.zeros_like(tensor) for _ in range(world_size)]
+    torch.distributed.all_gather(gathered, tensor, group=group)
+
+    # Replace our rank's entry with the original to preserve autograd
+    gathered[current_rank] = tensor
+
+    return gathered

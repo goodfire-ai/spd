@@ -1,4 +1,13 @@
-from spd.configs import Config, EvalMetricConfig
+import pytest
+
+from spd.configs import (
+    CI_L0Config,
+    Config,
+    FaithfulnessLossTrainConfig,
+    ImportanceMinimalityLossTrainConfig,
+    StochasticReconLayerwiseLossTrainConfig,
+    StochasticReconLossTrainConfig,
+)
 from spd.experiments.ih.configs import IHTaskConfig, InductionModelConfig
 from spd.experiments.ih.model import InductionTransformer
 from spd.identity_insertion import insert_identity_operations_
@@ -7,6 +16,7 @@ from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import set_seed
 
 
+@pytest.mark.slow
 def test_ih_transformer_decomposition_happy_path() -> None:
     """Test that SPD decomposition works on a 2-layer, 1 head attention-only Transformer model"""
     set_seed(0)
@@ -40,17 +50,21 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         target_module_patterns=["blocks.*.attn.q_proj", "blocks.*.attn.k_proj"],
         identity_module_patterns=["blocks.*.attn.q_proj"],
         # Loss Coefficients
-        faithfulness_coeff=200,
-        stochastic_recon_coeff=1.0,
-        ci_recon_layerwise_coeff=None,
-        stochastic_recon_layerwise_coeff=1.0,
-        importance_minimality_coeff=1e-2,
-        pnorm=0.9,
+        loss_metric_configs=[
+            ImportanceMinimalityLossTrainConfig(
+                coeff=1e-2,
+                pnorm=0.9,
+                eps=1e-12,
+            ),
+            StochasticReconLayerwiseLossTrainConfig(coeff=1.0),
+            StochasticReconLossTrainConfig(coeff=1.0),
+            FaithfulnessLossTrainConfig(coeff=200),
+        ],
         output_loss_type="kl",
         # Training
         lr=1e-3,
         batch_size=4,
-        steps=10,  # Run more steps to see improvement
+        steps=2,
         lr_schedule="cosine",
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
@@ -64,10 +78,8 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        eval_metrics=[
-            EvalMetricConfig(classname="CIHistograms"),
-            EvalMetricConfig(classname="ComponentActivationDensity"),
-            EvalMetricConfig(classname="CI_L0"),
+        eval_metric_configs=[
+            CI_L0Config(groups=None),
         ],
         # Pretrained model info
         pretrained_model_class="spd.experiments.ih.model.InductionTransformer",

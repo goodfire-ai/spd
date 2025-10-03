@@ -5,13 +5,12 @@ import wandb
 import wandb_workspaces.reports.v2 as wr
 import wandb_workspaces.workspaces as ws
 from dotenv import load_dotenv
-from pydantic import BaseModel
 from wandb.apis.public import File, Run
 
 from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import _fetch_latest_checkpoint_name, replace_pydantic_model
+from spd.utils.general_utils import BaseModel, _fetch_latest_checkpoint_name, replace_pydantic_model
 
 WORKSPACE_TEMPLATES = {
     "default": "https://wandb.ai/goodfire/spd?nw=css034maye",

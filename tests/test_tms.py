@@ -3,7 +3,13 @@ from typing import cast
 import torch
 from torch import nn
 
-from spd.configs import Config
+from spd.configs import (
+    Config,
+    FaithfulnessLossTrainConfig,
+    ImportanceMinimalityLossTrainConfig,
+    StochasticReconLayerwiseLossTrainConfig,
+    StochasticReconLossTrainConfig,
+)
 from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.experiments.tms.train_tms import get_model_and_dataloader, train
@@ -42,14 +48,16 @@ def test_tms_decomposition_happy_path() -> None:
         ci_fn_hidden_dims=[8],
         target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
         identity_module_patterns=["linear1"],
-        # Loss Coefficients
-        faithfulness_coeff=1.0,
-        ci_recon_coeff=None,
-        stochastic_recon_coeff=1.0,
-        ci_recon_layerwise_coeff=1e-1,
-        stochastic_recon_layerwise_coeff=1.0,
-        importance_minimality_coeff=3e-3,
-        pnorm=2.0,
+        loss_metric_configs=[
+            ImportanceMinimalityLossTrainConfig(
+                coeff=3e-3,
+                pnorm=2.0,
+                eps=1e-12,
+            ),
+            StochasticReconLayerwiseLossTrainConfig(coeff=1.0),
+            StochasticReconLossTrainConfig(coeff=1.0),
+            FaithfulnessLossTrainConfig(coeff=1.0),
+        ],
         output_loss_type="mse",
         # Training
         lr=1e-3,

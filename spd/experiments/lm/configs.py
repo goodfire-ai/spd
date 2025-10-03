@@ -1,10 +1,11 @@
-from typing import ClassVar, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import Field, PositiveInt
+
+from spd.utils.general_utils import BaseModel
 
 
 class LMTaskConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     task_name: Literal["lm"] = Field(
         default="lm",
         description="Identifier for the language-model decomposition task",

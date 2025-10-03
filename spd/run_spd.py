@@ -3,9 +3,8 @@
 import gc
 import json
 from collections import defaultdict
-from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -20,15 +19,15 @@ from tqdm import tqdm
 
 from spd.configs import Config
 from spd.data import loop_dataloader
-from spd.eval import evaluate
+from spd.eval import avg_eval_metrics_across_ranks, evaluate
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
-from spd.losses import calc_faithfulness_loss, calculate_losses
+from spd.losses import compute_total_loss
+from spd.metrics import faithfulness_loss
+from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel
-from spd.utils.alive_components_tracker import AliveComponentsTracker
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
-    avg_eval_metrics_across_ranks,
     avg_metrics_across_ranks,
     get_world_size,
     is_distributed,
@@ -37,7 +36,6 @@ from spd.utils.distributed_utils import (
 )
 from spd.utils.general_utils import (
     extract_batch_data,
-    get_linear_annealed_p,
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
@@ -61,7 +59,6 @@ def run_faithfulness_warmup(
     logger.info("Starting faithfulness warmup phase...")
 
     assert component_params, "component_params is empty"
-    device = component_params[0].device
 
     faithfulness_warmup_optimizer = optim.AdamW(
         component_params,
@@ -72,25 +69,24 @@ def run_faithfulness_warmup(
     for faithfulness_warmup_step in range(config.faithfulness_warmup_steps):
         faithfulness_warmup_optimizer.zero_grad()
         weight_deltas = component_model.calc_weight_deltas()
-        faithfulness_loss = calc_faithfulness_loss(weight_deltas, device)
-        faithfulness_loss.backward()
+        loss = faithfulness_loss(weight_deltas)
+        loss.backward()
         faithfulness_warmup_optimizer.step()
 
         if (
             faithfulness_warmup_step % 100 == 0
             or faithfulness_warmup_step == config.faithfulness_warmup_steps - 1
         ):
+            warmup_step = (faithfulness_warmup_step + 1) / config.faithfulness_warmup_steps
             logger.info(
-                f"Faithfulness warmup step {faithfulness_warmup_step + 1}/{config.faithfulness_warmup_steps}; Faithfulness loss: {faithfulness_loss.item():.9f}"
+                f"Faithfulness warmup step {warmup_step}; Faithfulness loss: {loss.item():.9f}"
             )
     del faithfulness_warmup_optimizer
     torch.cuda.empty_cache()
     gc.collect()
 
 
-def local_log(
-    data: Mapping[str, float | Image.Image | wandb.plot.CustomChart], step: int, out_dir: Path
-) -> None:
+def local_log(data: dict[str, Any], step: int, out_dir: Path) -> None:
     metrics_file = out_dir / "metrics.jsonl"
     metrics_file.touch(exist_ok=True)
 
@@ -206,11 +202,12 @@ def optimize(
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
-        module_names=list(component_model.components.keys()),
+        module_paths=model.module_paths,
         C=config.C,
-        n_examples_until_dead=config.n_examples_until_dead,
         device=device,
+        n_examples_until_dead=config.n_examples_until_dead,
         ci_alive_threshold=config.ci_alive_threshold,
+        global_n_examples_per_batch=extract_batch_data(next(train_iterator)).shape[:-1].numel(),
     )
 
     for step in tqdm(range(config.steps + 1), ncols=0):
@@ -228,16 +225,13 @@ def optimize(
             group["lr"] = step_lr
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
-        current_p = config.pnorm  # Initialize with default value
 
         for _ in range(config.gradient_accumulation_steps):
             weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
             target_out, pre_weight_acts = wrapped_model(
-                batch,
-                mode="input_cache",
-                module_names=list(component_model.components.keys()),
+                batch, mode="input_cache", module_names=model.module_paths
             )
             # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
             # through the parameters in calc_causal_importances below, the DDP hook will get called
@@ -251,28 +245,21 @@ def optimize(
                 )
             )
 
-            alive_tracker.watch_batch(causal_importances)
+            alive_tracker.update(ci=causal_importances)
 
-            # Calculate current p value with annealing
-            current_p = get_linear_annealed_p(
-                step=step,
-                steps=config.steps,
-                initial_p=config.pnorm,
-                p_anneal_start_frac=config.p_anneal_start_frac,
-                p_anneal_final_p=config.p_anneal_final_p,
-                p_anneal_end_frac=config.p_anneal_end_frac,
-            )
-
-            microbatch_total_loss, microbatch_loss_terms = calculate_losses(
+            microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
+                loss_metric_configs=config.loss_metric_configs,
                 model=component_model,
                 batch=batch,
-                config=config,
-                causal_importances=causal_importances,
-                causal_importances_upper_leaky=causal_importances_upper_leaky,
+                ci=causal_importances,
+                ci_upper_leaky=causal_importances_upper_leaky,
                 target_out=target_out,
                 weight_deltas=weight_deltas,
-                device=device,
-                current_p=current_p,
+                current_frac_of_training=step / config.steps,
+                sampling=config.sampling,
+                use_delta_component=config.use_delta_component,
+                n_mask_samples=config.n_mask_samples,
+                output_loss_type=config.output_loss_type,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
@@ -293,9 +280,9 @@ def optimize(
                 avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
                 microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
-            # Already reduced alive counts across ranks, so no need to reduce again
-            for layer_name, n_alive_count in alive_tracker.n_alive().items():
-                n_alive_key = f"train/{layer_name}/n_alive_{alive_tracker.ci_alive_threshold}"
+            alive_counts = alive_tracker.compute()
+            for metric_name, n_alive_count in alive_counts.items():
+                n_alive_key = f"train/{metric_name}_{alive_tracker.ci_alive_threshold}"
                 microbatch_log_data[n_alive_key] = n_alive_count
 
             grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
@@ -304,7 +291,6 @@ def optimize(
                     grad_norm += param.grad.data.flatten().pow(2).sum()
             microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
             microbatch_log_data["train/misc/lr"] = step_lr
-            microbatch_log_data["train/misc/current_p"] = current_p
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")
@@ -319,19 +305,21 @@ def optimize(
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
             with torch.inference_mode():
-                run_slow: bool = (
+                slow_step: bool = (
                     config.slow_eval_on_first_step
                     if step == 0
                     else step % config.slow_eval_freq == 0
                 )
 
                 metrics = evaluate(
+                    metric_configs=config.eval_metric_configs + config.loss_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
                     device=device,
-                    config=config,
-                    run_slow=run_slow,
-                    n_steps=n_eval_steps,
+                    run_config=config,
+                    slow_step=slow_step,
+                    n_eval_steps=n_eval_steps,
+                    current_frac_of_training=step / config.steps,
                 )
 
                 if is_distributed():
@@ -343,7 +331,7 @@ def optimize(
                     if out_dir is not None:
                         local_log(metrics, step, out_dir)
                     if config.wandb_project:
-                        wandb_logs: dict[str, int | float | str | wandb.Image] = {
+                        wandb_logs = {
                             f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
                             for k, v in metrics.items()
                         }

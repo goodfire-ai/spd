@@ -8,7 +8,7 @@ from jaxtyping import Float, Int
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
-from spd.configs import Config
+from spd.configs import Config, ImportanceMinimalityLossTrainConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
@@ -134,8 +134,7 @@ def test_from_run_info():
             eval_batch_size=1,
             eval_freq=1,
             slow_eval_freq=1,
-            importance_minimality_coeff=1.0,
-            pnorm=1.0,
+            loss_metric_configs=[ImportanceMinimalityLossTrainConfig(coeff=1.0, pnorm=1.0)],
             n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,

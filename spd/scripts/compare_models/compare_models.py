@@ -17,14 +17,14 @@ import fire
 import torch
 import torch.nn.functional as F
 from jaxtyping import Float
-from pydantic import BaseModel, Field
+from pydantic import Field
 from torch import Tensor
 
 from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import extract_batch_data, load_config
+from spd.utils.general_utils import BaseModel, extract_batch_data, load_config
 from spd.utils.run_utils import save_file
 
 
@@ -253,7 +253,7 @@ class ModelComparator:
                 batch = extract_batch_data(next(eval_iterator))
                 batch = batch.to(self.device)
                 _, pre_weight_acts = model(
-                    batch, mode="pre_forward_cache", module_names=list(model.components.keys())
+                    batch, mode="pre_forward_cache", module_names=model.module_paths
                 )
                 ci, _ = model.calc_causal_importances(
                     pre_weight_acts,

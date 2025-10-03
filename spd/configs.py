@@ -1,13 +1,9 @@
 """Config classes of various types"""
 
-import importlib
-import inspect
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 
 from pydantic import (
-    BaseModel,
-    ConfigDict,
     Field,
     NonNegativeFloat,
     NonNegativeInt,
@@ -22,60 +18,132 @@ from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
 from spd.models.components import CiFnType
+from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
+from spd.utils.general_utils import BaseModel
 
 
-class EvalMetricConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    classname: str = Field(
+#### Train Metric Configs ####
+class TrainMetricConfig(BaseModel):
+    coeff: float = Field(
         ...,
-        description="Name of the class to instantiate",
-    )
-    extra_init_kwargs: dict[str, Any] = Field(
-        default={},
-        description="Extra keyword arguments to pass to the class constructor besides `model: ComponentModel` and `config: Config`",
+        description="Coefficient used for weighting into loss/total.",
     )
 
-    def _get_metric_class(self) -> type | None:
-        available_classes = importlib.import_module("spd.eval").EVAL_CLASSES
-        cls = available_classes.get(self.classname)
-        if cls is None:
-            logger.warning(
-                f"Metric class {self.classname!r} not found. Available classes: {available_classes.keys()}"
-            )
-        return cls
 
-    @model_validator(mode="after")
-    def validate_class_kwargs(self) -> Self:
-        """Check that the classname and kwargs are valid.
+class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
 
-        If the classname is not found, we warn instead of raising an error. This allows us to
-        load checkpoints from a run where a user might have added custom metrics.
-        """
-        cls = self._get_metric_class()
-        if cls is None:
-            return self
-        sig = inspect.signature(cls.__init__)
-        # Skip 'self' plus the first two actual parameters (model: ComponentModel, config: Config)
-        params_after_required = list(sig.parameters.values())[3:]
-        sig_extra_only = inspect.Signature(params_after_required)
 
-        # Check that kwargs are valid
-        try:
-            sig_extra_only.bind(**self.extra_init_kwargs)
-        except TypeError as e:
-            # Raise a warning instead of an error
-            # e.g. "unexpected parameter 'foo'" or "missing a required argument: 'bar'"
-            logger.warning(f"Invalid kwargs for {self.classname!r}: {e}")
+class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
 
-        return self
 
+class CIMaskedReconLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
+
+
+class FaithfulnessLossTrainConfig(TrainMetricConfig):
+    classname: Literal["FaithfulnessLoss"] = "FaithfulnessLoss"
+
+
+class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
+    classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
+    pnorm: float
+    p_anneal_start_frac: float = 1.0
+    p_anneal_final_p: float | None = None
+    p_anneal_end_frac: float = 1.0
+    eps: float = 1e-12
+
+
+class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
+    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
+
+
+class StochasticReconLossTrainConfig(TrainMetricConfig):
+    classname: Literal["StochasticReconLoss"] = "StochasticReconLoss"
+
+
+class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
+    classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+
+
+#### Eval Metric Configs ####
+class CEandKLLossesConfig(BaseModel):
+    classname: Literal["CEandKLLosses"] = "CEandKLLosses"
+    rounding_threshold: float
+
+
+class CIHistogramsConfig(BaseModel):
+    classname: Literal["CIHistograms"] = "CIHistograms"
+    n_batches_accum: int | None
+
+
+class CI_L0Config(BaseModel):
+    classname: Literal["CI_L0"] = "CI_L0"
+    groups: dict[str, list[str]] | None
+
+
+class CIMeanPerComponentConfig(BaseModel):
+    classname: Literal["CIMeanPerComponent"] = "CIMeanPerComponent"
+
+
+class ComponentActivationDensityConfig(BaseModel):
+    classname: Literal["ComponentActivationDensity"] = "ComponentActivationDensity"
+
+
+class IdentityCIErrorConfig(BaseModel):
+    classname: Literal["IdentityCIError"] = "IdentityCIError"
+    identity_ci: list[dict[str, str | int]] | None
+    dense_ci: list[dict[str, str | int]] | None
+
+
+class PermutedCIPlotsConfig(BaseModel):
+    classname: Literal["PermutedCIPlots"] = "PermutedCIPlots"
+    sigmoid_type: SigmoidTypes
+    identity_patterns: list[str] | None
+    dense_patterns: list[str] | None
+
+
+class StochasticReconSubsetCEAndKLConfig(BaseModel):
+    classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
+    include_patterns: dict[str, list[str]] | None
+    exclude_patterns: dict[str, list[str]] | None
+
+
+class UVPlotsConfig(BaseModel):
+    classname: Literal["UVPlots"] = "UVPlots"
+    identity_patterns: list[str] | None
+    dense_patterns: list[str] | None
+
+
+TrainMetricConfigType = (
+    CIMaskedReconSubsetLossTrainConfig
+    | CIMaskedReconLayerwiseLossTrainConfig
+    | CIMaskedReconLossTrainConfig
+    | FaithfulnessLossTrainConfig
+    | ImportanceMinimalityLossTrainConfig
+    | StochasticReconLayerwiseLossTrainConfig
+    | StochasticReconLossTrainConfig
+    | StochasticReconSubsetLossTrainConfig
+)
+EvalMetricConfigType = (
+    CEandKLLossesConfig
+    | CIHistogramsConfig
+    | CI_L0Config
+    | CIMeanPerComponentConfig
+    | ComponentActivationDensityConfig
+    | IdentityCIErrorConfig
+    | PermutedCIPlotsConfig
+    | UVPlotsConfig
+    | StochasticReconSubsetCEAndKLConfig
+)
+MetricConfigType = TrainMetricConfigType | EvalMetricConfigType
 
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
 class Config(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     # --- WandB
     wandb_project: str | None = Field(
         default=None,
@@ -139,56 +207,14 @@ class Config(BaseModel):
         "model and component weights. This allows for removing the faithfulness loss.",
     )
 
-    # --- Loss Coefficients
-    faithfulness_coeff: NonNegativeFloat | None = Field(
-        default=1.0,
-        description="Coefficient for matching parameters between components and target weights",
-    )
-    ci_recon_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with a causal importance mask",
-    )
-    stochastic_recon_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with stochastically sampled masks",
-    )
-    ci_recon_layerwise_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with causal importance mask on one layer at a time",
-    )
-    stochastic_recon_layerwise_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with stochastically sampled masks on one layer at "
-        "a time",
-    )
-    ci_masked_recon_subset_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with causal importance mask and routed components",
-    )
-    stochastic_recon_subset_coeff: NonNegativeFloat | None = Field(
-        default=None,
-        description="Coefficient for recon loss with stochastically sampled masks and routed components",
-    )
-    importance_minimality_coeff: NonNegativeFloat = Field(
-        ...,
-        description="Coefficient for importance minimality loss",
-    )
-    pnorm: PositiveFloat = Field(
-        ...,
-        description="The p-value used for the importance minimality loss",
-    )
-    p_anneal_start_frac: Probability = Field(
-        default=1.0,
-        description="Fraction of training after which to start annealing p (1.0 = no annealing)",
-    )
-    p_anneal_final_p: PositiveFloat | None = Field(
-        default=None,
-        description="Final p value to anneal to (None = no annealing)",
-    )
-    p_anneal_end_frac: Probability = Field(
-        default=1.0,
-        description="Fraction of training when annealing ends. We stay at the final p value from "
-        "this point onward (default 1.0 = anneal until end)",
+    loss_metric_configs: list[
+        Annotated[TrainMetricConfigType, Field(discriminator="classname")]
+    ] = Field(
+        default=[],
+        description=(
+            "List of configs for loss metrics to compute (used for both training logs and eval); "
+            "coefficients provided here are also used for weighting the training loss and eval loss/total."
+        ),
     )
     output_loss_type: Literal["mse", "kl"] = Field(
         ...,
@@ -257,7 +283,7 @@ class Config(BaseModel):
     )
     eval_batch_size: PositiveInt = Field(
         ...,
-        description="Batch size used for evaluation",
+        description="Batch size used for evaluation. If None, uses the same as `batch_size`.",
     )
     slow_eval_freq: PositiveInt = Field(
         ...,
@@ -276,9 +302,11 @@ class Config(BaseModel):
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    eval_metrics: list[EvalMetricConfig] = Field(
-        default=[],
-        description="List of metrics to use for evaluation",
+    eval_metric_configs: list[Annotated[EvalMetricConfigType, Field(discriminator="classname")]] = (
+        Field(
+            default=[],
+            description="List of configs for metrics to use for evaluation",
+        )
     )
 
     # --- Component Tracking ---
@@ -324,13 +352,6 @@ class Config(BaseModel):
         description="Nested task-specific configuration selected by the `task_name` discriminator",
     )
 
-    # --- Distributed ---
-    dist_backend: Literal["nccl", "gloo"] | None = Field(
-        default=None,
-        description="Backend for distributed training (nccl for GPU, gloo for CPU). If None, "
-        "uses the default backend for the current device.",
-    )
-
     DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = [
         "image_on_first_step",
         "image_freq",
@@ -340,6 +361,19 @@ class Config(BaseModel):
         "embedding_recon_coeff",
         "is_embed_unembed_recon",
         "out_recon_coeff",
+        "faithfulness_coeff",
+        "stochastic_recon_coeff",
+        "stochastic_recon_layerwise_coeff",
+        "recon_coeff",
+        "recon_layerwise_coeff",
+        "ci_recon_coeff",
+        "ci_recon_layerwise_coeff",
+        "pnorm",
+        "p_anneal_start_frac",
+        "p_anneal_final_p",
+        "p_anneal_end_frac",
+        "importance_minimality_coeff",
+        "dist_backend",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
@@ -353,11 +387,16 @@ class Config(BaseModel):
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
         """Remove deprecated config keys and change names of any keys that have been renamed."""
+
+        # We don't bother mapping the old ``eval_metrics`` to the new ``eval_metric_configs``.
+        config_dict.pop("eval_metrics", None)
+
         for key in list(config_dict.keys()):
             val = config_dict[key]
             if key in cls.DEPRECATED_CONFIG_KEYS:
                 logger.warning(f"{key} is deprecated, but has value: {val}. Removing from config.")
                 del config_dict[key]
+
             elif key in cls.RENAMED_CONFIG_KEYS:
                 logger.info(f"Renaming {key} to {cls.RENAMED_CONFIG_KEYS[key]}")
                 config_dict[cls.RENAMED_CONFIG_KEYS[key]] = val
@@ -373,15 +412,6 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
-        # If any of the coeffs are 0, raise a warning
-        msg = "is 0, you may wish to instead set it to null to avoid calculating the loss"
-        if self.ci_recon_coeff == 0:
-            logger.warning(f"recon_coeff {msg}")
-        if self.importance_minimality_coeff == 0:
-            logger.warning(f"importance_minimality_coeff {msg}")
-        if self.faithfulness_coeff == 0:
-            logger.warning(f"faithfulness_coeff {msg}")
-
         # Check that lr_exponential_halflife is not None if lr_schedule is "exponential"
         if self.lr_schedule == "exponential":
             assert self.lr_exponential_halflife is not None, (
