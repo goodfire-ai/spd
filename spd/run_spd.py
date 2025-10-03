@@ -25,7 +25,7 @@ from spd.log import logger
 from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CachedOutput, ComponentModel
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -230,13 +230,14 @@ def optimize(
             weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
-            target_out, pre_weight_acts = wrapped_model(batch, cache_type="input")
-            # NOTE: pre_weight_acts are now part of the DDP computation graph, so when they pass
-            # through the parameters in calc_causal_importances below, the DDP hook will get called
-            # and gradients will be properly synced across ranks on the next backward pass.
+            target_model_output: CachedOutput = wrapped_model(batch, cache_type="input")
+            # NOTE: target_model_output is now part of the DDP computation graph, so when it
+            # passes through the parameters in calc_causal_importances and compute_total_loss below,
+            # the DDP hook will get called and gradients will be properly synced across ranks on the
+            # next backward pass.
             causal_importances, causal_importances_upper_leaky = (
                 component_model.calc_causal_importances(
-                    pre_weight_acts=pre_weight_acts,
+                    pre_weight_acts=target_model_output.cache,
                     sigmoid_type=config.sigmoid_type,
                     detach_inputs=False,
                     sampling=config.sampling,
@@ -251,7 +252,7 @@ def optimize(
                 batch=batch,
                 ci=causal_importances,
                 ci_upper_leaky=causal_importances_upper_leaky,
-                target_out=target_out,
+                target_out=target_model_output.output,
                 weight_deltas=weight_deltas,
                 current_frac_of_training=step / config.steps,
                 sampling=config.sampling,
