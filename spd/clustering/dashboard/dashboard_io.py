@@ -15,6 +15,7 @@ from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.settings import SPD_CACHE_DIR
 
 
 def load_wandb_artifacts(wandb_path: str) -> tuple[MergeHistory, dict[str, Any]]:
@@ -38,7 +39,9 @@ def load_wandb_artifacts(wandb_path: str) -> tuple[MergeHistory, dict[str, Any]]
     artifact: Any = artifacts[0]
     logger.info(f"Found artifact: {artifact.name}")
 
-    artifact_dir: str = artifact.download()
+    artifact_cache_root = SPD_CACHE_DIR / "wandb_artifacts"
+    artifact_cache_root.mkdir(parents=True, exist_ok=True)
+    artifact_dir: str = artifact.download(root=str(artifact_cache_root))
     merge_history_path: Path = Path(artifact_dir) / "merge_history.zip"
     merge_history: MergeHistory = MergeHistory.read(merge_history_path)
     logger.info(f"Loaded merge history: {merge_history}")

@@ -51,7 +51,7 @@
 
     async function loadActivationContexts() {
         loadingActivationContexts = true;
-        examples = await getSubcomponentActivationContexts(component.index, layer);
+        // examples = await getComponentActivationContexts(component.index, layer);
         loadingActivationContexts = false;
     }
 

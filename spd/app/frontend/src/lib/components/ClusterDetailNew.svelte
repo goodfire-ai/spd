@@ -53,6 +53,7 @@
                     {/each}
                 </tbody>
             </table>
+            <!-- TODO: use component-level activation contexts (not subcomponents) in the modal -->
         </div>
 
         {#if histogramStats.length}

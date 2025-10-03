@@ -6,8 +6,10 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import Any, Optional
+import time
+from typing import Any
 from uuid import uuid4
+
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
@@ -19,9 +21,9 @@ from spd.clustering.dashboard.dashboard_io import (
     load_wandb_artifacts,
     setup_model_and_data,
 )
-from spd.settings import SPD_CACHE_DIR
 from spd.log import logger
-
+from spd.settings import SPD_CACHE_DIR
+from spd.utils.general_utils import runtime_cast
 
 DEFAULT_CLUSTER_RUN_PATH = "goodfire/spd-cluster/j8dgvemf"
 
@@ -101,7 +103,7 @@ class ActivationBatchDTO(BaseModel):
     cluster_id: dict[str, Any]
     text_hashes: list[str]
     activations: list[list[float]]
-    tokens: Optional[list[list[str]]]
+    tokens: list[list[str]] | None
 
 
 class ClusterDashboardResponse(BaseModel):
@@ -162,10 +164,19 @@ class ClusterDashboardService:
         context_length: int,
         clustering_run: str | None = None,
     ) -> ClusterDashboardResponse:
-        ctx = self.run_context_service.run_context
-        assert ctx is not None, "Run context not found"
-
+        # assert (ctx := self.run_context_service.run_context) is not None, "Run context not found"
         cluster_run_path = _normalize_wandb_path(clustering_run or DEFAULT_CLUSTER_RUN_PATH)
+        request_start = time.perf_counter()
+        logger.info(
+            "Getting dashboard data run=%s requested=%s iteration=%s n_samples=%s n_batches=%s batch_size=%s context_length=%s",
+            cluster_run_path,
+            clustering_run,
+            iteration,
+            n_samples,
+            n_batches,
+            batch_size,
+            context_length,
+        )
         cache_path = self._cache_path(
             cluster_run_path=cluster_run_path,
             iteration=iteration,
@@ -175,6 +186,12 @@ class ClusterDashboardService:
             context_length=context_length,
         )
         if cache_path.exists():
+            duration = time.perf_counter() - request_start
+            logger.info(
+                "🟢 cluster-dashboard cache hit path=%s duration_s=%.3f",
+                cache_path,
+                duration,
+            )
             return self._load_cache(cache_path)
 
         cache_key = str(cache_path)
@@ -186,6 +203,7 @@ class ClusterDashboardService:
         loop = asyncio.get_running_loop()
 
         async def _produce() -> ClusterDashboardResponse:
+            compute_start = time.perf_counter()
             result = await loop.run_in_executor(
                 None,
                 lambda: self._compute_dashboard_data(
@@ -197,9 +215,21 @@ class ClusterDashboardService:
                     cluster_run_path=cluster_run_path,
                 ),
             )
+            duration = time.perf_counter() - compute_start
+            logger.info(
+                "🟢 cluster-dashboard computed run=%s cache=%s duration_s=%.3f",
+                cluster_run_path,
+                cache_path,
+                duration,
+            )
             self._write_cache(cache_path, result)
             return result
 
+        logger.info(
+            "cluster-dashboard cache miss requested=%s resolved=%s",
+            clustering_run,
+            cluster_run_path,
+        )
         task: asyncio.Task[ClusterDashboardResponse] = asyncio.create_task(_produce())
         self._inflight[cache_key] = task
         task.add_done_callback(lambda _: self._inflight.pop(cache_key, None))
@@ -214,32 +244,36 @@ class ClusterDashboardService:
         context_length: int,
         cluster_run_path: str,
     ) -> ClusterDashboardResponse:
+        overall_start = time.perf_counter()
+
+        t = time.perf_counter()
+        merge_history, run_config = load_wandb_artifacts(cluster_run_path)
         logger.info(
-            "Computing dashboard data",
-            extra={
-                "cluster_run": cluster_run_path,
-                "iteration": iteration,
-                "n_samples": n_samples,
-                "n_batches": n_batches,
-                "batch_size": batch_size,
-                "context_length": context_length,
-            },
+            "🟢 cluster-dashboard loaded merge history run=%s duration_s=%.3f",
+            cluster_run_path,
+            time.perf_counter() - t,
         )
 
-        merge_history, run_config = load_wandb_artifacts(cluster_run_path)
         actual_iteration = (
             iteration if iteration >= 0 else merge_history.n_iters_current + iteration
         )
 
+        t = time.perf_counter()
         model, tokenizer, dataloader, config = setup_model_and_data(
             run_config=run_config,
             context_length=context_length,
             batch_size=batch_size,
         )
         model.eval()
+        logger.info(
+            "🟢 cluster-dashboard setup model run=%s duration_s=%.3f",
+            cluster_run_path,
+            time.perf_counter() - t,
+        )
 
         cluster_run_id = cluster_run_path.split("/")[-1]
 
+        t = time.perf_counter()
         dashboard_data, coactivations, cluster_indices = compute_max_activations(
             model=model,
             sigmoid_type=config.sigmoid_type,
@@ -251,31 +285,48 @@ class ClusterDashboardService:
             n_batches=n_batches,
             clustering_run=cluster_run_id,
         )
+        logger.info(
+            "🟢 cluster-dashboard computed max activations run=%s duration_s=%.3f clusters=%d",
+            cluster_run_path,
+            time.perf_counter() - t,
+            len(cluster_indices),
+        )
 
         merge = merge_history.merges[actual_iteration]
         model_path = run_config.get("model_path", "")
 
+        t = time.perf_counter()
         model_info = generate_model_info(
             model=model,
             merge_history=merge_history,
             merge=merge,
             iteration=actual_iteration,
             model_path=model_path,
-            tokenizer_name=config.tokenizer_name,
+            tokenizer_name=runtime_cast(str, config.tokenizer_name),
             config_dict=config.model_dump(mode="json"),
             wandb_run_path=cluster_run_path,
         )
+        logger.info(
+            "🟢 cluster-dashboard generated model info run=%s duration_s=%.3f",
+            cluster_run_path,
+            time.perf_counter() - t,
+        )
 
         serializable = _dashboard_to_serializable(dashboard_data)
+
+        total_duration = time.perf_counter() - overall_start
+        logger.info(
+            "🟢 cluster-dashboard compute complete run=%s duration_s=%.3f",
+            cluster_run_path,
+            total_duration,
+        )
 
         return ClusterDashboardResponse(
             clusters=[ClusterDataDTO(**cluster) for cluster in serializable["clusters"]],
             text_samples=[TextSampleDTO(**sample) for sample in serializable["text_samples"]],
             activation_batch=ActivationBatchDTO(**serializable["activation_batch"]),
             activations_map=serializable["activations_map"],
-            coactivations=coactivations.tolist()
-            if isinstance(coactivations, np.ndarray)
-            else coactivations,
+            coactivations=coactivations.tolist(),
             cluster_indices=cluster_indices,
             model_info=model_info,
             iteration=actual_iteration,

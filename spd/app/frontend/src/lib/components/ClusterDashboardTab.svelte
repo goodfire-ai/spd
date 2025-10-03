@@ -9,11 +9,16 @@
     import MiniModelView from "$lib/components/MiniModelView.svelte";
     import Sparkbars from "$lib/components/Sparkbars.svelte";
     
+    type TopToken = {
+        token: string;
+        count: number;
+    };
+
     type ClusterRow = {
         id: number;
         clusterHash: string;
         componentCount: number;
-        modules: string[];
+        topTokens: TopToken[];
     };
 
     type ClusterMap = Record<string, ClusterDataDTO>;
@@ -44,13 +49,17 @@
             const parts = cluster.cluster_hash.split("-");
             const maybeId = Number.parseInt(parts[parts.length - 1] ?? "", 10);
             const id = Number.isNaN(maybeId) ? idx : maybeId;
-            const modules = new Set<string>();
-            cluster.components?.forEach((c) => modules.add(c.module));
+            const topTokens: TopToken[] = (cluster.stats?.token_activations?.top_tokens ?? [])
+                .slice(0, 5)
+                .map((entry: any) => ({
+                    token: typeof entry.token === "string" ? entry.token : "",
+                    count: typeof entry.count === "number" ? entry.count : 0,
+                }));
             return {
                 id,
                 clusterHash: cluster.cluster_hash,
                 componentCount: cluster.components?.length ?? 0,
-                modules: Array.from(modules)
+                topTokens,
             } satisfies ClusterRow;
         });
     }
@@ -81,6 +90,7 @@
         errorMsg = null;
 
         try {
+            console.log("fetching dashboard");
             const result = await getClusterDashboardData({
                 iteration,
                 n_samples: nSamples,
@@ -89,11 +99,16 @@
                 context_length: contextLength,
                 signal: controller.signal
             });
+            console.log("dashboard fetched");
             if (controller.signal.aborted) return;
 
             dashboard = result;
             clusterMap = Object.fromEntries(result.clusters.map((cluster) => [cluster.cluster_hash, cluster]));
-            rows = applySort(buildRows(result.clusters));
+            console.log("clusterMap built, sorting rows");
+            const _rows = buildRows(result.clusters)
+            rows = applySort(_rows);
+            console.log("rows sorted");
+
             resetDetail();
         } catch (e: any) {
             if (controller.signal.aborted) return;
@@ -161,7 +176,7 @@
                   { label: "Parameters", value: modelInfo?.total_parameters },
                   { label: "Trainable Parameters", value: modelInfo?.trainable_parameters }
               ] as const
-          ).filter(({ value }) => value !== undefined && value !== null && value !== "")
+          ) // .filter(({ value }) => value !== undefined && value !== null && value !== "")
         : runId
           ? [{ label: "Run", value: runId }]
           : [];
@@ -231,7 +246,7 @@
                         <th class="col-model">Model View</th>
                         <th class="col-hist">All Activations</th>
                         <th class="col-hist">Max Activation Pos</th>
-                        <th class="col-modules">Modules</th>
+                        <th class="col-tokens">Top Tokens</th>
                         <th class="col-actions">Actions</th>
                     </tr>
                 </thead>
@@ -271,7 +286,20 @@
                                     <div class="hist-placeholder"></div>
                                 {/if}
                             </td>
-                            <td class="col-modules">{row.modules.join(", ")}</td>
+                            <td class="col-tokens">
+                                {#if row.topTokens.length}
+                                    <ul class="token-list">
+                                        {#each row.topTokens as token}
+                                            <li>
+                                                <code>{token.token.replace(/\s/g, "·")}</code>
+                                                <span class="token-count">({token.count})</span>
+                                            </li>
+                                        {/each}
+                                    </ul>
+                                {:else}
+                                    <span class="no-tokens">—</span>
+                                {/if}
+                            </td>
                             <td class="col-actions">
                                 <button class="view-button" on:click={() => onView(row)}
                                     >View →</button
@@ -366,9 +394,8 @@
     }
 
     .model-info {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 10px;
+        display: flex;
+        flex-direction: column;
         padding: 8px 0 12px 0;
         color: #555;
     }
@@ -403,6 +430,35 @@
     .cluster-table th.col-comps,
     .cluster-table td.col-comps {
         text-align: right;
+    }
+
+    .col-tokens {
+        min-width: 200px;
+    }
+
+    .token-list {
+        margin: 0;
+        padding-left: 1rem;
+    }
+
+    .token-list li {
+        list-style: disc;
+        color: #333;
+    }
+
+    .token-list code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 12px;
+    }
+
+    .token-count {
+        margin-left: 0.35rem;
+        color: #666;
+        font-size: 12px;
+    }
+
+    .no-tokens {
+        color: #999;
     }
 
     .col-hist {
