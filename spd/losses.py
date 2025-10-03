@@ -90,9 +90,18 @@ def calc_importance_minimality_loss(
     """
     total_loss = torch.zeros_like(next(iter(ci_upper_leaky.values())))
 
+    # Actual calc
+    # for layer_ci_upper_leaky in ci_upper_leaky.values():
+    #     # Note, the paper uses an absolute value but our layer_ci_upper_leaky is already > 0
+    #     total_loss = total_loss + (layer_ci_upper_leaky + eps) ** pnorm
+
+    # Experimental calc
     for layer_ci_upper_leaky in ci_upper_leaky.values():
-        # Note, the paper uses an absolute value but our layer_ci_upper_leaky is already > 0
-        total_loss = total_loss + (layer_ci_upper_leaky + eps) ** pnorm
+        above_one = layer_ci_upper_leaky > 1
+        higher_pnorm = (layer_ci_upper_leaky + eps) ** 0.9
+        lower_pnorm = (layer_ci_upper_leaky + eps) ** 2.0
+        combo = torch.where(above_one, higher_pnorm, lower_pnorm)
+        total_loss = total_loss + combo
 
     # Sum over the C dimension and mean over the other dimensions
     return total_loss.sum(dim=-1).mean()
