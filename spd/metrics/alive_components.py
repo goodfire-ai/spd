@@ -1,22 +1,22 @@
 """Track which components are alive based on their firing frequency."""
 
-from typing import Any, override
-
 import torch
 from einops import reduce
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.metrics.base import Metric
 from spd.utils.distributed_utils import all_reduce
 
 
-class AliveComponentsTracker(Metric):
+class AliveComponentsTracker:
     """Track which components are considered alive based on their firing frequency.
 
     A component is considered alive if it has fired (importance > threshold) within
     the last n_examples_until_dead examples.
+
+    NOTE: This does not directly inherit from spd.metrics.base.Metric, but its update and compute
+    methods have a similar signature to the Metric interface.
     """
 
     def __init__(
@@ -47,8 +47,7 @@ class AliveComponentsTracker(Metric):
             m: torch.zeros(C, dtype=torch.int64, device=device) for m in module_paths
         }
 
-    @override
-    def update(self, *, ci: dict[str, Float[Tensor, "... C"]], **_: Any) -> None:
+    def update(self, ci: dict[str, Float[Tensor, "... C"]]) -> None:
         """Update tracking based on importance values from a batch.
 
         Args:
@@ -64,7 +63,6 @@ class AliveComponentsTracker(Metric):
                 self.n_batches_since_fired[module_name] + 1,
             )
 
-    @override
     def compute(self) -> dict[str, int]:
         """Compute the number of alive components per module.
 
