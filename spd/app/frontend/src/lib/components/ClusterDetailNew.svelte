@@ -1,8 +1,18 @@
 <script lang="ts">
     import Sparkbars from "$lib/components/Sparkbars.svelte";
+    import TokenHighlights from "$lib/components/TokenHighlights.svelte";
     import type { ClusterDataDTO } from "$lib/api";
+    import MiniModelView from "./MiniModelView.svelte";
+
+    type ClusterExample = {
+        textHash: string;
+        rawText: string;
+        offsetMapping: [number, number][];
+        activations: number[];
+    };
 
     export let cluster: ClusterDataDTO | null = null;
+    export let examples: ClusterExample[] = [];
 
     $: histogramStats = (() => {
         if (!cluster?.stats) return [] as string[];
@@ -37,23 +47,7 @@
 
         <div class="section">
             <h4>Components</h4>
-            <table class="components-table">
-                <thead>
-                    <tr>
-                        <th>Module</th>
-                        <th class="col-right">Index</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {#each cluster.components as c}
-                        <tr>
-                            <td>{c.module}</td>
-                            <td class="col-right">{c.index}</td>
-                        </tr>
-                    {/each}
-                </tbody>
-            </table>
-            <!-- TODO: use component-level activation contexts (not subcomponents) in the modal -->
+            <MiniModelView components={cluster.components} />
         </div>
 
         {#if histogramStats.length}
@@ -102,7 +96,23 @@
             </div>
         {/if}
 
-        <!-- Samples/activations: add after NDArray loader abstraction is ready -->
+        {#if examples.length}
+            <div class="section">
+                <h4>Activation Examples</h4>
+                <div class="examples-grid">
+                    {#each examples as example}
+                        <div class="example-card">
+                            <TokenHighlights
+                                rawText={example.rawText}
+                                offsetMapping={example.offsetMapping}
+                                tokenCiValues={example.activations}
+                                activePosition={-1}
+                            />
+                        </div>
+                    {/each}
+                </div>
+            </div>
+        {/if}
     </div>
 {/if}
 
@@ -165,5 +175,21 @@
     .token-code {
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
         font-size: 12px;
+    }
+
+    .examples-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .example-card {
+        border: 1px solid #e9ecef;
+        border-radius: 6px;
+        padding: 0.75rem;
+        background: #fdfdfd;
+        font-family: monospace;
+        font-size: 14px;
+        line-height: 1.6;
     }
 </style>
