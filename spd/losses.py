@@ -110,7 +110,7 @@ def calc_masked_recon_loss(
         if loss_type == "mse":
             loss = ((out - target_out) ** 2).mean()
         else:
-            loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            loss = calc_kl_divergence_lm(pred=target_out, target=out)
             # flat_logits = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
             # masked_batch = batch.clone()
             # masked_batch[:, 0] = -100
@@ -537,7 +537,7 @@ def calculate_losses(
 
         # Adversarial-mask loss with subset routing
         if use_pgd_masks and adv_rand_tensors is not None:
-            adv_mask_infos_list = [
+            adv_mask_infos_list: list[dict[str, ComponentsMaskInfo]] = [
                 calc_stochastic_component_mask_info(
                     causal_importances=causal_importances,
                     sampling=config.sampling,
