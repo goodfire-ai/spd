@@ -642,9 +642,45 @@ class ComponentModel(LoadableModule):
                 )
 
             causal_importances[param_name] = lower_leaky_fn(gate_output_for_lower_leaky)
-            causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs()
+            causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs() # Why is this here?
 
         return causal_importances, causal_importances_upper_leaky
+
+    def calc_pre_sigmoid_gate_outputs(
+        self,
+        pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
+        detach_inputs: bool = False,
+    ) -> dict[str, Float[Tensor, "... C"]]:
+        """Calculate pre-sigmoid gate outputs.
+
+        Args:
+            pre_weight_acts: The activations before each layer in the target model.
+            detach_inputs: Whether to detach the inputs to the gates.
+
+        Returns:
+            Dictionary of pre-sigmoid gate outputs for each layer.
+        """
+        pre_sigmoid_outputs = {}
+
+        for param_name in pre_weight_acts:
+            acts = pre_weight_acts[param_name]
+            gates = self.gates[param_name]
+
+            match gates:
+                case MLPGates():
+                    gate_input = self.components[param_name].get_inner_acts(acts)
+                case VectorMLPGates() | VectorSharedMLPGate():
+                    gate_input = acts
+                case _:
+                    raise ValueError(f"Unknown gate type: {type(gates)}")
+
+            if detach_inputs:
+                gate_input = gate_input.detach()
+
+            gate_output = gates(gate_input)
+            pre_sigmoid_outputs[param_name] = gate_output
+
+        return pre_sigmoid_outputs
 
     def calc_weight_deltas(self) -> dict[str, Float[Tensor, " d_out d_in"]]:
         """Calculate the weight differences between the target and component weights (V@U) for each layer."""
