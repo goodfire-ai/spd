@@ -25,8 +25,8 @@ TEST_CONFIG = {
     "seed": 0,
     "C": 3,
     "n_mask_samples": 1,
-    "gate_type": "vector_mlp",
-    "gate_hidden_dims": [2],
+    "ci_fn_type": "vector_mlp",
+    "ci_fn_hidden_dims": [2],
     "sigmoid_type": "leaky_hard",
     "target_module_patterns": ["model.layers.0.mlp.gate_proj"],
     # --- Loss Coefficients ---
@@ -252,8 +252,8 @@ class TestDistributedDeterminicity:
         # Compare each parameter
         for param_name in sorted(dp1_state.keys()):
             # We know that the target model is not trained, so we only care about params with
-            # "components" or "gates" in the name.
-            if "components" not in param_name and "gates" not in param_name:
+            # "components" or "ci_fns" in the name.
+            if "components" not in param_name and "ci_fns" not in param_name:
                 continue
 
             dp1_param = dp1_state[param_name]

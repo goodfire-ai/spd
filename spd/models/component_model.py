@@ -18,15 +18,15 @@ from spd.configs import Config
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
+    CiFnType,
     Components,
     ComponentsMaskInfo,
     EmbeddingComponents,
-    GateType,
     Identity,
     LinearComponents,
-    MLPGates,
-    VectorMLPGates,
-    VectorSharedMLPGate,
+    MLPCiFn,
+    VectorMLPCiFn,
+    VectorSharedMLPCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
@@ -82,7 +82,7 @@ class ComponentModel(LoadableModule):
         inserted in place of the chosen modules with the use of forward hooks.
     - 'input_cache': Forward with caching inputs to chosen modules
 
-    We register components and gates as modules in this class in order to have them update
+    We register components and causal importance functions (ci_fns) as modules in this class in order to have them update
     correctly when the model is wrapped in a `DistributedDataParallel` wrapper (and for other
     conveniences).
     """
@@ -92,8 +92,8 @@ class ComponentModel(LoadableModule):
         target_model: nn.Module,
         target_module_patterns: list[str],
         C: int,
-        gate_type: GateType,
-        gate_hidden_dims: list[int],
+        ci_fn_type: CiFnType,
+        ci_fn_hidden_dims: list[int],
         pretrained_model_output_attr: str | None,
     ):
         super().__init__()
@@ -119,15 +119,15 @@ class ComponentModel(LoadableModule):
             {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
         )
 
-        self.gates = ComponentModel._create_gates(
+        self.ci_fns = ComponentModel._create_ci_fns(
             target_model=target_model,
             module_paths=module_paths,
             C=C,
-            gate_type=gate_type,
-            gate_hidden_dims=gate_hidden_dims,
+            ci_fn_type=ci_fn_type,
+            ci_fn_hidden_dims=ci_fn_hidden_dims,
         )
-        self._gates = nn.ModuleDict(
-            {k.replace(".", "-"): self.gates[k] for k in sorted(self.gates)}
+        self._ci_fns = nn.ModuleDict(
+            {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
         )
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
@@ -197,18 +197,18 @@ class ComponentModel(LoadableModule):
         return components
 
     @staticmethod
-    def _create_gate(
+    def _create_ci_fn(
         target_module: nn.Module,
         component_C: int,
-        gate_type: GateType,
-        gate_hidden_dims: list[int],
+        ci_fn_type: CiFnType,
+        ci_fn_hidden_dims: list[int],
     ) -> nn.Module:
-        """Helper to create a gate based on gate_type and module type."""
+        """Helper to create a causal importance function (ci_fn) based on ci_fn_type and module type."""
         if isinstance(target_module, nn.Embedding):
-            assert gate_type == "mlp", "Embedding modules only supported for gate_type='mlp'"
+            assert ci_fn_type == "mlp", "Embedding modules only supported for ci_fn_type='mlp'"
 
-        if gate_type == "mlp":
-            return MLPGates(C=component_C, hidden_dims=gate_hidden_dims)
+        if ci_fn_type == "mlp":
+            return MLPCiFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
 
         match target_module:
             case nn.Linear():
@@ -218,36 +218,36 @@ class ComponentModel(LoadableModule):
             case Identity():
                 input_dim = target_module.d
             case _:
-                raise ValueError(f"Module {type(target_module)} not supported for {gate_type=}")
+                raise ValueError(f"Module {type(target_module)} not supported for {ci_fn_type=}")
 
-        match gate_type:
+        match ci_fn_type:
             case "vector_mlp":
-                return VectorMLPGates(
-                    C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+                return VectorMLPCiFn(
+                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
                 )
             case "shared_mlp":
-                return VectorSharedMLPGate(
-                    C=component_C, input_dim=input_dim, hidden_dims=gate_hidden_dims
+                return VectorSharedMLPCiFn(
+                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
                 )
 
     @staticmethod
-    def _create_gates(
+    def _create_ci_fns(
         target_model: nn.Module,
         module_paths: list[str],
         C: int,
-        gate_type: GateType,
-        gate_hidden_dims: list[int],
+        ci_fn_type: CiFnType,
+        ci_fn_hidden_dims: list[int],
     ) -> dict[str, nn.Module]:
-        gates: dict[str, nn.Module] = {}
+        ci_fns: dict[str, nn.Module] = {}
         for module_path in module_paths:
             target_module = target_model.get_submodule(module_path)
-            gates[module_path] = ComponentModel._create_gate(
+            ci_fns[module_path] = ComponentModel._create_ci_fn(
                 target_module,
                 C,
-                gate_type,
-                gate_hidden_dims,
+                ci_fn_type,
+                ci_fn_hidden_dims,
             )
-        return gates
+        return ci_fns
 
     def _extract_output(self, raw_output: Any) -> Any:
         """Extract the desired output from the model's raw output.
@@ -464,8 +464,8 @@ class ComponentModel(LoadableModule):
             target_model=target_model,
             target_module_patterns=config.all_module_patterns,
             C=config.C,
-            gate_hidden_dims=config.gate_hidden_dims,
-            gate_type=config.gate_type,
+            ci_fn_hidden_dims=config.ci_fn_hidden_dims,
+            ci_fn_type=config.ci_fn_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
 
@@ -497,7 +497,7 @@ class ComponentModel(LoadableModule):
         Args:
             pre_weight_acts: The activations before each layer in the target model.
             sigmoid_type: Type of sigmoid to use.
-            detach_inputs: Whether to detach the inputs to the gates.
+            detach_inputs: Whether to detach the inputs to the causal importance function.
 
         Returns:
             Tuple of (causal_importances, causal_importances_upper_leaky) dictionaries for each layer.
@@ -507,20 +507,20 @@ class ComponentModel(LoadableModule):
 
         for param_name in pre_weight_acts:
             acts = pre_weight_acts[param_name]
-            gates = self.gates[param_name]
+            ci_fns = self.ci_fns[param_name]
 
-            match gates:
-                case MLPGates():
-                    gate_input = self.components[param_name].get_inner_acts(acts)
-                case VectorMLPGates() | VectorSharedMLPGate():
-                    gate_input = acts
+            match ci_fns:
+                case MLPCiFn():
+                    ci_fn_input = self.components[param_name].get_inner_acts(acts)
+                case VectorMLPCiFn() | VectorSharedMLPCiFn():
+                    ci_fn_input = acts
                 case _:
-                    raise ValueError(f"Unknown gate type: {type(gates)}")
+                    raise ValueError(f"Unknown ci_fn type: {type(ci_fns)}")
 
             if detach_inputs:
-                gate_input = gate_input.detach()
+                ci_fn_input = ci_fn_input.detach()
 
-            gate_output = gates(gate_input)
+            ci_fn_output = ci_fns(ci_fn_input)
 
             if sigmoid_type == "leaky_hard":
                 lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
@@ -530,14 +530,14 @@ class ComponentModel(LoadableModule):
                 lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
                 upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
 
-            gate_output_for_lower_leaky = gate_output
+            ci_fn_output_for_lower_leaky = ci_fn_output
             if sampling == "binomial":
-                gate_output_for_lower_leaky = 1.05 * gate_output - 0.05 * torch.rand_like(
-                    gate_output
+                ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
+                    ci_fn_output
                 )
 
-            causal_importances[param_name] = lower_leaky_fn(gate_output_for_lower_leaky)
-            causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs()
+            causal_importances[param_name] = lower_leaky_fn(ci_fn_output_for_lower_leaky)
+            causal_importances_upper_leaky[param_name] = upper_leaky_fn(ci_fn_output).abs()
 
         return causal_importances, causal_importances_upper_leaky
 
