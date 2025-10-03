@@ -4,15 +4,15 @@ from unittest.mock import patch
 import torch
 from torch import Tensor
 
-from spd.metrics import stochastic_hidden_acts_mse
+from spd.metrics import stochastic_hidden_acts_recon
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import RoutingType
 from tests.metrics.fixtures import make_two_layer_component_model
 
 
-class TestStochasticHiddenActsMSE:
+class TestStochasticHiddenActsRecon:
     def test_manual_calculation(self: object) -> None:
-        """Test stochastic hidden acts MSE with manual calculation.
+        """Test stochastic hidden acts recon with manual calculation.
 
         For a two-layer model (batch -> fc1 -> hidden -> fc2 -> output):
         - pre_weight_acts["fc1"] is the batch input (always same, MSE = 0)
@@ -75,7 +75,7 @@ class TestStochasticHiddenActsMSE:
             )
 
         with patch(
-            "spd.metrics.stochastic_hidden_acts_mse.calc_stochastic_component_mask_info",
+            "spd.metrics.stochastic_hidden_acts_recon.calc_stochastic_component_mask_info",
             side_effect=mock_calc_stochastic_component_mask_info,
         ):
             # Calculate expected loss manually
@@ -106,7 +106,7 @@ class TestStochasticHiddenActsMSE:
             expected_loss = sum_mse / n_examples
 
             # Calculate actual loss
-            actual_loss = stochastic_hidden_acts_mse(
+            actual_loss = stochastic_hidden_acts_recon(
                 model=model,
                 sampling="continuous",
                 use_delta_component=False,

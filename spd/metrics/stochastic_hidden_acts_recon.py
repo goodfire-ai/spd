@@ -11,7 +11,7 @@ from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 
 
-def _stochastic_hidden_acts_mse_update(
+def _stochastic_hidden_acts_recon_update(
     model: ComponentModel,
     sampling: Literal["continuous", "binomial"],
     use_delta_component: bool,
@@ -53,13 +53,13 @@ def _stochastic_hidden_acts_mse_update(
     return sum_mse, n_examples
 
 
-def _stochastic_hidden_acts_mse_compute(
+def _stochastic_hidden_acts_recon_compute(
     sum_mse: Float[Tensor, ""], n_examples: Int[Tensor, ""] | int
 ) -> Float[Tensor, ""]:
     return sum_mse / n_examples
 
 
-def stochastic_hidden_acts_mse(
+def stochastic_hidden_acts_recon(
     model: ComponentModel,
     sampling: Literal["continuous", "binomial"],
     use_delta_component: bool,
@@ -69,7 +69,7 @@ def stochastic_hidden_acts_mse(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
 ) -> Float[Tensor, ""]:
-    sum_mse, n_examples = _stochastic_hidden_acts_mse_update(
+    sum_mse, n_examples = _stochastic_hidden_acts_recon_update(
         model,
         sampling,
         use_delta_component,
@@ -79,11 +79,11 @@ def stochastic_hidden_acts_mse(
         ci,
         weight_deltas,
     )
-    return _stochastic_hidden_acts_mse_compute(sum_mse, n_examples)
+    return _stochastic_hidden_acts_recon_compute(sum_mse, n_examples)
 
 
-class StochasticHiddenActsMSE(Metric):
-    """MSE between target and stochastic hidden activations when sampling with stochastic masks."""
+class StochasticHiddenActsRecon(Metric):
+    """Reconstruction loss between target and stochastic hidden activations when sampling with stochastic masks."""
 
     def __init__(
         self,
@@ -110,7 +110,7 @@ class StochasticHiddenActsMSE(Metric):
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
         **_: Any,
     ) -> None:
-        sum_mse, n_examples = _stochastic_hidden_acts_mse_update(
+        sum_mse, n_examples = _stochastic_hidden_acts_recon_update(
             model=self.model,
             sampling=self.sampling,
             use_delta_component=self.use_delta_component,
@@ -127,4 +127,4 @@ class StochasticHiddenActsMSE(Metric):
     def compute(self) -> Float[Tensor, ""]:
         sum_mse = all_reduce(self.sum_mse, op=ReduceOp.SUM)
         n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM)
-        return _stochastic_hidden_acts_mse_compute(sum_mse, n_examples)
+        return _stochastic_hidden_acts_recon_compute(sum_mse, n_examples)

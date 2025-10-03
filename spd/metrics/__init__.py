@@ -18,8 +18,10 @@ from .identity_ci_error import IdentityCIError as IdentityCIError
 from .importance_minimality_loss import ImportanceMinimalityLoss as ImportanceMinimalityLoss
 from .importance_minimality_loss import importance_minimality_loss as importance_minimality_loss
 from .permuted_ci_plots import PermutedCIPlots as PermutedCIPlots
-from .stochastic_hidden_acts_mse import StochasticHiddenActsMSE as StochasticHiddenActsMSE
-from .stochastic_hidden_acts_mse import stochastic_hidden_acts_mse as stochastic_hidden_acts_mse
+from .stochastic_hidden_acts_recon import StochasticHiddenActsRecon as StochasticHiddenActsRecon
+from .stochastic_hidden_acts_recon import (
+    stochastic_hidden_acts_recon as stochastic_hidden_acts_recon,
+)
 from .stochastic_recon_layerwise_loss import (
     StochasticReconLayerwiseLoss as StochasticReconLayerwiseLoss,
 )
