@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from collections import defaultdict
 import heapq
-import os
 from dataclasses import dataclass
-from pathlib import Path
 
 import torch
 from pydantic import BaseModel
@@ -63,13 +62,6 @@ class _TopKExamples:
         return [ex for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)]
 
 
-def _write_atomic(path: Path, payload: str) -> None:
-    tmp_path = path.with_name(path.name + ".tmp")
-    with open(tmp_path, "w") as f:
-        f.write(payload)
-    os.replace(tmp_path, path)
-
-
 @dataclass
 class WorkerArgs:
     wandb_id: str
@@ -78,65 +70,24 @@ class WorkerArgs:
     max_examples_per_subcomponent: int
     n_steps: int
     n_tokens_either_side: int
-    out_path: Path
 
 
-def main(ctx: WorkerArgs) -> Path | None:
-    lock_path = ctx.out_path.with_suffix(ctx.out_path.suffix + ".lock")
-
-    # Try to obtain a simple lock to avoid duplicate computation.
-    try:
-        with open(lock_path, "x") as f:
-            f.write(str(os.getpid()))
-    except FileExistsError:
-        logger.info(f"Lock exists at {lock_path}, another worker may be running. Exiting.")
-        return None
-
-    try:
-        contexts_by_module = _main(
-            ctx.wandb_id,
-            ctx.importance_threshold,
-            ctx.separation_threshold_tokens,
-            ctx.max_examples_per_subcomponent,
-            ctx.n_steps,
-            ctx.n_tokens_either_side,
-        )
-        _write_atomic(ctx.out_path, contexts_by_module.model_dump_json())
-        logger.info(f"Wrote subcomponent activation contexts to {ctx.out_path}")
-    except Exception as e:
-        logger.warning(f"Activation contexts worker v2 failed: {e}")
-        return None
-    finally:
-        try:
-            if lock_path.exists():
-                lock_path.unlink()
-        except Exception:
-            pass
-
-
-def _main(
-    wandb_id: str,
-    importance_threshold: float,
-    separation_threshold_tokens: int,
-    max_examples_per_subcomponent: int,
-    n_steps: int,
-    n_tokens_either_side: int,
-) -> ModelActivationContexts:
-    logger.info("Computing v2 activation contexts in v1 format")
+def main(args: WorkerArgs) -> ModelActivationContexts:
+    logger.info("activation contexts")
 
     rcs = RunContextService()
-    rcs.load_run_from_wandb_id(wandb_id)
+    rcs.load_run_from_wandb_id(args.wandb_id)
     assert (run_context := rcs.run_context) is not None, "Run context not found"
 
     run_context.cm.to(DEVICE)
 
     topk_by_subcomponent = _get_topk_by_subcomponent(
         run_context,
-        importance_threshold,
-        separation_threshold_tokens,
-        max_examples_per_subcomponent,
-        n_steps,
-        n_tokens_either_side,
+        args.importance_threshold,
+        args.separation_threshold_tokens,
+        args.max_examples_per_subcomponent,
+        args.n_steps,
+        args.n_tokens_either_side,
     )
 
     return map_to_model_ctxs(run_context, topk_by_subcomponent)
@@ -319,7 +270,7 @@ def map_to_model_ctxs(
     topk_by_subcomponent: dict[tuple[str, int], _TopKExamples],
 ) -> ModelActivationContexts:
     # use dict of dicts to achieve ≈O(1) access
-    layers: dict[str, dict[int, list[ActivationContext]]] = {}
+    layers = defaultdict[str, defaultdict[int, list[ActivationContext]]](lambda: defaultdict(list))
     for (module_name, subcomponent_idx), heap_obj in topk_by_subcomponent.items():
         for ex in heap_obj.to_sorted_list_desc():
             activation_context = example_to_activation_context(ex, run_context.tokenizer)

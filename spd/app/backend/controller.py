@@ -20,15 +20,17 @@ from spd.app.backend.services.ablation_service import (
     TokenLayerCosineSimilarityData,
 )
 from spd.app.backend.services.activation_contexts_service import (
-    ActivationContext,
     ActivationContextsService,
-    SubcomponentActivationContexts,
 )
 from spd.app.backend.services.run_context_service import (
     AvailablePrompt,
     Run,
     RunContextService,
     Status,
+)
+from spd.app.backend.workers.activation_contexts_worker_v2 import (
+    ActivationContext,
+    SubcomponentActivationContexts,
 )
 from spd.settings import REPO_ROOT
 
