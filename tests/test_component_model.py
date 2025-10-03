@@ -15,7 +15,6 @@ from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import (
     ComponentModel,
     SPDRunInfo,
-    handle_deprecated_state_dict_keys_,
 )
 from spd.models.components import (
     ComponentsMaskInfo,
@@ -252,30 +251,6 @@ def test_vector_shared_mlp_fn(hidden_dims: list[int]):
     x = torch.randn(BATCH_SIZE, d_in)
     y = ci_fn(x)
     assert y.shape == (BATCH_SIZE, C)
-
-
-@pytest.mark.parametrize(
-    ("key", "expected"),
-    [
-        # components
-        ["target_model.a.b.components.U", "_components.a-b.U"],
-        ["target_model.a.b.components.V", "_components.a-b.V"],
-        ["target_model.a.b.components.bias", "_components.a-b.bias"],
-        # components (old naming)
-        ["patched_model.a.b.components.U", "_components.a-b.U"],
-        ["patched_model.a.b.components.V", "_components.a-b.V"],
-        ["patched_model.a.b.components.bias", "_components.a-b.bias"],
-        # original
-        ["target_model.a.b.original.weight", "target_model.a.b.weight"],
-        # regular state
-        ["target_model.a.b.c.weight", "target_model.a.b.c.weight"],
-    ],
-)
-def test_handle_deprecated_state_dict_keys_(key: str, expected: str):
-    input_dict = {key: torch.tensor([])}
-    handle_deprecated_state_dict_keys_(input_dict)
-    expected_dict = {expected: torch.tensor([])}
-    assert input_dict.keys() == expected_dict.keys()
 
 
 def test_full_weight_delta_matches_target_behaviour():
