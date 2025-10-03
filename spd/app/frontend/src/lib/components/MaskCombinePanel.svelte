@@ -1,6 +1,6 @@
 <script lang="ts">
     import { multiSelectMode, selectedTokensForCombining } from "$lib/stores/componentState";
-    import { api } from "$lib/api";
+    import * as api from "$lib/api";
     import { createEventDispatcher } from "svelte";
 
     const dispatch = createEventDispatcher();
@@ -71,7 +71,7 @@
         return Array.from(layers);
     })();
 
-    async function combineMasks() {
+    async function combineMasks_() {
         if (combining) return;
 
         if (layersWithSelections.length !== 1) return;
@@ -83,7 +83,12 @@
 
         combining = true;
         try {
-            await api.combineMasks(promptId, layer, tokenIndices, description);
+            await api.combineMasks({
+                prompt_id: promptId,
+                layer,
+                token_indices: tokenIndices,
+                description
+            });
 
             // Clear selections after successful combination
             $selectedTokensForCombining = [];
@@ -93,7 +98,7 @@
             simulatedJacc = null;
 
             // Notify parent to refresh saved masks
-            dispatch('maskCreated');
+            dispatch("maskCreated");
         } catch (error) {
             console.error("Failed to combine masks:", error);
         } finally {
@@ -133,7 +138,7 @@
             <button
                 class="combine-btn"
                 disabled={layersWithSelections.length !== 1 || combining}
-                on:click={combineMasks}
+                on:click={combineMasks_}
             >
                 {combining ? "Combining..." : "Combine Masks"}
             </button>
@@ -142,8 +147,8 @@
                 <div class="multi-layer-warning">
                     <span class="warning-icon">⚠️</span>
                     <span class="warning-text">
-                        Multi-select only available on a single layer.
-                        Please clear selections and select from one layer only.
+                        Multi-select only available on a single layer. Please clear selections and
+                        select from one layer only.
                     </span>
                 </div>
             {/if}

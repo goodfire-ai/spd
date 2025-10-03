@@ -3,12 +3,12 @@ import asyncio
 import traceback
 from contextlib import asynccontextmanager
 from functools import wraps
-from multiprocessing import get_context
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from spd.app.backend.services.ablation_service import (
@@ -30,13 +30,7 @@ from spd.app.backend.services.run_context_service import (
     RunContextService,
     Status,
 )
-from spd.app.backend.workers.activation_contexts_worker_v2 import (
-    WorkerArgs,
-)
-from spd.app.backend.workers.activation_contexts_worker_v2 import (
-    main as activation_contexts_worker_v2_main,
-)
-from spd.settings import SPD_CACHE_DIR
+from spd.settings import REPO_ROOT
 
 run_context_service = RunContextService()
 
@@ -102,6 +96,14 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Mount static dashboard under /cluster-dashboard
+DASHBOARD_DIR = REPO_ROOT / "spd" / "clustering" / "dashboard"
+app.mount(
+    "/cluster-dashboard",
+    StaticFiles(directory=str(DASHBOARD_DIR), html=True),
+    name="cluster_dashboard",
 )
 
 
@@ -306,55 +308,46 @@ async def get_component_activation_contexts(
     )
 
 
-@app.get("/activation_contexts/compute")
+@app.get("/dashboard/data-dirs")
 @handle_errors
-async def compute_activation_contexts(request: Request):
-    """Spawn the activation contexts worker and keep the connection open until ready.
+def list_cluster_dashboard_data_dirs(run_id: str | None = None) -> dict[str, Any]:
+    """List available cluster dashboard data directories.
 
-    Non-blocking: yields to other requests via asyncio sleep; returns JSON when done.
+    Returns JSON with keys:
+      - dirs: list[str] of relative paths under /cluster-dashboard (e.g. "data/<run>-i<iter>")
+      - latest: best guess of latest iteration for the (optional) run_id
     """
-    if (rc := run_context_service.run_context) is None:
-        raise HTTPException(status_code=400, detail="Run context not loaded")
+    root = DASHBOARD_DIR / "data"
+    dirs: list[str] = []
+    latest: str | None = None
+    latest_iter = -(10**9)
 
-    out_path = SPD_CACHE_DIR / "subcomponent_activation_contexts" / f"{rc.wandb_id}" / "data.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = out_path.with_suffix(out_path.suffix + ".lock")
+    if root.exists():
+        for p in root.iterdir():
+            if not p.is_dir():
+                continue
+            name = p.name  # e.g. "<runid>-i<iter>"
+            if (
+                not run_id
+                or (run_id and name.startswith(f"{run_id}-i"))
+                or name.startswith("dummy-")
+            ):
+                rel = f"data/{name}"
+                dirs.append(rel)
+                # extract iteration if possible
+                try:
+                    if "-i" in name:
+                        iter_part = name.split("-i")[-1]
+                        i_val = int(iter_part)
+                        if i_val > latest_iter:
+                            latest_iter = i_val
+                            latest = rel
+                except Exception:
+                    pass
 
-    proc = None
-    try:
-        if not lock_path.exists():
-            mp_ctx = get_context("spawn")
-            proc = mp_ctx.Process(
-                target=activation_contexts_worker_v2_main,
-                args=(
-                    WorkerArgs(
-                        wandb_id=rc.wandb_id,
-                        importance_threshold=0.01,
-                        separation_threshold_tokens=10,
-                        max_examples_per_component=10,
-                        n_steps=4,
-                        n_tokens_either_side=10,
-                        out_path=out_path,
-                    ),
-                ),
-                daemon=True,
-            )
-            proc.start()
-
-        while True:
-            if await request.is_disconnected():
-                if proc is not None and proc.is_alive():
-                    proc.terminate()
-                raise HTTPException(status_code=499, detail="Client disconnected")
-
-            if out_path.exists() and not lock_path.exists():
-                data = out_path.read_bytes()
-                return Response(content=data, media_type="application/json")
-
-            await asyncio.sleep(0.5)
-    finally:
-        if proc is not None and proc.is_alive():
-            proc.terminate()
+    ret = {"dirs": sorted(dirs), "latest": latest}
+    print(ret)
+    return ret
 
 
 if __name__ == "__main__":

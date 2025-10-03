@@ -26,7 +26,7 @@ analyse results, and optionally a train a target model:
 
 Note that the `lm` experiment allows for running SPD on any model from huggingface or that is
 accessible to the environment, provided that you only need to decompose `nn.Linear`, `nn.Embedding`
-or `transformers.modeling_utils.Conv1D` layers (other layer types are not yet supported, though
+or `transformers.pytorch_utils.Conv1D` layers (other layer types are not yet supported, though
 these should cover most modules). See `spd/experiments/lm/ss_gpt2_config.yaml` for an example which
 loads from huggingface and `spd/experiments/lm/ss_gpt2_simple_config.yaml` for an example which
 loads from https://github.com/goodfire-ai/simple_stories_train (with the model weights saved on

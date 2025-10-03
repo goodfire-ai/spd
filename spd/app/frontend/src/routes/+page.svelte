@@ -2,26 +2,26 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     import type { Status } from "$lib/api";
-    import { api } from "$lib/api";
     import { onMount } from "svelte";
+    import * as api from "$lib/api";
 
     import ActivationContextsTab from "$lib/components/ActivationContextsTab.svelte";
     import Interventions from "$lib/components/Interventions.svelte";
     import RunSelector from "$lib/components/RunSelector.svelte";
+    import ClusterDashboard from "$lib/components/ClusterDashboard.svelte";
 
     let isLoading = false;
     let wandbRunId: string | null = null;
     let loadingRun = false;
-    let activeTab: "ablation" | "activation-contexts" = "ablation";
+    let activeTab: "ablation" | "activation-contexts" | "cluster-dashboard" = "ablation";
 
     let status: Status | null = null;
     async function getStatus() {
         console.log("getting status");
         status = await api.getStatus();
+        wandbRunId = status.run_id
         console.log("status", status);
     }
-
-    $: wandbRunId = status?.run_id ?? null;
 
     onMount(() => {
         getStatus();
@@ -49,6 +49,13 @@
                 >
                     Activation Contexts
                 </button>
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "cluster-dashboard"}
+                    on:click={() => (activeTab = "cluster-dashboard")}
+                >
+                    Cluster Dashboard
+                </button>
             </div>
         </aside>
 
@@ -65,6 +72,12 @@
 
             <div class:hidden={activeTab !== "ablation"}>
                 <Interventions />
+            </div>
+
+            <div class:hidden={activeTab !== "cluster-dashboard"}>
+                <div class="activation-contexts-container">
+                    <ClusterDashboard runId={status?.run_id ?? null} />
+                </div>
             </div>
         </div>
     </div>

@@ -1,4 +1,47 @@
-const API_URL = "http://localhost:8000";
+export const API_URL = "http://localhost:8000";
+
+type Layer = string;
+
+type TokenComponentMaskIndices = number[];
+export type ComponentMask = Record<Layer, TokenComponentMaskIndices[]>;
+
+export type ComponentAblationRequest = {
+    prompt_id: string;
+    component_mask: Record<Layer, TokenComponentMaskIndices[]>;
+};
+
+const apiUrl: string = API_URL;
+
+export type Status = {
+    loaded: boolean;
+    run_id: string | null;
+    component_layers: string[]; // todo put me somewhere else
+};
+export async function getStatus(): Promise<Status> {
+    const response = await fetch(`${apiUrl}/status`);
+    return response.json();
+}
+
+export type AvailablePrompt = {
+    index: number;
+    full_text: string;
+};
+
+export async function getAvailablePrompts(): Promise<AvailablePrompt[]> {
+    const response = await fetch(`${apiUrl}/available_prompts`, {
+        method: "GET",
+        headers: {
+            "Content-Type": "application/json"
+        }
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get available prompts");
+    }
+
+    return response.json();
+}
 
 export type SparseVector = {
     l0: number;
@@ -6,22 +49,10 @@ export type SparseVector = {
     values: number[];
 };
 
-export type Status = {
-    loaded: boolean;
-    run_id: string | null;
-    component_layers: string[]; // todo put me somewhere else
-};
-
 export type OutputTokenLogit = {
     token: string;
     logit: number;
     probability: number;
-};
-
-export type CosineSimilarityData = {
-    input_singular_vectors: number[][]; // 2D array for pairwise cosine similarities
-    output_singular_vectors: number[][]; // 2D array for pairwise cosine similarities
-    component_indices: number[]; // indices corresponding to rows/cols
 };
 
 export type Component = {
@@ -49,19 +80,64 @@ export type RunPromptResponse = {
     ci_masked_token_logits: OutputTokenLogit[][];
 };
 
-type Layer = string;
+export async function runPrompt(prompt: string): Promise<RunPromptResponse> {
+    const response = await fetch(`${apiUrl}/run`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ prompt })
+    });
 
-type TokenComponentMaskIndices = number[];
-export type ComponentMask = Record<Layer, TokenComponentMaskIndices[]>;
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to run prompt");
+    }
 
-export type ComponentAblationRequest = {
-    prompt_id: string;
-    component_mask: Record<Layer, TokenComponentMaskIndices[]>;
-};
+    const data = await response.json();
+    data.layer_cis.reverse();
+    return data;
+}
+
+export async function runPromptByIndex(datasetIndex: number): Promise<RunPromptResponse> {
+    const response = await fetch(`${apiUrl}/run_prompt/${datasetIndex}`, {
+        method: "POST"
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to run prompt by index");
+    }
+
+    return response.json();
+}
 
 export type InterventionResponse = {
     token_logits: OutputTokenLogit[][];
 };
+
+export async function applyMaskAsAblation(
+    promptId: string,
+    maskOverrideId: string
+): Promise<InterventionResponse> {
+    const response = await fetch(`${apiUrl}/apply_mask`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            prompt_id: promptId,
+            mask_override_id: maskOverrideId
+        })
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to apply mask as ablation");
+    }
+
+    return response.json();
+}
 
 export type MaskOverrideDTO = {
     id: string;
@@ -69,6 +145,121 @@ export type MaskOverrideDTO = {
     layer: string;
     combined_mask: SparseVector;
 };
+
+export async function getMaskOverrides(): Promise<MaskOverrideDTO[]> {
+    const response = await fetch(`${apiUrl}/mask_overrides`, {
+        method: "GET",
+        headers: {
+            "Content-Type": "application/json"
+        }
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get mask overrides");
+    }
+
+    return response.json();
+}
+
+export async function ablateComponents(
+    promptId: string,
+    componentMask: ComponentMask
+): Promise<InterventionResponse> {
+    console.log(
+        "ablateComponents",
+        JSON.stringify({
+            prompt_id: promptId,
+            component_mask: componentMask
+        })
+    );
+
+    const response = await fetch(`${apiUrl}/ablate_components`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            prompt_id: promptId,
+            component_mask: componentMask
+        })
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to modify components");
+    }
+
+    return response.json();
+}
+
+export type Run = {
+    id: string;
+    url: string;
+};
+
+export async function getRuns(): Promise<Run[]> {
+    const response = await fetch(`${apiUrl}/runs`, {
+        method: "GET",
+        headers: {
+            "Content-Type": "application/json"
+        }
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get runs");
+    }
+    return response.json();
+}
+
+export async function loadRun(wandbRunId: string): Promise<void> {
+    const response = await fetch(`${apiUrl}/runs/load/${wandbRunId}`, {
+        method: "POST"
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to load run");
+    }
+}
+
+export type CosineSimilarityData = {
+    input_singular_vectors: number[][]; // 2D array for pairwise cosine similarities
+    output_singular_vectors: number[][]; // 2D array for pairwise cosine similarities
+    component_indices: number[]; // indices corresponding to rows/cols
+};
+
+export async function getCosineSimilarities(
+    layer: string,
+    componentIdx: number
+): Promise<CosineSimilarityData> {
+    const url = `${apiUrl}/cosine_similarities/${layer}/${componentIdx}`;
+    const response = await fetch(url, { method: "GET" });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get cosine similarities");
+    }
+
+    return response.json();
+}
+
+export type ClusterDashboardDataDirs = {
+    dirs: string[];
+    latest: string | null;
+};
+
+export async function getClusterDashboardDataDirs(
+    runId?: string
+): Promise<ClusterDashboardDataDirs> {
+    const url = new URL(`${apiUrl}/dashboard/data-dirs`);
+    if (runId) url.searchParams.set("run_id", runId);
+    const response = await fetch(url.toString(), { method: "GET" });
+    if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || "Failed to get cluster dashboard data dirs");
+    }
+    return response.json();
+}
 
 export type CombineMasksRequest = {
     prompt_id: string;
@@ -82,16 +273,52 @@ export type CombineMasksResponse = {
     mask_override: MaskOverrideDTO;
 };
 
-export type SimulateMergeRequest = {
-    prompt_id: string;
-    layer: string;
-    token_indices: number[];
-};
+export async function combineMasks(req: CombineMasksRequest): Promise<CombineMasksResponse> {
+    const response = await fetch(`${apiUrl}/combine_masks`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(req)
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to combine masks");
+    }
+
+    return response.json();
+}
 
 export type SimulateMergeResponse = {
     l0: number;
     jacc: number;
 };
+
+export async function simulateMerge(
+    promptId: string,
+    layer: string,
+    tokenIndices: number[]
+): Promise<SimulateMergeResponse> {
+    const response = await fetch(`${apiUrl}/simulate_merge`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            prompt_id: promptId,
+            layer: layer,
+            token_indices: tokenIndices
+        })
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to simulate merge");
+    }
+
+    return response.json();
+}
 
 export type ActivationContext = {
     raw_text: string;
@@ -101,276 +328,45 @@ export type ActivationContext = {
     ci_value: number;
 };
 
-export type SubcomponentActivationContexts = {
+export type ComponentActivationContexts = {
     subcomponent_idx: number;
     examples: ActivationContext[];
 };
 
-export type GetLayerActivationContextsResponse = {
-    layer: string;
-    subcomponent_example_sets: SubcomponentActivationContexts[];
-};
-
-export type ComponentActivationContextsResponse = {
-    component_idx: number;
-    layer: string;
-    examples: ActivationContext[];
-};
-
-export type Run = {
-    id: string;
-    url: string;
-};
-
-class ApiClient {
-    constructor(private apiUrl: string = API_URL) {}
-
-    async getStatus(): Promise<Status> {
-        const response = await fetch(`${this.apiUrl}/status`);
-        return response.json();
+export async function getLayerActivationContexts(
+    layer: string,
+    signal?: AbortSignal
+): Promise<ComponentActivationContexts[]> {
+    const response = await fetch(`${apiUrl}/component_activation_contexts/${layer}`, {
+        method: "GET",
+        signal
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get layer activation contexts");
     }
-
-    async runPrompt(prompt: string): Promise<RunPromptResponse> {
-        const response = await fetch(`${this.apiUrl}/run`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ prompt })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to run prompt");
-        }
-
-        const data = await response.json();
-        data.layer_cis.reverse();
-        return data;
-    }
-
-    async getAvailablePrompts(): Promise<{ index: number; text: string; full_text: string }[]> {
-        const response = await fetch(`${this.apiUrl}/available_prompts`, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json"
-            }
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to get available prompts");
-        }
-
-        return response.json();
-    }
-
-    async runPromptByIndex(datasetIndex: number): Promise<RunPromptResponse> {
-        const response = await fetch(`${this.apiUrl}/run_prompt/${datasetIndex}`, {
-            method: "POST"
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to run prompt by index");
-        }
-
-        return response.json();
-    }
-
-    async applyMaskAsAblation(
-        promptId: string,
-        maskOverrideId: string
-    ): Promise<InterventionResponse> {
-        const response = await fetch(`${this.apiUrl}/apply_mask`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                prompt_id: promptId,
-                mask_override_id: maskOverrideId
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to apply mask as ablation");
-        }
-
-        return response.json();
-    }
-
-    async getMaskOverrides(): Promise<MaskOverrideDTO[]> {
-        const response = await fetch(`${this.apiUrl}/mask_overrides`, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json"
-            }
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to get mask overrides");
-        }
-
-        return response.json();
-    }
-
-    async ablateComponents(
-        promptId: string,
-        componentMask: ComponentMask
-    ): Promise<InterventionResponse> {
-        console.log(
-            "ablateComponents",
-            JSON.stringify({
-                prompt_id: promptId,
-                component_mask: componentMask
-            })
-        );
-
-        const response = await fetch(`${this.apiUrl}/ablate_components`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                prompt_id: promptId,
-                component_mask: componentMask
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to modify components");
-        }
-
-        return response.json();
-    }
-
-    async getRuns(): Promise<Run[]> {
-        const response = await fetch(`${this.apiUrl}/runs`, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json"
-            }
-        });
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to get runs");
-        }
-        return response.json();
-    }
-
-    async loadRun(wandbRunId: string): Promise<void> {
-        const response = await fetch(`${this.apiUrl}/runs/load/${wandbRunId}`, {
-            method: "POST"
-        });
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to load run");
-        }
-    }
-
-    async getCosineSimilarities(
-        layer: string,
-        componentIdx: number
-    ): Promise<CosineSimilarityData> {
-        const url = `${this.apiUrl}/cosine_similarities/${layer}/${componentIdx}`;
-        const response = await fetch(url, { method: "GET" });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to get cosine similarities");
-        }
-
-        return response.json();
-    }
-
-    async combineMasks(
-        promptId: string,
-        layer: string,
-        tokenIndices: number[],
-        description?: string
-    ): Promise<CombineMasksResponse> {
-        const response = await fetch(`${this.apiUrl}/combine_masks`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                prompt_id: promptId,
-                layer: layer,
-                token_indices: tokenIndices,
-                description: description
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to combine masks");
-        }
-
-        return response.json();
-    }
-
-    async simulateMerge(
-        promptId: string,
-        layer: string,
-        tokenIndices: number[]
-    ): Promise<SimulateMergeResponse> {
-        const response = await fetch(`${this.apiUrl}/simulate_merge`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                prompt_id: promptId,
-                layer: layer,
-                token_indices: tokenIndices
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to simulate merge");
-        }
-
-        return response.json();
-    }
-
-    async getLayerActivationContexts(layer: string): Promise<GetLayerActivationContextsResponse> {
-        const response = await fetch(`${this.apiUrl}/component_activation_contexts/${layer}`, {
-            method: "GET"
-        });
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to get layer activation contexts");
-        }
-        return response.json();
-    }
-
-    async getComponentActivationContexts(
-        componentId: number,
-        layer: string
-    ): Promise<ComponentActivationContextsResponse> {
-        const response = await fetch(
-            `${this.apiUrl}/component_activation_contexts/${layer}/${componentId}`,
-            {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json"
-                }
-            }
-        );
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "Failed to get activation contexts");
-        }
-
-        return response.json();
-    }
+    return response.json();
 }
 
-export const api = new ApiClient();
+
+export async function getComponentActivationContexts(
+    componentId: number,
+    layer: string
+): Promise<ActivationContext[]> {
+    const response = await fetch(
+        `${apiUrl}/component_activation_contexts/${layer}/${componentId}`,
+        {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json"
+            }
+        }
+    );
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get activation contexts");
+    }
+
+    return response.json();
+}

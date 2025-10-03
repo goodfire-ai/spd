@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { api } from "$lib/api";
+    import * as api from "$lib/api";
     import type { MaskOverrideDTO } from "$lib/api";
 
     export let onApplyMask: (maskId: string) => void;
@@ -53,10 +53,7 @@
                             <span class="mask-l0">L0: {mask.combined_mask.l0}</span>
                         </div>
                     </div>
-                    <button
-                        class="apply-btn"
-                        on:click={() => handleApply(mask.id)}
-                    >
+                    <button class="apply-btn" on:click={() => handleApply(mask.id)}>
                         Apply as Ablation
                     </button>
                 </div>
@@ -132,7 +129,7 @@
 
     .mask-card:hover {
         border-color: #007bff;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
     .mask-info {

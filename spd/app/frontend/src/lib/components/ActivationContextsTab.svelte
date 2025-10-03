@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { api, type SubcomponentActivationContexts } from "$lib/api";
+    import type { ComponentActivationContexts } from "$lib/api";
+    import * as api from "$lib/api";
     import { onMount } from "svelte";
     import ActivationContext from "./ActivationContext.svelte";
 
@@ -7,18 +8,33 @@
 
     let selectedLayer: string = availableComponentLayers[0];
 
-    let exampleSets: SubcomponentActivationContexts[] | null = null;
+    let exampleSets: ComponentActivationContexts[] | null = null;
 
     let loading = false;
 
+    let currentAbort: AbortController | null = null;
+
     async function loadContexts() {
+        if (currentAbort) {
+            currentAbort.abort();
+        }
+        const ac = new AbortController();
+        currentAbort = ac;
         loading = true;
-        console.log(`loading contexts for layer ${selectedLayer}`);
-        const result = await api.getLayerActivationContexts(selectedLayer);
-        console.log(result);
-        exampleSets = result.subcomponent_example_sets;
-        console.log(`loaded ${exampleSets.length} contexts`);
-        loading = false;
+        try {
+            console.log(`loading contexts for layer ${selectedLayer}`);
+            exampleSets = await api.getLayerActivationContexts(selectedLayer, ac.signal);
+            console.log(`loaded ${exampleSets.length} contexts`);
+        } catch (e) {
+            if ((e as any)?.name !== "AbortError") {
+                console.error(e);
+            }
+        } finally {
+            if (currentAbort === ac) {
+                currentAbort = null;
+            }
+            loading = false;
+        }
     }
 
     onMount(() => {
@@ -30,7 +46,7 @@
     <div class="controls">
         <div class="control-group">
             <label for="layer-select">Layer:</label>
-            <select id="layer-select" bind:value={selectedLayer}>
+            <select id="layer-select" bind:value={selectedLayer} on:change={loadContexts}>
                 {#each availableComponentLayers as layer}
                     <option value={layer}>{layer}</option>
                 {/each}

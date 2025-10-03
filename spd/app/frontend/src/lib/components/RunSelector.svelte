@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { api } from "$lib/api";
+    import * as api from "$lib/api";
 
     export let wandbRunId: string | null = null;
     export let loadingRun: boolean = false;
@@ -40,10 +40,7 @@
                 <option value={preset.id}>{preset.label}</option>
             {/each}
         </datalist>
-        <button
-            on:click={loadRun}
-            disabled={loadingRun || isLoading || !wandbRunId?.trim()}
-        >
+        <button on:click={loadRun} disabled={loadingRun || isLoading || !wandbRunId?.trim()}>
             {loadingRun ? "Loading..." : "Load Run"}
         </button>
     </div>

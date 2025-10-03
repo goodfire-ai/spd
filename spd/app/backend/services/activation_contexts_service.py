@@ -63,6 +63,7 @@ class ActivationContextsService:
     def _try_load_from_cache(self) -> ActivationContextsByModule | None:
         assert (ctx := self.run_context_service.run_context) is not None, "Run context not found"
         cache_path = self._cache_path(ctx.wandb_id)
+        logger.info(f"Loading activation contexts from {cache_path}")
         if not cache_path.exists():
             return None
         try:
@@ -99,7 +100,7 @@ class ActivationContextsService:
                         importance_threshold=0.01,
                         separation_threshold_tokens=10,
                         max_examples_per_component=10,
-                        n_steps=4,
+                        n_steps=100,
                         n_tokens_either_side=10,
                         out_path=self._cache_path(ctx.wandb_id),
                     ),
@@ -157,22 +158,6 @@ class ActivationContextsService:
             # If loading fails here, the controller will surface errors on next access
             pass
 
-    # def get_layer_activation_contexts(
-    #     self,
-    #     layer: str,
-    # ) -> list[SubcomponentActivationContexts]:
-    #     if (layer_activations := self._get_activations()) == "loading":
-    #         raise HTTPException(
-    #             status_code=503, detail="Loading activation contexts"
-    #         )  # 503 meaning service unavailable
-
-    #     layer_activations = layer_activations[layer]
-
-    #     return [
-    #         SubcomponentActivationContexts(subcomponent_idx=component_idx, examples=examples)
-    #         for component_idx, examples in layer_activations.items()
-    #     ]
-
     async def get_layer_activation_contexts_async(
         self,
         layer: str,
@@ -187,22 +172,6 @@ class ActivationContextsService:
             SubcomponentActivationContexts(subcomponent_idx=component_idx, examples=examples)
             for component_idx, examples in layer_activations.items()
         ]
-
-    # def get_component_activation_contexts(
-    #     self,
-    #     layer: str,
-    #     component_idx: int,
-    # ) -> list[ActivationContext]:
-    #     if (activations_by_layer := self._get_activations()) == "loading":
-    #         raise HTTPException(status_code=503, detail="Loading activation contexts")
-
-    #     layer_activations = activations_by_layer[layer]
-
-    #     if component_idx not in layer_activations:
-    #         logger.warning(f"Component {component_idx} not found in layer {layer}")
-    #         return []
-
-    #     return layer_activations[component_idx]
 
     async def get_component_activation_contexts_async(
         self,

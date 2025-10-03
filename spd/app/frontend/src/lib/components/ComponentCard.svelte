@@ -6,7 +6,7 @@
         Component,
         CosineSimilarityData
     } from "$lib/api";
-    import { api } from "$lib/api";
+    import { getCosineSimilarities, getComponentActivationContexts } from "$lib/api";
     import { ablationComponentMask } from "$lib/stores/componentState";
     import { onMount } from "svelte";
     import CosineSimilarityPlot from "./CosineSimilarityPlot.svelte";
@@ -38,7 +38,7 @@
 
         loadingSimilarities = true;
         try {
-            similarityData = await api.getCosineSimilarities(layer, component.index);
+            similarityData = await getCosineSimilarities(layer, component.index);
         } catch (error) {
             console.error("Failed to load cosine similarities:", error);
             similarityData = null;
@@ -51,8 +51,7 @@
 
     async function loadActivationContexts() {
         loadingActivationContexts = true;
-        const result = await api.getComponentActivationContexts(component.index, layer);
-        examples = result.examples;
+        examples = await getComponentActivationContexts(component.index, layer);
         loadingActivationContexts = false;
     }
 

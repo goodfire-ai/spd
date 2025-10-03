@@ -17,7 +17,7 @@ dependencies = [
     "transformers",
     "jaxtyping",
     "einops",
-    "matplotlib==3.9.1", # Avoid frequent pyright errors with new matplotlib versions
+    "matplotlib",
     "numpy",
     "python-dotenv",
     "wandb-workspaces==0.1.12", # See https://github.com/wandb/wandb-workspaces/issues/65

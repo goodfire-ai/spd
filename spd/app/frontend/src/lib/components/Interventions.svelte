@@ -2,12 +2,13 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     import { onMount } from "svelte";
-    import { api } from "$lib/api";
+    import * as api from "$lib/api";
     import type {
         RunPromptResponse,
         ComponentMask,
         Status,
-        MatrixCausalImportances
+        MatrixCausalImportances,
+        AvailablePrompt
     } from "$lib/api";
     import {
         ablationComponentMask,
@@ -29,7 +30,7 @@
     let result: RunPromptResponse | null = null;
     let currentPromptId: string | null = null;
     let savedMasksPanel: SavedMasksPanel;
-    let availablePrompts: { index: number; text: string; full_text: string }[] | null = null;
+    let availablePrompts: AvailablePrompt[] | null = null;
     let showAvailablePrompts = false;
 
     async function loadAvailablePrompts() {
@@ -229,8 +230,6 @@
         console.log("status", status);
     }
 
-    $: wandbRunId = status?.run_id ?? null;
-
     onMount(() => {
         getStatus();
         loadAvailablePrompts();
@@ -268,7 +267,11 @@
                                 disabled={isLoading}
                             >
                                 <span class="prompt-number">#{i + 1}</span>
-                                <span class="prompt-text">{prompt.text}</span>
+                                <span class="prompt-text"
+                                    >{prompt.full_text.slice(0, 40)}{prompt.full_text.length > 40
+                                        ? "..."
+                                        : ""}</span
+                                >
                             </button>
                         {/each}
                     </div>

@@ -186,37 +186,4 @@
         background: #fafafa;
         overflow-x: auto;
     }
-
-    .activation-contexts-section {
-        margin-top: 1.5rem;
-        padding-top: 1.5rem;
-        border-top: 1px solid #eee;
-    }
-
-    .activation-contexts-section h3 {
-        margin: 0 0 0.5rem 0;
-        color: #333;
-        font-size: 1rem;
-    }
-
-    .section-description {
-        margin: 0 0 1rem 0;
-        color: #666;
-        font-size: 0.9rem;
-    }
-
-    .component-activation {
-        margin-bottom: 1rem;
-        padding: 0.75rem;
-        background: #f8f9fa;
-        border-radius: 6px;
-        border: 1px solid #e9ecef;
-    }
-
-    .component-activation h4 {
-        margin: 0 0 0.5rem 0;
-        font-size: 0.9rem;
-        color: #495057;
-        font-weight: 600;
-    }
 </style>
