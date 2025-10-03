@@ -38,6 +38,7 @@ from spd.utils.distributed_utils import (
 from spd.utils.general_utils import (
     extract_batch_data,
     get_linear_annealed_p,
+    get_linear_ramp_value,
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
@@ -184,6 +185,24 @@ def optimize(
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
         current_p = config.pnorm  # Initialize with default value
 
+        # Compute adversarial-vs-random mix weights for this step
+        adv_mix_adv_weight = get_linear_ramp_value(
+            step=step,
+            steps=config.steps,
+            start_frac=config.adv_mix_start_frac,
+            end_frac=config.adv_mix_end_frac,
+            start_value=config.adv_mix_adv_weight_start,
+            end_value=config.adv_mix_adv_weight_end,
+        )
+        adv_mix_rand_weight = get_linear_ramp_value(
+            step=step,
+            steps=config.steps,
+            start_frac=config.adv_mix_start_frac,
+            end_frac=config.adv_mix_end_frac,
+            start_value=config.adv_mix_rand_weight_start,
+            end_value=config.adv_mix_rand_weight_end,
+        )
+
         for _ in range(config.gradient_accumulation_steps):
             weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
@@ -227,6 +246,8 @@ def optimize(
                 weight_deltas=weight_deltas,
                 device=device,
                 current_p=current_p,
+                adv_mix_adv_weight=adv_mix_adv_weight,
+                adv_mix_rand_weight=adv_mix_rand_weight,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
@@ -259,6 +280,8 @@ def optimize(
             microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
             microbatch_log_data["train/misc/lr"] = step_lr
             microbatch_log_data["train/misc/current_p"] = current_p
+            microbatch_log_data["train/misc/adv_mix_adv_weight"] = adv_mix_adv_weight
+            microbatch_log_data["train/misc/adv_mix_rand_weight"] = adv_mix_rand_weight
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")

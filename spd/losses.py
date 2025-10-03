@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, cast
 
 import torch
 from jaxtyping import Float, Int
@@ -110,7 +110,12 @@ def calc_masked_recon_loss(
         if loss_type == "mse":
             loss = ((out - target_out) ** 2).mean()
         else:
-            loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            loss = calc_kl_divergence_lm(pred=target_out, target=out)
+            # flat_logits = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
+            # masked_batch = batch.clone()
+            # masked_batch[:, 0] = -100
+            # flat_masked_batch = masked_batch.flatten()
+            # loss = F.cross_entropy(flat_logits[:-1], flat_masked_batch[1:], ignore_index=-100)
         total_loss += loss
 
     return total_loss / len(mask_infos_list)
@@ -135,16 +140,170 @@ def calc_faithfulness_loss(
     return mse
 
 
+def _optimize_adversarial_stochastic_masks(
+    *,
+    model: ComponentModel,
+    batch: Int[Tensor, "..."],
+    config: Config,
+    causal_importances: dict[str, Float[Tensor, "... C"]],
+    target_out: Tensor,
+    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    device: str,
+) -> tuple[
+    dict[str, Float[Tensor, "... C"]],
+    dict[str, Float[Tensor, "..."]] | None,
+]:
+    """Optimize adversarial stochastic sources in [0,1] via PGD to maximize stochastic losses.
+
+    Returns (rand_tensors, weight_delta_rand_masks) where:
+    - rand_tensors: per-layer tensors shaped like corresponding causal_importances
+    - weight_delta_rand_masks: per-layer tensors with leading dims matching inputs (or None)
+    """
+    assert config.sampling == "continuous", (
+        "PGD mask optimization only supports continuous sampling"
+    )
+
+    # Initialize adversarial variables
+    rand_tensors: dict[str, Float[Tensor, "... C"]] = {}
+    weight_delta_rand_masks: dict[str, Float[Tensor, ...]] | None = (
+        {} if weight_deltas is not None else None
+    )
+    leading_dims = next(iter(causal_importances.values())).shape[:-1]
+    for layer, ci in causal_importances.items():
+        init = torch.rand_like(ci) if config.pgd_mask_random_init else torch.full_like(ci, 0.5)
+        init.requires_grad_(True)
+        rand_tensors[layer] = init
+        if weight_delta_rand_masks is not None:
+            wd_init = (
+                torch.rand(*leading_dims, device=ci.device, dtype=ci.dtype)
+                if config.pgd_mask_random_init
+                else torch.full(leading_dims, 0.5, device=ci.device, dtype=ci.dtype)
+            )
+            wd_init.requires_grad_(True)
+            weight_delta_rand_masks[layer] = wd_init
+
+    step_size = 0.1 if config.pgd_mask_step_size is None else float(config.pgd_mask_step_size)
+
+    def build_objective(routing_masks_subset: dict[str, Tensor] | None = None) -> Tensor:
+        objective = torch.tensor(0.0, device=device)
+
+        # Stochastic reconstruction loss (all components at once)
+        if config.stochastic_recon_coeff is not None:
+            mask_infos = calc_stochastic_component_mask_info(
+                causal_importances=causal_importances,
+                sampling=config.sampling,
+                routing="all",
+                weight_deltas=weight_deltas if config.use_delta_component else None,
+                rand_tensors=rand_tensors,
+                weight_delta_rand_mask=weight_delta_rand_masks,
+            )
+            loss_val = calc_masked_recon_loss(
+                model=model,
+                batch=batch,
+                mask_infos_list=[mask_infos],
+                target_out=target_out,
+                loss_type=config.output_loss_type,
+                device=device,
+            )
+            objective = objective + config.stochastic_recon_coeff * loss_val
+
+        # Stochastic reconstruction layerwise loss
+        if config.stochastic_recon_layerwise_coeff is not None:
+            mask_infos = calc_stochastic_component_mask_info(
+                causal_importances=causal_importances,
+                sampling=config.sampling,
+                routing="all",
+                weight_deltas=weight_deltas if config.use_delta_component else None,
+                rand_tensors=rand_tensors,
+                weight_delta_rand_mask=weight_delta_rand_masks,
+            )
+            loss_val = calc_masked_recon_layerwise_loss(
+                model=model,
+                batch=batch,
+                mask_infos_list=[mask_infos],
+                target_out=target_out,
+                loss_type=config.output_loss_type,
+                device=device,
+            )
+            objective = objective + config.stochastic_recon_layerwise_coeff * loss_val
+
+        # Stochastic reconstruction subset loss (routing subset)
+        if config.stochastic_recon_subset_coeff is not None:
+            mask_infos = calc_stochastic_component_mask_info(
+                causal_importances=causal_importances,
+                sampling=config.sampling,
+                routing="uniform_k-stochastic",
+                weight_deltas=weight_deltas if config.use_delta_component else None,
+                rand_tensors=rand_tensors,
+                weight_delta_rand_mask=weight_delta_rand_masks,
+                routing_masks=routing_masks_subset,
+            )
+            loss_val = calc_masked_recon_loss(
+                model=model,
+                batch=batch,
+                mask_infos_list=[mask_infos],
+                target_out=target_out,
+                loss_type=config.output_loss_type,
+                device=device,
+            )
+            objective = objective + config.stochastic_recon_subset_coeff * loss_val
+
+        return objective
+
+    # PGD ascent
+    for _ in range(int(config.pgd_mask_steps)):
+        # Zero any existing grads on rand tensors
+        for v in rand_tensors.values():
+            if v.grad is not None:
+                v.grad = None
+        if weight_delta_rand_masks is not None:
+            for v in weight_delta_rand_masks.values():
+                if v.grad is not None:
+                    v.grad = None
+
+        objective = build_objective(routing_masks_subset=None)
+        adv_vars = list(rand_tensors.values()) + (
+            list(weight_delta_rand_masks.values()) if weight_delta_rand_masks is not None else []
+        )
+        raw_grads = torch.autograd.grad(
+            objective,
+            adv_vars,
+            retain_graph=False,
+            create_graph=False,
+            allow_unused=True,
+        )
+        grads = cast(tuple[Tensor | None, ...], raw_grads)
+
+        with torch.no_grad():
+            # Update all adversarial variables in the same order they were passed to autograd
+            for v, g in zip(adv_vars, grads, strict=True):
+                if g is not None:
+                    v.add_(step_size * g.sign())
+                v.clamp_(0.0, 1.0)
+
+    # Detach to avoid tracking grads in the outer loss backward
+    with torch.no_grad():
+        for layer in list(rand_tensors.keys()):
+            rand_tensors[layer].detach_().clamp_(0.0, 1.0)
+        if weight_delta_rand_masks is not None:
+            for layer in list(weight_delta_rand_masks.keys()):
+                weight_delta_rand_masks[layer].detach_().clamp_(0.0, 1.0)
+
+    return rand_tensors, weight_delta_rand_masks
+
+
 def calculate_losses(
     model: ComponentModel,
     batch: Int[Tensor, "..."],
     config: Config,
-    causal_importances: dict[str, Float[Tensor, "batch C"]],
-    causal_importances_upper_leaky: dict[str, Float[Tensor, "batch C"]],
+    causal_importances: dict[str, Float[Tensor, "... C"]],
+    causal_importances_upper_leaky: dict[str, Float[Tensor, "... C"]],
     target_out: Tensor,
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
     device: str,
     current_p: float | None = None,
+    adv_mix_adv_weight: float | None = None,
+    adv_mix_rand_weight: float | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Calculate all losses and return total loss and individual loss terms.
 
@@ -183,9 +342,36 @@ def calculate_losses(
         total_loss += config.ci_recon_coeff * ci_recon_loss
         loss_terms["ci_recon"] = ci_recon_loss.item()
 
-    # Stochastic reconstruction loss
+    # Prepare adversarial rand tensors if enabled
+    use_pgd_masks = (
+        config.pgd_mask_enabled
+        and config.sampling == "continuous"
+        and config.pgd_mask_steps > 0
+        and (
+            config.stochastic_recon_coeff is not None
+            or config.stochastic_recon_layerwise_coeff is not None
+            or config.stochastic_recon_subset_coeff is not None
+        )
+    )
+
+    adv_rand_tensors: dict[str, Float[Tensor, "... C"]] | None = None
+    adv_weight_delta_rand_masks: dict[str, Float[Tensor, ...]] | None = None
+    wants_adv_component = adv_mix_adv_weight is None or adv_mix_adv_weight > 0.0
+    if use_pgd_masks and wants_adv_component:
+        adv_rand_tensors, adv_weight_delta_rand_masks = _optimize_adversarial_stochastic_masks(
+            model=model,
+            batch=batch,
+            config=config,
+            causal_importances=causal_importances,
+            target_out=target_out,
+            weight_deltas=weight_deltas if config.use_delta_component else None,
+            device=device,
+        )
+
+    # Stochastic reconstruction loss (mix adversarial vs random according to weights if provided)
     if config.stochastic_recon_coeff is not None:
-        stoch_mask_infos_list = [
+        # Random-mask loss
+        rand_mask_infos_list = [
             calc_stochastic_component_mask_info(
                 causal_importances=causal_importances,
                 sampling=config.sampling,
@@ -194,16 +380,48 @@ def calculate_losses(
             )
             for _ in range(config.n_mask_samples)
         ]
-        stochastic_recon_loss = calc_masked_recon_loss(
+        rand_stochastic_recon_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
-            mask_infos_list=stoch_mask_infos_list,
+            mask_infos_list=rand_mask_infos_list,
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,
         )
-        total_loss += config.stochastic_recon_coeff * stochastic_recon_loss
-        loss_terms["stochastic_recon"] = stochastic_recon_loss.item()
+
+        # Adversarial-mask loss
+        if use_pgd_masks and adv_rand_tensors is not None:
+            adv_mask_infos_list = [
+                calc_stochastic_component_mask_info(
+                    causal_importances=causal_importances,
+                    sampling=config.sampling,
+                    routing="all",
+                    weight_deltas=weight_deltas if config.use_delta_component else None,
+                    rand_tensors=adv_rand_tensors,
+                    weight_delta_rand_mask=adv_weight_delta_rand_masks,
+                )
+                for _ in range(config.n_mask_samples)
+            ]
+            adv_stochastic_recon_loss = calc_masked_recon_loss(
+                model=model,
+                batch=batch,
+                mask_infos_list=adv_mask_infos_list,
+                target_out=target_out,
+                loss_type=config.output_loss_type,
+                device=device,
+            )
+        else:
+            adv_stochastic_recon_loss = torch.tensor(0.0, device=device)
+
+        adv_w = 1.0 if adv_mix_adv_weight is None else float(adv_mix_adv_weight)
+        rand_w = 0.0 if adv_mix_rand_weight is None else float(adv_mix_rand_weight)
+        mixed_stochastic_recon_loss = (
+            adv_w * adv_stochastic_recon_loss + rand_w * rand_stochastic_recon_loss
+        )
+        total_loss += config.stochastic_recon_coeff * mixed_stochastic_recon_loss
+        loss_terms["stochastic_recon"] = mixed_stochastic_recon_loss.item()
+        loss_terms["stochastic_recon_adv"] = adv_stochastic_recon_loss.item()
+        loss_terms["stochastic_recon_rand"] = rand_stochastic_recon_loss.item()
 
     # CI reconstruction layerwise loss
     if config.ci_recon_layerwise_coeff is not None:
@@ -220,7 +438,8 @@ def calculate_losses(
 
     # Stochastic reconstruction layerwise loss
     if config.stochastic_recon_layerwise_coeff is not None:
-        stoch_mask_infos_list = [
+        # Random-mask loss
+        rand_mask_infos_list = [
             calc_stochastic_component_mask_info(
                 causal_importances=causal_importances,
                 sampling=config.sampling,
@@ -229,16 +448,49 @@ def calculate_losses(
             )
             for _ in range(config.n_mask_samples)
         ]
-        stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
+        rand_stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
             model=model,
             batch=batch,
-            mask_infos_list=stoch_mask_infos_list,
+            mask_infos_list=rand_mask_infos_list,
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,
         )
-        total_loss += config.stochastic_recon_layerwise_coeff * stochastic_recon_layerwise_loss
-        loss_terms["stochastic_recon_layerwise"] = stochastic_recon_layerwise_loss.item()
+
+        # Adversarial-mask loss
+        if use_pgd_masks and adv_rand_tensors is not None:
+            adv_mask_infos_list = [
+                calc_stochastic_component_mask_info(
+                    causal_importances=causal_importances,
+                    sampling=config.sampling,
+                    routing="all",
+                    weight_deltas=weight_deltas if config.use_delta_component else None,
+                    rand_tensors=adv_rand_tensors,
+                    weight_delta_rand_mask=adv_weight_delta_rand_masks,
+                )
+                for _ in range(config.n_mask_samples)
+            ]
+            adv_stochastic_recon_layerwise_loss = calc_masked_recon_layerwise_loss(
+                model=model,
+                batch=batch,
+                mask_infos_list=adv_mask_infos_list,
+                target_out=target_out,
+                loss_type=config.output_loss_type,
+                device=device,
+            )
+        else:
+            adv_stochastic_recon_layerwise_loss = torch.tensor(0.0, device=device)
+
+        adv_w = 1.0 if adv_mix_adv_weight is None else float(adv_mix_adv_weight)
+        rand_w = 0.0 if adv_mix_rand_weight is None else float(adv_mix_rand_weight)
+        mixed_layerwise = (
+            adv_w * adv_stochastic_recon_layerwise_loss
+            + rand_w * rand_stochastic_recon_layerwise_loss
+        )
+        total_loss += config.stochastic_recon_layerwise_coeff * mixed_layerwise
+        loss_terms["stochastic_recon_layerwise"] = mixed_layerwise.item()
+        loss_terms["stochastic_recon_layerwise_adv"] = adv_stochastic_recon_layerwise_loss.item()
+        loss_terms["stochastic_recon_layerwise_rand"] = rand_stochastic_recon_layerwise_loss.item()
 
     # CI subset reconstruction loss
     if config.ci_masked_recon_subset_coeff is not None:
@@ -265,25 +517,66 @@ def calculate_losses(
 
     # Stochastic reconstruction subset loss
     if config.stochastic_recon_subset_coeff is not None:
-        stoch_mask_infos_list = [
+        # Sample subset routing masks once and reuse for random and adversarial paths
+        shared_subset_routing_masks = sample_uniform_k_subset_routing_masks(
+            mask_shape=next(iter(causal_importances.values())).shape[:-1],
+            modules=list(causal_importances.keys()),
+            device=device,
+        )
+        # Random-mask loss with subset routing
+        rand_mask_infos_list = [
             calc_stochastic_component_mask_info(
                 causal_importances=causal_importances,
                 sampling=config.sampling,
                 weight_deltas=weight_deltas if config.use_delta_component else None,
                 routing="uniform_k-stochastic",
+                routing_masks=shared_subset_routing_masks,
             )
             for _ in range(config.n_mask_samples)
         ]
-        stochastic_recon_subset_loss = calc_masked_recon_loss(
+        rand_stochastic_recon_subset_loss = calc_masked_recon_loss(
             model=model,
             batch=batch,
-            mask_infos_list=stoch_mask_infos_list,
+            mask_infos_list=rand_mask_infos_list,
             target_out=target_out,
             loss_type=config.output_loss_type,
             device=device,
         )
-        total_loss += config.stochastic_recon_subset_coeff * stochastic_recon_subset_loss
-        loss_terms["stochastic_recon_subset"] = stochastic_recon_subset_loss.item()
+
+        # Adversarial-mask loss with subset routing
+        if use_pgd_masks and adv_rand_tensors is not None:
+            adv_mask_infos_list: list[dict[str, ComponentsMaskInfo]] = [
+                calc_stochastic_component_mask_info(
+                    causal_importances=causal_importances,
+                    sampling=config.sampling,
+                    weight_deltas=weight_deltas if config.use_delta_component else None,
+                    routing="uniform_k-stochastic",
+                    rand_tensors=adv_rand_tensors,
+                    weight_delta_rand_mask=adv_weight_delta_rand_masks,
+                    routing_masks=shared_subset_routing_masks,
+                )
+                for _ in range(config.n_mask_samples)
+            ]
+            adv_stochastic_recon_subset_loss = calc_masked_recon_loss(
+                model=model,
+                batch=batch,
+                mask_infos_list=adv_mask_infos_list,
+                target_out=target_out,
+                loss_type=config.output_loss_type,
+                device=device,
+            )
+        else:
+            adv_stochastic_recon_subset_loss = torch.tensor(0.0, device=device)
+
+        adv_w = 1.0 if adv_mix_adv_weight is None else float(adv_mix_adv_weight)
+        rand_w = 0.0 if adv_mix_rand_weight is None else float(adv_mix_rand_weight)
+        mixed_subset = (
+            adv_w * adv_stochastic_recon_subset_loss + rand_w * rand_stochastic_recon_subset_loss
+        )
+        total_loss += config.stochastic_recon_subset_coeff * mixed_subset
+        loss_terms["stochastic_recon_subset"] = mixed_subset.item()
+        loss_terms["stochastic_recon_subset_adv"] = adv_stochastic_recon_subset_loss.item()
+        loss_terms["stochastic_recon_subset_rand"] = rand_stochastic_recon_subset_loss.item()
 
     # Importance minimality loss
     pnorm_value = current_p if current_p is not None else config.pnorm
