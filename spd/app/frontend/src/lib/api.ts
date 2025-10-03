@@ -370,3 +370,77 @@ export async function getComponentActivationContexts(
 
     return response.json();
 }
+
+// ---- Demo data helpers (frontend-only scaffolding) ----
+
+export type ClusterSummaryRow = {
+    id: number;
+    clusterHash: string;
+    componentCount: number;
+    modules: string[];
+};
+
+export type ClusterDetailData = {
+    cluster_hash: string;
+    components: { module: string; index: number; label?: string }[];
+    stats?: Record<string, any>;
+    criterion_samples?: Record<string, string[]>;
+};
+
+export function getDemoClusterRows(n: number = 20): ClusterSummaryRow[] {
+    const modulePool = [
+        "model.layers.0.self_attn.q_proj",
+        "model.layers.0.self_attn.k_proj",
+        "model.layers.0.self_attn.v_proj",
+        "model.layers.0.self_attn.o_proj",
+        "model.layers.0.mlp.gate_proj",
+        "model.layers.0.mlp.up_proj",
+        "model.layers.0.mlp.down_proj",
+        "model.layers.1.self_attn.q_proj",
+        "model.layers.1.self_attn.k_proj",
+        "model.layers.1.mlp.down_proj",
+    ];
+    const rand = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
+    const out: ClusterSummaryRow[] = [];
+    for (let i = 0; i < n; i++) {
+        const comps = rand(1, 12);
+        const mods = new Set<string>();
+        const picks = rand(1, 4);
+        for (let k = 0; k < picks; k++) mods.add(modulePool[rand(0, modulePool.length - 1)]);
+        out.push({
+            id: i,
+            clusterHash: `demo-0-${i}`,
+            componentCount: comps,
+            modules: Array.from(mods),
+        });
+    }
+    return out;
+}
+
+export function getDemoClusterData(clusterHash: string): ClusterDetailData {
+    const idNum = parseInt(clusterHash.split('-').pop() || '0');
+    const componentCount = 5 + (idNum % 7);
+    const components = Array.from({ length: componentCount }).map((_, idx) => ({
+        module: `model.layers.${idx % 2}.` + (idx % 2 ? 'mlp.down_proj' : 'self_attn.q_proj'),
+        index: idx,
+    }));
+    const mkBins = (len = 10, base = 5) => Array.from({ length: len }).map((_, i) => base + ((i * 7 + idNum) % 11));
+    const stats = {
+        all_activations: { bin_edges: Array.from({ length: 11 }).map((_, i) => i / 10), bin_counts: mkBins(10, 3) },
+        'max_activation-max-16': { bin_edges: Array.from({ length: 11 }).map((_, i) => i / 10), bin_counts: mkBins(10, 1) },
+        max_activation_position: { bin_edges: Array.from({ length: 11 }).map((_, i) => i / 10), bin_counts: mkBins(10, 2) },
+        token_activations: {
+            top_tokens: [
+                { token: ' the', count: 50 },
+                { token: ' and', count: 30 },
+                { token: ' to', count: 20 },
+            ],
+            total_unique_tokens: 3,
+            total_activations: 100,
+            entropy: 1.23,
+            concentration_ratio: 0.62,
+            activation_threshold: 0.5,
+        },
+    } as Record<string, any>;
+    return { cluster_hash: clusterHash, components, stats };
+}

@@ -9,11 +9,12 @@
     import Interventions from "$lib/components/Interventions.svelte";
     import RunSelector from "$lib/components/RunSelector.svelte";
     import ClusterDashboard from "$lib/components/ClusterDashboard.svelte";
+    import NewClusterDashboard from "$lib/components/NewClusterDashboard.svelte";
 
     let isLoading = false;
     let wandbRunId: string | null = null;
     let loadingRun = false;
-    let activeTab: "ablation" | "activation-contexts" | "cluster-dashboard" = "ablation";
+    let activeTab: "ablation" | "activation-contexts" | "cluster-dashboard" | "cluster-dashboard-new" = "ablation";
 
     let status: Status | null = null;
     async function getStatus() {
@@ -56,6 +57,13 @@
                 >
                     Cluster Dashboard
                 </button>
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "cluster-dashboard-new"}
+                    on:click={() => (activeTab = "cluster-dashboard-new")}
+                >
+                    Cluster Dashboard (new)
+                </button>
             </div>
         </aside>
 
@@ -77,6 +85,12 @@
             <div class:hidden={activeTab !== "cluster-dashboard"}>
                 <div class="activation-contexts-container">
                     <ClusterDashboard runId={status?.run_id ?? null} />
+                </div>
+            </div>
+
+            <div class:hidden={activeTab !== "cluster-dashboard-new"}>
+                <div class="activation-contexts-container">
+                    <NewClusterDashboard runId={status?.run_id ?? null} />
                 </div>
             </div>
         </div>
