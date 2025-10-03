@@ -110,7 +110,7 @@ def calc_masked_recon_loss(
         if loss_type == "mse":
             loss = ((out - target_out) ** 2).mean()
         else:
-            loss = calc_kl_divergence_lm(pred=target_out, target=out)
+            loss = calc_kl_divergence_lm(pred=out, target=target_out)
             # flat_logits = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
             # masked_batch = batch.clone()
             # masked_batch[:, 0] = -100

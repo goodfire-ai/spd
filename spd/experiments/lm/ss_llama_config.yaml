@@ -1,5 +1,5 @@
 C: 1000
-batch_size: 256
+batch_size: 1024
 ci_alive_threshold: 0.0
 ci_masked_recon_subset_coeff: null
 ci_recon_coeff: null
@@ -68,13 +68,13 @@ eval_metrics:
   extra_init_kwargs: {}
 faithfulness_coeff: null
 gate_hidden_dims:
-- 1000
+- 500
 gate_type: shared_mlp
 gradient_accumulation_steps: 1
 identity_module_patterns:
 # - model.layers.0.mlp.gate_proj
 # - model.layers.0.mlp.down_proj
-importance_minimality_coeff: 0.003
+importance_minimality_coeff: 0.001
 lr: 0.0005
 lr_exponential_halflife: null
 lr_schedule: cosine
@@ -84,13 +84,15 @@ n_examples_until_dead: 1368400
 n_mask_samples: 1
 out_dir: null
 output_loss_type: kl
-# p_anneal_end_frac: 0.1
-# p_anneal_final_p: 0.9
-# p_anneal_start_frac: 0.02
+p_anneal_end_frac: 1
+p_anneal_final_p: 0.3
+p_anneal_start_frac: 0
 pnorm: 2.0
 pgd_mask_enabled: true
 pgd_mask_steps: 2
 pgd_mask_step_size: 0.5
+adv_mix_start_frac: 0
+adv_mix_adv_weight_end: 0.2
 pretrained_model_class: transformers.LlamaForCausalLM
 pretrained_model_name: SimpleStories/SimpleStories-1.25M
 pretrained_model_output_attr: logits
@@ -102,9 +104,9 @@ sigmoid_type: leaky_hard
 slow_eval_freq: 2000
 slow_eval_on_first_step: true
 steps: 50000
-stochastic_recon_coeff: 0.1
-stochastic_recon_layerwise_coeff: 1.0
-stochastic_recon_subset_coeff: null
+stochastic_recon_coeff: null
+stochastic_recon_layerwise_coeff: null
+stochastic_recon_subset_coeff: 1
 target_module_patterns:
 - model.layers.0.mlp.gate_proj
 - model.layers.0.mlp.down_proj
