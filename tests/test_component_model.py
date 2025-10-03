@@ -303,7 +303,7 @@ def test_full_weight_delta_matches_target_behaviour():
         name: (weight_deltas[name], torch.ones(BATCH_SIZE)) for name in target_module_paths
     }
     mask_infos = make_mask_infos(component_masks, weight_deltas_and_masks=weight_deltas_and_masks)
-    out = cm(token_ids, mask_infos=mask_infos)[0]
+    out = cm(token_ids, mask_infos=mask_infos)
 
     # THEN the output matches the target model's output
     torch.testing.assert_close(out, target_model(token_ids))
@@ -403,7 +403,7 @@ def test_replacement_effects_fwd_pass():
 
     # THEN the model output matches the component model output
     model_out = model(input)
-    cm_out_with_all_components = cm(input, mask_infos={"linear": use_all_components})[0]
+    cm_out_with_all_components = cm(input, mask_infos={"linear": use_all_components})
     torch.testing.assert_close(model_out, cm_out_with_all_components)
 
     # however, WHEN we double the values of the model weights
@@ -411,7 +411,7 @@ def test_replacement_effects_fwd_pass():
 
     # THEN the component-only output should be 1/2 the model output
     new_model_out = model(input)
-    new_cm_out_with_all_components = cm(input, mask_infos={"linear": use_all_components})[0]
+    new_cm_out_with_all_components = cm(input, mask_infos={"linear": use_all_components})
     torch.testing.assert_close(new_model_out, new_cm_out_with_all_components * 2)
 
 
@@ -453,18 +453,18 @@ def test_replacing_identity():
     # WHEN we forward with the model
     # THEN it should just act as the identity
     torch.testing.assert_close(model(input), input)
-    torch.testing.assert_close(cm(input)[0], input)
+    torch.testing.assert_close(cm(input), input)
 
     # WHEN we forward with the identity components
     use_all_components = ComponentsMaskInfo(component_mask=torch.ones(BATCH_SIZE, C))
 
-    cm_components_out = cm(input, mask_infos={"linear.pre_identity": use_all_components})[0]
+    cm_components_out = cm(input, mask_infos={"linear.pre_identity": use_all_components})
 
     # THEN it should modify the input
     assert not torch.allclose(cm_components_out, input)
 
     # BUT the original model output should be unchanged
-    cm_target_out = cm(input)[0]
+    cm_target_out = cm(input)
     assert torch.allclose(cm_target_out, model(input))
 
 
@@ -503,12 +503,12 @@ def test_routing():
     # WHEN we forward with the model
     # THEN it should just act as the identity
     torch.testing.assert_close(model(input), input)
-    torch.testing.assert_close(cm(input)[0], input)
+    torch.testing.assert_close(cm(input), input)
 
     # WHEN we forward with the components
     use_all_components = ComponentsMaskInfo(component_mask=torch.ones(BATCH_SIZE, C))
 
-    cm_components_out = cm(input, mask_infos={"linear": use_all_components})[0]
+    cm_components_out = cm(input, mask_infos={"linear": use_all_components})
 
     # THEN it should modify the input
     assert not torch.allclose(cm_components_out, input)
@@ -519,7 +519,7 @@ def test_routing():
         routing_mask=torch.tensor([True, False]),  # route to components only for example 0
     )
 
-    cm_routed_out = cm(input, mask_infos={"linear": use_all_components_for_example_0})[0]
+    cm_routed_out = cm(input, mask_infos={"linear": use_all_components_for_example_0})
 
     target_out = model(input)
 

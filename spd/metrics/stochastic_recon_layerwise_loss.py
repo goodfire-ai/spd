@@ -41,7 +41,7 @@ def _stochastic_recon_layerwise_loss_update(
 
     for stochastic_mask_infos in stochastic_mask_infos_list:
         for module_name, mask_info in stochastic_mask_infos.items():
-            out = model(batch, mask_infos={module_name: mask_info})[0]
+            out = model(batch, mask_infos={module_name: mask_info})
             loss_type = output_loss_type
             loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
 

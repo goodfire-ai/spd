@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, override
+from typing import Any, Literal, overload, override
 
 import torch
 import wandb
@@ -276,6 +276,24 @@ class ComponentModel(LoadableModule):
         else:
             return getattr(raw_output, self.pretrained_model_output_attr)
 
+    @overload
+    def forward(
+        self,
+        *args: Any,
+        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
+        cache_type: Literal["input"],
+        **kwargs: Any,
+    ) -> tuple[Any, dict[str, Tensor]]: ...
+
+    @overload
+    def forward(
+        self,
+        *args: Any,
+        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
+        cache_type: Literal["none"],
+        **kwargs: Any,
+    ) -> Any: ...
+
     @override
     def forward(
         self,
@@ -286,33 +304,39 @@ class ComponentModel(LoadableModule):
     ) -> tuple[Any, dict[str, Tensor]]:
         """Forward pass with optional component replacement and/or input caching.
 
+        This method handles the following 4 cases:
+        1. mask_infos is None and cache_type is "none": Regular forward pass.
+        2. mask_infos is None and cache_type is "input": Forward pass with input caching on
+            all modules in self.module_paths.
+        3. mask_infos is not None and cache_type is "input": Forward pass with component replacement
+            and input caching on the modules provided in mask_infos.
+        4. mask_infos is not None and cache_type is "none": Forward pass with component replacement
+            on the modules provided in mask_infos and no caching.
+
+        We use the same _components_and_cache_hook for cases 2, 3, and 4, and don't use any hooks
+        for case 1.
+
         Args:
             mask_infos: Dictionary mapping module names to ComponentsMaskInfo.
                 If provided, those modules will be replaced with their components.
-                Keys must match self.module_paths.
-            cache_type: If "input", cache the inputs to all modules in self.module_paths.
-                If "none", no caching is performed.
+            cache_type: If "input", cache the inputs to the modules provided in mask_infos. If
+                mask_infos is None, cache the inputs to all modules in self.module_paths.
 
         Returns:
             tuple of (model output, input cache dictionary)
         """
-        # Regular forward pass if no hooks needed
+        # Not hooks needed
         if mask_infos is None and cache_type == "none":
             return self._extract_output(self.target_model(*args, **kwargs))
-
-        # Validate mask_infos keys match module_paths
-        if mask_infos is not None:
-            assert set(mask_infos.keys()) == set(self.module_paths), (
-                f"mask_infos keys {set(mask_infos.keys())} must match "
-                f"module_paths {set(self.module_paths)}"
-            )
 
         cache: dict[str, Tensor] = {}
         hooks: dict[str, Callable[..., Any]] = {}
 
-        for module_name in self.module_paths:
-            mask_info = mask_infos.get(module_name) if mask_infos is not None else None
-            components = self.components[module_name] if mask_info is not None else None
+        hook_module_names = list(mask_infos.keys()) if mask_infos else self.module_paths
+
+        for module_name in hook_module_names:
+            mask_info = mask_infos[module_name] if mask_infos else None
+            components = self.components[module_name] if mask_info else None
 
             hooks[module_name] = partial(
                 self._components_and_cache_hook,
@@ -327,7 +351,11 @@ class ComponentModel(LoadableModule):
             raw_out = self.target_model(*args, **kwargs)
 
         out = self._extract_output(raw_out)
-        return (out, cache)
+        match cache_type:
+            case "input":
+                return (out, cache)
+            case "none":
+                return out
 
     def _components_and_cache_hook(
         self,

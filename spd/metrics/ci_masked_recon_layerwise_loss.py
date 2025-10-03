@@ -23,7 +23,7 @@ def _ci_masked_recon_layerwise_loss_update(
     n_examples = 0
     mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
     for module_name, mask_info in mask_infos.items():
-        out = model(batch, mask_infos={module_name: mask_info})[0]
+        out = model(batch, mask_infos={module_name: mask_info})
         loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
         n_examples += out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
         sum_loss += loss

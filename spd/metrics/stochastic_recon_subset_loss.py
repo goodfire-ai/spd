@@ -39,7 +39,7 @@ def _stochastic_recon_subset_loss_update(
         for _ in range(n_mask_samples)
     ]
     for stoch_mask_infos in stoch_mask_infos_list:
-        out = model(batch, mask_infos=stoch_mask_infos)[0]
+        out = model(batch, mask_infos=stoch_mask_infos)
 
         loss_type = output_loss_type
         loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)

@@ -146,7 +146,7 @@ class StochasticReconSubsetCEAndKL(Metric):
         target_ce = ce_vs_labels(target_out)
 
         zero_mask_infos = make_mask_infos({k: torch.zeros_like(v) for k, v in ci.items()})
-        zero_out = self.model(batch, mask_infos=zero_mask_infos)[0]
+        zero_out = self.model(batch, mask_infos=zero_mask_infos)
         zero_ce = ce_vs_labels(zero_out)
 
         # Generate stochastic masks
@@ -168,7 +168,7 @@ class StochasticReconSubsetCEAndKL(Metric):
                 mask_infos: dict[str, ComponentsMaskInfo] = {
                     module: layers_masks[module] for module in active_modules
                 }
-                outputs.append(self.model(batch, mask_infos=mask_infos)[0])
+                outputs.append(self.model(batch, mask_infos=mask_infos))
 
             kl_losses = [kl_vs_target(out) for out in outputs]
             ce_losses = [ce_vs_labels(out) for out in outputs]
