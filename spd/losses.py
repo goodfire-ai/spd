@@ -1,6 +1,8 @@
 from typing import Literal, cast
 
+import einops
 import torch
+import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -110,12 +112,12 @@ def calc_masked_recon_loss(
         if loss_type == "mse":
             loss = ((out - target_out) ** 2).mean()
         else:
-            loss = calc_kl_divergence_lm(pred=out, target=target_out)
-            # flat_logits = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
-            # masked_batch = batch.clone()
-            # masked_batch[:, 0] = -100
-            # flat_masked_batch = masked_batch.flatten()
-            # loss = F.cross_entropy(flat_logits[:-1], flat_masked_batch[1:], ignore_index=-100)
+            # loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            flat_logits = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
+            masked_batch = batch.clone()
+            masked_batch[:, 0] = -100
+            flat_masked_batch = masked_batch.flatten()
+            loss = F.cross_entropy(flat_logits[:-1], flat_masked_batch[1:], ignore_index=-100)
         total_loss += loss
 
     return total_loss / len(mask_infos_list)
@@ -537,7 +539,7 @@ def calculate_losses(
 
         # Adversarial-mask loss with subset routing
         if use_pgd_masks and adv_rand_tensors is not None:
-            adv_mask_infos_list = [
+            adv_mask_infos_list: list[dict[str, ComponentsMaskInfo]] = [
                 calc_stochastic_component_mask_info(
                     causal_importances=causal_importances,
                     sampling=config.sampling,
