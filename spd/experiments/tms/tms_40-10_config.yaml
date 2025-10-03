@@ -33,6 +33,11 @@ lr: 1e-3
 lr_schedule: cosine
 lr_warmup_pct: 0.0
 
+# --- Faithfulness Warmup ---
+faithfulness_warmup_steps: 200
+faithfulness_warmup_lr: 0.01
+faithfulness_warmup_weight_decay: 0.1
+
 # --- Logging & Saving ---
 train_log_freq: 500
 eval_freq: 1000

@@ -34,6 +34,11 @@ lr_warmup_pct: 0.01
 lr_exponential_halflife: null
 gradient_accumulation_steps: 1
 
+# --- Faithfulness Warmup ---
+faithfulness_warmup_steps: 200
+faithfulness_warmup_lr: 0.01
+faithfulness_warmup_weight_decay: 0.1
+
 # --- Logging & Saving ---
 train_log_freq: 100
 eval_freq: 1000
