@@ -29,7 +29,9 @@ from spd.plotting import (
     plot_causal_importance_vals,
     plot_ci_values_histograms,
     plot_component_activation_density,
+    plot_component_weight_heatmaps,
     plot_mean_component_cis_both_scales,
+    plot_pre_sigmoid_gate_outputs,
     plot_UV_matrices,
 )
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_mask_info
@@ -723,6 +725,88 @@ class FaithfulnessLoss(StreamingEval):
         return {"loss/faithfulness": loss.item()}
 
 
+class PreSigmoidGateOutputs(StreamingEval):
+    SLOW = True
+
+    def __init__(
+        self,
+        model: ComponentModel,
+        config: Config,
+        identity_patterns: list[str] | None = None,
+        dense_patterns: list[str] | None = None,
+    ):
+        self.model = model
+        self.config = config
+        self.device = next(iter(model.parameters())).device
+        self.identity_patterns = identity_patterns
+        self.dense_patterns = dense_patterns
+
+        self.batch_shape = None
+        assert config.task_config.task_name != "lm", (
+            "PreSigmoidGateOutputs currently only works with models that take float inputs (not lms). "
+        )
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        if self.batch_shape is None:
+            self.batch_shape = batch.shape
+
+    @override
+    def compute(self) -> Mapping[str, Image.Image]:
+        assert self.batch_shape is not None, "haven't seen any inputs yet"
+
+        figures, _ = plot_pre_sigmoid_gate_outputs(
+            model=self.model,
+            batch_shape=self.batch_shape,
+            device=self.device,
+            input_magnitude=0.75,
+            identity_patterns=self.identity_patterns,
+            dense_patterns=self.dense_patterns,
+        )
+
+        return {f"figures/{k}": v for k, v in figures.items()}
+
+
+class ComponentWeightHeatmaps(StreamingEval):
+    SLOW = True
+
+    def __init__(
+        self,
+        model: ComponentModel,
+        config: Config,
+        embedding_module_name: str | None = None,
+        unembedding_module_name: str | None = None,
+    ):
+        self.model = model
+        self.config = config
+        self.embedding_module_name = embedding_module_name
+        self.unembedding_module_name = unembedding_module_name
+
+    @override
+    def watch_batch(
+        self,
+        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+        target_out: Float[Tensor, "... vocab"],
+        ci: dict[str, Float[Tensor, "... C"]],
+    ) -> None:
+        pass
+
+    @override
+    def compute(self) -> Mapping[str, Image.Image]:
+        figures = plot_component_weight_heatmaps(
+            model=self.model,
+            embedding_module_name=self.embedding_module_name,
+            unembedding_module_name=self.unembedding_module_name,
+        )
+
+        return {f"figures/{k}": v for k, v in figures.items()}
+
+
 EVAL_CLASSES = {
     cls.__name__: cls
     for cls in [
@@ -730,7 +814,9 @@ EVAL_CLASSES = {
         CEandKLLosses,
         CIHistograms,
         ComponentActivationDensity,
+        ComponentWeightHeatmaps,
         PermutedCIPlots,
+        PreSigmoidGateOutputs,
         UVPlots,
         IdentityCIError,
         CIMeanPerComponent,
