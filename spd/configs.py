@@ -247,6 +247,36 @@ class Config(BaseModel):
         description="Initialize adversarial mask variables from Uniform(0,1) at each batch",
     )
 
+    # --- Adversarial ramp (mix adversarial vs random masks) ---
+    adv_mix_start_frac: Probability = Field(
+        default=0.0,
+        description=(
+            "Training fraction at which to start mixing adversarial vs random-mask losses"
+        ),
+    )
+    adv_mix_end_frac: Probability = Field(
+        default=1.0,
+        description=(
+            "Training fraction at which to end mixing schedule for adversarial vs random-mask losses"
+        ),
+    )
+    adv_mix_adv_weight_start: NonNegativeFloat = Field(
+        default=0.0,
+        description="Adversarial loss weight at adv_mix_start_frac",
+    )
+    adv_mix_adv_weight_end: NonNegativeFloat = Field(
+        default=1.0,
+        description="Adversarial loss weight at adv_mix_end_frac",
+    )
+    adv_mix_rand_weight_start: NonNegativeFloat = Field(
+        default=1.0,
+        description="Random-mask loss weight at adv_mix_start_frac",
+    )
+    adv_mix_rand_weight_end: NonNegativeFloat = Field(
+        default=0.0,
+        description="Random-mask loss weight at adv_mix_end_frac",
+    )
+
     # --- Logging & Saving ---
     out_dir: Path | None = Field(
         default=None,
