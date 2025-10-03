@@ -1,11 +1,11 @@
 """Core computation logic for finding max-activating text samples."""
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import torch
 from jaxtyping import Float, Int
-from muutils.spinner import SpinnerContext
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -33,6 +33,19 @@ from spd.clustering.merge_history import MergeHistory
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data, get_module_device
+
+
+@dataclass
+class ClusterActivations:
+    """Vectorized cluster activations for all clusters.
+
+    Attributes:
+        activations: Tensor of shape [n_samples, n_clusters] containing cluster activations
+        cluster_indices: List mapping column index to cluster index
+    """
+
+    activations: Float[Tensor, "n_samples n_clusters"]
+    cluster_indices: list[int]
 
 
 def _compute_cluster_activations(
@@ -73,6 +86,89 @@ def _compute_cluster_activations(
     return cluster_acts.view(batch_size, seq_len)
 
 
+def compute_all_cluster_activations(
+    processed: ProcessedActivations,
+    cluster_components: dict[int, list[dict[str, Any]]],
+    batch_size: int,
+    seq_len: int,
+) -> ClusterActivations:
+    """Compute activations for all clusters in a vectorized manner.
+
+    Args:
+        processed: ProcessedActivations containing all component activations
+        cluster_components: Dict mapping cluster_idx -> list of component info dicts
+        batch_size: Batch size
+        seq_len: Sequence length
+
+    Returns:
+        ClusterActivations with shape [batch_size * seq_len, n_clusters]
+    """
+    cluster_indices: list[int] = sorted(cluster_components.keys())
+    n_clusters: int = len(cluster_indices)
+    n_samples: int = batch_size * seq_len
+    device: torch.device = processed.activations.device
+
+    # Build cluster activation tensor: [n_samples, n_clusters]
+    cluster_acts: Float[Tensor, "n_samples n_clusters"] = torch.zeros(
+        (n_samples, n_clusters), device=device
+    )
+
+    # For each cluster, compute max activation across its components
+    for cluster_col_idx, cluster_idx in enumerate(cluster_indices):
+        components: list[dict[str, Any]] = cluster_components[cluster_idx]
+
+        # Get component indices for this cluster
+        comp_indices: list[int] = []
+        for component_info in components:
+            label: str = component_info["label"]
+            comp_idx: int | None = processed.get_label_index(label)
+            if comp_idx is not None:
+                comp_indices.append(comp_idx)
+
+        if not comp_indices:
+            continue
+
+        # Max activation across components for this cluster
+        # processed.activations: [n_samples, n_components]
+        cluster_acts[:, cluster_col_idx] = processed.activations[:, comp_indices].max(dim=1).values
+
+    return ClusterActivations(activations=cluster_acts, cluster_indices=cluster_indices)
+
+
+def compute_cluster_coactivations(
+    cluster_activations_list: list[ClusterActivations],
+) -> tuple[Float[np.ndarray, "n_clusters n_clusters"], list[int]]:
+    """Compute coactivation matrix for clusters across all batches.
+
+    Args:
+        cluster_activations_list: List of ClusterActivations from each batch
+
+    Returns:
+        Tuple of (coactivation_matrix, cluster_indices) where coact[i,j] is the number
+        of samples where both cluster i and j activate
+    """
+    if not cluster_activations_list:
+        return np.array([[]], dtype=np.float32), []
+
+    # All batches should have same cluster indices
+    cluster_indices: list[int] = cluster_activations_list[0].cluster_indices
+    _n_clusters: int = len(cluster_indices)
+
+    # Concatenate all batch activations: [total_samples, n_clusters]
+    all_acts: Float[Tensor, "total_samples n_clusters"] = torch.cat(
+        [ca.activations for ca in cluster_activations_list], dim=0
+    )
+
+    # Binarize activations (1 if cluster activates, 0 otherwise)
+    activation_mask: Float[Tensor, "total_samples n_clusters"] = (all_acts > 0).float()
+
+    # Compute coactivation matrix: coact[i,j] = sum over samples of (cluster_i_active * cluster_j_active)
+    # Following spd/clustering/merge.py:69
+    coact: Float[Tensor, "n_clusters n_clusters"] = activation_mask.T @ activation_mask
+
+    return coact.cpu().numpy(), cluster_indices
+
+
 def compute_max_activations(
     model: ComponentModel,
     sigmoid_type: SigmoidTypes,
@@ -83,8 +179,8 @@ def compute_max_activations(
     n_samples: int,
     n_batches: int,
     clustering_run: str,
-) -> DashboardData:
-    """Compute max-activating text samples for each cluster.
+) -> tuple[DashboardData, Float[np.ndarray, "n_clusters n_clusters"], list[int]]:
+    """Compute max-activating text samples for each cluster and coactivation matrix.
 
     Args:
         model: ComponentModel to get activations from
@@ -98,7 +194,9 @@ def compute_max_activations(
         clustering_run: Clustering run identifier
 
     Returns:
-        DashboardData with all cluster data, text samples, and activations
+        Tuple of (DashboardData, coactivation_matrix, cluster_indices) where coactivation_matrix[i,j]
+        is the number of samples where both cluster i and j activate, and cluster_indices maps
+        matrix positions to cluster IDs
     """
     device: torch.device = get_module_device(model)
 
@@ -144,6 +242,9 @@ def compute_max_activations(
     }
     text_samples: dict[TextSampleHash, TextSample] = {}
 
+    # Storage for computing coactivations
+    all_cluster_activations: list[ClusterActivations] = []
+
     # Process batches
     for batch_idx, batch_data in enumerate(
         tqdm(dataloader, total=n_batches, desc="Processing batches")
@@ -163,7 +264,9 @@ def compute_max_activations(
             batch=batch,
             sigmoid_type=sigmoid_type,
         )
-        processed: ProcessedActivations = process_activations(activations, seq_mode="concat")
+        processed: ProcessedActivations = process_activations(
+            activations, seq_mode="concat", filter_dead_threshold=0
+        )
 
         # Batch tokenize all samples once per batch (move to CPU first)
         batch_cpu: Int[Tensor, "batch_size n_ctx"] = batch.cpu()
@@ -187,29 +290,45 @@ def compute_max_activations(
                 text_samples[text_hash] = text_sample
             batch_text_samples.append(text_sample)
 
-        # TODO: no pbar here, outer loop has a pbar
-        for cluster_idx in unique_cluster_indices:
-            # Compute cluster activations
-            acts_2d: Float[Tensor, "batch_size seq_len"] = _compute_cluster_activations(
-                processed, cluster_components[cluster_idx], batch_size, seq_len
-            )
+        # Vectorized: compute all cluster activations at once
+        cluster_acts: ClusterActivations = compute_all_cluster_activations(
+            processed=processed,
+            cluster_components=cluster_components,
+            batch_size=batch_size,
+            seq_len=seq_len,
+        )
 
-            if acts_2d.abs().max() == 0:
+        # Store for coactivation computation
+        all_cluster_activations.append(cluster_acts)
+
+        # cluster_acts.activations shape: [n_samples, n_clusters] where n_samples = batch_size * seq_len
+        # Reshape to [batch_size, seq_len, n_clusters] for easier indexing
+        acts_3d: Float[Tensor, "batch_size seq_len n_clusters"] = cluster_acts.activations.view(
+            batch_size, seq_len, -1
+        )
+        acts_3d_cpu: Float[np.ndarray, "batch_size seq_len n_clusters"] = acts_3d.cpu().numpy()
+
+        # Store activations per cluster
+        for cluster_col_idx, cluster_idx in enumerate(cluster_acts.cluster_indices):
+            # Get activations for this cluster: [batch_size, seq_len]
+            cluster_acts_2d: Float[np.ndarray, "batch_size seq_len"] = acts_3d_cpu[
+                :, :, cluster_col_idx
+            ]
+
+            # Skip if no activations
+            if np.abs(cluster_acts_2d).max() == 0:
                 continue
 
             current_cluster_id: ClusterId = cluster_id_map[cluster_idx]
             current_cluster_hash: ClusterIdHash = current_cluster_id.to_string()
 
-            # Batch transfer activations to CPU and convert to numpy
-            acts_2d_cpu: Float[np.ndarray, "batch_size seq_len"] = acts_2d.cpu().numpy()
-
-            # Process each sample in batch
+            # Store activations for each sample in batch
             for batch_sample_idx in range(batch_size):
                 text_sample = batch_text_samples[batch_sample_idx]
                 text_hash = text_sample.text_hash
 
                 # Store activations for this cluster
-                activations_np: Float[np.ndarray, " n_ctx"] = acts_2d_cpu[batch_sample_idx]
+                activations_np: Float[np.ndarray, " n_ctx"] = cluster_acts_2d[batch_sample_idx]
                 cluster_activations[current_cluster_hash].append(activations_np)
                 cluster_text_hashes[current_cluster_hash].append(text_hash)
                 cluster_tokens[current_cluster_hash].append(text_sample.tokens)
@@ -272,7 +391,9 @@ def compute_max_activations(
         assert all_activations_list, "No activations collected"
         assert cluster_id_map, "No clusters found"
 
-        combined_activations: Float[np.ndarray, "total_samples n_ctx"] = np.stack(all_activations_list)
+        combined_activations: Float[np.ndarray, "total_samples n_ctx"] = np.stack(
+            all_activations_list
+        )
         # Use first cluster_id as placeholder since this is for all clusters
         dummy_cluster_id: ClusterId = list(cluster_id_map.values())[0]
         combined_batch: ActivationSampleBatch = ActivationSampleBatch(
@@ -289,4 +410,9 @@ def compute_max_activations(
             activations=combined_batch,
         )
 
-    return dashboard_data
+        # Compute coactivation matrix
+        coactivations: Float[np.ndarray, "n_clusters n_clusters"]
+        cluster_indices: list[int]
+        coactivations, cluster_indices = compute_cluster_coactivations(all_cluster_activations)
+
+    return dashboard_data, coactivations, cluster_indices

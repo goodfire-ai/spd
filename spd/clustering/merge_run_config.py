@@ -11,6 +11,7 @@ import yaml
 from muutils.misc.numerical import shorten_numerical_to_str
 from pydantic import BaseModel, Field, PositiveInt, model_validator
 
+from spd.clustering.consts import DistancesMethod
 from spd.clustering.merge_config import MergeConfig
 from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
 from spd.spd_types import TaskName
@@ -94,6 +95,10 @@ class ClusteringRunConfig(BaseModel):
     batch_size: PositiveInt = Field(
         default=64,
         description="Size of each batch for processing",
+    )
+    distances_method: DistancesMethod = Field(
+        default="perm_invariant_hamming",
+        description="Method to use for computing distances between clusterings",
     )
 
     # Implementation details

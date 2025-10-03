@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import heapq
-import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import torch
+from pydantic import BaseModel
+from transformers import PreTrainedTokenizer
 
-from spd.app.backend.services.run_context_service import RunContextService
+from spd.app.backend.services.run_context_service import RunContext, RunContextService
 from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel
-from spd.settings import SPD_CACHE_DIR
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
 
@@ -21,17 +20,17 @@ DEVICE = get_device()
 
 
 @dataclass
-class FastComponentExample:
-    # Windowed tokens around the firing position
+class SubcomponentExample:
     window_tokens: list[int]
-    # Absolute position within the original sequence
+    """Windowed tokens around the firing position"""
     pos: int
-    # Position within window_tokens corresponding to pos
+    """Absolute position within the original sequence"""
     active_pos_in_window: int
-    # CI values aligned to window_tokens
+    """Position within window_tokens corresponding to pos"""
     token_ci_values: list[float]
-    # CI value at the firing position
+    """CI values aligned to window_tokens"""
     last_tok_importance: float
+    """CI value at the firing position"""
 
 
 @dataclass
@@ -39,17 +38,17 @@ class FastComponentSummary:
     module_name: str
     component_idx: int
     density: float
-    examples: list[FastComponentExample]
+    examples: list[SubcomponentExample]
 
 
 class _TopKExamples:
     def __init__(self, k: int):
         self.k = k
         # Min-heap of tuples (importance, counter, example)
-        self.heap: list[tuple[float, int, FastComponentExample]] = []
+        self.heap: list[tuple[float, int, SubcomponentExample]] = []
         self._counter: int = 0
 
-    def maybe_add(self, example: FastComponentExample) -> None:
+    def maybe_add(self, example: SubcomponentExample) -> None:
         key = (example.last_tok_importance, self._counter, example)
         self._counter += 1
         if len(self.heap) < self.k:
@@ -59,17 +58,15 @@ class _TopKExamples:
         if self.heap[0][0] < example.last_tok_importance:
             heapq.heapreplace(self.heap, key)
 
-    def to_sorted_list_desc(self) -> list[FastComponentExample]:
+    def to_sorted_list_desc(self) -> list[SubcomponentExample]:
         # Return examples sorted by importance descending
         return [ex for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)]
 
 
-
-
-def _write_json_atomic(path: Path, payload: Any) -> None:
+def _write_atomic(path: Path, payload: str) -> None:
     tmp_path = path.with_name(path.name + ".tmp")
     with open(tmp_path, "w") as f:
-        json.dump(payload, f)
+        f.write(payload)
     os.replace(tmp_path, path)
 
 
@@ -78,7 +75,7 @@ class WorkerArgs:
     wandb_id: str
     importance_threshold: float
     separation_threshold_tokens: int
-    max_examples_per_component: int
+    max_examples_per_subcomponent: int
     n_steps: int
     n_tokens_either_side: int
     out_path: Path
@@ -96,15 +93,15 @@ def main(ctx: WorkerArgs) -> Path | None:
         return None
 
     try:
-        activations_json = _main(
+        contexts_by_module = _main(
             ctx.wandb_id,
             ctx.importance_threshold,
             ctx.separation_threshold_tokens,
-            ctx.max_examples_per_component,
+            ctx.max_examples_per_subcomponent,
             ctx.n_steps,
             ctx.n_tokens_either_side,
         )
-        _write_json_atomic(ctx.out_path, activations_json)
+        _write_atomic(ctx.out_path, contexts_by_module.model_dump_json())
         logger.info(f"Wrote subcomponent activation contexts to {ctx.out_path}")
     except Exception as e:
         logger.warning(f"Activation contexts worker v2 failed: {e}")
@@ -121,28 +118,48 @@ def _main(
     wandb_id: str,
     importance_threshold: float,
     separation_threshold_tokens: int,
-    max_examples_per_component: int,
+    max_examples_per_subcomponent: int,
     n_steps: int,
     n_tokens_either_side: int,
-) -> dict[str, dict[str, list[dict[str, Any]]]]:
+) -> ModelActivationContexts:
     logger.info("Computing v2 activation contexts in v1 format")
 
     rcs = RunContextService()
     rcs.load_run_from_wandb_id(wandb_id)
-    assert (rc := rcs.run_context) is not None, "Run context not found"
+    assert (run_context := rcs.run_context) is not None, "Run context not found"
 
-    cm = rc.cm
-    cm.to(DEVICE)
-    dataloader = rc.train_loader
+    run_context.cm.to(DEVICE)
 
+    topk_by_subcomponent = _get_topk_by_subcomponent(
+        run_context,
+        importance_threshold,
+        separation_threshold_tokens,
+        max_examples_per_subcomponent,
+        n_steps,
+        n_tokens_either_side,
+    )
+
+    return map_to_model_ctxs(run_context, topk_by_subcomponent)
+
+
+def _get_topk_by_subcomponent(
+    run_context: RunContext,
+    importance_threshold: float,
+    separation_threshold_tokens: int,
+    max_examples_per_subcomponent: int,
+    n_steps: int,
+    n_tokens_either_side: int,
+) -> dict[tuple[str, int], _TopKExamples]:
     # Tracking structures
-    topk_by_component: dict[tuple[str, int], _TopKExamples] = {}
+    topk_by_subcomponent: dict[tuple[str, int], _TopKExamples] = {}
     last_pos_in_seq: dict[tuple[str, int, int], int] = {}
     firing_counts: dict[tuple[str, int], int] = {}
     tokens_seen_total: int = 0
 
+    C = run_context.cm.C
+
     # Iterate limited steps over data
-    data_iter = iter(dataloader)
+    data_iter = iter(run_context.train_loader)
     for _ in range(n_steps):
         batch = extract_batch_data(next(data_iter)).to(DEVICE)
         assert isinstance(batch, torch.Tensor)
@@ -150,11 +167,13 @@ def _main(
 
         B, S = batch.shape
 
-        importances_by_module = _get_importances_by_module(cm, batch, rc.config)
+        importances_by_module = _get_importances_by_module(
+            run_context.cm, batch, run_context.config
+        )
 
         # Process each module tensor: threshold -> where -> counts -> gather examples
         for module_name, causal_importances in importances_by_module.items():
-            assert causal_importances.shape == (B, S, cm.C), "Expected (B,S,C) per module"
+            assert causal_importances.shape == (B, S, C), "Expected (B,S,C) per module"
 
             mask = causal_importances > importance_threshold
             if not mask.any():
@@ -165,8 +184,8 @@ def _main(
             K = b_idx.numel()
 
             # Update density numerators via bincount on component index
-            comp_counts = torch.bincount(m_idx, minlength=cm.C)
-            for comp_i in range(cm.C):
+            comp_counts = torch.bincount(m_idx, minlength=C)
+            for comp_i in range(C):
                 c = int(comp_counts[comp_i].item())
                 if c:
                     firing_counts[(module_name, comp_i)] = (
@@ -195,11 +214,11 @@ def _main(
                 importance_val = float(causal_importances[b, s, m].item())
 
                 # Enforce component-local top-k with a bounded heap
-                if key not in topk_by_component:
-                    topk_by_component[key] = _TopKExamples(max_examples_per_component)
+                if key not in topk_by_subcomponent:
+                    topk_by_subcomponent[key] = _TopKExamples(max_examples_per_subcomponent)
 
-                heap = topk_by_component[key].heap
-                if len(heap) == max_examples_per_component and importance_val <= heap[0][0]:
+                heap = topk_by_subcomponent[key].heap
+                if len(heap) == max_examples_per_subcomponent and importance_val <= heap[0][0]:
                     # still advance separation to avoid clustering
                     last_pos_in_seq[lp_key] = s
                     continue
@@ -222,47 +241,19 @@ def _main(
                 # Ensure active token uses the exact firing value
                 token_ci_values[active_pos_in_window] = importance_val
 
-                ex = FastComponentExample(
+                ex = SubcomponentExample(
                     window_tokens=window_tokens,
                     pos=s,
                     active_pos_in_window=active_pos_in_window,
                     token_ci_values=token_ci_values,
                     last_tok_importance=importance_val,
                 )
-                topk_by_component[key].maybe_add(ex)
+                topk_by_subcomponent[key].maybe_add(ex)
                 last_pos_in_seq[lp_key] = s
 
         tokens_seen_total += B * S
 
-    # Build v1-shaped ActivationContextsByModule JSON (componentIdx keys as strings)
-    activations_json: dict[str, dict[str, list[dict[str, Any]]]] = {}
-    for (module_name, comp), heap_obj in topk_by_component.items():
-        examples_sorted = heap_obj.to_sorted_list_desc()
-        layer_entry = activations_json.setdefault(module_name, {})
-        comp_key = str(comp)
-        comp_examples = layer_entry.setdefault(comp_key, [])
-        for ex in examples_sorted:
-            raw_text = rc.tokenizer.decode(ex.window_tokens, add_special_tokens=False)  # pyright: ignore[reportAttributeAccessIssue]
-            tokenized = rc.tokenizer.encode_plus(  # pyright: ignore[reportAttributeAccessIssue]
-                raw_text,
-                return_tensors="pt",
-                return_offsets_mapping=True,
-                truncation=False,
-                padding=False,
-                add_special_tokens=False,
-            )
-            offset_mapping = tokenized["offset_mapping"][0].tolist()
-            comp_examples.append(
-                {
-                    "raw_text": raw_text,
-                    "offset_mapping": offset_mapping,
-                    "token_ci_values": ex.token_ci_values,
-                    "active_position": ex.active_pos_in_window,
-                    "ci_value": ex.last_tok_importance,
-                }
-            )
-
-    return activations_json
+    return topk_by_subcomponent
 
 
 def _get_importances_by_module(
@@ -281,3 +272,66 @@ def _get_importances_by_module(
             sampling=config.sampling,
         )
     return importances_by_module
+
+
+class ActivationContext(BaseModel):
+    raw_text: str
+    offset_mapping: list[tuple[int, int]]
+    token_ci_values: list[float]
+    active_position: int
+    ci_value: float
+
+
+class SubcomponentActivationContexts(BaseModel):
+    subcomponent_idx: int
+    examples: list[ActivationContext]
+
+
+class ModelActivationContexts(BaseModel):
+    layers: dict[str, list[SubcomponentActivationContexts]]
+
+
+def example_to_activation_context(
+    ex: SubcomponentExample,
+    tokenizer: PreTrainedTokenizer,
+) -> ActivationContext:
+    raw_text = tokenizer.decode(ex.window_tokens, add_special_tokens=False)  # pyright: ignore[reportAttributeAccessIssue]
+    tokenized = tokenizer.encode_plus(  # pyright: ignore[reportAttributeAccessIssue]
+        raw_text,
+        return_tensors="pt",
+        return_offsets_mapping=True,
+        truncation=False,
+        padding=False,
+        add_special_tokens=False,
+    )
+    offset_mapping = tokenized["offset_mapping"][0].tolist()
+    return ActivationContext(
+        raw_text=raw_text,
+        offset_mapping=offset_mapping,
+        token_ci_values=ex.token_ci_values,
+        active_position=ex.active_pos_in_window,
+        ci_value=ex.last_tok_importance,
+    )
+
+
+def map_to_model_ctxs(
+    run_context: RunContext,
+    topk_by_subcomponent: dict[tuple[str, int], _TopKExamples],
+) -> ModelActivationContexts:
+    # use dict of dicts to achieve ≈O(1) access
+    layers: dict[str, dict[int, list[ActivationContext]]] = {}
+    for (module_name, subcomponent_idx), heap_obj in topk_by_subcomponent.items():
+        for ex in heap_obj.to_sorted_list_desc():
+            activation_context = example_to_activation_context(ex, run_context.tokenizer)
+            layers[module_name][subcomponent_idx].append(activation_context)
+
+    # convert to ModelActivationContexts which uses tuple form for persistence
+    return ModelActivationContexts(
+        layers={
+            layer: [
+                SubcomponentActivationContexts(subcomponent_idx=subcomponent_idx, examples=examples)
+                for subcomponent_idx, examples in subcomponents.items()
+            ]
+            for layer, subcomponents in layers.items()
+        }
+    )

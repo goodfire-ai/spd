@@ -282,29 +282,25 @@ def get_mask_overrides() -> list[MaskOverrideDTO]:
     ]
 
 
-@app.get("/component_activation_contexts/{layer}")
+@app.get("/activation_contexts/{layer}/subcomponents")
 @handle_errors
-async def get_layer_activation_contexts(
+async def get_layer_subcomponent_activation_contexts(
     layer: str,
-    request: Request,
 ) -> list[SubcomponentActivationContexts]:
-    return await component_activations_service.get_layer_activation_contexts_async(
+    return await component_activations_service.get_layer_subcomponents_activation_contexts_async(
         layer=layer,
-        cancel_check=request.is_disconnected,
     )
 
 
-@app.get("/component_activation_contexts/{layer}/{component_idx}")
+@app.get("/activation_contexts/{layer}/subcomponents/{subcomponent_idx}")
 @handle_errors
-async def get_component_activation_contexts(
+async def get_subcomponent_activation_contexts(
     layer: str,
-    component_idx: int,
-    request: Request,
+    subcomponent_idx: int,
 ) -> list[ActivationContext]:
-    return await component_activations_service.get_component_activation_contexts_async(
+    return await component_activations_service.get_layer_subcomponent_activation_contexts_async(
         layer=layer,
-        component_idx=component_idx,
-        cancel_check=request.is_disconnected,
+        subcomponent_idx=subcomponent_idx,
     )
 
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { ComponentActivationContexts } from "$lib/api";
+    import type { SubcomponentActivationContexts } from "$lib/api";
     import * as api from "$lib/api";
     import { onMount } from "svelte";
     import ActivationContext from "./ActivationContext.svelte";
@@ -8,7 +8,7 @@
 
     let selectedLayer: string = availableComponentLayers[0];
 
-    let exampleSets: ComponentActivationContexts[] | null = null;
+    let subcomponentsActivationContexts: SubcomponentActivationContexts[] | null = null;
 
     let loading = false;
 
@@ -23,8 +23,11 @@
         loading = true;
         try {
             console.log(`loading contexts for layer ${selectedLayer}`);
-            exampleSets = await api.getLayerActivationContexts(selectedLayer, ac.signal);
-            console.log(`loaded ${exampleSets.length} contexts`);
+            subcomponentsActivationContexts = await api.getLayerActivationContexts(
+                selectedLayer,
+                ac.signal
+            );
+            console.log(`loaded ${subcomponentsActivationContexts.length} contexts`);
         } catch (e) {
             if ((e as any)?.name !== "AbortError") {
                 console.error(e);
@@ -56,13 +59,13 @@
         <button class="load-button" on:click={loadContexts}>Load Contexts</button>
     </div>
 
-    {#if exampleSets}
+    {#if subcomponentsActivationContexts}
         <div class="subcomponents-list">
-            {#each exampleSets as exampleSet}
+            {#each subcomponentsActivationContexts as { subcomponent_idx, examples }}
                 <div class="subcomponent-section-header">
-                    <h4>Subcomponent {exampleSet.subcomponent_idx}</h4>
+                    <h4>Subcomponent {subcomponent_idx}</h4>
                     <div class="subcomponent-section">
-                        {#each exampleSet.examples as example}
+                        {#each examples as example}
                             <ActivationContext {example} />
                         {/each}
                     </div>

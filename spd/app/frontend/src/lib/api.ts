@@ -328,7 +328,7 @@ export type ActivationContext = {
     ci_value: number;
 };
 
-export type ComponentActivationContexts = {
+export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     examples: ActivationContext[];
 };
@@ -336,8 +336,8 @@ export type ComponentActivationContexts = {
 export async function getLayerActivationContexts(
     layer: string,
     signal?: AbortSignal
-): Promise<ComponentActivationContexts[]> {
-    const response = await fetch(`${apiUrl}/component_activation_contexts/${layer}`, {
+): Promise<SubcomponentActivationContexts[]> {
+    const response = await fetch(`${apiUrl}/activation_contexts/${layer}/subcomponents`, {
         method: "GET",
         signal
     });
@@ -348,18 +348,13 @@ export async function getLayerActivationContexts(
     return response.json();
 }
 
-export async function getComponentActivationContexts(
-    componentId: number,
+export async function getSubcomponentActivationContexts(
+    subcomponentIdx: number,
     layer: string
 ): Promise<ActivationContext[]> {
     const response = await fetch(
-        `${apiUrl}/component_activation_contexts/${layer}/${componentId}`,
-        {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json"
-            }
-        }
+        `${apiUrl}/activation_contexts/${layer}/subcomponents/${subcomponentIdx}`,
+        { method: "GET" }
     );
 
     if (!response.ok) {

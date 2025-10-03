@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import wandb
 from muutils.spinner import SpinnerContext
 from wandb.apis.public import Run
@@ -55,7 +56,7 @@ def main(
 
     Args:
         wandb_run: WandB clustering run path (e.g., entity/project/run_id)
-        output_dir: Output directory (default: REPO_ROOT/spd/clustering/dashboard/data/{run_id}-i{iteration})
+        output_dir: Base output directory (default: REPO_ROOT/spd/clustering/dashboard/data/)
         iteration: Merge iteration to analyze (negative indexes from end)
         n_samples: Number of top-activating samples to collect per cluster
         n_batches: Number of data batches to process
@@ -83,10 +84,9 @@ def main(
     )
 
     # Set up output directory with iteration count
+    base_output_dir: Path = output_dir or (REPO_ROOT / "spd/clustering/dashboard/data")
     dir_name: str = f"{run_id}-i{actual_iteration}"
-    final_output_dir: Path = output_dir or (
-        REPO_ROOT / "spd" / "clustering" / "dashboard" / "data" / dir_name
-    )
+    final_output_dir: Path = base_output_dir / dir_name
     final_output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Output directory: {final_output_dir}")
 
@@ -98,7 +98,7 @@ def main(
 
     # Compute max activations
     logger.info("computing max activations")
-    dashboard_data = compute_max_activations(
+    dashboard_data, coactivations, cluster_indices = compute_max_activations(
         model=model,
         sigmoid_type=config.sigmoid_type,
         tokenizer=tokenizer,
@@ -110,6 +110,7 @@ def main(
         clustering_run=run_id,
     )
     logger.info(f"computed max activations: {len(dashboard_data.clusters) = }")
+    logger.info(f"computed coactivations: shape={coactivations.shape}")
     merge: GroupMerge = merge_history.merges[actual_iteration]
 
     # Generate model information and save
@@ -136,6 +137,15 @@ def main(
         model_info_path.write_text(json.dumps(model_info, indent=2))
         logger.info(f"Model info saved to: {model_info_path}")
 
+        # Save coactivation matrix
+        coactivations_path: Path = final_output_dir / "coactivations.npz"
+        np.savez(
+            coactivations_path,
+            coactivations=coactivations,
+            cluster_indices=np.array(cluster_indices),
+        )
+        logger.info(f"Coactivations saved to: {coactivations_path}")
+
 
 def cli() -> None:
     """CLI entry point with argument parsing."""
@@ -154,8 +164,8 @@ def cli() -> None:
         "--output-dir",
         "-o",
         type=Path,
-        help="Output directory (default: REPO_ROOT/spd/clustering/dashboard/data/{run_id}-i{iteration})",
-        default=None,
+        help="Base output directory (default: REPO_ROOT/spd/clustering/dashboard/data/)",
+        default=(REPO_ROOT / "spd/clustering/dashboard/data"),
     )
     parser.add_argument(
         "--iteration",
@@ -200,9 +210,8 @@ def cli() -> None:
     )
     args: argparse.Namespace = parser.parse_args()
 
-    # Write HTML files before running main if requested
-    if args.write_html and args.output_dir:
-        args.output_dir.mkdir(parents=True, exist_ok=True)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    if args.write_html:
         write_html_files(args.output_dir)
 
     main(

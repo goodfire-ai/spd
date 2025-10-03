@@ -18,19 +18,6 @@ from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.general_utils import extract_batch_data
 
 
-class ActivationContext(BaseModel):
-    raw_text: str
-    offset_mapping: list[tuple[int, int]]
-    token_ci_values: list[float]
-    active_position: int
-    ci_value: float
-
-
-ActivationContextsByComponent = dict[int, list[ActivationContext]]
-
-ActivationContextsByModule = dict[str, ActivationContextsByComponent]
-
-
 def _default_output_path(wandb_id: str) -> Path:
     run_dir: Path = SPD_CACHE_DIR / "runs" / f"spd-{wandb_id}"
     run_dir.mkdir(parents=True, exist_ok=True)

@@ -11,6 +11,7 @@
   },
   "model_path": "wandb:goodfire/spd/runs/rn9klzfs",
   "task_name": "lm",
+  "distances_method": "jaccard",
   "n_batches": 1,
   "batch_size": 32,
   "wandb_enabled": true,

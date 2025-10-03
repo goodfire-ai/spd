@@ -6,7 +6,7 @@
         Component,
         CosineSimilarityData
     } from "$lib/api";
-    import { getCosineSimilarities, getComponentActivationContexts } from "$lib/api";
+    import { getCosineSimilarities, getSubcomponentActivationContexts } from "$lib/api";
     import { ablationComponentMask } from "$lib/stores/componentState";
     import { onMount } from "svelte";
     import CosineSimilarityPlot from "./CosineSimilarityPlot.svelte";
@@ -51,7 +51,7 @@
 
     async function loadActivationContexts() {
         loadingActivationContexts = true;
-        examples = await getComponentActivationContexts(component.index, layer);
+        examples = await getSubcomponentActivationContexts(component.index, layer);
         loadingActivationContexts = false;
     }
 
