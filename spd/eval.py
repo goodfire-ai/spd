@@ -19,16 +19,15 @@ from spd.configs import (
     CIMeanPerComponentConfig,
     ComponentActivationDensityConfig,
     Config,
-    EvalMetricConfigType,
     FaithfulnessLossTrainConfig,
     IdentityCIErrorConfig,
     ImportanceMinimalityLossTrainConfig,
+    MetricConfigType,
     PermutedCIPlotsConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
     StochasticReconSubsetCEAndKLConfig,
     StochasticReconSubsetLossTrainConfig,
-    TrainMetricConfigType,
     UVPlotsConfig,
 )
 from spd.metrics.base import Metric
@@ -100,7 +99,7 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
 
 
 def init_metric(
-    cfg: EvalMetricConfigType | TrainMetricConfigType,
+    cfg: MetricConfigType,
     model: ComponentModel,
     run_config: Config,
     device: str,
@@ -216,7 +215,7 @@ def init_metric(
 
 
 def evaluate(
-    metric_configs: list[EvalMetricConfigType | TrainMetricConfigType],
+    metric_configs: list[MetricConfigType],
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."] | tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: str,

@@ -5,7 +5,7 @@ import random
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import einops
 import numpy as np
@@ -15,7 +15,8 @@ import torch.nn.functional as F
 import wandb
 import yaml
 from jaxtyping import Float
-from pydantic import BaseModel, PositiveFloat
+from pydantic import BaseModel as _BaseModel
+from pydantic import ConfigDict, PositiveFloat
 from pydantic.v1.utils import deep_update
 from torch import Tensor
 
@@ -35,6 +36,12 @@ COLOR_PALETTE = [
     "#ECE133",
     "#56B4E9",
 ]
+
+
+class BaseModel(_BaseModel):
+    """Regular pydantic BaseModel but enforcing extra="forbid" and frozen=True."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
 
 def set_seed(seed: int | None) -> None:

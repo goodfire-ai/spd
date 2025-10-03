@@ -84,23 +84,17 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
 
     # Initialize PyTorch distributed
     if not dist.is_initialized():
+        assert backend in ["nccl", "gloo"]
         if backend == "nccl":
             assert torch.cuda.is_available(), "CUDA is required for NCCL ddp backend"
-            local_device = torch.device(f"cuda:{local_rank}")
-        else:
-            local_device = None
-
+            torch.cuda.set_device(local_rank)
         dist.init_process_group(
             backend=backend,
             init_method="env://",
             world_size=world_size,
             rank=rank,
-            device_id=local_device,
+            device_id=None if backend == "gloo" else torch.device(f"cuda:{local_rank}"),
         )
-
-    # Set the default cuda device for this process (only for NCCL backend)
-    if backend == "nccl" and torch.cuda.is_available():
-        torch.cuda.set_device(local_rank)
 
     _state = DistributedState(
         rank=rank, world_size=world_size, local_rank=local_rank, backend=backend
@@ -157,6 +151,13 @@ def is_main_process() -> bool:
 
 def get_device() -> str:
     """Get device for current process in distributed setting."""
+    state = get_distributed_state()
+
+    # We use gloo for distributed tests, regardless of whether CUDA is available
+    if state.backend == "gloo":
+        return "cpu"
+
+    # For nccl backend or non-distributed, use CUDA if available
     if torch.cuda.is_available():
         if is_distributed():
             local_rank = get_local_rank()

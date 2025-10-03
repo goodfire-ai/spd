@@ -18,6 +18,7 @@ from spd.experiments.tms.configs import TMSModelConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
+from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 
@@ -346,7 +347,7 @@ def run_train(config: TMSTrainConfig, device: str) -> None:
 
 
 if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
     # NOTE: Training TMS is very finnicky, you may need to adjust hyperparams to get it working
     # TMS 5-2
     config = TMSTrainConfig(
