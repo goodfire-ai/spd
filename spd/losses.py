@@ -194,6 +194,8 @@ def _optimize_adversarial_stochastic_masks(
     # Use eval mode to avoid stochastic layers affecting adversarial objective
     model.eval()
 
+    pgd_target_out = target_out.detach()
+
     def build_objective(routing_masks_subset: dict[str, Tensor] | None = None) -> Tensor:
         objective = torch.tensor(0.0, device=device)
 
@@ -211,7 +213,7 @@ def _optimize_adversarial_stochastic_masks(
                 model=model,
                 batch=batch,
                 mask_infos_list=[mask_infos],
-                target_out=target_out,
+                target_out=pgd_target_out,
                 loss_type=config.output_loss_type,
                 device=device,
             )
@@ -231,7 +233,7 @@ def _optimize_adversarial_stochastic_masks(
                 model=model,
                 batch=batch,
                 mask_infos_list=[mask_infos],
-                target_out=target_out,
+                target_out=pgd_target_out,
                 loss_type=config.output_loss_type,
                 device=device,
             )
@@ -252,7 +254,7 @@ def _optimize_adversarial_stochastic_masks(
                 model=model,
                 batch=batch,
                 mask_infos_list=[mask_infos],
-                target_out=target_out,
+                target_out=pgd_target_out,
                 loss_type=config.output_loss_type,
                 device=device,
             )
