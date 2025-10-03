@@ -110,7 +110,7 @@ def calc_masked_recon_loss(
         if loss_type == "mse":
             loss = ((out - target_out) ** 2).mean()
         else:
-            loss = calc_kl_divergence_lm(pred=target_out, target=out)
+            loss = calc_kl_divergence_lm(pred=out, target=target_out)
             # flat_logits = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
             # masked_batch = batch.clone()
             # masked_batch[:, 0] = -100
@@ -149,6 +149,7 @@ def _optimize_adversarial_stochastic_masks(
     target_out: Tensor,
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
     device: str,
+    routing_masks_subset: dict[str, Tensor] | None = None,
 ) -> tuple[
     dict[str, Float[Tensor, "... C"]],
     dict[str, Float[Tensor, "..."]] | None,
@@ -183,6 +184,15 @@ def _optimize_adversarial_stochastic_masks(
             weight_delta_rand_masks[layer] = wd_init
 
     step_size = 0.1 if config.pgd_mask_step_size is None else float(config.pgd_mask_step_size)
+
+    # Temporarily disable grads for model params to avoid building graphs w.r.t. parameters
+    # and reduce memory usage during PGD inner optimization. Restore afterwards.
+    prev_train_mode = model.training
+    prev_requires_grad: list[bool] = [p.requires_grad for p in model.parameters()]
+    for p in model.parameters():
+        p.requires_grad_(False)
+    # Use eval mode to avoid stochastic layers affecting adversarial objective
+    model.eval()
 
     def build_objective(routing_masks_subset: dict[str, Tensor] | None = None) -> Tensor:
         objective = torch.tensor(0.0, device=device)
@@ -250,36 +260,44 @@ def _optimize_adversarial_stochastic_masks(
 
         return objective
 
-    # PGD ascent
-    for _ in range(int(config.pgd_mask_steps)):
-        # Zero any existing grads on rand tensors
-        for v in rand_tensors.values():
-            if v.grad is not None:
-                v.grad = None
-        if weight_delta_rand_masks is not None:
-            for v in weight_delta_rand_masks.values():
+    try:
+        # PGD ascent
+        for _ in range(int(config.pgd_mask_steps)):
+            # Zero any existing grads on rand tensors
+            for v in rand_tensors.values():
                 if v.grad is not None:
                     v.grad = None
+            if weight_delta_rand_masks is not None:
+                for v in weight_delta_rand_masks.values():
+                    if v.grad is not None:
+                        v.grad = None
 
-        objective = build_objective(routing_masks_subset=None)
-        adv_vars = list(rand_tensors.values()) + (
-            list(weight_delta_rand_masks.values()) if weight_delta_rand_masks is not None else []
-        )
-        raw_grads = torch.autograd.grad(
-            objective,
-            adv_vars,
-            retain_graph=False,
-            create_graph=False,
-            allow_unused=True,
-        )
-        grads = cast(tuple[Tensor | None, ...], raw_grads)
+            objective = build_objective(routing_masks_subset=routing_masks_subset)
+            adv_vars = list(rand_tensors.values()) + (
+                list(weight_delta_rand_masks.values())
+                if weight_delta_rand_masks is not None
+                else []
+            )
+            raw_grads = torch.autograd.grad(
+                objective,
+                adv_vars,
+                retain_graph=False,
+                create_graph=False,
+                allow_unused=True,
+            )
+            grads = cast(tuple[Tensor | None, ...], raw_grads)
 
-        with torch.no_grad():
-            # Update all adversarial variables in the same order they were passed to autograd
-            for v, g in zip(adv_vars, grads, strict=True):
-                if g is not None:
-                    v.add_(step_size * g.sign())
-                v.clamp_(0.0, 1.0)
+            with torch.no_grad():
+                # Update all adversarial variables in the same order they were passed to autograd
+                for v, g in zip(adv_vars, grads, strict=True):
+                    if g is not None:
+                        v.add_(step_size * g.sign())
+                    v.clamp_(0.0, 1.0)
+    finally:
+        # Restore model state
+        for p, req in zip(model.parameters(), prev_requires_grad, strict=True):
+            p.requires_grad_(req)
+        model.train(prev_train_mode)
 
     # Detach to avoid tracking grads in the outer loss backward
     with torch.no_grad():
