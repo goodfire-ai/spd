@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 from torch import Tensor
 
@@ -12,8 +12,8 @@ from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci
 class IdentityCIError(Metric):
     """Error between the CI values and an Identity or Dense CI pattern."""
 
-    slow: bool = True
-    input_magnitude: float = 0.75
+    slow: ClassVar[bool] = True
+    input_magnitude: ClassVar[float] = 0.75
 
     def __init__(
         self,

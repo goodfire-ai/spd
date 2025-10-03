@@ -1,4 +1,4 @@
-from typing import Any, override
+from typing import Any, ClassVar, override
 
 import torch
 from einops import reduce
@@ -16,7 +16,7 @@ from spd.utils.distributed_utils import all_reduce
 class ComponentActivationDensity(Metric):
     """Activation density for each component."""
 
-    slow: bool = True
+    slow: ClassVar[bool] = True
 
     def __init__(self, model: ComponentModel, device: str, ci_alive_threshold: float) -> None:
         self.model = model

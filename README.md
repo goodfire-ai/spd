@@ -99,11 +99,6 @@ settings, copy `.vscode/settings-example.json` to `.vscode/settings.json`.
 
 Please read our [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to contribute to this project, including pull request requirements and review processes.
 
-### Custom Metrics and Figures
-
-Metrics and figures are defined in `spd/metrics.py` and `spd/figures.py`.
-These files expose dictionaries of functions that can be selected and parameterized in the config of a given experiment.
-
 ### Development Commands
 
 There are various `make` commands that may be helpful.

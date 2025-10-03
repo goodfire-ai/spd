@@ -4,8 +4,6 @@ from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal, Self
 
 from pydantic import (
-    BaseModel,
-    ConfigDict,
     Field,
     NonNegativeInt,
     PositiveFloat,
@@ -21,12 +19,11 @@ from spd.log import logger
 from spd.models.components import GateType
 from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
+from spd.utils.general_utils import BaseModel
 
 
 #### Train Metric Configs ####
 class TrainMetricConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-
     coeff: float = Field(
         ...,
         description="Coefficient used for weighting into loss/total.",
@@ -71,55 +68,36 @@ class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
 
 
 #### Eval Metric Configs ####
-EvalMetricClassname = Literal[
-    "CEandKLLosses",
-    "CIHistograms",
-    "CI_L0",
-    "CIMeanPerComponent",
-    "ComponentActivationDensity",
-    "IdentityCIError",
-    "PermutedCIPlots",
-    "StochasticReconSubsetCEAndKL",
-]
-
-
 class CEandKLLossesConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["CEandKLLosses"] = "CEandKLLosses"
     rounding_threshold: float
 
 
 class CIHistogramsConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["CIHistograms"] = "CIHistograms"
     n_batches_accum: int | None
 
 
 class CI_L0Config(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["CI_L0"] = "CI_L0"
     groups: dict[str, list[str]] | None
 
 
 class CIMeanPerComponentConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["CIMeanPerComponent"] = "CIMeanPerComponent"
 
 
 class ComponentActivationDensityConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["ComponentActivationDensity"] = "ComponentActivationDensity"
 
 
 class IdentityCIErrorConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["IdentityCIError"] = "IdentityCIError"
     identity_ci: list[dict[str, str | int]] | None
     dense_ci: list[dict[str, str | int]] | None
 
 
 class PermutedCIPlotsConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["PermutedCIPlots"] = "PermutedCIPlots"
     sigmoid_type: SigmoidTypes
     identity_patterns: list[str] | None
@@ -127,14 +105,12 @@ class PermutedCIPlotsConfig(BaseModel):
 
 
 class StochasticReconSubsetCEAndKLConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
     include_patterns: dict[str, list[str]] | None
     exclude_patterns: dict[str, list[str]] | None
 
 
 class UVPlotsConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     classname: Literal["UVPlots"] = "UVPlots"
     identity_patterns: list[str] | None
     dense_patterns: list[str] | None
@@ -167,7 +143,6 @@ TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
 class Config(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     # --- WandB
     wandb_project: str | None = Field(
         default=None,
@@ -362,13 +337,6 @@ class Config(BaseModel):
         description="Nested task-specific configuration selected by the `task_name` discriminator",
     )
 
-    # --- Distributed ---
-    dist_backend: Literal["nccl", "gloo"] | None = Field(
-        default=None,
-        description="Backend for distributed training (nccl for GPU, gloo for CPU). If None, "
-        "uses the default backend for the current device.",
-    )
-
     DEPRECATED_CONFIG_KEYS: ClassVar[list[str]] = [
         "image_on_first_step",
         "image_freq",
@@ -390,11 +358,11 @@ class Config(BaseModel):
         "p_anneal_final_p",
         "p_anneal_end_frac",
         "importance_minimality_coeff",
+        "dist_backend",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
         "pretrained_model_name_hf": "pretrained_model_name",
-        "eval_metrics": "eval_metric_configs",
     }
 
     @model_validator(mode="before")

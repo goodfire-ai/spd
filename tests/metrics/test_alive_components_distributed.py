@@ -19,6 +19,7 @@ from spd.utils.distributed_utils import (
     get_world_size,
     init_distributed,
     sync_across_processes,
+    with_distributed_cleanup,
 )
 
 
@@ -183,6 +184,7 @@ def _test_multiple_modules():
         )
 
 
+@with_distributed_cleanup
 def run_all_tests():
     """Run all distributed tests when called directly with mpirun."""
     init_distributed(backend="gloo")
