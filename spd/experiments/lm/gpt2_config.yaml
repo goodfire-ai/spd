@@ -8,8 +8,8 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 768
 n_mask_samples: 1
-gate_type: "vector_mlp"
-gate_hidden_dims: [12]
+ci_fn_type: "vector_mlp"
+ci_fn_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["transformer.h.1.attn.c_attn"]
 identity_module_patterns: null

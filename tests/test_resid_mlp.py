@@ -39,8 +39,8 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         seed=0,
         C=10,  # Smaller C for faster testing
         n_mask_samples=1,
-        gate_type="mlp",
-        gate_hidden_dims=[8],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[8],
         loss_metric_configs=[
             ImportanceMinimalityLossTrainConfig(
                 coeff=3e-3,
