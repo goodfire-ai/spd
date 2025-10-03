@@ -108,6 +108,7 @@ def calc_stochastic_component_mask_info(
     weight_deltas: dict[str, Tensor] | None,
     rand_tensors: dict[str, Float[Tensor, "... C"]] | None = None,
     weight_delta_rand_mask: dict[str, Float[Tensor, "..."]] | None = None,
+    routing_masks: dict[str, Bool[Tensor, "..."]] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
     ci_sample = next(iter(causal_importances.values()))
     leading_dims = ci_sample.shape[:-1]
@@ -135,19 +136,23 @@ def calc_stochastic_component_mask_info(
     else:
         weight_deltas_and_masks = None
 
+    final_routing_masks: dict[str, Bool[Tensor, ...]] | None
     match routing:
         case "uniform_k-stochastic":
-            routing_masks = sample_uniform_k_subset_routing_masks(
-                leading_dims,
-                list(causal_importances.keys()),
-                device,
-            )
+            if routing_masks is not None:
+                final_routing_masks = routing_masks
+            else:
+                final_routing_masks = sample_uniform_k_subset_routing_masks(
+                    leading_dims,
+                    list(causal_importances.keys()),
+                    device,
+                )
         case "all":
-            routing_masks = None
+            final_routing_masks = None
 
     return make_mask_infos(
         component_masks=component_masks,
-        routing_masks=routing_masks,
+        routing_masks=final_routing_masks,
         weight_deltas_and_masks=weight_deltas_and_masks,
     )
 

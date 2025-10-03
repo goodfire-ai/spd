@@ -110,7 +110,7 @@ def calc_masked_recon_loss(
         if loss_type == "mse":
             loss = ((out - target_out) ** 2).mean()
         else:
-            loss = calc_kl_divergence_lm(pred=out, target=target_out)
+            loss = calc_kl_divergence_lm(pred=target_out, target=out)
             # flat_logits = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
             # masked_batch = batch.clone()
             # masked_batch[:, 0] = -100
@@ -184,7 +184,7 @@ def _optimize_adversarial_stochastic_masks(
 
     step_size = 0.1 if config.pgd_mask_step_size is None else float(config.pgd_mask_step_size)
 
-    def build_objective() -> Tensor:
+    def build_objective(routing_masks_subset: dict[str, Tensor] | None = None) -> Tensor:
         objective = torch.tensor(0.0, device=device)
 
         # Stochastic reconstruction loss (all components at once)
@@ -236,6 +236,7 @@ def _optimize_adversarial_stochastic_masks(
                 weight_deltas=weight_deltas if config.use_delta_component else None,
                 rand_tensors=rand_tensors,
                 weight_delta_rand_mask=weight_delta_rand_masks,
+                routing_masks=routing_masks_subset,
             )
             loss_val = calc_masked_recon_loss(
                 model=model,
@@ -260,7 +261,7 @@ def _optimize_adversarial_stochastic_masks(
                 if v.grad is not None:
                     v.grad = None
 
-        objective = build_objective()
+        objective = build_objective(routing_masks_subset=None)
         adv_vars = list(rand_tensors.values()) + (
             list(weight_delta_rand_masks.values()) if weight_delta_rand_masks is not None else []
         )
@@ -516,6 +517,12 @@ def calculate_losses(
 
     # Stochastic reconstruction subset loss
     if config.stochastic_recon_subset_coeff is not None:
+        # Sample subset routing masks once and reuse for random and adversarial paths
+        shared_subset_routing_masks = sample_uniform_k_subset_routing_masks(
+            mask_shape=next(iter(causal_importances.values())).shape[:-1],
+            modules=list(causal_importances.keys()),
+            device=device,
+        )
         # Random-mask loss with subset routing
         rand_mask_infos_list = [
             calc_stochastic_component_mask_info(
@@ -523,6 +530,7 @@ def calculate_losses(
                 sampling=config.sampling,
                 weight_deltas=weight_deltas if config.use_delta_component else None,
                 routing="uniform_k-stochastic",
+                routing_masks=shared_subset_routing_masks,
             )
             for _ in range(config.n_mask_samples)
         ]
@@ -537,7 +545,7 @@ def calculate_losses(
 
         # Adversarial-mask loss with subset routing
         if use_pgd_masks and adv_rand_tensors is not None:
-            adv_mask_infos_list = [
+            adv_mask_infos_list: list[dict[str, ComponentsMaskInfo]] = [
                 calc_stochastic_component_mask_info(
                     causal_importances=causal_importances,
                     sampling=config.sampling,
@@ -545,6 +553,7 @@ def calculate_losses(
                     routing="uniform_k-stochastic",
                     rand_tensors=adv_rand_tensors,
                     weight_delta_rand_mask=adv_weight_delta_rand_masks,
+                    routing_masks=shared_subset_routing_masks,
                 )
                 for _ in range(config.n_mask_samples)
             ]
