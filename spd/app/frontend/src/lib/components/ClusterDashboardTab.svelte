@@ -1,7 +1,18 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { API_URL, getClusterDashboardDataDirs, type ClusterDashboardDataDirs } from "$lib/api";
+    import {
+        API_URL,
+        getClusterDashboardDataDirs,
+        type ClusterDashboardDataDirs,
+        getClustersIndex
+    } from "$lib/api";
 
+    import { getDemoClusterRows, getDemoClusterData } from "$lib/api";
+    import ClusterDetailNew from "$lib/components/ClusterDetailNew.svelte";
+    import MiniModelView from "$lib/components/MiniModelView.svelte";
+    import Sparkbars from "$lib/components/Sparkbars.svelte";
+
+    import type { ClusterMap } from "$lib/api";
     type ClusterRow = {
         id: number;
         clusterHash: string;
@@ -17,56 +28,23 @@
     let loading = true;
     let errorMsg: string | null = null;
     let rows: ClusterRow[] = [];
-    let clusterMap: Record<string, any> = {};
+    let clusterMap: ClusterMap = {};
 
     const assetBase = `${API_URL}/cluster-dashboard`;
-
-    async function fetchText(url: string): Promise<string> {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        return res.text();
-    }
 
     async function loadClusters(dirAbs: string) {
         rows = [];
         errorMsg = null;
         loading = true;
         try {
-            const clustersUrl = `${dirAbs}/clusters.jsonl`;
-            const text = await fetchText(clustersUrl);
-            const byHash: Record<string, any> = {};
-            for (const line of text.trim().split("\n")) {
-                if (!line) continue;
-                const obj = JSON.parse(line);
-                byHash[obj.cluster_hash] = obj;
-            }
-
-            const nextRows: ClusterRow[] = [];
-            for (const [clusterHash, cluster] of Object.entries(byHash)) {
-                const modules = new Set<string>();
-                (cluster as any).components.forEach((c: any) => modules.add(c.module));
-                const parts = clusterHash.split("-");
-                const id = parseInt(parts[parts.length - 1]);
-                nextRows.push({
-                    id,
-                    clusterHash,
-                    componentCount: (cluster as any).components.length,
-                    modules: Array.from(modules)
-                });
-            }
-            nextRows.sort((a, b) => a.id - b.id);
-            rows = nextRows;
-            clusterMap = byHash;
+            const res = await getClustersIndex(dirAbs);
+            rows = res.rows as ClusterRow[];
+            clusterMap = res.clusterMap;
         } catch (e: any) {
             errorMsg = e?.message ?? String(e);
         }
         loading = false;
     }
-
-    import { getDemoClusterRows, getDemoClusterData } from "$lib/api";
-    import ClusterDetailNew from "$lib/components/ClusterDetailNew.svelte";
-    import MiniModelView from "$lib/components/MiniModelView.svelte";
-    import Sparkbars from "$lib/components/Sparkbars.svelte";
 
     async function init() {
         loading = true;
@@ -125,43 +103,29 @@
         totalParameters: "127.5M"
     };
 
-    async function loadClusterObject(dirAbs: string, clusterHash: string) {
-        if (demo) return getDemoClusterData(clusterHash);
-        const clustersUrl = `${dirAbs}/clusters.jsonl`;
-        const text = await fetchText(clustersUrl);
-        for (const line of text.trim().split("\n")) {
-            if (!line) continue;
-            const obj = JSON.parse(line);
-            if (obj.cluster_hash === clusterHash) return obj;
-        }
-        return null;
-    }
-
     async function onView(row: ClusterRow) {
         if (!selectedDirAbs) return;
-        currentCluster = clusterMap[row.clusterHash] ?? await loadClusterObject(selectedDirAbs, row.clusterHash);
+        currentCluster = clusterMap[row.clusterHash];
         showDetail = true;
     }
 </script>
 
-<div class="dashboard-container">
+<div class="tab-content">
     <div class="toolbar">
-        <div class="toolbar-right">
-            <label for="data-dir" class="toolbar-label">Data dir</label>
-            <select
-                id="data-dir"
-                on:change={onDirChange}
-                disabled={!dataDirs || dataDirs.dirs.length === 0}
-            >
-                {#if dataDirs?.dirs?.length}
-                    {#each dataDirs.dirs as d}
-                        <option value={d} selected={d === selectedDirRel}>{d}</option>
-                    {/each}
-                {:else}
-                    <option value="">No data directories found</option>
-                {/if}
-            </select>
-        </div>
+        <label for="data-dir" class="toolbar-label">Data dir</label>
+        <select
+            id="data-dir"
+            on:change={onDirChange}
+            disabled={!dataDirs || dataDirs.dirs.length === 0}
+        >
+            {#if dataDirs?.dirs?.length}
+                {#each dataDirs.dirs as d}
+                    <option value={d} selected={d === selectedDirRel}>{d}</option>
+                {/each}
+            {:else}
+                <option value="">No data directories found</option>
+            {/if}
+        </select>
     </div>
 
     {#if loading}
@@ -221,14 +185,14 @@
                             <td class="col-comps">{row.componentCount}</td>
                             <td class="col-model">
                                 <MiniModelView
-                                    components={(clusterMap[row.clusterHash]?.components) ?? []}
-                                    maxLayers={12}
+                                    components={clusterMap[row.clusterHash]?.components ?? []}
                                 />
                             </td>
                             <td class="col-hist">
                                 {#if clusterMap[row.clusterHash]?.stats?.all_activations?.bin_counts}
                                     <Sparkbars
-                                        bins={clusterMap[row.clusterHash].stats.all_activations.bin_counts}
+                                        bins={clusterMap[row.clusterHash]!.stats!.all_activations!
+                                            .bin_counts as number[]}
                                         width={160}
                                         height={48}
                                         color="#4169E1"
@@ -240,7 +204,8 @@
                             <td class="col-hist">
                                 {#if clusterMap[row.clusterHash]?.stats?.max_activation_position?.bin_counts}
                                     <Sparkbars
-                                        bins={clusterMap[row.clusterHash].stats.max_activation_position.bin_counts}
+                                        bins={clusterMap[row.clusterHash]!.stats!
+                                            .max_activation_position!.bin_counts as number[]}
                                         width={160}
                                         height={48}
                                         color="#DC143C"
@@ -269,22 +234,17 @@
 </div>
 
 <style>
-    .dashboard-container {
+    .tab-content {
         display: flex;
         flex-direction: column;
-        gap: 0.75rem;
+        gap: 1rem;
+        padding: 1rem;
     }
 
     .toolbar {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-    }
-
-    .toolbar-right {
-        margin-left: auto;
-        display: flex;
-        align-items: center;
+        /* margin-left: auto; */
         gap: 0.5rem;
     }
 

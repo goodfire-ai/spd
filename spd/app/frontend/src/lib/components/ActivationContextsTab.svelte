@@ -42,7 +42,7 @@
     });
 </script>
 
-<div class="activation-contexts-tab">
+<div class="tab-content">
     <div class="controls">
         <div class="control-group">
             <label for="layer-select">Layer:</label>
@@ -57,11 +57,11 @@
     </div>
 
     {#if exampleSets}
-        <div class="components-list">
+        <div class="subcomponents-list">
             {#each exampleSets as exampleSet}
-                <div class="component-section-header">
-                    <h4>Component {exampleSet.subcomponent_idx}</h4>
-                    <div class="component-section">
+                <div class="subcomponent-section-header">
+                    <h4>Subcomponent {exampleSet.subcomponent_idx}</h4>
+                    <div class="subcomponent-section">
                         {#each exampleSet.examples as example}
                             <ActivationContext {example} />
                         {/each}
@@ -73,11 +73,11 @@
 </div>
 
 <style>
-    .activation-contexts-tab {
-        padding: 1rem;
+    .tab-content {
         display: flex;
         flex-direction: column;
-        gap: 1.5rem;
+        gap: 1rem;
+        padding: 1rem;
     }
 
     .controls {
@@ -96,21 +96,13 @@
         gap: 0.4rem;
     }
 
-    .control-group label {
-        font-size: 0.85rem;
-        font-weight: 600;
-        color: #495057;
+    .subcomponent-section-header {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
     }
 
-    .control-group select {
-        padding: 0.5rem;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 0.9rem;
-        min-width: 150px;
-    }
-
-    .components-list {
+    .subcomponents-list {
         display: flex;
         flex-direction: column;
         gap: 1.5rem;
@@ -118,7 +110,7 @@
         padding: 0.5rem;
     }
 
-    .component-section {
+    .subcomponent-section {
         border-radius: 8px;
         overflow: hidden;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);

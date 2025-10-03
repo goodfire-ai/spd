@@ -236,7 +236,7 @@
     });
 </script>
 
-<div>
+<div class="tab-content">
     <SavedMasksPanel bind:this={savedMasksPanel} onApplyMask={applyMaskAsAblation} />
     <div class="workspace-navigation">
         <div class="workspace-header">
@@ -360,6 +360,13 @@
 </div>
 
 <style>
+    .tab-content {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1rem;
+    }
+
     .main-layout {
         display: flex;
         gap: 1rem;

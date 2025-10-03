@@ -345,9 +345,7 @@ def list_cluster_dashboard_data_dirs(run_id: str | None = None) -> dict[str, Any
                 except Exception:
                     pass
 
-    ret = {"dirs": sorted(dirs), "latest": latest}
-    print(ret)
-    return ret
+    return {"dirs": sorted(dirs), "latest": latest}
 
 
 if __name__ == "__main__":

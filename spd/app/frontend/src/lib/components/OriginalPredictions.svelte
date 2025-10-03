@@ -4,7 +4,7 @@
 
     export let tokenLogits: OutputTokenLogit[][];
     export let promptTokens: string[];
-    export let title: string = "Original Model Predictions";
+    export let title: string;
 </script>
 
 <div class="predictions-section">

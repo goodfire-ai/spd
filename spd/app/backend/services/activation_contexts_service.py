@@ -38,7 +38,6 @@ class ActivationContextsService:
         self._activations_by_module: ActivationContextsByModule | None = None
 
     def _get_activations(self) -> ActivationContextsByModule | Literal["loading"]:
-        logger.info("Getting activations")
         if self._activations_by_module is None:
             cached = self._try_load_from_cache()
             if cached is not None:
@@ -48,7 +47,6 @@ class ActivationContextsService:
                 logger.info("No activations found in cache, starting worker")
                 self._ensure_worker_running()
                 return "loading"
-        logger.info("returning activations")
         return self._activations_by_module
 
     def _cache_path(self, wandb_id: str) -> Path:
