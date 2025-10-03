@@ -1,7 +1,7 @@
 """Metric interface for distributed metric computation.
 
-All metrics implement MetricInterface and handle distributed synchronization
-directly in their compute() methods using all_reduce() or gather_all_tensors().
+All metrics implement Metric and typically handle distributed synchronization directly in their
+compute() methods.
 """
 
 from typing import Any, ClassVar, Protocol
@@ -11,7 +11,7 @@ from torch import Tensor
 
 
 class Metric(Protocol):
-    """Interface for metrics that can be used in training and evaluation."""
+    """Interface for metrics that can be used in training and/or evaluation."""
 
     slow: ClassVar[bool] = False
 
