@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from muutils.spinner import SpinnerContext
 import numpy as np
 import torch
 from jaxtyping import Float, Int
@@ -32,7 +33,7 @@ from spd.clustering.dashboard.core import (
 from spd.clustering.merge_history import MergeHistory
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
-from spd.utils.general_utils import extract_batch_data, get_module_device
+from spd.utils.general_utils import extract_batch_data # , get_module_device
 
 
 @dataclass
@@ -198,12 +199,21 @@ def compute_max_activations(
         is the number of samples where both cluster i and j activate, and cluster_indices maps
         matrix positions to cluster IDs
     """
-    device: torch.device = get_module_device(model)
+    device: torch.device = next(model.parameters()).device
+
+    # Resolve iteration (support negative indexes from the end)
+    actual_iteration: int = iteration
+    if iteration < 0:
+        actual_iteration = merge_history.n_iters_current + iteration
+    if not (0 <= actual_iteration < merge_history.n_iters_current):
+        raise ValueError(
+            f"Iteration {iteration} resolved to {actual_iteration}, which is out of bounds"
+        )
 
     # Get unique cluster indices and component info
-    unique_cluster_indices: list[int] = merge_history.get_unique_clusters(iteration)
+    unique_cluster_indices: list[int] = merge_history.get_unique_clusters(actual_iteration)
     cluster_components: dict[int, list[dict[str, Any]]] = {
-        cid: merge_history.get_cluster_components_info(iteration, cid)
+        cid: merge_history.get_cluster_components_info(actual_iteration, cid)
         for cid in unique_cluster_indices
     }
 
@@ -217,7 +227,7 @@ def compute_max_activations(
 
         cluster_id_map[idx] = ClusterId(
             clustering_run=clustering_run,
-            iteration=iteration,
+            iteration=actual_iteration,
             cluster_label=cluster_label,
         )
 
@@ -385,34 +395,33 @@ def compute_max_activations(
             all_text_hashes_list.append(text_hash)
             current_idx += 1
 
-    # TODO: spinner here
-    with SpinnerContext(message="Creating combined activations and dashboard data"):
-        # Create combined activations batch
-        assert all_activations_list, "No activations collected"
-        assert cluster_id_map, "No clusters found"
+    # TODO: spinner here with SpinnerContext(message="Creating combined activations and dashboard data"):
+    # Create combined activations batch
+    assert all_activations_list, "No activations collected"
+    assert cluster_id_map, "No clusters found"
 
-        combined_activations: Float[np.ndarray, "total_samples n_ctx"] = np.stack(
-            all_activations_list
-        )
-        # Use first cluster_id as placeholder since this is for all clusters
-        dummy_cluster_id: ClusterId = list(cluster_id_map.values())[0]
-        combined_batch: ActivationSampleBatch = ActivationSampleBatch(
-            cluster_id=dummy_cluster_id,
-            text_hashes=all_text_hashes_list,
-            activations=combined_activations,
-        )
+    combined_activations: Float[np.ndarray, "total_samples n_ctx"] = np.stack(
+        all_activations_list
+    )
+    # Use first cluster_id as placeholder since this is for all clusters
+    dummy_cluster_id: ClusterId = list(cluster_id_map.values())[0]
+    combined_batch: ActivationSampleBatch = ActivationSampleBatch(
+        cluster_id=dummy_cluster_id,
+        text_hashes=all_text_hashes_list,
+        activations=combined_activations,
+    )
 
-        # Build DashboardData
-        dashboard_data: DashboardData = DashboardData(
-            clusters=clusters,
-            text_samples=text_samples,
-            activations_map=activations_map,
-            activations=combined_batch,
-        )
+    # Build DashboardData
+    dashboard_data: DashboardData = DashboardData(
+        clusters=clusters,
+        text_samples=text_samples,
+        activations_map=activations_map,
+        activations=combined_batch,
+    )
 
-        # Compute coactivation matrix
-        coactivations: Float[np.ndarray, "n_clusters n_clusters"]
-        cluster_indices: list[int]
-        coactivations, cluster_indices = compute_cluster_coactivations(all_cluster_activations)
+    # Compute coactivation matrix
+    coactivations: Float[np.ndarray, "n_clusters n_clusters"]
+    cluster_indices: list[int]
+    coactivations, cluster_indices = compute_cluster_coactivations(all_cluster_activations)
 
     return dashboard_data, coactivations, cluster_indices

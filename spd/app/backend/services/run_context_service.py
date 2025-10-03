@@ -26,6 +26,7 @@ DEVICE = get_device()
 @dataclass
 class RunContext:
     wandb_id: str
+    wandb_path: str
     config: Config
     cm: ComponentModel
     tokenizer: PreTrainedTokenizer
@@ -70,17 +71,30 @@ class RunContextService:
         )
 
     def load_run_from_wandb_id(self, wandb_id: str):
-        self.run_context = get_pickle_cached(
-            wandb_id, lambda: self._load_run_from_wandb_id(wandb_id)
-        )
+        ctx = get_pickle_cached(wandb_id, lambda: self._load_run_from_wandb_id(wandb_id))
+
+        if not hasattr(ctx, "wandb_path"):
+            logger.info("Cached run context missing wandb_path; rebuilding cache")
+            cache_path = CACHE_DIR / f"{wandb_id}.pkl"
+            ctx = self._load_run_from_wandb_id(wandb_id)
+            with open(cache_path, "wb") as f:
+                pickle.dump(ctx, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        self.run_context = ctx
         logger.info(f"Loaded run from wandb id: {wandb_id}")
         # self.run_context = self._load_run_from_wandb_id(wandb_id)
 
-    @staticmethod
-    def _load_run_from_wandb_id(wandb_id: str):
+    def _load_run_from_wandb_id(self, wandb_id: str):
         logger.info(f"Loading run from wandb id: {wandb_id}")
-        path = f"wandb:goodfire/spd/runs/{wandb_id}"
-        run_info = SPDRunInfo.from_path(path)
+
+        wandb_run = next((run for run in self.api.runs(WANDB_PROJECT) if run.id == wandb_id), None)
+        if wandb_run is None:
+            raise ValueError(f"WandB run not found for id {wandb_id}")
+
+        wandb_path = "/".join(wandb_run.path)
+        model_path = f"wandb:{wandb_run.entity}/{wandb_run.project}/runs/{wandb_run.id}"
+
+        run_info = SPDRunInfo.from_path(model_path)
 
         task_config = runtime_cast(LMTaskConfig, run_info.config.task_config)
 
@@ -114,6 +128,7 @@ class RunContextService:
 
         return RunContext(
             wandb_id=wandb_id,
+            wandb_path=wandb_path,
             config=run_info.config,
             cm=cm,
             tokenizer=tokenizer,

@@ -2,7 +2,7 @@ import warnings
 
 import numpy as np
 from jaxtyping import Float, Int
-from scipy.optimize import linear_sum_assignment
+# from scipy.optimize import linear_sum_assignment
 
 
 def perm_invariant_hamming_matrix(

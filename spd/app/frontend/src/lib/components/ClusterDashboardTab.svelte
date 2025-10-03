@@ -1,18 +1,14 @@
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onDestroy, onMount } from "svelte";
     import {
-        API_URL,
-        getClusterDashboardDataDirs,
-        type ClusterDashboardDataDirs,
-        getClustersIndex
+        getClusterDashboardData,
+        type ClusterDashboardResponse,
+        type ClusterDataDTO
     } from "$lib/api";
-
-    import { getDemoClusterRows, getDemoClusterData } from "$lib/api";
     import ClusterDetailNew from "$lib/components/ClusterDetailNew.svelte";
     import MiniModelView from "$lib/components/MiniModelView.svelte";
     import Sparkbars from "$lib/components/Sparkbars.svelte";
-
-    import type { ClusterMap } from "$lib/api";
+    
     type ClusterRow = {
         id: number;
         clusterHash: string;
@@ -20,112 +16,183 @@
         modules: string[];
     };
 
+    type ClusterMap = Record<string, ClusterDataDTO>;
+
     export let runId: string | null = null;
-    export let demo: boolean = true;
-    let dataDirs: ClusterDashboardDataDirs | null = null;
-    let selectedDirRel: string | null = null; // relative under /cluster-dashboard
-    let selectedDirAbs: string | null = null; // absolute URL for fetch
+
     let loading = true;
     let errorMsg: string | null = null;
     let rows: ClusterRow[] = [];
     let clusterMap: ClusterMap = {};
+    let dashboard: ClusterDashboardResponse | null = null;
 
-    const assetBase = `${API_URL}/cluster-dashboard`;
+    let iteration = 3000;
+    let nSamples = 16;
+    let nBatches = 2;
+    let batchSize = 64;
+    let contextLength = 64;
 
-    async function loadClusters(dirAbs: string) {
-        rows = [];
-        errorMsg = null;
-        loading = true;
-        try {
-            const res = await getClustersIndex(dirAbs);
-            rows = res.rows as ClusterRow[];
-            clusterMap = res.clusterMap;
-        } catch (e: any) {
-            errorMsg = e?.message ?? String(e);
-        }
-        loading = false;
+    let showDetail = false;
+    let currentCluster: ClusterDataDTO | null = null;
+    let sortKey: "id" | "componentCount" = "id";
+    let sortDir: "asc" | "desc" = "asc";
+
+    let pendingController: AbortController | null = null;
+
+    function buildRows(clusters: ClusterDataDTO[]): ClusterRow[] {
+        return clusters.map((cluster, idx) => {
+            const parts = cluster.cluster_hash.split("-");
+            const maybeId = Number.parseInt(parts[parts.length - 1] ?? "", 10);
+            const id = Number.isNaN(maybeId) ? idx : maybeId;
+            const modules = new Set<string>();
+            cluster.components?.forEach((c) => modules.add(c.module));
+            return {
+                id,
+                clusterHash: cluster.cluster_hash,
+                componentCount: cluster.components?.length ?? 0,
+                modules: Array.from(modules)
+            } satisfies ClusterRow;
+        });
     }
 
-    async function init() {
+    function applySort(nextRows: ClusterRow[]): ClusterRow[] {
+        const sorted = [...nextRows];
+        if (sortKey === "id") {
+            sorted.sort((a, b) => (sortDir === "asc" ? a.id - b.id : b.id - a.id));
+        } else {
+            sorted.sort((a, b) =>
+                sortDir === "asc" ? a.componentCount - b.componentCount : b.componentCount - a.componentCount
+            );
+        }
+        return sorted;
+    }
+
+    function resetDetail() {
+        showDetail = false;
+        currentCluster = null;
+    }
+
+    async function fetchDashboard() {
+        pendingController?.abort();
+        const controller = new AbortController();
+        pendingController = controller;
+
         loading = true;
         errorMsg = null;
+
         try {
-            if (demo) {
-                // Populate demo rows immediately
-                rows = getDemoClusterRows(24);
-                dataDirs = { dirs: ["data/demo"], latest: "data/demo" };
-                selectedDirRel = "data/demo";
-                selectedDirAbs = `${assetBase}/data/demo`;
-                const map: Record<string, any> = {};
-                for (const r of rows) {
-                    map[r.clusterHash] = getDemoClusterData(r.clusterHash);
-                }
-                clusterMap = map;
-                loading = false;
-                return;
-            }
-            dataDirs = await getClusterDashboardDataDirs(runId ?? undefined);
-            const rel = dataDirs?.latest ?? dataDirs?.dirs?.[0] ?? null;
-            selectedDirRel = rel;
-            selectedDirAbs = rel ? `${assetBase}/${rel}` : null;
-            if (selectedDirAbs) {
-                await loadClusters(selectedDirAbs);
-            } else {
-                loading = false;
-            }
+            const result = await getClusterDashboardData({
+                iteration,
+                n_samples: nSamples,
+                n_batches: nBatches,
+                batch_size: batchSize,
+                context_length: contextLength,
+                signal: controller.signal
+            });
+            if (controller.signal.aborted) return;
+
+            dashboard = result;
+            clusterMap = Object.fromEntries(result.clusters.map((cluster) => [cluster.cluster_hash, cluster]));
+            rows = applySort(buildRows(result.clusters));
+            resetDetail();
         } catch (e: any) {
+            if (controller.signal.aborted) return;
             errorMsg = e?.message ?? String(e);
-            loading = false;
+        } finally {
+            if (!controller.signal.aborted) {
+                loading = false;
+            }
         }
     }
 
     onMount(() => {
-        init().catch((e) => (errorMsg = e?.message ?? String(e)));
+        fetchDashboard().catch((e) => (errorMsg = e?.message ?? String(e)));
     });
 
-    function onDirChange(e: Event) {
-        const v = (e.target as HTMLSelectElement).value || null;
-        selectedDirRel = v;
-        selectedDirAbs = v ? `${assetBase}/${v}` : null;
-        if (selectedDirAbs)
-            loadClusters(selectedDirAbs).catch((e) => (errorMsg = e?.message ?? String(e)));
+    onDestroy(() => {
+        pendingController?.abort();
+        pendingController = null;
+    });
+
+    function toggleSort(key: "id" | "componentCount") {
+        if (sortKey === key) {
+            sortDir = sortDir === "asc" ? "desc" : "asc";
+        } else {
+            sortKey = key;
+            sortDir = "asc";
+        }
+        rows = applySort(rows);
     }
 
-    let showDetail = false;
-    let currentCluster: any | null = null;
-    let sortKey: "id" | "componentCount" = "id";
-    let sortDir: "asc" | "desc" = "asc";
-
-    let modelInfoDemo = {
-        totalModules: 28,
-        totalComponents: 3241,
-        totalClusters: 2240,
-        totalParameters: "127.5M"
-    };
-
-    async function onView(row: ClusterRow) {
-        if (!selectedDirAbs) return;
-        currentCluster = clusterMap[row.clusterHash];
+    function onView(row: ClusterRow) {
+        const cluster = clusterMap[row.clusterHash];
+        if (!cluster) return;
+        currentCluster = cluster;
         showDetail = true;
     }
+
+    function refresh() {
+        fetchDashboard().catch((e) => (errorMsg = e?.message ?? String(e)));
+    }
+
+    const formatValue = (value: unknown): string => {
+        if (value === null || value === undefined) return "";
+        if (typeof value === "number") return value.toLocaleString();
+        if (typeof value === "string") return value;
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return String(value);
+        }
+    };
+
+    $: modelInfo = dashboard?.model_info ?? null;
+    $: modelStats = dashboard
+        ? (
+              [
+                  { label: "Cluster Run", value: dashboard.cluster_run_path },
+                  { label: "Cluster Run ID", value: dashboard.run_id },
+                  { label: "Iteration", value: dashboard.iteration },
+                  { label: "Model Run", value: modelInfo?.model_path },
+                  { label: "Tokenizer", value: modelInfo?.tokenizer_name },
+                  { label: "Total Modules", value: modelInfo?.total_modules },
+                  { label: "Total Components", value: modelInfo?.total_components },
+                  { label: "Total Clusters", value: modelInfo?.total_clusters },
+                  { label: "Parameters", value: modelInfo?.total_parameters },
+                  { label: "Trainable Parameters", value: modelInfo?.trainable_parameters }
+              ] as const
+          ).filter(({ value }) => value !== undefined && value !== null && value !== "")
+        : runId
+          ? [{ label: "Run", value: runId }]
+          : [];
 </script>
 
 <div class="tab-content">
     <div class="toolbar">
-        <label for="data-dir" class="toolbar-label">Data dir</label>
-        <select
-            id="data-dir"
-            on:change={onDirChange}
-            disabled={!dataDirs || dataDirs.dirs.length === 0}
-        >
-            {#if dataDirs?.dirs?.length}
-                {#each dataDirs.dirs as d}
-                    <option value={d} selected={d === selectedDirRel}>{d}</option>
-                {/each}
-            {:else}
-                <option value="">No data directories found</option>
-            {/if}
-        </select>
+        <form class="toolbar-form" on:submit|preventDefault={refresh}>
+            <label>
+                Iteration
+                <input type="number" bind:value={iteration} />
+            </label>
+            <label>
+                Samples
+                <input type="number" min={1} bind:value={nSamples} />
+            </label>
+            <label>
+                Batches
+                <input type="number" min={1} bind:value={nBatches} />
+            </label>
+            <label>
+                Batch Size
+                <input type="number" min={1} bind:value={batchSize} />
+            </label>
+            <label>
+                Context
+                <input type="number" min={1} bind:value={contextLength} />
+            </label>
+            <button class="refresh-button" type="submit">Run</button>
+        </form>
+        <button class="refresh-button secondary" on:click={refresh}>Refresh</button>
     </div>
 
     {#if loading}
@@ -134,41 +201,31 @@
         <div class="status-error">{errorMsg}</div>
     {:else if !showDetail}
         <div class="table-wrapper">
-            <div class="model-info">
-                <div>Total Modules: {modelInfoDemo.totalModules}</div>
-                <div>Total Components: {modelInfoDemo.totalComponents}</div>
-                <div>Total Clusters: {modelInfoDemo.totalClusters}</div>
-                <div>Model Parameters: {modelInfoDemo.totalParameters}</div>
-            </div>
+            {#if modelStats.length}
+                <div class="model-info">
+                    {#each modelStats as stat}
+                        <div>
+                            <span class="model-info-label">{stat.label}:</span>
+                            <span class="model-info-value">{formatValue(stat.value)}</span>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
             <table class="cluster-table">
                 <thead>
                     <tr>
                         <th class="col-id">
                             <button
                                 class="th-btn"
-                                on:click={() => {
-                                    const same = sortKey === "id";
-                                    sortKey = "id";
-                                    sortDir = same && sortDir === "asc" ? "desc" : "asc";
-                                    rows = [...rows].sort((a, b) =>
-                                        sortDir === "asc" ? a.id - b.id : b.id - a.id
-                                    );
-                                }}>ID</button
+                                on:click={() => toggleSort("id")}
+                            >ID</button
                             >
                         </th>
                         <th class="col-comps">
                             <button
                                 class="th-btn"
-                                on:click={() => {
-                                    const same = sortKey === "componentCount";
-                                    sortKey = "componentCount";
-                                    sortDir = same && sortDir === "asc" ? "desc" : "asc";
-                                    rows = [...rows].sort((a, b) =>
-                                        sortDir === "asc"
-                                            ? a.componentCount - b.componentCount
-                                            : b.componentCount - a.componentCount
-                                    );
-                                }}>Comps</button
+                                on:click={() => toggleSort("componentCount")}
+                            >Comps</button
                             >
                         </th>
                         <th class="col-model">Model View</th>
@@ -226,8 +283,8 @@
             </table>
         </div>
     {:else}
-        <div class="detail-toolbar">
-            <button class="back-button" on:click={() => (showDetail = false)}>← Back</button>
+    <div class="detail-toolbar">
+        <button class="back-button" on:click={resetDetail}>← Back</button>
         </div>
         <ClusterDetailNew cluster={currentCluster} />
     {/if}
@@ -243,14 +300,57 @@
 
     .toolbar {
         display: flex;
-        align-items: center;
-        /* margin-left: auto; */
-        gap: 0.5rem;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: flex-end;
     }
 
-    .toolbar-label {
-        font-size: 0.9rem;
+    .toolbar-form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: flex-end;
+    }
+
+    .toolbar-form label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 0.85rem;
         color: #555;
+    }
+
+    .toolbar-form input {
+        width: 90px;
+        padding: 4px 6px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 0.85rem;
+    }
+
+    .refresh-button {
+        padding: 6px 12px;
+        border-radius: 4px;
+        border: 1px solid #0d6efd;
+        background: #0d6efd;
+        color: #fff;
+        cursor: pointer;
+        font-size: 0.9rem;
+    }
+
+    .refresh-button:hover {
+        background: #0b5ed7;
+        border-color: #0b5ed7;
+    }
+
+    .refresh-button.secondary {
+        border-color: #dee2e6;
+        background: #fff;
+        color: #0d6efd;
+    }
+
+    .refresh-button.secondary:hover {
+        background: #e9ecef;
     }
 
     .status {
@@ -271,6 +371,16 @@
         gap: 10px;
         padding: 8px 0 12px 0;
         color: #555;
+    }
+
+    .model-info-label {
+        font-weight: 600;
+        margin-right: 0.35rem;
+        color: #333;
+    }
+
+    .model-info-value {
+        color: #343a40;
     }
 
     .cluster-table {

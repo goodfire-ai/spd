@@ -3,12 +3,10 @@ import asyncio
 import traceback
 from contextlib import asynccontextmanager
 from functools import wraps
-from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from spd.app.backend.services.ablation_service import (
@@ -22,6 +20,10 @@ from spd.app.backend.services.ablation_service import (
 from spd.app.backend.services.activation_contexts_service import (
     ActivationContextsService,
 )
+from spd.app.backend.services.cluster_dashboard_service import (
+    ClusterDashboardResponse,
+    ClusterDashboardService,
+)
 from spd.app.backend.services.run_context_service import (
     AvailablePrompt,
     Run,
@@ -32,12 +34,12 @@ from spd.app.backend.workers.activation_contexts_worker_v2 import (
     ActivationContext,
     SubcomponentActivationContexts,
 )
-from spd.settings import REPO_ROOT
 
 run_context_service = RunContextService()
 
 ablation_service = AblationService(run_context_service)
 component_activations_service = ActivationContextsService(run_context_service)
+cluster_dashboard_service = ClusterDashboardService(run_context_service)
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
@@ -98,14 +100,6 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)
-
-# Mount static dashboard under /cluster-dashboard
-DASHBOARD_DIR = REPO_ROOT / "spd" / "clustering" / "dashboard"
-app.mount(
-    "/cluster-dashboard",
-    StaticFiles(directory=str(DASHBOARD_DIR), html=True),
-    name="cluster_dashboard",
 )
 
 
@@ -306,44 +300,24 @@ async def get_subcomponent_activation_contexts(
     )
 
 
-@app.get("/dashboard/data-dirs")
+@app.get("/cluster-dashboard/data", response_model=ClusterDashboardResponse)
 @handle_errors
-def list_cluster_dashboard_data_dirs(run_id: str | None = None) -> dict[str, Any]:
-    """List available cluster dashboard data directories.
-
-    Returns JSON with keys:
-      - dirs: list[str] of relative paths under /cluster-dashboard (e.g. "data/<run>-i<iter>")
-      - latest: best guess of latest iteration for the (optional) run_id
-    """
-    root = DASHBOARD_DIR / "data"
-    dirs: list[str] = []
-    latest: str | None = None
-    latest_iter = -(10**9)
-
-    if root.exists():
-        for p in root.iterdir():
-            if not p.is_dir():
-                continue
-            name = p.name  # e.g. "<runid>-i<iter>"
-            if (
-                not run_id
-                or (run_id and name.startswith(f"{run_id}-i"))
-                or name.startswith("dummy-")
-            ):
-                rel = f"data/{name}"
-                dirs.append(rel)
-                # extract iteration if possible
-                try:
-                    if "-i" in name:
-                        iter_part = name.split("-i")[-1]
-                        i_val = int(iter_part)
-                        if i_val > latest_iter:
-                            latest_iter = i_val
-                            latest = rel
-                except Exception:
-                    pass
-
-    return {"dirs": sorted(dirs), "latest": latest}
+async def get_cluster_dashboard_data(
+    iteration: int = 3000,
+    n_samples: int = 16,
+    n_batches: int = 2,
+    batch_size: int = 64,
+    context_length: int = 64,
+    clustering_run: str | None = None,
+) -> ClusterDashboardResponse:
+    return await cluster_dashboard_service.get_dashboard_data(
+        iteration=iteration,
+        n_samples=n_samples,
+        n_batches=n_batches,
+        batch_size=batch_size,
+        context_length=context_length,
+        clustering_run=clustering_run,
+    )
 
 
 if __name__ == "__main__":

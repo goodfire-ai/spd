@@ -23,7 +23,7 @@ def component_activations(
         _, pre_weight_acts = model.forward(
             batch.to(device),
             mode="input_cache",
-            module_names=model.module_paths,
+            module_names=list(model.components.keys()),
         )
 
         causal_importances, _ = model.calc_causal_importances(

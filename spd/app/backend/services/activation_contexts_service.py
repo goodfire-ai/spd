@@ -12,6 +12,7 @@ from spd.app.backend.workers.activation_contexts_worker_v2 import (
     WorkerArgs,
 )
 from spd.app.backend.workers.activation_contexts_worker_v2 import main as worker_main
+from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
 
 _pool: ProcessPoolExecutor | None = None
@@ -42,11 +43,13 @@ class ActivationContextsService:
         # Coalesce concurrent callers (keep this!)
         existing = self._inflight.get(wandb_id)
         if existing:
+            logger.info(f"Found existing task for {wandb_id}, returning immediately")
             return await existing
 
         async def _produce() -> ModelActivationContexts:
             # Single cache check happens *inside* the task
             if cache_path.exists():
+                logger.info(f"Found existing cache for {wandb_id}, loading from cache")
                 with open(cache_path) as f:
                     return ModelActivationContexts(**json.load(f))
 
@@ -58,12 +61,15 @@ class ActivationContextsService:
                 n_steps=100,
                 n_tokens_either_side=10,
             )
+
+            logger.info(f"Starting activation contexts computation for {wandb_id}")
             result: ModelActivationContexts = await loop.run_in_executor(
                 _get_pool(), worker_main, args
             )
 
             # Atomic write to avoid partial reads
             tmp = cache_path.with_name(f"{cache_path.name}.{uuid.uuid4().hex}.tmp")
+            logger.info(f"Writing activation contexts to {tmp}")
             with open(tmp, "w") as f:
                 json.dump(result.model_dump(), f)
             os.replace(tmp, cache_path)

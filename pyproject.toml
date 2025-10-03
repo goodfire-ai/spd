@@ -28,6 +28,7 @@ dependencies = [
     "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
     "fastapi>=0.117.1",
     "uvicorn>=0.37.0",
+    "muutils>=0.8.11",
 ]
 
 [dependency-groups]

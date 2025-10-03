@@ -243,24 +243,6 @@ export async function getCosineSimilarities(
     return response.json();
 }
 
-export type ClusterDashboardDataDirs = {
-    dirs: string[];
-    latest: string | null;
-};
-
-export async function getClusterDashboardDataDirs(
-    runId?: string
-): Promise<ClusterDashboardDataDirs> {
-    const url = new URL(`${apiUrl}/dashboard/data-dirs`);
-    if (runId) url.searchParams.set("run_id", runId);
-    const response = await fetch(url.toString(), { method: "GET" });
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Failed to get cluster dashboard data dirs");
-    }
-    return response.json();
-}
-
 export type CombineMasksRequest = {
     prompt_id: string;
     layer: string;
@@ -365,189 +347,78 @@ export async function getSubcomponentActivationContexts(
     return response.json();
 }
 
-// ---- Demo data helpers (frontend-only scaffolding) ----
-
-export type ClusterSummaryRow = {
-    id: number;
-    clusterHash: string;
-    componentCount: number;
-    modules: string[];
+export type ClusterComponentDTO = {
+    module: string;
+    index: number;
+    label?: string;
 };
 
-export type ClusterDetailData = {
+export type ClusterStatsDTO = Record<string, any>;
+
+export type ClusterDataDTO = {
     cluster_hash: string;
-    components: { module: string; index: number; label?: string }[];
-    stats?: Record<string, any>;
+    components: ClusterComponentDTO[];
+    stats?: ClusterStatsDTO;
     criterion_samples?: Record<string, string[]>;
 };
 
-export async function fetchText(url: string): Promise<string> {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    return res.text();
-}
+export type TextSampleDTO = {
+    text_hash: string;
+    full_text: string;
+    tokens: string[];
+};
 
-export function getDemoClusterRows(n: number = 20): ClusterSummaryRow[] {
-    const modulePool = Array.from({ length: 4 }).flatMap((_, i) => [
-        `model.layers.${i}.self_attn.q_proj`,
-        `model.layers.${i}.self_attn.k_proj`,
-        `model.layers.${i}.self_attn.v_proj`,
-        `model.layers.${i}.self_attn.o_proj`,
-        `model.layers.${i}.mlp.gate_proj`,
-        `model.layers.${i}.mlp.up_proj`,
-        `model.layers.${i}.mlp.down_proj`
-    ]);
-    const rand = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
-    const out: ClusterSummaryRow[] = [];
-    for (let i = 0; i < n; i++) {
-        const comps = rand(1, 12);
-        const mods = new Set<string>();
-        const picks = rand(1, 4);
-        for (let k = 0; k < picks; k++) mods.add(modulePool[rand(0, modulePool.length - 1)]);
-        out.push({
-            id: i,
-            clusterHash: `demo-0-${i}`,
-            componentCount: comps,
-            modules: Array.from(mods)
-        });
-    }
-    return out;
-}
-
-export function getDemoClusterData(clusterHash: string): ClusterDetailData {
-    const idNum = parseInt(clusterHash.split("-").pop() || "0");
-    // seeded PRNG (mulberry32-like)
-    let seed = (0x9e3779b9 ^ idNum) >>> 0;
-    const rand = () => {
-        seed |= 0;
-        seed = (seed + 0x6d2b79f5) | 0;
-        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+export type ActivationBatchDTO = {
+    cluster_id: {
+        clustering_run: string;
+        iteration: number;
+        cluster_label: number;
+        hash: string;
     };
+    text_hashes: string[];
+    activations: number[][];
+    tokens?: string[][] | null;
+};
 
-    // choose number of layers between 12 and 36
-    const numLayers = 4;
-    const sublayers = [
-        "self_attn.q_proj",
-        "self_attn.k_proj",
-        "self_attn.v_proj",
-        "self_attn.o_proj",
-        "mlp.gate_proj",
-        "mlp.up_proj",
-        "mlp.down_proj"
-    ];
+export type ClusterDashboardResponse = {
+    clusters: ClusterDataDTO[];
+    text_samples: TextSampleDTO[];
+    activation_batch: ActivationBatchDTO;
+    activations_map: Record<string, number>;
+    coactivations: number[][];
+    cluster_indices: number[];
+    model_info: Record<string, any>;
+    iteration: number;
+    run_id: string;
+    cluster_run_path: string;
+};
 
-    const components: { module: string; index: number }[] = [];
-    let nextIndex = 0;
-    for (let layer = 0; layer < numLayers; layer++) {
-        for (const sub of sublayers) {
-            const p = 0.08 + 0.22 * rand();
-            const n = rand() < p ? 1 + Math.floor(rand() * 3) : 0; // 0-3 comps
-            for (let k = 0; k < n; k++) {
-                components.push({ module: `model.layers.${layer}.${sub}`, index: nextIndex++ });
-            }
+type DashboardQueryParams = {
+    iteration?: number;
+    n_samples?: number;
+    n_batches?: number;
+    batch_size?: number;
+    context_length?: number;
+    clustering_run?: string;
+    signal?: AbortSignal;
+};
+
+export async function getClusterDashboardData(
+    params: DashboardQueryParams = {}
+): Promise<ClusterDashboardResponse> {
+    const { signal, ...rest } = params;
+    const url = new URL(`${apiUrl}/cluster-dashboard/data`);
+    for (const [key, value] of Object.entries(rest)) {
+        if (value !== undefined) {
+            url.searchParams.set(key, String(value));
         }
     }
 
-    const mkBins = (len = 10, base = 5, skew = rand() * 2 - 1) => {
-        const bins: number[] = [];
-        for (let i = 0; i < len; i++) {
-            const t = i / (len - 1);
-            const shape = skew >= 0 ? Math.pow(1 - t, 1 + skew * 2) : Math.pow(t, 1 + -skew * 2);
-            const noise = 0.3 + rand();
-            bins.push(Math.max(0, Math.round(base * (0.6 + 1.8 * shape * noise))));
-        }
-        return bins;
-    };
-
-    const allBins = mkBins(10, 6);
-    const posBins = mkBins(10, 5, rand() * 2 - 1);
-
-    const tokensPool = [
-        " the",
-        " and",
-        " to",
-        " of",
-        " in",
-        " is",
-        " it",
-        " that",
-        " as",
-        " with",
-        " you",
-        " for"
-    ];
-    const topTokens = tokensPool
-        .slice()
-        .sort(() => rand() - 0.5)
-        .slice(0, 5)
-        .map((t, i) => ({ token: t, count: 15 + Math.floor(rand() * 60) - i * 5 }));
-    const totalActivations = topTokens.reduce((a, b) => a + b.count, 0);
-
-    const stats = {
-        all_activations: {
-            bin_edges: Array.from({ length: 11 }).map((_, i) => i / 10),
-            bin_counts: allBins
-        },
-        "max_activation-max-16": {
-            bin_edges: Array.from({ length: 11 }).map((_, i) => i / 10),
-            bin_counts: mkBins(10, 4)
-        },
-        max_activation_position: {
-            bin_edges: Array.from({ length: 11 }).map((_, i) => i / 10),
-            bin_counts: posBins
-        },
-        token_activations: {
-            top_tokens: topTokens,
-            total_unique_tokens: topTokens.length,
-            total_activations: totalActivations,
-            entropy: 0.5 + rand() * 4,
-            concentration_ratio: 0.3 + rand() * 0.5,
-            activation_threshold: 0.5
-        }
-    } as Record<string, any>;
-
-    return { cluster_hash: clusterHash, components, stats };
-}
-
-export type ClusterMap = Record<string, ClusterDetailData>;
-
-export function getDemoClustersIndex(n: number): {
-    rows: ClusterSummaryRow[];
-    clusterMap: ClusterMap;
-} {
-    const rows = getDemoClusterRows(n);
-    const clusterMap: ClusterMap = {};
-    for (const r of rows) {
-        clusterMap[r.clusterHash] = getDemoClusterData(r.clusterHash);
+    const response = await fetch(url.toString(), { method: "GET", signal });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || "Failed to load cluster dashboard data");
     }
-    return { rows, clusterMap };
-}
 
-export async function getClustersIndex(
-    absDir: string
-): Promise<{ rows: ClusterSummaryRow[]; clusterMap: ClusterMap }> {
-    const clustersUrl = `${absDir}/clusters.jsonl`;
-    const text = await fetchText(clustersUrl);
-    const clusterMap: ClusterMap = {};
-    for (const line of text.trim().split("\n")) {
-        if (!line) continue;
-        const obj = JSON.parse(line) as ClusterDetailData;
-        clusterMap[obj.cluster_hash] = obj;
-    }
-    const rows: ClusterSummaryRow[] = Object.entries(clusterMap).map(([clusterHash, cluster]) => {
-        const modules = new Set<string>();
-        cluster.components.forEach((c) => modules.add(c.module));
-        const parts = clusterHash.split("-");
-        const id = parseInt(parts[parts.length - 1]);
-        return {
-            id,
-            clusterHash,
-            componentCount: cluster.components.length,
-            modules: Array.from(modules)
-        } as ClusterSummaryRow;
-    });
-    rows.sort((a, b) => a.id - b.id);
-    return { rows, clusterMap };
+    return response.json();
 }

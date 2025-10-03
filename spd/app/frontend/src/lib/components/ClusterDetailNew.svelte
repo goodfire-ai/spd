@@ -1,15 +1,8 @@
 <script lang="ts">
     import Sparkbars from "$lib/components/Sparkbars.svelte";
+    import type { ClusterDataDTO } from "$lib/api";
 
-    type ClusterStats = Record<string, any>;
-    type ClusterDataLocal = {
-        cluster_hash: string;
-        components: { module: string; index: number; label?: string }[];
-        stats?: ClusterStats;
-        criterion_samples?: Record<string, string[]>;
-    };
-
-    export let cluster: ClusterDataLocal | null = null;
+    export let cluster: ClusterDataDTO | null = null;
 
     $: histogramStats = (() => {
         if (!cluster?.stats) return [] as string[];
@@ -173,4 +166,3 @@
         font-size: 12px;
     }
 </style>
-
