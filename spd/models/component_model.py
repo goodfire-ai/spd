@@ -567,43 +567,9 @@ class ComponentModel(LoadableModule):
         return weight_deltas
 
 
-def _transform_key(key: str) -> str:
-    key = key[:]  # make a copy
-
-    # do this first to simplify the rest. All following logic assumes "target_model" naming convention
-    key = key.replace("patched_model", "target_model")
-
-    has_components = ".components." in key
-    has_original = ".original." in key
-    if has_components and has_original:
-        raise ValueError(
-            f"Key {key} has both components and original, this is technically possible but unsupported"
-        )
-
-    if has_components:
-        # we need to move the path out of the target model, remove the "components" nesting,
-        # normalize the path, and put it under the "_components" ModuleDict
-        assert key.startswith("target_model.")
-        key = key.removeprefix("target_model.")
-        path, contents = key.split(".components.")
-        normalized_path = path.replace(".", "-")
-        key = f"_components.{normalized_path}.{contents}"
-
-    if has_original:
-        # simpler: just collapse the nesting
-        key = key.replace(".original.", ".")
-
-    return key
-
-
 def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
-    """Maps deprecated state dict keys to new state dict keys
-    old: used nested ComponentsOrModule wrappers
-    new: uses a single ModuleDict for all components
-    """
+    """Maps deprecated state dict keys to new state dict keys"""
     for key in list(state_dict.keys()):
-        new_key = _transform_key(key)
-        if new_key == key:
-            continue
-        assert new_key not in state_dict, f"Renamed key {key} already exists in state_dict"
-        state_dict[new_key] = state_dict.pop(key)
+        # We used to have "_gates.*", now we have "_ci_fns.*"
+        if "_gates." in key:
+            state_dict[key.replace("_gates.", "_ci_fns.")] = state_dict.pop(key)
