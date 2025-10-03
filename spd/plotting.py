@@ -217,6 +217,43 @@ def get_single_feature_causal_importances(
     return ci_raw, ci_upper_leaky_raw
 
 
+def get_single_feature_pre_sigmoid_gate_outputs(
+    model: ComponentModel,
+    batch_shape: tuple[int, ...],
+    device: str | torch.device,
+    input_magnitude: float,
+) -> dict[str, Float[Tensor, "batch C"]]:
+    """Compute pre-sigmoid gate output arrays for single active features.
+
+    Args:
+        model: The ComponentModel
+        batch_shape: Shape of the batch
+        device: Device to use
+        input_magnitude: Magnitude of input features
+
+    Returns:
+        Dictionary of pre-sigmoid gate output arrays (2D tensors)
+    """
+    # Create a batch of inputs with single active features
+    has_pos_dim = len(batch_shape) == 3
+    n_features = batch_shape[-1]
+    batch = torch.eye(n_features, device=device) * input_magnitude
+    if has_pos_dim:
+        # NOTE: For now, we only use the first pos dim
+        batch = batch.unsqueeze(1)
+
+    pre_weight_acts = model(batch, mode="input_cache", module_names=list(model.components.keys()))[
+        1
+    ]
+
+    pre_sigmoid_outputs = model.calc_pre_sigmoid_gate_outputs(
+        pre_weight_acts=pre_weight_acts,
+        detach_inputs=False,
+    )
+
+    return pre_sigmoid_outputs
+
+
 def plot_causal_importance_vals(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
@@ -485,3 +522,429 @@ def plot_ci_values_histograms(
     plt.close(fig)
 
     return fig_img
+def plot_pre_sigmoid_gate_outputs(
+    model: ComponentModel,
+    batch_shape: tuple[int, ...],
+    device: str | torch.device,
+    input_magnitude: float,
+    identity_patterns: list[str] | None = None,
+    dense_patterns: list[str] | None = None,
+    title_formatter: Callable[[str], str] | None = None,
+) -> tuple[dict[str, Image.Image], dict[str, Float[Tensor, " C"]]]:
+    """Plot the pre-sigmoid gate output values for a batch of inputs with single active features.
+
+    Args:
+        model: The ComponentModel
+        batch_shape: Shape of the batch
+        device: Device to use
+        input_magnitude: Magnitude of input features
+        identity_patterns: List of patterns to match for identity permutation
+        dense_patterns: List of patterns to match for dense permutation
+        title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
+
+    Returns:
+        Tuple of:
+            - Dictionary of figures with key 'pre_sigmoid_gate_outputs'
+            - Dictionary of permutation indices for pre-sigmoid gate outputs
+    """
+    # Get the pre-sigmoid gate output arrays
+    pre_sigmoid_raw = get_single_feature_pre_sigmoid_gate_outputs(
+        model=model,
+        batch_shape=batch_shape,
+        device=device,
+        input_magnitude=input_magnitude,
+    )
+
+    pre_sigmoid: dict[str, Float[Tensor, "... C"]] = {}
+    all_perm_indices: dict[str, Float[Tensor, " C"]] = {}
+    for k in pre_sigmoid_raw:
+        # Determine permutation strategy based on patterns
+        if identity_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in identity_patterns):
+            pre_sigmoid[k], all_perm_indices[k] = permute_to_identity(ci_vals=pre_sigmoid_raw[k])
+        elif dense_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in dense_patterns):
+            pre_sigmoid[k], all_perm_indices[k] = permute_to_dense(ci_vals=pre_sigmoid_raw[k])
+        else:
+            pre_sigmoid[k] = pre_sigmoid_raw[k]
+
+    # Determine if we have position dimension
+    has_pos_dim = len(batch_shape) == 3
+
+    # Create the plot
+    fig_img = _plot_causal_importances_figure(
+        ci_vals=pre_sigmoid,
+        title_prefix="Pre-sigmoid gate outputs",
+        colormap="RdBu_r",  # Use a different colormap to distinguish from post-sigmoid
+        input_magnitude=input_magnitude,
+        has_pos_dim=has_pos_dim,
+        title_formatter=title_formatter,
+    )
+
+    return {"pre_sigmoid_gate_outputs": fig_img}, all_perm_indices
+
+
+def plot_component_weight_heatmaps(
+    model: ComponentModel,
+    embedding_module_name: str | None = None,
+    unembedding_module_name: str | None = None,
+    figsize_per_component: tuple[float, float] = (4, 3),
+    dpi: int = 150,
+    input_magnitude: float = 0.75,
+) -> dict[str, Image.Image]:
+    """Plot heatmaps of component weights and their interactions with embedding/unembedding.
+    Only plots components that actually respond to inputs (have non-zero causal importance).
+    
+    Args:
+        model: The ComponentModel
+        embedding_module_name: Name of the embedding module in the target model (e.g., 'token_embed')
+        unembedding_module_name: Name of the unembedding module in the target model (e.g., 'unembed')
+        figsize_per_component: Figure size for each component heatmap
+        dpi: DPI for the plots
+        input_magnitude: Magnitude of input features for causal importance calculation
+        
+    Returns:
+        Dictionary of figures with keys for each layer's component heatmaps
+    """
+    figures = {}
+    
+    # Get embedding and unembedding weights if specified
+    embedding_weight = None
+    unembedding_weight = None
+    
+    if embedding_module_name:
+        try:
+            # Try to get as a module first
+            embedding_weight = model.target_weight(embedding_module_name)
+        except Exception:
+            try:
+                # If that fails, try to get as a parameter
+                embedding_weight = dict(model.target_model.named_parameters())[embedding_module_name]
+            except Exception as e:
+                print(f"Warning: Could not load embedding weight from {embedding_module_name}: {e}")
+                embedding_weight = None
+    
+    if unembedding_module_name:
+        try:
+            # Try to get as a module first
+            unembedding_weight = model.target_weight(unembedding_module_name)
+        except Exception:
+            try:
+                # If that fails, try to get as a parameter
+                unembedding_weight = dict(model.target_model.named_parameters())[unembedding_module_name]
+            except Exception as e:
+                print(f"Warning: Could not load unembedding weight from {unembedding_module_name}: {e}")
+                unembedding_weight = None
+    
+    # First, calculate causal importances to identify active components
+    print("Calculating causal importances to identify active components...")
+    device = next(iter(model.parameters())).device
+    
+    # Create a batch of inputs with single active features
+    # For this model, we need to use the embedding dimension, not the component input dimension
+    # The model expects inputs with the same dimension as the embedding
+    if hasattr(model.target_model, 'W_E'):
+        n_features = model.target_model.W_E.shape[0]  # Use embedding dimension
+    else:
+        # Fallback to component input dimension
+        first_component = next(iter(model.components.values()))
+        n_features = first_component.V.shape[0]  # d_in
+    
+    print(f"Using input dimension: {n_features}")
+    batch = torch.eye(n_features, device=device) * input_magnitude
+    
+    # Get pre-weight activations
+    _, pre_weight_acts = model(batch, mode="input_cache", module_names=list(model.components.keys()))
+    
+    # Calculate causal importances
+    ci, ci_upper_leaky = model.calc_causal_importances(
+        pre_weight_acts=pre_weight_acts,
+        sigmoid_type=model.config.sigmoid_type if hasattr(model, 'config') else 'leaky_hard',
+        sampling='continuous',
+        detach_inputs=False,
+    )
+    
+    # Collect all weight matrices to calculate global min/max
+    all_weight_matrices = []
+    all_embedding_matrices = []
+    all_unembedding_matrices = []
+    
+    # Process each layer
+    for layer_name, component in model.components.items():
+        C = component.C
+        V = component.V  # Shape: (d_in, C)
+        U = component.U  # Shape: (C, d_out)
+        
+        # Get causal importance for this layer
+        ci_layer = ci_upper_leaky[layer_name]  # Shape: (n_features, C)
+        
+        # Find active components (those with non-zero causal importance)
+        active_components = []
+        generalist_components = []  # Components that respond to >50% of input dimensions
+        
+        for c in range(C):
+            # Check if this component responds to any input
+            if ci_layer[:, c].abs().max() > 1e-6:  # Threshold for "active"
+                active_components.append(c)
+                
+                # Check if this component responds to more than 50% of input dimensions
+                n_responsive_inputs = (ci_layer[:, c].abs() > 1e-6).sum().item()
+                total_inputs = ci_layer.shape[0]
+                if n_responsive_inputs > 0.5 * total_inputs:
+                    generalist_components.append(c)
+        
+        print(f"Layer {layer_name}: {len(active_components)}/{C} components are active")
+        if generalist_components:
+            print(f"  Generalist components (respond to >50% of inputs): {generalist_components}")
+        
+        if not active_components:
+            print(f"  Skipping layer {layer_name} - no active components")
+            continue
+        
+        # Collect weight matrices for global min/max calculation
+        for c in active_components:
+            v_c = V[:, c]  # Shape: (d_in,)
+            u_c = U[c, :]  # Shape: (d_out,)
+            rank_one_matrix = torch.outer(v_c, u_c)  # Shape: (d_in, d_out)
+            all_weight_matrices.append(rank_one_matrix)
+        
+        # Collect embedding interaction matrices (only for mlp_in layers)
+        if embedding_weight is not None and "mlp_in" in layer_name:
+            # W_in^c @ W_E: Take outer product U[c] @ V[c] to get component matrix, then multiply with W_E
+            for c in active_components:
+                v_c = V[:, c]  # Shape: (d_in,)
+                u_c = U[c, :]  # Shape: (d_out,)
+                # Create component matrix: U[c] @ V[c] = (d_out, d_in)
+                component_matrix = torch.outer(u_c, v_c)  # Shape: (d_out, d_in) = (25, 1000)
+                # Multiply with embedding: (d_out, d_in) @ (d_in, n_inputs) -> (d_out, n_inputs)
+                embedding_interaction = torch.matmul(component_matrix, embedding_weight.T)  # Shape: (25, 100)
+                all_embedding_matrices.append(embedding_interaction)
+        
+        # Collect unembedding interaction matrices (only for mlp_out layers)
+        if unembedding_weight is not None and "mlp_out" in layer_name:
+            # W_U @ W_out^c: Take outer product U[c] @ V[c] to get component matrix, then multiply with W_U
+            for c in active_components:
+                v_c = V[:, c]  # Shape: (d_in,)
+                u_c = U[c, :]  # Shape: (d_out,)
+                # Create component matrix: U[c] @ V[c] = (d_out, d_in)
+                component_matrix = torch.outer(u_c, v_c)  # Shape: (d_out, d_in) = (1000, 25)
+                # Multiply with unembedding: (n_outputs, d_out) @ (d_out, d_in) -> (n_outputs, d_in)
+                unembedding_interaction = torch.matmul(unembedding_weight.T, component_matrix)  # Shape: (100, 25)
+                all_unembedding_matrices.append(unembedding_interaction)
+    
+    # Calculate global min/max for fixed color scale
+    if all_weight_matrices:
+        global_min = min(tensor.min().item() for tensor in all_weight_matrices)
+        global_max = max(tensor.max().item() for tensor in all_weight_matrices)
+        # Ensure 0 is in the center
+        abs_max = max(abs(global_min), abs(global_max))
+        vmin, vmax = -abs_max, abs_max
+    else:
+        vmin, vmax = -1, 1
+    
+    if all_embedding_matrices:
+        embedding_min = min(tensor.min().item() for tensor in all_embedding_matrices)
+        embedding_max = max(tensor.max().item() for tensor in all_embedding_matrices)
+        embedding_abs_max = max(abs(embedding_min), abs(embedding_max))
+        embedding_vmin, embedding_vmax = -embedding_abs_max, embedding_abs_max
+    else:
+        embedding_vmin, embedding_vmax = -1, 1
+    
+    if all_unembedding_matrices:
+        unembedding_min = min(tensor.min().item() for tensor in all_unembedding_matrices)
+        unembedding_max = max(tensor.max().item() for tensor in all_unembedding_matrices)
+        unembedding_abs_max = max(abs(unembedding_min), abs(unembedding_max))
+        unembedding_vmin, unembedding_vmax = -unembedding_abs_max, unembedding_abs_max
+    else:
+        unembedding_vmin, unembedding_vmax = -1, 1
+    
+    print(f"Global color scale - weights: [{vmin:.3f}, {vmax:.3f}], embedding: [{embedding_vmin:.3f}, {embedding_vmax:.3f}], unembedding: [{unembedding_vmin:.3f}, {unembedding_vmax:.3f}]")
+    
+    # Now create the plots
+    for layer_name, component in model.components.items():
+        C = component.C
+        V = component.V  # Shape: (d_in, C)
+        U = component.U  # Shape: (C, d_out)
+        
+        # Get causal importance for this layer
+        ci_layer = ci_upper_leaky[layer_name]  # Shape: (n_features, C)
+        
+        # Find active components and generalist components
+        active_components = []
+        generalist_components = []
+        
+        for c in range(C):
+            if ci_layer[:, c].abs().max() > 1e-6:
+                active_components.append(c)
+                
+                # Check if this component responds to more than 50% of input dimensions
+                n_responsive_inputs = (ci_layer[:, c].abs() > 1e-6).sum().item()
+                total_inputs = ci_layer.shape[0]
+                if n_responsive_inputs > 0.5 * total_inputs:
+                    generalist_components.append(c)
+        
+        if not active_components:
+            continue
+        
+        # Create subplots for this layer (only active components)
+        n_active = len(active_components)
+        n_cols = min(4, n_active)  # Max 4 components per row
+        n_rows = (n_active + n_cols - 1) // n_cols  # Ceiling division
+        
+        fig_width = n_cols * figsize_per_component[0]
+        fig_height = n_rows * figsize_per_component[1]
+        
+        fig, axes = plt.subplots(
+            n_rows, n_cols,
+            figsize=(fig_width, fig_height),
+            dpi=dpi,
+            squeeze=False
+        )
+        
+        # Flatten axes for easier indexing
+        axes_flat = axes.flatten()
+        
+        for i, c in enumerate(active_components):
+            ax = axes_flat[i]
+            
+            # Get the c-th component
+            v_c = V[:, c]  # Shape: (d_in,)
+            u_c = U[c, :]  # Shape: (d_out,)
+            
+            # Create rank-one matrix for this component
+            rank_one_matrix = torch.outer(v_c, u_c)  # Shape: (d_in, d_out)
+            
+            
+            # Plot the heatmap with fixed color scale
+            im = ax.matshow(
+                rank_one_matrix.detach().cpu().numpy(),
+                cmap='bwr',
+                aspect='auto',
+                vmin=vmin,
+                vmax=vmax
+            )
+            
+            # Create title with special marking for generalist components
+            if c in generalist_components:
+                n_responsive = (ci_layer[:, c].abs() > 1e-6).sum().item()
+                ax.set_title(f'Component {c} (GENERALIST: {n_responsive}/{total_inputs} inputs)', 
+                           color='red', fontweight='bold')
+            else:
+                ax.set_title(f'Component {c}')
+            ax.set_xlabel('Output dim')
+            ax.set_ylabel('Input dim')
+            
+            # Add colorbar
+            plt.colorbar(im, ax=ax, shrink=0.8)
+        
+        # Hide unused subplots
+        for i in range(n_active, len(axes_flat)):
+            axes_flat[i].set_visible(False)
+        
+        plt.tight_layout()
+        fig_img = _render_figure(fig)
+        plt.close(fig)
+        
+        figures[f"component_weights_{layer_name}"] = fig_img
+        
+        # Plot W_in^c @ W_embedding if embedding is available (only for mlp_in layers)
+        if embedding_weight is not None and "mlp_in" in layer_name and all_embedding_matrices:
+            fig, axes = plt.subplots(
+                n_rows, n_cols,
+                figsize=(fig_width, fig_height),
+                dpi=dpi,
+                squeeze=False
+            )
+            axes_flat = axes.flatten()
+            
+            for i, c in enumerate(active_components):
+                ax = axes_flat[i]
+                
+                # Get the embedding interaction matrix for this component
+                v_c = V[:, c]  # Shape: (d_in,)
+                u_c = U[c, :]  # Shape: (d_out,)
+                component_matrix = torch.outer(u_c, v_c)  # Shape: (d_out, d_in) = (25, 1000)
+                embedding_interaction = torch.matmul(component_matrix, embedding_weight.T)  # Shape: (25, 100)
+                
+                # Plot the 2D heatmap (d_out x n_inputs) with fixed color scale
+                im = ax.matshow(
+                    embedding_interaction.detach().cpu().numpy(),
+                    cmap='bwr',
+                    aspect='auto',
+                    vmin=embedding_vmin,
+                    vmax=embedding_vmax
+                )
+                
+                # Create title with special marking for generalist components
+                if c in generalist_components:
+                    n_responsive = (ci_layer[:, c].abs() > 1e-6).sum().item()
+                    ax.set_title(f'W_in^{c} @ W_embedding (GENERALIST: {n_responsive}/{total_inputs} inputs)', 
+                               color='red', fontweight='bold')
+                else:
+                    ax.set_title(f'W_in^{c} @ W_embedding')
+                ax.set_xlabel('Input dim')
+                ax.set_ylabel('Hidden neurons')
+                
+                # Add colorbar
+                plt.colorbar(im, ax=ax, shrink=0.8)
+            
+            # Hide unused subplots
+            for i in range(n_active, len(axes_flat)):
+                axes_flat[i].set_visible(False)
+            
+            plt.tight_layout()
+            fig_img = _render_figure(fig)
+            plt.close(fig)
+            
+            figures[f"input_embedding_interaction_{layer_name}"] = fig_img
+        
+        # Plot W_unembedding @ W_out^c if unembedding is available (only for mlp_out layers)
+        if unembedding_weight is not None and "mlp_out" in layer_name and all_unembedding_matrices:
+            fig, axes = plt.subplots(
+                n_rows, n_cols,
+                figsize=(fig_width, fig_height),
+                dpi=dpi,
+                squeeze=False
+            )
+            axes_flat = axes.flatten()
+            
+            for i, c in enumerate(active_components):
+                ax = axes_flat[i]
+                
+                # Get the unembedding interaction matrix for this component
+                v_c = V[:, c]  # Shape: (d_in,)
+                u_c = U[c, :]  # Shape: (d_out,)
+                component_matrix = torch.outer(u_c, v_c)  # Shape: (d_out, d_in) = (1000, 25)
+                unembedding_interaction = torch.matmul(unembedding_weight.T, component_matrix)  # Shape: (100, 25)
+                
+                # Plot the 2D heatmap (n_outputs x d_in) with fixed color scale
+                im = ax.matshow(
+                    unembedding_interaction.detach().cpu().numpy(),
+                    cmap='bwr',
+                    aspect='auto',
+                    vmin=unembedding_vmin,
+                    vmax=unembedding_vmax
+                )
+                
+                # Create title with special marking for generalist components
+                if c in generalist_components:
+                    n_responsive = (ci_layer[:, c].abs() > 1e-6).sum().item()
+                    ax.set_title(f'W_unembedding @ W_out^{c} (GENERALIST: {n_responsive}/{total_inputs} inputs)', 
+                               color='red', fontweight='bold')
+                else:
+                    ax.set_title(f'W_unembedding @ W_out^{c}')
+                ax.set_xlabel('Input dim')
+                ax.set_ylabel('Output dim')
+                
+                # Add colorbar
+                plt.colorbar(im, ax=ax, shrink=0.8)
+            
+            # Hide unused subplots
+            for i in range(n_active, len(axes_flat)):
+                axes_flat[i].set_visible(False)
+            
+            plt.tight_layout()
+            fig_img = _render_figure(fig)
+            plt.close(fig)
+            
+            figures[f"output_unembedding_interaction_{layer_name}"] = fig_img
+    
+    return figures

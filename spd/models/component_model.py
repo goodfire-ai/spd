@@ -642,7 +642,7 @@ class ComponentModel(LoadableModule):
                 )
 
             causal_importances[param_name] = lower_leaky_fn(gate_output_for_lower_leaky)
-            causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs()
+            causal_importances_upper_leaky[param_name] = upper_leaky_fn(gate_output).abs() # Why is this here?
 
         return causal_importances, causal_importances_upper_leaky
 

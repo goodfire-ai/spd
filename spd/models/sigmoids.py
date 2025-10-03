@@ -51,7 +51,7 @@ def leaky_hard_sigmoid(x: Tensor, alpha: float = 0.01) -> Tensor:
     return torch.where(x > 0, torch.clamp(x, max=1), alpha * x)
 
 
-def upper_leaky_hard_sigmoid(x: Tensor, alpha: float = 0.01) -> Tensor:
+def upper_leaky_hard_sigmoid(x: Tensor, alpha: float = 0.00000001) -> Tensor:
     return torch.where(x > 1, 1 + alpha * (x - 1), torch.clamp(x, min=0, max=1))
 
 
