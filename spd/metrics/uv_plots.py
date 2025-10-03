@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 from PIL import Image
 from torch import Tensor
@@ -10,8 +10,8 @@ from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
 
 
 class UVPlots(Metric):
-    slow: bool = True
-    input_magnitude: float = 0.75
+    slow: ClassVar[bool] = True
+    input_magnitude: ClassVar[float] = 0.75
 
     def __init__(
         self,

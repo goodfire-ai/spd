@@ -1,4 +1,4 @@
-from typing import Any, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float
@@ -12,7 +12,7 @@ from spd.utils.distributed_utils import gather_all_tensors
 
 
 class CIHistograms(Metric):
-    slow: bool = True
+    slow: ClassVar[bool] = True
 
     def __init__(
         self,

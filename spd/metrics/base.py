@@ -4,19 +4,17 @@ All metrics implement MetricInterface and handle distributed synchronization
 directly in their compute() methods using all_reduce() or gather_all_tensors().
 """
 
-from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, ClassVar, Protocol
 
 from jaxtyping import Float, Int
 from torch import Tensor
 
 
-class Metric(ABC):
+class Metric(Protocol):
     """Interface for metrics that can be used in training and evaluation."""
 
-    slow: bool = False
+    slow: ClassVar[bool] = False
 
-    @abstractmethod
     def update(
         self,
         *,
@@ -28,9 +26,8 @@ class Metric(ABC):
         weight_deltas: dict[str, Float[Tensor, "... C"]],
     ) -> None:
         """Update metric state with a batch of data."""
-        pass
+        ...
 
-    @abstractmethod
     def compute(self) -> Any:
         """Compute the final metric value(s)."""
-        pass
+        ...
