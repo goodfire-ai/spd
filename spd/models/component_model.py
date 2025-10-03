@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, overload, override
+from typing import Any, Literal, NamedTuple, overload, override
 
 import torch
 import wandb
@@ -67,6 +67,11 @@ class SPDRunInfo(RunInfo[Config]):
             config = Config(**yaml.safe_load(f))
 
         return cls(checkpoint_path=comp_model_path, config=config)
+
+
+class CachedOutput(NamedTuple):
+    output: Tensor
+    cache: dict[str, Tensor]
 
 
 class ComponentModel(LoadableModule):
@@ -248,7 +253,7 @@ class ComponentModel(LoadableModule):
             )
         return ci_fns
 
-    def _extract_output(self, raw_output: Any) -> Any:
+    def _extract_output(self, raw_output: Any) -> Tensor:
         """Extract the desired output from the model's raw output.
 
         If pretrained_model_output_attr is None, returns the raw output directly.
@@ -263,7 +268,7 @@ class ComponentModel(LoadableModule):
             The extracted output.
         """
         if self.pretrained_model_output_attr is None:
-            return raw_output
+            out = raw_output
         elif self.pretrained_model_output_attr.startswith("idx_"):
             idx_val = int(self.pretrained_model_output_attr.split("_")[1])
             assert isinstance(raw_output, Sequence), (
@@ -272,27 +277,34 @@ class ComponentModel(LoadableModule):
             assert idx_val < len(raw_output), (
                 f"Index {idx_val} out of range for raw_output of length {len(raw_output)}"
             )
-            return raw_output[idx_val]
+            out = raw_output[idx_val]
         else:
-            return getattr(raw_output, self.pretrained_model_output_attr)
+            out = getattr(raw_output, self.pretrained_model_output_attr)
+
+        assert isinstance(out, Tensor), f"Expected tensor output, got {type(out)}"
+        return out
 
     @overload
-    def forward(
+    def __call__(
         self,
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["input"],
         **kwargs: Any,
-    ) -> tuple[Any, dict[str, Tensor]]: ...
+    ) -> CachedOutput: ...
 
     @overload
-    def forward(
+    def __call__(
         self,
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["none"],
+        cache_type: Literal["none"] = "none",
         **kwargs: Any,
-    ) -> Any: ...
+    ) -> Tensor: ...
+
+    @override
+    def __call__(self, *args: Any, **kwargs: Any) -> Tensor | CachedOutput:
+        return super().__call__(*args, **kwargs)
 
     @override
     def forward(
@@ -301,7 +313,7 @@ class ComponentModel(LoadableModule):
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["input", "none"] = "none",
         **kwargs: Any,
-    ) -> tuple[Any, dict[str, Tensor]]:
+    ) -> Tensor | CachedOutput:
         """Forward pass with optional component replacement and/or input caching.
 
         This method handles the following 4 cases:
@@ -323,10 +335,10 @@ class ComponentModel(LoadableModule):
                 mask_infos is None, cache the inputs to all modules in self.module_paths.
 
         Returns:
-            tuple of (model output, input cache dictionary)
+            CachedOutput object if cache_type is "input", otherwise the model output tensor.
         """
-        # Not hooks needed
         if mask_infos is None and cache_type == "none":
+            # No hooks needed. Do a regular forward pass of the target model.
             return self._extract_output(self.target_model(*args, **kwargs))
 
         cache: dict[str, Tensor] = {}
@@ -353,7 +365,7 @@ class ComponentModel(LoadableModule):
         out = self._extract_output(raw_out)
         match cache_type:
             case "input":
-                return (out, cache)
+                return CachedOutput(output=out, cache=cache)
             case "none":
                 return out
 
