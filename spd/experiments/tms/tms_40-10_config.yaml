@@ -8,8 +8,8 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 200
 n_mask_samples: 1
-gate_type: "mlp"
-gate_hidden_dims: [16]
+ci_fn_type: "mlp"
+ci_fn_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["linear1", "linear2"]
 identity_module_patterns: null
@@ -32,6 +32,11 @@ steps: 10_000
 lr: 1e-3
 lr_schedule: cosine
 lr_warmup_pct: 0.0
+
+# --- Faithfulness Warmup ---
+faithfulness_warmup_steps: 200
+faithfulness_warmup_lr: 0.01
+faithfulness_warmup_weight_decay: 0.1
 
 # --- Logging & Saving ---
 train_log_freq: 500

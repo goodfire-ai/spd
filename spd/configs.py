@@ -5,6 +5,7 @@ from typing import Annotated, Any, ClassVar, Literal, Self
 
 from pydantic import (
     Field,
+    NonNegativeFloat,
     NonNegativeInt,
     PositiveFloat,
     PositiveInt,
@@ -16,7 +17,7 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
-from spd.models.components import GateType
+from spd.models.components import CiFnType
 from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
 from spd.utils.general_utils import BaseModel
@@ -167,13 +168,13 @@ class Config(BaseModel):
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",
     )
-    gate_type: GateType = Field(
+    ci_fn_type: CiFnType = Field(
         default="vector_mlp",
-        description="Type of gate used to calculate the causal importance.",
+        description="Type of causal importance function used to calculate the causal importance.",
     )
-    gate_hidden_dims: list[NonNegativeInt] = Field(
+    ci_fn_hidden_dims: list[NonNegativeInt] = Field(
         default=[8],
-        description="Hidden dimensions for the gate used to calculate the causal importance",
+        description="Hidden dimensions for the causal importance function used to calculate the causal importance",
     )
     sampling: Literal["continuous", "binomial"] = Field(
         default="continuous",
@@ -233,6 +234,20 @@ class Config(BaseModel):
     gradient_accumulation_steps: PositiveInt = Field(
         default=1,
         description="Number of steps to accumulate gradients over before updating parameters",
+    )
+
+    # --- Faithfulness Warmup ---
+    faithfulness_warmup_steps: NonNegativeInt = Field(
+        default=0,
+        description="Number of warmup steps to optimize faithfulness loss before main training",
+    )
+    faithfulness_warmup_lr: PositiveFloat = Field(
+        default=0.001,
+        description="Learning rate for warmup phase (optimizing faithfulness loss only)",
+    )
+    faithfulness_warmup_weight_decay: NonNegativeFloat = Field(
+        default=0.0,
+        description="Weight decay for warmup phase optimizer",
     )
 
     @property
@@ -363,6 +378,10 @@ class Config(BaseModel):
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "print_freq": "eval_freq",
         "pretrained_model_name_hf": "pretrained_model_name",
+        "recon_coeff": "ci_recon_coeff",
+        "recon_layerwise_coeff": "ci_recon_layerwise_coeff",
+        "gate_type": "ci_fn_type",
+        "gate_hidden_dims": "ci_fn_hidden_dims",
     }
 
     @model_validator(mode="before")

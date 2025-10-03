@@ -23,6 +23,7 @@ from spd.eval import avg_eval_metrics_across_ranks, evaluate
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_total_loss
+from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_ci_l_zero
@@ -40,6 +41,49 @@ from spd.utils.general_utils import (
 )
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
+
+
+def run_faithfulness_warmup(
+    component_model: ComponentModel,
+    component_params: list[torch.nn.Parameter],
+    config: Config,
+) -> None:
+    """Run faithfulness warmup phase to improve initialization.
+
+    Args:
+        component_model: The component model to warm up
+        component_params: List of component parameters to optimize
+        config: Configuration object containing warmup settings
+    """
+
+    logger.info("Starting faithfulness warmup phase...")
+
+    assert component_params, "component_params is empty"
+
+    faithfulness_warmup_optimizer = optim.AdamW(
+        component_params,
+        lr=config.faithfulness_warmup_lr,
+        weight_decay=config.faithfulness_warmup_weight_decay,
+    )
+
+    for faithfulness_warmup_step in range(config.faithfulness_warmup_steps):
+        faithfulness_warmup_optimizer.zero_grad()
+        weight_deltas = component_model.calc_weight_deltas()
+        loss = faithfulness_loss(weight_deltas)
+        loss.backward()
+        faithfulness_warmup_optimizer.step()
+
+        if (
+            faithfulness_warmup_step % 100 == 0
+            or faithfulness_warmup_step == config.faithfulness_warmup_steps - 1
+        ):
+            warmup_step = (faithfulness_warmup_step + 1) / config.faithfulness_warmup_steps
+            logger.info(
+                f"Faithfulness warmup step {warmup_step}; Faithfulness loss: {loss.item():.9f}"
+            )
+    del faithfulness_warmup_optimizer
+    torch.cuda.empty_cache()
+    gc.collect()
 
 
 def local_log(data: dict[str, Any], step: int, out_dir: Path) -> None:
@@ -98,8 +142,8 @@ def optimize(
         target_model=target_model,
         target_module_patterns=config.all_module_patterns,
         C=config.C,
-        gate_type=config.gate_type,
-        gate_hidden_dims=config.gate_hidden_dims,
+        ci_fn_type=config.ci_fn_type,
+        ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
 
@@ -141,17 +185,20 @@ def optimize(
             tgt.V.data = src.U.data.T
 
     component_params: list[torch.nn.Parameter] = []
-    gate_params: list[torch.nn.Parameter] = []
+    ci_fn_params: list[torch.nn.Parameter] = []
     for name, component in component_model.components.items():
         component_params.extend(list(component.parameters()))
-        gate_params.extend(list(component_model.gates[name].parameters()))
+        ci_fn_params.extend(list(component_model.ci_fns[name].parameters()))
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
-    optimizer = optim.AdamW(component_params + gate_params, lr=config.lr, weight_decay=0)
+    optimizer = optim.AdamW(component_params + ci_fn_params, lr=config.lr, weight_decay=0)
 
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
+
+    if config.faithfulness_warmup_steps > 0:
+        run_faithfulness_warmup(component_model, component_params, config)
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
@@ -237,7 +284,7 @@ def optimize(
                 microbatch_log_data[n_alive_key] = n_alive_count
 
             grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
-            for param in component_params + gate_params:
+            for param in component_params + ci_fn_params:
                 if param.grad is not None:
                     grad_norm += param.grad.data.flatten().pow(2).sum()
             microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()

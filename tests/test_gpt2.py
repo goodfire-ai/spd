@@ -32,8 +32,8 @@ def test_gpt_2_decomposition_happy_path() -> None:
         seed=0,
         C=10,  # Smaller C for faster testing
         n_mask_samples=1,
-        gate_type="vector_mlp",
-        gate_hidden_dims=[128],
+        ci_fn_type="vector_mlp",
+        ci_fn_hidden_dims=[128],
         target_module_patterns=["transformer.h.2.attn.c_attn", "transformer.h.3.mlp.c_fc"],
         identity_module_patterns=["transformer.h.1.attn.c_attn"],
         loss_metric_configs=[
