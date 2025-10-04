@@ -63,6 +63,7 @@ def create_slurm_array_script(
         #!/bin/bash
         #SBATCH --nodes=1
         #SBATCH --gres=gpu:{n_gpus_per_job}
+        #SBATCH --partition=h100-dev
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}
