@@ -41,11 +41,10 @@ def _stochastic_recon_layerwise_loss_update(
 
     for stochastic_mask_infos in stochastic_mask_infos_list:
         for module_name, mask_info in stochastic_mask_infos.items():
-            out = model(batch, mode="components", mask_infos={module_name: mask_info})
-            loss_type = output_loss_type
-            loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
+            out = model(batch, mask_infos={module_name: mask_info})
+            loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
 
-            n_examples += out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
+            n_examples += out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
             sum_loss += loss
     return sum_loss, n_examples
 
