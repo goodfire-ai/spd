@@ -229,7 +229,7 @@ def evaluate(
     metrics: list[Metric] = []
     for cfg in metric_configs:
         metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
-        if slow_step and not metric.slow:
+        if metric.slow and not slow_step:
             continue
         metrics.append(metric)
 
