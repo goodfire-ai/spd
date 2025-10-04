@@ -352,6 +352,7 @@ def main(
     create_report: bool = True,
     job_suffix: str | None = None,
     cpu: bool = False,
+    partition: str = "h100-reserved",
     dp: int = 1,
     project: str = "spd",
     local: bool = False,
@@ -372,6 +373,7 @@ def main(
         create_report: Create W&B report for aggregated view (default: True)
         job_suffix: Optional suffix for SLURM job names
         cpu: Use CPU instead of GPU (default: False)
+        partition: SLURM partition to use (default: "h100-reserved")
         dp: Number of GPUs for data parallelism (1-8). Only supported for lm experiments.
             Cannot be used with local mode (default: 1)
         project: W&B project name (default: "spd"). Will be created if it doesn't exist.
@@ -485,6 +487,7 @@ def main(
                 snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
                 max_concurrent_tasks=n_agents,
                 n_gpus_per_job=n_gpus_per_job,
+                partition=partition,
             )
 
             array_job_id = submit_slurm_array(array_script)
@@ -646,6 +649,14 @@ def cli():
         help="Logging format for script output. 'terse' removes timestamps/level (default: 'default')",
     )
 
+    parser.add_argument(
+        "-p",
+        "--partition",
+        type=str,
+        default="h100-reserved",
+        help="SLURM partition to use (default: 'h100-reserved')",
+    )
+
     args: argparse.Namespace = parser.parse_args()
 
     # Call main with parsed arguments
@@ -656,6 +667,7 @@ def cli():
         create_report=args.create_report,
         job_suffix=args.job_suffix,
         cpu=args.cpu,
+        partition=args.partition,
         dp=args.dp,
         project=args.project,
         local=args.local,
