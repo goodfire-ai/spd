@@ -35,7 +35,7 @@ class TestStochasticHiddenActsRecon:
         # Get target pre_weight_acts (activations before each weight matrix)
         # fc1: input is batch
         # fc2: input is output of fc1
-        _, target_pre_weight_acts = model(batch, cache_type="input")
+        target_pre_weight_acts = model(batch, cache_type="input").cache
 
         ci = {
             "fc1": torch.tensor([[0.8]], dtype=torch.float32),
@@ -63,15 +63,10 @@ class TestStochasticHiddenActsRecon:
         ) -> dict[str, ComponentsMaskInfo]:
             idx = call_count[0] % len(sample_masks_fc1)
             call_count[0] += 1
-            masks = {
-                "fc1": sample_masks_fc1[idx],
-                "fc2": sample_masks_fc2[idx],
-            }
+            masks = {"fc1": sample_masks_fc1[idx], "fc2": sample_masks_fc2[idx]}
 
             return make_mask_infos(
-                component_masks=masks,
-                routing_masks=None,
-                weight_deltas_and_masks=None,
+                component_masks=masks, routing_masks=None, weight_deltas_and_masks=None
             )
 
         with patch(
@@ -94,6 +89,7 @@ class TestStochasticHiddenActsRecon:
                 mse_fc1 = torch.nn.functional.mse_loss(
                     stoch_fc1_input, target_pre_weight_acts["fc1"], reduction="sum"
                 )
+                assert mse_fc1.item() == 0.0, f"MSE for fc1 input should be 0, got {mse_fc1.item()}"
 
                 # MSE for fc2 input (the actual meaningful comparison)
                 mse_fc2 = torch.nn.functional.mse_loss(
@@ -105,7 +101,6 @@ class TestStochasticHiddenActsRecon:
 
             expected_loss = sum_mse / n_examples
 
-            # Calculate actual loss
             actual_loss = stochastic_hidden_acts_recon(
                 model=model,
                 sampling="continuous",

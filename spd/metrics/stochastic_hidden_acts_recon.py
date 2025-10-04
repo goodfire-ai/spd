@@ -38,15 +38,14 @@ def _stochastic_hidden_acts_recon_update(
         for _ in range(n_mask_samples)
     ]
     for stoch_mask_infos in stoch_mask_infos_list:
-        _, stoch_pre_weight_acts = model(batch, mask_infos=stoch_mask_infos, cache_type="input")
+        comp_pre_weight_acts = model(batch, mask_infos=stoch_mask_infos, cache_type="input").cache
 
-        # Calculate MSE between stochastic and target pre_weight_acts
+        # Calculate MSE between pre_weight_acts with and without components
         for layer_name, target_acts in pre_weight_acts.items():
-            assert layer_name in stoch_pre_weight_acts, (
-                f"Layer {layer_name} not in stoch_pre_weight_acts"
+            assert layer_name in comp_pre_weight_acts, f"{layer_name} not in comp_pre_weight_acts"
+            mse = torch.nn.functional.mse_loss(
+                comp_pre_weight_acts[layer_name], target_acts, reduction="sum"
             )
-            stoch_acts = stoch_pre_weight_acts[layer_name]
-            mse = torch.nn.functional.mse_loss(stoch_acts, target_acts, reduction="sum")
             sum_mse += mse
             n_examples += target_acts.numel()
 

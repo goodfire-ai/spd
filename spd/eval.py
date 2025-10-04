@@ -250,9 +250,9 @@ def evaluate(
         batch_raw = next(eval_iterator)
         batch = extract_batch_data(batch_raw).to(device)
 
-        target_out, pre_weight_acts = model(batch, cache_type="input")
+        target_output = model(batch, cache_type="input")
         ci, ci_upper_leaky = model.calc_causal_importances(
-            pre_weight_acts=pre_weight_acts,
+            pre_weight_acts=target_output.cache,
             sigmoid_type=run_config.sigmoid_type,
             detach_inputs=False,
             sampling=run_config.sampling,
@@ -261,8 +261,8 @@ def evaluate(
         for metric in metrics:
             metric.update(
                 batch=batch,
-                target_out=target_out,
-                pre_weight_acts=pre_weight_acts,
+                target_out=target_output.output,
+                pre_weight_acts=target_output.cache,
                 ci=ci,
                 current_frac_of_training=current_frac_of_training,
                 ci_upper_leaky=ci_upper_leaky,
