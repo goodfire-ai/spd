@@ -20,8 +20,10 @@ class ParallelLinear(nn.Module):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.W = nn.Parameter(torch.empty(C, input_dim, output_dim))
-        self.b = nn.Parameter(torch.zeros(C, output_dim))
+        # self.b = nn.Parameter(torch.zeros(C, output_dim))
+        self.b = nn.Parameter(torch.empty(C, output_dim))
         init_param_(self.W, fan_val=input_dim, nonlinearity=nonlinearity)
+        init_param_(self.b, fan_val=input_dim, nonlinearity=nonlinearity)
 
     @override
     def forward(self, x: Float[Tensor, "... C d_in"]) -> Float[Tensor, "... C d_out"]:
