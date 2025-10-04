@@ -178,7 +178,7 @@ def _optimize_adversarial_stochastic_masks(
             wd_init = (
                 torch.rand(*leading_dims, device=ci.device, dtype=ci.dtype)
                 if config.pgd_mask_random_init
-                else torch.full(leading_dims, 0.5, device=ci.device, dtype=ci.dtype)
+                else torch.full(leading_dims, 0.0, device=ci.device, dtype=ci.dtype)
             )
             wd_init.requires_grad_(True)
             weight_delta_rand_masks[layer] = wd_init
