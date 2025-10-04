@@ -65,6 +65,7 @@ eval_metric_configs:
   - classname: "CI_L0"
     groups: null
   - classname: "CIMeanPerComponent"
+  - classname: "StochasticHiddenActsRecon"
 
 
 # --- Pretrained model info ---

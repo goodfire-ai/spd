@@ -20,6 +20,7 @@ class Metric(Protocol):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
+        pre_weight_acts: dict[str, Float[Tensor, "..."]],
         ci: dict[str, Float[Tensor, "... C"]],
         current_frac_of_training: float,
         ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
