@@ -242,6 +242,7 @@ def optimize(
                     sigmoid_type=config.sigmoid_type,
                     detach_inputs=False,
                     sampling=config.sampling,
+                    use_abs_inner_acts=config.use_abs_inner_acts,
                 )
             )
 
