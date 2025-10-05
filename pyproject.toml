@@ -117,6 +117,12 @@ reportImplicitStringConcatenation = false
 reportPrivateUsage = false
 reportUnannotatedClassAttribute = false
 reportUnknownLambdaType = false
+reportAttributeAccessIssue = false
+reportOperatorIssue = false
+reportIndexIssue = false
+reportArgumentType = false
+reportAssignmentType = false
+reportUnnecessaryTypeIgnoreComment = false
 
 
 

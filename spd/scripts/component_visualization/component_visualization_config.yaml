@@ -1,0 +1,17 @@
+# Configuration for component_visualization.py
+
+# Model path (supports both wandb: and local paths)
+model_path: "wandb:goodfire/spd/runs/2ki9tfsx"
+
+# Analysis parameters
+threshold: 0.01  # Threshold for considering a value as 'active'
+
+# Plotting parameters
+figsize: [8, 6]  # Figure size per component (width height)
+dpi: 150  # DPI for the figures
+
+# Device settings
+device: "auto"  # Device to use (auto, cpu, cuda, etc.)
+
+# Output settings (optional - defaults to 'out' directory relative to script location)
+# output_dir: "/path/to/custom/output/directory"

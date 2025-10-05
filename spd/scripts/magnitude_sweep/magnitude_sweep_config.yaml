@@ -1,0 +1,21 @@
+# Configuration for magnitude_sweep.py
+
+# Model path (supports both wandb: and local paths)
+model_path: "wandb:goodfire/spd/runs/2ki9tfsx"
+
+# Analysis parameters
+feature_idx: 0  # Which feature to activate
+n_steps: 100  # Number of steps from 0 to max_magnitude
+max_magnitude: 2.0  # Maximum input magnitude
+ci_threshold: 0.1  # CI threshold for active gates
+pre_activation: false  # Show pre-activation values (before ReLU) instead of post-activation
+
+# Plotting parameters
+figsize_per_subplot: [2, 1.5]  # Figure size per subplot (width height)
+dpi: 150  # DPI for figures
+
+# Device settings
+device: "auto"  # Device to use (auto, cpu, cuda, etc.)
+
+# Output settings (optional - defaults to 'out' directory relative to script location)
+# output_dir: "/path/to/custom/output/directory"
