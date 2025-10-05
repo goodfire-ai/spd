@@ -184,6 +184,10 @@ class Config(BaseModel):
         default="leaky_hard",
         description="Type of sigmoid to use for causal importance calculation",
     )
+    use_abs_inner_acts: bool = Field(
+        default=False,
+        description="If True, take the absolute value of inner activations before passing them to MLP CI functions",
+    )
     target_module_patterns: list[str] = Field(
         ...,
         description="List of fnmatch-style patterns that select modules to decompose",
