@@ -51,7 +51,6 @@ def extract_ci_val_figures(
     figures, all_perm_indices_ci_vals = plot_causal_importance_vals(
         model=model,
         batch_shape=batch_shape,
-        device=device,
         input_magnitude=input_magnitude,
         plot_raw_cis=False,
         sigmoid_type=config.sigmoid_type,
@@ -529,7 +528,6 @@ def main(out_dir: Path, device: str):
         figs_causal: dict[str, Image.Image] = plot_causal_importance_vals(
             model=model,
             batch_shape=batch_shape,
-            device=device,
             input_magnitude=0.75,
             sampling=config.sampling,
             plot_raw_cis=False,

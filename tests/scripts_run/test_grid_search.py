@@ -154,8 +154,14 @@ class TestConfigIntegration:
             "C": 10,
             "n_mask_samples": 1,
             "target_module_patterns": ["linear1"],
-            "importance_minimality_coeff": 0.001,
-            "pnorm": 1.0,
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": 0.001,
+                    "pnorm": 1.0,
+                    "eps": 1e-12,
+                }
+            ],
             "output_loss_type": "mse",
             "lr": 0.001,
             "steps": 1000,
@@ -192,8 +198,14 @@ class TestConfigIntegration:
             "C": 10,
             "n_mask_samples": 1,
             "target_module_patterns": ["transformer"],
-            "importance_minimality_coeff": 0.001,
-            "pnorm": 1.0,
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": 0.001,
+                    "pnorm": 1.0,
+                    "eps": 1e-12,
+                }
+            ],
             "output_loss_type": "kl",
             "lr": 0.001,
             "steps": 1000,
@@ -238,8 +250,14 @@ class TestConfigIntegration:
             "C": 10,
             "n_mask_samples": 1,
             "target_module_patterns": ["linear1"],
-            "importance_minimality_coeff": 0.001,
-            "pnorm": 1.0,
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": 0.001,
+                    "pnorm": 1.0,
+                    "eps": 1e-12,
+                }
+            ],
             "output_loss_type": "mse",
             "lr": 0.001,
             "steps": 1000,
@@ -276,8 +294,14 @@ class TestConfigIntegration:
             "C": 10,
             "n_mask_samples": 1,
             "target_module_patterns": ["linear1"],
-            "importance_minimality_coeff": 0.001,
-            "pnorm": 1.0,
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": 0.001,
+                    "pnorm": 1.0,
+                    "eps": 1e-12,
+                }
+            ],
             "output_loss_type": "mse",
             "lr": 0.01,  # Will be overridden
             "steps": 1000,

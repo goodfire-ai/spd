@@ -961,8 +961,6 @@ class TMSPlotter:
 
 def main():
     """Main execution function."""
-    # Configuration
-    # device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Define run configurations with custom PlotConfig for each
     run_configs = {

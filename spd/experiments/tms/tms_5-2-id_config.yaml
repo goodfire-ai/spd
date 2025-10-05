@@ -8,20 +8,20 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 20
 n_mask_samples: 1
-gate_type: "mlp"
-gate_hidden_dims: [16]
+ci_fn_type: "mlp"
+ci_fn_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["linear1", "linear2", "hidden_layers.0"]
 use_delta_component: true
 
-# --- Loss Coefficients ---
-faithfulness_coeff: null
-ci_recon_coeff: null
-stochastic_recon_coeff: 1
-ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 1.0
-importance_minimality_coeff: 3e-3
-pnorm: 1.0
+loss_metric_configs:
+  - classname: "ImportanceMinimalityLoss"
+    coeff: 3e-3
+    pnorm: 1.0
+  - classname: "StochasticReconLayerwiseLoss"
+    coeff: 1.0
+  - classname: "StochasticReconLoss"
+    coeff: 1.0
 output_loss_type: mse
 
 # --- Training ---
@@ -45,32 +45,26 @@ slow_eval_freq: 5_000
 save_freq: null
 ci_alive_threshold: 0.1
 n_examples_until_dead: 4_096_000
-eval_metrics:
+eval_metric_configs:
   - classname: "CIHistograms"
-    extra_init_kwargs:
-      n_batches_accum: 5
+    n_batches_accum: 5
   - classname: "ComponentActivationDensity"
   - classname: "PermutedCIPlots"
-    extra_init_kwargs:
-      identity_patterns: ["linear1", "linear2"]
-      dense_patterns: ["hidden_layers.0"]
-  - classname: "UVPlots"
-    extra_init_kwargs:
-      identity_patterns: ["linear1", "linear2"]
-      dense_patterns: ["hidden_layers.0"]
+    sigmoid_type: "leaky_hard"
+    identity_patterns: ["linear1", "linear2"]
+    dense_patterns: ["hidden_layers.0"]
   - classname: "IdentityCIError"
-    extra_init_kwargs:
-      identity_ci:
-        - layer_pattern: "linear1"
-          n_features: 5
-        - layer_pattern: "linear2"
-          n_features: 5
-      dense_ci:
-        - layer_pattern: "hidden_layers.0"
-          k: 2
+    identity_ci:
+      - layer_pattern: "linear1"
+        n_features: 5
+      - layer_pattern: "linear2"
+        n_features: 5
+    dense_ci:
+      - layer_pattern: "hidden_layers.0"
+        k: 2
   - classname: "CI_L0"
+    groups: null
   - classname: "CIMeanPerComponent"
-  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"

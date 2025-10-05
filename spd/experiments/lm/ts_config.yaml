@@ -10,21 +10,22 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 100
 n_mask_samples: 1
-gate_type: "vector_mlp"
-gate_hidden_dims: [8]
+ci_fn_type: "vector_mlp"
+ci_fn_hidden_dims: [8]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["transformer.h.3.mlp.c_fc"]
 sampling: "continuous"
 use_delta_component: true
 
-# --- Loss Coefficients ---
-faithfulness_coeff: null
-ci_recon_coeff: null
-stochastic_recon_coeff: null
-ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 1
-importance_minimality_coeff: 1e-6
-pnorm: 2.0
+loss_metric_configs:
+  - classname: "ImportanceMinimalityLoss"
+    coeff: 0.0003
+    pnorm: 2.0
+    p_anneal_start_frac: 0.0
+    p_anneal_final_p: 0.3
+    p_anneal_end_frac: 1.0
+  - classname: "StochasticReconLayerwiseLoss"
+    coeff: 2.0
 output_loss_type: kl
 
 # --- Training ---
@@ -49,15 +50,15 @@ slow_eval_freq: 2000
 slow_eval_on_first_step: true
 save_freq: null
 n_examples_until_dead: 8_192_000
-eval_metrics:
+eval_metric_configs:
   - classname: "CIHistograms"
+    n_batches_accum: null
   - classname: "ComponentActivationDensity"
   - classname: "CI_L0"
+    groups: null
   - classname: "CEandKLLosses"
-    extra_init_kwargs:
-      rounding_threshold: 0.1
+    rounding_threshold: 0.1
   - classname: "CIMeanPerComponent"
-  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.AutoModelForCausalLM

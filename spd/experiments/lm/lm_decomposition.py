@@ -39,7 +39,7 @@ def main(
 ) -> None:
     config = load_config(config_path_or_obj, config_model=Config)
 
-    dist_state = init_distributed(backend=config.dist_backend)
+    dist_state = init_distributed()
 
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))

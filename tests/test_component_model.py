@@ -8,23 +8,22 @@ from jaxtyping import Float, Int
 from torch import Tensor, nn
 from transformers.modeling_utils import Conv1D as RadfordConv1D
 
-from spd.configs import Config
+from spd.configs import Config, ImportanceMinimalityLossTrainConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import (
     ComponentModel,
     SPDRunInfo,
-    handle_deprecated_state_dict_keys_,
 )
 from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
     LinearComponents,
-    MLPGates,
+    MLPCiFn,
     ParallelLinear,
-    VectorMLPGates,
-    VectorSharedMLPGate,
+    VectorMLPCiFn,
+    VectorSharedMLPCiFn,
     make_mask_infos,
 )
 from spd.spd_types import ModelPath
@@ -79,8 +78,8 @@ def test_correct_parameters_require_grad():
         target_model=target_model,
         target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
         C=4,
-        gate_type="mlp",
-        gate_hidden_dims=[4],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[4],
         pretrained_model_output_attr=None,
     )
 
@@ -126,8 +125,8 @@ def test_from_run_info():
             target_module_patterns=["linear1", "linear2", "embedding", "conv1d1", "conv1d2"],
             identity_module_patterns=["linear1"],
             C=4,
-            gate_type="mlp",
-            gate_hidden_dims=[4],
+            ci_fn_type="mlp",
+            ci_fn_hidden_dims=[4],
             batch_size=1,
             steps=1,
             lr=1e-3,
@@ -135,8 +134,7 @@ def test_from_run_info():
             eval_batch_size=1,
             eval_freq=1,
             slow_eval_freq=1,
-            importance_minimality_coeff=1.0,
-            pnorm=1.0,
+            loss_metric_configs=[ImportanceMinimalityLossTrainConfig(coeff=1.0, pnorm=1.0)],
             n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
@@ -157,8 +155,8 @@ def test_from_run_info():
             target_model=target_model,
             target_module_patterns=config.all_module_patterns,
             C=config.C,
-            gate_type=config.gate_type,
-            gate_hidden_dims=config.gate_hidden_dims,
+            ci_fn_type=config.ci_fn_type,
+            ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
 
@@ -227,56 +225,32 @@ def test_parallel_linear_shapes_and_forward():
 
 
 @pytest.mark.parametrize("hidden_dims", [[8], [4, 3]])
-def test_mlp_gates_scalar_per_component(hidden_dims: list[int]):
+def test_mlp_ci_fn_scalar_per_component(hidden_dims: list[int]):
     C = 5
-    gates = MLPGates(C=C, hidden_dims=hidden_dims)
+    ci_fns = MLPCiFn(C=C, hidden_dims=hidden_dims)
     x = torch.randn(BATCH_SIZE, C)  # two items, C components
-    y = gates(x)
+    y = ci_fns(x)
     assert y.shape == (BATCH_SIZE, C)
 
 
 @pytest.mark.parametrize("hidden_dims", [[4], [6, 3]])
-def test_vector_mlp_gates(hidden_dims: list[int]):
+def test_vector_mlp_ci_fns(hidden_dims: list[int]):
     C = 3
     d_in = 10
-    gates = VectorMLPGates(C=C, input_dim=d_in, hidden_dims=hidden_dims)
+    ci_fns = VectorMLPCiFn(C=C, input_dim=d_in, hidden_dims=hidden_dims)
     x = torch.randn(BATCH_SIZE, d_in)
-    y = gates(x)
+    y = ci_fns(x)
     assert y.shape == (BATCH_SIZE, C)
 
 
 @pytest.mark.parametrize("hidden_dims", [[], [7], [8, 5]])
-def test_vector_shared_mlp_gate(hidden_dims: list[int]):
+def test_vector_shared_mlp_fn(hidden_dims: list[int]):
     C = 3
     d_in = 10
-    gate = VectorSharedMLPGate(C=C, input_dim=d_in, hidden_dims=hidden_dims)
+    ci_fn = VectorSharedMLPCiFn(C=C, input_dim=d_in, hidden_dims=hidden_dims)
     x = torch.randn(BATCH_SIZE, d_in)
-    y = gate(x)
+    y = ci_fn(x)
     assert y.shape == (BATCH_SIZE, C)
-
-
-@pytest.mark.parametrize(
-    ("key", "expected"),
-    [
-        # components
-        ["target_model.a.b.components.U", "_components.a-b.U"],
-        ["target_model.a.b.components.V", "_components.a-b.V"],
-        ["target_model.a.b.components.bias", "_components.a-b.bias"],
-        # components (old naming)
-        ["patched_model.a.b.components.U", "_components.a-b.U"],
-        ["patched_model.a.b.components.V", "_components.a-b.V"],
-        ["patched_model.a.b.components.bias", "_components.a-b.bias"],
-        # original
-        ["target_model.a.b.original.weight", "target_model.a.b.weight"],
-        # regular state
-        ["target_model.a.b.c.weight", "target_model.a.b.c.weight"],
-    ],
-)
-def test_handle_deprecated_state_dict_keys_(key: str, expected: str):
-    input_dict = {key: torch.tensor([])}
-    handle_deprecated_state_dict_keys_(input_dict)
-    expected_dict = {expected: torch.tensor([])}
-    assert input_dict.keys() == expected_dict.keys()
 
 
 def test_full_weight_delta_matches_target_behaviour():
@@ -288,8 +262,8 @@ def test_full_weight_delta_matches_target_behaviour():
         target_model=target_model,
         target_module_patterns=target_module_paths,
         C=4,
-        gate_type="mlp",
-        gate_hidden_dims=[4],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[4],
         pretrained_model_output_attr=None,
     )
 
@@ -320,8 +294,8 @@ def test_input_cache_captures_pre_weight_input():
         target_model=target_model,
         target_module_patterns=target_module_paths,
         C=2,
-        gate_type="mlp",
-        gate_hidden_dims=[2],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
     )
 
@@ -355,8 +329,8 @@ def test_weight_deltas():
         target_model=target_model,
         target_module_patterns=target_module_paths,
         C=3,
-        gate_type="mlp",
-        gate_hidden_dims=[2],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
     )
 
@@ -390,8 +364,8 @@ def test_replacement_effects_fwd_pass():
         target_model=model,
         target_module_patterns=["linear"],
         C=C,
-        gate_type="mlp",
-        gate_hidden_dims=[2],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
     )
 
@@ -447,8 +421,8 @@ def test_replacing_identity():
         target_model=model,
         target_module_patterns=["linear.pre_identity"],
         C=C,
-        gate_type="mlp",
-        gate_hidden_dims=[2],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
     )
 
@@ -499,8 +473,8 @@ def test_routing():
         target_model=model,
         target_module_patterns=["linear"],
         C=C,
-        gate_type="mlp",
-        gate_hidden_dims=[2],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
     )
 

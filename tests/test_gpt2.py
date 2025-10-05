@@ -1,6 +1,14 @@
+import pytest
 from transformers import PreTrainedModel
 
-from spd.configs import Config, EvalMetricConfig
+from spd.configs import (
+    CI_L0Config,
+    Config,
+    FaithfulnessLossTrainConfig,
+    ImportanceMinimalityLossTrainConfig,
+    StochasticReconLayerwiseLossTrainConfig,
+    StochasticReconLossTrainConfig,
+)
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.identity_insertion import insert_identity_operations_
@@ -8,6 +16,7 @@ from spd.run_spd import optimize
 from spd.utils.general_utils import resolve_class, set_seed
 
 
+@pytest.mark.slow
 def test_gpt_2_decomposition_happy_path() -> None:
     """Test that SPD decomposition works on for GPT-2"""
     set_seed(0)
@@ -23,22 +32,25 @@ def test_gpt_2_decomposition_happy_path() -> None:
         seed=0,
         C=10,  # Smaller C for faster testing
         n_mask_samples=1,
-        gate_type="vector_mlp",
-        gate_hidden_dims=[128],
-        target_module_patterns=["transformer.h.*.attn.c_attn", "transformer.h.*.attn.c_proj"],
-        identity_module_patterns=["transformer.h.*.attn.c_attn"],
-        # Loss Coefficients
-        faithfulness_coeff=200,
-        stochastic_recon_coeff=1.0,
-        ci_recon_layerwise_coeff=None,
-        stochastic_recon_layerwise_coeff=1.0,
-        importance_minimality_coeff=1e-2,
-        pnorm=0.9,
+        ci_fn_type="vector_mlp",
+        ci_fn_hidden_dims=[128],
+        target_module_patterns=["transformer.h.2.attn.c_attn", "transformer.h.3.mlp.c_fc"],
+        identity_module_patterns=["transformer.h.1.attn.c_attn"],
+        loss_metric_configs=[
+            ImportanceMinimalityLossTrainConfig(
+                coeff=1e-2,
+                pnorm=0.9,
+                eps=1e-12,
+            ),
+            StochasticReconLayerwiseLossTrainConfig(coeff=1.0),
+            StochasticReconLossTrainConfig(coeff=1.0),
+            FaithfulnessLossTrainConfig(coeff=200),
+        ],
         output_loss_type="kl",
         # Training
         lr=1e-3,
         batch_size=4,
-        steps=10,  # Run more steps to see improvement
+        steps=2,
         lr_schedule="cosine",
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
@@ -48,17 +60,12 @@ def test_gpt_2_decomposition_happy_path() -> None:
         eval_freq=500,
         eval_batch_size=1,
         slow_eval_freq=500,
-        slow_eval_on_first_step=True,
+        slow_eval_on_first_step=False,
         save_freq=None,
         ci_alive_threshold=0.1,
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        eval_metrics=[
-            EvalMetricConfig(classname="CIHistograms", extra_init_kwargs={"n_batches_accum": 5}),
-            EvalMetricConfig(classname="ComponentActivationDensity"),
-            EvalMetricConfig(classname="CI_L0"),
-            EvalMetricConfig(
-                classname="CEandKLLosses", extra_init_kwargs={"rounding_threshold": 0.0}
-            ),
+        eval_metric_configs=[
+            CI_L0Config(groups=None),
         ],
         # Pretrained model info
         pretrained_model_class="transformers.GPT2LMHeadModel",

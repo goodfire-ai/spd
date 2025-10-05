@@ -14,6 +14,7 @@ from spd.experiments.resid_mlp.resid_mlp_dataset import (
 )
 from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader
+from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import compute_feature_importances, get_lr_schedule_fn, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
@@ -203,7 +204,7 @@ def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
 
 
 if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
     # 1 layer
     config = ResidMLPTrainConfig(
         wandb_project="spd",
