@@ -2,6 +2,7 @@ import copy
 import importlib
 import json
 import random
+import re
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -292,6 +293,15 @@ def calc_sum_recon_loss_lm(
     return loss
 
 
+def _ensure_list_at_index(current: dict[str, Any], key: str, index: int) -> None:
+    """Ensure that current[key] is a list with at least index+1 elements."""
+    if key not in current:
+        current[key] = []
+    # Ensure the list is long enough
+    while len(current[key]) <= index:
+        current[key].append({})
+
+
 def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
     """Apply nested updates to a dictionary."""
     result = copy.deepcopy(base_dict)
@@ -303,16 +313,25 @@ def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> 
             keys = []
 
             # Parse the key to handle both dots and list indices
-            import re
-
             # Split by dots but preserve list indices
             parts = re.split(r"\.", key)
             for part in parts:
-                if "[" in part and "]" in part:
+                if "[" in part:
+                    # Check for malformed brackets (missing closing bracket)
+                    if "]" not in part:
+                        raise ValueError(
+                            f"Malformed list index notation in key '{key}': missing closing bracket"
+                        )
                     # Handle list index notation like "loss_metric_configs[0]"
-                    base_key = part.split("[")[0]
-                    index = int(part.split("[")[1].split("]")[0])
-                    keys.append((base_key, index))
+                    try:
+                        base_key = part.split("[")[0]
+                        index_str = part.split("[")[1].split("]")[0]
+                        index = int(index_str)
+                        if index < 0:
+                            raise ValueError(f"List index must be non-negative, got {index}")
+                        keys.append((base_key, index))
+                    except (ValueError, IndexError) as e:
+                        raise ValueError(f"Invalid list index notation in key '{key}': {e}") from e
                 else:
                     # Regular key
                     keys.append((part, None))
@@ -321,11 +340,7 @@ def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> 
             for k, idx in keys[:-1]:
                 if idx is not None:
                     # This is a list index
-                    if k not in current:
-                        current[k] = []
-                    # Ensure the list is long enough
-                    while len(current[k]) <= idx:
-                        current[k].append({})
+                    _ensure_list_at_index(current, k, idx)
                     current = current[k][idx]
                 else:
                     # Regular key
@@ -337,11 +352,7 @@ def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> 
             final_key, final_idx = keys[-1]
             if final_idx is not None:
                 # Final key is a list index
-                if final_key not in current:
-                    current[final_key] = []
-                # Ensure the list is long enough
-                while len(current[final_key]) <= final_idx:
-                    current[final_key].append({})
+                _ensure_list_at_index(current, final_key, final_idx)
                 current[final_key][final_idx] = value
             else:
                 # Final key is regular

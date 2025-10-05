@@ -3,6 +3,8 @@
 import json
 from typing import Any
 
+import pytest
+
 from spd.configs import Config
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
@@ -92,6 +94,75 @@ class TestGenerateGridCombinations:
             "direct_nested.sub_param": 3,
         }
 
+    def test_list_based_parameters(self):
+        """Test generation with list-based parameter structures."""
+        parameters = {
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": {"values": [1e-3, 1e-4]},
+                    "pnorm": 2.0,
+                }
+            ]
+        }
+
+        combinations = generate_grid_combinations(parameters)
+
+        assert len(combinations) == 2
+        assert {"loss_metric_configs[0].coeff": 1e-3} in combinations
+        assert {"loss_metric_configs[0].coeff": 1e-4} in combinations
+
+    def test_mixed_list_and_nested_parameters(self):
+        """Test generation with both list-based and nested parameters."""
+        parameters = {
+            "ci_fn_type": {"values": ["mlp", "vector_mlp"]},
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": {"values": [1e-3, 1e-4]},
+                }
+            ],
+        }
+
+        combinations = generate_grid_combinations(parameters)
+
+        assert len(combinations) == 4
+        expected_combos = [
+            {"ci_fn_type": "mlp", "loss_metric_configs[0].coeff": 1e-3},
+            {"ci_fn_type": "mlp", "loss_metric_configs[0].coeff": 1e-4},
+            {"ci_fn_type": "vector_mlp", "loss_metric_configs[0].coeff": 1e-3},
+            {"ci_fn_type": "vector_mlp", "loss_metric_configs[0].coeff": 1e-4},
+        ]
+        for combo in expected_combos:
+            assert combo in combinations
+
+    def test_multiple_list_items_with_sweepable_params(self):
+        """Test generation with multiple list items that have sweepable parameters."""
+        parameters = {
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": {"values": [1e-3, 1e-4]},
+                },
+                {
+                    "classname": "StochasticReconLoss",
+                    "coeff": {"values": [0.5, 1.0]},
+                },
+            ]
+        }
+
+        combinations = generate_grid_combinations(parameters)
+
+        assert len(combinations) == 4
+        expected_combos = [
+            {"loss_metric_configs[0].coeff": 1e-3, "loss_metric_configs[1].coeff": 0.5},
+            {"loss_metric_configs[0].coeff": 1e-3, "loss_metric_configs[1].coeff": 1.0},
+            {"loss_metric_configs[0].coeff": 1e-4, "loss_metric_configs[1].coeff": 0.5},
+            {"loss_metric_configs[0].coeff": 1e-4, "loss_metric_configs[1].coeff": 1.0},
+        ]
+        for combo in expected_combos:
+            assert combo in combinations
+
 
 class TestApplyNestedUpdates:
     """Test the apply_nested_updates function."""
@@ -143,6 +214,59 @@ class TestApplyNestedUpdates:
         result = apply_nested_updates(base, updates)
 
         assert result == {"simple": 10, "nested": {"a": 20, "b": 3, "c": 30}, "new": {"param": 40}}
+
+    def test_list_index_updates(self):
+        """Test applying updates with list index notation."""
+        base = {
+            "loss_metric_configs": [
+                {"classname": "A", "coeff": 1.0},
+                {"classname": "B", "coeff": 2.0},
+            ]
+        }
+        updates = {"loss_metric_configs[0].coeff": 5.0, "loss_metric_configs[1].classname": "C"}
+
+        result = apply_nested_updates(base, updates)
+
+        expected = {
+            "loss_metric_configs": [
+                {"classname": "A", "coeff": 5.0},
+                {"classname": "C", "coeff": 2.0},
+            ]
+        }
+        assert result == expected
+
+    def test_list_index_creates_missing_lists(self):
+        """Test that list index notation creates missing lists."""
+        base = {"existing": 1}
+        updates = {"new_list[0].value": 42, "new_list[2].other": "test"}
+
+        result = apply_nested_updates(base, updates)
+
+        expected = {
+            "existing": 1,
+            "new_list": [
+                {"value": 42},
+                {},
+                {"other": "test"},
+            ],
+        }
+        assert result == expected
+
+    def test_list_index_validation(self):
+        """Test validation of list index notation."""
+        base = {"test": []}
+
+        # Test negative index
+        with pytest.raises(ValueError, match="List index must be non-negative"):
+            apply_nested_updates(base, {"test[-1].value": 1})
+
+        # Test invalid index format
+        with pytest.raises(ValueError, match="Invalid list index notation"):
+            apply_nested_updates(base, {"test[abc].value": 1})
+
+        # Test malformed brackets
+        with pytest.raises(ValueError, match="Malformed list index notation"):
+            apply_nested_updates(base, {"test[0.value": 1})
 
 
 class TestConfigIntegration:
