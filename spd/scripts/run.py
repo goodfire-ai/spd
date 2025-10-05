@@ -502,7 +502,7 @@ def main(
                 snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
                 max_concurrent_tasks=n_agents,
                 n_gpus_per_job=n_gpus_per_job,
-                partition="gpu",  # Default partition
+                partition=partition,
             )
 
             array_job_id = submit_slurm_array(array_script)
