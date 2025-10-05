@@ -643,6 +643,14 @@ def cli():
         help="Optional suffix for SLURM job names",
     )
 
+    parser.add_argument(
+        "-p",
+        "--partition",
+        type=str,
+        default="h100-reserved",
+        help="SLURM partition to use (default: h100-reserved)",
+    )
+
     # Git and logging settings
     parser.add_argument(
         "--create-snapshot",
@@ -676,6 +684,7 @@ def cli():
         create_report=args.create_report,
         job_suffix=args.job_suffix,
         cpu=args.cpu,
+        partition=args.partition,
         dp=args.dp,
         project=args.project,
         local=args.local,
