@@ -3,8 +3,6 @@
 import json
 from typing import Any
 
-import pytest
-
 from spd.configs import Config
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
@@ -257,16 +255,25 @@ class TestApplyNestedUpdates:
         base = {"test": []}
 
         # Test negative index
-        with pytest.raises(ValueError, match="List index must be non-negative"):
+        try:
             apply_nested_updates(base, {"test[-1].value": 1})
+            raise AssertionError("Should have raised ValueError for negative index")
+        except ValueError as e:
+            assert "List index must be non-negative" in str(e)
 
         # Test invalid index format
-        with pytest.raises(ValueError, match="Invalid list index notation"):
+        try:
             apply_nested_updates(base, {"test[abc].value": 1})
+            raise AssertionError("Should have raised ValueError for invalid index format")
+        except ValueError as e:
+            assert "Invalid list index notation" in str(e)
 
         # Test malformed brackets
-        with pytest.raises(ValueError, match="Malformed list index notation"):
+        try:
             apply_nested_updates(base, {"test[0.value": 1})
+            raise AssertionError("Should have raised ValueError for malformed brackets")
+        except ValueError as e:
+            assert "Malformed list index notation" in str(e)
 
 
 class TestConfigIntegration:
