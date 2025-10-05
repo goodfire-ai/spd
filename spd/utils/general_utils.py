@@ -297,19 +297,55 @@ def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> 
     result = copy.deepcopy(base_dict)
 
     for key, value in updates.items():
-        if "." in key:
-            # Handle nested keys
-            keys = key.split(".")
+        if "." in key or "[" in key:
+            # Handle nested keys (including list indices like loss_metric_configs[0].coeff)
             current = result
+            keys = []
+
+            # Parse the key to handle both dots and list indices
+            import re
+
+            # Split by dots but preserve list indices
+            parts = re.split(r"\.", key)
+            for part in parts:
+                if "[" in part and "]" in part:
+                    # Handle list index notation like "loss_metric_configs[0]"
+                    base_key = part.split("[")[0]
+                    index = int(part.split("[")[1].split("]")[0])
+                    keys.append((base_key, index))
+                else:
+                    # Regular key
+                    keys.append((part, None))
 
             # Navigate to the parent of the final key
-            for k in keys[:-1]:
-                if k not in current:
-                    current[k] = {}
-                current = current[k]
+            for k, idx in keys[:-1]:
+                if idx is not None:
+                    # This is a list index
+                    if k not in current:
+                        current[k] = []
+                    # Ensure the list is long enough
+                    while len(current[k]) <= idx:
+                        current[k].append({})
+                    current = current[k][idx]
+                else:
+                    # Regular key
+                    if k not in current:
+                        current[k] = {}
+                    current = current[k]
 
             # Set the final value
-            current[keys[-1]] = value
+            final_key, final_idx = keys[-1]
+            if final_idx is not None:
+                # Final key is a list index
+                if final_key not in current:
+                    current[final_key] = []
+                # Ensure the list is long enough
+                while len(current[final_key]) <= final_idx:
+                    current[final_key].append({})
+                current[final_key][final_idx] = value
+            else:
+                # Final key is regular
+                current[final_key] = value
         else:
             # Simple key
             result[key] = value

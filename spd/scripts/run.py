@@ -82,6 +82,23 @@ def generate_grid_combinations(parameters: dict[str, Any]) -> list[dict[str, Any
                 else:
                     # This might be a direct nested structure
                     flatten_params(value, full_key)
+            elif isinstance(value, list):
+                # Handle list-based parameters (like loss_metric_configs)
+                flatten_list_params(value, full_key)
+
+    def flatten_list_params(list_value: list[Any], prefix: str) -> None:
+        """Handle list-based parameter structures."""
+        for i, item in enumerate(list_value):
+            if isinstance(item, dict):
+                item_prefix = f"{prefix}[{i}]"
+                for sub_key, sub_value in item.items():
+                    if isinstance(sub_value, dict) and "values" in sub_value:
+                        # This is a parameter specification within a list item
+                        full_key = f"{item_prefix}.{sub_key}"
+                        flattened_params[full_key] = sub_value["values"]
+                    elif isinstance(sub_value, dict):
+                        # Recursively handle nested structures within list items
+                        flatten_params({sub_key: sub_value}, item_prefix)
 
     flatten_params(parameters)
 
