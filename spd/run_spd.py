@@ -37,6 +37,7 @@ from spd.utils.distributed_utils import (
 )
 from spd.utils.general_utils import (
     extract_batch_data,
+    get_cosine_ramp_value,
     get_linear_annealed_p,
     get_linear_ramp_value,
     get_lr_schedule_fn,
@@ -184,6 +185,7 @@ def optimize(
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
         current_p = config.pnorm  # Initialize with default value
+        current_importance_minimality_coeff = config.importance_minimality_coeff
 
         # Compute adversarial-vs-random mix weights for this step
         adv_mix_adv_weight = get_linear_ramp_value(
@@ -202,6 +204,20 @@ def optimize(
             start_value=config.adv_mix_rand_weight_start,
             end_value=config.adv_mix_rand_weight_end,
         )
+
+        # Compute scheduled importance_minimality_coeff if configured (cosine ramp)
+        if (
+            config.importance_minimality_coeff_final is not None
+            and config.importance_minimality_coeff_start_frac < 1.0
+        ):
+            current_importance_minimality_coeff = get_cosine_ramp_value(
+                step=step,
+                steps=config.steps,
+                start_frac=config.importance_minimality_coeff_start_frac,
+                end_frac=config.importance_minimality_coeff_end_frac,
+                start_value=config.importance_minimality_coeff,
+                end_value=float(config.importance_minimality_coeff_final),
+            )
 
         for _ in range(config.gradient_accumulation_steps):
             weight_deltas = component_model.calc_weight_deltas()
@@ -248,6 +264,7 @@ def optimize(
                 current_p=current_p,
                 adv_mix_adv_weight=adv_mix_adv_weight,
                 adv_mix_rand_weight=adv_mix_rand_weight,
+                importance_minimality_coeff_override=current_importance_minimality_coeff,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
@@ -280,6 +297,9 @@ def optimize(
             microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
             microbatch_log_data["train/misc/lr"] = step_lr
             microbatch_log_data["train/misc/current_p"] = current_p
+            microbatch_log_data["train/misc/importance_minimality_coeff"] = float(
+                current_importance_minimality_coeff
+            )
             microbatch_log_data["train/misc/adv_mix_adv_weight"] = adv_mix_adv_weight
             microbatch_log_data["train/misc/adv_mix_rand_weight"] = adv_mix_rand_weight
 

@@ -1,11 +1,11 @@
-C: 1000
-batch_size: 1024
+C: 2000
+batch_size: 256
 ci_alive_threshold: 0.0
 ci_masked_recon_subset_coeff: null
 ci_recon_coeff: null
 ci_recon_layerwise_coeff: null
 dist_backend: null
-eval_batch_size: 64
+eval_batch_size: 256
 eval_freq: 1000
 eval_metrics:
 - classname: CIHistograms
@@ -68,31 +68,39 @@ eval_metrics:
   extra_init_kwargs: {}
 faithfulness_coeff: null
 gate_hidden_dims:
-- 500
+- 1000
 gate_type: shared_mlp
 gradient_accumulation_steps: 1
 identity_module_patterns:
-# - model.layers.0.mlp.gate_proj
+- model.layers.0.mlp.gate_proj
 # - model.layers.0.mlp.down_proj
-importance_minimality_coeff: 0.001
+importance_minimality_coeff: 1e-2
+importance_minimality_coeff_start_frac: 0.0
+importance_minimality_coeff_end_frac: 0.5
+importance_minimality_coeff_final: 1e-3
 lr: 0.0005
 lr_exponential_halflife: null
-lr_schedule: cosine
+lr_schedule: constant
 lr_warmup_pct: 0.0
 n_eval_steps: 5
 n_examples_until_dead: 1368400
 n_mask_samples: 1
 out_dir: null
 output_loss_type: kl
-p_anneal_end_frac: 1
-p_anneal_final_p: 0.3
-p_anneal_start_frac: 0
-pnorm: 2.0
+# p_anneal_end_frac: 1
+# p_anneal_final_p: 0.3
+# p_anneal_start_frac: 0
+pnorm: 0.9
 pgd_mask_enabled: true
-pgd_mask_steps: 2
-pgd_mask_step_size: 0.5
+pgd_mask_steps: 1
+pgd_mask_step_size: 1.0
 adv_mix_start_frac: 0
-adv_mix_adv_weight_end: 0.2
+adv_mix_end_frac: 1
+adv_mix_adv_weight_start: 0.05
+adv_mix_rand_weight_start: 0.95
+adv_mix_adv_weight_end: 0.05
+adv_mix_rand_weight_end: 0.95
+pgd_mask_random_init: false
 pretrained_model_class: transformers.LlamaForCausalLM
 pretrained_model_name: SimpleStories/SimpleStories-1.25M
 pretrained_model_output_attr: logits
@@ -103,18 +111,19 @@ seed: 0
 sigmoid_type: leaky_hard
 slow_eval_freq: 2000
 slow_eval_on_first_step: true
-steps: 50000
+steps: 100000
 stochastic_recon_coeff: null
 stochastic_recon_layerwise_coeff: null
 stochastic_recon_subset_coeff: 1
 target_module_patterns:
+# - model.embed_tokens
 - model.layers.0.mlp.gate_proj
 - model.layers.0.mlp.down_proj
 - model.layers.0.mlp.up_proj
-- model.layers.0.self_attn.q_proj
-- model.layers.0.self_attn.k_proj
-- model.layers.0.self_attn.v_proj
-- model.layers.0.self_attn.o_proj
+# - model.layers.0.self_attn.q_proj
+# - model.layers.0.self_attn.k_proj
+# - model.layers.0.self_attn.v_proj
+# - model.layers.0.self_attn.o_proj
 task_config:
   buffer_size: 1000
   column_name: story
