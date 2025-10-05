@@ -23,6 +23,7 @@ from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
     Identity,
+    LinearCiFn,
     LinearComponents,
     MLPCiFn,
     VectorMLPCiFn,
@@ -220,6 +221,8 @@ class ComponentModel(LoadableModule):
                 raise ValueError(f"Module {type(target_module)} not supported for {ci_fn_type=}")
 
         match ci_fn_type:
+            case "linear":
+                return LinearCiFn(C=component_C, input_dim=input_dim)
             case "vector_mlp":
                 return VectorMLPCiFn(
                     C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
@@ -490,6 +493,7 @@ class ComponentModel(LoadableModule):
         sigmoid_type: SigmoidTypes,
         sampling: Literal["continuous", "binomial"],
         detach_inputs: bool = False,
+        use_abs_inner_acts: bool = False,
     ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
         """Calculate causal importances.
 
@@ -497,6 +501,7 @@ class ComponentModel(LoadableModule):
             pre_weight_acts: The activations before each layer in the target model.
             sigmoid_type: Type of sigmoid to use.
             detach_inputs: Whether to detach the inputs to the causal importance function.
+            use_abs_inner_acts: Whether to take the absolute value of inner activations for MLP CI functions.
 
         Returns:
             Tuple of (causal_importances, causal_importances_upper_leaky) dictionaries for each layer.
@@ -509,8 +514,10 @@ class ComponentModel(LoadableModule):
             ci_fns = self.ci_fns[param_name]
 
             match ci_fns:
-                case MLPCiFn():
+                case MLPCiFn() | LinearCiFn():
                     ci_fn_input = self.components[param_name].get_inner_acts(acts)
+                    if use_abs_inner_acts:
+                        ci_fn_input = ci_fn_input.abs()
                 case VectorMLPCiFn() | VectorSharedMLPCiFn():
                     ci_fn_input = acts
                 case _:

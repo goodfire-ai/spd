@@ -9,7 +9,7 @@ from torch import Tensor, nn
 
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
-CiFnType = Literal["mlp", "vector_mlp", "shared_mlp"]
+CiFnType = Literal["mlp", "vector_mlp", "shared_mlp", "linear"]
 
 
 class ParallelLinear(nn.Module):
@@ -42,6 +42,22 @@ class Linear(nn.Module):
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
         return einops.einsum(x, self.W, "... d_in, d_in d_out -> ... d_out") + self.b
+
+
+class LinearCiFn(nn.Module):
+    """Linear-based function that map component 'inner acts' to a scalar output for each component."""
+
+    def __init__(self, C: int, input_dim: int):
+        super().__init__()
+
+        self.layer = ParallelLinear(C, 1, 1, nonlinearity="relu")
+
+    @override
+    def forward(self, x: Float[Tensor, "... C"]) -> Float[Tensor, "... C"]:
+        x = einops.rearrange(x, "... C -> ... C 1")
+        x = self.layer(x)
+        assert x.shape[-1] == 1, "Last dimension should be 1"
+        return x[..., 0]
 
 
 class MLPCiFn(nn.Module):
