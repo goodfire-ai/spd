@@ -10,12 +10,26 @@ import torch
 from jaxtyping import Float, Int
 from muutils.dbg import dbg_tensor
 
-from spd.clustering.consts import DistancesArray, DistancesMethod, MergesArray, SaveableObject
+from spd.clustering.consts import (
+    ComponentLabels,
+    DistancesArray,
+    DistancesMethod,
+    MergePair,
+    MergesArray,
+    SaveableObject,
+)
 from spd.clustering.math.merge_distances import compute_distances
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
 from spd.clustering.merge_config import MergeConfig
 
-IterationInfo = dict[str, int | list[int] | GroupMerge]
+
+@dataclass(frozen=True)
+class IterationInfo:
+    """Information about a single merge iteration."""
+
+    idx: int
+    selected_pair: list[int]
+    merges: GroupMerge
 
 
 def _zip_save_arr(zf: zipfile.ZipFile, name: str, arr: np.ndarray) -> None:
@@ -39,7 +53,7 @@ class MergeHistory(SaveableObject):
 
     merges: BatchedGroupMerge
     selected_pairs: Int[np.ndarray, " n_iters 2"]
-    labels: list[str]
+    labels: ComponentLabels
     merge_config: MergeConfig
     n_iters_current: int
 
@@ -53,7 +67,7 @@ class MergeHistory(SaveableObject):
     def from_config(
         cls,
         merge_config: MergeConfig,
-        labels: list[str],
+        labels: ComponentLabels,
     ) -> "MergeHistory":
         n_components: int = len(labels)
         n_iters_target: int = merge_config.get_num_iters(n_components)
@@ -90,7 +104,7 @@ class MergeHistory(SaveableObject):
     def add_iteration(
         self,
         idx: int,
-        selected_pair: tuple[int, int],
+        selected_pair: MergePair,
         current_merge: GroupMerge,
     ) -> None:
         """Add data for one iteration."""
@@ -107,11 +121,11 @@ class MergeHistory(SaveableObject):
                 f"Index {idx} out of range for history with {self.n_iters_current} iterations"
             )
 
-        return {
-            "idx": idx,
-            "selected_pair": self.selected_pairs[idx].tolist(),
-            "merges": self.merges[idx],
-        }
+        return IterationInfo(
+            idx=idx,
+            selected_pair=self.selected_pairs[idx].tolist(),
+            merges=self.merges[idx],
+        )
 
     def __len__(self) -> int:
         """Get the number of iterations in the history."""
@@ -141,7 +155,7 @@ class MergeHistory(SaveableObject):
         merge: GroupMerge = self.merges[iteration]
         return torch.unique(merge.group_idxs).tolist()
 
-    def get_cluster_component_labels(self, iteration: int, cluster_id: int) -> list[str]:
+    def get_cluster_component_labels(self, iteration: int, cluster_id: int) -> ComponentLabels:
         """Get component labels for a specific cluster at a given iteration.
 
         Args:
@@ -158,7 +172,7 @@ class MergeHistory(SaveableObject):
         )
         merge: GroupMerge = self.merges[iteration]
         component_indices: list[int] = merge.components_in_group(cluster_id)
-        return [self.labels[idx] for idx in component_indices]
+        return ComponentLabels([self.labels[idx] for idx in component_indices])
 
     def get_cluster_components_info(self, iteration: int, cluster_id: int) -> list[dict[str, Any]]:
         """Get detailed component information for a cluster.
@@ -240,7 +254,8 @@ class MergeHistory(SaveableObject):
                 group_idxs=torch.from_numpy(group_idxs),
                 k_groups=torch.from_numpy(k_groups),
             )
-            labels: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
+            labels_raw: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
+            labels: ComponentLabels = ComponentLabels(labels_raw)
             metadata: dict[str, Any] = json.loads(zf.read("metadata.json").decode("utf-8"))
             merge_config: MergeConfig = MergeConfig.model_validate(metadata["merge_config"])
 
@@ -348,7 +363,8 @@ class MergeHistoryEnsemble:
         for history in self.data:
             unique_labels_set.update(history.labels)
 
-        unique_labels: list[str] = sorted(unique_labels_set)
+        unique_labels_list: list[str] = sorted(unique_labels_set)
+        unique_labels: ComponentLabels = ComponentLabels(unique_labels_list)
         c_components: int = len(unique_labels)
         component_label_idxs: dict[str, int] = {
             label: idx for idx, label in enumerate(unique_labels)

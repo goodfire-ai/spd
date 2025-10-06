@@ -5,6 +5,10 @@ from jaxtyping import Bool, Int
 from muutils.tensor_info import array_summary
 from torch import Tensor
 
+from spd.clustering.consts import GroupIdxsTensor
+
+# pyright: reportUnnecessaryTypeIgnoreComment=false
+
 
 @dataclass(kw_only=True, slots=True)
 class GroupMerge:
@@ -14,13 +18,13 @@ class GroupMerge:
     gives the group index (0 to `k_groups-1`) that contains component `c`.
     """
 
-    group_idxs: Int[Tensor, " n_components"]
+    group_idxs: GroupIdxsTensor
     k_groups: int
     old_to_new_idx: dict[int | None, int | None] | None = None
 
     def summary(self) -> dict[str, int | str | None]:
         return dict(
-            group_idxs=array_summary(self.group_idxs, as_list=False),
+            group_idxs=array_summary(self.group_idxs, as_list=False),  # pyright: ignore[reportCallIssue]
             k_groups=self.k_groups,
             old_to_new_idx=f"len={len(self.old_to_new_idx)}"
             if self.old_to_new_idx is not None
@@ -79,7 +83,7 @@ class GroupMerge:
             raise TypeError("mat must have dtype bool")
         if not mat.sum(dim=0).eq(1).all():
             raise ValueError("each column must contain exactly one True")
-        group_idxs: Int[Tensor, " n_components"] = mat.argmax(dim=0).to(torch.int64)
+        group_idxs: GroupIdxsTensor = mat.argmax(dim=0).to(torch.int64)
         inst: GroupMerge = cls(group_idxs=group_idxs, k_groups=int(mat.shape[0]))
         inst.validate(require_nonempty=False)
         return inst
@@ -96,12 +100,12 @@ class GroupMerge:
         if ensure_groups_nonempty and n_components < k_groups:
             raise ValueError("n_components must be >= k_groups when ensure_groups_nonempty is True")
 
-        group_idxs: Int[Tensor, " n_components"]
+        group_idxs: GroupIdxsTensor
 
         if ensure_groups_nonempty:
             base: Int[Tensor, " k_groups"] = torch.arange(k_groups, device=device)
             if n_components > k_groups:
-                extra: Int[Tensor, " ..."] = torch.randint(
+                extra: Int[Tensor, " n_extra"] = torch.randint(
                     0, k_groups, (n_components - k_groups,), device=device
                 )
                 group_idxs = torch.cat((base, extra))
@@ -134,7 +138,7 @@ class GroupMerge:
             group_a, group_b = group_b, group_a
 
         # make a copy
-        new_idxs: Int[Tensor, " n_components"] = self.group_idxs.clone()
+        new_idxs: GroupIdxsTensor = self.group_idxs.clone()
         # wherever its currently b, change it to a
         new_idxs[new_idxs == group_b] = group_a
         # wherever i currently above b, change it to i-1
@@ -181,13 +185,13 @@ class BatchedGroupMerge:
     group index for every component in that matrix.
     """
 
-    group_idxs: Int[Tensor, " batch n_components"]
+    group_idxs: Int[Tensor, "batch n_components"]
     k_groups: Int[Tensor, " batch"]
 
     def summary(self) -> dict[str, int | str | None]:
         return dict(
-            group_idxs=array_summary(self.group_idxs, as_list=False),
-            k_groups=array_summary(self.k_groups, as_list=False),
+            group_idxs=array_summary(self.group_idxs, as_list=False),  # pyright: ignore[reportCallIssue]
+            k_groups=array_summary(self.k_groups, as_list=False),  # pyright: ignore[reportCallIssue]
             # TODO: re-add metadata (which pairs merged at each step)
             # meta=f"len={len(self.meta)}" if self.meta is not None else None,
         )
@@ -245,7 +249,7 @@ class BatchedGroupMerge:
         cls,
         merge_matrices: list[GroupMerge],
     ) -> "BatchedGroupMerge":
-        group_idxs: Int[Tensor, " batch n_components"] = torch.stack(
+        group_idxs: Int[Tensor, "batch n_components"] = torch.stack(
             [mm.group_idxs for mm in merge_matrices], dim=0
         )
         k_groups: Int[Tensor, " batch"] = torch.tensor(
@@ -258,7 +262,7 @@ class BatchedGroupMerge:
     def __getitem__(self, idx: int) -> GroupMerge:
         if not (0 <= idx < self._batch_size):
             raise IndexError("index out of range")
-        group_idxs: Int[Tensor, " n_components"] = self.group_idxs[idx]
+        group_idxs: GroupIdxsTensor = self.group_idxs[idx]
         k_groups: int = int(self.k_groups[idx].item())
         return GroupMerge(group_idxs=group_idxs, k_groups=k_groups)
 

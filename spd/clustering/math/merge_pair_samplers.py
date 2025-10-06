@@ -5,29 +5,31 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+from spd.clustering.consts import ClusterCoactivationShaped, MergePair
+
 MergePairSamplerKey = Literal["range", "mcmc"]
 
 
 class MergePairSamplerConfigurable(Protocol):
     def __call__(
         self,
-        costs: Float[Tensor, "k_groups k_groups"],
+        costs: ClusterCoactivationShaped,
         **kwargs: Any,
-    ) -> tuple[int, int]: ...
+    ) -> MergePair: ...
 
 
 class MergePairSampler(Protocol):
     def __call__(
         self,
-        costs: Float[Tensor, "k_groups k_groups"],
-    ) -> tuple[int, int]: ...
+        costs: ClusterCoactivationShaped,
+    ) -> MergePair: ...
 
 
 def range_sampler(
-    costs: Float[Tensor, "k_groups k_groups"],
+    costs: ClusterCoactivationShaped,
     threshold: float = 0.05,
     **kwargs: Any,
-) -> tuple[int, int]:
+) -> MergePair:
     """Sample a merge pair using threshold-based range selection.
 
     Considers all pairs with costs below a threshold defined as a fraction
@@ -46,7 +48,7 @@ def range_sampler(
     assert costs.shape[1] == k_groups, "Cost matrix must be square"
 
     # Find the range of non-diagonal costs
-    non_diag_costs: Float[Tensor, " k^2-k"] = costs[
+    non_diag_costs: Float[Tensor, " k_groups_squared_minus_k"] = costs[
         ~torch.eye(k_groups, dtype=torch.bool, device=costs.device)
     ]
     min_cost: float = float(non_diag_costs.min().item())
@@ -64,14 +66,15 @@ def range_sampler(
 
     # Randomly select one of the considered pairs
     selected_idx: int = random.randint(0, considered_idxs.shape[0] - 1)
-    return tuple(considered_idxs[selected_idx].tolist())
+    pair_tuple: tuple[int, int] = tuple(considered_idxs[selected_idx].tolist())  # type: ignore[assignment]
+    return MergePair(pair_tuple)
 
 
 def mcmc_sampler(
-    costs: Float[Tensor, "k_groups k_groups"],
+    costs: ClusterCoactivationShaped,
     temperature: float = 1.0,
     **kwargs: Any,
-) -> tuple[int, int]:
+) -> MergePair:
     """Sample a merge pair using MCMC with probability proportional to exp(-cost/temperature).
 
     Args:
@@ -93,15 +96,15 @@ def mcmc_sampler(
 
     # Compute probabilities: exp(-cost/temperature)
     # Use stable softmax computation to avoid overflow
-    costs_masked: Float[Tensor, "k_groups k_groups"] = costs.clone()
+    costs_masked: ClusterCoactivationShaped = costs.clone()
     costs_masked[~valid_mask] = float("inf")  # Set diagonal to inf so exp gives 0
 
     # Subtract min for numerical stability
     min_cost: float = float(costs_masked[valid_mask].min())
-    probs: Float[Tensor, "k_groups k_groups"] = (
+    probs: ClusterCoactivationShaped = (
         torch.exp((min_cost - costs_masked) / temperature) * valid_mask
     )  # Zero out diagonal
-    probs_flatten: Float[Tensor, " k_groups^2"] = probs.flatten()
+    probs_flatten: Float[Tensor, " k_groups_squared"] = probs.flatten()
     probs_flatten = probs_flatten / probs_flatten.sum()
 
     # Sample from multinomial distribution
@@ -109,7 +112,7 @@ def mcmc_sampler(
     row: int = idx // k_groups
     col: int = idx % k_groups
 
-    return (row, col)
+    return MergePair((row, col))
 
 
 MERGE_PAIR_SAMPLERS: dict[MergePairSamplerKey, MergePairSamplerConfigurable] = {

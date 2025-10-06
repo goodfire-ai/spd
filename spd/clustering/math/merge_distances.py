@@ -10,6 +10,7 @@ from spd.clustering.consts import (
     MergesArray,
     MergesAtIterArray,
 )
+
 # from spd.clustering.math.jaccard import jaccard_partition_matrix
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming_matrix
 
@@ -26,7 +27,7 @@ def compute_distances(
     method: DistancesMethod = "perm_invariant_hamming",
 ) -> DistancesArray:
     n_iters: int = normalized_merge_array.shape[1]
-    merges_array_list: list[Int[np.ndarray, "n_ens c_components"]]
+    merges_array_list: list[Int[np.ndarray, "n_ens n_components"]]
     distances_list: list[Float[np.ndarray, "n_ens n_ens"]]
     match method:
         case "perm_invariant_hamming":
@@ -40,7 +41,7 @@ def compute_distances(
 
             return np.stack(distances_list, axis=0)
         case "jaccard":
-            raise NotImplementedError("Jaccard distance computation is not implemented yet.")
+            raise NotImplementedError("Jaccard distance computation is not implemented.")
             # merges_array_list = [normalized_merge_array[:, i, :] for i in range(n_iters)]
             # distances_list = run_maybe_parallel(
             #     func=jaccard_partition_matrix,

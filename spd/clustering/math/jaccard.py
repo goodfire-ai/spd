@@ -15,8 +15,9 @@ where:
 """
 
 # %%
+import matplotlib.pyplot as plt
 import torch
-from jaxtyping import Bool, Int, Float
+from jaxtyping import Bool, Float, Int
 from muutils.dbg import dbg
 from torch import Tensor
 
@@ -85,6 +86,7 @@ def process_singletons(
 #     mat[self.group_idxs.to(dtype=torch.int), idxs] = True
 #     return mat
 
+
 def expand_to_onehot(
     x: Int[Tensor, " n"],
     k_groups: int,
@@ -94,28 +96,30 @@ def expand_to_onehot(
 
     # add 1 as -1 will map to last index and be ignored
     mat: Bool[Tensor, " k_groups n_components"] = torch.zeros(
-        (k_groups+1, n_components), dtype=torch.bool
+        (k_groups + 1, n_components), dtype=torch.bool
     )
-    idxs: Int[Tensor, " n_components"] = torch.arange(
-        n_components, dtype=torch.int
-    )
+    idxs: Int[Tensor, " n_components"] = torch.arange(n_components, dtype=torch.int)
     mat[x.to(dtype=torch.int), idxs] = True
     return mat
-
-import matplotlib.pyplot as plt
 
 
 def show_matrix(mat: Tensor, title: str = "", cmap: str = "viridis") -> None:
     """Display a matrix with values annotated on each cell."""
     mat_np = mat.cpu().numpy()
-    fig, ax = plt.subplots()
+    _fig, ax = plt.subplots()
     im = ax.matshow(mat_np, cmap=cmap)
 
     # Add text annotations
     for i in range(mat_np.shape[0]):
         for j in range(mat_np.shape[1]):
-            text = ax.text(j, i, f"{mat_np[i, j]:.2f}",
-                          ha="center", va="center", color="white" if mat_np[i, j] < mat_np.max() / 2 else "black")
+            ax.text(
+                j,
+                i,
+                f"{mat_np[i, j]:.2f}",
+                ha="center",
+                va="center",
+                color="white" if mat_np[i, j] < mat_np.max() / 2 else "black",
+            )
 
     if title:
         plt.title(title)
@@ -134,12 +138,11 @@ def jaccard_index(
 ) -> Float[Tensor, " s s"]:
     """compute pairwise jaccard indices between rows of X"""
     s: int
-    n: int
-    s, n = X.shape
+    _n: int
+    s, _n = X.shape
 
     X_expanded_list: list[Int[Tensor, " k n"]] = [
-        expand_to_onehot(*process_singletons(X[i]))
-        for i in range(s)
+        expand_to_onehot(*process_singletons(X[i])) for i in range(s)
     ]
 
     # compute jaccard for each pair of rows
@@ -154,23 +157,38 @@ def jaccard_index(
             X_i: Int[Tensor, " k_i n"] = X_expanded_list[i].to(torch.int16)
             X_j: Int[Tensor, " k_j n"] = X_expanded_list[j].to(torch.int16)
             intersects: Int[Tensor, " k_i k_j"] = X_i @ X_j.T
-            unions: Int[Tensor, " k_i k_j"] = X_i.sum(dim=1, keepdim=True) + X_j.sum(dim=1, keepdim=True).T - intersects
-            jaccard_mat: Int[Tensor, " k_i k_j"]  = intersects / unions
+            unions: Int[Tensor, " k_i k_j"] = (
+                X_i.sum(dim=1, keepdim=True) + X_j.sum(dim=1, keepdim=True).T - intersects
+            )
+            jaccard_mat: Int[Tensor, " k_i k_j"] = intersects / unions
 
-            show_matrix(X_i, title=f"One-hot matrix for row {i} of X\nshape={X_i.shape}", cmap="Blues")
-            show_matrix(X_j, title=f"One-hot matrix for row {j} of X\nshape={X_j.shape}", cmap="Blues")
-            show_matrix(jaccard_mat, title=f"Gram matrix between row {i} and row {j}\n$[{jaccard_mat.min():.2f}, {jaccard_mat.max():.2f}]$")
-            
+            show_matrix(
+                X_i, title=f"One-hot matrix for row {i} of X\nshape={X_i.shape}", cmap="Blues"
+            )
+            show_matrix(
+                X_j, title=f"One-hot matrix for row {j} of X\nshape={X_j.shape}", cmap="Blues"
+            )
+            show_matrix(
+                jaccard_mat,
+                title=f"Gram matrix between row {i} and row {j}\n$[{jaccard_mat.min():.2f}, {jaccard_mat.max():.2f}]$",
+            )
+
             # jaccard[i, j] = jaccard_mat.mean()
 
+    return jaccard
 
-jaccard_index(torch.tensor([
-    # [1, 2, 3, 3],
-    [0, 1, 1, 2, 3, 3],
-    [0, 1, 1, 1, 2, 2],
-    # [0, 0, 0, 0, 1, 1],
-    [0, 0, 0, 0, 0, 0],
-    # [0, 1, 2, 3],
-]))
+
+jaccard_index(
+    torch.tensor(
+        [
+            # [1, 2, 3, 3],
+            [0, 1, 1, 2, 3, 3],
+            [0, 1, 1, 1, 2, 2],
+            # [0, 0, 0, 0, 1, 1],
+            [0, 0, 0, 0, 0, 0],
+            # [0, 1, 2, 3],
+        ]
+    )
+)
 
 # dbg(X - z[0])

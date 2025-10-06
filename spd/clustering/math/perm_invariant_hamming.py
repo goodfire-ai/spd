@@ -6,19 +6,19 @@ from scipy.optimize import linear_sum_assignment
 
 
 def perm_invariant_hamming_matrix(
-    X: Int[np.ndarray, " k n"],
-) -> Float[np.ndarray, " k k"]:
+    X: Int[np.ndarray, "n_ens n_components"],
+) -> Float[np.ndarray, "n_ens n_ens"]:
     """Compute all pairwise permutation-invariant Hamming distances.
 
     The strictly lower-triangular entries are filled with distances;
     the diagonal and upper triangle are left as `np.nan`.
 
     # Parameters:
-     - `X : Int[np.ndarray, " k n"]`
-       Matrix where each of the `k` rows is a label vector of length `n`.
+     - `X : Int[np.ndarray, "n_ens n_components"]`
+       Matrix where each of the `n_ens` rows is a label vector of length `n_components`.
 
     # Returns:
-     - `Float[np.ndarray, " k k"]`
+     - `Float[np.ndarray, "n_ens n_ens"]`
        Distance matrix `D` with `D[i, j]` defined only for `i > j`;
        all other positions are `np.nan`.
 
@@ -34,18 +34,18 @@ def perm_invariant_hamming_matrix(
            [ 2., 2., nan]])
     ```
     """
-    k_rows: int
-    n_len: int
-    k_rows, n_len = X.shape
-    D: Float[np.ndarray, "k k"] = np.full((k_rows, k_rows), np.nan, dtype=float)
+    n_ens: int
+    n_components: int
+    n_ens, n_components = X.shape
+    D: Float[np.ndarray, "n_ens n_ens"] = np.full((n_ens, n_ens), np.nan, dtype=float)
 
     # Pre-compute max label in each row once.
-    row_max: Int[np.ndarray, " k"] = X.max(axis=1)
+    row_max: Int[np.ndarray, " n_ens"] = X.max(axis=1)
 
-    for i in range(1, k_rows):
-        a: Int[np.ndarray, " n"] = X[i]
+    for i in range(1, n_ens):
+        a: Int[np.ndarray, " n_components"] = X[i]
         for j in range(i):
-            b: Int[np.ndarray, " n"] = X[j]
+            b: Int[np.ndarray, " n_components"] = X[j]
 
             k_lbls: int = int(max(row_max[i], row_max[j]) + 1)
 
@@ -65,6 +65,6 @@ def perm_invariant_hamming_matrix(
             row_ind, col_ind = linear_sum_assignment(-C)
             matches: int = int(C[row_ind, col_ind].sum())
 
-            D[i, j] = n_len - matches  # int is fine; array is float because of NaN
+            D[i, j] = n_components - matches  # int is fine; array is float because of NaN
 
     return D

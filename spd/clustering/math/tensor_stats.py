@@ -1,6 +1,7 @@
 from typing import Literal
 
 import torch
+from jaxtyping import Float
 from torch import Tensor
 
 StatsKey = Literal[
@@ -30,11 +31,11 @@ def _flatten_if_needed(x: Tensor) -> Tensor:
 
 def _approx_quantile(
     x: Tensor,
-    qs: Tensor,
+    qs: Float[Tensor, " n_quantiles"],
     *,
     max_elems: int = 5_000_000,
     generator: torch.Generator | None = None,
-) -> Tensor:
+) -> Float[Tensor, " n_quantiles"]:
     """Approximate quantiles by subsampling if needed, else exact.
 
     If x.numel() > max_elems, draws a random subset of size max_elems (with replacement)
@@ -56,10 +57,12 @@ def _approx_quantile(
     return q
 
 
-def _exact_quantile_all_at_once(x: Tensor, qs: Tensor) -> Tensor:
+def _exact_quantile_all_at_once(
+    x: Tensor, qs: Float[Tensor, " n_quantiles"]
+) -> Float[Tensor, " n_quantiles"]:
     """Exact quantiles without repeated sorts."""
     x1d: Tensor = _flatten_if_needed(x)
-    q: Tensor = torch.quantile(x1d, qs, interpolation="linear")
+    q: Float[Tensor, " n_quantiles"] = torch.quantile(x1d, qs, interpolation="linear")
     return q
 
 
@@ -122,13 +125,14 @@ def stats_dict(
 
     # median is a quantile; we can either reuse below or do .median() directly.
     # We will get it from the quantiles call to avoid extra work.
-    q_values: Tensor = torch.tensor(
+    q_values: Float[Tensor, " 9"] = torch.tensor(
         [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99],
         device=xf.device,
         dtype=xf.dtype,
     )
+    qs_all: Float[Tensor, " 9"]
     if approx_if_large:
-        qs_all: Tensor = _approx_quantile(
+        qs_all = _approx_quantile(
             xf,
             q_values,
             max_elems=max_elems_for_quantile,
