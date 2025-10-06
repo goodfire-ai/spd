@@ -1,6 +1,9 @@
 name: Build Docker Image
 
 on:
+  push:
+    branches:
+      - feature/mpi-image # TODO: This is just temporarily here so I can test it
   workflow_dispatch: # Must manually trigger this workflow in order to build the image
 
 jobs:
