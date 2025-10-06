@@ -106,7 +106,6 @@ reportUnnecessaryComparison = true
 reportUnnecessaryContains = true
 reportUnusedExpression = true
 reportMatchNotExhaustive = true
-reportShadowedImports = true
 reportPrivateImportUsage = false
 # basedpyright
 reportCallIssue = true
