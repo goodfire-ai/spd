@@ -232,7 +232,9 @@ class Config(BaseModel):
     )
 
     # --- Training ---
-    lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
+    lr: PositiveFloat | None = Field(default=None, description="Learning rate for optimiser (deprecated, use gate_lr and component_lr)")
+    gate_lr: PositiveFloat | None = Field(default=None, description="Learning rate for gate/causal importance functions")
+    component_lr: PositiveFloat | None = Field(default=None, description="Learning rate for subcomponents")
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
     batch_size: PositiveInt = Field(
         ...,
@@ -266,15 +268,41 @@ class Config(BaseModel):
 
     lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
         default="constant",
-        description="Type of learning-rate schedule to apply",
+        description="Type of learning-rate schedule to apply (deprecated, use gate_lr_schedule and component_lr_schedule)",
     )
     lr_exponential_halflife: PositiveFloat | None = Field(
         default=None,
-        description="Half-life parameter when using an exponential LR schedule",
+        description="Half-life parameter when using an exponential LR schedule (deprecated, use gate_lr_exponential_halflife and component_lr_exponential_halflife)",
     )
     lr_warmup_pct: Probability = Field(
         default=0.0,
-        description="Fraction of total steps to linearly warm up the learning rate",
+        description="Fraction of total steps to linearly warm up the learning rate (deprecated, use gate_lr_warmup_pct and component_lr_warmup_pct)",
+    )
+    
+    # Separate learning rate schedules for gates and components
+    gate_lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
+        default="constant",
+        description="Type of learning-rate schedule for gates",
+    )
+    component_lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
+        default="constant",
+        description="Type of learning-rate schedule for components",
+    )
+    gate_lr_exponential_halflife: PositiveFloat | None = Field(
+        default=None,
+        description="Half-life parameter for gate exponential LR schedule",
+    )
+    component_lr_exponential_halflife: PositiveFloat | None = Field(
+        default=None,
+        description="Half-life parameter for component exponential LR schedule",
+    )
+    gate_lr_warmup_pct: Probability = Field(
+        default=0.0,
+        description="Fraction of total steps to linearly warm up the gate learning rate",
+    )
+    component_lr_warmup_pct: Probability = Field(
+        default=0.0,
+        description="Fraction of total steps to linearly warm up the component learning rate",
     )
 
     # --- Logging & Saving ---
@@ -422,10 +450,46 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
+        # Handle backward compatibility: if lr is set but gate_lr/component_lr are not, use lr for both
+        if self.lr is not None and (self.gate_lr is None or self.component_lr is None):
+            if self.gate_lr is None:
+                self.gate_lr = self.lr
+            if self.component_lr is None:
+                self.component_lr = self.lr
+        
+        # Ensure both gate_lr and component_lr are set
+        assert self.gate_lr is not None, "gate_lr must be set (or use lr for backward compatibility)"
+        assert self.component_lr is not None, "component_lr must be set (or use lr for backward compatibility)"
+        
+        # Handle backward compatibility for schedules: if old schedule is set but new ones are default, use old values
+        if self.lr_schedule != "constant" and self.gate_lr_schedule == "constant" and self.component_lr_schedule == "constant":
+            self.gate_lr_schedule = self.lr_schedule
+            self.component_lr_schedule = self.lr_schedule
+        
+        if self.lr_exponential_halflife is not None and self.gate_lr_exponential_halflife is None and self.component_lr_exponential_halflife is None:
+            self.gate_lr_exponential_halflife = self.lr_exponential_halflife
+            self.component_lr_exponential_halflife = self.lr_exponential_halflife
+        
+        if self.lr_warmup_pct != 0.0 and self.gate_lr_warmup_pct == 0.0 and self.component_lr_warmup_pct == 0.0:
+            self.gate_lr_warmup_pct = self.lr_warmup_pct
+            self.component_lr_warmup_pct = self.lr_warmup_pct
+        
         # Check that lr_exponential_halflife is not None if lr_schedule is "exponential"
         if self.lr_schedule == "exponential":
             assert self.lr_exponential_halflife is not None, (
                 "lr_exponential_halflife must be set if lr_schedule is exponential"
+            )
+        
+        # Check that gate_lr_exponential_halflife is not None if gate_lr_schedule is "exponential"
+        if self.gate_lr_schedule == "exponential":
+            assert self.gate_lr_exponential_halflife is not None, (
+                "gate_lr_exponential_halflife must be set if gate_lr_schedule is exponential"
+            )
+        
+        # Check that component_lr_exponential_halflife is not None if component_lr_schedule is "exponential"
+        if self.component_lr_schedule == "exponential":
+            assert self.component_lr_exponential_halflife is not None, (
+                "component_lr_exponential_halflife must be set if component_lr_schedule is exponential"
             )
 
         assert self.batch_size % self.gradient_accumulation_steps == 0, (
