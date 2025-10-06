@@ -71,10 +71,10 @@ gate_hidden_dims:
 - 1000
 gate_type: shared_mlp
 gradient_accumulation_steps: 1
-identity_module_patterns:
+identity_module_patterns: 
 - model.layers.0.mlp.gate_proj
-# - model.layers.0.mlp.down_proj
-importance_minimality_coeff: 1e-2
+- model.layers.0.mlp.down_proj
+importance_minimality_coeff: 1e-3
 importance_minimality_coeff_start_frac: 0.0
 importance_minimality_coeff_end_frac: 0.5
 importance_minimality_coeff_final: 1e-3
@@ -90,7 +90,7 @@ output_loss_type: kl
 # p_anneal_end_frac: 1
 # p_anneal_final_p: 0.3
 # p_anneal_start_frac: 0
-pnorm: 0.9
+pnorm: 1.0
 pgd_mask_enabled: true
 pgd_mask_steps: 1
 pgd_mask_step_size: 1.0
