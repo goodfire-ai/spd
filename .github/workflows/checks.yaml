@@ -75,15 +75,7 @@ jobs:
         run: uv run ruff format .
       
       - name: disk usage
-        run: | 
-          echo "disk"
-          df -h || true
-          echo "root"
-          du -h -d 1 / 2>temp.txt
-          echo "spd"
-          du -h -d 1
-          echo "spd depth 2"
-          du -h -d 2
+        run: make diskinfo || true
 
       - name: Run tests
         run: uv run pytest tests/ --runslow --durations 10 --numprocesses auto
