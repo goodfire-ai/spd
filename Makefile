@@ -84,8 +84,6 @@ clustering-dashboard: bundle-dashboard
 diskinfo:
 	echo "### disk"
 	df -h
-	echo "### root"
-	du -h -d 1 / 2>/dev/null || true
 	echo "### spd"
 	du -h -d 1
 	echo "spd depth 2"
