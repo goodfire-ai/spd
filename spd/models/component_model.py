@@ -69,7 +69,6 @@ class SPDRunInfo(RunInfo[Config]):
         return cls(checkpoint_path=comp_model_path, config=config)
 
 
-# TODO encapsulate Gates in a separate class (containing sigmoid type and sampling mode)
 class ComponentModel(LoadableModule):
     """Wrapper around an arbitrary pytorch model for running SPD.
 
@@ -108,8 +107,6 @@ class ComponentModel(LoadableModule):
         self.target_model = target_model
         self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
-
-        # this is useful for calling forward with input_cache
         self.module_paths: list[str] = get_target_module_paths(target_model, target_module_patterns)
 
         self.components = ComponentModel._create_components(
