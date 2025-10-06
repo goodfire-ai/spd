@@ -1,12 +1,15 @@
 # setup
+CUDA_EXTRA ?= cu128
+
 .PHONY: install
 install: copy-templates
-	uv sync --no-dev
+	uv sync --no-dev --extra ${CUDA_EXTRA}
 
 .PHONY: install-dev
 install-dev: copy-templates
-	uv sync
+	uv sync --extra ${CUDA_EXTRA}
 	pre-commit install
+
 
 .PHONY: copy-templates
 copy-templates:
