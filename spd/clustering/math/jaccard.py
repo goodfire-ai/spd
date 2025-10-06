@@ -104,6 +104,25 @@ def expand_to_onehot(
 
 import matplotlib.pyplot as plt
 
+
+def show_matrix(mat: Tensor, title: str = "", cmap: str = "viridis") -> None:
+    """Display a matrix with values annotated on each cell."""
+    mat_np = mat.cpu().numpy()
+    fig, ax = plt.subplots()
+    im = ax.matshow(mat_np, cmap=cmap)
+
+    # Add text annotations
+    for i in range(mat_np.shape[0]):
+        for j in range(mat_np.shape[1]):
+            text = ax.text(j, i, f"{mat_np[i, j]:.2f}",
+                          ha="center", va="center", color="white" if mat_np[i, j] < mat_np.max() / 2 else "black")
+
+    if title:
+        plt.title(title)
+    plt.colorbar(im, ax=ax)
+    plt.show()
+
+
 # plt.imshow(expand_to_onehot(*process_singletons(X_1)))
 # plt.show()
 # plt.imshow(expand_to_onehot(*process_singletons(X_2)))
@@ -136,16 +155,9 @@ def jaccard_index(
             unions: Int[Tensor, " k_i k_j"] = X_i.sum(dim=1, keepdim=True) + X_j.sum(dim=1, keepdim=True) - intersects
             jaccard_mat: Int[Tensor, " k_i k_j"]  = intersects / unions
 
-            plt.matshow(X_i.cpu())
-            plt.title(f"One-hot matrix for row {i} of X\nshape={X_i.shape}")
-            plt.show()
-            plt.matshow(X_j.cpu())
-            plt.title(f"One-hot matrix for row {j} of X\nshape={X_j.shape}")
-            plt.show()
-
-            plt.matshow(jaccard_mat.cpu())
-            plt.title(f"Gram matrix between row {i} and row {j}\n$[{jaccard_mat.min()}, {jaccard_mat.max()}]$")
-            plt.show()
+            show_matrix(X_i, title=f"One-hot matrix for row {i} of X\nshape={X_i.shape}", cmap="Blues")
+            show_matrix(X_j, title=f"One-hot matrix for row {j} of X\nshape={X_j.shape}", cmap="Blues")
+            show_matrix(jaccard_mat, title=f"Gram matrix between row {i} and row {j}\n$[{jaccard_mat.min():.2f}, {jaccard_mat.max():.2f}]$")
 
 
 jaccard_index(torch.tensor([
