@@ -108,7 +108,7 @@ def _read_json_result(json_r: IO[bytes], dataset_path: Path) -> dict[str, str | 
     """
     json_line: bytes = json_r.readline()
     if not json_line:
-        raise RuntimeError(f"No JSON result received from {dataset_path}")
+        raise RuntimeError(f"No data received from {dataset_path}")
 
     json_str: str = json_line.decode("utf-8", errors="strict").strip()
     try:
