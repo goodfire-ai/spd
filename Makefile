@@ -1,11 +1,11 @@
 # setup
 .PHONY: install
 install: copy-templates
-	uv sync --no-dev
+	uv sync --no-dev --extra cu128
 
 .PHONY: install-dev
 install-dev: copy-templates
-	uv sync
+	uv sync --extra cu128
 	pre-commit install
 
 .PHONY: copy-templates
@@ -78,3 +78,15 @@ clustering-dashboard: bundle-dashboard
 		--n-samples 32 \
 		--n-batches 4 \
 		--batch-size 128
+
+
+.PHONY: diskinfo
+diskinfo:
+	echo "### disk"
+	df -h
+	echo "### root"
+	du -h -d 1 / 2>/dev/null || true
+	echo "### spd"
+	du -h -d 1
+	echo "spd depth 2"
+	du -h -d 2

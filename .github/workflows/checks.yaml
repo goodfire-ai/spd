@@ -19,29 +19,13 @@ jobs:
     # timeout-minutes: 15 # TODO: see https://github.com/goodfire-ai/spd/issues/114
     steps:
       - name: disk usage
-        run: | 
-          echo "### disk"
-          df -h
-          echo "### root"
-          du -h -d 1 / 2>/dev/null || true
-          echo "### spd"
-          du -h -d 1
-          echo "spd depth 2"
-          du -h -d 2
+        run: make diskinfo
 
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: disk usage
-        run: | 
-          echo "### disk"
-          df -h
-          echo "### root"
-          du -h -d 1 / 2>/dev/null || true
-          echo "### spd"
-          du -h -d 1
-          echo "spd depth 2"
-          du -h -d 2
+        run: make diskinfo
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -55,19 +39,11 @@ jobs:
 
 
       - name: disk usage
-        run: | 
-          echo "### disk"
-          df -h
-          echo "### root"
-          du -h -d 1 / 2>/dev/null || true
-          echo "### spd"
-          du -h -d 1
-          echo "spd depth 2"
-          du -h -d 2
+        run: make diskinfo
 
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --extra cpu --link-mode copy
 
 
       - name: disk usage
@@ -80,6 +56,9 @@ jobs:
           du -h -d 1
           echo "spd depth 2"
           du -h -d 2
+
+      - name: clear uv cache
+        run: uv cache clean || true
 
 
       - name: Print dependencies
@@ -114,12 +93,4 @@ jobs:
 
       - name: disk usage
         if: ${{ always() }}
-        run: | 
-          echo "### disk"
-          df -h
-          echo "### root"
-          du -h -d 1 / 2>/dev/null || true
-          echo "### spd"
-          du -h -d 1
-          echo "spd depth 2"
-          du -h -d 2
+        run: make diskinfo
