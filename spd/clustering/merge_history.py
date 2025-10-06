@@ -40,7 +40,7 @@ class MergeHistory(SaveableObject):
     merges: BatchedGroupMerge
     selected_pairs: Int[np.ndarray, " n_iters 2"]
     labels: list[str]
-    config: MergeConfig
+    merge_config: MergeConfig
     n_iters_current: int
 
     meta: dict[str, Any] | None = None
@@ -52,19 +52,40 @@ class MergeHistory(SaveableObject):
     @classmethod
     def from_config(
         cls,
-        config: MergeConfig,
+        merge_config: MergeConfig,
         labels: list[str],
     ) -> "MergeHistory":
-        n_iters_target: int = config.iters
+        n_components: int = len(labels)
+        n_iters_target: int = merge_config.get_num_iters(n_components)
         return MergeHistory(
             labels=labels,
             n_iters_current=0,
             selected_pairs=np.full((n_iters_target, 2), -1, dtype=np.int16),
             merges=BatchedGroupMerge.init_empty(
-                batch_size=n_iters_target, n_components=len(labels)
+                batch_size=n_iters_target, n_components=n_components
             ),
-            config=config,
+            merge_config=merge_config,
         )
+
+    def summary(self) -> dict[str, str | int | None | dict[str, int | str | None]]:
+        return dict(
+            c_components=self.c_components,
+            n_iters_current=self.n_iters_current,
+            total_iters=len(self.merges.k_groups),
+            len_labels=len(self.labels),
+            # wandb_url=self.wandb_url,
+            merge_config=self.merge_config.model_dump(mode="json"),
+            merges_summary=self.merges.summary(),
+        )
+
+    @override
+    def __str__(self) -> str:
+        out: list[str] = [f"  {key} = {value}" for key, value in self.summary().items()]
+        return "MergeHistory(\n" + "\n".join(out) + "\n)"
+
+    @override
+    def __repr__(self) -> str:
+        return self.__str__()
 
     def add_iteration(
         self,
@@ -102,6 +123,61 @@ class MergeHistory(SaveableObject):
             raise ValueError("No history available")
         latest_idx: int = self.n_iters_current - 1
         return self[latest_idx]
+
+    def get_unique_clusters(self, iteration: int) -> list[int]:
+        """Get unique cluster IDs at a given iteration.
+
+        Args:
+            iteration: Iteration index (negative indexes from end)
+
+        Returns:
+            List of unique cluster IDs
+        """
+        if iteration < 0:
+            iteration = self.n_iters_current + iteration
+        assert 0 <= iteration < self.n_iters_current, (
+            f"Invalid iteration: {iteration = }, {self.n_iters_current = }"
+        )
+        merge: GroupMerge = self.merges[iteration]
+        return torch.unique(merge.group_idxs).tolist()
+
+    def get_cluster_component_labels(self, iteration: int, cluster_id: int) -> list[str]:
+        """Get component labels for a specific cluster at a given iteration.
+
+        Args:
+            iteration: Iteration index (negative indexes from end)
+            cluster_id: Cluster ID to query
+
+        Returns:
+            List of component labels in the cluster
+        """
+        if iteration < 0:
+            iteration = self.n_iters_current + iteration
+        assert 0 <= iteration < self.n_iters_current, (
+            f"Invalid iteration: {iteration = }, {self.n_iters_current = }"
+        )
+        merge: GroupMerge = self.merges[iteration]
+        component_indices: list[int] = merge.components_in_group(cluster_id)
+        return [self.labels[idx] for idx in component_indices]
+
+    def get_cluster_components_info(self, iteration: int, cluster_id: int) -> list[dict[str, Any]]:
+        """Get detailed component information for a cluster.
+
+        Args:
+            iteration: Iteration index (negative indexes from end)
+            cluster_id: Cluster ID to query
+
+        Returns:
+            List of dicts with keys: module, index, label
+        """
+        component_labels: list[str] = self.get_cluster_component_labels(iteration, cluster_id)
+        result: list[dict[str, Any]] = []
+        for label in component_labels:
+            module: str
+            idx_str: str
+            module, idx_str = label.rsplit(":", 1)
+            result.append({"module": module, "index": int(idx_str), "label": label})
+        return result
 
     # Convenience properties for sweep analysis
     @property
@@ -143,7 +219,7 @@ class MergeHistory(SaveableObject):
                 "metadata.json",
                 json.dumps(
                     dict(
-                        config=self.config.model_dump(mode="json"),
+                        merge_config=self.merge_config.model_dump(mode="json"),
                         wandb_url=wandb_url,
                         c_components=self.c_components,
                         n_iters_current=self.n_iters_current,
@@ -166,7 +242,7 @@ class MergeHistory(SaveableObject):
             )
             labels: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
             metadata: dict[str, Any] = json.loads(zf.read("metadata.json").decode("utf-8"))
-            config: MergeConfig = MergeConfig.model_validate(metadata["config"])
+            merge_config: MergeConfig = MergeConfig.model_validate(metadata["merge_config"])
 
         metadata["origin_path"] = path
 
@@ -174,7 +250,7 @@ class MergeHistory(SaveableObject):
             merges=merges,
             selected_pairs=selected_pairs,
             labels=labels,
-            config=config,
+            merge_config=merge_config,
             n_iters_current=metadata["n_iters_current"],
             meta=metadata,
         )
@@ -194,25 +270,32 @@ class MergeHistoryEnsemble:
         """Ensure all histories have the same merge config."""
         if not self.data:
             return
-        first_config: MergeConfig = self.data[0].config
+        first_config: MergeConfig = self.data[0].merge_config
         for history in self.data[1:]:
-            if history.config != first_config:
+            if history.merge_config != first_config:
                 raise ValueError("All histories must have the same merge config")
 
     @property
     def config(self) -> MergeConfig:
         """Get the merge config used in the ensemble."""
         self._validate_configs_match()
-        return self.data[0].config
+        return self.data[0].merge_config
 
     @property
-    def n_iters(self) -> int:
-        """Number of iterations in the ensemble."""
-        n_iterations: int = len(self.data[0].merges.k_groups)
-        assert all(len(history.merges.k_groups) == n_iterations for history in self.data), (
-            "All histories must have the same number of iterations"
-        )
-        return n_iterations
+    def n_iters_min(self) -> int:
+        """Minimum number of iterations across all histories in the ensemble."""
+        return min(len(history.merges.k_groups) for history in self.data)
+
+    @property
+    def n_iters_max(self) -> int:
+        """Maximum number of iterations across all histories in the ensemble."""
+        return max(len(history.merges.k_groups) for history in self.data)
+
+    @property
+    def n_iters_range(self) -> tuple[int, int]:
+        """Range of iterations (min, max) across all histories in the ensemble."""
+        iter_counts = [len(history.merges.k_groups) for history in self.data]
+        return (min(iter_counts), max(iter_counts))
 
     @property
     def n_ensemble(self) -> int:
@@ -231,12 +314,12 @@ class MergeHistoryEnsemble:
     @property
     def shape(self) -> tuple[int, int, int]:
         """Shape of the ensemble data."""
-        return (self.n_ensemble, self.n_iters, self.c_components)
+        return (self.n_ensemble, self.n_iters_min, self.c_components)
 
     @property
     def merges_array(self) -> MergesArray:
         n_ens: int = self.n_ensemble
-        n_iters: int = self.n_iters
+        n_iters: int = self.n_iters_min
         c_components: int = self.c_components
 
         output: MergesArray = np.full(
@@ -273,7 +356,7 @@ class MergeHistoryEnsemble:
 
         try:
             merges_array: MergesArray = np.full(
-                (self.n_ensemble, self.n_iters, c_components),
+                (self.n_ensemble, self.n_iters_min, c_components),
                 fill_value=-1,
                 dtype=np.int16,
             )
@@ -301,7 +384,9 @@ class MergeHistoryEnsemble:
             comp_label: str
             for i_comp_old, comp_label in enumerate(hist_c_labels):
                 i_comp_new: int = component_label_idxs[comp_label]
-                merges_array[i_ens, :, i_comp_new] = history.merges.group_idxs[:, i_comp_old]
+                merges_array[i_ens, :, i_comp_new] = history.merges.group_idxs[
+                    : self.n_iters_min, i_comp_old
+                ]
 
             # assert np.max(merges_array[i_ens]) == hist_n_components - 1, (
             #     f"Max component index in history {i_ens} should be {hist_n_components - 1}, "
@@ -316,7 +401,7 @@ class MergeHistoryEnsemble:
             for idx_missing, missing_label in enumerate(hist_missing_labels):
                 i_comp_new_relabel: int = component_label_idxs[missing_label]
                 merges_array[i_ens, :, i_comp_new_relabel] = np.full(
-                    self.n_iters,
+                    self.n_iters_min,
                     fill_value=idx_missing + hist_n_components,
                     dtype=np.int16,
                 )
@@ -345,7 +430,9 @@ class MergeHistoryEnsemble:
             dict(
                 component_labels=unique_labels,
                 n_ensemble=self.n_ensemble,
-                n_iters=self.n_iters,
+                n_iters_min=self.n_iters_min,
+                n_iters_max=self.n_iters_max,
+                n_iters_range=self.n_iters_range,
                 c_components=c_components,
                 config=self.config.model_dump(mode="json"),
                 history_metadatas=history_metadatas,
@@ -353,9 +440,6 @@ class MergeHistoryEnsemble:
         )
 
     def get_distances(self, method: DistancesMethod = "perm_invariant_hamming") -> DistancesArray:
-        _n_iters: int = self.n_iters
-        _n_ens: int = self.n_ensemble
-
         merges_array: MergesArray = self.merges_array
         return compute_distances(
             normalized_merge_array=merges_array,

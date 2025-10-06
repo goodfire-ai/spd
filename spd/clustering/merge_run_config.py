@@ -11,6 +11,7 @@ import yaml
 from muutils.misc.numerical import shorten_numerical_to_str
 from pydantic import BaseModel, Field, PositiveInt, model_validator
 
+from spd.clustering.consts import DistancesMethod
 from spd.clustering.merge_config import MergeConfig
 from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
 from spd.spd_types import TaskName
@@ -95,6 +96,10 @@ class ClusteringRunConfig(BaseModel):
         default=64,
         description="Size of each batch for processing",
     )
+    distances_method: DistancesMethod = Field(
+        default="perm_invariant_hamming",
+        description="Method to use for computing distances between clusterings",
+    )
 
     # Implementation details
     # note that these are *always* overriden by CLI args in `spd/clustering/scripts/main.py`, but we have to have defaults here
@@ -177,6 +182,8 @@ class ClusteringRunConfig(BaseModel):
     @property
     def _iters_str(self) -> str:
         """Shortened string representation of iterations for run ID"""
+        if self.merge_config.iters is None:
+            return "_auto"
         return shorten_numerical_to_str(self.merge_config.iters)
 
     @property

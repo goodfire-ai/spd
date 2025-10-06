@@ -54,9 +54,9 @@ class MergeConfig(BaseModel):
         default=1.0,
         description="rank weight factor. Higher values mean a higher penalty on 'sending' the component weights",
     )
-    iters: PositiveInt = Field(
+    iters: PositiveInt | None = Field(
         default=100,
-        description="max number of iterations to run the merge algorithm for.",
+        description="max number of iterations to run the merge algorithm for. If `None`, set to number of components (after filtering) minus one.",
     )
     merge_pair_sampling_method: MergePairSamplerKey = Field(
         default="range",
@@ -101,15 +101,20 @@ class MergeConfig(BaseModel):
         """Get the module filter function based on the provided source."""
         return _to_module_filter(self.module_name_filter)
 
+    def get_num_iters(self, n_components: int) -> PositiveInt:
+        """Get the number of iterations to run the merge algorithm for.
+
+        Args:
+            n_components: Number of components (after filtering)
+
+        Returns:
+            Number of iterations to run
+        """
+        if self.iters is None:
+            return n_components - 1
+        else:
+            return self.iters
+
     @property
     def stable_hash(self) -> str:
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
-
-    @property
-    def config_identifier(self) -> str:
-        """Unique identifier for this specific config on this specific model.
-
-        Format: model_abc123-a0.1-i1k-b64-n10-h_12ab
-        Allows filtering in WandB for all runs with this exact config and model.
-        """
-        return f"a{self.alpha:g}-h_{self.stable_hash}"

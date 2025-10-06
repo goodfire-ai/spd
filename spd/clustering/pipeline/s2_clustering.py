@@ -276,8 +276,9 @@ def _log_callback(
             "costs": costs,
             "group_sizes": group_sizes,
             "group_activations": diag_acts,
-            "group_activations_over_sizes": diag_acts
-            / group_sizes.to(device=diag_acts.device).float(),
+            "group_activations_over_sizes": (
+                diag_acts / group_sizes.to(device=diag_acts.device).float()
+            ),
         }
 
         fraction_singleton_groups: float = (group_sizes == 1).float().mean().item()
@@ -309,8 +310,9 @@ def _log_callback(
                 metadata={
                     "batch_name": batch_id,
                     "iteration": iter_idx,
-                    "config": merge_history.config.model_dump(mode="json"),
-                    "config_identifier": merge_history.config.config_identifier,
+                    "config": merge_history.merge_config.model_dump(mode="json"),
+                    # TODO: had to remove identifiers on config due to MergeConfig <--> ClusteringRunConfig (formerly MergeRunConfig) split
+                    # "config_identifier": merge_history.merge_config.config_identifier,
                 },
             )
             artifact.add_file(str(file))

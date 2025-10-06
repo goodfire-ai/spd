@@ -73,6 +73,9 @@ def merge_iteration(
     c_components: int = coact.shape[0]
     assert coact.shape[1] == c_components, "Coactivation matrix must be square"
 
+    # determine number of iterations based on config and number of components
+    num_iters: int = merge_config.get_num_iters(c_components)
+
     # pop logic setup
     # --------------------------------------------------
     # for speed, we precompute whether to pop components and which components to pop
@@ -81,14 +84,14 @@ def merge_iteration(
     if do_pop:
         # at each iteration, we will pop a component with probability `pop_component_prob`
         iter_pop: Bool[Tensor, " iters"] = (
-            torch.rand(merge_config.iters, device=coact.device) < merge_config.pop_component_prob
+            torch.rand(num_iters, device=coact.device) < merge_config.pop_component_prob
         )
         # we pick a subcomponent at random, and if we decide to pop, we pop that one out of its group
         # if the component is a singleton, nothing happens. this naturally biases towards popping
         # less at the start and more at the end, since the effective probability of popping a component
         # is actually something like `pop_component_prob * (c_components - k_groups) / c_components`
         pop_component_idx: Int[Tensor, " iters"] = torch.randint(
-            0, c_components, (merge_config.iters,), device=coact.device
+            0, c_components, (num_iters,), device=coact.device
         )
 
     # initialize vars
@@ -103,7 +106,8 @@ def merge_iteration(
 
     # variables we keep track of
     merge_history: MergeHistory = MergeHistory.from_config(
-        config=merge_config, labels=component_labels
+        merge_config=merge_config,
+        labels=component_labels,
     )
 
     # free up memory
@@ -114,8 +118,11 @@ def merge_iteration(
 
     # merge iteration
     # ==================================================
-    # while i < merge_config.iters:
-    pbar: tqdm[int] = tqdm(range(merge_config.iters), unit="iter", total=merge_config.iters)
+    pbar: tqdm[int] = tqdm(
+        range(num_iters),
+        unit="iter",
+        total=num_iters,
+    )
     for iter_idx in pbar:
         # pop components
         # --------------------------------------------------

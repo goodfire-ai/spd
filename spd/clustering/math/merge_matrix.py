@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import torch
 from jaxtyping import Bool, Int
+from muutils.tensor_info import array_summary
 from torch import Tensor
 
 
@@ -16,6 +17,15 @@ class GroupMerge:
     group_idxs: Int[Tensor, " n_components"]
     k_groups: int
     old_to_new_idx: dict[int | None, int | None] | None = None
+
+    def summary(self) -> dict[str, int | str | None]:
+        return dict(
+            group_idxs=array_summary(self.group_idxs, as_list=False),
+            k_groups=self.k_groups,
+            old_to_new_idx=f"len={len(self.old_to_new_idx)}"
+            if self.old_to_new_idx is not None
+            else None,
+        )
 
     @property
     def _n_components(self) -> int:
@@ -33,7 +43,10 @@ class GroupMerge:
 
     def components_in_group(self, group_idx: int) -> list[int]:
         """Returns a list of component indices in the specified group."""
-        return (self.group_idxs == group_idx).nonzero(as_tuple=False).squeeze().tolist()
+        indices: Int[Tensor, " n_matches"] = (
+            (self.group_idxs == group_idx).nonzero(as_tuple=False).squeeze(-1)
+        )
+        return indices.tolist()
 
     def validate(self, *, require_nonempty: bool = True) -> None:
         v_min: int = int(self.group_idxs.min().item())
@@ -170,6 +183,14 @@ class BatchedGroupMerge:
 
     group_idxs: Int[Tensor, " batch n_components"]
     k_groups: Int[Tensor, " batch"]
+
+    def summary(self) -> dict[str, int | str | None]:
+        return dict(
+            group_idxs=array_summary(self.group_idxs, as_list=False),
+            k_groups=array_summary(self.k_groups, as_list=False),
+            # TODO: re-add metadata (which pairs merged at each step)
+            # meta=f"len={len(self.meta)}" if self.meta is not None else None,
+        )
 
     @classmethod
     def init_empty(cls, batch_size: int, n_components: int) -> "BatchedGroupMerge":

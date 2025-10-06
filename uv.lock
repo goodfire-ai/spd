@@ -2503,9 +2503,15 @@ dependencies = [
     { name = "ipykernel" },
     { name = "jaxtyping" },
     { name = "matplotlib" },
+    { name = "muutils" },
+    { name = "nbconvert" },
     { name = "numpy" },
+    { name = "plotly" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "seaborn" },
     { name = "simple-stories-train" },
     { name = "streamlit" },
     { name = "streamlit-antd-components" },
@@ -2516,23 +2522,17 @@ dependencies = [
     { name = "transformers" },
     { name = "wandb" },
     { name = "wandb-workspaces" },
+    { name = "zanj" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
-    { name = "muutils" },
-    { name = "nbconvert" },
-    { name = "plotly" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
-    { name = "scikit-learn" },
-    { name = "scipy" },
-    { name = "seaborn" },
-    { name = "zanj" },
 ]
 
 [package.metadata]
@@ -2543,9 +2543,15 @@ requires-dist = [
     { name = "ipykernel" },
     { name = "jaxtyping" },
     { name = "matplotlib", specifier = "==3.9.1" },
+    { name = "muutils" },
+    { name = "nbconvert" },
     { name = "numpy" },
+    { name = "plotly" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "scikit-learn" },
+    { name = "scipy", specifier = ">=1.14.1" },
+    { name = "seaborn" },
     { name = "simple-stories-train", git = "https://github.com/goodfire-ai/simple_stories_train.git?rev=dev" },
     { name = "streamlit" },
     { name = "streamlit-antd-components" },
@@ -2556,23 +2562,17 @@ requires-dist = [
     { name = "transformers", specifier = "==4.53.2" },
     { name = "wandb", specifier = ">=0.20.1" },
     { name = "wandb-workspaces", specifier = "==0.1.12" },
+    { name = "zanj" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright" },
-    { name = "muutils" },
-    { name = "nbconvert" },
-    { name = "plotly" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
-    { name = "scikit-learn" },
-    { name = "scipy", specifier = ">=1.14.1" },
-    { name = "seaborn" },
-    { name = "zanj" },
 ]
 
 [[package]]

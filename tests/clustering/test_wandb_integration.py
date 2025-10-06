@@ -32,7 +32,7 @@ def test_wandb_url_parsing_short_format():
         # Save histories using storage
         for idx in range(2):
             history = MergeHistory.from_config(
-                config=config,
+                merge_config=config,
                 labels=[f"comp{j}" for j in range(5)],
             )
             storage.save_history(history, batch_id=f"batch_{idx:02d}")
@@ -64,7 +64,7 @@ def test_merge_history_ensemble():
     histories = []
     for _idx in range(2):
         history = MergeHistory.from_config(
-            config=config,
+            merge_config=config,
             labels=[f"comp{j}" for j in range(4)],
         )
         histories.append(history)
@@ -91,7 +91,7 @@ def test_save_merge_history_to_wandb():
     )
 
     history = MergeHistory.from_config(
-        config=config,
+        merge_config=config,
         labels=["comp0", "comp1", "comp2"],
     )
 
@@ -139,7 +139,7 @@ def test_wandb_url_field_in_merge_history():
 
     # Create MergeHistory with wandb_url
     history = MergeHistory.from_config(
-        config=config,
+        merge_config=config,
         labels=["comp0", "comp1", "comp2", "comp3", "comp4"],
     )
     # Check that it can be serialized and deserialized

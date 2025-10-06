@@ -74,6 +74,7 @@ class ClusteringStorage:
     _HISTORIES_DIR: str = "merge_histories"
     _ENSEMBLE_DIR: str = "ensemble"
     _DISTANCES_DIR: str = "distances"
+    _DASHBOARD_DIR: str = "dashboard"
 
     # File naming constants
     _RUN_CONFIG_FILE: str = "run_config.json"
@@ -81,9 +82,11 @@ class ClusteringStorage:
     _ENSEMBLE_META_FILE: str = "ensemble_meta.json"
     _ENSEMBLE_ARRAY_FILE: str = "ensemble_merge_array.npz"
     _BATCH_FILE_FMT: str = "batch_{batch_idx:02d}.npz"
-    _HISTORY_FILE_FMT: str = "data_{batch_id}"
+    _HISTORY_FILE_FMT: str = "{batch_id}"
     _MERGE_HISTORY_FILE: str = "merge_history.zip"
     _DISTANCES_FILE_FMT: str = "distances.{method}.npz"
+    _MODEL_INFO_FILE: str = "model_info.json"
+    _MAX_ACTIVATIONS_FILE_FMT: str = "max_activations_i{iteration}_n{n_samples}.json"
 
     def __init__(self, base_path: Path, run_identifier: str | None = None):
         """Initialize storage with base path and optional run identifier.
@@ -133,6 +136,10 @@ class ClusteringStorage:
     def _distances_dir(self) -> Path:
         return self.run_path / self._DISTANCES_DIR
 
+    @property
+    def _dashboard_dir(self) -> Path:
+        return self.run_path / self._DASHBOARD_DIR
+
     # files
     @property
     def run_config_file(self) -> Path:
@@ -150,6 +157,14 @@ class ClusteringStorage:
     def ensemble_array_file(self) -> Path:
         return self._ensemble_dir / self._ENSEMBLE_ARRAY_FILE
 
+    @property
+    def model_info_file(self) -> Path:
+        return self.run_path / self._MODEL_INFO_FILE
+
+    @property
+    def dashboard_model_info_file(self) -> Path:
+        return self._dashboard_dir / self._MODEL_INFO_FILE
+
     # dynamic
 
     def batch_path(self, batch_idx: int) -> Path:
@@ -160,6 +175,11 @@ class ClusteringStorage:
             self._histories_dir
             / self._HISTORY_FILE_FMT.format(batch_id=batch_id)
             / self._MERGE_HISTORY_FILE
+        )
+
+    def max_activations_path(self, iteration: int, n_samples: int) -> Path:
+        return self._dashboard_dir / self._MAX_ACTIVATIONS_FILE_FMT.format(
+            iteration=iteration, n_samples=n_samples
         )
 
     # Batch storage methods
@@ -249,3 +269,33 @@ class ClusteringStorage:
         return _write_text_to_path_and_return(
             self.run_config_file, config.model_dump_json(indent=2)
         )
+
+    def load_run_config(self) -> ClusteringRunConfig:
+        return ClusteringRunConfig.read(self.run_config_file)
+
+    # Dashboard storage methods
+
+    def save_max_activations(
+        self, data: dict[int, dict[str, list[dict[str, Any]]]], iteration: int, n_samples: int
+    ) -> Path:
+        """Save max activations data to dashboard directory."""
+        max_act_path: Path = self.max_activations_path(iteration, n_samples)
+        return _write_text_to_path_and_return(max_act_path, json.dumps(data, indent=2))
+
+    def save_model_info(self, model_info: dict[str, Any]) -> Path:
+        """Save model info to run directory."""
+        return _write_text_to_path_and_return(
+            self.model_info_file, json.dumps(model_info, indent=2)
+        )
+
+    def save_model_info_to_dashboard(self, model_info: dict[str, Any]) -> Path:
+        """Save or copy model info to dashboard directory."""
+        return _write_text_to_path_and_return(
+            self.dashboard_model_info_file, json.dumps(model_info, indent=2)
+        )
+
+    def load_model_info(self) -> dict[str, Any] | None:
+        """Load model info from run directory if it exists."""
+        if self.model_info_file.exists():
+            return json.loads(self.model_info_file.read_text())
+        return None
