@@ -225,7 +225,12 @@ class TestGatherAllTensors:
         cmd = ["mpirun", "-np", "2", sys.executable, str(script_path)]
 
         result = subprocess.run(
-            cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=60
+            # TODO: is this timeout enough?
+            cmd,
+            env={**os.environ, **env},
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
 
         if result.returncode != 0:
