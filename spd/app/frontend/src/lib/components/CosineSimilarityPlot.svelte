@@ -1,5 +1,4 @@
 <script lang="ts">
-    export let title: string;
     export let data: number[][];
     export let indices: number[];
     export let disabledIndices: number[] = [];
@@ -21,46 +20,32 @@
 
         // Linear gradient: white (0) -> blue (1)
         const whiteAmount = Math.round(255 * (1 - v));
-        return `rgb(255, ${whiteAmount}, ${whiteAmount})`;
+        return `rgb(${whiteAmount}, ${whiteAmount}, 255)`;
     };
-
 </script>
 
-<div class="similarity-plot">
-    <h4>{title}</h4>
-    <div class="heatmap-wrapper">
-        <div class="heatmap">
-            {#each data as row, i}
-                <div class="heatmap-row">
-                    {#each row as value, j}
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                        <div
-                            class="heatmap-cell"
-                            class:disabled={isDisabled(i, j)}
-                            style="background-color: {getHeatmapColor(value, i, j)};"
-                            title="Components {indices[i]} × {indices[j]}: {value.toFixed(
-                                3
-                            )}{isDisabled(i, j) ? ' (disabled)' : ''}"
-                        ></div>
-                    {/each}
-                </div>
-            {/each}
-        </div>
+<div class="heatmap-wrapper">
+    <div class="heatmap">
+        {#each data as row, i}
+            <div class="heatmap-row">
+                {#each row as value, j}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <div
+                        class="heatmap-cell"
+                        class:disabled={isDisabled(i, j)}
+                        style="background-color: {getHeatmapColor(value, i, j)};"
+                        title="Components {indices[i]} × {indices[j]}: {value.toFixed(
+                            3
+                        )}{isDisabled(i, j) ? ' (disabled)' : ''}"
+                    ></div>
+                {/each}
+            </div>
+        {/each}
     </div>
 </div>
 
 <style>
-    .similarity-plot {
-        margin: 1rem 0;
-    }
-
-    .similarity-plot h4 {
-        margin: 0 0 0.5rem 0;
-        color: #333;
-        font-size: 0.9rem;
-    }
-
     .heatmap-wrapper {
         width: 100%;
         aspect-ratio: 1;

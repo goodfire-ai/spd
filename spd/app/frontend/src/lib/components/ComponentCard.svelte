@@ -2,7 +2,9 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     import type { CosineSimilarityData } from "$lib/api";
+    import * as api from "$lib/api";
     import { ablationComponentMask } from "$lib/stores/componentState";
+    import { onMount } from "svelte";
     import CosineSimilarityPlot from "./CosineSimilarityPlot.svelte";
     import TokenHighlights from "./TokenHighlights.svelte";
 
@@ -19,7 +21,6 @@
     export let componentAggCi: number;
     export let subcomponentCis: number[];
     export let toggle: () => void;
-    export let similarityData: CosineSimilarityData | null = null;
     export let examples: ComponentExample[] = [];
 
     $: isDisabled = (() => {
@@ -36,6 +37,16 @@
     $: disabledComponentIndices = isDisabled ? [componentIdx] : [];
 
     $: textColor = componentAggCi > 0.5 ? "#ffffff" : "#000000";
+
+    let similarityData: CosineSimilarityData | null = null;
+    let loading = false;
+    async function loadCosineSims() {
+        loading = true;
+        await new Promise((resolve) => setTimeout(resolve, componentIdx * 50));
+        similarityData = await api.getCosineSimilarities(layer, componentIdx);
+        loading = false;
+    }
+    onMount(loadCosineSims);
 </script>
 
 <div class="component-card-container" class:disabled={isDisabled} on:click={toggle}>
@@ -77,22 +88,26 @@
                 <h4>Pairwise Cosine Similarities</h4>
                 <div class="plots-container">
                     <div class="plot-wrapper">
+                        <h5>Input</h5>
                         <CosineSimilarityPlot
-                            title="Input"
                             data={similarityData.input_singular_vectors}
                             indices={similarityData.component_indices}
                             disabledIndices={disabledComponentIndices}
                         />
                     </div>
                     <div class="plot-wrapper">
+                        <h5>Output</h5>
                         <CosineSimilarityPlot
-                            title="Output"
                             data={similarityData.output_singular_vectors}
                             indices={similarityData.component_indices}
                             disabledIndices={disabledComponentIndices}
                         />
                     </div>
                 </div>
+            </div>
+        {:else}
+            <div class="loading-similarities">
+                <p>Loading...</p>
             </div>
         {/if}
     </div>
@@ -108,8 +123,8 @@
         transition: all 0.2s ease;
         border: 1px solid #e0e0e0;
         position: relative;
-        min-width: 600px;
-        max-width: 600px;
+        /* min-width: 600px; */
+        width: 600px;
         height: 800px;
         overflow: hidden;
         flex-shrink: 0;
@@ -186,7 +201,6 @@
         font-weight: 600;
     }
 
-    .loading,
     .loading-similarities {
         padding: 1rem;
         text-align: center;

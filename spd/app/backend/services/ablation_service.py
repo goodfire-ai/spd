@@ -15,7 +15,6 @@ from spd.app.backend.api import (
     OutputTokenLogit,
     RunResponse,
     SimulateMergeResponse,
-    TokenLayerCosineSimilarityData,
 )
 from spd.app.backend.services.cluster_dashboard_service import ComponentActivationContextsService
 from spd.app.backend.services.run_context_service import RunContextService
@@ -328,65 +327,6 @@ class AblationService:
 
         return self.run_prompt(example)
 
-    def get_subcomponent_cosine_sims(
-        self, layer: str, component_idx: int
-    ) -> TokenLayerCosineSimilarityData:
-        assert (run := self.run_context_service.train_run_context) is not None, (
-            "Run context not found"
-        )
-        assert (components := run.cm.components.get(layer)) is not None, f"Layer {layer} not found"
-
-        logger.info(f"component index: {component_idx}")
-
-        assert (cluster_ctx := self.run_context_service.cluster_run_context) is not None
-        layer_components = cluster_ctx.clustering_shape.module_component_groups[layer]
-
-        component_subcomponent_indices = torch.tensor(
-            layer_components[component_idx], device=DEVICE, dtype=torch.long
-        )
-
-        assert component_subcomponent_indices.ndim == 1, "Nonzero indices must be 1D"
-        n_nonzero = component_subcomponent_indices.shape[0]
-
-        u_singular_vectors: Float[torch.Tensor, "C d_in"] = components.U[
-            component_subcomponent_indices.tolist()
-        ]
-        u_pairwise_cosine_similarities = pairwise_cosine_similarities(u_singular_vectors)
-        assert u_pairwise_cosine_similarities.shape == (n_nonzero, n_nonzero), (
-            f"Expected {n_nonzero}x{n_nonzero} shape, got {u_pairwise_cosine_similarities.shape}"
-        )
-
-        v_singular_vectors: Float[torch.Tensor, "d_out C"] = components.V[
-            :, component_subcomponent_indices.tolist()
-        ]
-        v_pairwise_cosine_similarities = pairwise_cosine_similarities(v_singular_vectors.T)
-        assert v_pairwise_cosine_similarities.shape == (n_nonzero, n_nonzero), (
-            f"Expected {n_nonzero}x{n_nonzero} shape, got {v_pairwise_cosine_similarities.shape}"
-        )
-
-        # Compute combined cosine similarities: cat([U, V^T], dim=1)
-        combined_vectors: Float[torch.Tensor, "C (d_in+d_out)"] = torch.cat(
-            [u_singular_vectors, v_singular_vectors.T], dim=1
-        )
-        combined_cosine_similarities = pairwise_cosine_similarities(combined_vectors)
-        assert combined_cosine_similarities.shape == (n_nonzero, n_nonzero), (
-            f"Expected {n_nonzero}x{n_nonzero} shape, got {combined_cosine_similarities.shape}"
-        )
-
-        # Zero out diagonal for display (self-similarity is always 1 and distracting)
-        combined_cosine_similarities.fill_diagonal_(0.0)
-
-        logger.info(f"U pairwise cosine similarities: {u_pairwise_cosine_similarities.shape}")
-        logger.info(f"V pairwise cosine similarities: {v_pairwise_cosine_similarities.shape}")
-        logger.info(f"Combined cosine similarities: {combined_cosine_similarities.shape}")
-
-        return TokenLayerCosineSimilarityData(
-            input_singular_vectors=u_pairwise_cosine_similarities.tolist(),
-            output_singular_vectors=v_pairwise_cosine_similarities.tolist(),
-            combined_singular_vectors=combined_cosine_similarities.tolist(),
-            component_indices=component_subcomponent_indices.tolist(),
-        )
-
     def create_combined_mask(
         self,
         prompt_id: str,
@@ -444,10 +384,6 @@ class AblationService:
         # jacc = k_way_set_jaccard(token_masks, threshold=0.0)
 
         return SimulateMergeResponse(l0=l0, jacc=jacc)
-
-
-def pairwise_cosine_similarities(vectors: Float[Tensor, "n d"]) -> Float[Tensor, "n n"]:
-    return F.cosine_similarity(vectors[:, None, :], vectors[None, :, :], dim=-1)
 
 
 def k_way_weighted_jaccard(token_masks: Float[Tensor, "m C"]) -> float:

@@ -178,23 +178,19 @@ export async function ablateComponents(
     promptId: string,
     componentMask: ComponentMask
 ): Promise<InterventionResponse> {
-    console.log(
-        "ablateComponents",
-        JSON.stringify({
-            prompt_id: promptId,
-            component_mask: componentMask
-        })
-    );
+    const req: ComponentAblationRequest = {
+        prompt_id: promptId,
+        component_mask: componentMask
+    };
+
+    console.log("ablateComponents", JSON.stringify(req));
 
     const response = await fetch(`${apiUrl}/ablate_components`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-            prompt_id: promptId,
-            component_mask: componentMask
-        })
+        body: JSON.stringify(req)
     });
 
     if (!response.ok) {
@@ -284,26 +280,24 @@ export async function combineMasks(req: CombineMasksRequest): Promise<CombineMas
     return response.json();
 }
 
+export type SimulateMergeRequest = {
+    prompt_id: string;
+    layer: string;
+    token_indices: number[];
+};
+
 export type SimulateMergeResponse = {
     l0: number;
     jacc: number;
 };
 
-export async function simulateMerge(
-    promptId: string,
-    layer: string,
-    tokenIndices: number[]
-): Promise<SimulateMergeResponse> {
+export async function simulateMerge(req: SimulateMergeRequest): Promise<SimulateMergeResponse> {
     const response = await fetch(`${apiUrl}/simulate_merge`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-            prompt_id: promptId,
-            layer: layer,
-            token_indices: tokenIndices
-        })
+        body: JSON.stringify(req)
     });
 
     if (!response.ok) {

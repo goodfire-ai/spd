@@ -52,7 +52,11 @@
 
         simulating = true;
         try {
-            const response = await api.simulateMerge(promptId, layer, tokenIndices);
+            const response = await api.simulateMerge({
+                prompt_id: promptId,
+                layer,
+                token_indices: tokenIndices
+            });
             simulatedL0 = response.l0;
             simulatedJacc = response.jacc;
         } catch (error) {

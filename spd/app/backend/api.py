@@ -1,4 +1,5 @@
 from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -57,7 +58,6 @@ class RunResponse(BaseModel):
 class TokenLayerCosineSimilarityData(BaseModel):
     input_singular_vectors: list[list[float]]
     output_singular_vectors: list[list[float]]
-    combined_singular_vectors: list[list[float]]
     component_indices: list[int]
 
 

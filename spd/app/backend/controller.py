@@ -33,6 +33,7 @@ from spd.app.backend.services.activation_contexts_service import (
     SubcomponentActivationContextsService,
 )
 from spd.app.backend.services.cluster_dashboard_service import ComponentActivationContextsService
+from spd.app.backend.services.geometry_service import GeometryService
 from spd.app.backend.services.run_context_service import (
     CLUSTER_PROJECT,
     ENTITY,
@@ -46,6 +47,7 @@ subcomponent_activations_context_service = SubcomponentActivationContextsService
 )
 component_activation_contexts_service = ComponentActivationContextsService(run_context_service)
 ablation_service = AblationService(run_context_service, component_activation_contexts_service)
+geometry_service = GeometryService(run_context_service)
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
@@ -181,7 +183,7 @@ def get_status() -> Status:
 @app.get("/cosine_similarities/{layer}/{component_idx}")
 @handle_errors
 def get_cosine_similarities(layer: str, component_idx: int) -> TokenLayerCosineSimilarityData:
-    return ablation_service.get_subcomponent_cosine_sims(layer, component_idx)
+    return geometry_service.get_subcomponent_cosine_sims(layer, component_idx)
 
 
 @app.post("/combine_masks")

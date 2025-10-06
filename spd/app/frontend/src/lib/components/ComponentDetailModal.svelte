@@ -9,14 +9,14 @@
 </script>
 
 <script lang="ts">
-    import type { ClusterRunDTO, MatrixCausalImportances, CosineSimilarityData } from "$lib/api";
+    import type { ClusterRunDTO, MatrixCausalImportances } from "$lib/api";
     import * as api from "$lib/api";
     import ComponentCard from "./ComponentCard.svelte";
     import HorizontalVirtualList from "./HorizontalVirtualList.svelte";
     import { onMount } from "svelte";
 
     export let onClose: () => void;
-    export let onToggleComponent: (
+    export let toggleComponent: (
         layerName: string,
         tokenIdx: number,
         componentIdx: number
@@ -48,7 +48,7 @@
             componentAggCi: popupData.tokenCIs.component_agg_cis[componentIdx]
         }));
 
-        componentItems.sort((a, b) => b.componentAggCi - a.componentAggCi);
+        componentItems.sort((a, b) => b.componentAggCi - a.componentAggCi || b.subcomponentCis.length - a.subcomponentCis.length);
 
         return componentItems;
     })();
@@ -60,31 +60,6 @@
         activations: number[];
     };
 
-    let similarityDataMap: Map<number, CosineSimilarityData> = new Map();
-    let loading = false;
-
-    async function loadCosineSims() {
-        if (!popupData || loading) return;
-
-        loading = true;
-
-        const similarityPromises = componentItems.map(async (item) => {
-            try {
-                const data = await api.getCosineSimilarities(popupData.layerName, item.componentIdx);
-                return [item.componentIdx, data] as [number, CosineSimilarityData];
-            } catch (error) {
-                console.error(`Failed to load similarities for component ${item.componentIdx}:`, error);
-                return null;
-            }
-        });
-
-        const results = await Promise.all(similarityPromises);
-        similarityDataMap = new Map(
-            results.filter((r): r is [number, CosineSimilarityData] => r !== null)
-        );
-
-        loading = false;
-    }
 
     // Build activation examples from dashboard data (like ClusterDashboardBody)
     $: textSampleLookup = Object.fromEntries(
@@ -157,10 +132,11 @@
     }
 
     $: activationContextsMap = new Map(
-        componentItems.map((item) => [item.componentIdx, buildExamplesForComponent(item.componentIdx)])
+        componentItems.map((item) => [
+            item.componentIdx,
+            buildExamplesForComponent(item.componentIdx)
+        ])
     );
-
-    onMount(loadCosineSims);
 
     function getAllComponentIndices(): number[] {
         // this is a little silly lol
@@ -192,7 +168,7 @@
                 (shouldDisable && !isCurrentlyDisabled) ||
                 (!shouldDisable && isCurrentlyDisabled)
             ) {
-                onToggleComponent(popupData.layerName, popupData.tokenIdx, componentIdx);
+                toggleComponent(popupData.layerName, popupData.tokenIdx, componentIdx);
             }
         }
     }
@@ -251,16 +227,13 @@
                                 componentAggCi={item.componentAggCi}
                                 layer={popupData.layerName}
                                 tokenIdx={popupData.tokenIdx}
-                                similarityData={similarityDataMap.get(item.componentIdx)}
                                 examples={activationContextsMap.get(item.componentIdx)}
                                 toggle={() => {
-                                    if (popupData) {
-                                        onToggleComponent(
-                                            popupData.layerName,
-                                            popupData.tokenIdx,
-                                            item.componentIdx
-                                        );
-                                    }
+                                    toggleComponent(
+                                        popupData.layerName,
+                                        popupData.tokenIdx,
+                                        item.componentIdx
+                                    );
                                 }}
                             />
                         </HorizontalVirtualList>

@@ -30,7 +30,9 @@
         trainWandbRunId = status.train_run.wandb_path.split("/").pop()!;
         availableClusterRuns = status.train_run.available_cluster_runs;
 
-        clusterWandbRunPath = status.cluster_run?.wandb_path ?? null;
+        if (status.cluster_run) {
+            clusterWandbRunPath = status.cluster_run.wandb_path;
+        }
 
         if (status.cluster_run?.clustering_shape) {
             const cGroups = status.cluster_run?.clustering_shape.module_component_groups;
@@ -92,8 +94,15 @@
                         class="cluster-load"
                         type="submit"
                         disabled={loadingCluster === "loading"}
+                        class:done={loadingCluster === "loaded"}
                     >
-                        {loadingCluster === "loading" ? "Loading..." : "Load Cluster"}
+                        {(
+                            {
+                                none: "Load Cluster",
+                                loading: "Loading...",
+                                loaded: "Loaded"
+                            } as const
+                        )[loadingCluster]}
                     </button>
                 </form>
             </div>
@@ -133,7 +142,10 @@
         {#if status?.train_run}
             <div class:hidden={activeTab !== "ablation"}>
                 {#if status?.cluster_run && clusterIteration !== null}
-                    <InterventionsTab cluster_run={status.cluster_run} iteration={clusterIteration} />
+                    <InterventionsTab
+                        cluster_run={status.cluster_run}
+                        iteration={clusterIteration}
+                    />
                 {:else}
                     <div class="status">No cluster run selected.</div>
                 {/if}
@@ -279,6 +291,10 @@
         font-weight: 500;
         cursor: pointer;
         transition: all 0.15s ease;
+    }
+
+    .cluster-load.done {
+        background: #28a745;
     }
 
     .cluster-load:hover:not(:disabled) {

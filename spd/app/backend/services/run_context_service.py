@@ -137,16 +137,9 @@ class RunContextService:
                 groups.append(unique_indices)
 
             unassigned = [sub_idx for sub_idx in range(C) if assignments[sub_idx] == -1]
-            if unassigned:
-                next_group_idx = len(groups)
-                for sub_idx in unassigned:
-                    assignments[sub_idx] = next_group_idx
-                groups.append(unassigned)
-
-            # for sub_idx in range(C):
-            #     if assignments[sub_idx] == -1:
-            #         print(f"assignment {sub_idx} is -1, entering breakpoint")
-            #         breakpoint()
+            for sub_idx in unassigned:
+                assignments[sub_idx] = len(groups)
+                groups.append([sub_idx])
 
             module_component_assignments[module_name] = assignments
             module_component_groups[module_name] = groups
@@ -158,6 +151,7 @@ class RunContextService:
 
     def get_status(self) -> Status:
         if (train_ctx := self.train_run_context) is None:
+            logger.info("No train run context found")
             return Status(
                 train_run=None,
                 cluster_run=None,
@@ -170,6 +164,7 @@ class RunContextService:
         )
 
         if (cluster_ctx := self.cluster_run_context) is None:
+            logger.info("No cluster run context found")
             return Status(
                 train_run=train_run,
                 cluster_run=None,

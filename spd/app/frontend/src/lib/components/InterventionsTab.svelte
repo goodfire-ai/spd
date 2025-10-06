@@ -168,8 +168,7 @@
             $ablationComponentMask[layerName] = result!.prompt_tokens.map(() => []);
         }
 
-        const disabledComponents = $ablationComponentMask[layerName][tokenIdx];
-        const existingIdx = disabledComponents.indexOf(componentIdx);
+        const disabledComponents = $ablationComponentMask[layerName][tokenIdx]; const existingIdx = disabledComponents.indexOf(componentIdx);
 
         if (existingIdx === -1) {
             disabledComponents.push(componentIdx);
@@ -368,7 +367,7 @@
             {popupData}
             {dashboard}
             onClose={closePopup}
-            onToggleComponent={toggleComponentDisabled}
+            toggleComponent={toggleComponentDisabled}
             {isComponentDisabled}
         />
     {/if}
