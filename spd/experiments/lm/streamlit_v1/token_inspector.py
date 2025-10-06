@@ -15,6 +15,7 @@ from torch import Tensor
 from spd.data import DatasetConfig
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.lm.streamlit_v1.utils import ModelData
+from spd.utils.general_utils import get_module_device
 
 
 @dataclass
@@ -332,7 +333,7 @@ def render_token_activations_tab(model_data: ModelData):
     # Compute masks for current prompt
     cis = compute_causal_importances(
         model_data,
-        prompt_data.input_ids.to(next(model_data.model.parameters()).device),
+        prompt_data.input_ids.to(get_module_device(model_data.model)),
     )
 
     # Check if prompt was truncated for model
