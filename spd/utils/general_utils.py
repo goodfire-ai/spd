@@ -2,10 +2,10 @@ import copy
 import importlib
 import json
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Protocol
 
 import einops
 import numpy as np
@@ -432,4 +432,43 @@ def get_module_device(model: nn.Module) -> torch.device:
     """Get the device of the model's parameters. Assumes all parameters are on the same device."""
     devices: set[torch.device] = get_module_devices(model)
     assert len(devices) == 1, f"Model parameters are on multiple devices: {devices}"
+    return devices.pop()
+
+
+class _HasDevice(Protocol):
+    """Protocol for objects with a `.device` attribute that is a `torch.device`."""
+
+    device: torch.device
+
+
+CanGetDevice = (
+    nn.Module
+    | _HasDevice
+    | Tensor
+    | dict[str, Tensor]
+    | dict[str, _HasDevice]
+    | Sequence[Tensor]
+    | Sequence[_HasDevice]
+)
+
+
+def get_obj_devices(d: CanGetDevice) -> set[torch.device]:
+    """try to get the set of devices on which an object's parameters are located"""
+    if isinstance(d, Tensor) or hasattr(d, "device"):
+        # pyright doesn't realize that we just checked for a `.device` attribute, hence the ignores
+        assert isinstance(d.device, torch.device)  # pyright: ignore[reportAttributeAccessIssue]
+        return {d.device}  # pyright: ignore[reportAttributeAccessIssue]
+    elif isinstance(d, nn.Module):
+        return get_module_devices(d)
+    elif isinstance(d, dict):
+        return {obj.device for obj in d.values()}
+    else:
+        # this might fail, we don't really know what `d` is at this point
+        return {obj.device for obj in d}  # pyright: ignore[reportGeneralTypeIssues]
+
+
+def get_obj_device(d: CanGetDevice) -> torch.device:
+    """try to get the device of an object's parameters. Assumes all parameters are on the same device."""
+    devices: set[torch.device] = get_obj_devices(d)
+    assert len(devices) == 1, f"Object parameters are on multiple devices: {devices}"
     return devices.pop()
