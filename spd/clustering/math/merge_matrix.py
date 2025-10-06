@@ -22,7 +22,7 @@ class GroupMerge:
 
     def summary(self) -> dict[str, int | str | None]:
         return dict(
-            group_idxs=array_summary(self.group_idxs, as_list=False),
+            group_idxs=array_summary(self.group_idxs, as_list=False),  # pyright: ignore[reportCallIssue]
             k_groups=self.k_groups,
             old_to_new_idx=f"len={len(self.old_to_new_idx)}"
             if self.old_to_new_idx is not None
@@ -188,8 +188,8 @@ class BatchedGroupMerge:
 
     def summary(self) -> dict[str, int | str | None]:
         return dict(
-            group_idxs=array_summary(self.group_idxs, as_list=False),
-            k_groups=array_summary(self.k_groups, as_list=False),
+            group_idxs=array_summary(self.group_idxs, as_list=False),  # pyright: ignore[reportCallIssue]
+            k_groups=array_summary(self.k_groups, as_list=False),  # pyright: ignore[reportCallIssue]
             # TODO: re-add metadata (which pairs merged at each step)
             # meta=f"len={len(self.meta)}" if self.meta is not None else None,
         )
