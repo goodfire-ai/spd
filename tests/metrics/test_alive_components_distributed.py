@@ -223,6 +223,8 @@ def run_all_tests():
 
 # ===== Pytest wrapper =====
 @pytest.mark.slow
+@pytest.mark.distributed
+@pytest.mark.xdist_group("serial")
 class TestDistributedAliveComponentsTracker:
     """Pytest wrapper for distributed AliveComponentsTracker tests."""
 
@@ -230,8 +232,9 @@ class TestDistributedAliveComponentsTracker:
         """Run distributed tests via mpirun in subprocess."""
         script_path = Path(__file__).resolve()
 
+        # ports should be globally unique in tests to allow test parallelization
         env = {
-            "MASTER_PORT": "29501",
+            "MASTER_PORT": "29503",
             "OMP_NUM_THREADS": "1",
         }
 

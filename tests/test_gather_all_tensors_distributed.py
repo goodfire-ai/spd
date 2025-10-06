@@ -207,6 +207,8 @@ def run_all_tests():
 # ===== Pytest wrapper =====
 # This allows running via pytest, which will spawn mpirun in a subprocess
 @pytest.mark.slow
+@pytest.mark.distributed
+@pytest.mark.xdist_group("serial")
 class TestGatherAllTensors:
     """Pytest wrapper for gather_all_tensors tests."""
 
@@ -214,8 +216,9 @@ class TestGatherAllTensors:
         """Run distributed tests via mpirun in subprocess."""
         script_path = Path(__file__).resolve()
 
+        # ports should be globally unique in tests to allow test parallelization
         env = {
-            "MASTER_PORT": "29501",
+            "MASTER_PORT": "29502",
             "OMP_NUM_THREADS": "1",
         }
 
