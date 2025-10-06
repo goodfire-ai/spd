@@ -26,29 +26,9 @@ from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
 from spd.utils.general_utils import load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
-from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations
+from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
 from spd.utils.wandb_utils import wandb_setup
-
-
-def generate_run_name(
-    params: dict[str, Any],
-) -> str:
-    """Generate a run name based on the present parameters.
-
-    Uses only leaf-node parameters.
-    Example:
-        >>> params = {"a": {"b": 1}, "c": 2}
-        >>> generate_run_name(params)
-        "b-1_c-2"
-    """
-    parts: list[str] = []
-    for k, v in params.items():
-        if isinstance(v, dict):
-            parts.append(generate_run_name(v))
-        else:
-            parts.append(f"{k}-{v}")
-    return "_".join(parts)
 
 
 def generate_run_id() -> str:
