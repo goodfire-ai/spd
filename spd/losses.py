@@ -258,7 +258,7 @@ def _optimize_adversarial_stochastic_masks(
                 batch=batch,
                 mask_infos_list=[mask_infos],
                 target_out=pgd_target_out,
-                loss_type=config.output_loss_type,
+                loss_type="ce",
                 device=device,
             )
             objective = objective + config.stochastic_recon_subset_coeff * loss_val
@@ -588,7 +588,7 @@ def calculate_losses(
                 batch=batch,
                 mask_infos_list=adv_mask_infos_list,
                 target_out=target_out,
-                loss_type=config.output_loss_type,
+                loss_type="ce",
                 device=device,
             )
         else:
