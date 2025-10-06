@@ -143,27 +143,33 @@ def jaccard_index(
     ]
 
     # compute jaccard for each pair of rows
-    jaccard: dict[
-        tuple[int, int], # key is (i, j) from the rows of X
-        Int[Tensor, " k_i k_j"], # value at (p, q) is jaccard index between two clusters
-    ] = {}
+    # jaccard: dict[
+    #     tuple[int, int], # key is (i, j) from the rows of X
+    #     fl
+    #     # Int[Tensor, " k_i k_j"], # value at (p, q) is jaccard index between two clusters
+    # ] = {}
+    jaccard: Float[Tensor, " s s"] = torch.full((s, s), fill_value=torch.nan)
     for i in range(s):
         for j in range(i, s):
             X_i: Int[Tensor, " k_i n"] = X_expanded_list[i].to(torch.int16)
             X_j: Int[Tensor, " k_j n"] = X_expanded_list[j].to(torch.int16)
             intersects: Int[Tensor, " k_i k_j"] = X_i @ X_j.T
-            unions: Int[Tensor, " k_i k_j"] = X_i.sum(dim=1, keepdim=True) + X_j.sum(dim=1, keepdim=True) - intersects
+            unions: Int[Tensor, " k_i k_j"] = X_i.sum(dim=1, keepdim=True) + X_j.sum(dim=1, keepdim=True).T - intersects
             jaccard_mat: Int[Tensor, " k_i k_j"]  = intersects / unions
 
             show_matrix(X_i, title=f"One-hot matrix for row {i} of X\nshape={X_i.shape}", cmap="Blues")
             show_matrix(X_j, title=f"One-hot matrix for row {j} of X\nshape={X_j.shape}", cmap="Blues")
             show_matrix(jaccard_mat, title=f"Gram matrix between row {i} and row {j}\n$[{jaccard_mat.min():.2f}, {jaccard_mat.max():.2f}]$")
+            
+            # jaccard[i, j] = jaccard_mat.mean()
 
 
 jaccard_index(torch.tensor([
     # [1, 2, 3, 3],
     [0, 1, 1, 2, 3, 3],
     [0, 1, 1, 1, 2, 2],
+    # [0, 0, 0, 0, 1, 1],
+    [0, 0, 0, 0, 0, 0],
     # [0, 1, 2, 3],
 ]))
 
