@@ -14,6 +14,7 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.lm.streamlit_v1.utils import ModelData
 from spd.utils.component_utils import calc_ci_l_zero
+from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -321,9 +322,7 @@ def _process_batch_for_tokens(
     # Get activations before each component
     with torch.no_grad():
         _, pre_weight_acts = model_data.model(
-            batch,
-            mode="input_cache",
-            module_names=list(model_data.model.components.keys()),
+            batch, mode="input_cache", module_names=model_data.model.module_paths
         )
 
         causal_importances, _ = model_data.model.calc_causal_importances(
@@ -440,7 +439,7 @@ def analyze_component_token_table(
     Note: Parameters prefixed with _ are Streamlit conventions indicating the parameter
     should not trigger cache invalidation when it changes.
     """
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
 
     # Create dataloader
     data_config = DatasetConfig(

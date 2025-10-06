@@ -1,12 +1,12 @@
-from typing import ClassVar, Literal, Self
+from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt, model_validator
+from pydantic import Field, PositiveFloat, PositiveInt, model_validator
 
 from spd.spd_types import Probability
+from spd.utils.general_utils import BaseModel
 
 
 class ResidMLPModelConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     n_features: PositiveInt
     d_embed: PositiveInt
     d_mlp: PositiveInt
@@ -20,7 +20,6 @@ class ResidMLPModelConfig(BaseModel):
 
 
 class ResidMLPTrainConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
     wandb_project: str | None = None  # The name of the wandb project (if None, don't log to wandb)
     seed: int = 0
     resid_mlp_model_config: ResidMLPModelConfig
@@ -61,7 +60,6 @@ class ResidMLPTrainConfig(BaseModel):
 
 
 class ResidMLPTaskConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     task_name: Literal["resid_mlp"] = Field(
         default="resid_mlp",
         description="Identifier for the residual-MLP decomposition task",

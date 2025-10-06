@@ -178,7 +178,6 @@ def plot_mean_component_cis_both_scales(
 def get_single_feature_causal_importances(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
-    device: str | torch.device,
     input_magnitude: float,
     sampling: Literal["continuous", "binomial"],
     sigmoid_type: SigmoidTypes,
@@ -188,13 +187,13 @@ def get_single_feature_causal_importances(
     Args:
         model: The ComponentModel
         batch_shape: Shape of the batch
-        device: Device to use
         input_magnitude: Magnitude of input features
         sigmoid_type: Type of sigmoid to use for causal importance calculation
 
     Returns:
         Tuple of (ci_raw, ci_upper_leaky_raw) dictionaries of causal importance arrays (2D tensors)
     """
+    device = next(iter(model.parameters())).device
     # Create a batch of inputs with single active features
     has_pos_dim = len(batch_shape) == 3
     n_features = batch_shape[-1]
@@ -203,9 +202,7 @@ def get_single_feature_causal_importances(
         # NOTE: For now, we only use the first pos dim
         batch = batch.unsqueeze(1)
 
-    pre_weight_acts = model(batch, mode="input_cache", module_names=list(model.components.keys()))[
-        1
-    ]
+    pre_weight_acts = model(batch, mode="input_cache", module_names=model.module_paths)[1]
 
     ci_raw, ci_upper_leaky_raw = model.calc_causal_importances(
         pre_weight_acts=pre_weight_acts,
@@ -220,7 +217,6 @@ def get_single_feature_causal_importances(
 def plot_causal_importance_vals(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
-    device: str | torch.device,
     input_magnitude: float,
     sampling: Literal["continuous", "binomial"],
     sigmoid_type: SigmoidTypes,
@@ -234,11 +230,15 @@ def plot_causal_importance_vals(
     Args:
         model: The ComponentModel
         batch_shape: Shape of the batch
-        device: Device to use
         input_magnitude: Magnitude of input features
+        sampling: Sampling method to use
+        sigmoid_type: Type of sigmoid to use for causal importance calculation
         plot_raw_cis: Whether to plot the raw causal importances (blue plots)
         title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
-        sigmoid_type: Type of sigmoid to use for causal importance calculation.
+        identity_patterns: List of patterns to match for identity permutation
+        dense_patterns: List of patterns to match for dense permutation
+        plot_raw_cis: Whether to plot the raw causal importances (blue plots)
+        title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
 
     Returns:
         Tuple of:
@@ -249,7 +249,6 @@ def plot_causal_importance_vals(
     ci_raw, ci_upper_leaky_raw = get_single_feature_causal_importances(
         model=model,
         batch_shape=batch_shape,
-        device=device,
         input_magnitude=input_magnitude,
         sigmoid_type=sigmoid_type,
         sampling=sampling,
@@ -432,6 +431,7 @@ def plot_ci_values_histograms(
     Returns:
         Single figure with subplots for each layer.
     """
+    assert len(causal_importances) > 0, "No causal importances to plot"
     n_layers = len(causal_importances)
     max_rows = 6
 

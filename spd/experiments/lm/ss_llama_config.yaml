@@ -5,32 +5,31 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 4000
+C: 1200
 n_mask_samples: 1
-gate_type: "vector_mlp"
-gate_hidden_dims: [12]
+gate_type: "shared_mlp"
+gate_hidden_dims: [400]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj", "model.layers.*.self_attn.q_proj", "model.layers.*.self_attn.k_proj", "model.layers.*.self_attn.v_proj", "model.layers.*.self_attn.o_proj"]
 identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
-
-# --- Loss Coefficients ---
-faithfulness_coeff: null
-ci_recon_coeff: null
-stochastic_recon_coeff: 0.2
-ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 2.0
-importance_minimality_coeff: 0.0003
-pnorm: 2.0
-p_anneal_start_frac: 0.0
-p_anneal_final_p: 0.3
-p_anneal_end_frac: 1.0
+loss_metric_configs:
+  - classname: "ImportanceMinimalityLoss"
+    coeff: 0.0003
+    pnorm: 2.0
+    p_anneal_start_frac: 0.0
+    p_anneal_final_p: 0.7
+    p_anneal_end_frac: 1.0
+  - classname: "StochasticReconLayerwiseLoss"
+    coeff: 2.0
+  - classname: "StochasticReconLoss"
+    coeff: 0.2
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 48
-eval_batch_size: 48
+batch_size: 128
+eval_batch_size: 64
 steps: 50000
 lr: 0.0005
 lr_schedule: cosine
@@ -38,49 +37,47 @@ lr_warmup_pct: 0.0
 lr_exponential_halflife: null
 gradient_accumulation_steps: 1
 
+# --- Faithfulness Warmup ---
+faithfulness_warmup_steps: 200
+faithfulness_warmup_lr: 0.01
+faithfulness_warmup_weight_decay: 0.1
+
 # --- Logging & Saving ---
 train_log_freq: 200
 eval_freq: 1000
-slow_eval_freq: 5000
+slow_eval_freq: 2000
 slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
-eval_metrics:
+eval_metric_configs:
   - classname: "CIHistograms"
-    extra_init_kwargs:
-      n_batches_accum: 5
+    n_batches_accum: 5
   - classname: "ComponentActivationDensity"
-    extra_init_kwargs: {}
   - classname: "CI_L0"
-    extra_init_kwargs:
-      groups:
-        total: ["*"]  # Sum of all L0 values
-        layer_0: ["model.layers.0.*"]
-        layer_1: ["model.layers.1.*"]
-        layer_2: ["model.layers.2.*"]
-        layer_3: ["model.layers.3.*"]
+    groups:
+      total: ["*"]  # Sum of all L0 values
+      layer_0: ["model.layers.0.*"]
+      layer_1: ["model.layers.1.*"]
+      layer_2: ["model.layers.2.*"]
+      layer_3: ["model.layers.3.*"]
   - classname: "CEandKLLosses"
-    extra_init_kwargs:
-      rounding_threshold: 0.0
+    rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
-  - classname: "SubsetReconstructionLoss"
-    extra_init_kwargs:
-      n_mask_samples: 1
-      include_patterns:
-        layer_0_only: ["model.layers.0.*"]
-        layer_1_only: ["model.layers.1.*"]
-        layer_2_only: ["model.layers.2.*"]
-        layer_3_only: ["model.layers.3.*"]
-        mlp_only: ["*.mlp.*"]
-        attention_only: ["*.self_attn.*"]
-      exclude_patterns:
-        all_but_layer_0: ["model.layers.0.*"]
-        all_but_layer_1: ["model.layers.1.*"]
-        all_but_layer_2: ["model.layers.2.*"]
-        all_but_layer_3: ["model.layers.3.*"]
-  - classname: "FaithfulnessLoss"
+  - classname: "StochasticReconSubsetCEAndKL"
+    include_patterns:
+      layer_0_only: ["model.layers.0.*"]
+      layer_1_only: ["model.layers.1.*"]
+      layer_2_only: ["model.layers.2.*"]
+      layer_3_only: ["model.layers.3.*"]
+      mlp_only: ["*.mlp.*"]
+      attention_only: ["*.self_attn.*"]
+    exclude_patterns:
+      all_but_layer_0: ["model.layers.0.*"]
+      all_but_layer_1: ["model.layers.1.*"]
+      all_but_layer_2: ["model.layers.2.*"]
+      all_but_layer_3: ["model.layers.3.*"]
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM

@@ -8,8 +8,8 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 100
 n_mask_samples: 1
-gate_type: "mlp"
-gate_hidden_dims: [16]
+ci_fn_type: "mlp"
+ci_fn_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   - "layers.*.mlp_in"
@@ -17,14 +17,15 @@ target_module_patterns:
 identity_module_patterns: null
 use_delta_component: true
 
-# --- Loss Coefficients ---
-faithfulness_coeff: null
-ci_recon_coeff: null
-stochastic_recon_coeff: 1.0
-ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 1.0
-importance_minimality_coeff: 1e-5
-pnorm: 2
+# --- Loss config ---
+loss_metric_configs:
+  - classname: "ImportanceMinimalityLoss"
+    coeff: 1e-5
+    pnorm: 2.0
+  - classname: "StochasticReconLayerwiseLoss"
+    coeff: 1.0
+  - classname: "StochasticReconLoss"
+    coeff: 1.0
 output_loss_type: mse
 
 # --- Training ---
@@ -35,6 +36,11 @@ lr: 2e-3
 lr_schedule: constant
 lr_warmup_pct: 0.0
 
+# --- Faithfulness Warmup ---
+faithfulness_warmup_steps: 200
+faithfulness_warmup_lr: 0.01
+faithfulness_warmup_weight_decay: 0.1
+
 # --- Logging & Saving ---
 train_log_freq: 100
 eval_freq: 500
@@ -44,30 +50,24 @@ slow_eval_on_first_step: true
 save_freq: null
 ci_alive_threshold: 0.1
 n_examples_until_dead: 204_800
-eval_metrics:
+eval_metric_configs:
   - classname: "CIHistograms"
-    extra_init_kwargs:
-      n_batches_accum: 5
+    n_batches_accum: 5
   - classname: "ComponentActivationDensity"
   - classname: "PermutedCIPlots"
-    extra_init_kwargs:
-      identity_patterns: ["layers.*.mlp_in"]
-      dense_patterns: ["layers.*.mlp_out"]
-  - classname: "UVPlots"
-    extra_init_kwargs:
-      identity_patterns: ["layers.*.mlp_in"]
-      dense_patterns: ["layers.*.mlp_out"]
+    sigmoid_type: "leaky_hard"
+    identity_patterns: ["layers.*.mlp_in"]
+    dense_patterns: ["layers.*.mlp_out"]
   - classname: "IdentityCIError"
-    extra_init_kwargs:
-      identity_ci:
-        - layer_pattern: "layers.*.mlp_in"
-          n_features: 100
-      dense_ci:
-        - layer_pattern: "layers.*.mlp_out"
-          k: 50
+    identity_ci:
+      - layer_pattern: "layers.*.mlp_in"
+        n_features: 100
+    dense_ci:
+      - layer_pattern: "layers.*.mlp_out"
+        k: 50
   - classname: "CI_L0"
+    groups: null
   - classname: "CIMeanPerComponent"
-  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"

@@ -1,6 +1,8 @@
-from typing import ClassVar, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import Field, PositiveInt
+
+from spd.utils.general_utils import BaseModel
 
 
 class InductionModelConfig(BaseModel):
@@ -17,7 +19,6 @@ class InductionModelConfig(BaseModel):
 
 
 class InductionHeadsTrainConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
     wandb_project: str | None = None
     ih_model_config: InductionModelConfig
     steps: PositiveInt
@@ -32,7 +33,6 @@ class InductionHeadsTrainConfig(BaseModel):
 
 
 class IHTaskConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     task_name: Literal["induction_head"]
     prefix_window: PositiveInt | None = Field(
         default=None,

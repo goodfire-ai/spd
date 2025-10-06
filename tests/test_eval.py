@@ -1,13 +1,12 @@
 """Tests for evaluation metrics and figures, particularly CIHistograms."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 import torch
-from PIL import Image
 
 from spd.configs import Config
-from spd.eval import CIHistograms
+from spd.metrics import CIHistograms
 from spd.models.component_model import ComponentModel
 
 
@@ -39,11 +38,11 @@ class TestCIHistograms:
         }
 
     def test_n_batches_accum_enforcement(
-        self, mock_model: Mock, mock_config: Mock, sample_ci: dict[str, torch.Tensor]
+        self, mock_model: Mock, sample_ci: dict[str, torch.Tensor]
     ):
         """Test that CIHistograms stops accumulating after n_batches_accum."""
         n_batches_accum = 3
-        ci_hist = CIHistograms(mock_model, mock_config, n_batches_accum=n_batches_accum)
+        ci_hist = CIHistograms(mock_model, n_batches_accum=n_batches_accum)
 
         # Create dummy batch and target_out
         batch = torch.randn(4, 8)
@@ -51,18 +50,18 @@ class TestCIHistograms:
 
         # Watch more batches than n_batches_accum
         for _ in range(n_batches_accum + 2):
-            ci_hist.watch_batch(batch, target_out, sample_ci)
+            ci_hist.update(
+                batch=batch, target_out=target_out, ci=sample_ci, ci_upper_leaky=sample_ci
+            )
 
         # Check that only n_batches_accum were accumulated
-        assert ci_hist.batches_seen == n_batches_accum + 2  # Total batches seen
+        assert ci_hist.batches_seen == n_batches_accum
         assert len(ci_hist.causal_importances["layer1"]) == n_batches_accum
         assert len(ci_hist.causal_importances["layer2"]) == n_batches_accum
 
-    def test_none_n_batches_accum(
-        self, mock_model: Mock, mock_config: Mock, sample_ci: dict[str, torch.Tensor]
-    ):
+    def test_none_n_batches_accum(self, mock_model: Mock, sample_ci: dict[str, torch.Tensor]):
         """Test unlimited batch accumulation when n_batches_accum is None."""
-        ci_hist = CIHistograms(mock_model, mock_config, n_batches_accum=None)
+        ci_hist = CIHistograms(mock_model, n_batches_accum=None)
 
         batch = torch.randn(4, 8)
         target_out = torch.randn(4, 8, 100)
@@ -70,28 +69,20 @@ class TestCIHistograms:
         # Watch many batches
         num_batches = 10
         for _ in range(num_batches):
-            ci_hist.watch_batch(batch, target_out, sample_ci)
+            ci_hist.update(
+                batch=batch, target_out=target_out, ci=sample_ci, ci_upper_leaky=sample_ci
+            )
 
         # All batches should be accumulated
         assert ci_hist.batches_seen == num_batches
         assert len(ci_hist.causal_importances["layer1"]) == num_batches
         assert len(ci_hist.causal_importances["layer2"]) == num_batches
 
-    def test_empty_compute(self, mock_model: Mock, mock_config: Mock):
-        """Test compute() when no batches have been watched."""
-        ci_hist = CIHistograms(mock_model, mock_config)
+    def test_empty_compute(self, mock_model: Mock):
+        """Test compute() when no batches have been updated."""
 
-        with patch("spd.eval.plot_ci_values_histograms") as mock_plot:
-            mock_plot.return_value = Image.new("RGB", (100, 100))
+        ci_hist = CIHistograms(mock_model)
 
-            # When no batches watched, causal_importances dict has empty lists
-            # But we still need to mock the model.components to match the compute() logic
-            result = ci_hist.compute()
-
-            # Should still call plot with empty dict
-            mock_plot.assert_called_once()
-            combined_ci = mock_plot.call_args[1]["causal_importances"]
-
-            # Dict will be empty since no batches were watched
-            assert len(combined_ci) == 0
-            assert "figures/causal_importance_values" in result
+        # When no batches watched, compute will raise a RuntimeError
+        with pytest.raises(RuntimeError, match="expected a non-empty list of Tensors"):
+            ci_hist.compute()

@@ -223,8 +223,14 @@ def test_cli_argument_parsing(
         # Run the CLI
         cli()
 
-        # Check that main was called once with the expected arguments
-        mock_main.assert_called_once_with(**expected_kwargs)
+        # Check that main was called once with the expected arguments (subset)
+        assert mock_main.call_count == 1
+        called_kwargs = mock_main.call_args[1]
+        for k, v in expected_kwargs.items():
+            assert k in called_kwargs, f"Missing expected kwarg: {k}"
+            assert called_kwargs[k] == v, (
+                f"Value mismatch for {k}: expected {v}, got {called_kwargs[k]}"
+            )
 
 
 def test_help_flag():

@@ -14,6 +14,7 @@ from spd.experiments.ih.configs import InductionHeadsTrainConfig, InductionModel
 from spd.experiments.ih.model import InductionTransformer
 from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
+from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 
@@ -253,7 +254,7 @@ if __name__ == "__main__":
     # We need 4 "spots" for the induction pair,
     # and 1 spot for the BOS token.
     prefix_window = seq_length - 3
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
     config = InductionHeadsTrainConfig(
         ih_model_config=InductionModelConfig(
             vocab_size=128,
