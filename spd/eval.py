@@ -50,7 +50,7 @@ from spd.metrics.stochastic_recon_loss import StochasticReconLoss
 from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
 from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
-from spd.models.component_model import CachedOutput, ComponentModel
+from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import extract_batch_data
 
@@ -250,7 +250,7 @@ def evaluate(
         batch_raw = next(eval_iterator)
         batch = extract_batch_data(batch_raw).to(device)
 
-        target_output: CachedOutput = model(batch, cache_type="input")
+        target_output: OutputWithCache = model(batch, cache_type="input")
         ci, ci_upper_leaky = model.calc_causal_importances(
             pre_weight_acts=target_output.cache,
             sigmoid_type=run_config.sigmoid_type,
