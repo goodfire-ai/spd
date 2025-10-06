@@ -15,7 +15,6 @@ target_module_patterns:
   - "layers.*.mlp_in"
   - "layers.*.mlp_out"
 use_delta_component: true
-
 # --- Loss Coefficients ---
 faithfulness_coeff: null
 ci_recon_coeff: null
