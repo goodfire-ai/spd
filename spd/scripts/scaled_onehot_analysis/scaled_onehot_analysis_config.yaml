@@ -1,0 +1,23 @@
+# Configuration for scaled one-hot vector analysis
+# This script analyzes how ResidMLP models respond to scaled one-hot vectors
+
+# --- Model ---
+model_path: "wandb:goodfire/spd/runs/6hk3uciu"  # Wandb URL for resid_mlp model
+model_type: "target"  # Model type: 'spd', 'target', or 'auto' (auto-detect based on path)
+
+# --- Analysis Parameters ---
+min_scale: -1.5          # Minimum scale for one-hot vectors
+max_scale: 1.5           # Maximum scale for one-hot vectors  
+n_steps: 50              # Number of scale steps
+n_features_to_plot: 5    # Number of input features to analyze
+subtract_inputs: true    # Whether to subtract inputs from outputs
+
+# --- Plotting ---
+figsize: [12, 8]         # Figure size per plot (width, height)
+dpi: 150                 # DPI for figures
+
+# --- Device ---
+device: "auto"           # Device to use (auto, cpu, cuda)
+
+# --- Output ---
+output_dir: null         # Directory to save results (null = use default)
