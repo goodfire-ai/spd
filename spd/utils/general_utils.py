@@ -421,3 +421,15 @@ def get_linear_annealed_p(
         # Linear interpolation between start and end fractions
         progress = (cur_frac - p_anneal_start_frac) / (p_anneal_end_frac - p_anneal_start_frac)
         return initial_p + (p_anneal_final_p - initial_p) * progress
+
+
+def get_module_devices(model: nn.Module) -> set[torch.device]:
+    """Get the set of devices on which the model's parameters are located."""
+    return {param.device for param in model.parameters()}
+
+
+def get_module_device(model: nn.Module) -> torch.device:
+    """Get the device of the model's parameters. Assumes all parameters are on the same device."""
+    devices: set[torch.device] = get_module_devices(model)
+    assert len(devices) == 1, f"Model parameters are on multiple devices: {devices}"
+    return devices.pop()
