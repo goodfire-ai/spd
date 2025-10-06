@@ -32,6 +32,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: disk usage
+        run: | 
+          echo "disk"
+          df -h
+          echo "root"
+          du -h -d 1 / 2>temp.txt
+          echo "spd"
+          du -h -d 1
+          echo "spd depth 2"
+          du -h -d 2
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -42,8 +53,34 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+
+      - name: disk usage
+        run: | 
+          echo "disk"
+          df -h
+          echo "root"
+          du -h -d 1 / 2>temp.txt
+          echo "spd"
+          du -h -d 1
+          echo "spd depth 2"
+          du -h -d 2
+
+
       - name: Install dependencies
         run: uv sync
+
+
+      - name: disk usage
+        run: | 
+          echo "disk"
+          df -h
+          echo "root"
+          du -h -d 1 / 2>temp.txt
+          echo "spd"
+          du -h -d 1
+          echo "spd depth 2"
+          du -h -d 2
+
 
       - name: Print dependencies
         run: uv pip list
