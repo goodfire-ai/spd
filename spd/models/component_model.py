@@ -551,6 +551,25 @@ class ComponentModel(LoadableModule):
 def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
     """Maps deprecated state dict keys to new state dict keys"""
     for key in list(state_dict.keys()):
+        new_key: str = key
         # We used to have "_gates.*", now we have "_ci_fns.*"
-        if "_gates." in key:
-            state_dict[key.replace("_gates.", "_ci_fns.")] = state_dict.pop(key)
+        if "_gates." in new_key:
+            new_key = new_key.replace("_gates.", "_ci_fns.")
+        # We used to have prefix "patched_model.*", now we have "target_model.*"
+        if new_key.startswith("patched_model."):
+            new_key = "target_model." + new_key.removeprefix("patched_model.")
+        # We used to have "*.original.weight", now we have "*.weight"
+        if new_key.endswith(".original.weight"):
+            new_key = new_key.removesuffix(".original.weight") + ".weight"
+        # We used to have "*.components.{U,V}", now we have "_components.*.{U,V}"
+        if new_key.endswith(".components.U") or new_key.endswith(".components.V"):
+            module_path: str = (
+                new_key.removeprefix("target_model.")
+                .removesuffix(".components.U")
+                .removesuffix(".components.V")
+            )
+            # module path has "." replaced with "-"
+            new_key = f"_components.{module_path.replace('.', '-')}.{new_key.split('.')[-1]}"
+        # replace if modified
+        if new_key != key:
+            state_dict[new_key] = state_dict.pop(key)
