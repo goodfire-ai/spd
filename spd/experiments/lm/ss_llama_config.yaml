@@ -1,9 +1,9 @@
-C: 2000
-adv_mix_adv_weight_end: 0.05
-adv_mix_adv_weight_start: 0.05
+C: 5000
+adv_mix_adv_weight_end: 0.1
+adv_mix_adv_weight_start: 0.1
 adv_mix_end_frac: 1.0
-adv_mix_rand_weight_end: 0.95
-adv_mix_rand_weight_start: 0.95
+adv_mix_rand_weight_end: 0.9
+adv_mix_rand_weight_start: 0.9
 adv_mix_start_frac: 0.0
 batch_size: 256
 ci_alive_threshold: 0.0
@@ -19,38 +19,39 @@ eval_metrics:
     n_batches_accum: 5
 - classname: ComponentActivationDensity
   extra_init_kwargs: {}
-- classname: CI_L0
-  extra_init_kwargs:
-    groups:
-      layer_0:
-      - model.layers.0.*
+# - classname: CI_L0
+#   extra_init_kwargs:
+#     groups:
+#       layer_0:
+#       - model.layers.0.*
 - classname: CEandKLLosses
   extra_init_kwargs:
     rounding_threshold: 0.0
 - classname: CIMeanPerComponent
   extra_init_kwargs: {}
-- classname: SubsetReconstructionLoss
-  extra_init_kwargs:
-    exclude_patterns: null
-    include_patterns:
-      layer_0_only:
-      - model.layers.0.*
-    n_mask_samples: 1
+# - classname: SubsetReconstructionLoss
+#   extra_init_kwargs:
+#     exclude_patterns: null
+#     include_patterns:
+#       layer_0_only:
+#       - model.layers.0.*
+    # n_mask_samples: 1
 - classname: FaithfulnessLoss
   extra_init_kwargs: {}
 faithfulness_coeff: null
 gate_hidden_dims:
-- 1000
-gate_type: shared_mlp
+- 16
+gate_type: mlp
 gradient_accumulation_steps: 1
 identity_module_patterns: null
-importance_minimality_coeff: 0.001
+importance_minimality_coeff: 5e-2
 importance_minimality_coeff_end_frac: 0.5
-importance_minimality_coeff_final: 0.001
+importance_minimality_coeff_final: 5e-2
 importance_minimality_coeff_start_frac: 0.0
 lr: 0.0005
 lr_exponential_halflife: null
 lr_schedule: constant
+
 lr_warmup_pct: 0.0
 n_eval_steps: 5
 n_examples_until_dead: 1368400
@@ -61,9 +62,9 @@ p_anneal_end_frac: 1.0
 p_anneal_final_p: null
 p_anneal_start_frac: 1.0
 pgd_mask_enabled: true
-pgd_mask_random_init: false
-pgd_mask_step_size: 1.0
-pgd_mask_steps: 1
+pgd_mask_random_init: true
+pgd_mask_step_size: 0.5
+pgd_mask_steps: 2
 pnorm: 1.0
 pretrained_model_class: transformers.LlamaForCausalLM
 pretrained_model_name: SimpleStories/SimpleStories-1.25M
@@ -75,14 +76,15 @@ seed: 0
 sigmoid_type: leaky_hard
 slow_eval_freq: 2000
 slow_eval_on_first_step: true
-steps: 10000
+steps: 500000
 stochastic_recon_coeff: null
 stochastic_recon_layerwise_coeff: null
 stochastic_recon_subset_coeff: 1.0
 target_module_patterns:
-- model.layers.0.mlp.gate_proj
-- model.layers.0.mlp.down_proj
-- model.layers.0.mlp.up_proj
+- model.embed_tokens
+# - model.layers.0.mlp.gate_proj
+# - model.layers.0.mlp.down_proj
+# - model.layers.0.mlp.up_proj
 task_config:
   buffer_size: 1000
   column_name: story
