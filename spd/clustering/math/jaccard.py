@@ -16,10 +16,9 @@ where:
 
 # %%
 import torch
-from torch import Tensor
 from jaxtyping import Bool, Int
-
 from muutils.dbg import dbg
+from torch import Tensor
 
 # def per_row_label_counts(X: Int[Tensor, "k n"]) -> list[Tensor]:
 #     """Return a list of 1D count arrays, one per row."""
@@ -38,7 +37,6 @@ def relabel_singletons(
     counts: Int[Tensor, " k"] = torch.bincount(x)
     singleton_mask: Bool[Tensor, " k"] = counts == 1
 
-    
     x_relabel: Int[Tensor, " n"] = x.clone()
     dbg(x)
     dbg(singleton_mask)
@@ -56,8 +54,7 @@ def relabel_singletons(
     n_unique_nonsingleton_labels: int = non_singleton_labels.shape[0]
     dbg(n_unique_nonsingleton_labels)
     old_to_new: dict[int, int] = {
-        old: new
-        for new, old in enumerate(sorted(non_singleton_labels.tolist()))
+        old: new for new, old in enumerate(sorted(non_singleton_labels.tolist()))
     }
     dbg(old_to_new)
 
