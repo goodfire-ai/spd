@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # timeout-minutes: 15
+    # timeout-minutes: 15 # TODO: see https://github.com/goodfire-ai/spd/issues/114
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,7 +50,6 @@ jobs:
           mpi: openmpi
 
       - name: Run tests
-        # github actions workers have 4 cores
         run: uv run pytest tests/ --runslow --durations 10 --numprocesses auto
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
