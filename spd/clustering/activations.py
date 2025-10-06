@@ -7,7 +7,7 @@ from jaxtyping import Bool, Float, Float16, Int
 from torch import Tensor
 
 from spd.clustering.util import ModuleFilterFunc
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.sigmoids import SigmoidTypes
 
 
@@ -20,14 +20,13 @@ def component_activations(
     """Get the component activations over a **single** batch."""
     causal_importances: dict[str, Float[Tensor, " n_steps C"]]
     with torch.no_grad():
-        _, pre_weight_acts = model.forward(
+        model_output: OutputWithCache = model(
             batch.to(device),
-            mode="input_cache",
-            module_names=model.module_paths,
+            cache_type="input",
         )
 
         causal_importances, _ = model.calc_causal_importances(
-            pre_weight_acts=pre_weight_acts,
+            pre_weight_acts=model_output.cache,
             sigmoid_type=sigmoid_type,
             sampling="continuous",
             detach_inputs=False,

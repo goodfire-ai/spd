@@ -106,7 +106,7 @@ def expand_to_onehot(
 def show_matrix(mat: Tensor, title: str = "", cmap: str = "viridis") -> None:
     """Display a matrix with values annotated on each cell."""
     mat_np = mat.cpu().numpy()
-    fig, ax = plt.subplots()
+    _fig, ax = plt.subplots()
     im = ax.matshow(mat_np, cmap=cmap)
 
     # Add text annotations
@@ -138,8 +138,8 @@ def jaccard_index(
 ) -> Float[Tensor, " s s"]:
     """compute pairwise jaccard indices between rows of X"""
     s: int
-    n: int
-    s, n = X.shape
+    _n: int
+    s, _n = X.shape
 
     X_expanded_list: list[Int[Tensor, " k n"]] = [
         expand_to_onehot(*process_singletons(X[i])) for i in range(s)
@@ -151,7 +151,7 @@ def jaccard_index(
     #     fl
     #     # Int[Tensor, " k_i k_j"], # value at (p, q) is jaccard index between two clusters
     # ] = {}
-    _jaccard: Float[Tensor, " s s"] = torch.full((s, s), fill_value=torch.nan)
+    jaccard: Float[Tensor, " s s"] = torch.full((s, s), fill_value=torch.nan)
     for i in range(s):
         for j in range(i, s):
             X_i: Int[Tensor, " k_i n"] = X_expanded_list[i].to(torch.int16)
@@ -174,6 +174,8 @@ def jaccard_index(
             )
 
             # jaccard[i, j] = jaccard_mat.mean()
+
+    return jaccard
 
 
 jaccard_index(
