@@ -7,6 +7,8 @@ from torch import Tensor
 
 from spd.clustering.consts import GroupIdxsTensor
 
+# pyright: reportUnnecessaryTypeIgnoreComment=false
+
 
 @dataclass(kw_only=True, slots=True)
 class GroupMerge:
