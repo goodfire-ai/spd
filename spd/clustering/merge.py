@@ -44,7 +44,7 @@ class LogCallback(Protocol):
 
 def merge_iteration(
     merge_config: MergeConfig,
-    activations: Float[Tensor, "n_steps c"],
+    activations: Float[Tensor, "samples C"],
     component_labels: list[str],
     log_callback: LogCallback | None = None,
     batch_id: str = "unk",
@@ -62,7 +62,7 @@ def merge_iteration(
 
     # compute coactivations
     # --------------------------------------------------
-    activation_mask_orig: Bool[Tensor, "n_steps c"] | Float[Tensor, "n_steps c"] | None = (
+    activation_mask_orig: Bool[Tensor, "samples C"] | Float[Tensor, "samples C"] | None = (
         activations > merge_config.activation_threshold
         if merge_config.activation_threshold is not None
         else activations

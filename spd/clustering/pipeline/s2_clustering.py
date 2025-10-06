@@ -106,7 +106,7 @@ def run_clustering(
     batch: Int[Tensor, "batch seq"] = storage.load_batch(data_path).to(device)
     logger_call(f"loaded batch {batch_id} with shape {batch.shape}")
 
-    activations_dict: dict[str, Float[Tensor, "batch seq n_components"]] = component_activations(
+    activations_dict: dict[str, Float[Tensor, "batch seq C"]] | dict[str, Float[Tensor, "batch C"]] = component_activations(
         model=model,
         batch=batch,
         device=device,

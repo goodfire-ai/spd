@@ -45,8 +45,8 @@ def plot_activations(
     """
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    act_dict: dict[str, Float[Tensor, " n_steps c"]] = processed_activations.activations_raw
-    act_concat: Float[Tensor, " n_steps c"] = processed_activations.activations
+    act_dict: dict[str, Float[Tensor, "samples C"]] = processed_activations.activations_raw
+    act_concat: Float[Tensor, "samples C"] = processed_activations.activations
     coact: Float[Tensor, " c c"] = compute_coactivatons(act_concat)
     labels: list[str] = processed_activations.labels
     n_samples: int = act_concat.shape[0]
@@ -118,15 +118,15 @@ def plot_activations(
         fig3, ax3 = plt.subplots(figsize=figsize_concat)
 
         # Compute gram matrix (sample similarity) and sort samples using greedy ordering
-        gram_matrix: Float[Tensor, " n_steps n_steps"] = act_concat @ act_concat.T
+        gram_matrix: Float[Tensor, "samples samples"] = act_concat @ act_concat.T
 
         # Normalize gram matrix to get cosine similarity
-        norms: Float[Tensor, " n_steps 1"] = torch.norm(act_concat, dim=1, keepdim=True)
+        norms: Float[Tensor, "samples 1"] = torch.norm(act_concat, dim=1, keepdim=True)
         norms = torch.where(norms > 1e-8, norms, torch.ones_like(norms))
-        similarity_matrix: Float[Tensor, " n_steps n_steps"] = gram_matrix / (norms @ norms.T)
+        similarity_matrix: Float[Tensor, "samples samples"] = gram_matrix / (norms @ norms.T)
 
         # Greedy ordering: start with sample most similar to all others
-        avg_similarity: Float[Tensor, " n_steps"] = similarity_matrix.mean(dim=1)
+        avg_similarity: Float[Tensor, "samples"] = similarity_matrix.mean(dim=1)
         start_idx: int = int(torch.argmax(avg_similarity).item())
 
         # Build ordering greedily
@@ -150,10 +150,10 @@ def plot_activations(
             remaining.remove(best_idx)
             current_idx = best_idx
 
-        sorted_indices: Int[Tensor, " n_steps"] = torch.tensor(
+        sorted_indices: Int[Tensor, " samples"] = torch.tensor(
             ordered_indices, dtype=torch.long, device=act_concat.device
         )
-        act_concat_sorted: Float[Tensor, " n_steps c"] = act_concat[sorted_indices]
+        act_concat_sorted: Float[Tensor, "samples C"] = act_concat[sorted_indices]
 
         # Handle log10 properly - add small epsilon to avoid log(0)
         act_sorted_data: np.ndarray = act_concat_sorted.T.cpu().numpy()

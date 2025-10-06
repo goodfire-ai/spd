@@ -16,9 +16,9 @@ def component_activations(
     device: torch.device | str,
     batch: Int[Tensor, "batch_size n_ctx"],
     sigmoid_type: SigmoidTypes,
-) -> dict[str, Float[Tensor, " n_steps C"]]:
+) -> dict[str, Float[Tensor, "samples C"]]:
     """Get the component activations over a **single** batch."""
-    causal_importances: dict[str, Float[Tensor, " n_steps C"]]
+    causal_importances: dict[str, Float[Tensor, "samples C"]]
     with torch.no_grad():
         model_output: OutputWithCache = model(
             batch.to(device),
@@ -36,18 +36,18 @@ def component_activations(
 
 
 def compute_coactivatons(
-    activations: Float[Tensor, " n_steps c"] | Bool[Tensor, " n_steps c"],
+    activations: Float[Tensor, "samples C"] | Bool[Tensor, "samples C"],
 ) -> Float16[Tensor, " c c"]:
     """Compute the coactivations matrix from the activations."""
     # TODO: this works for both boolean and continuous activations,
     # but we could do better by just using OR for boolean activations
     # and maybe even some bitshift hacks. but for now, we convert to float16
-    activations_f16: Float16[Tensor, " n_steps c"] = activations.to(torch.float16)
+    activations_f16: Float16[Tensor, "samples C"] = activations.to(torch.float16)
     return activations_f16.T @ activations_f16
 
 
 class FilteredActivations(NamedTuple):
-    activations: Float[Tensor, " n_steps c"]
+    activations: Float[Tensor, "samples C"]
     "activations after filtering dead components"
 
     labels: list[str]
@@ -72,7 +72,7 @@ class FilteredActivations(NamedTuple):
 
 
 def filter_dead_components(
-    activations: Float[Tensor, " n_steps c"],
+    activations: Float[Tensor, "samples C"],
     labels: list[str],
     filter_dead_threshold: float = 0.01,
 ) -> FilteredActivations:
@@ -112,10 +112,10 @@ def filter_dead_components(
 class ProcessedActivations:
     """Processed activations after filtering and concatenation"""
 
-    activations_raw: dict[str, Float[Tensor, " n_steps C"]]
+    activations_raw: dict[str, Float[Tensor, "samples C"]]
     "activations after filtering, but prior to concatenation"
 
-    activations: Float[Tensor, " n_steps c"]
+    activations: Float[Tensor, "samples C"]
     "activations after filtering and concatenation"
 
     labels: list[str]
@@ -189,7 +189,7 @@ class ProcessedActivations:
 def process_activations(
     activations: dict[
         str,  # module name to
-        Float[Tensor, " n_steps C"]  # (sample x component gate activations)
+        Float[Tensor, "samples C"]  # (sample x component gate activations)
         | Float[Tensor, " n_sample n_ctx C"],  # (sample x seq index x component gate activations)
     ],
     filter_dead_threshold: float = 0.01,
@@ -208,7 +208,7 @@ def process_activations(
 
     # reshape -- special cases for llms
     # ============================================================
-    activations_: dict[str, Float[Tensor, " n_steps C"]]
+    activations_: dict[str, Float[Tensor, "samples C"]]
     if seq_mode == "concat":
         # Concatenate the sequence dimension into the sample dimension
         activations_ = {
@@ -240,7 +240,7 @@ def process_activations(
         total_c += c
 
     # concat the activations
-    act_concat: Float[Tensor, " n_steps c"] = torch.cat(
+    act_concat: Float[Tensor, "samples C"] = torch.cat(
         [activations_[key] for key in activations_], dim=-1
     )
 
