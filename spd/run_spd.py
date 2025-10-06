@@ -25,7 +25,7 @@ from spd.log import logger
 from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
-from spd.models.component_model import CachedOutput, ComponentModel
+from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -230,7 +230,7 @@ def optimize(
             weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
-            target_model_output: CachedOutput = wrapped_model(batch, cache_type="input")
+            target_model_output: OutputWithCache = wrapped_model(batch, cache_type="input")
             # NOTE: target_model_output is now part of the DDP computation graph, so when it
             # passes through the parameters in calc_causal_importances and compute_total_loss below,
             # the DDP hook will get called and gradients will be properly synced across ranks on the

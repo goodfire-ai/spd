@@ -69,7 +69,7 @@ class SPDRunInfo(RunInfo[Config]):
         return cls(checkpoint_path=comp_model_path, config=config)
 
 
-class CachedOutput(NamedTuple):
+class OutputWithCache(NamedTuple):
     output: Tensor
     cache: dict[str, Tensor]
 
@@ -291,7 +291,7 @@ class ComponentModel(LoadableModule):
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["input"],
         **kwargs: Any,
-    ) -> CachedOutput: ...
+    ) -> OutputWithCache: ...
 
     @overload
     def __call__(
@@ -303,7 +303,7 @@ class ComponentModel(LoadableModule):
     ) -> Tensor: ...
 
     @override
-    def __call__(self, *args: Any, **kwargs: Any) -> Tensor | CachedOutput:
+    def __call__(self, *args: Any, **kwargs: Any) -> Tensor | OutputWithCache:
         return super().__call__(*args, **kwargs)
 
     @override
@@ -313,7 +313,7 @@ class ComponentModel(LoadableModule):
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["input", "none"] = "none",
         **kwargs: Any,
-    ) -> Tensor | CachedOutput:
+    ) -> Tensor | OutputWithCache:
         """Forward pass with optional component replacement and/or input caching.
 
         This method handles the following 4 cases:
@@ -335,7 +335,7 @@ class ComponentModel(LoadableModule):
                 mask_infos is None, cache the inputs to all modules in self.module_paths.
 
         Returns:
-            CachedOutput object if cache_type is "input", otherwise the model output tensor.
+            OutputWithCache object if cache_type is "input", otherwise the model output tensor.
         """
         if mask_infos is None and cache_type == "none":
             # No hooks needed. Do a regular forward pass of the target model.
@@ -365,7 +365,7 @@ class ComponentModel(LoadableModule):
         out = self._extract_output(raw_out)
         match cache_type:
             case "input":
-                return CachedOutput(output=out, cache=cache)
+                return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
 
