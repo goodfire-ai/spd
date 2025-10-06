@@ -130,6 +130,7 @@ TrainMetricConfigType = (
     | StochasticReconLayerwiseLossTrainConfig
     | StochasticReconLossTrainConfig
     | StochasticReconSubsetLossTrainConfig
+    | StochasticHiddenActsReconConfig
 )
 EvalMetricConfigType = (
     CEandKLLossesConfig

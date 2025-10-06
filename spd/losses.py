@@ -10,6 +10,7 @@ from spd.configs import (
     CIMaskedReconSubsetLossTrainConfig,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
+    StochasticHiddenActsReconConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
     StochasticReconSubsetLossTrainConfig,
@@ -21,6 +22,7 @@ from spd.metrics import (
     ci_masked_recon_subset_loss,
     faithfulness_loss,
     importance_minimality_loss,
+    stochastic_hidden_acts_recon,
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
@@ -41,6 +43,7 @@ def compute_total_loss(
     use_delta_component: bool,
     n_mask_samples: int,
     output_loss_type: Literal["mse", "kl"],
+    pre_weight_acts: dict[str, Float[Tensor, "..."]] | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 
@@ -120,6 +123,21 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
+                    ci=ci,
+                    weight_deltas=weight_deltas,
+                )
+            case StochasticHiddenActsReconConfig():
+                if pre_weight_acts is None:
+                    raise ValueError(
+                        "pre_weight_acts is required for StochasticHiddenActsRecon but was not provided"
+                    )
+                loss = stochastic_hidden_acts_recon(
+                    model=model,
+                    sampling=sampling,
+                    use_delta_component=use_delta_component,
+                    n_mask_samples=n_mask_samples,
+                    batch=batch,
+                    pre_weight_acts=pre_weight_acts,
                     ci=ci,
                     weight_deltas=weight_deltas,
                 )
