@@ -16,7 +16,7 @@ where:
 
 # %%
 import torch
-from jaxtyping import Bool, Int
+from jaxtyping import Bool, Int, Float
 from muutils.dbg import dbg
 from torch import Tensor
 
@@ -65,11 +65,10 @@ def process_singletons(
     return x_relabel, n_unique_nonsingleton_labels
 
 
-X = torch.tensor(
-    [0, 3, 3, 2, 4, 0, 5, 6, 7, 7, 7],
-)
-dbg(X)
-process_singletons(X)
+# X_1 = torch.tensor([0, 3, 3, 2, 4, 0, 5, 6, 7, 7, 7])
+# X_2 = torch.tensor([1, 1, 2, 3, 3, 1, 4, 5, 6, 6, 6])
+# dbg(X_1)
+# process_singletons(X_1)
 
 
 # def to_matrix(
@@ -89,7 +88,7 @@ process_singletons(X)
 def expand_to_onehot(
     x: Int[Tensor, " n"],
     k_groups: int,
-) -> Bool[Tensor, " k_groups n_components"]:
+) -> Bool[Tensor, " k_groups+1 n_components"]:
     """expand a label (possibly having -1s) vector to a one-hot matrix"""
     n_components: int = x.shape[0]
 
@@ -105,9 +104,55 @@ def expand_to_onehot(
 
 import matplotlib.pyplot as plt
 
-plt.imshow(expand_to_onehot(*process_singletons(X)))
+# plt.imshow(expand_to_onehot(*process_singletons(X_1)))
+# plt.show()
+# plt.imshow(expand_to_onehot(*process_singletons(X_2)))
+# plt.show()
 
 
-def jaccard_index
+def jaccard_index(
+    X: Int[Tensor, " s n"],
+) -> Float[Tensor, " s s"]:
+    """compute pairwise jaccard indices between rows of X"""
+    s: int
+    n: int
+    s, n = X.shape
+
+    X_expanded_list: list[Int[Tensor, " k n"]] = [
+        expand_to_onehot(*process_singletons(X[i]))
+        for i in range(s)
+    ]
+
+    # compute jaccard for each pair of rows
+    jaccard: dict[
+        tuple[int, int], # key is (i, j) from the rows of X
+        Int[Tensor, " k_i k_j"], # value at (p, q) is jaccard index between two clusters
+    ] = {}
+    for i in range(s):
+        for j in range(i, s):
+            X_i: Int[Tensor, " k_i n"] = X_expanded_list[i].to(torch.int16)
+            X_j: Int[Tensor, " k_j n"] = X_expanded_list[j].to(torch.int16)
+            intersects: Int[Tensor, " k_i k_j"] = X_i @ X_j.T
+            unions: Int[Tensor, " k_i k_j"] = X_i.sum(dim=1, keepdim=True) + X_j.sum(dim=1, keepdim=True) - intersects
+            jaccard_mat: Int[Tensor, " k_i k_j"]  = intersects / unions
+
+            plt.matshow(X_i.cpu())
+            plt.title(f"One-hot matrix for row {i} of X\nshape={X_i.shape}")
+            plt.show()
+            plt.matshow(X_j.cpu())
+            plt.title(f"One-hot matrix for row {j} of X\nshape={X_j.shape}")
+            plt.show()
+
+            plt.matshow(jaccard_mat.cpu())
+            plt.title(f"Gram matrix between row {i} and row {j}\n$[{jaccard_mat.min()}, {jaccard_mat.max()}]$")
+            plt.show()
+
+
+jaccard_index(torch.tensor([
+    # [1, 2, 3, 3],
+    [0, 1, 1, 2, 3, 3],
+    [0, 1, 1, 1, 2, 2],
+    # [0, 1, 2, 3],
+]))
 
 # dbg(X - z[0])
