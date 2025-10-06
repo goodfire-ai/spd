@@ -85,8 +85,6 @@ TEST_CONFIG = {
 
 
 @pytest.mark.slow
-@pytest.mark.distributed
-@pytest.mark.xdist_group("serial")
 class TestDistributedDeterminicity:
     def test_distributed_determinicity(self):
         """Test DDP determinicity for SPD runs which don't use stochastic masks.

@@ -223,8 +223,6 @@ def run_all_tests():
 
 # ===== Pytest wrapper =====
 @pytest.mark.slow
-@pytest.mark.distributed
-@pytest.mark.xdist_group("serial")
 class TestDistributedAliveComponentsTracker:
     """Pytest wrapper for distributed AliveComponentsTracker tests."""
 
