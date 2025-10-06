@@ -9,27 +9,26 @@ from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
-def _stochastic_recon_layerwise_loss_update(
+def _stochastic_hidden_acts_recon_loss_update(
     model: ComponentModel,
     sampling: Literal["continuous", "binomial"],
     use_delta_component: bool,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
+    pre_weight_acts: dict[str, Float[Tensor, "..."]],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     assert weight_deltas, "Empty weight deltas"
+    assert pre_weight_acts, "Empty pre_weight_acts"
     device = next(iter(ci.values())).device
-    sum_loss = torch.tensor(0.0, device=device)
+    sum_mse = torch.tensor(0.0, device=device)
     n_examples = 0
 
-    stochastic_mask_infos_list = [
+    stoch_mask_infos_list = [
         calc_stochastic_component_mask_info(
             causal_importances=ci,
             sampling=sampling,
@@ -38,50 +37,52 @@ def _stochastic_recon_layerwise_loss_update(
         )
         for _ in range(n_mask_samples)
     ]
+    for stoch_mask_infos in stoch_mask_infos_list:
+        comp_pre_weight_acts = model(batch, mask_infos=stoch_mask_infos, cache_type="input").cache
 
-    for stochastic_mask_infos in stochastic_mask_infos_list:
-        for module_name, mask_info in stochastic_mask_infos.items():
-            out = model(batch, mask_infos={module_name: mask_info})
-            loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+        # Calculate MSE between pre_weight_acts with and without components
+        for layer_name, target_acts in pre_weight_acts.items():
+            assert layer_name in comp_pre_weight_acts, f"{layer_name} not in comp_pre_weight_acts"
+            mse = torch.nn.functional.mse_loss(
+                comp_pre_weight_acts[layer_name], target_acts, reduction="sum"
+            )
+            sum_mse += mse
+            n_examples += target_acts.numel()
 
-            n_examples += out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
-            sum_loss += loss
-    return sum_loss, n_examples
+    return sum_mse, n_examples
 
 
-def _stochastic_recon_layerwise_loss_compute(
-    sum_loss: Float[Tensor, ""], n_examples: Int[Tensor, ""] | int
+def _stochastic_hidden_acts_recon_loss_compute(
+    sum_mse: Float[Tensor, ""], n_examples: Int[Tensor, ""] | int
 ) -> Float[Tensor, ""]:
-    return sum_loss / n_examples
+    return sum_mse / n_examples
 
 
-def stochastic_recon_layerwise_loss(
+def stochastic_hidden_acts_recon_loss(
     model: ComponentModel,
     sampling: Literal["continuous", "binomial"],
     use_delta_component: bool,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
+    pre_weight_acts: dict[str, Float[Tensor, "..."]],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
 ) -> Float[Tensor, ""]:
-    sum_loss, n_examples = _stochastic_recon_layerwise_loss_update(
-        model=model,
-        sampling=sampling,
-        use_delta_component=use_delta_component,
-        n_mask_samples=n_mask_samples,
-        output_loss_type=output_loss_type,
-        batch=batch,
-        target_out=target_out,
-        ci=ci,
-        weight_deltas=weight_deltas,
+    sum_mse, n_examples = _stochastic_hidden_acts_recon_loss_update(
+        model,
+        sampling,
+        use_delta_component,
+        n_mask_samples,
+        batch,
+        pre_weight_acts,
+        ci,
+        weight_deltas,
     )
-    return _stochastic_recon_layerwise_loss_compute(sum_loss, n_examples)
+    return _stochastic_hidden_acts_recon_loss_compute(sum_mse, n_examples)
 
 
-class StochasticReconLayerwiseLoss(Metric):
-    """Recon loss when sampling with stochastic masks one layer at a time."""
+class StochasticHiddenActsReconLoss(Metric):
+    """Reconstruction loss between target and stochastic hidden activations when sampling with stochastic masks."""
 
     def __init__(
         self,
@@ -90,14 +91,12 @@ class StochasticReconLayerwiseLoss(Metric):
         sampling: Literal["continuous", "binomial"],
         use_delta_component: bool,
         n_mask_samples: int,
-        output_loss_type: Literal["mse", "kl"],
     ) -> None:
         self.model = model
         self.sampling: Literal["continuous", "binomial"] = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        self.sum_loss = torch.tensor(0.0, device=device)
+        self.sum_mse = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
     @override
@@ -105,27 +104,26 @@ class StochasticReconLayerwiseLoss(Metric):
         self,
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
+        pre_weight_acts: dict[str, Float[Tensor, "..."]],
         ci: dict[str, Float[Tensor, "... C"]],
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
         **_: Any,
     ) -> None:
-        sum_loss, n_examples = _stochastic_recon_layerwise_loss_update(
+        sum_mse, n_examples = _stochastic_hidden_acts_recon_loss_update(
             model=self.model,
             sampling=self.sampling,
             use_delta_component=self.use_delta_component,
             n_mask_samples=self.n_mask_samples,
-            output_loss_type=self.output_loss_type,
             batch=batch,
-            target_out=target_out,
+            pre_weight_acts=pre_weight_acts,
             ci=ci,
             weight_deltas=weight_deltas,
         )
-        self.sum_loss += sum_loss
+        self.sum_mse += sum_mse
         self.n_examples += n_examples
 
     @override
     def compute(self) -> Float[Tensor, ""]:
-        sum_loss = all_reduce(self.sum_loss, op=ReduceOp.SUM)
+        sum_mse = all_reduce(self.sum_mse, op=ReduceOp.SUM)
         n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM)
-        return _stochastic_recon_layerwise_loss_compute(sum_loss, n_examples)
+        return _stochastic_hidden_acts_recon_loss_compute(sum_mse, n_examples)

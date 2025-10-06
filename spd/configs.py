@@ -111,6 +111,10 @@ class StochasticReconSubsetCEAndKLConfig(BaseModel):
     exclude_patterns: dict[str, list[str]] | None
 
 
+class StochasticHiddenActsReconLossConfig(BaseModel):
+    classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
+
+
 class UVPlotsConfig(BaseModel):
     classname: Literal["UVPlots"] = "UVPlots"
     identity_patterns: list[str] | None
@@ -137,6 +141,7 @@ EvalMetricConfigType = (
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
+    | StochasticHiddenActsReconLossConfig
 )
 MetricConfigType = TrainMetricConfigType | EvalMetricConfigType
 
@@ -401,6 +406,12 @@ class Config(BaseModel):
                 logger.info(f"Renaming {key} to {cls.RENAMED_CONFIG_KEYS[key]}")
                 config_dict[cls.RENAMED_CONFIG_KEYS[key]] = val
                 del config_dict[key]
+
+            elif key in ("loss_metric_configs", "eval_metric_configs"):
+                # We used to have an extra_init_kwargs field. This is hard to map. Just remove all
+                # configs with it
+                new_vals = [cfg for cfg in val if "extra_init_kwargs" not in cfg]
+                config_dict[key] = new_vals
 
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]
