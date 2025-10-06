@@ -44,9 +44,9 @@ gate_hidden_dims:
 gate_type: shared_mlp
 gradient_accumulation_steps: 1
 identity_module_patterns: null
-importance_minimality_coeff: 0.001
+importance_minimality_coeff: 1e-2
 importance_minimality_coeff_end_frac: 0.5
-importance_minimality_coeff_final: 0.001
+importance_minimality_coeff_final: 3e-5
 importance_minimality_coeff_start_frac: 0.0
 lr: 0.0005
 lr_exponential_halflife: null
@@ -80,6 +80,7 @@ stochastic_recon_coeff: null
 stochastic_recon_layerwise_coeff: null
 stochastic_recon_subset_coeff: 1.0
 target_module_patterns:
+- model.embed_tokens
 - model.layers.0.mlp.gate_proj
 - model.layers.0.mlp.down_proj
 - model.layers.0.mlp.up_proj
