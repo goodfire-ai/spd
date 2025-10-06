@@ -28,9 +28,15 @@ from torch import Tensor
 #     ]
 
 
+<<<<<<< HEAD
 def relabel_singletons(
     x: Int[Tensor, " n"],
 ) -> Int[Tensor, " n"]:
+=======
+def process_singletons(
+    x: Int[Tensor, " n"],
+) -> tuple[Int[Tensor, " n"], int]:
+>>>>>>> feature/clustering
     """relabel anything in a singleton cluster to -1, relabel other clusters to minimize labels"""
     assert (x >= 0).all(), "input labels must be non-negative"
     # figure out where the singletons are
@@ -62,13 +68,52 @@ def relabel_singletons(
         x_relabel[x == old] = new
     dbg(x_relabel)
 
+    return x_relabel, n_unique_nonsingleton_labels
+
 
 X = torch.tensor(
     [0, 3, 3, 2, 4, 0, 5, 6, 7, 7, 7],
 )
 dbg(X)
+process_singletons(X)
 
-relabel_singletons(X)
 
+# def to_matrix(
+#     self, device: torch.device | None = None
+# ) -> Bool[Tensor, "k_groups n_components"]:
+#     if device is None:
+#         device = self.group_idxs.device
+#     mat: Bool[Tensor, "k_groups n_components"] = torch.zeros(
+#         (self.k_groups, self._n_components), dtype=torch.bool, device=device
+#     )
+#     idxs: Int[Tensor, " n_components"] = torch.arange(
+#         self._n_components, device=device, dtype=torch.int
+#     )
+#     mat[self.group_idxs.to(dtype=torch.int), idxs] = True
+#     return mat
+
+def expand_to_onehot(
+    x: Int[Tensor, " n"],
+    k_groups: int,
+) -> Bool[Tensor, " k_groups n_components"]:
+    """expand a label (possibly having -1s) vector to a one-hot matrix"""
+    n_components: int = x.shape[0]
+
+    # add 1 as -1 will map to last index and be ignored
+    mat: Bool[Tensor, " k_groups n_components"] = torch.zeros(
+        (k_groups+1, n_components), dtype=torch.bool
+    )
+    idxs: Int[Tensor, " n_components"] = torch.arange(
+        n_components, dtype=torch.int
+    )
+    mat[x.to(dtype=torch.int), idxs] = True
+    return mat
+
+import matplotlib.pyplot as plt
+
+plt.imshow(expand_to_onehot(*process_singletons(X)))
+
+
+def jaccard_index
 
 # dbg(X - z[0])

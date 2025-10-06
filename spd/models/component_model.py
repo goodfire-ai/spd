@@ -70,6 +70,8 @@ class SPDRunInfo(RunInfo[Config]):
 
 
 class OutputWithCache(NamedTuple):
+    """Output tensor and cached activations."""
+
     output: Tensor
     cache: dict[str, Tensor]
 
