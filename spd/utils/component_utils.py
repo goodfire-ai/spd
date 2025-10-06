@@ -60,40 +60,40 @@ def rand_perm(
 
 def sample_uniform_k_subset_routing_masks(
     mask_shape: tuple[int, ...],
-    modules: list[str],
+    module_names: list[str],
     device: torch.device | str = "cpu",
     generator: torch.Generator | None = None,
 ) -> dict[str, Bool[Tensor, "..."]]:
     """Creates routing masks for each module such that the number of modules routed to for each
-    position is independent and uniformly sampled from [1, len(modules)]
+    position is independent and uniformly sampled from [1, len(module_names)]
 
     Achieves this by:
-    - for each position, k is independent and uniformly sampled from [1, len(modules)]
+    - for each position, k is independent and uniformly sampled from [1, len(module_names)]
     - for each position, a k-sized random subset of modules are routed to
 
     Args:
         mask_shape: Shape of the routing masks, likely (batch,) or (batch, seq_len)
-        modules: List of modules to route to
+        module_names: List of module names to route to
 
     Returns:
         Dict mapping module names to routing masks of shape `mask_shape`.
     """
     k_modules_to_route: Int[Tensor, " ..."] = torch.randint(
         low=1,
-        high=len(modules) + 1,
+        high=len(module_names) + 1,
         size=mask_shape,
         device=device,
         generator=generator,
     )
 
     perms: Int[Tensor, "k_modules ..."] = rand_perm(
-        shape=(len(modules), *mask_shape),
+        shape=(len(module_names), *mask_shape),
         dim=0,
         device=device,
         generator=generator,
     )
 
-    return {mod: perms[i] < k_modules_to_route for i, mod in enumerate(modules)}
+    return {mod: perms[i] < k_modules_to_route for i, mod in enumerate(module_names)}
 
 
 def calc_stochastic_component_mask_info(

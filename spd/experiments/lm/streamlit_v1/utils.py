@@ -8,13 +8,18 @@ from dataclasses import dataclass
 from typing import cast
 
 import streamlit as st
-import torch
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from spd.configs import Config
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.models.components import EmbeddingComponents, LinearComponents, MLPGates, VectorMLPGates
+from spd.models.components import (
+    EmbeddingComponents,
+    LinearComponents,
+    MLPCiFn,
+    VectorMLPCiFn,
+)
+from spd.utils.distributed_utils import get_device
 
 DEFAULT_WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "spd")
 
@@ -26,7 +31,7 @@ class ModelData:
     model: ComponentModel
     tokenizer: PreTrainedTokenizer
     config: Config
-    gates: dict[str, MLPGates | VectorMLPGates]
+    ci_fns: dict[str, MLPCiFn | VectorMLPCiFn]
     components: dict[str, LinearComponents | EmbeddingComponents]
     layer_names: list[str]
 
@@ -60,7 +65,7 @@ def parse_wandb_url(url_or_path: str) -> str:
 @st.cache_resource(show_spinner="Loading model...")
 def load_model(model_path: str) -> ModelData:
     """Load model and prepare components."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
     run_info = SPDRunInfo.from_path(model_path)
     model = ComponentModel.from_run_info(run_info)
     config = run_info.config
@@ -72,10 +77,10 @@ def load_model(model_path: str) -> ModelData:
 
     tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_name)
 
-    # Extract components and gates
-    gates = {
-        k.removeprefix("gates.").replace("-", "."): cast(MLPGates | VectorMLPGates, v)
-        for k, v in model.gates.items()
+    # Extract components and causal importance functions.
+    ci_fns = {
+        k.removeprefix("ci_fns.").replace("-", "."): cast(MLPCiFn | VectorMLPCiFn, v)
+        for k, v in model.ci_fns.items()
     }
     components = {
         k.removeprefix("components.").replace("-", "."): cast(
@@ -88,7 +93,7 @@ def load_model(model_path: str) -> ModelData:
         model=model,
         tokenizer=tokenizer,
         config=config,
-        gates=gates,
+        ci_fns=ci_fns,
         components=components,
         layer_names=sorted(list(components.keys())),
     )

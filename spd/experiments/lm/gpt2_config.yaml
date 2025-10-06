@@ -8,20 +8,22 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 768
 n_mask_samples: 1
-gate_type: "vector_mlp"
-gate_hidden_dims: [12]
+ci_fn_type: "vector_mlp"
+ci_fn_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["transformer.h.1.attn.c_attn"]
+identity_module_patterns: null
 sampling: "continuous"
-
-# --- Loss Coefficients ---
-faithfulness_coeff: null
-ci_recon_coeff: null
-stochastic_recon_coeff: null
-ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 1
-importance_minimality_coeff: 1e-3
-pnorm: 1.0
+use_delta_component: true
+loss_metric_configs:
+  - classname: "ImportanceMinimalityLoss"
+    coeff: 0.0003
+    pnorm: 2.0
+    p_anneal_start_frac: 0.0
+    p_anneal_final_p: 0.3
+    p_anneal_end_frac: 1.0
+  - classname: "StochasticReconLayerwiseLoss"
+    coeff: 2.0
 output_loss_type: kl
 
 # --- Training ---
@@ -33,6 +35,11 @@ lr_warmup_pct: 0.01
 lr_exponential_halflife: null
 gradient_accumulation_steps: 1
 
+# --- Faithfulness Warmup ---
+faithfulness_warmup_steps: 200
+faithfulness_warmup_lr: 0.01
+faithfulness_warmup_weight_decay: 0.1
+
 # --- Logging & Saving ---
 train_log_freq: 100
 eval_freq: 1000
@@ -42,17 +49,15 @@ n_eval_steps: 5
 save_freq: null
 ci_alive_threshold: 0.0
 n_examples_until_dead: 3_276_800  # train_log_freq * batch_size * max_seq_len = 100 * 64 * 512
-eval_metrics:
+eval_metric_configs:
   - classname: "CIHistograms"
-    extra_init_kwargs:
-      n_batches_accum: 5
+    n_batches_accum: 5
   - classname: "ComponentActivationDensity"
   - classname: "CI_L0"
+    groups: null
   - classname: "CEandKLLosses"
-    extra_init_kwargs:
-      rounding_threshold: 0.0
+    rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
-  - classname: "FaithfulnessLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.GPT2LMHeadModel

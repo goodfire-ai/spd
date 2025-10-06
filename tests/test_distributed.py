@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Literal, cast
 
 import pytest
 import torch
@@ -13,6 +14,7 @@ import yaml
 from spd.settings import REPO_ROOT
 from spd.utils import distributed_utils
 from spd.utils.distributed_utils import (
+    DistributedState,
     get_local_rank,
     get_rank,
     get_world_size,
@@ -25,18 +27,22 @@ TEST_CONFIG = {
     "seed": 0,
     "C": 3,
     "n_mask_samples": 1,
-    "gate_type": "vector_mlp",
-    "gate_hidden_dims": [2],
+    "ci_fn_type": "vector_mlp",
+    "ci_fn_hidden_dims": [2],
     "sigmoid_type": "leaky_hard",
     "target_module_patterns": ["model.layers.0.mlp.gate_proj"],
-    # --- Loss Coefficients ---
-    "faithfulness_coeff": 3000,
-    "recon_coeff": None,
-    "stochastic_recon_coeff": None,  # Otherwise we're non-deterministic with dp>1
-    "recon_layerwise_coeff": 1,
-    "stochastic_recon_layerwise_coeff": None,  # Otherwise we're non-deterministic with dp>1
-    "importance_minimality_coeff": 0.1,
-    "pnorm": 2.0,
+    # --- Loss metrics ---
+    "loss_metric_configs": [
+        {
+            "classname": "ImportanceMinimalityLoss",
+            "coeff": 0.1,
+            "pnorm": 2.0,
+            "eps": 1e-12,
+        },
+        # Disable stochastic terms for deterministic dp test; keep a simple layerwise recon if needed
+        {"classname": "CIMaskedReconLayerwiseLoss", "coeff": 1.0},
+        {"classname": "FaithfulnessLoss", "coeff": 3000},
+    ],
     "output_loss_type": "kl",
     # --- Training ---
     "batch_size": 2,
@@ -55,7 +61,7 @@ TEST_CONFIG = {
     "n_examples_until_dead": 999999,  # We're not tracking this
     "eval_metrics": [
         {"classname": "CI_L0"},
-        {"classname": "CEandKLLosses", "extra_init_kwargs": {"rounding_threshold": 0.1}},
+        {"classname": "CEandKLLosses", "rounding_threshold": 0.1},
     ],
     # --- Pretrained model info ---
     "pretrained_model_class": "transformers.LlamaForCausalLM",
@@ -252,8 +258,8 @@ class TestDistributedDeterminicity:
         # Compare each parameter
         for param_name in sorted(dp1_state.keys()):
             # We know that the target model is not trained, so we only care about params with
-            # "components" or "gates" in the name.
-            if "components" not in param_name and "gates" not in param_name:
+            # "components" or "ci_fns" in the name.
+            if "components" not in param_name and "ci_fns" not in param_name:
                 continue
 
             dp1_param = dp1_state[param_name]
@@ -278,21 +284,22 @@ class TestDistributedUtilities:
     def test_non_distributed_getters(self):
         """Test getter functions in non-distributed mode."""
         assert not is_distributed()
-
         assert get_rank() == 0
         assert get_world_size() == 1
         assert get_local_rank() == 0
         assert is_main_process()
-        assert not is_distributed()
 
     @pytest.mark.parametrize(
-        "cuda_available, distributed, local_rank, expected",
+        "cuda_available, distributed, local_rank, backend, expected",
         [
-            (False, False, 0, "cpu"),
-            (False, True, 1, "cpu"),
-            (True, False, 0, "cuda"),
-            (True, True, 0, "cuda:0"),
-            (True, True, 2, "cuda:2"),
+            (False, False, 0, "gloo", "cpu"),
+            (False, True, 1, "gloo", "cpu"),
+            (True, False, 0, "nccl", "cuda"),
+            (True, True, 0, "nccl", "cuda:0"),
+            (True, True, 2, "nccl", "cuda:2"),
+            # Test that gloo backend forces CPU even when CUDA is available
+            (True, True, 0, "gloo", "cpu"),
+            (True, True, 2, "gloo", "cpu"),
         ],
     )
     def test_get_device_matrix(
@@ -301,9 +308,18 @@ class TestDistributedUtilities:
         cuda_available: bool,
         distributed: bool,
         local_rank: int,
+        backend: str,
         expected: str,
     ) -> None:
         monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available, raising=False)
         monkeypatch.setattr(distributed_utils, "is_distributed", lambda: distributed)
         monkeypatch.setattr(distributed_utils, "get_local_rank", lambda: local_rank)
+        # Mock get_distributed_state to return the expected backend
+        mock_state = DistributedState(
+            rank=0,
+            world_size=2 if distributed else 1,
+            local_rank=local_rank,
+            backend=cast(Literal["nccl", "gloo"], backend),
+        )
+        monkeypatch.setattr(distributed_utils, "get_distributed_state", lambda: mock_state)
         assert distributed_utils.get_device() == expected

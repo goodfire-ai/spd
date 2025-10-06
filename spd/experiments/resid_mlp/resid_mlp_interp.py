@@ -51,7 +51,6 @@ def extract_ci_val_figures(
     figures, all_perm_indices_ci_vals = plot_causal_importance_vals(
         model=model,
         batch_shape=batch_shape,
-        device=device,
         input_magnitude=input_magnitude,
         plot_raw_cis=False,
         sigmoid_type=config.sigmoid_type,
@@ -308,6 +307,7 @@ def plot_spd_feature_contributions_truncated(
 
     n_rows = 2
     fig1, axes1 = plt.subplots(n_rows, 1, figsize=(10, 7), constrained_layout=True)
+    # TODO: whats up with these ignores?
     axes1 = np.atleast_1d(axes1)  # pyright: ignore[reportCallIssue,reportArgumentType]
 
     labelled_neurons = feature_contribution_plot(
@@ -529,7 +529,6 @@ def main(out_dir: Path, device: str):
         figs_causal: dict[str, Image.Image] = plot_causal_importance_vals(
             model=model,
             batch_shape=batch_shape,
-            device=device,
             input_magnitude=0.75,
             sampling=config.sampling,
             plot_raw_cis=False,

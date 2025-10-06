@@ -1,19 +1,18 @@
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy as np
 import torch
 from datasets import Dataset, IterableDataset, load_dataset
 from numpy.typing import NDArray
-from pydantic import BaseModel, ConfigDict
 from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from spd.log import logger
+from spd.utils.general_utils import BaseModel
 
 
 class DatasetConfig(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     name: str = "lennart-finke/SimpleStories"
     is_tokenized: bool = True
     hf_tokenizer_path: str | None = None
