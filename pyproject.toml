@@ -26,28 +26,19 @@ dependencies = [
     "streamlit-antd-components",
     "datasets",
     "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
-    # wip deps for grouping. some of these can probably be removed later.
     "scipy>=1.14.1",
-    "scikit-learn",
-    "nbconvert",
-    "seaborn",
-    "muutils", # custom (by mivanit) utils, using it for debugging
-    "zanj", # custom (by mivanit), with `muutils` it makes it easier to save/load merge histories
-    "plotly",  # wandb.errors.errors.Error: plotly is required to log interactive plots, install with: `pip install plotly` or convert the plot to an image with `wandb.Image(plt)`
+    "muutils",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
     "pytest-cov", # for coverage reports
-    "pytest-xdist", # for parallel test execution
+    "pytest-xdist", # parallel test execution
     "ruff",
     "basedpyright",
     "pre-commit",
 ]
-
-[tool.uv.sources]
-js_embedding_vis = { git = "https://github.com/mivanit/js-embedding-vis/"}
 
 [project.scripts]
 spd-run = "spd.scripts.run:cli"
@@ -60,9 +51,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["spd*"]
-
-[tool.setuptools.package-data]
-"spd.clustering.dashboard._bundled" = ["*.html"]
 
 [tool.ruff]
 line-length = 100
@@ -95,13 +83,6 @@ docstring-code-format = true
 
 [tool.ruff.lint.isort]
 known-third-party = ["wandb"]
-
-
-# TODO: remove this when actually cleaned up
-[tool.ruff.lint.per-file-ignores]
-"spd/clustering/experiments/*" = [
-    "E703", # semicolons fine for notebooks
-]
 
 [tool.pyright]
 include = ["spd", "tests"]

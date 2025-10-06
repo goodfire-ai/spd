@@ -5,7 +5,6 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-import plotly.graph_objects as go
 import wandb
 import wandb.sdk.wandb_run
 from muutils.dbg import dbg_tensor
@@ -125,70 +124,6 @@ def _create_histogram(
         ax.set_yscale("log")
 
     plt.tight_layout()
-    return fig
-
-
-def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:  # pyright: ignore[reportUnusedFunction]
-    """Create Plotly histogram figure."""
-    # get the values and stats about them
-    values: np.ndarray = tensor.flatten().detach().cpu().numpy()
-    if np.isnan(values).any():
-        values = values[~np.isnan(values)]
-    info: dict[str, Any] = array_info(tensor)
-
-    # Create Plotly histogram
-    fig: go.Figure = go.Figure()
-    fig.add_trace(
-        go.Histogram(
-            x=values,
-            nbinsx=50,
-            name=name,
-            opacity=0.7,
-        )
-    )
-
-    # Add vertical lines for mean, median, std
-    if info["mean"] is not None:
-        mean_val: float = info["mean"]
-        median_val: float = info["median"]
-        std_val: float = info["std"]
-
-        fig.add_vline(
-            x=mean_val, line_dash="solid", line_color="red", annotation_text=f"μ={mean_val:.3g}"
-        )
-
-        fig.add_vline(
-            x=median_val,
-            line_dash="solid",
-            line_color="blue",
-            annotation_text=f"x̃={median_val:.3g}",
-        )
-
-        if std_val:
-            fig.add_vline(
-                x=mean_val + std_val, line_dash="dash", line_color="orange", annotation_text="μ+σ"
-            )
-            fig.add_vline(
-                x=mean_val - std_val, line_dash="dash", line_color="orange", annotation_text="μ-σ"
-            )
-
-    # Update layout with stats
-    title_text: str = f"{name}"
-    if info.get("shape"):
-        shape_str: str = str(tuple(info["shape"]))
-        dtype_str: str = str(info.get("dtype", "unknown")).replace("torch.", "")
-        title_text += f"<br>shape={shape_str}, dtype={dtype_str}"
-
-    if info["mean"] is not None:
-        title_text += f"<br>range=[{info['min']:.3g}, {info['max']:.3g}], μ={info['mean']:.3g}, x̃={info['median']:.3g}, σ={info['std']:.3g}"
-
-    fig.update_layout(
-        title=title_text,
-        xaxis_title="Value",
-        yaxis_title="Count",
-        showlegend=False,
-    )
-
     return fig
 
 
