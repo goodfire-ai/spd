@@ -58,13 +58,15 @@ spd-run --experiments <experiment_name> --sweep --n-agents <n-agents> [--cpu]
 - You can specify a custom sweep parameters file by passing its path to `--sweep`
 - Sweep parameters support both experiment-specific and global configurations:
   ```yaml
-  # Global parameters applied to all experiments
+  # Params used for all experiments
   global:
     seed:
-      values: [0, 1, 2]
-    lr:
-      values: [0.001, 0.01]
-  
+      values: [0, 1]
+    loss_metric_configs:
+      - classname: "ImportanceMinimalityLoss"
+        coeff:
+          values: [0.1, 0.2]
+
   # Experiment-specific parameters (override global)
   tms_5-2:
     seed:
