@@ -14,6 +14,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}/ci-mpi:latest
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -44,12 +46,9 @@ jobs:
       - name: Run ruff format
         run: uv run ruff format .
 
-      - name: Install MPI for tests
-        uses: mpi4py/setup-mpi@v1
-        with:
-          mpi: openmpi
-
       - name: Run tests
         run: uv run pytest tests/ --runslow --durations 10 --numprocesses auto
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
