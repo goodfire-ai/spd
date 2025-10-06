@@ -215,7 +215,7 @@ class TestGatherAllTensors:
         script_path = Path(__file__).resolve()
 
         env = {
-            "MASTER_PORT": "29501",
+            "MASTER_PORT": "29502",
             "OMP_NUM_THREADS": "1",
         }
 
