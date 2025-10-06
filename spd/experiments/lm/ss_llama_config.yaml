@@ -71,10 +71,10 @@ gate_hidden_dims:
 - 1000
 gate_type: shared_mlp
 gradient_accumulation_steps: 1
-identity_module_patterns:
-- model.layers.0.mlp.gate_proj
+identity_module_patterns: 
+# - model.layers.0.mlp.gate_proj
 # - model.layers.0.mlp.down_proj
-importance_minimality_coeff: 1e-2
+importance_minimality_coeff: 1e-4
 importance_minimality_coeff_start_frac: 0.0
 importance_minimality_coeff_end_frac: 0.5
 importance_minimality_coeff_final: 1e-3
@@ -90,16 +90,16 @@ output_loss_type: kl
 # p_anneal_end_frac: 1
 # p_anneal_final_p: 0.3
 # p_anneal_start_frac: 0
-pnorm: 0.9
+pnorm: 1.0
 pgd_mask_enabled: true
 pgd_mask_steps: 1
 pgd_mask_step_size: 1.0
 adv_mix_start_frac: 0
 adv_mix_end_frac: 1
-adv_mix_adv_weight_start: 0.05
-adv_mix_rand_weight_start: 0.95
-adv_mix_adv_weight_end: 0.05
-adv_mix_rand_weight_end: 0.95
+adv_mix_adv_weight_start: 0.5
+adv_mix_rand_weight_start: 0.5
+adv_mix_adv_weight_end: 0.5
+adv_mix_rand_weight_end: 0.5
 pgd_mask_random_init: false
 pretrained_model_class: transformers.LlamaForCausalLM
 pretrained_model_name: SimpleStories/SimpleStories-1.25M
