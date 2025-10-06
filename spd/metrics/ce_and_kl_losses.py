@@ -102,7 +102,7 @@ class CEandKLLosses(Metric):
             return calc_kl_divergence_lm(pred=logits, target=target_out).item()
 
         ci_mask_infos = make_mask_infos(ci)
-        ci_masked_logits = self.model(batch, mode="components", mask_infos=ci_mask_infos)
+        ci_masked_logits = self.model(batch, mask_infos=ci_mask_infos)
         ci_masked_ce_loss = ce_vs_labels(ci_masked_logits)
         ci_masked_kl_loss = kl_vs_target(ci_masked_logits)
 
@@ -113,18 +113,18 @@ class CEandKLLosses(Metric):
             routing="all",
             weight_deltas=None,
         )
-        stoch_masked_logits = self.model(batch, mode="components", mask_infos=mask_infos)
+        stoch_masked_logits = self.model(batch, mask_infos=mask_infos)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
         stoch_masked_kl_loss = kl_vs_target(stoch_masked_logits)
 
         nonmask_infos = make_mask_infos({k: torch.ones_like(v) for k, v in ci.items()})
-        unmasked_logits = self.model(batch, mode="components", mask_infos=nonmask_infos)
+        unmasked_logits = self.model(batch, mask_infos=nonmask_infos)
         unmasked_ce_loss = ce_vs_labels(unmasked_logits)
         unmasked_kl_loss = kl_vs_target(unmasked_logits)
 
         # Completely random masks
         rand_mask_infos = make_mask_infos({k: torch.rand_like(v) for k, v in ci.items()})
-        random_masked_logits = self.model(batch, mode="components", mask_infos=rand_mask_infos)
+        random_masked_logits = self.model(batch, mask_infos=rand_mask_infos)
         random_masked_ce_loss = ce_vs_labels(random_masked_logits)
         random_masked_kl_loss = kl_vs_target(random_masked_logits)
 
@@ -132,13 +132,13 @@ class CEandKLLosses(Metric):
         rounded_mask_infos = make_mask_infos(
             {k: (v > self.rounding_threshold).float() for k, v in ci.items()}
         )
-        rounded_masked_logits = self.model(batch, mode="components", mask_infos=rounded_mask_infos)
+        rounded_masked_logits = self.model(batch, mask_infos=rounded_mask_infos)
         rounded_masked_ce_loss = ce_vs_labels(rounded_masked_logits)
         rounded_masked_kl_loss = kl_vs_target(rounded_masked_logits)
 
         # Zero all the components
         zero_mask_infos = make_mask_infos({k: torch.zeros_like(v) for k, v in ci.items()})
-        zero_masked_logits = self.model(batch, mode="components", mask_infos=zero_mask_infos)
+        zero_masked_logits = self.model(batch, mask_infos=zero_mask_infos)
         zero_masked_ce_loss = ce_vs_labels(zero_masked_logits)
         zero_masked_kl_loss = kl_vs_target(zero_masked_logits)
 

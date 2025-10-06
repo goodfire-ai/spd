@@ -5,6 +5,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
+    StochasticHiddenActsReconConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
 )
@@ -80,6 +81,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
         eval_metric_configs=[
             CI_L0Config(groups=None),
+            StochasticHiddenActsReconConfig(),
         ],
         # Pretrained model info
         pretrained_model_class="spd.experiments.ih.model.InductionTransformer",

@@ -111,6 +111,10 @@ class StochasticReconSubsetCEAndKLConfig(BaseModel):
     exclude_patterns: dict[str, list[str]] | None
 
 
+class StochasticHiddenActsReconConfig(BaseModel):
+    classname: Literal["StochasticHiddenActsRecon"] = "StochasticHiddenActsRecon"
+
+
 class UVPlotsConfig(BaseModel):
     classname: Literal["UVPlots"] = "UVPlots"
     identity_patterns: list[str] | None
@@ -137,6 +141,7 @@ EvalMetricConfigType = (
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
+    | StochasticHiddenActsReconConfig
 )
 MetricConfigType = TrainMetricConfigType | EvalMetricConfigType
 
