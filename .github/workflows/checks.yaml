@@ -50,3 +50,5 @@ jobs:
         run: uv run python -m pytest tests/ --runslow --durations=10
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
