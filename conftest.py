@@ -20,6 +20,7 @@ def pytest_addoption(parser: Parser) -> None:
 def pytest_configure(config: Config) -> None:
     config.addinivalue_line("markers", "slow: mark test as slow to run")
     config.addinivalue_line("markers", "requires_wandb: mark test as requiring WANDB credentials")
+    config.addinivalue_line("markers", "distributed: mark test as using distributed/mpirun")
 
 
 def _wandb_host() -> str:

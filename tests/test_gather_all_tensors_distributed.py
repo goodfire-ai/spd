@@ -207,6 +207,8 @@ def run_all_tests():
 # ===== Pytest wrapper =====
 # This allows running via pytest, which will spawn mpirun in a subprocess
 @pytest.mark.slow
+@pytest.mark.distributed
+@pytest.mark.xdist_group("serial")
 class TestGatherAllTensors:
     """Pytest wrapper for gather_all_tensors tests."""
 
