@@ -173,6 +173,28 @@ class Config(BaseModel):
         ...,
         description="Coefficient for importance minimality loss",
     )
+    # Scheduling for importance_minimality_coeff
+    importance_minimality_coeff_start_frac: Probability = Field(
+        default=1.0,
+        description=(
+            "Fraction of training after which to start scheduling importance_minimality_coeff "
+            "(1.0 = no scheduling)"
+        ),
+    )
+    importance_minimality_coeff_final: NonNegativeFloat | None = Field(
+        default=None,
+        description=(
+            "Final coefficient value to linearly reach by importance_minimality_coeff_end_frac "
+            "(None = no scheduling)"
+        ),
+    )
+    importance_minimality_coeff_end_frac: Probability = Field(
+        default=1.0,
+        description=(
+            "Fraction of training when importance_minimality_coeff scheduling ends. We stay at the "
+            "final value from this point onward (default 1.0 = schedule until end)"
+        ),
+    )
     pnorm: PositiveFloat = Field(
         ...,
         description="The p-value used for the importance minimality loss",

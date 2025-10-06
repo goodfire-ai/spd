@@ -171,14 +171,14 @@ def _optimize_adversarial_stochastic_masks(
     )
     leading_dims = next(iter(causal_importances.values())).shape[:-1]
     for layer, ci in causal_importances.items():
-        init = torch.rand_like(ci) if config.pgd_mask_random_init else torch.full_like(ci, 0.5)
+        init = torch.rand_like(ci) if config.pgd_mask_random_init else torch.full_like(ci, 0.0)
         init.requires_grad_(True)
         rand_tensors[layer] = init
         if weight_delta_rand_masks is not None:
             wd_init = (
                 torch.rand(*leading_dims, device=ci.device, dtype=ci.dtype)
                 if config.pgd_mask_random_init
-                else torch.full(leading_dims, 0.5, device=ci.device, dtype=ci.dtype)
+                else torch.full(leading_dims, 0.0, device=ci.device, dtype=ci.dtype)
             )
             wd_init.requires_grad_(True)
             weight_delta_rand_masks[layer] = wd_init
@@ -324,6 +324,7 @@ def calculate_losses(
     current_p: float | None = None,
     adv_mix_adv_weight: float | None = None,
     adv_mix_rand_weight: float | None = None,
+    importance_minimality_coeff_override: float | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Calculate all losses and return total loss and individual loss terms.
 
@@ -337,6 +338,8 @@ def calculate_losses(
         weight_deltas: Weight deltas between the target model and component weights (V@U)
         device: Device to run computations on
         current_p: Current p value for L_p sparsity loss (if using annealing)
+        importance_minimality_coeff_override: If provided, use this coefficient value for the
+            importance minimality loss instead of config.importance_minimality_coeff
     Returns:
         Tuple of (total_loss, loss_terms_dict)
     """
@@ -603,7 +606,12 @@ def calculate_losses(
     importance_minimality_loss = calc_importance_minimality_loss(
         ci_upper_leaky=causal_importances_upper_leaky, pnorm=pnorm_value
     )
-    total_loss += config.importance_minimality_coeff * importance_minimality_loss
+    coeff_im = (
+        float(importance_minimality_coeff_override)
+        if importance_minimality_coeff_override is not None
+        else float(config.importance_minimality_coeff)
+    )
+    total_loss += coeff_im * importance_minimality_loss
     loss_terms["importance_minimality"] = importance_minimality_loss.item()
 
     loss_terms["total"] = total_loss.item()
