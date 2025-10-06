@@ -39,7 +39,7 @@ def _stochastic_recon_loss_update(
         for _ in range(n_mask_samples)
     ]
     for stoch_mask_infos in stoch_mask_infos_list:
-        out = model(batch, mode="components", mask_infos=stoch_mask_infos)
+        out = model(batch, mask_infos=stoch_mask_infos)
         loss_type = output_loss_type
         loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
         n_examples += out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
