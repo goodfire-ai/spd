@@ -1,31 +1,31 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
-    import type {
-        ActivationContext as ActivationContextType,
-        Component,
-        CosineSimilarityData
-    } from "$lib/api";
-    import { getCosineSimilarities, getSubcomponentActivationContexts } from "$lib/api";
+    import type { CosineSimilarityData } from "$lib/api";
     import { ablationComponentMask } from "$lib/stores/componentState";
-    import { onMount } from "svelte";
     import CosineSimilarityPlot from "./CosineSimilarityPlot.svelte";
-    import ActivationContext from "./ActivationContext.svelte";
+    import TokenHighlights from "./TokenHighlights.svelte";
 
-    export let component: Component;
-    export let componentAggCi: number;
-    export let subcomponentCis: number[];
+    type ComponentExample = {
+        textHash: string;
+        rawText: string;
+        offsetMapping: [number, number][];
+        activations: number[];
+    };
+
     export let layer: string;
     export let tokenIdx: number;
-    export let onToggle: () => void;
-
-    let similarityData: CosineSimilarityData | null = null;
-    let loadingSimilarities = false;
+    export let componentIdx: number;
+    export let componentAggCi: number;
+    export let subcomponentCis: number[];
+    export let toggle: () => void;
+    export let similarityData: CosineSimilarityData | null = null;
+    export let examples: ComponentExample[] = [];
 
     $: isDisabled = (() => {
         const layerMask = $ablationComponentMask[layer];
         if (!layerMask || !layerMask[tokenIdx]) return false;
-        return layerMask[tokenIdx].includes(component.index);
+        return layerMask[tokenIdx].includes(componentIdx);
     })();
 
     function getColorFromCI(ci: number): string {
@@ -33,56 +33,24 @@
         return `rgb(${whiteAmount}, ${whiteAmount}, 255)`;
     }
 
-    async function loadCosineSimilarities() {
-        if (similarityData) return;
+    $: disabledComponentIndices = isDisabled ? [componentIdx] : [];
 
-        loadingSimilarities = true;
-        try {
-            similarityData = await getCosineSimilarities(layer, component.index);
-        } catch (error) {
-            console.error("Failed to load cosine similarities:", error);
-            similarityData = null;
-        }
-        loadingSimilarities = false;
-    }
-
-    let loadingActivationContexts = false;
-    let examples: ActivationContextType[] = [];
-
-    async function loadActivationContexts() {
-        loadingActivationContexts = true;
-        // examples = await getComponentActivationContexts(component.index, layer);
-        loadingActivationContexts = false;
-    }
-
-    function handleCardClick() {
-        onToggle();
-    }
-
-    onMount(() => {
-        loadCosineSimilarities();
-        loadActivationContexts();
-    });
-
-    $: disabledComponentIndices = isDisabled ? [component.index] : [];
+    $: textColor = componentAggCi > 0.5 ? "#ffffff" : "#000000";
 </script>
 
-<div class="component-card-container" class:disabled={isDisabled} on:click={handleCardClick}>
-    <div
-        class="component-header-bar"
-        style="background-color: {getColorFromCI(componentAggCi / 2)}"
-    >
-        <span class="component-index">#{component.index}</span>
-        <span class="component-ci">{componentAggCi.toFixed(4)}</span>
-        <span class="component-rank">{component.subcomponent_indices.length}</span>
+<div class="component-card-container" class:disabled={isDisabled} on:click={toggle}>
+    <div class="component-header-bar" style="background-color: {getColorFromCI(componentAggCi)}">
+        <span class="component-index" style="color: {textColor}">#{componentIdx}</span>
+        <span class="component-ci" style="color: {textColor}">{componentAggCi.toFixed(4)}</span>
+        <span class="component-rank" style="color: {textColor}">Rank {subcomponentCis.length}</span>
     </div>
 
     <div class="subcomponent-ci-strip">
         {#each subcomponentCis as ci, idx}
             <div
                 class="ci-cell"
-                style="background-color: {getColorFromCI(ci / 2)}"
-                title="Subcomponent {component.subcomponent_indices[idx]}: CI = {ci.toFixed(4)}"
+                style="background-color: {getColorFromCI(ci)}"
+                title="Subcomponent {idx}: CI = {ci.toFixed(4)}"
             ></div>
         {/each}
     </div>
@@ -90,20 +58,21 @@
     <div class="card-content">
         <div class="activation-contexts-section">
             <h4>Activation Examples</h4>
-            {#if loadingActivationContexts}
-                <div class="loading">Loading examples...</div>
-            {:else}
-                <div class="examples-container">
-                    {#each examples as example}
-                        <ActivationContext {example} />
-                    {/each}
-                </div>
-            {/if}
+            <div class="examples-container">
+                {#each examples as example}
+                    <div class="example-card">
+                        <TokenHighlights
+                            rawText={example.rawText}
+                            offsetMapping={example.offsetMapping}
+                            tokenCiValues={example.activations}
+                            activePosition={-1}
+                        />
+                    </div>
+                {/each}
+            </div>
         </div>
 
-        {#if loadingSimilarities}
-            <div class="loading-similarities">Loading similarity data...</div>
-        {:else if similarityData}
+        {#if similarityData}
             <div class="similarity-plots">
                 <h4>Pairwise Cosine Similarities</h4>
                 <div class="plots-container">
@@ -173,7 +142,7 @@
     .ci-cell {
         flex: 1;
         min-width: 2px;
-        cursor: help;
+        /* cursor: help; */
     }
 
     .component-index {
@@ -254,5 +223,15 @@
         flex-direction: column;
         gap: 0.75rem;
         overflow-y: auto;
+    }
+
+    .example-card {
+        border: 1px solid #e9ecef;
+        border-radius: 4px;
+        padding: 0.5rem;
+        background: #fdfdfd;
+        font-family: monospace;
+        font-size: 13px;
+        line-height: 1.5;
     }
 </style>

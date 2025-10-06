@@ -1,6 +1,19 @@
+<script context="module">
+    export type PopupData = {
+        token: string;
+        tokenIdx: number;
+        layerIdx: number;
+        layerName: string;
+        tokenCIs: MatrixCausalImportances;
+    };
+</script>
+
 <script lang="ts">
-    import { popupData } from "$lib/stores/componentState";
+    import type { ClusterRunDTO, MatrixCausalImportances, CosineSimilarityData } from "$lib/api";
+    import * as api from "$lib/api";
     import ComponentCard from "./ComponentCard.svelte";
+    import HorizontalVirtualList from "./HorizontalVirtualList.svelte";
+    import { onMount } from "svelte";
 
     export let onClose: () => void;
     export let onToggleComponent: (
@@ -14,40 +27,178 @@
         componentIdx: number
     ) => boolean;
 
+    export let cluster: ClusterRunDTO;
+    export let dashboard: api.ClusterDashboardResponse;
+    export let popupData: PopupData;
+
+    type ComponentItem = {
+        componentIdx: number;
+        subcomponentCis: number[];
+        componentAggCi: number;
+    };
+
+    $: componentItems = (() => {
+        const groups: number[][] =
+            cluster.clustering_shape.module_component_groups[popupData.layerName];
+        const componentItems = groups.map<ComponentItem>((subcomponent_group, componentIdx) => ({
+            componentIdx,
+            subcomponentCis: subcomponent_group.map(
+                (subcomponentIdx) => popupData.tokenCIs.subcomponent_cis[subcomponentIdx]
+            ),
+            componentAggCi: popupData.tokenCIs.component_agg_cis[componentIdx]
+        }));
+
+        componentItems.sort((a, b) => b.componentAggCi - a.componentAggCi);
+
+        return componentItems;
+    })();
+
+    type ComponentExample = {
+        textHash: string;
+        rawText: string;
+        offsetMapping: [number, number][];
+        activations: number[];
+    };
+
+    let similarityDataMap: Map<number, CosineSimilarityData> = new Map();
+    let loading = false;
+
+    async function loadCosineSims() {
+        if (!popupData || loading) return;
+
+        loading = true;
+
+        const similarityPromises = componentItems.map(async (item) => {
+            try {
+                const data = await api.getCosineSimilarities(popupData.layerName, item.componentIdx);
+                return [item.componentIdx, data] as [number, CosineSimilarityData];
+            } catch (error) {
+                console.error(`Failed to load similarities for component ${item.componentIdx}:`, error);
+                return null;
+            }
+        });
+
+        const results = await Promise.all(similarityPromises);
+        similarityDataMap = new Map(
+            results.filter((r): r is [number, CosineSimilarityData] => r !== null)
+        );
+
+        loading = false;
+    }
+
+    // Build activation examples from dashboard data (like ClusterDashboardBody)
+    $: textSampleLookup = Object.fromEntries(
+        dashboard.text_samples.map((sample) => [
+            sample.text_hash,
+            { full_text: sample.full_text, tokens: sample.tokens }
+        ])
+    );
+
+    function buildOffsets(tokens: string[]): [number, number][] {
+        const offsets: [number, number][] = [];
+        let cursor = 0;
+        for (const token of tokens) {
+            offsets.push([cursor, cursor + token.length]);
+            cursor += token.length;
+        }
+        return offsets;
+    }
+
+    function normalizeActivations(values: number[], length: number): number[] {
+        if (!values.length) return new Array(length).fill(0);
+        const slice = values.slice(0, length);
+        const max = Math.max(...slice.map((v) => Math.max(v, 0)), 1e-6);
+        return slice.map((v) => Math.max(v, 0) / max);
+    }
+
+    // Map from componentIdx to cluster
+    $: componentToClusterMap = new Map(
+        dashboard.clusters.flatMap((cluster) =>
+            cluster.components.map((comp) => [comp.index, cluster.cluster_hash])
+        )
+    );
+
+    function buildExamplesForComponent(componentIdx: number): ComponentExample[] {
+        const clusterHash = componentToClusterMap.get(componentIdx);
+        if (!clusterHash) return [];
+
+        const cluster = dashboard.clusters.find((c) => c.cluster_hash === clusterHash);
+        if (!cluster?.criterion_samples?.["max_activation-max-16"]) return [];
+
+        const hashes = cluster.criterion_samples["max_activation-max-16"];
+        const activations = dashboard.activation_batch.activations;
+
+        const examples: ComponentExample[] = [];
+        for (const textHash of hashes.slice(0, 5)) {
+            const activationHash = `${clusterHash}:${textHash}`;
+            const idx = dashboard.activations_map[activationHash];
+            if (typeof idx !== "number") continue;
+
+            const sample = textSampleLookup[textHash];
+            if (!sample?.tokens) continue;
+
+            const activationValues = activations[idx];
+            if (!activationValues || sample.tokens.length !== activationValues.length) continue;
+            if (sample.tokens.length === 0) continue;
+
+            const rawText = sample.tokens.join("");
+            const offsets = buildOffsets(sample.tokens);
+            const normalized = normalizeActivations(activationValues, offsets.length);
+
+            examples.push({
+                textHash,
+                rawText,
+                offsetMapping: offsets,
+                activations: normalized
+            });
+        }
+
+        return examples;
+    }
+
+    $: activationContextsMap = new Map(
+        componentItems.map((item) => [item.componentIdx, buildExamplesForComponent(item.componentIdx)])
+    );
+
+    onMount(loadCosineSims);
+
     function getAllComponentIndices(): number[] {
-        if (!$popupData) return [];
-        return $popupData.matrixCis.components.map((component) => component.index);
+        // this is a little silly lol
+        return cluster.clustering_shape.module_component_assignments[popupData.layerName].map(
+            (_, idx) => idx
+        );
     }
 
     function areAllComponentsDisabled(): boolean {
-        if (!$popupData) return false;
+        if (!popupData) return false;
         const allIndices = getAllComponentIndices();
         return allIndices.every((idx) =>
-            isComponentDisabled($popupData!.layer, $popupData!.tokenIdx, idx)
+            isComponentDisabled(popupData.layerName, popupData.tokenIdx, idx)
         );
     }
 
     function toggleAllComponents() {
-        if (!$popupData) return;
+        if (!popupData) return;
         const allIndices = getAllComponentIndices();
         const shouldDisable = !areAllComponentsDisabled();
 
         for (const componentIdx of allIndices) {
             const isCurrentlyDisabled = isComponentDisabled(
-                $popupData.layer,
-                $popupData.tokenIdx,
+                popupData.layerName,
+                popupData.tokenIdx,
                 componentIdx
             );
-            if (shouldDisable && !isCurrentlyDisabled) {
-                onToggleComponent($popupData.layer, $popupData.tokenIdx, componentIdx);
-            } else if (!shouldDisable && isCurrentlyDisabled) {
-                onToggleComponent($popupData.layer, $popupData.tokenIdx, componentIdx);
+            if (
+                (shouldDisable && !isCurrentlyDisabled) ||
+                (!shouldDisable && isCurrentlyDisabled)
+            ) {
+                onToggleComponent(popupData.layerName, popupData.tokenIdx, componentIdx);
             }
         }
     }
 </script>
 
-{#if $popupData}
+{#if popupData}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="popup-overlay" on:click={onClose}>
@@ -55,12 +206,23 @@
             <div class="popup-content">
                 <div class="popup-info">
                     <p>
-                        <strong>Token:</strong> "{$popupData.token}" (position {$popupData.tokenIdx})
+                        <strong>Token:</strong> "{popupData.token}" (position {popupData.tokenIdx})
                     </p>
-                    <p><strong>Layer:</strong> {$popupData.layer}</p>
+                    <p><strong>Layer:</strong> {popupData.layerName}</p>
                     <p>
                         <strong>Subcomponents L0:</strong>
-                        {$popupData.matrixCis.subcomponent_cis_sparse.l0}
+                        {popupData.tokenCIs.subcomponent_cis_sparse.l0}
+                    </p>
+                    <p>
+                        <strong>Total Components:</strong>
+                        {componentItems.length}
+                    </p>
+                    <p>
+                        <strong>Component L0:</strong>
+                        {popupData.tokenCIs.component_agg_cis.reduce(
+                            (acc, val) => acc + (val > 0.0 ? 1 : 0),
+                            0
+                        )}
                     </p>
                 </div>
                 <div class="components-section">
@@ -75,35 +237,33 @@
                             Ablate All
                         </label>
                     </div>
-                    <div class="components-grid">
-                        {#each $popupData.matrixCis.components
-                            .map( (component) => ({ component, aggCi: $popupData.matrixCis.component_agg_cis[component.index] }) )
-                            .sort((a, b) => b.aggCi - a.aggCi) as { component, aggCi }}
+                    <div class="components-grid-container">
+                        <HorizontalVirtualList
+                            items={componentItems}
+                            itemWidth={616}
+                            buffer={2}
+                            getKey={(item) => item.componentIdx}
+                            let:item
+                        >
                             <ComponentCard
-                                {component}
-                                componentAggCi={aggCi}
-                                subcomponentCis={component.subcomponent_indices.map((idx) => {
-                                    const val = $popupData.matrixCis.subcomponent_cis[idx];
-                                    if (typeof val !== "number") {
-                                        throw new Error(
-                                            `Expected number, got ${val} for index ${idx} (len: ${$popupData.matrixCis.subcomponent_cis_sparse.values.length})`
-                                        );
-                                    }
-                                    return val;
-                                })}
-                                layer={$popupData.layer}
-                                tokenIdx={$popupData.tokenIdx}
-                                onToggle={() => {
-                                    if ($popupData) {
+                                componentIdx={item.componentIdx}
+                                subcomponentCis={item.subcomponentCis}
+                                componentAggCi={item.componentAggCi}
+                                layer={popupData.layerName}
+                                tokenIdx={popupData.tokenIdx}
+                                similarityData={similarityDataMap.get(item.componentIdx)}
+                                examples={activationContextsMap.get(item.componentIdx)}
+                                toggle={() => {
+                                    if (popupData) {
                                         onToggleComponent(
-                                            $popupData.layer,
-                                            $popupData.tokenIdx,
-                                            component.index
+                                            popupData.layerName,
+                                            popupData.tokenIdx,
+                                            item.componentIdx
                                         );
                                     }
                                 }}
                             />
-                        {/each}
+                        </HorizontalVirtualList>
                     </div>
                 </div>
             </div>
@@ -177,13 +337,9 @@
         cursor: pointer;
     }
 
-    .components-grid {
-        display: flex;
-        gap: 1rem;
-        padding: 1rem;
+    .components-grid-container {
         border: 1px solid #e0e0e0;
         border-radius: 6px;
         background: #fafafa;
-        overflow-x: auto;
     }
 </style>

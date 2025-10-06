@@ -73,16 +73,10 @@ export type OutputTokenLogit = {
     probability: number;
 };
 
-export type Component = {
-    index: number;
-    subcomponent_indices: number[];
-};
-
 export type MatrixCausalImportances = {
     subcomponent_cis_sparse: SparseVector;
     subcomponent_cis: number[];
     component_agg_cis: number[];
-    components: Component[];
 };
 
 export type LayerCIs = {
@@ -334,12 +328,12 @@ export type SubcomponentActivationContexts = {
 };
 
 export async function getLayerActivationContexts(
-    layer: string,
-    signal?: AbortSignal
+    layer: string
+    // signal?: AbortSignal
 ): Promise<SubcomponentActivationContexts[]> {
     const response = await fetch(`${apiUrl}/activation_contexts/${layer}/subcomponents`, {
-        method: "GET",
-        signal
+        method: "GET"
+        // signal
     });
     if (!response.ok) {
         const error = await response.json();
@@ -376,8 +370,8 @@ export type ClusterStatsDTO = Record<string, any>;
 export type ClusterDataDTO = {
     cluster_hash: string;
     components: ClusterComponentDTO[];
-    stats?: ClusterStatsDTO;
-    criterion_samples?: Record<string, string[]>;
+    stats: ClusterStatsDTO;
+    criterion_samples: Record<string, string[]>;
 };
 
 export type TextSampleDTO = {
@@ -395,7 +389,6 @@ export type ActivationBatchDTO = {
     };
     text_hashes: string[];
     activations: number[][];
-    tokens?: string[][] | null;
 };
 
 export type ClusterDashboardResponse = {
@@ -408,14 +401,13 @@ export type ClusterDashboardResponse = {
     run_path: string;
 };
 
-
 type DashboardQueryParams = {
     iteration: number;
     n_samples: number;
     n_batches: number;
     batch_size: number;
     context_length: number;
-    signal: AbortSignal;
+    signal?: AbortSignal;
 };
 
 export async function loadClusterRun(wandbRunPath: string, iteration: number): Promise<void> {
@@ -438,7 +430,7 @@ export async function getClusterDashboardData(
         url.searchParams.set(key, String(value));
     }
 
-    const response = await fetch(url.toString(), { method: "GET", signal });
+    const response = await fetch(url.toString(), { method: "GET" });
     if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         throw new Error(error.detail || "Failed to load cluster dashboard data");

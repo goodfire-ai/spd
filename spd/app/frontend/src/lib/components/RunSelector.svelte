@@ -1,20 +1,14 @@
 <script lang="ts">
     import * as api from "$lib/api";
 
-    export let trainWandbRunPath: string | null = null;
-    export let loadingRun: boolean = false;
-    export let isLoading: boolean = false;
+    export let trainWandbRunId: string | null;
+    export let loadingRun: boolean;
 
     async function loadRun() {
-        if (!trainWandbRunPath?.trim()) return;
+        if (!trainWandbRunId?.trim()) return;
 
         loadingRun = true;
-        try {
-            await api.loadRun(trainWandbRunPath);
-        } catch (error: any) {
-            console.error(`Error loading run: ${error.message}`);
-            alert(`Failed to load run: ${error.message}`);
-        }
+        await api.loadRun(trainWandbRunId);
         loadingRun = false;
     }
 </script>
@@ -26,16 +20,11 @@
             type="text"
             id="wandb-run-id"
             list="run-options"
-            bind:value={trainWandbRunPath}
-            disabled={loadingRun || isLoading}
+            bind:value={trainWandbRunId}
+            disabled={loadingRun}
             placeholder="Select or enter run ID"
         />
-        <!-- <datalist id="run-options">
-            {#each presetRuns as preset}
-                <option value={preset.id}>{preset.label}</option>
-            {/each}
-        </datalist> -->
-        <button on:click={loadRun} disabled={loadingRun || isLoading || !trainWandbRunPath?.trim()}>
+        <button on:click={loadRun} disabled={loadingRun || !trainWandbRunId?.trim()}>
             {loadingRun ? "Loading..." : "Load Run"}
         </button>
     </div>

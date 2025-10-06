@@ -12,12 +12,12 @@
 
     export let result: { layer_cis: LayerCIs[]; prompt_tokens: string[] };
     export let promptId: string;
-    export let onCellClick: (
+    export let onCellPopop: (
         token: string,
         tokenIdx: number,
-        layer: string,
         layerIdx: number,
-        matrixCis: MatrixCausalImportances
+        layerName: string,
+        tokenCIs: MatrixCausalImportances
     ) => void;
 
     function handleMaskCreated() {
@@ -27,13 +27,12 @@
     function handleCellClick(
         token: string,
         tokenIdx: number,
-        layer: string,
         layerIdx: number,
-        matrixCis: MatrixCausalImportances
+        layerCIs: LayerCIs
     ) {
         if ($multiSelectMode) {
             const existingIndex = $selectedTokensForCombining.findIndex(
-                (t) => t.layer === layer && t.tokenIdx === tokenIdx
+                (t) => t.layer === layerCIs.module && t.tokenIdx === tokenIdx
             );
 
             if (existingIndex >= 0) {
@@ -45,12 +44,12 @@
                 // Add to selection
                 $selectedTokensForCombining = [
                     ...$selectedTokensForCombining,
-                    { layer, tokenIdx, token }
+                    { layer: layerCIs.module, tokenIdx, token }
                 ];
             }
         } else {
             // Normal click behavior - open popup
-            onCellClick(token, tokenIdx, layer, layerIdx, matrixCis);
+            onCellPopop(token, tokenIdx, layerIdx, layerCIs.module, layerCIs.token_cis[tokenIdx]);
         }
     }
 
@@ -114,14 +113,7 @@
                                     tokenIdx
                                 )}"
                                 title="L0={layer.token_cis[tokenIdx].subcomponent_cis_sparse.l0}"
-                                on:click={() =>
-                                    handleCellClick(
-                                        token,
-                                        tokenIdx,
-                                        layer.module,
-                                        layerIdx,
-                                        layer.token_cis[tokenIdx]
-                                    )}
+                                on:click={() => handleCellClick(token, tokenIdx, layerIdx, layer)}
                             ></div>
                         {/each}
                     </div>
@@ -142,7 +134,7 @@
         display: flex;
         flex-direction: column;
         border: 1px solid #ddd;
-        border-radius: 4px;
+        border-radius: 6px;
         padding: 1rem;
         background-color: #fafafa;
     }

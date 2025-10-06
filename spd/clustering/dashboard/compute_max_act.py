@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from typing import Any
 
-from muutils.spinner import SpinnerContext
 import numpy as np
 import torch
 from jaxtyping import Float, Int
@@ -33,7 +32,7 @@ from spd.clustering.dashboard.core import (
 from spd.clustering.merge_history import MergeHistory
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
-from spd.utils.general_utils import extract_batch_data # , get_module_device
+from spd.utils.general_utils import extract_batch_data  # , get_module_device
 
 
 @dataclass

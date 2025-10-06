@@ -8,9 +8,18 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel
-
-from spd.app.backend.services.run_context_service import ClusteringShape, RunContextService
+from spd.app.backend.api import (
+    ActivationBatchDTO,
+    ClusterComponentDTO,
+    ClusterDashboardResponse,
+    ClusterDataDTO,
+    ClusterIdDTO,
+    ClusterStatsDTO,
+    HistogramDTO,
+    TextSampleDTO,
+    TokenActivationsDTO,
+)
+from spd.app.backend.services.run_context_service import RunContextService
 from spd.clustering.dashboard.compute_max_act import compute_max_activations
 from spd.clustering.dashboard.core import (
     ActivationSampleBatch,
@@ -29,153 +38,7 @@ from spd.settings import SPD_CACHE_DIR
 from spd.utils.general_utils import runtime_cast
 
 
-class ClusterIdDTO(BaseModel):
-    clustering_run: str
-    iteration: int
-    cluster_label: int
-    hash: str
-
-
-class HistogramDTO(BaseModel):
-    bin_edges: list[float]
-    bin_counts: list[int]
-
-
-class TokenActivationStatDTO(BaseModel):
-    token: str
-    count: int
-
-
-class TokenActivationsDTO(BaseModel):
-    top_tokens: list[TokenActivationStatDTO]
-    total_unique_tokens: int
-    total_activations: int
-    entropy: float
-    concentration_ratio: float
-    activation_threshold: float
-
-
-class ClusterComponentDTO(BaseModel):
-    module: str
-    index: int
-    label: str
-
-
-class ClusterStatsDTO(BaseModel):
-    all_activations: HistogramDTO
-    max_activation_position: HistogramDTO
-    n_samples: int
-    n_tokens: int
-    mean_activation: float
-    min_activation: float
-    max_activation: float
-    median_activation: float
-    token_activations: TokenActivationsDTO
-
-
-class ClusterDataDTO(BaseModel):
-    cluster_hash: str
-    components: list[ClusterComponentDTO]
-    criterion_samples: dict[str, list[str]]
-    stats: ClusterStatsDTO
-
-
-class TextSampleDTO(BaseModel):
-    text_hash: str
-    full_text: str
-    tokens: list[str]
-
-
-class ActivationBatchDTO(BaseModel):
-    cluster_id: ClusterIdDTO
-    text_hashes: list[str]
-    activations: list[list[float]]
-    tokens: list[list[str]] | None
-
-
-class ClusterDashboardResponse(BaseModel):
-    clusters: list[ClusterDataDTO]
-    text_samples: list[TextSampleDTO]
-    activation_batch: ActivationBatchDTO
-    activations_map: dict[str, int]
-    model_info: dict[str, Any]
-    iteration: int
-    run_path: str
-
-
-def _cluster_stats_to_dto(stats: dict[str, Any]) -> ClusterStatsDTO:
-    all_activations = runtime_cast(BinnedData, stats["all_activations"])
-    all_acts_dto = HistogramDTO(
-        bin_edges=list(all_activations.bin_edges),
-        bin_counts=list(all_activations.bin_counts),
-    )
-
-    max_activation_position = runtime_cast(BinnedData, stats["max_activation_position"])
-    max_activation_position_dto = HistogramDTO(
-        bin_edges=list(max_activation_position.bin_edges),
-        bin_counts=list(max_activation_position.bin_counts),
-    )
-
-    return ClusterStatsDTO(
-        all_activations=all_acts_dto,
-        max_activation_position=max_activation_position_dto,
-        n_samples=runtime_cast(int, stats["n_samples"]),
-        n_tokens=runtime_cast(int, stats["n_tokens"]),
-        mean_activation=runtime_cast(float, stats["mean_activation"]),
-        min_activation=runtime_cast(float, stats["min_activation"]),
-        max_activation=runtime_cast(float, stats["max_activation"]),
-        median_activation=runtime_cast(float, stats["median_activation"]),
-        token_activations=TokenActivationsDTO(**stats["token_activations"]),
-    )
-
-
-def _cluster_to_dto(cluster: ClusterData) -> ClusterDataDTO:
-    """Map a domain cluster object directly into its DTO."""
-
-    components = [
-        ClusterComponentDTO(module=component.module, index=component.index, label=component.label)
-        for component in cluster.components
-    ]
-    criterion_samples = {
-        str(criterion): [str(sample_hash) for sample_hash in hashes]
-        for criterion, hashes in cluster.criterion_samples.items()
-    }
-    return ClusterDataDTO(
-        cluster_hash=str(cluster.cluster_hash),
-        components=components,
-        criterion_samples=criterion_samples,
-        stats=_cluster_stats_to_dto(cluster.stats),
-    )
-
-
-def _text_sample_to_dto(text_hash: TextSampleHash, sample: TextSample) -> TextSampleDTO:
-    """Convert a TextSample into its DTO counterpart."""
-
-    return TextSampleDTO(
-        text_hash=str(text_hash),
-        full_text=sample.full_text,
-        tokens=sample.tokens,
-    )
-
-
-def _activation_batch_to_dto(batch: ActivationSampleBatch) -> ActivationBatchDTO:
-    """Convert activation batches without intermediate dict representations."""
-
-    cluster_id = batch.cluster_id
-    return ActivationBatchDTO(
-        cluster_id=ClusterIdDTO(
-            clustering_run=cluster_id.clustering_run,
-            iteration=cluster_id.iteration,
-            cluster_label=int(cluster_id.cluster_label),
-            hash=str(cluster_id.to_string()),
-        ),
-        text_hashes=[str(text_hash) for text_hash in batch.text_hashes],
-        activations=batch.activations.tolist(),
-        tokens=batch.tokens,
-    )
-
-
-class ClusterDashboardService:
+class ComponentActivationContextsService:
     """Compute dashboard data using the loaded run context."""
 
     def __init__(self, run_context_service: RunContextService):
@@ -337,3 +200,73 @@ class ClusterDashboardService:
             iteration=iteration,
             run_path=cluster_run_wandb_path,
         )
+
+
+def _cluster_stats_to_dto(stats: dict[str, Any]) -> ClusterStatsDTO:
+    all_activations = runtime_cast(BinnedData, stats["all_activations"])
+    all_acts_dto = HistogramDTO(
+        bin_edges=list(all_activations.bin_edges),
+        bin_counts=list(all_activations.bin_counts),
+    )
+
+    max_activation_position = runtime_cast(BinnedData, stats["max_activation_position"])
+    max_activation_position_dto = HistogramDTO(
+        bin_edges=list(max_activation_position.bin_edges),
+        bin_counts=list(max_activation_position.bin_counts),
+    )
+
+    return ClusterStatsDTO(
+        all_activations=all_acts_dto,
+        max_activation_position=max_activation_position_dto,
+        n_samples=runtime_cast(int, stats["n_samples"]),
+        n_tokens=runtime_cast(int, stats["n_tokens"]),
+        mean_activation=runtime_cast(float, stats["mean_activation"]),
+        min_activation=runtime_cast(float, stats["min_activation"]),
+        max_activation=runtime_cast(float, stats["max_activation"]),
+        median_activation=runtime_cast(float, stats["median_activation"]),
+        token_activations=TokenActivationsDTO(**stats["token_activations"]),
+    )
+
+
+def _cluster_to_dto(cluster: ClusterData) -> ClusterDataDTO:
+    """Map a domain cluster object directly into its DTO."""
+
+    components = [
+        ClusterComponentDTO(module=component.module, index=component.index, label=component.label)
+        for component in cluster.components
+    ]
+    criterion_samples = {
+        str(criterion): [str(sample_hash) for sample_hash in hashes]
+        for criterion, hashes in cluster.criterion_samples.items()
+    }
+    return ClusterDataDTO(
+        cluster_hash=str(cluster.cluster_hash),
+        components=components,
+        criterion_samples=criterion_samples,
+        stats=_cluster_stats_to_dto(cluster.stats),
+    )
+
+
+def _text_sample_to_dto(text_hash: TextSampleHash, sample: TextSample) -> TextSampleDTO:
+    """Convert a TextSample into its DTO counterpart."""
+
+    return TextSampleDTO(
+        text_hash=str(text_hash),
+        full_text=sample.full_text,
+        tokens=sample.tokens,
+    )
+
+
+def _activation_batch_to_dto(batch: ActivationSampleBatch) -> ActivationBatchDTO:
+    """Convert activation batches without intermediate dict representations."""
+    cluster_id = batch.cluster_id
+    return ActivationBatchDTO(
+        cluster_id=ClusterIdDTO(
+            clustering_run=cluster_id.clustering_run,
+            iteration=cluster_id.iteration,
+            cluster_label=int(cluster_id.cluster_label),
+            hash=str(cluster_id.to_string()),
+        ),
+        text_hashes=[str(text_hash) for text_hash in batch.text_hashes],
+        activations=batch.activations.tolist(),
+    )

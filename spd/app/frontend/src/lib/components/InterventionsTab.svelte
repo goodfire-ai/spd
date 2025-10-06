@@ -6,13 +6,12 @@
     import type {
         RunPromptResponse,
         ComponentMask,
-        Status,
         MatrixCausalImportances,
-        AvailablePrompt
+        AvailablePrompt,
+        ClusterDashboardResponse
     } from "$lib/api";
     import {
         ablationComponentMask,
-        popupData,
         ablationResults,
         promptWorkspaces,
         currentWorkspaceIndex,
@@ -21,10 +20,15 @@
 
     import ComponentHeatmap from "$lib/components/ComponentHeatmap.svelte";
     import DisabledComponentsPanel from "$lib/components/DisabledComponentsPanel.svelte";
-    import ComponentDetailModal from "$lib/components/ComponentDetailModal.svelte";
+    import ComponentDetailModal, {
+        type PopupData
+    } from "$lib/components/ComponentDetailModal.svelte";
     import OriginalPredictions from "$lib/components/OriginalPredictions.svelte";
     import AblationPredictions from "$lib/components/AblationPredictions.svelte";
     import SavedMasksPanel from "$lib/components/SavedMasksPanel.svelte";
+
+    export let cluster_run: api.ClusterRunDTO;
+    export let iteration: number;
 
     let isLoading = false;
     let result: RunPromptResponse | null = null;
@@ -33,12 +37,25 @@
     let availablePrompts: AvailablePrompt[] | null = null;
     let showAvailablePrompts = false;
 
+    let popupData: PopupData | null = null;
+    let dashboard: ClusterDashboardResponse | null = null;
+
     async function loadAvailablePrompts() {
         try {
             availablePrompts = await api.getAvailablePrompts();
         } catch (error: any) {
             console.error("Failed to load prompts:", error.message);
         }
+    }
+
+    async function loadDashboard() {
+        dashboard = await api.getClusterDashboardData({
+            iteration,
+            n_samples: 16,
+            n_batches: 2,
+            batch_size: 64,
+            context_length: 64
+        });
     }
 
     function toggleAvailablePrompts() {
@@ -208,31 +225,24 @@
     function openPopup(
         token: string,
         tokenIdx: number,
-        layer: string,
         layerIdx: number,
-        matrixCis: MatrixCausalImportances
+        layerName: string,
+        tokenCIs: MatrixCausalImportances
     ) {
-        $popupData = { token, tokenIdx, layer, layerIdx, matrixCis };
+        popupData = { token, tokenIdx, layerIdx, layerName, tokenCIs };
     }
 
     function closePopup() {
-        $popupData = null;
+        popupData = null;
     }
 
     $: if (result) {
         initializeRunAblation();
     }
 
-    let status: Status | null = null;
-    async function getStatus() {
-        console.log("getting status");
-        status = await api.getStatus();
-        console.log("status", status);
-    }
-
     onMount(() => {
-        getStatus();
         loadAvailablePrompts();
+        loadDashboard();
     });
 </script>
 
@@ -309,7 +319,7 @@
                 <ComponentHeatmap
                     {result}
                     promptId={currentPromptId}
-                    onCellClick={openPopup}
+                    onCellPopop={openPopup}
                     on:maskCreated={refreshSavedMasks}
                 />
                 <DisabledComponentsPanel
@@ -352,11 +362,16 @@
         </div>
     </div>
 
-    <ComponentDetailModal
-        onClose={closePopup}
-        onToggleComponent={toggleComponentDisabled}
-        {isComponentDisabled}
-    />
+    {#if popupData && dashboard}
+        <ComponentDetailModal
+            cluster={cluster_run}
+            {popupData}
+            {dashboard}
+            onClose={closePopup}
+            onToggleComponent={toggleComponentDisabled}
+            {isComponentDisabled}
+        />
+    {/if}
 </div>
 
 <style>
@@ -374,7 +389,6 @@
     }
 
     .left-panel {
-        padding: 0.5rem;
         flex: 1;
         min-width: 0;
         position: sticky;

@@ -21,7 +21,7 @@
 
         // Linear gradient: white (0) -> blue (1)
         const whiteAmount = Math.round(255 * (1 - v));
-        return `rgb(${whiteAmount}, ${whiteAmount}, 255)`;
+        return `rgb(255, ${whiteAmount}, ${whiteAmount})`;
     };
 
 </script>

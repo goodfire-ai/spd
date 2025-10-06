@@ -47,7 +47,7 @@
 
         <div class="section">
             <h4>Components</h4>
-            <MiniModelView components={cluster.components} />
+            <MiniModelView components={cluster.components} layerCount={4} />
         </div>
 
         {#if histogramStats.length}

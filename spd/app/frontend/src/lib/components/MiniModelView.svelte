@@ -1,7 +1,9 @@
 <script lang="ts">
     type ComponentInfo = { module: string; index: number };
-    export let components: ComponentInfo[] = [];
-    export let maxLayers: number | null = null;
+    export let components: ComponentInfo[];
+    if (components == null) throw new Error('Components are required');
+
+    export let layerCount: number;
 
     const SUBLAYER_COLUMNS = [
         'self_attn.q_proj',
@@ -29,11 +31,6 @@
         }
         return -1; // ignore others
     }
-
-    $: layerCount = (() => {
-        const max = components.reduce((m, c) => Math.max(m, getLayer(c.module)), 0);
-        return (maxLayers ?? max) + 1;
-    })();
 
     type Cell = { count: number; indices: number[] };
     $: grid = Array.from({ length: layerCount }, () =>

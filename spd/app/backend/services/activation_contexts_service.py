@@ -5,10 +5,9 @@ import uuid
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+from spd.app.backend.api import ActivationContext, ModelActivationContexts
 from spd.app.backend.services.run_context_service import RunContextService
 from spd.app.backend.workers.activation_contexts_worker import (
-    ActivationContext,
-    ModelActivationContexts,
     WorkerArgs,
 )
 from spd.app.backend.workers.activation_contexts_worker import main as worker_main
@@ -57,7 +56,7 @@ class SubcomponentActivationContextsService:
                 importance_threshold=0.01,
                 separation_threshold_tokens=10,
                 max_examples_per_subcomponent=10,
-                n_steps=100,
+                n_steps=1000,
                 n_tokens_either_side=10,
             )
 
@@ -81,14 +80,14 @@ class SubcomponentActivationContextsService:
 
         return await task
 
-    async def get_layer_subcomponents_activation_contexts_async(self, layer: str):
+    async def get_layer_subcomponents_activation_contexts(self, layer: str):
         assert (ctx := self.run_context_service.train_run_context) is not None, (
             "Run context not found"
         )
         layer_activations = await self.load_when_ready(ctx.wandb_path)
         return layer_activations.layers[layer]
 
-    async def get_layer_subcomponent_activation_contexts_async(
+    async def get_layer_subcomponent_activation_contexts(
         self, layer: str, subcomponent_idx: int
     ) -> list[ActivationContext]:
         assert (ctx := self.run_context_service.train_run_context) is not None, (

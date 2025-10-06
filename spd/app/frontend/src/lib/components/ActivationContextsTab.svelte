@@ -6,8 +6,7 @@
 
     export let availableComponentLayers: string[];
 
-    if (availableComponentLayers.length === 0)
-    {
+    if (availableComponentLayers.length === 0) {
         throw new Error(`No component layers available: ${availableComponentLayers}`);
     }
 
@@ -17,30 +16,29 @@
 
     let loading = false;
 
-    let currentAbort: AbortController | null = null;
+    // let currentAbort: AbortController | null = null;
 
     async function loadContexts() {
-        if (currentAbort) {
-            currentAbort.abort();
-        }
-        const ac = new AbortController();
-        currentAbort = ac;
+        // if (currentAbort) {
+        //     currentAbort.abort();
+        // }
+        // const ac = new AbortController();
+        // currentAbort = ac;
         loading = true;
         try {
             console.log(`loading contexts for layer ${selectedLayer}`);
             subcomponentsActivationContexts = await api.getLayerActivationContexts(
-                selectedLayer,
-                ac.signal
+                selectedLayer
+                // ac.signal
             );
-            console.log(`loaded ${subcomponentsActivationContexts.length} contexts`);
         } catch (e) {
             if ((e as any)?.name !== "AbortError") {
                 console.error(e);
             }
         } finally {
-            if (currentAbort === ac) {
-                currentAbort = null;
-            }
+            // if (currentAbort === ac) {
+            //     currentAbort = null;
+            // }
             loading = false;
         }
     }
@@ -52,16 +50,12 @@
 
 <div class="tab-content">
     <div class="controls">
-        <div class="control-group">
-            <label for="layer-select">Layer:</label>
-            <select id="layer-select" bind:value={selectedLayer} on:change={loadContexts}>
-                {#each availableComponentLayers as layer}
-                    <option value={layer}>{layer}</option>
-                {/each}
-            </select>
-        </div>
-
-        <button class="load-button" on:click={loadContexts}>Load Contexts</button>
+        <label for="layer-select">Layer:</label>
+        <select id="layer-select" bind:value={selectedLayer} on:change={loadContexts}>
+            {#each availableComponentLayers as layer}
+                <option value={layer}>{layer}</option>
+            {/each}
+        </select>
     </div>
 
     {#if subcomponentsActivationContexts}
@@ -89,19 +83,14 @@
     }
 
     .controls {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1.5rem;
+        /* display: flex;
+        flex-wrap: wrap; */
+        gap: 0.5rem;
         padding: 1rem;
         background: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #dee2e6;
-    }
-
-    .control-group {
-        display: flex;
         flex-direction: column;
-        gap: 0.4rem;
     }
 
     .subcomponent-section-header {
@@ -124,17 +113,13 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
-    .load-button {
-        padding: 0.5rem 1rem;
-        border: 1px solid #ced4da;
+    #layer-select {
+        border: 1px solid #dee2e6;
         border-radius: 4px;
-    }
-
-    .load-button:hover {
-        background: #f8f9fa;
+        padding: 0.5rem;
+        font-size: 0.9rem;
+        background: white;
         cursor: pointer;
-        background: #007bff;
-        color: white;
-        border: 1px solid #007bff;
+        width: 100%;
     }
 </style>

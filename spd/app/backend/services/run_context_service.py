@@ -5,13 +5,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# from wandb.apis.public.runs import Run
 import torch
 import wandb
-from pydantic import BaseModel
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizer
 
+from spd.app.backend.api import (
+    AvailablePrompt,
+    ClusteringShape,
+    ClusterRunDTO,
+    Run,
+    Status,
+    TrainRunDTO,
+)
 from spd.clustering.dashboard.dashboard_io import load_wandb_artifacts
 from spd.clustering.merge_history import MergeHistory
 from spd.configs import Config
@@ -49,53 +55,18 @@ class TrainRunContext:
     available_cluster_runs: list[str]
 
 
-class ClusteringShape(BaseModel):
-    module_component_assignments: dict[str, list[int]]
-    """For each module, a length C list of indices mapping its subcomponents to a component"""
-    module_component_groups: dict[str, list[list[int]]]
-    """For each module, the groups of subcomponents that are assigned to a component (basically the inverse of module_component_assignments)"""
-
-
 @dataclass
 class ClusterRunContext:
     wandb_path: str
     iteration: int
     clustering_shape: ClusteringShape
 
-
-class ClusterRunDTO(BaseModel):
-    wandb_path: str
-    iteration: int
-    clustering_shape: ClusteringShape
-
-    @classmethod
-    def from_cluster_run_context(cls, cluster_run_context: ClusterRunContext) -> "ClusterRunDTO":
-        return cls(
-            wandb_path=cluster_run_context.wandb_path,
-            iteration=cluster_run_context.iteration,
-            clustering_shape=cluster_run_context.clustering_shape,
+    def to_dto(self) -> ClusterRunDTO:
+        return ClusterRunDTO(
+            wandb_path=self.wandb_path,
+            iteration=self.iteration,
+            clustering_shape=self.clustering_shape,
         )
-
-
-class TrainRunDTO(BaseModel):
-    wandb_path: str
-    component_layers: list[str]
-    available_cluster_runs: list[str]
-
-
-class Status(BaseModel):
-    train_run: TrainRunDTO | None
-    cluster_run: ClusterRunDTO | None
-
-
-class AvailablePrompt(BaseModel):
-    index: int
-    full_text: str
-
-
-class Run(BaseModel):
-    id: str
-    url: str
 
 
 class RunContextService:
@@ -119,13 +90,12 @@ class RunContextService:
         cluster_project = f"{ENTITY}/{CLUSTER_PROJECT}"
         runs: list[str] = []
         logger.info(f"Discovering cluster runs for {training_run.id}")
-        try:
-            for run in self.api.runs(cluster_project, filters={"tags": {"$in": [model_tag]}}):
-                if model_tag in run.tags:
-                    runs.append("/".join(run.path))
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.warning("Failed to list clustering runs for %s: %s", training_run.id, exc)
-        logger.info(f"Found {len(runs)} clustering runs for {training_run.id}")
+        for run in self.api.runs(cluster_project, filters={"tags": {"$in": [model_tag]}}):
+            if model_tag in run.tags:
+                runs.append("/".join(runtime_cast(list, run.path)))
+        logger.info(
+            f"Found {len(runs)} clustering runs for {training_run.id}: [{', '.join(runs[:3])}...]"
+        )
         return sorted(set(runs))
 
     def _get_cluster_data(
@@ -205,7 +175,7 @@ class RunContextService:
                 cluster_run=None,
             )
 
-        cluster_run = ClusterRunDTO.from_cluster_run_context(cluster_ctx)
+        cluster_run = cluster_ctx.to_dto()
 
         return Status(
             train_run=train_run,
@@ -277,10 +247,11 @@ class RunContextService:
 
     def load_cluster_run(self, wandb_path: str, iteration: int):
         logger.info(f"Loading cluster run from wandb path: {wandb_path}")
-        self.cluster_run_context = get_pickle_cached(
-            key=f"{wandb_path.replace('/', '-')}-{iteration}",
-            get_func=lambda: self._load_cluster_run_from_wandb_path(wandb_path, iteration),
-        )
+        # self.cluster_run_context = get_pickle_cached(
+        #     key=f"{wandb_path.replace('/', '-')}-{iteration}",
+        #     get_func=lambda: self._load_cluster_run_from_wandb_path(wandb_path, iteration),
+        # )
+        self.cluster_run_context = self._load_cluster_run_from_wandb_path(wandb_path, iteration)
         logger.info(f"Loaded cluster run from wandb path: {wandb_path}")
 
     def _load_cluster_run_from_wandb_path(self, wandb_path: str, iteration: int):

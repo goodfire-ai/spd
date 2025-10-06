@@ -5,9 +5,13 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 import torch
-from pydantic import BaseModel
 from transformers import PreTrainedTokenizer
 
+from spd.app.backend.api import (
+    ActivationContext,
+    ModelActivationContexts,
+    SubcomponentActivationContexts,
+)
 from spd.app.backend.services.run_context_service import RunContextService, TrainRunContext
 from spd.configs import Config
 from spd.log import logger
@@ -223,23 +227,6 @@ def _get_importances_by_module(
             sampling=config.sampling,
         )
     return importances_by_module
-
-
-class ActivationContext(BaseModel):
-    raw_text: str
-    offset_mapping: list[tuple[int, int]]
-    token_ci_values: list[float]
-    active_position: int
-    ci_value: float
-
-
-class SubcomponentActivationContexts(BaseModel):
-    subcomponent_idx: int
-    examples: list[ActivationContext]
-
-
-class ModelActivationContexts(BaseModel):
-    layers: dict[str, list[SubcomponentActivationContexts]]
 
 
 def example_to_activation_context(

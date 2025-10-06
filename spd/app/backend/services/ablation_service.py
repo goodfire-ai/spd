@@ -1,5 +1,4 @@
 # %%
-import asyncio
 import uuid
 from dataclasses import dataclass
 from typing import cast
@@ -7,11 +6,20 @@ from typing import cast
 import torch
 import torch.nn.functional as F
 from jaxtyping import Float, Int
-from pydantic import BaseModel
 from torch._tensor import Tensor
 
-from spd.app.backend.services.cluster_dashboard_service import ClusterDashboardService
+from spd.app.backend.api import (
+    LayerCIs,
+    MaskOverrideDTO,
+    MatrixCausalImportances,
+    OutputTokenLogit,
+    RunResponse,
+    SimulateMergeResponse,
+    TokenLayerCosineSimilarityData,
+)
+from spd.app.backend.services.cluster_dashboard_service import ComponentActivationContextsService
 from spd.app.backend.services.run_context_service import RunContextService
+from spd.app.backend.utils import tensor_to_sparse_vector
 from spd.log import logger
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import get_device
@@ -25,74 +33,20 @@ class PromptContext:
     subcomponent_causal_importances: dict[str, Float[torch.Tensor, " seq_len C"]]
 
 
-class SparseVector(BaseModel):
-    l0: int
-    indices: list[int]
-    values: list[float]
-
-    @classmethod
-    def from_tensor(cls, tensor: Float[torch.Tensor, " C"]) -> "SparseVector":
-        assert tensor.ndim == 1, "Tensor must be 1D"
-        l0 = (tensor > 0.0).float().sum().item()
-        (nonzero_indices,) = tensor.nonzero(as_tuple=True)
-        return cls(
-            l0=int(l0),
-            indices=nonzero_indices.tolist(),
-            values=tensor[nonzero_indices].tolist(),
-        )
-
-
-class Component(BaseModel):
-    index: int
-    subcomponent_indices: list[int]
-
-
-class MatrixCausalImportances(BaseModel):
-    subcomponent_cis_sparse: SparseVector
-    subcomponent_cis: list[float]
-    """the CI values for each subcomponent"""
-
-    # component_indices: list[int]
-    # """len: C. the index of the component that the each subcomponent belongs to"""
-
-    component_agg_cis: list[float]  # or SparseVector
-    """len: M. For each component, the assigned CI value as aggregated from the subcomponents (usually via
-    max)"""
-
-    components: list[Component]
-
-
-class LayerCIs(BaseModel):
-    module: str
-    token_cis: list[MatrixCausalImportances]
-
-
-class OutputTokenLogit(BaseModel):
-    token: str
-    logit: float
-    probability: float
-
-
-class RunResponse(BaseModel):
-    prompt_id: str
-    prompt_tokens: list[str]
-    layer_cis: list[LayerCIs]
-    full_run_token_logits: list[list[OutputTokenLogit]]
-    ci_masked_token_logits: list[list[OutputTokenLogit]]
-
-
-class TokenLayerCosineSimilarityData(BaseModel):
-    input_singular_vectors: list[list[float]]
-    output_singular_vectors: list[list[float]]
-    component_indices: list[int]
-
-
 @dataclass
 class MaskOverride:
     id: str
     description: str | None
     layer: str
     combined_mask: Float[Tensor, " C"]
+
+    def to_dto(self) -> MaskOverrideDTO:
+        return MaskOverrideDTO(
+            id=self.id,
+            description=self.description,
+            layer=self.layer,
+            combined_mask=tensor_to_sparse_vector(self.combined_mask),
+        )
 
 
 DEVICE = get_device()
@@ -102,7 +56,7 @@ class AblationService:
     def __init__(
         self,
         run_context_service: RunContextService,
-        cluster_dashboard_service: ClusterDashboardService,
+        cluster_dashboard_service: ComponentActivationContextsService,
         *,
         dashboard_iteration: int = 3000,
         dashboard_n_samples: int = 16,
@@ -122,9 +76,13 @@ class AblationService:
     ) -> Float[Tensor, "seq_len M"]:
         assert (ctx := self.run_context_service.cluster_run_context) is not None
 
-        assignments = torch.tensor(ctx.clustering_shape.module_component_assignments[module], device=cis.device)
+        assignments = torch.tensor(
+            ctx.clustering_shape.module_component_assignments[module], device=cis.device
+        )
         assert assignments.ndim == 1, "Assignments must be 1D"
-        assert assignments.shape[0] == cis.shape[1], "Assignments must have the same length as the number of components"
+        assert assignments.shape[0] == cis.shape[1], (
+            "Assignments must have the same length as the number of components"
+        )
 
         n_tokens, _ = cis.shape
         component_indices = assignments.unsqueeze(0).expand(n_tokens, -1)
@@ -228,31 +186,19 @@ class AblationService:
         self,
         causal_importances: dict[str, Float[Tensor, "seq_len C"]],
     ) -> list[LayerCIs]:
-        assert (ctx := self.run_context_service.cluster_run_context) is not None
-        assert (run_ctx := self.run_context_service.train_run_context) is not None
-
         layer_cis = []
         for module, layer_ci in causal_importances.items():
-            component_agg_cis = self._aggregate_cis(module, layer_ci)
-
-            # TODO potentially factor this out
-            components = []
-            for module in list(run_ctx.cm.components.keys()):
-                shape = ctx.clustering_shape
-                component_groups = shape.module_component_groups[module]
-                for component_idx, subcomponent_indices in enumerate(component_groups):
-                    comp = Component(index=component_idx, subcomponent_indices=subcomponent_indices)
-                    components.append(comp)
+            component_agg_cis: Float[Tensor, "seq_len M"] = self._aggregate_cis(module, layer_ci)
 
             token_cis = []
+            # tok_component_agg_ci: (M,)
+            # tok_layer_ci: (C,)
             for tok_component_agg_ci, tok_layer_ci in zip(component_agg_cis, layer_ci, strict=True):
                 token_cis.append(
                     MatrixCausalImportances(
-                        subcomponent_cis_sparse=SparseVector.from_tensor(tok_layer_ci),
+                        subcomponent_cis_sparse=tensor_to_sparse_vector(tok_layer_ci),
                         subcomponent_cis=tok_layer_ci.tolist(),
-                        # component_indices=tok_component_indices.tolist(),
                         component_agg_cis=tok_component_agg_ci.tolist(),
-                        components=components,
                     )
                 )
 
@@ -391,7 +337,7 @@ class AblationService:
         assert (components := run.cm.components.get(layer)) is not None, f"Layer {layer} not found"
 
         logger.info(f"component index: {component_idx}")
-        # selected_components = self._get_components(layer)
+
         assert (cluster_ctx := self.run_context_service.cluster_run_context) is not None
         layer_components = cluster_ctx.clustering_shape.module_component_groups[layer]
 
@@ -399,12 +345,10 @@ class AblationService:
             layer_components[component_idx], device=DEVICE, dtype=torch.long
         )
 
-        logger.info(f"component subcomponent indices: {component_subcomponent_indices.shape}")
-
         assert component_subcomponent_indices.ndim == 1, "Nonzero indices must be 1D"
         n_nonzero = component_subcomponent_indices.shape[0]
 
-        u_singular_vectors: Float[torch.Tensor, "C d"] = components.U[
+        u_singular_vectors: Float[torch.Tensor, "C d_in"] = components.U[
             component_subcomponent_indices.tolist()
         ]
         u_pairwise_cosine_similarities = pairwise_cosine_similarities(u_singular_vectors)
@@ -412,7 +356,7 @@ class AblationService:
             f"Expected {n_nonzero}x{n_nonzero} shape, got {u_pairwise_cosine_similarities.shape}"
         )
 
-        v_singular_vectors: Float[torch.Tensor, "d C"] = components.V[
+        v_singular_vectors: Float[torch.Tensor, "d_out C"] = components.V[
             :, component_subcomponent_indices.tolist()
         ]
         v_pairwise_cosine_similarities = pairwise_cosine_similarities(v_singular_vectors.T)
@@ -420,13 +364,26 @@ class AblationService:
             f"Expected {n_nonzero}x{n_nonzero} shape, got {v_pairwise_cosine_similarities.shape}"
         )
 
+        # Compute combined cosine similarities: cat([U, V^T], dim=1)
+        combined_vectors: Float[torch.Tensor, "C (d_in+d_out)"] = torch.cat(
+            [u_singular_vectors, v_singular_vectors.T], dim=1
+        )
+        combined_cosine_similarities = pairwise_cosine_similarities(combined_vectors)
+        assert combined_cosine_similarities.shape == (n_nonzero, n_nonzero), (
+            f"Expected {n_nonzero}x{n_nonzero} shape, got {combined_cosine_similarities.shape}"
+        )
+
+        # Zero out diagonal for display (self-similarity is always 1 and distracting)
+        combined_cosine_similarities.fill_diagonal_(0.0)
+
         logger.info(f"U pairwise cosine similarities: {u_pairwise_cosine_similarities.shape}")
         logger.info(f"V pairwise cosine similarities: {v_pairwise_cosine_similarities.shape}")
-        logger.info(f"Component indices: {component_subcomponent_indices.tolist()}")
+        logger.info(f"Combined cosine similarities: {combined_cosine_similarities.shape}")
 
         return TokenLayerCosineSimilarityData(
             input_singular_vectors=u_pairwise_cosine_similarities.tolist(),
             output_singular_vectors=v_pairwise_cosine_similarities.tolist(),
+            combined_singular_vectors=combined_cosine_similarities.tolist(),
             component_indices=component_subcomponent_indices.tolist(),
         )
 
@@ -464,7 +421,7 @@ class AblationService:
     # change this to also return the metric
     def get_merge_l0(
         self, prompt_id: str, layer: str, token_indices: list[int]
-    ) -> tuple[int, float]:
+    ) -> SimulateMergeResponse:
         mask_override = self.create_combined_mask(
             prompt_id=prompt_id,
             layer=layer,
@@ -472,7 +429,7 @@ class AblationService:
             description=None,
             save=False,
         )
-        l0 = SparseVector.from_tensor(mask_override.combined_mask).l0
+        l0 = tensor_to_sparse_vector(mask_override.combined_mask).l0
 
         # Compute the k-way Jaccard on the original token masks for this layer
         assert prompt_id in self.prompt_contexts, f"Prompt {prompt_id} not found"
@@ -486,7 +443,7 @@ class AblationService:
         # If you prefer the set/binary interpretation (presence > 0.0), use:
         # jacc = k_way_set_jaccard(token_masks, threshold=0.0)
 
-        return l0, jacc
+        return SimulateMergeResponse(l0=l0, jacc=jacc)
 
 
 def pairwise_cosine_similarities(vectors: Float[Tensor, "n d"]) -> Float[Tensor, "n n"]:

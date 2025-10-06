@@ -6,42 +6,46 @@ from functools import wraps
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
-from spd.app.backend.services.ablation_service import (
-    AblationService,
-    MaskOverride,
-    OutputTokenLogit,
+from spd.app.backend.api import (
+    ActivationContext,
+    ApplyMaskRequest,
+    AvailablePrompt,
+    ClusterDashboardResponse,
+    CombineMasksRequest,
+    CombineMasksResponse,
+    ComponentAblationRequest,
+    InterventionResponse,
+    MaskOverrideDTO,
+    Run,
+    RunRequest,
     RunResponse,
-    SparseVector,
+    SimulateMergeRequest,
+    SimulateMergeResponse,
+    Status,
+    SubcomponentAblationRequest,
+    SubcomponentAblationResponse,
+    SubcomponentActivationContexts,
     TokenLayerCosineSimilarityData,
 )
+from spd.app.backend.services.ablation_service import AblationService
 from spd.app.backend.services.activation_contexts_service import (
     SubcomponentActivationContextsService,
 )
-from spd.app.backend.services.cluster_dashboard_service import (
-    ClusterDashboardResponse,
-    ClusterDashboardService,
-)
+from spd.app.backend.services.cluster_dashboard_service import ComponentActivationContextsService
 from spd.app.backend.services.run_context_service import (
     CLUSTER_PROJECT,
     ENTITY,
     TRAIN_PROJECT,
-    AvailablePrompt,
-    Run,
     RunContextService,
-    Status,
-)
-from spd.app.backend.workers.activation_contexts_worker import (
-    ActivationContext,
-    SubcomponentActivationContexts,
 )
 
 run_context_service = RunContextService()
-
-cluster_dashboard_service = ClusterDashboardService(run_context_service)
-ablation_service = AblationService(run_context_service, cluster_dashboard_service)
-component_activations_service = SubcomponentActivationContextsService(run_context_service)
+subcomponent_activations_context_service = SubcomponentActivationContextsService(
+    run_context_service
+)
+component_activation_contexts_service = ComponentActivationContextsService(run_context_service)
+ablation_service = AblationService(run_context_service, component_activation_contexts_service)
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
@@ -98,10 +102,6 @@ app.add_middleware(
 )
 
 
-class RunRequest(BaseModel):
-    prompt: str
-
-
 @app.post("/run")
 @handle_errors
 def run_prompt(request: RunRequest) -> RunResponse:
@@ -121,15 +121,6 @@ def run_prompt_by_index(dataset_index: int) -> RunResponse:
     return ablation_service.run_prompt_by_index(dataset_index)
 
 
-class SubcomponentAblationRequest(BaseModel):
-    prompt_id: str
-    subcomponent_mask: dict[str, list[list[int]]]
-
-
-class SubcomponentAblationResponse(BaseModel):
-    token_logits: list[list[OutputTokenLogit]]
-
-
 @app.post("/ablate_subcomponents")
 @handle_errors
 def ablate_subcomponents(request: SubcomponentAblationRequest) -> SubcomponentAblationResponse:
@@ -140,15 +131,6 @@ def ablate_subcomponents(request: SubcomponentAblationRequest) -> SubcomponentAb
     return SubcomponentAblationResponse(token_logits=tokens_logits)
 
 
-class ComponentAblationRequest(BaseModel):
-    prompt_id: str
-    component_mask: dict[str, list[list[int]]]
-
-
-class InterventionResponse(BaseModel):
-    token_logits: list[list[OutputTokenLogit]]
-
-
 @app.post("/ablate_components")
 @handle_errors
 def ablate_components(request: ComponentAblationRequest) -> InterventionResponse:
@@ -157,11 +139,6 @@ def ablate_components(request: ComponentAblationRequest) -> InterventionResponse
         request.component_mask,
     )
     return InterventionResponse(token_logits=tokens_logits)
-
-
-class ApplyMaskRequest(BaseModel):
-    prompt_id: str
-    mask_override_id: str
 
 
 @app.post("/apply_mask")
@@ -207,34 +184,6 @@ def get_cosine_similarities(layer: str, component_idx: int) -> TokenLayerCosineS
     return ablation_service.get_subcomponent_cosine_sims(layer, component_idx)
 
 
-class CombineMasksRequest(BaseModel):
-    prompt_id: str
-    layer: str
-    token_indices: list[int]  # List of token indices (positions) to combine
-    description: str | None = None
-
-
-class MaskOverrideDTO(BaseModel):
-    id: str
-    layer: str
-    combined_mask: SparseVector
-    description: str | None
-
-    @classmethod
-    def from_mask_override(cls, mask_override: MaskOverride) -> "MaskOverrideDTO":
-        return MaskOverrideDTO(
-            id=mask_override.id,
-            description=mask_override.description,
-            layer=mask_override.layer,
-            combined_mask=SparseVector.from_tensor(mask_override.combined_mask),
-        )
-
-
-class CombineMasksResponse(BaseModel):
-    mask_id: str
-    mask_override: MaskOverrideDTO
-
-
 @app.post("/combine_masks")
 @handle_errors
 def combine_masks(request: CombineMasksRequest) -> CombineMasksResponse:
@@ -247,37 +196,23 @@ def combine_masks(request: CombineMasksRequest) -> CombineMasksResponse:
 
     return CombineMasksResponse(
         mask_id=mask_override.id,
-        mask_override=MaskOverrideDTO.from_mask_override(mask_override),
+        mask_override=mask_override.to_dto(),
     )
-
-
-class SimulateMergeRequest(BaseModel):
-    prompt_id: str
-    layer: str
-    token_indices: list[int]
-
-
-class SimulateMergeResponse(BaseModel):
-    l0: int
-    jacc: float
 
 
 @app.post("/simulate_merge")
 @handle_errors
 def simulate_merge(request: SimulateMergeRequest) -> SimulateMergeResponse:
     """Simulate merging masks without persisting the result"""
-    l0, jacc = ablation_service.get_merge_l0(
+    return ablation_service.get_merge_l0(
         prompt_id=request.prompt_id, layer=request.layer, token_indices=request.token_indices
     )
-    return SimulateMergeResponse(l0=l0, jacc=jacc)
 
 
 @app.get("/mask_overrides")
 @handle_errors
 def get_mask_overrides() -> list[MaskOverrideDTO]:
-    return [
-        MaskOverrideDTO.from_mask_override(mo) for mo in ablation_service.mask_overrides.values()
-    ]
+    return [mo.to_dto() for mo in ablation_service.mask_overrides.values()]
 
 
 @app.get("/activation_contexts/{layer}/subcomponents")
@@ -285,9 +220,8 @@ def get_mask_overrides() -> list[MaskOverrideDTO]:
 async def get_layer_subcomponent_activation_contexts(
     layer: str,
 ) -> list[SubcomponentActivationContexts]:
-    return await component_activations_service.get_layer_subcomponents_activation_contexts_async(
-        layer=layer,
-    )
+    f = subcomponent_activations_context_service.get_layer_subcomponents_activation_contexts
+    return await f(layer)
 
 
 @app.get("/activation_contexts/{layer}/subcomponents/{subcomponent_idx}")
@@ -296,13 +230,11 @@ async def get_subcomponent_activation_contexts(
     layer: str,
     subcomponent_idx: int,
 ) -> list[ActivationContext]:
-    return await component_activations_service.get_layer_subcomponent_activation_contexts_async(
-        layer=layer,
-        subcomponent_idx=subcomponent_idx,
-    )
+    f = subcomponent_activations_context_service.get_layer_subcomponent_activation_contexts
+    return await f(layer=layer, subcomponent_idx=subcomponent_idx)
 
 
-@app.get("/cluster-dashboard/data", response_model=ClusterDashboardResponse)
+@app.get("/cluster-dashboard/data")
 @handle_errors
 async def get_cluster_dashboard_data(
     iteration: int,
@@ -311,7 +243,7 @@ async def get_cluster_dashboard_data(
     batch_size: int,
     context_length: int,
 ) -> ClusterDashboardResponse:
-    return await cluster_dashboard_service.get_dashboard_data(
+    return await component_activation_contexts_service.get_dashboard_data(
         iteration=iteration,
         n_samples=n_samples,
         n_batches=n_batches,
