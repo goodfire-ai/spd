@@ -107,7 +107,7 @@ class ComponentModel(LoadableModule):
         self.target_model = target_model
         self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
-        self.module_paths: list[str] = get_target_module_paths(target_model, target_module_patterns)
+        self.module_paths = get_target_module_paths(target_model, target_module_patterns)
 
         self.components = ComponentModel._create_components(
             target_model=target_model,
