@@ -204,6 +204,10 @@ def optimize(
             start_value=config.adv_mix_rand_weight_start,
             end_value=config.adv_mix_rand_weight_end,
         )
+        # If PGD is disabled, force random-only mixing to avoid any adversarial path usage or confusion
+        if not config.pgd_mask_enabled or config.pgd_mask_steps == 0:
+            adv_mix_adv_weight = 0.0
+            adv_mix_rand_weight = 1.0
 
         # Compute scheduled importance_minimality_coeff if configured (cosine ramp)
         if (
