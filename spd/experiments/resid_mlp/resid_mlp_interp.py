@@ -307,6 +307,7 @@ def plot_spd_feature_contributions_truncated(
 
     n_rows = 2
     fig1, axes1 = plt.subplots(n_rows, 1, figsize=(10, 7), constrained_layout=True)
+    # TODO: whats up with these ignores?
     axes1 = np.atleast_1d(axes1)  # pyright: ignore[reportCallIssue,reportArgumentType]
 
     labelled_neurons = feature_contribution_plot(
