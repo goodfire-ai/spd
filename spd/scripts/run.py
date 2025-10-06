@@ -66,36 +66,107 @@ def resolve_sweep_params_path(sweep_params_file: str) -> Path:
 
 
 def generate_grid_combinations(parameters: dict[str, Any]) -> list[dict[str, Any]]:
-    """Generate all combinations for a grid search from parameter specifications."""
-    # Flatten nested parameters first
-    flattened_params = {}
+    """Generate all combinations for a grid search from parameter specifications.
 
-    def flatten_params(params: dict[str, Any], prefix: str = "") -> None:
-        """Recursively flatten nested parameters."""
-        for key, value in params.items():
-            full_key = f"{prefix}.{key}" if prefix else key
+    All leaf values in the parameters dict must be {"values": [...]}.
+    Lists are preserved in the output structure. Discriminated unions in lists
+    are fully supported.
 
-            if isinstance(value, dict):
-                if "values" in value:
-                    # This is a parameter specification
-                    flattened_params[full_key] = value["values"]
-                else:
-                    # This might be a direct nested structure
-                    flatten_params(value, full_key)
+    Args:
+        parameters: Nested dict/list structure where all leaves are {"values": [...]}
 
-    flatten_params(parameters)
+    Returns:
+        List of parameter combinations with values unwrapped and structure preserved
 
-    # Extract parameter names and their values
-    param_names = list(flattened_params.keys())
-    param_values = [flattened_params[name] for name in param_names]
+    Example:
+        >>> params = {
+        ...     "seed": {"values": [0, 1]},
+        ...     "loss_metric_configs": [
+        ...         {
+        ...             "classname": {"values": ["ImportanceMinimalityLoss"]},
+        ...             "coeff": {"values": [0.1, 0.2]},
+        ...         }
+        ...     ],
+        ... }
+        >>> combos = generate_grid_combinations(params)
+        >>> len(combos)
+        4
+        >>> combos[0]["seed"]
+        0
+        >>> combos[0]["loss_metric_configs"][0]["coeff"]
+        0.1
+        >>> combos[3]["seed"]
+        1
+        >>> combos[3]["loss_metric_configs"][0]["coeff"]
+        0.2
+    """
+    # Step 1: Extract all value specs with their paths
+    value_specs: list[tuple[tuple[str | int, ...], list[Any]]] = []
 
-    # Generate all combinations
-    combinations = []
-    for values in itertools.product(*param_values):
-        combination = dict(zip(param_names, values, strict=True))
-        combinations.append(combination)
+    def extract_value_specs(obj: Any, path: tuple[str | int, ...] = ()) -> None:
+        """Recursively extract all {"values": [...]} specs with their paths."""
+        if isinstance(obj, dict):
+            if "values" in obj and len(obj) == 1:
+                # This is a value spec
+                value_specs.append((path, obj["values"]))
+            else:
+                # Regular dict, recurse
+                for key, value in obj.items():
+                    extract_value_specs(value, path + (key,))
+        elif isinstance(obj, list):
+            # List, recurse into each item
+            for idx, item in enumerate(obj):
+                extract_value_specs(item, path + (idx,))
+
+    extract_value_specs(parameters)
+
+    if not value_specs:
+        # No value specs found, return single empty combination
+        return [{}]
+
+    # Step 2: Generate cartesian product of all value specs
+    paths, value_lists = zip(*value_specs, strict=True)
+    all_value_combinations = list(itertools.product(*value_lists))
+
+    # Step 3: For each combination, reconstruct the structure
+    combinations: list[dict[str, Any]] = []
+
+    for value_combo in all_value_combinations:
+        # Create a mapping from path to value for this combination
+        path_to_value = dict(zip(paths, value_combo, strict=True))
+
+        # Reconstruct the structure
+        result = _reconstruct_structure(parameters, path_to_value)
+        combinations.append(result)
 
     return combinations
+
+
+def _reconstruct_structure(
+    template: Any,
+    path_to_value: dict[tuple[str | int, ...], Any],
+    current_path: tuple[str | int, ...] = (),
+) -> Any:
+    """Recursively reconstruct the structure, replacing value specs with actual values."""
+    if isinstance(template, dict):
+        if "values" in template and len(template) == 1:
+            # This is a value spec, replace with actual value
+            return path_to_value[current_path]
+        else:
+            # Regular dict, recurse
+            return {
+                key: _reconstruct_structure(value, path_to_value, current_path + (key,))
+                for key, value in template.items()
+            }
+    elif isinstance(template, list):
+        # List, recurse into each item
+        return [
+            _reconstruct_structure(item, path_to_value, current_path + (idx,))
+            for idx, item in enumerate(template)
+        ]
+    else:
+        # Leaf value that's not a value spec (shouldn't happen with proper input)
+        return template
 
 
 def load_sweep_params(experiment_name: str, sweep_params_path: Path) -> dict[str, Any]:

@@ -292,13 +292,42 @@ def calc_sum_recon_loss_lm(
     return loss
 
 
+# Fields that use discriminated union merging: field_name -> discriminator_field
+_DISCRIMINATED_LIST_FIELDS: dict[str, str] = {
+    "loss_metric_configs": "classname",
+    "eval_metric_configs": "classname",
+}
+
+
 def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
-    """Apply nested updates to a dictionary."""
+    """Apply nested updates to a dictionary with smart handling of dicts and lists.
+
+    For regular fields:
+        - Supports dot notation (e.g., "task_config.max_seq_len")
+        - Supports nested dict merging (e.g., {"task_config": {"feature_probability": 0.05}})
+        - Deep merges nested dicts recursively
+
+    For discriminated list fields (loss_metric_configs, eval_metric_configs):
+        - Matches items by discriminator field ("classname")
+        - Merges fields: updates from combo, preserves from base
+        - Preserves base items not mentioned in updates
+        - Adds new items from updates
+
+    Args:
+        base_dict: The base configuration dictionary
+        updates: Dictionary of updates to apply
+
+    Returns:
+        Updated dictionary (deep copy, original unchanged)
+
+    Raises:
+        ValueError: If a discriminated list field has items missing the discriminator
+    """
     result = copy.deepcopy(base_dict)
 
     for key, value in updates.items():
         if "." in key:
-            # Handle nested keys
+            # Handle dot notation for nested keys
             keys = key.split(".")
             current = result
 
@@ -310,9 +339,76 @@ def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> 
 
             # Set the final value
             current[keys[-1]] = value
+        elif key in _DISCRIMINATED_LIST_FIELDS and isinstance(value, list):
+            # Smart list merging for discriminated unions
+            discriminator = _DISCRIMINATED_LIST_FIELDS[key]
+            if key in result and isinstance(result[key], list):
+                result[key] = _merge_discriminated_lists(
+                    result[key], value, discriminator=discriminator, field_name=key
+                )
+            else:
+                # Base doesn't have this field, just use the update value
+                result[key] = value
+        elif isinstance(value, dict) and key in result and isinstance(result[key], dict):
+            # Deep merge nested dicts recursively
+            result[key] = apply_nested_updates(result[key], value)
         else:
-            # Simple key
+            # Simple key replacement
             result[key] = value
+
+    return result
+
+
+def _merge_discriminated_lists(
+    base_list: list[dict[str, Any]],
+    update_list: list[dict[str, Any]],
+    discriminator: str,
+    field_name: str,
+) -> list[dict[str, Any]]:
+    """Merge two lists of discriminated union items.
+
+    Items are matched by discriminator field. Matched items have their fields merged.
+    Unmatched items from base are preserved. New items from update are added.
+
+    Args:
+        base_list: List of items from base config
+        update_list: List of items from updates
+        discriminator: The field name to use for matching (e.g., "classname")
+        field_name: Name of the field being merged (for error messages)
+
+    Returns:
+        Merged list with items from both base and update
+
+    Raises:
+        ValueError: If items are missing the discriminator field
+    """
+    # Validate all items have the discriminator
+    all_items = base_list + update_list
+    for item in all_items:
+        if discriminator not in item:
+            raise ValueError(
+                f"Cannot merge list field '{field_name}': item missing discriminator '{discriminator}': {item}"
+            )
+
+    # Build a mapping from discriminator value to item for both lists
+    base_map: dict[str, dict[str, Any]] = {item[discriminator]: item for item in base_list}
+    update_map: dict[str, dict[str, Any]] = {item[discriminator]: item for item in update_list}
+
+    # Merge: start with items from update_list (in their order)
+    result: list[dict[str, Any]] = []
+    for disc_value, update_item in update_map.items():
+        if disc_value in base_map:
+            # Merge fields: base fields + update fields (update wins)
+            merged_item = {**base_map[disc_value], **update_item}
+            result.append(merged_item)
+        else:
+            # New item from update
+            result.append(update_item)
+
+    # Add unmatched items from base (preserve them)
+    for disc_value, base_item in base_map.items():
+        if disc_value not in update_map:
+            result.append(base_item)
 
     return result
 

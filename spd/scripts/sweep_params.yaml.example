@@ -2,6 +2,13 @@
 global:
   seed:
     values: [0, 1]
+  loss_metric_configs:
+    - classname "ImportanceMinimalityLoss"
+      coeff:
+        values: [0.1, 0.2]
+    - classname "StochasticReconLayerwiseLoss"
+      coeff:
+        values: [0.1]
 
 # Experiment-specific params that override the global params
 tms_5-2-id:
