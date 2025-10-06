@@ -20,7 +20,7 @@ class TestCIMaskedReconSubsetLoss:
         U = model.components["fc"].U
 
         batch = torch.randn(1, 2, dtype=torch.float32)
-        target_out = model(batch, mode="target")
+        target_out = model(batch)
 
         ci = {"fc": torch.tensor([[0.8]], dtype=torch.float32)}
 
