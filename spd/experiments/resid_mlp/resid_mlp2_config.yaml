@@ -25,18 +25,22 @@ loss_metric_configs:
     coeff: 1.0
   - classname: "StochasticReconLoss"
     coeff: 1.0
+  - classname: "FaithfulnessLoss"
+    coeff: 1.0
 output_loss_type: mse
 
 # --- Training ---
 batch_size: 2048
 eval_batch_size: 2048
 steps: 20_000
-lr: 1e-3
-lr_schedule: constant
-lr_warmup_pct: 0.00
+# lr: 1e-3
+# lr_schedule: constant
+# lr_warmup_pct: 0.00
+gate_lr: 1e-3
+component_lr: 1e-3
 
 # --- Faithfulness Warmup ---
-faithfulness_warmup_steps: 200
+faithfulness_warmup_steps: 0
 faithfulness_warmup_lr: 0.01
 faithfulness_warmup_weight_decay: 0.1
 
