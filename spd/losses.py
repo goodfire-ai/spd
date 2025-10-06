@@ -1,6 +1,8 @@
 from typing import Literal, cast
 
+import einops
 import torch
+import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -82,7 +84,7 @@ def calc_masked_recon_loss(
     batch: Float[Tensor, "... d_in"],
     mask_infos_list: list[dict[str, ComponentsMaskInfo]],
     target_out: Float[Tensor, "... d_model_out"],
-    loss_type: Literal["mse", "kl"],
+    loss_type: Literal["mse", "kl", "ce"],
     device: str,
 ) -> Float[Tensor, ""]:
     """Calculate the recon loss when applying all (masked) component layers at once.
@@ -102,20 +104,21 @@ def calc_masked_recon_loss(
         The recon loss
     """
     # Do a forward pass with all components
-    assert loss_type in ["mse", "kl"], f"Invalid loss type: {loss_type}"
+    assert loss_type in ["mse", "kl", "ce"], f"Invalid loss type: {loss_type}"
 
     total_loss = torch.tensor(0.0, device=device)
     for mask_infos in mask_infos_list:
         out = model(batch, mode="components", mask_infos=mask_infos)
         if loss_type == "mse":
             loss = ((out - target_out) ** 2).mean()
-        else:
+        elif loss_type == "kl":
             loss = calc_kl_divergence_lm(pred=out, target=target_out)
-            # flat_logits = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
-            # masked_batch = batch.clone()
-            # masked_batch[:, 0] = -100
-            # flat_masked_batch = masked_batch.flatten()
-            # loss = F.cross_entropy(flat_logits[:-1], flat_masked_batch[1:], ignore_index=-100)
+        elif loss_type == "ce":
+            flat_logits = einops.rearrange(out, "b seq_len vocab -> (b seq_len) vocab")
+            masked_batch = batch.clone()
+            masked_batch[:, 0] = -100
+            flat_masked_batch = masked_batch.flatten()
+            loss = F.cross_entropy(flat_logits[:-1], flat_masked_batch[1:], ignore_index=-100)
         total_loss += loss
 
     return total_loss / len(mask_infos_list)
@@ -171,14 +174,14 @@ def _optimize_adversarial_stochastic_masks(
     )
     leading_dims = next(iter(causal_importances.values())).shape[:-1]
     for layer, ci in causal_importances.items():
-        init = torch.rand_like(ci) if config.pgd_mask_random_init else torch.full_like(ci, 0.0)
+        init = torch.rand_like(ci) if config.pgd_mask_random_init else torch.full_like(ci, 1.0)
         init.requires_grad_(True)
         rand_tensors[layer] = init
         if weight_delta_rand_masks is not None:
             wd_init = (
                 torch.rand(*leading_dims, device=ci.device, dtype=ci.dtype)
                 if config.pgd_mask_random_init
-                else torch.full(leading_dims, 0.0, device=ci.device, dtype=ci.dtype)
+                else torch.full(leading_dims, 1.0, device=ci.device, dtype=ci.dtype)
             )
             wd_init.requires_grad_(True)
             weight_delta_rand_masks[layer] = wd_init

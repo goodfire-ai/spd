@@ -1,4 +1,10 @@
 C: 2000
+adv_mix_adv_weight_end: 0.05
+adv_mix_adv_weight_start: 0.05
+adv_mix_end_frac: 1.0
+adv_mix_rand_weight_end: 0.95
+adv_mix_rand_weight_start: 0.95
+adv_mix_start_frac: 0.0
 batch_size: 256
 ci_alive_threshold: 0.0
 ci_masked_recon_subset_coeff: null
@@ -18,14 +24,6 @@ eval_metrics:
     groups:
       layer_0:
       - model.layers.0.*
-      # layer_1:
-      # - model.layers.1.*
-      # layer_2:
-      # - model.layers.2.*
-      # layer_3:
-      # - model.layers.3.*
-      # total:
-      # - '*'
 - classname: CEandKLLosses
   extra_init_kwargs:
     rounding_threshold: 0.0
@@ -33,36 +31,10 @@ eval_metrics:
   extra_init_kwargs: {}
 - classname: SubsetReconstructionLoss
   extra_init_kwargs:
-    exclude_patterns:
-      # all_but_layer_0:
-      # - model.layers.0.*
-      # all_but_layer_1:
-      # - model.layers.1.*
-      # all_but_layer_2:
-      # - model.layers.2.*
-      # all_but_layer_3:
-      # - model.layers.3.*
+    exclude_patterns: null
     include_patterns:
-      # attention_only:
-      # - '*.self_attn.*'
-      # key_only:
-      # - '*.self_attn.k_proj'
       layer_0_only:
       - model.layers.0.*
-      # layer_1_only:
-      # - model.layers.1.*
-      # layer_2_only:
-      # - model.layers.2.*
-      # layer_3_only:
-      # - model.layers.3.*
-      # mlp_only:
-      # - '*.mlp.*'
-      # output_only:
-      # - '*.self_attn.o_proj'
-      # query_only:
-      # - '*.self_attn.q_proj'
-      # value_only:
-      # - '*.self_attn.v_proj'
     n_mask_samples: 1
 - classname: FaithfulnessLoss
   extra_init_kwargs: {}
@@ -71,13 +43,11 @@ gate_hidden_dims:
 - 1000
 gate_type: shared_mlp
 gradient_accumulation_steps: 1
-identity_module_patterns:
-- model.layers.0.mlp.gate_proj
-# - model.layers.0.mlp.down_proj
-importance_minimality_coeff: 1e-2
-importance_minimality_coeff_start_frac: 0.0
+identity_module_patterns: null
+importance_minimality_coeff: 0.001
 importance_minimality_coeff_end_frac: 0.5
-importance_minimality_coeff_final: 1e-3
+importance_minimality_coeff_final: 0.001
+importance_minimality_coeff_start_frac: 0.0
 lr: 0.0005
 lr_exponential_halflife: null
 lr_schedule: constant
@@ -87,20 +57,14 @@ n_examples_until_dead: 1368400
 n_mask_samples: 1
 out_dir: null
 output_loss_type: kl
-# p_anneal_end_frac: 1
-# p_anneal_final_p: 0.3
-# p_anneal_start_frac: 0
-pnorm: 0.9
+p_anneal_end_frac: 1.0
+p_anneal_final_p: null
+p_anneal_start_frac: 1.0
 pgd_mask_enabled: true
-pgd_mask_steps: 1
-pgd_mask_step_size: 1.0
-adv_mix_start_frac: 0
-adv_mix_end_frac: 1
-adv_mix_adv_weight_start: 0.05
-adv_mix_rand_weight_start: 0.95
-adv_mix_adv_weight_end: 0.05
-adv_mix_rand_weight_end: 0.95
 pgd_mask_random_init: false
+pgd_mask_step_size: 1.0
+pgd_mask_steps: 1
+pnorm: 1.0
 pretrained_model_class: transformers.LlamaForCausalLM
 pretrained_model_name: SimpleStories/SimpleStories-1.25M
 pretrained_model_output_attr: logits
@@ -111,19 +75,14 @@ seed: 0
 sigmoid_type: leaky_hard
 slow_eval_freq: 2000
 slow_eval_on_first_step: true
-steps: 100000
+steps: 10000
 stochastic_recon_coeff: null
 stochastic_recon_layerwise_coeff: null
-stochastic_recon_subset_coeff: 1
+stochastic_recon_subset_coeff: 1.0
 target_module_patterns:
-# - model.embed_tokens
 - model.layers.0.mlp.gate_proj
 - model.layers.0.mlp.down_proj
 - model.layers.0.mlp.up_proj
-# - model.layers.0.self_attn.q_proj
-# - model.layers.0.self_attn.k_proj
-# - model.layers.0.self_attn.v_proj
-# - model.layers.0.self_attn.o_proj
 task_config:
   buffer_size: 1000
   column_name: story
