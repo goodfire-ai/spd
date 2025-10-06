@@ -56,19 +56,13 @@ jobs:
 
 
       - name: disk usage
-        run: |
-          echo "### disk"
-          df -h
-          echo "### root"
-          du -h -d 1 / 2>/dev/null || true
-          echo "### spd"
-          du -h -d 1
-          echo "spd depth 2"
-          du -h -d 2
+        run: make diskinfo
 
       - name: clear uv cache
         run: uv cache clean || true
 
+      - name: disk usage
+        run: make diskinfo
 
       - name: Print dependencies
         run: uv pip list
