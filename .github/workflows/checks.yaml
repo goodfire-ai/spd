@@ -20,10 +20,14 @@ jobs:
     steps:
       - name: disk usage
         run: | 
+          echo "disk"
           df -h
+          echo "root"
+          du -h -d 1 / 2>temp.txt
+          echo "spd"
           du -h -d 1
+          echo "spd depth 2"
           du -h -d 2
-
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,8 +59,13 @@ jobs:
       
       - name: disk usage
         run: | 
+          echo "disk"
           df -h
+          echo "root"
+          du -h -d 1 / 2>temp.txt
+          echo "spd"
           du -h -d 1
+          echo "spd depth 2"
           du -h -d 2
 
       - name: Run tests
@@ -69,6 +78,11 @@ jobs:
       - name: disk usage
         if: ${{ always() }}
         run: | 
+          echo "disk"
           df -h
+          echo "root"
+          du -h -d 1 / 2>temp.txt
+          echo "spd"
           du -h -d 1
+          echo "spd depth 2"
           du -h -d 2
