@@ -19,7 +19,16 @@ jobs:
     # timeout-minutes: 15 # TODO: see https://github.com/goodfire-ai/spd/issues/114
     steps:
       - name: disk usage
-        run: make diskinfo
+        run: |
+          echo "### disk"
+          df -h
+          echo "### root"
+          du -h -d 1 / 2>/dev/null || true
+          echo "### spd"
+          du -h -d 1
+          echo "spd depth 2"
+          du -h -d 2
+
 
       - name: Checkout
         uses: actions/checkout@v4
