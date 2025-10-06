@@ -28,15 +28,9 @@ from torch import Tensor
 #     ]
 
 
-<<<<<<< HEAD
-def relabel_singletons(
-    x: Int[Tensor, " n"],
-) -> Int[Tensor, " n"]:
-=======
 def process_singletons(
     x: Int[Tensor, " n"],
 ) -> tuple[Int[Tensor, " n"], int]:
->>>>>>> feature/clustering
     """relabel anything in a singleton cluster to -1, relabel other clusters to minimize labels"""
     assert (x >= 0).all(), "input labels must be non-negative"
     # figure out where the singletons are
