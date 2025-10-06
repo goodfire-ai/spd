@@ -48,16 +48,16 @@ def jaccard_partition_matrix(
        all other positions are `np.nan`.
     """
     k_rows: int
-    n_len: int
-    k_rows, n_len = X.shape
+    _n_len: int
+    k_rows, _n_len = X.shape
     J: Float[np.ndarray, "k k"] = np.full((k_rows, k_rows), np.nan, dtype=float)
 
     # Precompute relabeled partitions + their sum of combs
     invs: list[Int[np.ndarray, " n"]] = []
     sizes_list: list[Int[np.ndarray, " ki"]] = []
     sum_combs: Int[np.ndarray, " k"] = np.zeros((k_rows,), dtype=np.int64)
+    inv_i: Int[np.ndarray, " n"]
     for i in range(k_rows):
-        inv_i: Int[np.ndarray, " n"]
         sizes_i: Int[np.ndarray, " ki"]
         inv_i, sizes_i = _relabeled_partition(X[i])
         invs.append(inv_i)
@@ -65,7 +65,7 @@ def jaccard_partition_matrix(
         sum_combs[i] = _sum_combinations2(sizes_i)
 
     for i in range(1, k_rows):
-        inv_i: Int[np.ndarray, " n"] = invs[i]
+        inv_i = invs[i]
         sum_comb_i: int = int(sum_combs[i])
         for j in range(i):
             inv_j: Int[np.ndarray, " n"] = invs[j]

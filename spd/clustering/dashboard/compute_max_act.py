@@ -49,7 +49,7 @@ class ClusterActivations:
     cluster_indices: list[int]
 
 
-def _compute_cluster_activations(
+def _compute_cluster_activations(  # pyright: ignore[reportUnusedFunction]
     processed: ProcessedActivations,
     cluster_components: list[dict[str, Any]],
     batch_size: int,

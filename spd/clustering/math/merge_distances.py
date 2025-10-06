@@ -26,13 +26,13 @@ def compute_distances(
     method: DistancesMethod = "perm_invariant_hamming",
 ) -> DistancesArray:
     n_iters: int = normalized_merge_array.shape[1]
+    merges_array_list: list[Int[np.ndarray, "n_ens c_components"]]
+    distances_list: list[Float[np.ndarray, "n_ens n_ens"]]
     match method:
         case "perm_invariant_hamming":
-            merges_array_list: list[Int[np.ndarray, "n_ens c_components"]] = [
-                normalized_merge_array[:, i, :] for i in range(n_iters)
-            ]
+            merges_array_list = [normalized_merge_array[:, i, :] for i in range(n_iters)]
 
-            distances_list: list[Float[np.ndarray, "n_ens n_ens"]] = run_maybe_parallel(
+            distances_list = run_maybe_parallel(
                 func=perm_invariant_hamming_matrix,
                 iterable=merges_array_list,
                 parallel=True,
@@ -40,10 +40,8 @@ def compute_distances(
 
             return np.stack(distances_list, axis=0)
         case "jaccard":
-            merges_array_list: list[Int[np.ndarray, "n_ens c_components"]] = [
-                normalized_merge_array[:, i, :] for i in range(n_iters)
-            ]
-            distances_list: list[Float[np.ndarray, "n_ens n_ens"]] = run_maybe_parallel(
+            merges_array_list = [normalized_merge_array[:, i, :] for i in range(n_iters)]
+            distances_list = run_maybe_parallel(
                 func=jaccard_partition_matrix,
                 iterable=merges_array_list,
                 parallel=True,
