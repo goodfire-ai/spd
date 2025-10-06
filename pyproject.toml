@@ -40,14 +40,11 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-cov", # for coverage reports
-    "pytest-xdist", # for parallel test execution
+    "pytest-xdist", # parallel test execution
     "ruff",
     "basedpyright",
     "pre-commit",
 ]
-
-[tool.uv.sources]
-js_embedding_vis = { git = "https://github.com/mivanit/js-embedding-vis/"}
 
 [project.scripts]
 spd-run = "spd.scripts.run:cli"
@@ -60,9 +57,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["spd*"]
-
-[tool.setuptools.package-data]
-"spd.clustering.dashboard._bundled" = ["*.html"]
 
 [tool.ruff]
 line-length = 100
@@ -97,11 +91,6 @@ docstring-code-format = true
 known-third-party = ["wandb"]
 
 
-# TODO: remove this when actually cleaned up
-[tool.ruff.lint.per-file-ignores]
-"spd/clustering/experiments/*" = [
-    "E703", # semicolons fine for notebooks
-]
 
 [tool.pyright]
 include = ["spd", "tests"]
