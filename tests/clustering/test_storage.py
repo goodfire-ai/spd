@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import torch
 
-from spd.clustering.consts import DistancesMethod
+from spd.clustering.consts import ComponentLabels, DistancesMethod
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import ClusteringRunConfig
@@ -159,7 +159,7 @@ class TestHistoryStorage:
         # Create history
         history = MergeHistory.from_config(
             merge_config=sample_config,
-            labels=["comp0", "comp1", "comp2"],
+            labels=ComponentLabels(["comp0", "comp1", "comp2"]),
         )
 
         batch_id = "batch_00"
@@ -182,7 +182,7 @@ class TestHistoryStorage:
         for i in range(3):
             history = MergeHistory.from_config(
                 merge_config=sample_config,
-                labels=[f"comp{j}" for j in range(4)],
+                labels=ComponentLabels([f"comp{j}" for j in range(4)]),
             )
             temp_storage.save_history(history, batch_id=f"batch_{i:02d}")
 
@@ -196,7 +196,7 @@ class TestHistoryStorage:
         for i in range(2):
             history = MergeHistory.from_config(
                 merge_config=sample_config,
-                labels=["comp0", "comp1"],
+                labels=ComponentLabels(["comp0", "comp1"]),
             )
             temp_storage.save_history(history, batch_id=f"batch_{i:02d}")
 
@@ -298,7 +298,7 @@ class TestStorageIntegration:
         for i in range(2):
             history = MergeHistory.from_config(
                 merge_config=sample_config,
-                labels=["comp0", "comp1", "comp2"],
+                labels=ComponentLabels(["comp0", "comp1", "comp2"]),
             )
             temp_storage.save_history(history, batch_id=f"batch_{i:02d}")
 

@@ -21,6 +21,12 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
+from spd.clustering.consts import (
+    ActivationsTensor,
+    BatchTensor,
+    ClusterCoactivationShaped,
+    ComponentLabels,
+)
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
 from spd.clustering.merge import _BATCH_PREFIX_FMT, merge_iteration
@@ -38,10 +44,10 @@ os.environ["WANDB_QUIET"] = "True"
 
 LogCallback = Callable[
     [
-        Float[Tensor, "k_groups k_groups"],
-        list[str],
+        ClusterCoactivationShaped,
+        ComponentLabels,
         GroupMerge,
-        Float[Tensor, "k_groups k_groups"],
+        ClusterCoactivationShaped,
         MergeHistory,
         int,
         int,
@@ -103,10 +109,12 @@ def run_clustering(
     model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path).to(device)
     logger_call("loaded model")
 
-    batch: Int[Tensor, "batch seq"] = storage.load_batch(data_path).to(device)
+    batch: BatchTensor = storage.load_batch(data_path).to(device)
     logger_call(f"loaded batch {batch_id} with shape {batch.shape}")
 
-    activations_dict: dict[str, Float[Tensor, "batch seq C"]] | dict[str, Float[Tensor, "batch C"]] = component_activations(
+    activations_dict: (
+        dict[str, Float[Tensor, "batch seq C"]] | dict[str, Float[Tensor, "batch C"]]
+    ) = component_activations(
         model=model,
         batch=batch,
         device=device,
@@ -146,8 +154,8 @@ def run_clustering(
     logger_call(f"plots saved to {this_merge_plots_dir}")
 
     logger_call("cleaning up memory")
-    activations: Float[Tensor, "samples n_components"] = processed_activations.activations
-    component_labels: list[str] = processed_activations.labels.copy()
+    activations: ActivationsTensor = processed_activations.activations
+    component_labels: ComponentLabels = ComponentLabels(processed_activations.labels.copy())
     del processed_activations  # we copied what we needed
     del activations_dict  # processed already
     del model  # already did the forward pass
@@ -243,11 +251,11 @@ def _save_merge_history_to_wandb(
 def _log_callback(
     run: Run,
     batch_id: str,
-    current_coact: Float[Tensor, "k_groups k_groups"],
-    component_labels: list[str],
+    current_coact: ClusterCoactivationShaped,
+    component_labels: ComponentLabels,
     current_merge: GroupMerge,
     config: ClusteringRunConfig,
-    costs: Float[Tensor, "k_groups k_groups"],
+    costs: ClusterCoactivationShaped,
     merge_history: MergeHistory,
     iter_idx: int,
     k_groups: int,

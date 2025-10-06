@@ -18,6 +18,13 @@ from spd.clustering.compute_costs import (
     recompute_coacts_merge_pair,
     recompute_coacts_pop_group,
 )
+from spd.clustering.consts import (
+    ActivationsTensor,
+    BoolActivationsTensor,
+    ClusterCoactivationShaped,
+    ComponentLabels,
+    MergePair,
+)
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
@@ -28,10 +35,10 @@ _BATCH_PREFIX_FMT: str = "\033[38;5;208m[{batch_id}]\033[0m"
 class LogCallback(Protocol):
     def __call__(
         self,
-        current_coact: Float[Tensor, "k_groups k_groups"],
-        component_labels: list[str],
+        current_coact: ClusterCoactivationShaped,
+        component_labels: ComponentLabels,
         current_merge: GroupMerge,
-        costs: Float[Tensor, "k_groups k_groups"],
+        costs: ClusterCoactivationShaped,
         merge_history: MergeHistory,
         iter_idx: int,
         k_groups: int,
@@ -44,8 +51,8 @@ class LogCallback(Protocol):
 
 def merge_iteration(
     merge_config: MergeConfig,
-    activations: Float[Tensor, "samples C"],
-    component_labels: list[str],
+    activations: ActivationsTensor,
+    component_labels: ComponentLabels,
     log_callback: LogCallback | None = None,
     batch_id: str = "unk",
 ) -> MergeHistory:
@@ -62,7 +69,7 @@ def merge_iteration(
 
     # compute coactivations
     # --------------------------------------------------
-    activation_mask_orig: Bool[Tensor, "samples C"] | Float[Tensor, "samples C"] | None = (
+    activation_mask_orig: BoolActivationsTensor | ActivationsTensor | None = (
         activations > merge_config.activation_threshold
         if merge_config.activation_threshold is not None
         else activations
@@ -101,7 +108,7 @@ def merge_iteration(
 
     # initialize variables for the merge process
     k_groups: int = c_components
-    current_coact: Float[Tensor, "k_groups k_groups"] = coact.clone()
+    current_coact: ClusterCoactivationShaped = coact.clone()
     current_act_mask: Bool[Tensor, "samples k_groups"] = activation_mask_orig.clone()
 
     # variables we keep track of
@@ -151,13 +158,13 @@ def merge_iteration(
         # compute costs, figure out what to merge
         # --------------------------------------------------
         # HACK: this is messy
-        costs: Float[Tensor, "k_groups k_groups"] = compute_merge_costs(
+        costs: ClusterCoactivationShaped = compute_merge_costs(
             coact=current_coact / current_act_mask.shape[0],
             merges=current_merge,
             alpha=merge_config.alpha,
         )
 
-        merge_pair: tuple[int, int] = merge_config.merge_pair_sample(costs)
+        merge_pair: MergePair = merge_config.merge_pair_sample(costs)
 
         # merge the pair
         # --------------------------------------------------

@@ -12,7 +12,7 @@ def cli() -> None:
 
     logger.set_format("console", style="terse")
 
-    parser = argparse.ArgumentParser(
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Run clustering on a dataset using clean architecture"
     )
     parser.add_argument(
@@ -43,11 +43,12 @@ def cli() -> None:
         default=1,
         help="Maximum number of concurrent clustering processes per device (default: 1)",
     )
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
 
     logger.info("Starting clustering pipeline")
 
     # Parse devices
+    devices: list[str]
     if args.devices is None:
         import torch
 

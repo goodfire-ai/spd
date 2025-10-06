@@ -8,10 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-from jaxtyping import Int
 from torch import Tensor
 
-from spd.clustering.consts import DistancesArray, DistancesMethod, MergesArray
+from spd.clustering.consts import BatchTensor, DistancesArray, DistancesMethod, MergesArray
 from spd.clustering.merge_run_config import ClusteringRunConfig
 
 if TYPE_CHECKING:
@@ -189,14 +188,14 @@ class ClusteringStorage:
             self.dataset_config_file, json.dumps(config, indent=2)
         )
 
-    def save_batch(self, batch: Tensor, batch_idx: int) -> Path:
+    def save_batch(self, batch: BatchTensor, batch_idx: int) -> Path:
         batch_path: Path = self.batch_path(batch_idx)
         batch_path.parent.mkdir(parents=True, exist_ok=True)
 
         np.savez_compressed(batch_path, input_ids=batch.cpu().numpy())
         return batch_path
 
-    def save_batches(self, batches: Iterator[Tensor], config: dict[str, Any]) -> list[Path]:
+    def save_batches(self, batches: Iterator[BatchTensor], config: dict[str, Any]) -> list[Path]:
         paths: list[Path] = []
 
         self.save_dataset_config(config)
@@ -207,7 +206,7 @@ class ClusteringStorage:
 
         return paths
 
-    def load_batch(self, batch_path: Path) -> Int[Tensor, "batch_size n_ctx"]:
+    def load_batch(self, batch_path: Path) -> BatchTensor:
         data: dict[str, np.ndarray] = np.load(batch_path)
         return torch.tensor(data["input_ids"])
 

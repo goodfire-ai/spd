@@ -2,14 +2,13 @@ import functools
 import hashlib
 from typing import Any, Literal
 
-from jaxtyping import Float
 from pydantic import (
     BaseModel,
     Field,
     PositiveInt,
 )
-from torch import Tensor
 
+from spd.clustering.consts import ClusterCoactivationShaped, MergePair
 from spd.clustering.math.merge_pair_samplers import (
     MERGE_PAIR_SAMPLERS,
     MergePairSampler,
@@ -88,11 +87,11 @@ class MergeConfig(BaseModel):
 
     def merge_pair_sample(
         self,
-        costs: Float[Tensor, "k_groups k_groups"],
-    ) -> tuple[int, int]:
+        costs: ClusterCoactivationShaped,
+    ) -> MergePair:
         """do merge sampling based on the configured method and kwargs
 
-        has signature `MergePairSampler = Callable[[Float[Tensor, "k_groups k_groups"], int], tuple[int, int]]`
+        has signature `MergePairSampler = Callable[[ClusterCoactivationShaped], MergePair]`
         """
         return self.merge_pair_sample_func(costs=costs)
 

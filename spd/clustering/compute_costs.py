@@ -4,6 +4,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+from spd.clustering.consts import ClusterCoactivationShaped, MergePair
 from spd.clustering.math.merge_matrix import GroupMerge
 
 
@@ -35,10 +36,10 @@ def compute_mdl_cost(
 
 
 def compute_merge_costs(
-    coact: Float[Tensor, "k_groups k_groups"],
+    coact: ClusterCoactivationShaped,
     merges: GroupMerge,
     alpha: float = 1.0,
-) -> Float[Tensor, "k_groups k_groups"]:
+) -> ClusterCoactivationShaped:
     r"""Compute MDL costs for merge matrices
 
     $$
@@ -78,7 +79,7 @@ def compute_merge_costs(
     # term_si_rpj: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) * (ranks.view(1, -1) + 1/alpha)
     term_si_rpi: Float[Tensor, " k_groups"] = s_diag * ranks
     # dbg_auto(term_si_rpi)
-    rank_sum: Float[Tensor, "k_groups k_groups"] = ranks.view(-1, 1) + ranks.view(1, -1)
+    rank_sum: ClusterCoactivationShaped = ranks.view(-1, 1) + ranks.view(1, -1)
     # TODO: use dynamic rank computation
     # return alpha * (
     #     term_si_rpj  # |s_i| r(P_j)
@@ -89,7 +90,7 @@ def compute_merge_costs(
     #     )
     # )
 
-    coact_OR: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) + s_diag.view(1, -1) - coact
+    coact_OR: ClusterCoactivationShaped = s_diag.view(-1, 1) + s_diag.view(1, -1) - coact
 
     # reduce penalty for sending dictionary by 1
     # (s_\Sigma - s_i - s_j) log((c-1)/c)
@@ -98,30 +99,30 @@ def compute_merge_costs(
     # delta of cost for sending ranks, in expectation
     # + alpha ( s_{i,j} r(P_{i,j}) - s_i r(P_i) - s_j r(P_j)
 
-    s_other: Float[Tensor, "k_groups k_groups"] = (
+    s_other: ClusterCoactivationShaped = (
         s_diag.sum() - s_diag.view(-1, 1) - s_diag.view(1, -1)
     ) * math.log2((k_groups - 1) / k_groups)
 
-    bits_local: Float[Tensor, "k_groups k_groups"] = (
+    bits_local: ClusterCoactivationShaped = (
         coact_OR * math.log2(k_groups - 1)
         - s_diag.view(-1, 1) * math.log2(k_groups)
         - s_diag.view(1, -1) * math.log2(k_groups)
     )
 
-    penalty: Float[Tensor, "k_groups k_groups"] = (
+    penalty: ClusterCoactivationShaped = (
         coact_OR * rank_sum  # s_{i,j} r(P_{i,j})
         - term_si_rpi.view(-1, 1)  # s_i r(P_i)
         - term_si_rpi.view(1, -1)  # s_j r(P_j)
     )
 
-    output: Float[Tensor, "k_groups k_groups"] = s_other + bits_local + alpha * penalty
+    output: ClusterCoactivationShaped = s_other + bits_local + alpha * penalty
     return output
 
 
 def recompute_coacts_merge_pair(
-    coact: Float[Tensor, "k_groups k_groups"],
+    coact: ClusterCoactivationShaped,
     merges: GroupMerge,
-    merge_pair: tuple[int, int],
+    merge_pair: MergePair,
     activation_mask: Bool[Tensor, "samples k_groups"],
 ) -> tuple[
     GroupMerge,
@@ -161,7 +162,7 @@ def recompute_coacts_merge_pair(
     # TODO: check that the rest are in order? probably not necessary
 
     # reindex coactivations
-    coact_temp: Float[Tensor, "k_groups k_groups"] = coact.clone()
+    coact_temp: ClusterCoactivationShaped = coact.clone()
     # add in the similarities with the new group
     coact_temp[new_group_idx, :] = coact_with_merge
     coact_temp[:, new_group_idx] = coact_with_merge
@@ -189,7 +190,7 @@ def recompute_coacts_merge_pair(
 
 
 def recompute_coacts_pop_group(
-    coact: Float[Tensor, "k_groups k_groups"],
+    coact: ClusterCoactivationShaped,
     merges: GroupMerge,
     component_idx: int,
     activation_mask: Bool[Tensor, "n_samples k_groups"],

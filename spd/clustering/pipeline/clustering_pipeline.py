@@ -19,10 +19,10 @@ def main(config: ClusteringRunConfig) -> None:
     """
     logger.section("setup")
 
-    from spd.clustering.consts import DistancesArray, DistancesMethod, MergesArray
+    from spd.clustering.consts import BatchTensor, DistancesArray, DistancesMethod, MergesArray
     from spd.clustering.math.merge_distances import compute_distances
     from spd.clustering.pipeline.dist_utils import distribute_clustering
-    from spd.clustering.pipeline.s1_split_dataset import BatchTensor, split_dataset
+    from spd.clustering.pipeline.s1_split_dataset import split_dataset
     from spd.clustering.pipeline.s3_normalize_histories import normalize_and_save
     from spd.clustering.pipeline.s4_compute_distances import create_clustering_report
     from spd.clustering.pipeline.storage import ClusteringStorage
@@ -60,7 +60,10 @@ def main(config: ClusteringRunConfig) -> None:
         f"Processing {n_batch_paths} batches with {config.workers_per_device} workers per device on {config.devices}..."
     )
     distribute_prefix: str = "\033[92m[spd-cluster]\033[0m"
-    results: list[dict[str, str | None]] = distribute_clustering(
+
+    from spd.clustering.pipeline.dist_utils import ClusteringBatchResult
+
+    results: list[ClusteringBatchResult] = distribute_clustering(
         config_path=config_path,
         data_files=batch_paths,
         devices=config.devices,
@@ -92,7 +95,7 @@ def main(config: ClusteringRunConfig) -> None:
     logger.info(f"Distances computed and saved: shape={distances.shape}")
 
     # Create clustering report
-    wandb_urls: list[str] = [str(r["wandb_url"]) for r in results if r.get("wandb_url") is not None]
+    wandb_urls: list[str] = [r["wandb_url"] for r in results if r["wandb_url"] is not None]
     logger.info(f"Creating clustering report with {len(wandb_urls)} WandB URLs")
     create_clustering_report(
         distances=distances,

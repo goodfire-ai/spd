@@ -6,6 +6,12 @@ import torch
 from jaxtyping import Bool, Float, Float16, Int
 from torch import Tensor
 
+from spd.clustering.consts import (
+    ActivationsTensor,
+    BoolActivationsTensor,
+    ClusterCoactivationShaped,
+    ComponentLabels,
+)
 from spd.clustering.util import ModuleFilterFunc
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.sigmoids import SigmoidTypes
@@ -16,9 +22,9 @@ def component_activations(
     device: torch.device | str,
     batch: Int[Tensor, "batch_size n_ctx"],
     sigmoid_type: SigmoidTypes,
-) -> dict[str, Float[Tensor, "samples C"]]:
+) -> dict[str, ActivationsTensor]:
     """Get the component activations over a **single** batch."""
-    causal_importances: dict[str, Float[Tensor, "samples C"]]
+    causal_importances: dict[str, ActivationsTensor]
     with torch.no_grad():
         model_output: OutputWithCache = model(
             batch.to(device),
@@ -36,8 +42,8 @@ def component_activations(
 
 
 def compute_coactivatons(
-    activations: Float[Tensor, "samples C"] | Bool[Tensor, "samples C"],
-) -> Float16[Tensor, " c c"]:
+    activations: ActivationsTensor | BoolActivationsTensor,
+) -> ClusterCoactivationShaped:
     """Compute the coactivations matrix from the activations."""
     # TODO: this works for both boolean and continuous activations,
     # but we could do better by just using OR for boolean activations
@@ -47,13 +53,13 @@ def compute_coactivatons(
 
 
 class FilteredActivations(NamedTuple):
-    activations: Float[Tensor, "samples C"]
+    activations: ActivationsTensor
     "activations after filtering dead components"
 
-    labels: list[str]
+    labels: ComponentLabels
     "list of length c with labels for each preserved component"
 
-    dead_components_labels: list[str] | None
+    dead_components_labels: ComponentLabels | None
     "list of labels for dead components, or None if no filtering was applied"
 
     @property
@@ -72,8 +78,8 @@ class FilteredActivations(NamedTuple):
 
 
 def filter_dead_components(
-    activations: Float[Tensor, "samples C"],
-    labels: list[str],
+    activations: ActivationsTensor,
+    labels: ComponentLabels,
     filter_dead_threshold: float = 0.01,
 ) -> FilteredActivations:
     """Filter out dead components based on a threshold
@@ -85,9 +91,9 @@ def filter_dead_components(
     are considered dead and filtered out. The labels of these components are returned in `dead_components_labels`.
     `dead_components_labels` will also be `None` if no components were below the threshold.
     """
-    dead_components_lst: list[str] | None = None
+    dead_components_lst: ComponentLabels | None = None
     if filter_dead_threshold > 0:
-        dead_components_lst = list()
+        dead_components_lst = ComponentLabels(list())
         max_act: Float[Tensor, " c"] = activations.max(dim=0).values
         dead_components: Bool[Tensor, " c"] = max_act < filter_dead_threshold
 
@@ -98,13 +104,15 @@ def filter_dead_components(
                 for lbl, keep in zip(labels, ~dead_components, strict=False)
             ]
             # re-assign labels only if we are filtering
-            labels = [label for label, keep in alive_labels if keep]
-            dead_components_lst = [label for label, keep in alive_labels if not keep]
+            labels = ComponentLabels([label for label, keep in alive_labels if keep])
+            dead_components_lst = ComponentLabels(
+                [label for label, keep in alive_labels if not keep]
+            )
 
     return FilteredActivations(
         activations=activations,
         labels=labels,
-        dead_components_labels=dead_components_lst,
+        dead_components_labels=dead_components_lst if dead_components_lst else None,
     )
 
 
@@ -112,16 +120,16 @@ def filter_dead_components(
 class ProcessedActivations:
     """Processed activations after filtering and concatenation"""
 
-    activations_raw: dict[str, Float[Tensor, "samples C"]]
+    activations_raw: dict[str, ActivationsTensor]
     "activations after filtering, but prior to concatenation"
 
-    activations: Float[Tensor, "samples C"]
+    activations: ActivationsTensor
     "activations after filtering and concatenation"
 
-    labels: list[str]
+    labels: ComponentLabels
     "list of length c with labels for each preserved component, format `{module_name}:{component_index}`"
 
-    dead_components_lst: list[str] | None
+    dead_components_lst: ComponentLabels | None
     "list of labels for dead components, or None if no filtering was applied"
 
     def validate(self) -> None:
@@ -208,7 +216,7 @@ def process_activations(
 
     # reshape -- special cases for llms
     # ============================================================
-    activations_: dict[str, Float[Tensor, "samples C"]]
+    activations_: dict[str, ActivationsTensor]
     if seq_mode == "concat":
         # Concatenate the sequence dimension into the sample dimension
         activations_ = {
@@ -233,16 +241,14 @@ def process_activations(
 
     # compute the labels and total component count
     total_c: int = 0
-    labels: list[str] = list()
+    labels: ComponentLabels = ComponentLabels(list())
     for key, act in activations_.items():
         c: int = act.shape[-1]
         labels.extend([f"{key}:{i}" for i in range(c)])
         total_c += c
 
     # concat the activations
-    act_concat: Float[Tensor, "samples C"] = torch.cat(
-        [activations_[key] for key in activations_], dim=-1
-    )
+    act_concat: ActivationsTensor = torch.cat([activations_[key] for key in activations_], dim=-1)
 
     # filter dead components
     filtered_components: FilteredActivations = filter_dead_components(

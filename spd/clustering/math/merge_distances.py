@@ -27,7 +27,7 @@ def compute_distances(
     method: DistancesMethod = "perm_invariant_hamming",
 ) -> DistancesArray:
     n_iters: int = normalized_merge_array.shape[1]
-    merges_array_list: list[Int[np.ndarray, "n_ens c_components"]]
+    merges_array_list: list[Int[np.ndarray, "n_ens n_components"]]
     distances_list: list[Float[np.ndarray, "n_ens n_ens"]]
     match method:
         case "perm_invariant_hamming":

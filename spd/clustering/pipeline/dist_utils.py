@@ -7,10 +7,20 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO
+from typing import IO, TypedDict
 
 from spd.log import logger
 from spd.settings import REPO_ROOT
+
+
+class ClusteringBatchResult(TypedDict):
+    """Result from clustering a single batch."""
+
+    hist_save_path: str
+    wandb_url: str | None
+    batch_name: str
+    config_identifier: str
+
 
 # Module-global cache for JSON writer in child processes
 _JSON_WRITER: IO[str] | None = None
@@ -80,7 +90,7 @@ def _open_json_fd() -> IO[str]:
     return _JSON_WRITER
 
 
-def emit_result(obj: dict[str, str | None]) -> None:
+def emit_result(obj: ClusteringBatchResult) -> None:
     """Emit result JSON via environment fd.
 
     Called by child processes to return structured results to the parent.
@@ -92,7 +102,7 @@ def emit_result(obj: dict[str, str | None]) -> None:
     print(json.dumps(obj, separators=(",", ":")), file=out, flush=True)
 
 
-def _read_json_result(json_r: IO[bytes], dataset_path: Path) -> dict[str, str | None]:
+def _read_json_result(json_r: IO[bytes], dataset_path: Path) -> ClusteringBatchResult:
     """Read JSON result from file descriptor.
 
     Args:
@@ -112,7 +122,7 @@ def _read_json_result(json_r: IO[bytes], dataset_path: Path) -> dict[str, str | 
 
     json_str: str = json_line.decode("utf-8", errors="strict").strip()
     try:
-        result: dict[str, str | None] = json.loads(json_str)
+        result: ClusteringBatchResult = json.loads(json_str)
         return result
     except json.JSONDecodeError as e:
         raise ValueError(
@@ -123,7 +133,7 @@ def _read_json_result(json_r: IO[bytes], dataset_path: Path) -> dict[str, str | 
 def _collect_one_ready(
     active: list[ActiveProcess],
     log_fn: Callable[[str], None],
-) -> tuple[dict[str, str | None], ActiveProcess]:
+) -> tuple[ClusteringBatchResult, ActiveProcess]:
     """Block until any active process has JSON ready, then collect it.
 
     Uses selectors to wait on multiple FDs simultaneously, avoiding head-of-line blocking.
@@ -148,7 +158,7 @@ def _collect_one_ready(
     finally:
         sel.close()
 
-    result: dict[str, str | None] = _read_json_result(ap.json_fd, ap.dataset_path)
+    result: ClusteringBatchResult = _read_json_result(ap.json_fd, ap.dataset_path)
     rc: int | None = ap.proc.wait()
     try:  # noqa: SIM105
         ap.json_fd.close()
@@ -173,7 +183,7 @@ def distribute_clustering(
     workers_per_device: int = 1,
     log_fn: Callable[[str], None] | None = None,
     log_fn_error: Callable[[str], None] | None = None,
-) -> list[dict[str, str | None]]:
+) -> list[ClusteringBatchResult]:
     """Distribute clustering tasks across multiple devices via subprocess.
 
     Launches clustering processes using shell-out approach with JSON fd for structured
@@ -219,7 +229,7 @@ def distribute_clustering(
     # Track active processes per device to enforce workers_per_device limit
     device_active_counts: dict[str, int] = {device: 0 for device in devices}
     active: list[ActiveProcess] = []
-    results: list[dict[str, str | None]] = []
+    results: list[ClusteringBatchResult] = []
 
     n_files: int = len(data_files)
     try:

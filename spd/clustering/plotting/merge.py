@@ -8,7 +8,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from spd.clustering.consts import DistancesArray
+from spd.clustering.consts import ClusterCoactivationShaped, ComponentLabels, DistancesArray
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.util import format_scientific_latex
@@ -22,18 +22,18 @@ DEFAULT_PLOT_CONFIG: dict[str, Any] = dict(
 
 
 def plot_merge_matrix(
-    merge_matrix: Tensor,
+    merge_matrix: Bool[Tensor, "k_groups n_components"],
     show: bool = True,
     figsize: tuple[int, int] = (10, 3),
     show_row_sums: bool | None = None,
     ax: "plt.Axes | None" = None,
-    component_labels: list[str] | None = None,
+    component_labels: ComponentLabels | None = None,
 ) -> None:
     import matplotlib.pyplot as plt
 
-    merge_matrix = merge_matrix
+    k_groups: int
     k_groups, _ = merge_matrix.shape
-    group_sizes = merge_matrix.sum(dim=1)
+    group_sizes: Int[Tensor, " k_groups"] = merge_matrix.sum(dim=1)
 
     if show_row_sums is None:
         show_row_sums = k_groups <= 20
@@ -80,11 +80,11 @@ def plot_merge_matrix(
 
 def plot_merge_iteration(
     current_merge: GroupMerge,
-    current_coact: Float[Tensor, "k_groups k_groups"],
-    costs: Float[Tensor, "k_groups k_groups"],
+    current_coact: ClusterCoactivationShaped,
+    costs: ClusterCoactivationShaped,
     # pair_cost: float,
     iteration: int,
-    component_labels: list[str] | None = None,
+    component_labels: ComponentLabels | None = None,
     plot_config: dict[str, Any] | None = None,
     nan_diag: bool = True,
     show: bool = False,
@@ -193,7 +193,9 @@ def plot_dists_distribution(
     if ax is not None and kwargs_fig is not None:
         raise ValueError("Cannot provide both ax and kwargs_fig")
 
-    dists_flat: Float[np.ndarray, "n_iters n_ens*n_ens"] = distances.reshape(distances.shape[0], -1)
+    dists_flat: Float[np.ndarray, " n_iters n_ens*n_ens"] = distances.reshape(
+        distances.shape[0], -1
+    )
 
     # Create figure if ax not provided
     if ax is None:
@@ -228,28 +230,26 @@ def plot_dists_distribution(
     elif mode == "dist":
         # Distribution statistics mode
         # Generate a random color for this plot
-        color = np.random.rand(
-            3,
-        )
+        color: Float[np.ndarray, " 3"] = np.random.rand(3)
 
         # Calculate statistics for each iteration
-        mins = []
-        maxs = []
-        means = []
-        medians = []
-        q1s = []
-        q3s = []
+        mins: list[float] = []
+        maxs: list[float] = []
+        means: list[float] = []
+        medians: list[float] = []
+        q1s: list[float] = []
+        q3s: list[float] = []
 
         for i in range(n_iters):
             # Filter out NaN values (diagonal and upper triangle)
-            valid_dists = dists_flat[i][~np.isnan(dists_flat[i])]
+            valid_dists: Float[np.ndarray, " n_valid"] = dists_flat[i][~np.isnan(dists_flat[i])]
             if len(valid_dists) > 0:
                 mins.append(np.min(valid_dists))
                 maxs.append(np.max(valid_dists))
-                means.append(np.mean(valid_dists))
-                medians.append(np.median(valid_dists))
-                q1s.append(np.percentile(valid_dists, 25))
-                q3s.append(np.percentile(valid_dists, 75))
+                means.append(float(np.mean(valid_dists)))
+                medians.append(float(np.median(valid_dists)))
+                q1s.append(float(np.percentile(valid_dists, 25)))
+                q3s.append(float(np.percentile(valid_dists, 75)))
             else:
                 # Handle case with no valid distances
                 mins.append(np.nan)
@@ -259,7 +259,7 @@ def plot_dists_distribution(
                 q1s.append(np.nan)
                 q3s.append(np.nan)
 
-        iterations = np.arange(n_iters)
+        iterations: Int[np.ndarray, " n_iters"] = np.arange(n_iters)
 
         # Plot statistics
         ax_.plot(iterations, mins, "-", color=color, alpha=0.5)

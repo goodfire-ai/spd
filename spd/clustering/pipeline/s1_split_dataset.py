@@ -6,12 +6,12 @@ from collections.abc import Generator, Iterator
 from typing import Any
 
 import torch
-from jaxtyping import Int
 from muutils.spinner import SpinnerContext
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from spd.clustering.consts import BatchTensor
 from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
@@ -19,8 +19,6 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
-
-BatchTensor = Int[Tensor, "batch seq"]
 
 
 def split_dataset(config: ClusteringRunConfig) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
