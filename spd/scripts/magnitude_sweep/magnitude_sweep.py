@@ -532,9 +532,27 @@ def main(config_path_or_obj: str | MagnitudeSweepConfig = None) -> None:
 
     # Set up output directory
     if config.output_dir is None:
-        output_dir = Path(__file__).parent / "out"
+        base_output_dir = Path(__file__).parent / "out"
     else:
-        output_dir = Path(config.output_dir)
+        base_output_dir = Path(config.output_dir)
+
+    # Create model-specific subdirectory
+    if "wandb:" in config.model_path:
+        # Extract run ID from wandb URL (e.g., "wandb://entity/project/run_id" -> "run_id")
+        model_id = config.model_path.split("/")[-1]
+    elif "/wandb/" in config.model_path:
+        # Extract run ID from local wandb path (e.g., "./wandb/6hk3uciu/files/model.pth" -> "6hk3uciu")
+        path_parts = config.model_path.split("/")
+        wandb_idx = path_parts.index("wandb")
+        if wandb_idx + 1 < len(path_parts):
+            model_id = path_parts[wandb_idx + 1]
+        else:
+            model_id = Path(config.model_path).stem
+    else:
+        # For other local paths, use filename without extension
+        model_id = Path(config.model_path).stem
+
+    output_dir = base_output_dir / model_id
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Get device

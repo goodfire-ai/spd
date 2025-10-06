@@ -38,4 +38,21 @@ The script generates unified grid plots showing:
 - Pre-sigmoid gate outputs
 - Gate inputs (inner acts)
 
-Results are saved to the `out/` directory by default, or to a custom directory if specified in the configuration.
+Plots are saved as PNG files in model-specific subdirectories within the output directory:
+
+**Directory Structure:**
+```
+out/
+└── {model_id}/
+    ├── unified_grid_feature_0_layers_0_mlp_in.png
+    ├── unified_grid_feature_0_layers_0_mlp_out.png
+    └── ...
+```
+
+**File Naming:**
+- `unified_grid_feature_0_layers_0_mlp_in.png` - Feature 0, Layer 0 input component
+- `unified_grid_feature_0_layers_0_mlp_out.png` - Feature 0, Layer 0 output component
+
+**Model ID Examples:**
+- Local files: `resid_mlp` (from `resid_mlp.pth`)
+- Wandb URLs: `2ki9tfsx` (from `wandb:goodfire/spd/runs/2ki9tfsx`)

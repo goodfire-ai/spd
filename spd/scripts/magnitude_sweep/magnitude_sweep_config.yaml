@@ -5,8 +5,8 @@ model_path: "wandb:goodfire/spd/runs/2ki9tfsx"
 
 # Analysis parameters
 feature_idx: 0  # Which feature to activate
-n_steps: 100  # Number of steps from 0 to max_magnitude
-max_magnitude: 2.0  # Maximum input magnitude
+n_steps: 50  # Number of steps from 0 to max_magnitude
+max_magnitude: 1.5  # Maximum input magnitude
 ci_threshold: 0.1  # CI threshold for active gates
 pre_activation: false  # Show pre-activation values (before ReLU) instead of post-activation
 
