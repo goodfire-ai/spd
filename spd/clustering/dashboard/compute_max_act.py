@@ -89,7 +89,7 @@ def _compute_cluster_activations(
 
 def compute_all_cluster_activations(
     processed: ProcessedActivations,
-    cluster_components: dict[int, list[dict[str, Any]]],
+    cluster_components: dict[int, list[MergeHistory.ClusterComponentInfo]],
     batch_size: int,
     seq_len: int,
 ) -> ClusterActivations:
@@ -116,12 +116,12 @@ def compute_all_cluster_activations(
 
     # For each cluster, compute max activation across its components
     for cluster_col_idx, cluster_idx in enumerate(cluster_indices):
-        components: list[dict[str, Any]] = cluster_components[cluster_idx]
+        components: list[MergeHistory.ClusterComponentInfo] = cluster_components[cluster_idx]
 
         # Get component indices for this cluster
         comp_indices: list[int] = []
         for component_info in components:
-            label: str = component_info["label"]
+            label: str = component_info.label
             comp_idx: int | None = processed.get_label_index(label)
             if comp_idx is not None:
                 comp_indices.append(comp_idx)
@@ -212,7 +212,7 @@ def compute_max_activations(
 
     # Get unique cluster indices and component info
     unique_cluster_indices: list[int] = merge_history.get_unique_clusters(actual_iteration)
-    cluster_components: dict[int, list[dict[str, Any]]] = {
+    cluster_components: dict[int, list[MergeHistory.ClusterComponentInfo]] = {
         cid: merge_history.get_cluster_components_info(actual_iteration, cid)
         for cid in unique_cluster_indices
     }
@@ -220,7 +220,7 @@ def compute_max_activations(
     # Create ClusterId objects for each cluster
     cluster_id_map: dict[int, ClusterId] = {}
     for idx in unique_cluster_indices:
-        components: list[dict[str, Any]] = cluster_components[idx]
+        components: list[MergeHistory.ClusterComponentInfo] = cluster_components[idx]
         assert components, f"Cluster {idx} has no components"
 
         cluster_label: ClusterLabel = ClusterLabel(idx)
@@ -372,7 +372,7 @@ def compute_max_activations(
 
         # Convert component info to ComponentInfo objects
         components_info: list[ComponentInfo] = [
-            ComponentInfo(module=comp["module"], index=comp["index"])
+            ComponentInfo(module=comp.module, index=comp.index)
             for comp in cluster_components[cluster_idx]
         ]
 

@@ -1,4 +1,5 @@
 # %%
+import asyncio
 import uuid
 from dataclasses import dataclass
 from typing import cast
@@ -9,6 +10,7 @@ from jaxtyping import Float, Int
 from pydantic import BaseModel
 from torch._tensor import Tensor
 
+from spd.app.backend.services.cluster_dashboard_service import ClusterDashboardService
 from spd.app.backend.services.run_context_service import RunContextService
 from spd.log import logger
 from spd.models.components import make_mask_infos
@@ -21,9 +23,6 @@ class PromptContext:
     prompt: str
     input_token_ids: Int[torch.Tensor, " seq_len"]
     subcomponent_causal_importances: dict[str, Float[torch.Tensor, " seq_len C"]]
-
-
-N_MOCK_COMPONENTS = 20
 
 
 class SparseVector(BaseModel):
@@ -100,52 +99,53 @@ DEVICE = get_device()
 
 
 class AblationService:
-    def __init__(self, run_context_service: RunContextService):
+    def __init__(
+        self,
+        run_context_service: RunContextService,
+        cluster_dashboard_service: ClusterDashboardService,
+        *,
+        dashboard_iteration: int = 3000,
+        dashboard_n_samples: int = 16,
+        dashboard_n_batches: int = 2,
+        dashboard_batch_size: int = 64,
+        dashboard_context_length: int = 64,
+    ):
         self.run_context_service = run_context_service
-        self.prompt_contexts: dict[str, PromptContext] = {}  # Multiple prompts by ID
+        self.cluster_dashboard_service = cluster_dashboard_service
+        self.prompt_contexts: dict[str, PromptContext] = {}
         self.mask_overrides: dict[str, MaskOverride] = {}
 
-        self.__mock_component_indices = None  # REMOVE ME
+    def _aggregate_cis(
+        self,
+        module: str,
+        cis: Float[Tensor, "seq_len C"],
+    ) -> Float[Tensor, "seq_len M"]:
+        assert (ctx := self.run_context_service.cluster_run_context) is not None
 
-    def _mock_component_indices(self) -> Int[Tensor, " C"]:
-        assert (ctx := self.run_context_service.run_context) is not None, "Run context not found"
-        C = ctx.config.C
-        # groups of N_MOCK_COMPONENTS subcomponents
-        if self.__mock_component_indices is None:
-            self.__mock_component_indices = torch.randint(0, N_MOCK_COMPONENTS, (C,)).to(DEVICE)
-        return self.__mock_component_indices
+        assignments = torch.tensor(ctx.clustering_shape.module_component_assignments[module], device=cis.device)
+        assert assignments.ndim == 1, "Assignments must be 1D"
+        assert assignments.shape[0] == cis.shape[1], "Assignments must have the same length as the number of components"
 
-    def mock_aggregate_cis(self, cis: Float[Tensor, "seq_len C"]) -> Float[Tensor, "seq_len M"]:
-        # Pretend it's the same for each layer
-        assert (cfg := self.run_context_service.run_context) is not None, "Run context not found"
+        n_tokens, _ = cis.shape
+        component_indices = assignments.unsqueeze(0).expand(n_tokens, -1)
+        num_components = int(assignments.max().item()) + 1 if assignments.numel() else 0
+        if num_components == 0:
+            return torch.zeros((n_tokens, 0), device=cis.device)
 
-        n_toks, n_subcomponents = cis.shape
-
-        seq_len = 24
-        assert n_toks == seq_len, "for now"
-        assert n_subcomponents == cfg.config.C
-
-        # TODO not sure this is right
-        component_indices: Int[Tensor, " C"] = self._mock_component_indices()
-
-        component_agg_cis = torch.full(
-            (n_toks, N_MOCK_COMPONENTS), float("-inf"), dtype=cis.dtype, device=cis.device
-        )
-        component_agg_cis.scatter_reduce_(
+        component_agg = torch.zeros((n_tokens, num_components), device=cis.device)
+        component_agg.scatter_reduce_(
             dim=1,
-            index=component_indices.unsqueeze(0).repeat(n_toks, 1),
+            index=component_indices,
             src=cis,
             reduce="amax",
-            include_self=True,
         )
-
-        return component_agg_cis
+        return component_agg
 
     def _materialize_prompt(
         self, prompt: str | torch.Tensor
     ) -> tuple[str, list[str], torch.Tensor]:
-        assert self.run_context_service.run_context is not None, "Run context not found"
-        run = self.run_context_service.run_context
+        assert self.run_context_service.train_run_context is not None, "Run context not found"
+        run = self.run_context_service.train_run_context
 
         match prompt:
             case str():
@@ -172,7 +172,7 @@ class AblationService:
         return prompt_str, prompt_tokens, inputs
 
     def run_prompt(self, prompt: str | torch.Tensor) -> RunResponse:
-        assert (ctx := self.run_context_service.run_context) is not None
+        assert (ctx := self.run_context_service.train_run_context) is not None
 
         prompt_str, prompt_tokens, inputs = self._materialize_prompt(prompt)
 
@@ -228,28 +228,24 @@ class AblationService:
         self,
         causal_importances: dict[str, Float[Tensor, "seq_len C"]],
     ) -> list[LayerCIs]:
-        assert (ctx := self.run_context_service.run_context) is not None
-
-        component_indices = self._mock_component_indices()
+        assert (ctx := self.run_context_service.cluster_run_context) is not None
+        assert (run_ctx := self.run_context_service.train_run_context) is not None
 
         layer_cis = []
         for module, layer_ci in causal_importances.items():
-            component_agg_cis = self.mock_aggregate_cis(layer_ci)
+            component_agg_cis = self._aggregate_cis(module, layer_ci)
+
+            # TODO potentially factor this out
+            components = []
+            for module in list(run_ctx.cm.components.keys()):
+                shape = ctx.clustering_shape
+                component_groups = shape.module_component_groups[module]
+                for component_idx, subcomponent_indices in enumerate(component_groups):
+                    comp = Component(index=component_idx, subcomponent_indices=subcomponent_indices)
+                    components.append(comp)
+
             token_cis = []
-
             for tok_component_agg_ci, tok_layer_ci in zip(component_agg_cis, layer_ci, strict=True):
-                assert tok_component_agg_ci.shape == (N_MOCK_COMPONENTS,)
-                # assert tok_component_indices.shape == (ctx.config.C,), (
-                #     f"got {tok_component_indices.shape}"
-                # )
-
-                assert tok_layer_ci.shape == (ctx.config.C,), f"got {tok_layer_ci.shape}"
-
-                components = []
-                for i in range(N_MOCK_COMPONENTS):
-                    subcomponent_indices = torch.where(component_indices == i)[0].tolist()
-                    components.append(Component(index=i, subcomponent_indices=subcomponent_indices))
-
                 token_cis.append(
                     MatrixCausalImportances(
                         subcomponent_cis_sparse=SparseVector.from_tensor(tok_layer_ci),
@@ -268,7 +264,7 @@ class AblationService:
         self, prompt_id: str, mask_override_id: str
     ) -> list[list[OutputTokenLogit]]:
         """Apply a saved mask override as an ablation to a specific prompt."""
-        assert (ctx := self.run_context_service.run_context) is not None
+        assert (ctx := self.run_context_service.train_run_context) is not None
         assert (prompt_context := self.prompt_contexts.get(prompt_id)) is not None
         assert (mask_override := self.mask_overrides.get(mask_override_id)) is not None
 
@@ -290,7 +286,7 @@ class AblationService:
     def ablate_subcomponents(
         self, prompt_id: str, subcomponent_mask: dict[str, list[list[int]]]
     ) -> list[list[OutputTokenLogit]]:
-        assert (ctx := self.run_context_service.run_context) is not None
+        assert (ctx := self.run_context_service.train_run_context) is not None
         assert (prompt_context := self.prompt_contexts.get(prompt_id)) is not None
 
         masked_ci = prompt_context.subcomponent_causal_importances.copy()
@@ -307,27 +303,28 @@ class AblationService:
         return self._logits_to_token_logits(ci_masked_logits)
 
     def ablate_components(
-        self, prompt_id: str, component_mask: dict[str, list[list[int]]]
+        self,
+        prompt_id: str,
+        component_mask: dict[str, list[list[int]]],
     ) -> list[list[OutputTokenLogit]]:
-        assert (ctx := self.run_context_service.run_context) is not None
+        assert (ctx := self.run_context_service.train_run_context) is not None
         assert (prompt_context := self.prompt_contexts.get(prompt_id)) is not None
-
-        component_indices = self._mock_component_indices()
+        assert (cluster_ctx := self.run_context_service.cluster_run_context) is not None
 
         masked_ci = prompt_context.subcomponent_causal_importances.copy()
         for module, token_component_masks in component_mask.items():
+            components = cluster_ctx.clustering_shape.module_component_groups[module]
             for token_idx, token_component_mask in enumerate(token_component_masks):
                 for component_idx in token_component_mask:
-                    component_subcomponent_indices = torch.where(
-                        component_indices == component_idx
-                    )[0].tolist()
+                    assert component_idx < len(components)
+                    component_subcomponent_indices = components[component_idx]
                     masked_ci[module][token_idx][component_subcomponent_indices] = 0
 
         ci_masked_logits = ctx.cm(
-            prompt_context.input_token_ids[None],
+            prompt_context.input_token_ids[None],  # add batch dim
             mode="components",
             mask_infos=make_mask_infos(masked_ci),
-        )[0]
+        )[0]  # remove batch dim
 
         return self._logits_to_token_logits(ci_masked_logits)
 
@@ -337,7 +334,9 @@ class AblationService:
         self,
         logits: Float[torch.Tensor, "seq_len vocab"],
     ) -> list[list[OutputTokenLogit]]:
-        assert (ctx := self.run_context_service.run_context) is not None, "Run context not found"
+        assert (ctx := self.run_context_service.train_run_context) is not None, (
+            "Run context not found"
+        )
 
         assert logits.ndim == 2, "Logits must be 2D (seq_len, vocab)"
         assert logits.shape[0] == 24
@@ -366,7 +365,9 @@ class AblationService:
 
     def run_prompt_by_index(self, dataset_index: int) -> RunResponse:
         """Run a specific prompt from the dataset by index."""
-        assert (ctx := self.run_context_service.run_context) is not None, "Run context not found"
+        assert (ctx := self.run_context_service.train_run_context) is not None, (
+            "Run context not found"
+        )
 
         if dataset_index >= len(ctx.train_loader.dataset):  # pyright: ignore[reportArgumentType]
             raise ValueError(
@@ -384,13 +385,19 @@ class AblationService:
     def get_subcomponent_cosine_sims(
         self, layer: str, component_idx: int
     ) -> TokenLayerCosineSimilarityData:
-        assert (run := self.run_context_service.run_context) is not None, "Run context not found"
+        assert (run := self.run_context_service.train_run_context) is not None, (
+            "Run context not found"
+        )
         assert (components := run.cm.components.get(layer)) is not None, f"Layer {layer} not found"
 
         logger.info(f"component index: {component_idx}")
-        component_subcomponent_indices = torch.where(
-            self._mock_component_indices() == component_idx
-        )[0]
+        # selected_components = self._get_components(layer)
+        assert (cluster_ctx := self.run_context_service.cluster_run_context) is not None
+        layer_components = cluster_ctx.clustering_shape.module_component_groups[layer]
+
+        component_subcomponent_indices = torch.tensor(
+            layer_components[component_idx], device=DEVICE, dtype=torch.long
+        )
 
         logger.info(f"component subcomponent indices: {component_subcomponent_indices.shape}")
 
@@ -431,7 +438,7 @@ class AblationService:
         description: str | None = None,
         save: bool = True,
     ) -> MaskOverride:
-        assert self.run_context_service.run_context is not None, "Run context not found"
+        assert self.run_context_service.train_run_context is not None, "Run context not found"
         assert prompt_id in self.prompt_contexts, f"Prompt {prompt_id} not found"
 
         # Get the CIs for the specified layer
@@ -500,4 +507,3 @@ def k_way_weighted_jaccard(token_masks: Float[Tensor, "m C"]) -> float:
     numerator = mins.sum()
     denominator = maxs.sum()
     return float(numerator / denominator) if float(denominator) > 0.0 else 1.0
-

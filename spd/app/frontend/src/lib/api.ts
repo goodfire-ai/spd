@@ -12,14 +12,32 @@ export type ComponentAblationRequest = {
 
 const apiUrl: string = API_URL;
 
-export type Status = {
-    loaded: boolean;
-    run_id: string | null;
-    component_layers: string[]; // todo put me somewhere else
+export type TrainRunDTO = {
+    wandb_path: string;
+    component_layers: string[];
+    available_cluster_runs: string[];
 };
+
+export type ClusteringShape = {
+    module_component_assignments: Record<string, number[]>;
+    module_component_groups: Record<string, number[][]>;
+};
+
+export type ClusterRunDTO = {
+    wandb_path: string;
+    iteration: number;
+    clustering_shape: ClusteringShape;
+};
+
+export type Status =
+    | { train_run: null; cluster_run: null }
+    | { train_run: TrainRunDTO; cluster_run: null }
+    | { train_run: TrainRunDTO; cluster_run: ClusterRunDTO };
+
 export async function getStatus(): Promise<Status> {
     const response = await fetch(`${apiUrl}/status`);
-    return response.json();
+    const data = await response.json();
+    return data;
 }
 
 export type AvailablePrompt = {
@@ -385,33 +403,39 @@ export type ClusterDashboardResponse = {
     text_samples: TextSampleDTO[];
     activation_batch: ActivationBatchDTO;
     activations_map: Record<string, number>;
-    coactivations: number[][];
-    cluster_indices: number[];
     model_info: Record<string, any>;
     iteration: number;
-    run_id: string;
-    cluster_run_path: string;
+    run_path: string;
 };
+
 
 type DashboardQueryParams = {
-    iteration?: number;
-    n_samples?: number;
-    n_batches?: number;
-    batch_size?: number;
-    context_length?: number;
-    clustering_run?: string;
-    signal?: AbortSignal;
+    iteration: number;
+    n_samples: number;
+    n_batches: number;
+    batch_size: number;
+    context_length: number;
+    signal: AbortSignal;
 };
 
+export async function loadClusterRun(wandbRunPath: string, iteration: number): Promise<void> {
+    const response = await fetch(`${apiUrl}/cluster-runs/load/${wandbRunPath}/${iteration}`, {
+        method: "POST"
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to load cluster run");
+    }
+}
+
 export async function getClusterDashboardData(
-    params: DashboardQueryParams = {}
+    params: DashboardQueryParams
 ): Promise<ClusterDashboardResponse> {
     const { signal, ...rest } = params;
+
     const url = new URL(`${apiUrl}/cluster-dashboard/data`);
     for (const [key, value] of Object.entries(rest)) {
-        if (value !== undefined) {
-            url.searchParams.set(key, String(value));
-        }
+        url.searchParams.set(key, String(value));
     }
 
     const response = await fetch(url.toString(), { method: "GET", signal });

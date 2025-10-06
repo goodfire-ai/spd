@@ -159,7 +159,15 @@ class MergeHistory(SaveableObject):
         component_indices: list[int] = merge.components_in_group(cluster_id)
         return [self.labels[idx] for idx in component_indices]
 
-    def get_cluster_components_info(self, iteration: int, cluster_id: int) -> list[dict[str, Any]]:
+    @dataclass
+    class ClusterComponentInfo:
+        module: str
+        index: int
+        label: str
+
+    def get_cluster_components_info(
+        self, iteration: int, cluster_id: int
+    ) -> list[ClusterComponentInfo]:
         """Get detailed component information for a cluster.
 
         Args:
@@ -170,12 +178,10 @@ class MergeHistory(SaveableObject):
             List of dicts with keys: module, index, label
         """
         component_labels: list[str] = self.get_cluster_component_labels(iteration, cluster_id)
-        result: list[dict[str, Any]] = []
+        result: list[MergeHistory.ClusterComponentInfo] = []
         for label in component_labels:
-            module: str
-            idx_str: str
             module, idx_str = label.rsplit(":", 1)
-            result.append({"module": module, "index": int(idx_str), "label": label})
+            result.append(self.ClusterComponentInfo(module=module, index=int(idx_str), label=label))
         return result
 
     # Convenience properties for sweep analysis

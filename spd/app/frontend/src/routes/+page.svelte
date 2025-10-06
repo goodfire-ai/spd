@@ -11,27 +11,102 @@
     import NewClusterDashboard from "$lib/components/ClusterDashboardTab.svelte";
 
     let isLoading = false;
-    let wandbRunId: string | null = null;
+    let trainWandbRunPath: string | null = null;
+
     let loadingRun = false;
-    let activeTab: "ablation" | "activation-contexts" | "cluster-dashboard-new" = "ablation";
+    let availableClusterRuns: string[] | null = null;
+
+    let clusterWandbRunPath: string | null = null;
 
     let status: Status | null = null;
+
     async function getStatus() {
         console.log("getting status");
         status = await api.getStatus();
-        wandbRunId = status.run_id;
-        console.log("status", status);
+        console.log("status:", status);
+
+        trainWandbRunPath = status?.train_run?.wandb_path ?? null;
+        clusterWandbRunPath = status?.cluster_run?.wandb_path ?? null;
+        availableClusterRuns = status?.train_run?.available_cluster_runs ?? [];
     }
 
     onMount(() => {
         getStatus();
     });
+
+    let clusterIteration: number | null = null;
+    let savingClusterSettings = false;
+    $: canSubmitClusterSettings = clusterWandbRunPath !== null && clusterIteration !== null;
+
+    async function loadClusterRun() {
+        console.log("loading cluster run", clusterWandbRunPath, clusterIteration);
+        if (!canSubmitClusterSettings) {
+            console.log("cannot submit cluster settings", clusterWandbRunPath, clusterIteration);
+            return;
+        }
+
+        savingClusterSettings = true;
+        try {
+            await api.loadClusterRun(clusterWandbRunPath!.split("/").pop()!, clusterIteration!);
+            // clusterWandbRunPath = null; // clusterIteration = null;
+            await getStatus();
+        } catch (error) {
+            console.error(error);
+        } finally {
+            savingClusterSettings = false;
+        }
+    }
+
+    let activeTab: "ablation" | "activation-contexts" | "cluster-dashboard-new" = "ablation";
 </script>
 
 <div class="app-layout">
     <!-- Left Sidebar -->
     <aside class="sidebar">
-        <RunSelector bind:loadingRun bind:wandbRunId {isLoading} />
+        <RunSelector bind:loadingRun bind:trainWandbRunPath {isLoading} />
+
+        {#if status?.train_run}
+            <div class="cluster-settings">
+                <h4>Cluster Settings</h4>
+                <form on:submit|preventDefault={loadClusterRun}>
+                    <label>
+                        Clustering Run
+                        <select bind:value={clusterWandbRunPath}>
+                            {#if availableClusterRuns !== null}
+                                {#each availableClusterRuns as run}
+                                    <option value={run}>{run}</option>
+                                {/each}
+                            {/if}
+                        </select>
+                    </label>
+                    <div class="settings-grid">
+                        <label>
+                            Iteration
+                            <input type="number" bind:value={clusterIteration} />
+                        </label>
+                        <!-- <label>
+                            Samples
+                            <input type="number" min={1} bind:value={clusterNSamples} />
+                        </label>
+                        <label>
+                            Batches
+                            <input type="number" min={1} bind:value={clusterNBatches} />
+                        </label>
+                        <label>
+                            Batch Size
+                            <input type="number" min={1} bind:value={clusterBatchSize} />
+                        </label>
+                        <label>
+                            Context
+                            <input type="number" min={1} bind:value={clusterContextLength} />
+                        </label> -->
+                    </div>
+                    <button class="cluster-save" type="submit" disabled={savingClusterSettings}>
+                        {savingClusterSettings ? "Saving..." : "Load Cluster"}
+                    </button>
+                </form>
+            </div>
+        {/if}
 
         <div class="tab-navigation">
             <button
@@ -60,18 +135,22 @@
 
     <!-- Main Content -->
     <div class="main-content">
-        {#if status}
+        {#if status?.train_run}
             <div class:hidden={activeTab !== "activation-contexts"}>
-                <ActivationContextsTab availableComponentLayers={status.component_layers} />
+                <ActivationContextsTab
+                    availableComponentLayers={status.train_run.component_layers}
+                />
             </div>
 
             <div class:hidden={activeTab !== "ablation"}>
                 <InterventionsTab />
             </div>
 
-            <div class:hidden={activeTab !== "cluster-dashboard-new"}>
-                <NewClusterDashboard runId={status?.run_id ?? null} />
-            </div>
+            {#if status?.cluster_run}
+                <div class:hidden={activeTab !== "cluster-dashboard-new"}>
+                    <NewClusterDashboard iteration={clusterIteration!} />
+                </div>
+            {/if}
         {/if}
     </div>
 </div>
@@ -135,10 +214,22 @@
         border-color: #0056b3;
     }
 
-    .activation-contexts-container {
+    .cluster-settings {
         padding: 1rem;
         background: white;
         border-radius: 8px;
-        min-height: 60vh;
+    }
+
+    .cluster-save {
+        padding: 0.5rem 1rem;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+    }
+
+    .cluster-save:hover {
+        background: #0056b3;
+        cursor: pointer;
     }
 </style>

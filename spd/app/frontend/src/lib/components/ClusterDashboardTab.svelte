@@ -10,6 +10,8 @@
     import Sparkbars from "$lib/components/Sparkbars.svelte";
     import VirtualList from "$lib/components/VirtualList.svelte";
 
+    export let iteration: number;
+
     type TopToken = {
         token: string;
         count: number;
@@ -39,12 +41,11 @@
     let dashboard: ClusterDashboardResponse | null = null;
     let textSampleLookup: Record<string, { full_text: string; tokens: string[] }> = {};
 
-    let iteration = 3000;
     let nSamples = 16;
     let nBatches = 2;
     let batchSize = 64;
     let contextLength = 64;
-    let clusteringRunId = "goodfire/spd-cluster/j8dgvemf";
+    // let clusteringRunId = "goodfire/spd-cluster/j8dgvemf";
 
     let showDetail = false;
     let currentCluster: ClusterDataDTO | null = null;
@@ -120,6 +121,7 @@
         return slice.map((v) => Math.max(v, 0) / max);
     }
 
+    // todo put this in backend
     function buildExamples(cluster: ClusterDataDTO): ClusterExample[] {
         if (!dashboard) return [];
         const hashes = cluster.criterion_samples?.["max_activation-max-16"] ?? [];
@@ -130,7 +132,8 @@
         for (const textHash of hashes.slice(0, 5)) {
             const activationHash = `${cluster.cluster_hash}:${textHash}`;
             const idx = dashboard.activations_map[activationHash];
-            if (typeof idx !== "number") continue;
+            if (typeof idx !== "number")
+                throw new Error(`Activation hash ${activationHash} not found in activations map`);
 
             const tokens = tokensList[idx] ?? textSampleLookup[textHash]?.tokens ?? [];
             const activationValues = activations[idx] ?? [];
@@ -173,7 +176,6 @@
                 n_batches: nBatches,
                 batch_size: batchSize,
                 context_length: contextLength,
-                clustering_run: clusteringRunId,
                 signal: controller.signal
             });
             console.log("dashboard fetched");
@@ -209,7 +211,7 @@
     }
 
     onMount(() => {
-        fetchDashboard().catch((e) => (errorMsg = e?.message ?? String(e)));
+        fetchDashboard();
     });
 
     onDestroy(() => {
@@ -253,8 +255,8 @@
     $: modelInfo = dashboard?.model_info ?? null;
     $: modelStats = dashboard
         ? ([
-              { label: "Cluster Run", value: dashboard.cluster_run_path },
-              { label: "Cluster Run ID", value: dashboard.run_id },
+              { label: "Cluster Run", value: dashboard.run_path },
+              //   { label: "Cluster Run ID", value: dashboard.run_id },
               { label: "Iteration", value: dashboard.iteration },
               { label: "Model Run", value: modelInfo?.model_path },
               { label: "Tokenizer", value: modelInfo?.tokenizer_name },
@@ -270,10 +272,10 @@
 <div class="tab-content">
     <div class="toolbar">
         <form class="toolbar-form" on:submit|preventDefault={refresh}>
-            <label>
+            <!-- <label>
                 Iteration
                 <input type="number" bind:value={iteration} />
-            </label>
+            </label> -->
             <label>
                 Samples
                 <input type="number" min={1} bind:value={nSamples} />

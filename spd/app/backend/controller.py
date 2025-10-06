@@ -1,11 +1,10 @@
-# %%
 import asyncio
 import traceback
 from contextlib import asynccontextmanager
 from functools import wraps
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -18,28 +17,31 @@ from spd.app.backend.services.ablation_service import (
     TokenLayerCosineSimilarityData,
 )
 from spd.app.backend.services.activation_contexts_service import (
-    ActivationContextsService,
+    SubcomponentActivationContextsService,
 )
 from spd.app.backend.services.cluster_dashboard_service import (
     ClusterDashboardResponse,
     ClusterDashboardService,
 )
 from spd.app.backend.services.run_context_service import (
+    CLUSTER_PROJECT,
+    ENTITY,
+    TRAIN_PROJECT,
     AvailablePrompt,
     Run,
     RunContextService,
     Status,
 )
-from spd.app.backend.workers.activation_contexts_worker_v2 import (
+from spd.app.backend.workers.activation_contexts_worker import (
     ActivationContext,
     SubcomponentActivationContexts,
 )
 
 run_context_service = RunContextService()
 
-ablation_service = AblationService(run_context_service)
-component_activations_service = ActivationContextsService(run_context_service)
 cluster_dashboard_service = ClusterDashboardService(run_context_service)
+ablation_service = AblationService(run_context_service, cluster_dashboard_service)
+component_activations_service = SubcomponentActivationContextsService(run_context_service)
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
@@ -71,10 +73,13 @@ def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMi
     return sync_wrapper
 
 
+DEFAULT_RUN_ID = "rn9klzfs"
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global run_context_service
-    run_context_service.load_run_from_wandb_id("ry05f67a")
+    run_context_service.load_run(f"{ENTITY}/{TRAIN_PROJECT}/{DEFAULT_RUN_ID}")
     try:
         yield
     finally:
@@ -86,17 +91,7 @@ app = FastAPI(lifespan=lifespan, debug=True)
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "*",
-        # "http://localhost:5173",
-        # "http://127.0.0.1:5173",
-        # #
-        # "http://localhost:5174",
-        # "http://127.0.0.1:5174",
-        # #
-        # "http://localhost:3000",
-        # "http://127.0.0.1:3000",
-    ],
+    allow_origins=["*"],  # Don't host me publically lol
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -184,7 +179,14 @@ def apply_mask_as_ablation(request: ApplyMaskRequest) -> InterventionResponse:
 @handle_errors
 def load_run(wandb_run_id: str):
     global ablation_service
-    run_context_service.load_run_from_wandb_id(wandb_run_id)
+    run_context_service.load_run(f"{ENTITY}/{TRAIN_PROJECT}/{wandb_run_id}")
+
+
+@app.post("/cluster-runs/load/{wandb_run_id}/{iteration}")
+@handle_errors
+def load_cluster_run(wandb_run_id: str, iteration: int):
+    global ablation_service
+    run_context_service.load_cluster_run(f"{ENTITY}/{CLUSTER_PROJECT}/{wandb_run_id}", iteration)
 
 
 @app.get("/runs")
@@ -303,12 +305,11 @@ async def get_subcomponent_activation_contexts(
 @app.get("/cluster-dashboard/data", response_model=ClusterDashboardResponse)
 @handle_errors
 async def get_cluster_dashboard_data(
-    iteration: int = 3000,
-    n_samples: int = 16,
-    n_batches: int = 2,
-    batch_size: int = 64,
-    context_length: int = 64,
-    clustering_run: str | None = None,
+    iteration: int,
+    n_samples: int,
+    n_batches: int,
+    batch_size: int,
+    context_length: int,
 ) -> ClusterDashboardResponse:
     return await cluster_dashboard_service.get_dashboard_data(
         iteration=iteration,
@@ -316,7 +317,6 @@ async def get_cluster_dashboard_data(
         n_batches=n_batches,
         batch_size=batch_size,
         context_length=context_length,
-        clustering_run=clustering_run,
     )
 
 

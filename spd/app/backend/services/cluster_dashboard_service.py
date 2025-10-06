@@ -1,21 +1,24 @@
 """Service for computing cluster dashboard data on demand."""
 
-from __future__ import annotations
-
 import asyncio
 import json
 import os
+from collections import defaultdict
 from pathlib import Path
-import time
 from typing import Any
 from uuid import uuid4
 
-import numpy as np
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
-from spd.app.backend.services.run_context_service import RunContextService
+from spd.app.backend.services.run_context_service import ClusteringShape, RunContextService
 from spd.clustering.dashboard.compute_max_act import compute_max_activations
-from spd.clustering.dashboard.core import ActivationSampleBatch, DashboardData
+from spd.clustering.dashboard.core import (
+    ActivationSampleBatch,
+    BinnedData,
+    ClusterData,
+    TextSample,
+    TextSampleHash,
+)
 from spd.clustering.dashboard.dashboard_io import (
     generate_model_info,
     load_wandb_artifacts,
@@ -25,55 +28,31 @@ from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
 from spd.utils.general_utils import runtime_cast
 
-DEFAULT_CLUSTER_RUN_PATH = "goodfire/spd-cluster/j8dgvemf"
+
+class ClusterIdDTO(BaseModel):
+    clustering_run: str
+    iteration: int
+    cluster_label: int
+    hash: str
 
 
-def _normalize_wandb_path(raw: str) -> str:
-    value = raw.strip()
-    if value.startswith("https://"):
-        parts = value.rstrip("/").split("/")
-        if len(parts) >= 3:
-            return "/".join(parts[-3:])
-        raise ValueError(f"Cannot parse WandB URL: {raw}")
-    if value.startswith("wandb:"):
-        value = value.removeprefix("wandb:")
-    return value
+class HistogramDTO(BaseModel):
+    bin_edges: list[float]
+    bin_counts: list[int]
 
 
-def _activation_batch_to_dict(batch: ActivationSampleBatch) -> dict[str, Any]:
-    cluster_id = batch.cluster_id
-    return {
-        "cluster_id": {
-            "clustering_run": cluster_id.clustering_run,
-            "iteration": cluster_id.iteration,
-            "cluster_label": int(cluster_id.cluster_label),
-            "hash": str(cluster_id.to_string()),
-        },
-        "text_hashes": [str(th) for th in batch.text_hashes],
-        "activations": batch.activations.tolist(),
-        "tokens": batch.tokens,
-    }
+class TokenActivationStatDTO(BaseModel):
+    token: str
+    count: int
 
 
-def _dashboard_to_serializable(dashboard_data: DashboardData) -> dict[str, Any]:
-    clusters = [cluster.serialize() for cluster in dashboard_data.clusters.values()]
-    text_samples = [
-        {
-            "text_hash": str(sample.text_hash),
-            "full_text": sample.full_text,
-            "tokens": sample.tokens,
-        }
-        for sample in dashboard_data.text_samples.values()
-    ]
-    activation_batch = _activation_batch_to_dict(dashboard_data.activations)
-    activations_map = {str(k): v for k, v in dashboard_data.activations_map.items()}
-
-    return {
-        "clusters": clusters,
-        "text_samples": text_samples,
-        "activation_batch": activation_batch,
-        "activations_map": activations_map,
-    }
+class TokenActivationsDTO(BaseModel):
+    top_tokens: list[TokenActivationStatDTO]
+    total_unique_tokens: int
+    total_activations: int
+    entropy: float
+    concentration_ratio: float
+    activation_threshold: float
 
 
 class ClusterComponentDTO(BaseModel):
@@ -83,7 +62,15 @@ class ClusterComponentDTO(BaseModel):
 
 
 class ClusterStatsDTO(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    all_activations: HistogramDTO
+    max_activation_position: HistogramDTO
+    n_samples: int
+    n_tokens: int
+    mean_activation: float
+    min_activation: float
+    max_activation: float
+    median_activation: float
+    token_activations: TokenActivationsDTO
 
 
 class ClusterDataDTO(BaseModel):
@@ -100,7 +87,7 @@ class TextSampleDTO(BaseModel):
 
 
 class ActivationBatchDTO(BaseModel):
-    cluster_id: dict[str, Any]
+    cluster_id: ClusterIdDTO
     text_hashes: list[str]
     activations: list[list[float]]
     tokens: list[list[str]] | None
@@ -111,12 +98,81 @@ class ClusterDashboardResponse(BaseModel):
     text_samples: list[TextSampleDTO]
     activation_batch: ActivationBatchDTO
     activations_map: dict[str, int]
-    coactivations: list[list[float]]
-    cluster_indices: list[int]
     model_info: dict[str, Any]
     iteration: int
-    run_id: str
-    cluster_run_path: str
+    run_path: str
+
+
+def _cluster_stats_to_dto(stats: dict[str, Any]) -> ClusterStatsDTO:
+    all_activations = runtime_cast(BinnedData, stats["all_activations"])
+    all_acts_dto = HistogramDTO(
+        bin_edges=list(all_activations.bin_edges),
+        bin_counts=list(all_activations.bin_counts),
+    )
+
+    max_activation_position = runtime_cast(BinnedData, stats["max_activation_position"])
+    max_activation_position_dto = HistogramDTO(
+        bin_edges=list(max_activation_position.bin_edges),
+        bin_counts=list(max_activation_position.bin_counts),
+    )
+
+    return ClusterStatsDTO(
+        all_activations=all_acts_dto,
+        max_activation_position=max_activation_position_dto,
+        n_samples=runtime_cast(int, stats["n_samples"]),
+        n_tokens=runtime_cast(int, stats["n_tokens"]),
+        mean_activation=runtime_cast(float, stats["mean_activation"]),
+        min_activation=runtime_cast(float, stats["min_activation"]),
+        max_activation=runtime_cast(float, stats["max_activation"]),
+        median_activation=runtime_cast(float, stats["median_activation"]),
+        token_activations=TokenActivationsDTO(**stats["token_activations"]),
+    )
+
+
+def _cluster_to_dto(cluster: ClusterData) -> ClusterDataDTO:
+    """Map a domain cluster object directly into its DTO."""
+
+    components = [
+        ClusterComponentDTO(module=component.module, index=component.index, label=component.label)
+        for component in cluster.components
+    ]
+    criterion_samples = {
+        str(criterion): [str(sample_hash) for sample_hash in hashes]
+        for criterion, hashes in cluster.criterion_samples.items()
+    }
+    return ClusterDataDTO(
+        cluster_hash=str(cluster.cluster_hash),
+        components=components,
+        criterion_samples=criterion_samples,
+        stats=_cluster_stats_to_dto(cluster.stats),
+    )
+
+
+def _text_sample_to_dto(text_hash: TextSampleHash, sample: TextSample) -> TextSampleDTO:
+    """Convert a TextSample into its DTO counterpart."""
+
+    return TextSampleDTO(
+        text_hash=str(text_hash),
+        full_text=sample.full_text,
+        tokens=sample.tokens,
+    )
+
+
+def _activation_batch_to_dto(batch: ActivationSampleBatch) -> ActivationBatchDTO:
+    """Convert activation batches without intermediate dict representations."""
+
+    cluster_id = batch.cluster_id
+    return ActivationBatchDTO(
+        cluster_id=ClusterIdDTO(
+            clustering_run=cluster_id.clustering_run,
+            iteration=cluster_id.iteration,
+            cluster_label=int(cluster_id.cluster_label),
+            hash=str(cluster_id.to_string()),
+        ),
+        text_hashes=[str(text_hash) for text_hash in batch.text_hashes],
+        activations=batch.activations.tolist(),
+        tokens=batch.tokens,
+    )
 
 
 class ClusterDashboardService:
@@ -128,14 +184,14 @@ class ClusterDashboardService:
 
     @staticmethod
     def _cache_path(
-        cluster_run_path: str,
+        cluster_run_wandb_path: str,
         iteration: int,
         n_samples: int,
         n_batches: int,
         batch_size: int,
         context_length: int,
     ) -> Path:
-        safe_cluster = cluster_run_path.replace("/", "-")
+        safe_cluster = cluster_run_wandb_path.replace("/", "-")
         filename = (
             f"i{iteration}_ns{n_samples}_nb{n_batches}_bs{batch_size}_ctx{context_length}.json"
         )
@@ -162,174 +218,122 @@ class ClusterDashboardService:
         n_batches: int,
         batch_size: int,
         context_length: int,
-        clustering_run: str | None = None,
     ) -> ClusterDashboardResponse:
-        # assert (ctx := self.run_context_service.run_context) is not None, "Run context not found"
-        cluster_run_path = _normalize_wandb_path(clustering_run or DEFAULT_CLUSTER_RUN_PATH)
-        request_start = time.perf_counter()
-        logger.info(
-            "Getting dashboard data run=%s requested=%s iteration=%s n_samples=%s n_batches=%s batch_size=%s context_length=%s",
-            cluster_run_path,
-            clustering_run,
-            iteration,
-            n_samples,
-            n_batches,
-            batch_size,
-            context_length,
+        assert (ctx := self.run_context_service.cluster_run_context) is not None, (
+            "Run context not found"
         )
+
+        logger.info(
+            f"Getting dashboard data run={ctx.wandb_path} requested={iteration} n_samples={n_samples} "
+            f"n_batches={n_batches} batch_size={batch_size} context_length={context_length}",
+        )
+
         cache_path = self._cache_path(
-            cluster_run_path=cluster_run_path,
+            cluster_run_wandb_path=ctx.wandb_path,
             iteration=iteration,
             n_samples=n_samples,
             n_batches=n_batches,
             batch_size=batch_size,
             context_length=context_length,
         )
-        if cache_path.exists():
-            duration = time.perf_counter() - request_start
-            logger.info(
-                "🟢 cluster-dashboard cache hit path=%s duration_s=%.3f",
-                cache_path,
-                duration,
-            )
-            return self._load_cache(cache_path)
 
-        cache_key = str(cache_path)
+        task_key = str(cache_path)
 
-        existing = self._inflight.get(cache_key)
+        existing = self._inflight.get(task_key)
         if existing:
             return await existing
 
         loop = asyncio.get_running_loop()
 
         async def _produce() -> ClusterDashboardResponse:
-            compute_start = time.perf_counter()
+            if cache_path.exists():
+                logger.info(f"Loading cached dashboard data from {cache_path}")
+                return self._load_cache(cache_path)
+
+            logger.info(f"Computing dashboard data for {ctx.wandb_path} iteration={iteration}")
             result = await loop.run_in_executor(
                 None,
                 lambda: self._compute_dashboard_data(
+                    cluster_run_wandb_path=ctx.wandb_path,
                     iteration=iteration,
                     n_samples=n_samples,
                     n_batches=n_batches,
                     batch_size=batch_size,
                     context_length=context_length,
-                    cluster_run_path=cluster_run_path,
                 ),
             )
-            duration = time.perf_counter() - compute_start
-            logger.info(
-                "🟢 cluster-dashboard computed run=%s cache=%s duration_s=%.3f",
-                cluster_run_path,
-                cache_path,
-                duration,
-            )
+            logger.info(f"Writing cached dashboard data to {cache_path}")
             self._write_cache(cache_path, result)
             return result
 
-        logger.info(
-            "cluster-dashboard cache miss requested=%s resolved=%s",
-            clustering_run,
-            cluster_run_path,
-        )
         task: asyncio.Task[ClusterDashboardResponse] = asyncio.create_task(_produce())
-        self._inflight[cache_key] = task
-        task.add_done_callback(lambda _: self._inflight.pop(cache_key, None))
+        self._inflight[task_key] = task
+        task.add_done_callback(lambda _: self._inflight.pop(task_key, None))
         return await task
 
     def _compute_dashboard_data(
         self,
+        cluster_run_wandb_path: str,
         iteration: int,
         n_samples: int,
         n_batches: int,
         batch_size: int,
         context_length: int,
-        cluster_run_path: str,
     ) -> ClusterDashboardResponse:
-        overall_start = time.perf_counter()
+        merge_history, run_config = load_wandb_artifacts(cluster_run_wandb_path)
 
-        t = time.perf_counter()
-        merge_history, run_config = load_wandb_artifacts(cluster_run_path)
-        logger.info(
-            "🟢 cluster-dashboard loaded merge history run=%s duration_s=%.3f",
-            cluster_run_path,
-            time.perf_counter() - t,
-        )
-
-        actual_iteration = (
-            iteration if iteration >= 0 else merge_history.n_iters_current + iteration
-        )
-
-        t = time.perf_counter()
         model, tokenizer, dataloader, config = setup_model_and_data(
             run_config=run_config,
             context_length=context_length,
             batch_size=batch_size,
         )
         model.eval()
-        logger.info(
-            "🟢 cluster-dashboard setup model run=%s duration_s=%.3f",
-            cluster_run_path,
-            time.perf_counter() - t,
-        )
+        cluster_run_id = cluster_run_wandb_path.split("/")[-1]
 
-        cluster_run_id = cluster_run_path.split("/")[-1]
-
-        t = time.perf_counter()
-        dashboard_data, coactivations, cluster_indices = compute_max_activations(
+        dashboard_data, _, _ = compute_max_activations(
             model=model,
             sigmoid_type=config.sigmoid_type,
             tokenizer=tokenizer,
             dataloader=dataloader,
             merge_history=merge_history,
-            iteration=actual_iteration,
+            iteration=iteration,
             n_samples=n_samples,
             n_batches=n_batches,
             clustering_run=cluster_run_id,
         )
-        logger.info(
-            "🟢 cluster-dashboard computed max activations run=%s duration_s=%.3f clusters=%d",
-            cluster_run_path,
-            time.perf_counter() - t,
-            len(cluster_indices),
-        )
 
-        merge = merge_history.merges[actual_iteration]
+        merge = merge_history.merges[iteration]
         model_path = run_config.get("model_path", "")
 
-        t = time.perf_counter()
         model_info = generate_model_info(
             model=model,
             merge_history=merge_history,
             merge=merge,
-            iteration=actual_iteration,
+            iteration=iteration,
             model_path=model_path,
             tokenizer_name=runtime_cast(str, config.tokenizer_name),
             config_dict=config.model_dump(mode="json"),
-            wandb_run_path=cluster_run_path,
+            wandb_run_path=cluster_run_wandb_path,
         )
-        logger.info(
-            "🟢 cluster-dashboard generated model info run=%s duration_s=%.3f",
-            cluster_run_path,
-            time.perf_counter() - t,
-        )
+        clusters = [_cluster_to_dto(cluster) for cluster in dashboard_data.clusters.values()]
+        text_samples = [
+            _text_sample_to_dto(text_hash, sample)
+            for text_hash, sample in dashboard_data.text_samples.items()
+        ]
+        activation_batch = _activation_batch_to_dto(dashboard_data.activations)
+        activations_map = {str(key): value for key, value in dashboard_data.activations_map.items()}
 
-        serializable = _dashboard_to_serializable(dashboard_data)
-
-        total_duration = time.perf_counter() - overall_start
-        logger.info(
-            "🟢 cluster-dashboard compute complete run=%s duration_s=%.3f",
-            cluster_run_path,
-            total_duration,
-        )
+        module_cluster_map: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
+        for cluster_hash, cluster in dashboard_data.clusters.items():
+            for component in cluster.components:
+                module_cluster_map[component.module][cluster_hash].append(component.index)
 
         return ClusterDashboardResponse(
-            clusters=[ClusterDataDTO(**cluster) for cluster in serializable["clusters"]],
-            text_samples=[TextSampleDTO(**sample) for sample in serializable["text_samples"]],
-            activation_batch=ActivationBatchDTO(**serializable["activation_batch"]),
-            activations_map=serializable["activations_map"],
-            coactivations=coactivations.tolist(),
-            cluster_indices=cluster_indices,
+            clusters=clusters,
+            text_samples=text_samples,
+            activation_batch=activation_batch,
+            activations_map=activations_map,
             model_info=model_info,
-            iteration=actual_iteration,
-            run_id=cluster_run_id,
-            cluster_run_path=cluster_run_path,
+            iteration=iteration,
+            run_path=cluster_run_wandb_path,
         )

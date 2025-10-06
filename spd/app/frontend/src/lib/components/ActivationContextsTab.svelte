@@ -6,6 +6,11 @@
 
     export let availableComponentLayers: string[];
 
+    if (availableComponentLayers.length === 0)
+    {
+        throw new Error(`No component layers available: ${availableComponentLayers}`);
+    }
+
     let selectedLayer: string = availableComponentLayers[0];
 
     let subcomponentsActivationContexts: SubcomponentActivationContexts[] | null = null;
