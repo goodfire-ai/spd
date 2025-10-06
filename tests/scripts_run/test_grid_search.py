@@ -459,3 +459,151 @@ class TestConfigIntegration:
             assert (
                 reloaded_config.loss_metric_configs[0].coeff == config.loss_metric_configs[0].coeff
             )
+
+
+class TestInvalidConfigurations:
+    """Test error handling for various invalid sweep parameter configurations."""
+
+    def test_list_without_discriminator(self):
+        """Test that non-discriminated lists raise an error."""
+        parameters = {
+            "seed": {"values": [0, 1]},
+            "some_regular_list": [{"value": 1}, {"value": 2}],
+        }
+
+        try:
+            generate_grid_combinations(parameters)
+            raise AssertionError("Expected ValueError for non-discriminated list")
+        except ValueError as e:
+            assert "not in _DISCRIMINATED_LIST_FIELDS" in str(e)
+
+    def test_duplicate_discriminator_values(self):
+        """Test that duplicate discriminator values raise an error."""
+        parameters = {
+            "seed": {"values": [0]},
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": {"values": [0.1]},
+                },
+                {
+                    "classname": "ImportanceMinimalityLoss",  # Duplicate
+                    "pnorm": {"values": [1.0]},
+                },
+            ],
+        }
+
+        try:
+            generate_grid_combinations(parameters)
+            raise AssertionError("Expected ValueError for duplicate discriminator")
+        except ValueError as e:
+            assert "Duplicate discriminator value" in str(e)
+
+    def test_discriminated_list_non_dict_item(self):
+        """Test that discriminated list items must be dicts."""
+        parameters = {
+            "seed": {"values": [0]},
+            "loss_metric_configs": [
+                "ImportanceMinimalityLoss",  # Should be dict
+            ],
+        }
+
+        try:
+            generate_grid_combinations(parameters)
+            raise AssertionError("Expected ValueError for non-dict item")
+        except ValueError as e:
+            assert "must be dicts" in str(e)
+
+    def test_leaf_without_values_dict(self):
+        """Test that leaf values without {"values": [...]} raise an error."""
+        parameters = {
+            "seed": {"values": [0, 1]},
+            "lr": 0.001,  # Should be {"values": [0.001]}
+        }
+
+        try:
+            generate_grid_combinations(parameters)
+            raise AssertionError("Expected ValueError for leaf without values dict")
+        except ValueError as e:
+            assert 'must be {"values": [...]}' in str(e)
+
+    def test_nested_leaf_without_values_dict(self):
+        """Test that nested leaf values without {"values": [...]} raise an error."""
+        parameters = {
+            "seed": {"values": [0]},
+            "task_config": {
+                "feature_probability": 0.05,  # Should be {"values": [0.05]}
+            },
+        }
+
+        try:
+            generate_grid_combinations(parameters)
+            raise AssertionError("Expected ValueError for nested leaf without values dict")
+        except ValueError as e:
+            assert 'must be {"values": [...]}' in str(e)
+
+    def test_discriminated_list_field_without_values_dict(self):
+        """Test that fields in discriminated lists need {"values": [...]}."""
+        parameters = {
+            "seed": {"values": [0]},
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": 0.1,  # Should be {"values": [0.1]}
+                }
+            ],
+        }
+
+        try:
+            generate_grid_combinations(parameters)
+            raise AssertionError("Expected ValueError for field without values dict")
+        except ValueError as e:
+            assert 'must be {"values": [...]}' in str(e)
+
+    def test_apply_updates_to_non_list_field(self):
+        """Test that applying discriminated list updates to non-list field raises error."""
+        base = {
+            "seed": 0,
+            "loss_metric_configs": "not_a_list",  # Should be a list
+        }
+
+        updates = {
+            "loss_metric_configs.ImportanceMinimalityLoss.coeff": 0.1,
+        }
+
+        try:
+            apply_nested_updates(base, updates)
+            raise AssertionError("Expected ValueError for non-list field")
+        except ValueError as e:
+            assert "Expected 'loss_metric_configs' to be a list" in str(e)
+
+    def test_empty_values_list(self):
+        """Test that empty values lists are handled correctly."""
+        parameters = {
+            "seed": {"values": []},
+        }
+
+        combinations = generate_grid_combinations(parameters)
+        assert len(combinations) == 0
+
+    def test_empty_parameters_dict(self):
+        """Test that empty parameters dict returns single empty combination."""
+        parameters = {}
+
+        combinations = generate_grid_combinations(parameters)
+        assert len(combinations) == 1
+        assert combinations[0] == {}
+
+    def test_values_dict_with_extra_keys(self):
+        """Test that {"values": [...]} with extra keys is not treated as value spec."""
+        parameters = {
+            "seed": {"values": [0, 1], "extra_key": "ignored"},
+        }
+
+        # This should NOT be treated as a value spec since it has extra keys
+        # The "values" field is then treated as a list, which triggers discriminated list error
+        try:
+            generate_grid_combinations(parameters)
+            raise AssertionError("Expected ValueError for values dict with extra keys")
+        except ValueError as e:
+            assert "not in _DISCRIMINATED_LIST_FIELDS" in str(e)
