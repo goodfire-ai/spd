@@ -20,11 +20,11 @@ jobs:
     steps:
       - name: disk usage
         run: | 
-          echo "disk"
-          df -h
-          echo "root"
+          echo "### disk"
+          df -h || true
+          echo "### root"
           du -h -d 1 / 2>temp.txt
-          echo "spd"
+          echo "### spd"
           du -h -d 1
           echo "spd depth 2"
           du -h -d 2
@@ -34,11 +34,11 @@ jobs:
 
       - name: disk usage
         run: | 
-          echo "disk"
-          df -h
-          echo "root"
+          echo "### disk"
+          df -h || true
+          echo "### root"
           du -h -d 1 / 2>temp.txt
-          echo "spd"
+          echo "### spd"
           du -h -d 1
           echo "spd depth 2"
           du -h -d 2
@@ -56,11 +56,11 @@ jobs:
 
       - name: disk usage
         run: | 
-          echo "disk"
-          df -h
-          echo "root"
+          echo "### disk"
+          df -h || true
+          echo "### root"
           du -h -d 1 / 2>temp.txt
-          echo "spd"
+          echo "### spd"
           du -h -d 1
           echo "spd depth 2"
           du -h -d 2
@@ -71,12 +71,12 @@ jobs:
 
 
       - name: disk usage
-        run: | 
-          echo "disk"
-          df -h
-          echo "root"
+        run: |
+          echo "### disk"
+          df -h || true
+          echo "### root"
           du -h -d 1 / 2>temp.txt
-          echo "spd"
+          echo "### spd"
           du -h -d 1
           echo "spd depth 2"
           du -h -d 2
@@ -97,7 +97,7 @@ jobs:
       - name: disk usage
         run: | 
           echo "disk"
-          df -h
+          df -h || true
           echo "root"
           du -h -d 1 / 2>temp.txt
           echo "spd"
@@ -115,11 +115,11 @@ jobs:
       - name: disk usage
         if: ${{ always() }}
         run: | 
-          echo "disk"
-          df -h
-          echo "root"
+          echo "### disk"
+          df -h || true
+          echo "### root"
           du -h -d 1 / 2>temp.txt
-          echo "spd"
+          echo "### spd"
           du -h -d 1
           echo "spd depth 2"
           du -h -d 2
