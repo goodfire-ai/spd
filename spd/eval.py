@@ -24,7 +24,7 @@ from spd.configs import (
     ImportanceMinimalityLossTrainConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
-    StochasticHiddenActsReconConfig,
+    StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
     StochasticReconSubsetCEAndKLConfig,
@@ -44,7 +44,7 @@ from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
 from spd.metrics.permuted_ci_plots import PermutedCIPlots
-from spd.metrics.stochastic_hidden_acts_recon import StochasticHiddenActsRecon
+from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
 from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
@@ -205,8 +205,8 @@ def init_metric(
                 include_patterns=cfg.include_patterns,
                 exclude_patterns=cfg.exclude_patterns,
             )
-        case StochasticHiddenActsReconConfig():
-            metric = StochasticHiddenActsRecon(
+        case StochasticHiddenActsReconLossConfig():
+            metric = StochasticHiddenActsReconLoss(
                 model=model,
                 device=device,
                 sampling=run_config.sampling,

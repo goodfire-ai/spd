@@ -78,7 +78,7 @@ eval_metric_configs:
       all_but_layer_1: ["model.layers.1.*"]
       all_but_layer_2: ["model.layers.2.*"]
       all_but_layer_3: ["model.layers.3.*"]
-  - classname: "StochasticHiddenActsRecon"
+  - classname: "StochasticHiddenActsReconLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM
