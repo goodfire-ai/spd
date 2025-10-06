@@ -50,6 +50,6 @@ jobs:
           mpi: openmpi
 
       - name: Run tests
-        run: uv run python -m pytest tests/ --runslow --durations=10
+        run: uv run pytest tests/ --runslow --durations 10 --numprocesses auto
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
