@@ -44,16 +44,6 @@ class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
     eps: float = 1e-12
 
 
-PGDInitStrategy = Literal["random", "ones", "zeroes"]
-
-
-class PGDConfig(BaseModel):
-    n_mask_samples: int
-    init: PGDInitStrategy
-    step_size: float
-    n_steps: int
-
-
 class StochasticConfig(BaseModel):
     n_mask_samples: int
     # sampling: Literal["continuous", "binomial"]
@@ -66,7 +56,7 @@ class SubsetSelectorConfig(BaseModel):
 
 
 RoutingConfigType = Literal["all", "layerwise"] | SubsetSelectorConfig
-MaskingConfigType = Literal["ci"] | StochasticConfig | PGDConfig
+MaskingConfigType = Literal["ci"] | StochasticConfig
 
 
 class ReconstructionLossConfig(TrainMetricConfig):
