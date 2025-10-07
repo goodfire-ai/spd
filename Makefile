@@ -10,7 +10,7 @@ install-dev: copy-templates
 
 .PHONY: install-ci
 install-ci:
-	uv venv --clear # clear existing venv for when running locally
+	uv venv --python 3.12 --clear # clear existing venv for when running locally
 	uv sync --link-mode copy --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
 
 .PHONY: copy-templates
