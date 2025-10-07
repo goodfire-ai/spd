@@ -201,7 +201,8 @@ def create_data_loader(
             logger.warning("WARNING: Streaming with ddp has not been well tested. Use at own risk.")
             ds_num_shards = getattr(dataset, "num_shards", None)
             if isinstance(ds_num_shards, int) and ds_num_shards >= ddp_world_size:
-                dataset = dataset.shard(num_shards=ddp_world_size, index=ddp_rank)
+                # TODO: not sure why this causes an error
+                dataset = dataset.shard(num_shards=ddp_world_size, index=ddp_rank)  # pyright: ignore[reportAttributeAccessIssue]
             else:
                 # Fallback: example-level partitioning before shuffle
                 dataset = dataset.filter(
