@@ -387,6 +387,7 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "ComponentActivationDensity": "CompActDens",
     "IdentityCIError": "IdCIErr",
     "PermutedCIPlots": "PermCIPlots",
+    "MultiMagnitudeCIPlots": "MultiMagCIPlots",
     "UVPlots": "UVPlots",
     "StochasticReconSubsetCEAndKL": "StochReconSubCEKL",
     "StochasticHiddenActsReconLoss": "StochHiddenRecon",
