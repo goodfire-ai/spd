@@ -45,7 +45,6 @@ pytorch = [
 [tool.uv]
 default-groups = ["dev", "pytorch"]
 
-
 [project.scripts]
 spd-run = "spd.scripts.run:cli"
 
@@ -135,44 +134,3 @@ filterwarnings = [
     # Ignore Pydantic V1 deprecation warnings from wandb_workspaces
     "ignore:Pydantic V1 style.*:DeprecationWarning:wandb_workspaces",
 ]
-
-
-# installing with only CPU in CI
-
-# [project.optional-dependencies]
-# cu128 = [
-#     "torch>=2.6",
-#     "torchvision",
-# ]
-# cpu = [
-#     "torch>=2.6",
-#     "torchvision",
-# ]
-
-# [tool.uv]
-# conflicts = [
-#   [
-#     { extra = "cu128" },
-#     { extra = "cpu" },
-#   ],
-# ]
-
-# [tool.uv.sources]
-# torch = [
-#   { index = "pytorch-cu128", extra = "cu128" },
-#   { index = "pytorch-cpu", extra = "cpu" },
-# ]
-# torchvision = [
-#   { index = "pytorch-cu128", extra = "cu128" },
-#   { index = "pytorch-cpu", extra = "cpu" },
-# ]
-
-# [[tool.uv.index]]
-# name = "pytorch-cpu"
-# url = "https://download.pytorch.org/whl/cpu"
-# explicit = true
-
-# [[tool.uv.index]]
-# name = "pytorch-cu128"
-# url = "https://download.pytorch.org/whl/cu128"
-# explicit = true
