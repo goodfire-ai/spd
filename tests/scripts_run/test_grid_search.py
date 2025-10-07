@@ -292,6 +292,30 @@ class TestApplyNestedUpdates:
 
         assert result == {"existing": 1, "new": {"nested": {"value": 42}}}
 
+    def test_apply_over_discriminated_list_and_list(self):
+        """Test applying updates over a discriminated list and a list."""
+        base = {
+            "ci_fn_hidden_dims": [8],
+            "loss_metric_configs": [
+                {"classname": "ImportanceMinimalityLoss", "coeff": 0.1},
+                {"classname": "FaithfulnessLoss", "coeff": 0.2},
+            ],
+        }
+        updates = {
+            "ci_fn_hidden_dims": [[4, 3], [3]],
+            "loss_metric_configs.ImportanceMinimalityLoss.coeff": 0.2,
+        }
+
+        result = apply_nested_updates(base, updates)
+
+        assert result == {
+            "ci_fn_hidden_dims": [[4, 3], [3]],
+            "loss_metric_configs": [
+                {"classname": "ImportanceMinimalityLoss", "coeff": 0.2},
+                {"classname": "FaithfulnessLoss", "coeff": 0.2},
+            ],
+        }
+
 
 class TestConfigIntegration:
     """Test end-to-end Config creation with realistic discriminated lists."""
