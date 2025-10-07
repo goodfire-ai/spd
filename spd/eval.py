@@ -170,7 +170,7 @@ def init_metric(
                 device=device,
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
-                n_mask_samples=cfg.n_mask_samples, # run_config.n_mask_samples,
+                n_mask_samples=cfg.n_mask_samples,
                 include_patterns=cfg.include_patterns,
                 exclude_patterns=cfg.exclude_patterns,
             )

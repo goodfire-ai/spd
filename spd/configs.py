@@ -171,10 +171,6 @@ class Config(BaseModel):
         ...,
         description="The number of subcomponents per layer",
     )
-    n_mask_samples: PositiveInt = Field(
-        ...,
-        description="Number of stochastic masks to sample when using stochastic recon losses",
-    )
     ci_fn_type: CiFnType = Field(
         default="vector_mlp",
         description="Type of causal importance function used to calculate the causal importance.",
