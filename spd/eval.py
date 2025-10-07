@@ -25,6 +25,7 @@ from spd.configs import (
     MetricConfigType,
     PermutedCIPlotsConfig,
     StochasticHiddenActsReconLossConfig,
+    StochasticHiddenActsReconLossEvalConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
     StochasticReconSubsetCEAndKLConfig,
@@ -206,6 +207,14 @@ def init_metric(
                 exclude_patterns=cfg.exclude_patterns,
             )
         case StochasticHiddenActsReconLossConfig():
+            metric = StochasticHiddenActsReconLoss(
+                model=model,
+                device=device,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+            )
+        case StochasticHiddenActsReconLossEvalConfig():
             metric = StochasticHiddenActsReconLoss(
                 model=model,
                 device=device,
