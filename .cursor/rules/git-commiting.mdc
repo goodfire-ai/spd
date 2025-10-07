@@ -1,0 +1,4 @@
+---
+description: Do not commit using --no-verify unless given permission. The pre-commit hooks are there for a reason.
+alwaysApply: false
+---
