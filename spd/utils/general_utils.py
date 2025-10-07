@@ -468,7 +468,7 @@ def get_obj_devices(d: CanGetDevice) -> set[torch.device]:
 
 
 def get_obj_device(d: CanGetDevice) -> torch.device:
-    """try to get the device of an object's parameters. Assumes all parameters are on the same device."""
+    """Try to get the device of an object's parameters. Asserts that all parameters are on the same device."""
     devices: set[torch.device] = get_obj_devices(d)
     assert len(devices) == 1, f"Object parameters are on multiple devices: {devices}"
     return devices.pop()
