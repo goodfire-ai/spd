@@ -732,4 +732,7 @@ def main(config_path_or_obj: str | MagnitudeSweepConfig | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    config_path = sys.argv[1] if len(sys.argv) > 1 else None
+    main(config_path)
