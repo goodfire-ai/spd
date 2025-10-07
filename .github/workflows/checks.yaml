@@ -32,7 +32,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: make install-ci
+        run:  /usr/bin/make install-ci
       
       - name: clear uv cache
         run: uv cache clean || true
