@@ -18,13 +18,13 @@ class IdentityCIError(Metric):
     def __init__(
         self,
         model: ComponentModel,
-        sampling: Literal["continuous", "binomial"],
+        do_binomial_fuzz: bool,
         sigmoid_type: SigmoidTypes,
         identity_ci: list[dict[str, str | int]] | None = None,
         dense_ci: list[dict[str, str | int]] | None = None,
     ) -> None:
         self.model = model
-        self.sampling: Literal["continuous", "binomial"] = sampling
+        self.do_binomial_fuzz: bool = do_binomial_fuzz
         self.sigmoid_type: SigmoidTypes = sigmoid_type
         self.identity_ci = identity_ci
         self.dense_ci = dense_ci
@@ -50,7 +50,7 @@ class IdentityCIError(Metric):
             model=self.model,
             batch_shape=self.batch_shape,
             input_magnitude=self.input_magnitude,
-            sampling=self.sampling,
+            do_binomial_fuzz=self.do_binomial_fuzz,
             sigmoid_type=self.sigmoid_type,
         )
 

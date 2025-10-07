@@ -179,7 +179,7 @@ def get_single_feature_causal_importances(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
     input_magnitude: float,
-    sampling: Literal["continuous", "binomial"],
+    do_binomial_fuzz: bool,
     sigmoid_type: SigmoidTypes,
 ) -> tuple[dict[str, Float[Tensor, "batch C"]], dict[str, Float[Tensor, "batch C"]]]:
     """Compute causal importance arrays for single active features.
@@ -208,7 +208,7 @@ def get_single_feature_causal_importances(
         pre_weight_acts=pre_weight_acts,
         sigmoid_type=sigmoid_type,
         detach_inputs=False,
-        sampling=sampling,
+        do_binomial_fuzz=do_binomial_fuzz,
     )
 
     return ci_raw, ci_upper_leaky_raw
@@ -218,7 +218,7 @@ def plot_causal_importance_vals(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
     input_magnitude: float,
-    sampling: Literal["continuous", "binomial"],
+    do_binomial_fuzz: bool,
     sigmoid_type: SigmoidTypes,
     identity_patterns: list[str] | None = None,
     dense_patterns: list[str] | None = None,
@@ -251,7 +251,7 @@ def plot_causal_importance_vals(
         batch_shape=batch_shape,
         input_magnitude=input_magnitude,
         sigmoid_type=sigmoid_type,
-        sampling=sampling,
+        do_binomial_fuzz=do_binomial_fuzz,
     )
 
     ci: dict[str, Float[Tensor, "... C"]] = {}

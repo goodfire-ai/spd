@@ -17,7 +17,6 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
-from spd.metrics.pgd_utils import PGDInitStrategy
 from spd.models.components import CiFnType
 from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
@@ -45,16 +44,35 @@ class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
     eps: float = 1e-12
 
 
+PGDInitStrategy = Literal["random", "ones", "zeroes"]
+
+
 class PGDConfig(BaseModel):
+    n_mask_samples: int
     init: PGDInitStrategy
     step_size: float
     n_steps: int
 
 
+class StochasticConfig(BaseModel):
+    n_mask_samples: int
+    # sampling: Literal["continuous", "binomial"]
+    # This should probably be here but it's used a lot, but why???
+
+
+class SubsetSelectorConfig(BaseModel):
+    n_subsets_samples: int
+    routing: Literal["uniform_k-stochastic"] = "uniform_k-stochastic"
+
+
+RoutingConfigType = Literal["all", "layerwise"] | SubsetSelectorConfig
+MaskingConfigType = Literal["ci"] | StochasticConfig | PGDConfig
+
+
 class ReconstructionLossConfig(TrainMetricConfig):
     classname: Literal["ReconstructionLoss"] = "ReconstructionLoss"
-    routing: Literal["all", "uniform_k-stochastic", "layerwise"]
-    masking: Literal["stochastic", "ci"] | PGDConfig
+    routing: RoutingConfigType
+    masking: MaskingConfigType
 
 
 #### Eval Metric Configs ####
@@ -96,12 +114,14 @@ class PermutedCIPlotsConfig(BaseModel):
 
 class StochasticReconSubsetCEAndKLConfig(BaseModel):
     classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
+    n_mask_samples: int
     include_patterns: dict[str, list[str]] | None
     exclude_patterns: dict[str, list[str]] | None
 
 
 class StochasticHiddenActsReconLossConfig(BaseModel):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
+    n_mask_samples: int
 
 
 class UVPlotsConfig(BaseModel):

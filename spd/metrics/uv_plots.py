@@ -16,13 +16,13 @@ class UVPlots(Metric):
     def __init__(
         self,
         model: ComponentModel,
-        sampling: Literal["continuous", "binomial"],
+        do_binomial_fuzz: bool,
         sigmoid_type: SigmoidTypes,
         identity_patterns: list[str] | None = None,
         dense_patterns: list[str] | None = None,
     ) -> None:
         self.model = model
-        self.sampling: Literal["continuous", "binomial"] = sampling
+        self.do_binomial_fuzz: bool = do_binomial_fuzz
         self.sigmoid_type: SigmoidTypes = sigmoid_type
         self.identity_patterns = identity_patterns
         self.dense_patterns = dense_patterns
@@ -44,7 +44,7 @@ class UVPlots(Metric):
             input_magnitude=self.input_magnitude,
             identity_patterns=self.identity_patterns,
             dense_patterns=self.dense_patterns,
-            sampling=self.sampling,
+            do_binomial_fuzz=self.do_binomial_fuzz,
             sigmoid_type=self.sigmoid_type,
         )[1]
 

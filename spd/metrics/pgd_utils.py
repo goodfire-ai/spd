@@ -4,6 +4,7 @@ import torch
 from jaxtyping import Float, Int
 from torch import Tensor
 
+from spd.configs import PGDInitStrategy
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import WeightDeltaSamplingData, calc_stochastic_component_mask_info
 from spd.utils.general_utils import calc_sum_recon_loss_lm
@@ -16,9 +17,6 @@ class PGDObjective(Protocol):
         component_mask: dict[str, Float[Tensor, "... C"]],
         weight_delta_mask: dict[str, Float[Tensor, "..."]] | None,
     ) -> Tensor: ...
-
-
-PGDInitStrategy = Literal["random", "ones", "zeroes"]
 
 
 def get_pgd_init_tensor(

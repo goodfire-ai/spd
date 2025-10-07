@@ -27,7 +27,6 @@ def compute_total_loss(
     current_frac_of_training: float,
     sampling: Literal["continuous", "binomial"],
     use_delta_component: bool,
-    n_mask_samples: int,
     output_loss_type: Literal["mse", "kl"],
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
@@ -58,7 +57,6 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     use_delta_component=use_delta_component,
                     sampling=sampling,
-                    n_mask_samples=n_mask_samples,
                     model=model,
                     batch=batch,
                     target_out=target_out,

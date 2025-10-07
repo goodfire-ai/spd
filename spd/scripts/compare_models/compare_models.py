@@ -254,9 +254,9 @@ class ModelComparator:
                 batch = batch.to(self.device)
                 pre_weight_acts = model(batch, cache_type="input").cache
                 ci, _ = model.calc_causal_importances(
-                    pre_weight_acts,
+                    pre_weight_acts=pre_weight_acts,
                     sigmoid_type=model_config.sigmoid_type,
-                    sampling=model_config.sampling,
+                    do_binomial_fuzz=model_config.sampling == "binomial",
                 )
 
                 n_tokens_batch = next(iter(ci.values())).shape[:-1].numel()

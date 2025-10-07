@@ -21,7 +21,6 @@ from spd.configs import (
     ImportanceMinimalityLossTrainConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
-    PGDConfig,
     ReconstructionLossConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconSubsetCEAndKLConfig,
@@ -36,10 +35,11 @@ from spd.metrics.component_activation_density import ComponentActivationDensity
 from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
-from spd.metrics.layer_selector import AllSelector, LayerwiseSelector, SubsetSelector
-from spd.metrics.masker import CIMasker, PGDMasker, StochasticMaskSampler
 from spd.metrics.permuted_ci_plots import PermutedCIPlots
-from spd.metrics.reconstruction_loss import ReconstructionLoss
+from spd.metrics.reconstruction_loss import (
+    ReconstructionLoss,
+    create_reconstruction_loss_components,
+)
 from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
 from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
 from spd.metrics.uv_plots import UVPlots
@@ -136,7 +136,7 @@ def init_metric(
         case IdentityCIErrorConfig():
             metric = IdentityCIError(
                 model=model,
-                sampling=run_config.sampling,
+                do_binomial_fuzz=run_config.sampling == "binomial",
                 sigmoid_type=run_config.sigmoid_type,
                 identity_ci=cfg.identity_ci,
                 dense_ci=cfg.dense_ci,
@@ -144,43 +144,25 @@ def init_metric(
         case PermutedCIPlotsConfig():
             metric = PermutedCIPlots(
                 model=model,
-                sampling=run_config.sampling,
+                do_binomial_fuzz=run_config.sampling == "binomial",
                 sigmoid_type=cfg.sigmoid_type,
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
             )
         case ReconstructionLossConfig():
-            match cfg.masking:
-                case PGDConfig():
-                    masker = PGDMasker(
-                        init=cfg.masking.init,
-                        step_size=cfg.masking.step_size,
-                        n_steps=cfg.masking.n_steps,
-                        output_loss_type=run_config.output_loss_type,
-                    )
-                case "stochastic":
-                    masker = StochasticMaskSampler(
-                        use_delta_component=run_config.use_delta_component,
-                        sampling=run_config.sampling,
-                    )
-                case "ci":
-                    masker = CIMasker()
-
-            match cfg.routing:
-                case "all":
-                    layer_selector = AllSelector()
-                case "uniform_k-stochastic":
-                    layer_selector = SubsetSelector(n_subsets=run_config.n_mask_samples)
-                case "layerwise":
-                    layer_selector = LayerwiseSelector()
-
+            layer_selector, masker = create_reconstruction_loss_components(
+                routing_cfg=cfg.routing,
+                masking_cfg=cfg.masking,
+                output_loss_type=run_config.output_loss_type,
+                use_delta_component=run_config.use_delta_component,
+                sampling=run_config.sampling,
+            )
             metric = ReconstructionLoss(
                 model=model,
                 device=device,
                 output_loss_type=run_config.output_loss_type,
                 layer_selector=layer_selector,
                 masker=masker,
-                n_samples=cfg.n_mask_samples,
             )
         case StochasticReconSubsetCEAndKLConfig():
             metric = StochasticReconSubsetCEAndKL(
@@ -188,7 +170,7 @@ def init_metric(
                 device=device,
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
-                n_mask_samples=run_config.n_mask_samples,
+                n_mask_samples=cfg.n_mask_samples, # run_config.n_mask_samples,
                 include_patterns=cfg.include_patterns,
                 exclude_patterns=cfg.exclude_patterns,
             )
@@ -198,12 +180,12 @@ def init_metric(
                 device=device,
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
-                n_mask_samples=run_config.n_mask_samples,
+                n_mask_samples=cfg.n_mask_samples,
             )
         case UVPlotsConfig():
             metric = UVPlots(
                 model=model,
-                sampling=run_config.sampling,
+                do_binomial_fuzz=run_config.sampling == "binomial",
                 sigmoid_type=run_config.sigmoid_type,
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
@@ -242,7 +224,7 @@ def evaluate(
             pre_weight_acts=target_output.cache,
             sigmoid_type=run_config.sigmoid_type,
             detach_inputs=False,
-            sampling=run_config.sampling,
+            do_binomial_fuzz=run_config.sampling == "binomial",
         )
 
         for metric in metrics:

@@ -54,7 +54,7 @@ def extract_ci_val_figures(
         input_magnitude=input_magnitude,
         plot_raw_cis=False,
         sigmoid_type=config.sigmoid_type,
-        sampling=config.sampling,
+        do_binomial_fuzz=config.sampling == "binomial",
     )
 
     return {
@@ -529,7 +529,7 @@ def main(out_dir: Path, device: str):
             model=model,
             batch_shape=batch_shape,
             input_magnitude=0.75,
-            sampling=config.sampling,
+            do_binomial_fuzz=config.sampling == "binomial",
             plot_raw_cis=False,
             title_formatter=format_resid_mlp_title,
             sigmoid_type=config.sigmoid_type,

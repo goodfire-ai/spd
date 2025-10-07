@@ -5,7 +5,13 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import PGDConfig
+from spd.configs import (
+    MaskingConfigType,
+    PGDConfig,
+    RoutingConfigType,
+    StochasticConfig,
+    SubsetSelectorConfig,
+)
 from spd.metrics.base import Metric
 from spd.metrics.layer_selector import AllSelector, LayerSelector, LayerwiseSelector, SubsetSelector
 from spd.metrics.masker import CIMasker, Masker, PGDMasker, StochasticMaskSampler
@@ -22,13 +28,11 @@ class ReconstructionLoss(Metric):
         layer_selector: LayerSelector,
         masker: Masker,
         device: str,
-        n_samples: int,
     ):
         self.model = model
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
         self.layer_selector = layer_selector
         self.masker = masker
-        self.n_samples: int = n_samples
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -51,7 +55,6 @@ class ReconstructionLoss(Metric):
             output_loss_type=self.output_loss_type,
             layer_selector=self.layer_selector,
             masker=self.masker,
-            n_samples=self.n_samples,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples
@@ -72,22 +75,19 @@ def _reconstruction_loss_update(
     output_loss_type: Literal["mse", "kl"],
     layer_selector: LayerSelector,
     masker: Masker,
-    n_samples: int,
 ):
     sum_loss = torch.tensor(0.0, device=batch.device)
     n_examples = 0
 
-    # # This is wrong re weight_deltas_and_mask_sampling
-    for __ in range(n_samples):
-        for layer_set_ci in layer_selector.iterate_layer_sets(ci, weight_deltas):
-            mask_infos = masker.sample_mask_infos(
-                model=model,
-                batch=batch,
-                ci=layer_set_ci,
-                weight_deltas=weight_deltas,
-                target_out=target_out,
-                routing=layer_selector.get_routing(),
-            )
+    for layer_set_ci in layer_selector.iterate_layer_sets(ci, weight_deltas):
+        for mask_infos in masker.sample_mask_infos(
+            model=model,
+            batch=batch,
+            ci=layer_set_ci,
+            weight_deltas=weight_deltas,
+            target_out=target_out,
+            routing=layer_selector.get_routing(),
+        ):
             out = model(batch, mask_infos=mask_infos)
             loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
             sum_loss += loss
@@ -97,13 +97,46 @@ def _reconstruction_loss_update(
     return sum_loss, n_examples
 
 
-def reconstruction_loss(
-    routing_cfg: Literal["all", "uniform_k-stochastic", "layerwise"],
-    masking_cfg: Literal["stochastic", "ci"] | PGDConfig,
+def create_reconstruction_loss_components(
+    routing_cfg: RoutingConfigType,
+    masking_cfg: MaskingConfigType,
     output_loss_type: Literal["mse", "kl"],
     use_delta_component: bool,
     sampling: Literal["continuous", "binomial"],
-    n_mask_samples: int,
+):
+    match masking_cfg:
+        case PGDConfig():
+            masker = PGDMasker(
+                init=masking_cfg.init,
+                step_size=masking_cfg.step_size,
+                n_steps=masking_cfg.n_steps,
+                output_loss_type=output_loss_type,
+                n_mask_samples=masking_cfg.n_mask_samples,
+            )
+        case StochasticConfig():
+            masker = StochasticMaskSampler(
+                use_delta_component=use_delta_component,
+                sampling=sampling,
+                n_mask_samples=masking_cfg.n_mask_samples,
+            )
+        case "ci":
+            masker = CIMasker()
+    match routing_cfg:
+        case "all":
+            layer_selector = AllSelector()
+        case SubsetSelectorConfig():
+            layer_selector = SubsetSelector(n_subsets=routing_cfg.n_subsets_samples)
+        case "layerwise":
+            layer_selector = LayerwiseSelector()
+    return layer_selector, masker
+
+
+def reconstruction_loss(
+    routing_cfg: RoutingConfigType,
+    masking_cfg: MaskingConfigType,
+    output_loss_type: Literal["mse", "kl"],
+    use_delta_component: bool,
+    sampling: Literal["continuous", "binomial"],
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
@@ -117,11 +150,13 @@ def reconstruction_loss(
                 step_size=masking_cfg.step_size,
                 n_steps=masking_cfg.n_steps,
                 output_loss_type=output_loss_type,
+                n_mask_samples=masking_cfg.n_mask_samples,
             )
-        case "stochastic":
-            # n_mask_samples=cfg.masking,
+        case StochasticConfig():
             masker = StochasticMaskSampler(
-                use_delta_component=use_delta_component, sampling=sampling
+                use_delta_component=use_delta_component,
+                sampling=sampling,
+                n_mask_samples=masking_cfg.n_mask_samples,
             )
         case "ci":
             masker = CIMasker()
@@ -129,8 +164,8 @@ def reconstruction_loss(
     match routing_cfg:
         case "all":
             layer_selector = AllSelector()
-        case "uniform_k-stochastic":
-            layer_selector = SubsetSelector(n_subsets=n_mask_samples)
+        case SubsetSelectorConfig():
+            layer_selector = SubsetSelector(n_subsets=routing_cfg.n_subsets_samples)
         case "layerwise":
             layer_selector = LayerwiseSelector()
 
@@ -143,7 +178,6 @@ def reconstruction_loss(
         output_loss_type=output_loss_type,
         layer_selector=layer_selector,
         masker=masker,
-        n_samples=n_mask_samples,
     )
 
     return sum_loss / n_examples

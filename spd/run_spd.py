@@ -23,8 +23,8 @@ from spd.eval import avg_eval_metrics_across_ranks, evaluate
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_total_loss
-from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
+from spd.metrics.faithfulness_loss import faithfulness_loss
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
@@ -240,7 +240,7 @@ def optimize(
                     pre_weight_acts=target_model_output.cache,
                     sigmoid_type=config.sigmoid_type,
                     detach_inputs=False,
-                    sampling=config.sampling,
+                    do_binomial_fuzz=config.sampling == "binomial",
                 )
             )
 
@@ -257,7 +257,6 @@ def optimize(
                 current_frac_of_training=step / config.steps,
                 sampling=config.sampling,
                 use_delta_component=config.use_delta_component,
-                n_mask_samples=config.n_mask_samples,
                 output_loss_type=config.output_loss_type,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()

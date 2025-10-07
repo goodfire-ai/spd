@@ -90,7 +90,6 @@ class StochasticReconSubsetCEAndKL(Metric):
             weight_deltas=weight_deltas,
             sampling=self.sampling,
             use_delta_component=self.use_delta_component,
-            n_mask_samples=self.n_mask_samples,
         )
         for key, value in losses.items():
             self.metric_values[key].append(value)
@@ -125,7 +124,6 @@ class StochasticReconSubsetCEAndKL(Metric):
         weight_deltas: dict[str, Tensor],
         sampling: Literal["continuous", "binomial"],
         use_delta_component: bool,
-        n_mask_samples: int,
     ) -> dict[str, float]:
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
 
@@ -159,7 +157,7 @@ class StochasticReconSubsetCEAndKL(Metric):
                 else None,
                 routing="all",
             )
-            for _ in range(n_mask_samples)
+            for _ in range(self.n_mask_samples)
         ]
         results: dict[str, float] = {}
 
