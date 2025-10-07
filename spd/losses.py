@@ -10,7 +10,7 @@ from spd.configs import (
     CIMaskedReconSubsetLossTrainConfig,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
-    StochasticHiddenActsReconConfig,
+    StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
     StochasticReconSubsetLossTrainConfig,
@@ -22,7 +22,7 @@ from spd.metrics import (
     ci_masked_recon_subset_loss,
     faithfulness_loss,
     importance_minimality_loss,
-    stochastic_hidden_acts_recon,
+    stochastic_hidden_acts_recon_loss,
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
@@ -126,12 +126,12 @@ def compute_total_loss(
                     ci=ci,
                     weight_deltas=weight_deltas,
                 )
-            case StochasticHiddenActsReconConfig():
+            case StochasticHiddenActsReconLossConfig():
                 if pre_weight_acts is None:
                     raise ValueError(
-                        "pre_weight_acts is required for StochasticHiddenActsRecon but was not provided"
+                        "pre_weight_acts is required for StochasticHiddenActsReconLoss but was not provided"
                     )
-                loss = stochastic_hidden_acts_recon(
+                loss = stochastic_hidden_acts_recon_loss(
                     model=model,
                     sampling=sampling,
                     use_delta_component=use_delta_component,

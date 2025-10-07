@@ -111,7 +111,11 @@ class StochasticReconSubsetCEAndKLConfig(BaseModel):
     exclude_patterns: dict[str, list[str]] | None
 
 
-class StochasticHiddenActsReconLossConfig(BaseModel):
+class StochasticHiddenActsReconLossConfig(TrainMetricConfig):
+    classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
+
+
+class StochasticHiddenActsReconLossEvalConfig(BaseModel):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
 
@@ -130,7 +134,7 @@ TrainMetricConfigType = (
     | StochasticReconLayerwiseLossTrainConfig
     | StochasticReconLossTrainConfig
     | StochasticReconSubsetLossTrainConfig
-    | StochasticHiddenActsReconConfig
+    | StochasticHiddenActsReconLossConfig
 )
 EvalMetricConfigType = (
     CEandKLLossesConfig
@@ -142,7 +146,7 @@ EvalMetricConfigType = (
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
-    | StochasticHiddenActsReconLossConfig
+    | StochasticHiddenActsReconLossEvalConfig
 )
 MetricConfigType = TrainMetricConfigType | EvalMetricConfigType
 
