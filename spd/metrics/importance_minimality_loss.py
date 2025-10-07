@@ -73,7 +73,7 @@ def _importance_minimality_loss_update(
         p_anneal_final_p=p_anneal_final_p,
         p_anneal_end_frac=p_anneal_end_frac,
     )
-    device: torch.device = get_obj_device(ci_upper_leaky)
+    device = get_obj_device(ci_upper_leaky)
     sum_loss = torch.tensor(0.0, device=device)
     for layer_ci_upper_leaky in ci_upper_leaky.values():
         # Note: layer_ci_upper_leaky already >= 0
