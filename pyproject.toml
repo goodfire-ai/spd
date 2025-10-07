@@ -14,7 +14,7 @@ dependencies = [
     "fire",
     "tqdm",
     "ipykernel",
-    "transformers==4.53.2", # latest `transformers` causes pyright issues, see https://github.com/goodfire-ai/spd/issues/139
+    "transformers",
     "jaxtyping",
     "einops",
     "matplotlib==3.9.1", # Avoid frequent pyright errors with new matplotlib versions
