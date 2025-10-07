@@ -71,7 +71,7 @@ class ClusteringRunConfig(BaseModel):
     """Configuration for a complete merge clustering run.
 
     Extends MergeConfig with parameters for model, dataset, and batch configuration.
-    CLI-only parameters (base_path, devices, max_concurrency) are intentionally excluded.
+    CLI parameters (base_path, devices, workers_per_device) have defaults but will always be overridden
     """
 
     merge_config: MergeConfig = Field(
