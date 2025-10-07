@@ -141,6 +141,28 @@ class TestGenerateGridCombinations:
             "loss_metric_configs.ImportanceMinimalityLoss.coeff": 0.2,
         } in combinations
 
+    def test_sweep_over_list_and_discriminated_list(self):
+        """Test sweeping over a list and a discriminated list."""
+        parameters = {
+            "ci_fn_hidden_dims": {"values": [[8], [4, 3]]},
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": {"values": [0.1, 0.2]},
+                }
+            ],
+        }
+        combinations = generate_grid_combinations(parameters)
+        assert len(combinations) == 4  # 2 × 2
+        assert {
+            "ci_fn_hidden_dims": [8],
+            "loss_metric_configs.ImportanceMinimalityLoss.coeff": 0.1,
+        } in combinations
+        assert {
+            "ci_fn_hidden_dims": [4, 3],
+            "loss_metric_configs.ImportanceMinimalityLoss.coeff": 0.2,
+        } in combinations
+
 
 class TestApplyNestedUpdates:
     """Test apply_nested_updates with realistic discriminated lists."""
