@@ -11,7 +11,6 @@ dependencies = [
     "torchvision",
     "pydantic",
     "wandb>=0.20.1", # Avoid wandb.sdk.wandb_manager.ManagerConnectionRefusedError
-    "markupsafe<3.0.2", # https://github.com/goodfire-ai/spd/pull/187#issuecomment-3376388699
     "fire",
     "tqdm",
     "ipykernel",
