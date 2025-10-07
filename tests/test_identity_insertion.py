@@ -8,8 +8,7 @@ import torch.nn as nn
 from torch.testing import assert_close
 
 from spd.identity_insertion import insert_identity_operations_
-from spd.models.component_model import ComponentModel
-from spd.models.components import ComponentsMaskInfo, Identity
+from spd.models.components import Identity
 
 
 class SimpleModel(nn.Module):
@@ -149,4 +148,3 @@ def test_unmatched_pattern_raises_error():
 
     with pytest.raises(ValueError, match="did not match any modules"):
         insert_identity_operations_(target_model=model, identity_patterns=["does.not.exist*"])
-

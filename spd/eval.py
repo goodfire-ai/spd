@@ -166,6 +166,7 @@ class CEandKLLosses(StreamingEval):
         mask_infos = calc_stochastic_component_mask_info(
             causal_importances=ci,
             sampling=self.config.sampling,
+            routing="all",
             weight_deltas=None,
         )
         stoch_masked_logits = self.model(batch, mode="components", mask_infos=mask_infos)
@@ -550,13 +551,35 @@ class SubsetReconstructionLoss(StreamingEval):
         self.model = model
         self.config = config
         self.n_mask_samples = n_mask_samples
-        self.include_patterns = include_patterns or {}
-        self.exclude_patterns = exclude_patterns or {}
+        include_patterns = include_patterns or {}
+        exclude_patterns = exclude_patterns or {}
 
-        if not self.include_patterns and not self.exclude_patterns:
+        if not include_patterns and not exclude_patterns:
             raise ValueError(
                 "At least one of include_patterns or exclude_patterns must be provided"
             )
+
+        # Pre-compute which modules each subset will use and validate
+        all_modules = list(model.components.keys())
+        self.subset_modules: dict[str, list[str]] = {}
+
+        for name, patterns in include_patterns.items():
+            matched = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
+            if not matched:
+                raise ValueError(
+                    f"Include pattern '{name}' with patterns {patterns} does not match any "
+                    f"decomposed modules. Available modules: {all_modules}"
+                )
+            self.subset_modules[name] = matched
+
+        for name, patterns in exclude_patterns.items():
+            remaining = [m for m in all_modules if not any(fnmatch(m, p) for p in patterns)]
+            if not remaining:
+                raise ValueError(
+                    f"Exclude pattern '{name}' with patterns {patterns} excludes all "
+                    f"decomposed modules. Available modules: {all_modules}"
+                )
+            self.subset_modules[name] = remaining
 
         self.losses = defaultdict[str, list[float]](list)
 
@@ -604,42 +627,21 @@ class SubsetReconstructionLoss(StreamingEval):
         masks_list = [
             calc_stochastic_component_mask_info(
                 ci,
-                self.config.sampling,
-                self.model.calc_weight_deltas() if self.config.use_delta_component else None,
+                sampling=self.config.sampling,
+                routing="all",
+                weight_deltas=self.model.calc_weight_deltas()
+                if self.config.use_delta_component
+                else None,
             )
             for _ in range(self.n_mask_samples)
         ]
 
         results = {}
-        all_modules = list(ci.keys())
 
-        # Process include patterns
-        for name, patterns in self.include_patterns.items():
-            active = [m for m in all_modules if any(fnmatch(m, p) for p in patterns)]
-
-            outputs: list[Float[Tensor, "... vocab"]] = []  # pyright: ignore[reportRedeclaration]
-            for layers_masks in masks_list:
-                mask_infos = {module: layers_masks[module] for module in active}
-                outputs.append(self.model(batch, mode="components", mask_infos=mask_infos))
-
-            kl_losses = [kl_vs_target(out) for out in outputs]
-            ce_losses = [ce_vs_labels(out) for out in outputs]
-
-            mean_kl = sum(kl_losses) / len(kl_losses)
-            mean_ce = sum(ce_losses) / len(ce_losses)
-            ce_unrec = (mean_ce - target_ce) / (zero_ce - target_ce) if zero_ce != target_ce else 0
-
-            results[f"subset/{name}/kl"] = mean_kl
-            results[f"subset/{name}/ce"] = mean_ce
-            results[f"subset/{name}/ce_unrec"] = ce_unrec
-
-        # Process exclude patterns
-        for name, exclude_patterns in self.exclude_patterns.items():
-            active = [m for m in all_modules if not any(fnmatch(m, p) for p in exclude_patterns)]
-
+        for name, active_modules in self.subset_modules.items():
             outputs: list[Float[Tensor, "... vocab"]] = []
             for layers_masks in masks_list:
-                mask_infos = {module: layers_masks[module] for module in active}
+                mask_infos = {module: layers_masks[module] for module in active_modules}
                 outputs.append(self.model(batch, mode="components", mask_infos=mask_infos))
 
             kl_losses = [kl_vs_target(out) for out in outputs]

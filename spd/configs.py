@@ -161,9 +161,39 @@ class Config(BaseModel):
         description="Coefficient for recon loss with stochastically sampled masks on one layer at "
         "a time",
     )
+    ci_masked_recon_subset_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for recon loss with causal importance mask and routed components",
+    )
+    stochastic_recon_subset_coeff: NonNegativeFloat | None = Field(
+        default=None,
+        description="Coefficient for recon loss with stochastically sampled masks and routed components",
+    )
     importance_minimality_coeff: NonNegativeFloat = Field(
         ...,
         description="Coefficient for importance minimality loss",
+    )
+    # Scheduling for importance_minimality_coeff
+    importance_minimality_coeff_start_frac: Probability = Field(
+        default=1.0,
+        description=(
+            "Fraction of training after which to start scheduling importance_minimality_coeff "
+            "(1.0 = no scheduling)"
+        ),
+    )
+    importance_minimality_coeff_final: NonNegativeFloat | None = Field(
+        default=None,
+        description=(
+            "Final coefficient value to linearly reach by importance_minimality_coeff_end_frac "
+            "(None = no scheduling)"
+        ),
+    )
+    importance_minimality_coeff_end_frac: Probability = Field(
+        default=1.0,
+        description=(
+            "Fraction of training when importance_minimality_coeff scheduling ends. We stay at the "
+            "final value from this point onward (default 1.0 = schedule until end)"
+        ),
     )
     pnorm: PositiveFloat = Field(
         ...,
@@ -217,6 +247,56 @@ class Config(BaseModel):
     lr_warmup_pct: Probability = Field(
         default=0.0,
         description="Fraction of total steps to linearly warm up the learning rate",
+    )
+
+    # --- Adversarial (PGD) mask optimization ---
+    pgd_mask_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable PGD adversarial optimization of stochastic mask sampling variables (rand_tensors)."
+        ),
+    )
+    pgd_mask_steps: NonNegativeInt = Field(
+        default=0,
+        description="Number of projected gradient ascent steps for adversarial mask optimization",
+    )
+    pgd_mask_step_size: PositiveFloat | None = Field(
+        default=None,
+        description=("Step size for PGD ascent on mask variables. If None, defaults to 0.1."),
+    )
+    pgd_mask_random_init: bool = Field(
+        default=True,
+        description="Initialize adversarial mask variables from Uniform(0,1) at each batch",
+    )
+
+    # --- Adversarial ramp (mix adversarial vs random masks) ---
+    adv_mix_start_frac: Probability = Field(
+        default=0.0,
+        description=(
+            "Training fraction at which to start mixing adversarial vs random-mask losses"
+        ),
+    )
+    adv_mix_end_frac: Probability = Field(
+        default=1.0,
+        description=(
+            "Training fraction at which to end mixing schedule for adversarial vs random-mask losses"
+        ),
+    )
+    adv_mix_adv_weight_start: NonNegativeFloat = Field(
+        default=0.0,
+        description="Adversarial loss weight at adv_mix_start_frac",
+    )
+    adv_mix_adv_weight_end: NonNegativeFloat = Field(
+        default=1.0,
+        description="Adversarial loss weight at adv_mix_end_frac",
+    )
+    adv_mix_rand_weight_start: NonNegativeFloat = Field(
+        default=1.0,
+        description="Random-mask loss weight at adv_mix_start_frac",
+    )
+    adv_mix_rand_weight_end: NonNegativeFloat = Field(
+        default=0.0,
+        description="Random-mask loss weight at adv_mix_end_frac",
     )
 
     # --- Logging & Saving ---

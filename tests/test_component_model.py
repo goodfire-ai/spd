@@ -303,7 +303,7 @@ def test_full_weight_delta_matches_target_behaviour():
     weight_deltas_and_masks = {
         name: (weight_deltas[name], torch.ones(BATCH_SIZE)) for name in target_module_paths
     }
-    mask_infos = make_mask_infos(component_masks, weight_deltas_and_masks)
+    mask_infos = make_mask_infos(component_masks, weight_deltas_and_masks=weight_deltas_and_masks)
     out = cm(token_ids, mode="components", mask_infos=mask_infos)
 
     # THEN the output matches the target model's output
@@ -400,9 +400,7 @@ def test_replacement_effects_fwd_pass():
 
     # AND we use all components
     input = torch.randn(BATCH_SIZE, d_in)
-    use_all_components = ComponentsMaskInfo(
-        component_mask=torch.ones(BATCH_SIZE, C), weight_delta_and_mask=None
-    )
+    use_all_components = ComponentsMaskInfo(component_mask=torch.ones(BATCH_SIZE, C))
 
     # THEN the model output matches the component model output
     model_out = model(input)
@@ -426,7 +424,7 @@ def test_replacing_identity():
     d = 10
     C = 20
 
-    class IDLayerModel(nn.Module):
+    class IdentityLayerModel(nn.Module):
         def __init__(self):
             super().__init__()
             self.linear = nn.Linear(d, d, bias=False)
@@ -437,7 +435,7 @@ def test_replacing_identity():
             return self.linear(x)
 
     # GIVEN a simple model that performs identity (so we can isolate the effects below)
-    model = IDLayerModel()
+    model = IdentityLayerModel()
     model.eval()
     model.requires_grad_(False)
 
@@ -463,9 +461,7 @@ def test_replacing_identity():
     torch.testing.assert_close(cm(input, mode="target"), input)
 
     # WHEN we forward with the identity components
-    use_all_components = ComponentsMaskInfo(
-        component_mask=torch.ones(BATCH_SIZE, C), weight_delta_and_mask=None
-    )
+    use_all_components = ComponentsMaskInfo(component_mask=torch.ones(BATCH_SIZE, C))
 
     cm_components_out = cm(
         input, mode="components", mask_infos={"linear.pre_identity": use_all_components}
@@ -477,3 +473,69 @@ def test_replacing_identity():
     # BUT the original model output should be unchanged
     cm_target_out = cm(input, mode="target")
     assert torch.allclose(cm_target_out, model(input))
+
+
+def test_routing():
+    d = 10
+    C = 20
+
+    class IdentityLayerModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = nn.Linear(d, d, bias=False)
+            nn.init.eye_(self.linear.weight)
+
+        @override
+        def forward(self, x: Tensor) -> Tensor:
+            return self.linear(x)
+
+    # GIVEN a simple model that performs identity (so we can isolate the effects below)
+    model = IdentityLayerModel()
+    model.eval()
+    model.requires_grad_(False)
+
+    # wrapped in a component model that decomposes the layer
+    cm = ComponentModel(
+        target_model=model,
+        target_module_patterns=["linear"],
+        C=C,
+        gate_type="mlp",
+        gate_hidden_dims=[2],
+        pretrained_model_output_attr=None,
+    )
+
+    # and a random input
+    input = torch.randn(BATCH_SIZE, d)
+
+    # WHEN we forward with the model
+    # THEN it should just act as the identity
+    torch.testing.assert_close(model(input), input)
+    torch.testing.assert_close(cm(input, mode="target"), input)
+
+    # WHEN we forward with the components
+    use_all_components = ComponentsMaskInfo(component_mask=torch.ones(BATCH_SIZE, C))
+
+    cm_components_out = cm(input, mode="components", mask_infos={"linear": use_all_components})
+
+    # THEN it should modify the input
+    assert not torch.allclose(cm_components_out, input)
+
+    # but WHEN we forward with the components with routing:
+    use_all_components_for_example_0 = ComponentsMaskInfo(
+        component_mask=torch.ones(BATCH_SIZE, C),
+        routing_mask=torch.tensor([True, False]),  # route to components only for example 0
+    )
+
+    cm_routed_out = cm(
+        input,
+        mode="components",
+        mask_infos={"linear": use_all_components_for_example_0},
+    )
+
+    target_out = model(input)
+
+    # THEN the output should be different for the first example (where it's routed to components)
+    assert not torch.allclose(cm_routed_out[0], target_out[0])
+
+    # but it should be the same for the second example (where it's not routed to components)
+    assert torch.allclose(cm_routed_out[1], target_out[1])
