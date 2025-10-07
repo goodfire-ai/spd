@@ -174,14 +174,14 @@ def _optimize_adversarial_stochastic_masks(
     )
     leading_dims = next(iter(causal_importances.values())).shape[:-1]
     for layer, ci in causal_importances.items():
-        init = torch.rand_like(ci) if config.pgd_mask_random_init else torch.full_like(ci, 1.0)
+        init = torch.rand_like(ci) if config.pgd_mask_random_init else torch.full_like(ci, 0.0)
         init.requires_grad_(True)
         rand_tensors[layer] = init
         if weight_delta_rand_masks is not None:
             wd_init = (
                 torch.rand(*leading_dims, device=ci.device, dtype=ci.dtype)
                 if config.pgd_mask_random_init
-                else torch.full(leading_dims, 1.0, device=ci.device, dtype=ci.dtype)
+                else torch.full(leading_dims, 0.0, device=ci.device, dtype=ci.dtype)
             )
             wd_init.requires_grad_(True)
             weight_delta_rand_masks[layer] = wd_init
