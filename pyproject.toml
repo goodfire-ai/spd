@@ -11,7 +11,7 @@ dependencies = [
     "torchvision",
     "pydantic",
     "wandb>=0.20.1", # Avoid wandb.sdk.wandb_manager.ManagerConnectionRefusedError
-    "markupsafe>=2.1", # https://github.com/goodfire-ai/spd/pull/187#issuecomment-3376388699
+    "markupsafe<3.0.2", # https://github.com/goodfire-ai/spd/pull/187#issuecomment-3376388699
     "transformers==4.53.2", # latest `transformers` causes pyright issues, see https://github.com/goodfire-ai/spd/issues/139
     "fire",
     "tqdm",
