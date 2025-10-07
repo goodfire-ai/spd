@@ -97,6 +97,128 @@ def _plot_causal_importances_figure(
     return img
 
 
+def _plot_multi_magnitude_causal_importances_figure(
+    all_ci_vals: dict[float, dict[str, Float[Tensor, "... C"]]],
+    title_prefix: str,
+    colormap: str,
+    input_magnitudes: list[float],
+    has_pos_dim: bool,
+    title_formatter: Callable[[str], str] | None = None,
+    perm_indices: dict[str, Float[Tensor, " C"]] | None = None,
+) -> Image.Image:
+    """Plot causal importances for multiple input magnitudes side by side.
+
+    Args:
+        all_ci_vals: Dictionary mapping input magnitude to ci_vals dictionary
+        title_prefix: String to prepend to the title (e.g., "causal importances" or
+            "causal importances upper leaky relu")
+        colormap: Matplotlib colormap name
+        input_magnitudes: List of input magnitudes used
+        has_pos_dim: Whether the masks have a position dimension
+        title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
+        perm_indices: Optional permutation indices to apply to all magnitudes
+
+    Returns:
+        The matplotlib figure
+    """
+    n_magnitudes = len(input_magnitudes)
+    n_modules = len(next(iter(all_ci_vals.values())))
+
+    # Create figure with subplots: n_modules rows, n_magnitudes columns
+    figsize = (3 * n_magnitudes, 3 * n_modules)
+    fig, axs = plt.subplots(
+        n_modules,
+        n_magnitudes,
+        figsize=figsize,
+        constrained_layout=True,
+        dpi=300,
+    )
+
+    # Handle case where we have only one module or one magnitude
+    if n_modules == 1 and n_magnitudes == 1:
+        axs = np.array([[axs]])
+    elif n_modules == 1:
+        axs = axs.reshape(1, -1)
+    elif n_magnitudes == 1:
+        axs = axs.reshape(-1, 1)
+
+    # Collect all data for consistent colorbar
+    all_data = []
+    for magnitude in input_magnitudes:
+        for _mask_name, mask in all_ci_vals[magnitude].items():
+            mask_data = mask.detach().cpu().numpy()
+            if has_pos_dim:
+                assert mask_data.ndim == 3
+                mask_data = mask_data[:, 0, :]
+            all_data.append(mask_data)
+
+    # Calculate global min/max for consistent colorbar
+    global_min = min(data.min() for data in all_data)
+    global_max = max(data.max() for data in all_data)
+
+    # Plot each module and magnitude combination
+    im = None  # Initialize im variable
+    for i, (mask_name, _) in enumerate(next(iter(all_ci_vals.values())).items()):
+        for j, magnitude in enumerate(input_magnitudes):
+            ax = axs[i, j]
+
+            # Get the data for this module and magnitude
+            mask = all_ci_vals[magnitude][mask_name]
+            mask_data = mask.detach().cpu().numpy()
+            if has_pos_dim:
+                assert mask_data.ndim == 3
+                mask_data = mask_data[:, 0, :]
+
+            # Apply permutation if provided
+            if perm_indices and mask_name in perm_indices:
+                perm_idx = perm_indices[mask_name]
+                mask_data = mask_data[:, perm_idx.cpu().numpy()]
+
+            # Plot the data
+            im = ax.matshow(
+                mask_data, aspect="auto", cmap=colormap, vmin=global_min, vmax=global_max
+            )
+
+            # Move x-axis ticks to bottom
+            ax.xaxis.tick_bottom()
+            ax.xaxis.set_label_position("bottom")
+
+            # Set labels and title
+            if i == n_modules - 1:  # Bottom row
+                ax.set_xlabel("Subcomponent index")
+            if j == 0:  # Left column
+                ax.set_ylabel("Input feature index")
+
+            # Apply custom title formatting if provided
+            title = title_formatter(mask_name) if title_formatter is not None else mask_name
+            if j == 0:  # Only show module name on leftmost column
+                ax.set_title(title)
+
+            # Add magnitude label to top row
+            if i == 0:
+                ax.text(
+                    0.5,
+                    1.1,
+                    f"Magnitude: {magnitude}",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="bottom",
+                    fontsize=10,
+                )
+
+    # Add unified colorbar (only if we have data)
+    if im is not None:
+        fig.colorbar(im, ax=axs.ravel().tolist(), shrink=0.8)
+
+    # Capitalize first letter of title prefix for the figure title
+    fig.suptitle(f"{title_prefix.capitalize()} - Multi-magnitude comparison")
+
+    img = _render_figure(fig)
+    plt.close(fig)
+
+    return img
+
+
 def plot_mean_component_cis_both_scales(
     mean_component_cis: dict[str, Float[Tensor, " C"]],
 ) -> tuple[Image.Image, Image.Image]:
@@ -212,6 +334,107 @@ def get_single_feature_causal_importances(
     )
 
     return ci_raw, ci_upper_leaky_raw
+
+
+def plot_multi_magnitude_causal_importance_vals(
+    model: ComponentModel,
+    batch_shape: tuple[int, ...],
+    input_magnitudes: list[float],
+    sampling: Literal["continuous", "binomial"],
+    sigmoid_type: SigmoidTypes,
+    identity_patterns: list[str] | None = None,
+    dense_patterns: list[str] | None = None,
+    plot_raw_cis: bool = True,
+    title_formatter: Callable[[str], str] | None = None,
+) -> tuple[dict[str, Image.Image], dict[str, Float[Tensor, " C"]]]:
+    """Plot causal importance values for multiple input magnitudes side by side.
+
+    Args:
+        model: The ComponentModel
+        batch_shape: Shape of the batch
+        input_magnitudes: List of input magnitudes to test
+        sampling: Sampling method to use
+        sigmoid_type: Type of sigmoid to use for causal importance calculation
+        identity_patterns: List of patterns to match for identity permutation
+        dense_patterns: List of patterns to match for dense permutation
+        plot_raw_cis: Whether to plot the raw causal importances (blue plots)
+        title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
+
+    Returns:
+        Tuple of:
+            - Dictionary of figures with keys 'causal_importances_multi_magnitude' (if plot_raw_cis=True) and 'causal_importances_upper_leaky_multi_magnitude'
+            - Dictionary of permutation indices for causal importances (from first magnitude)
+    """
+    # Get causal importance arrays for all magnitudes
+    all_ci_raw = {}
+    all_ci_upper_leaky_raw = {}
+
+    for input_magnitude in input_magnitudes:
+        ci_raw, ci_upper_leaky_raw = get_single_feature_causal_importances(
+            model=model,
+            batch_shape=batch_shape,
+            input_magnitude=input_magnitude,
+            sigmoid_type=sigmoid_type,
+            sampling=sampling,
+        )
+        all_ci_raw[input_magnitude] = ci_raw
+        all_ci_upper_leaky_raw[input_magnitude] = ci_upper_leaky_raw
+
+    # Apply permutations using the first magnitude as reference
+    first_magnitude = input_magnitudes[0]
+    ci: dict[str, Float[Tensor, "... C"]] = {}
+    ci_upper_leaky: dict[str, Float[Tensor, "... C"]] = {}
+    all_perm_indices: dict[str, Float[Tensor, " C"]] = {}
+
+    for k in all_ci_raw[first_magnitude]:
+        # Determine permutation strategy based on patterns
+        if identity_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in identity_patterns):
+            ci[k], _ = permute_to_identity(ci_vals=all_ci_raw[first_magnitude][k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(
+                ci_vals=all_ci_upper_leaky_raw[first_magnitude][k]
+            )
+        elif dense_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in dense_patterns):
+            ci[k], _ = permute_to_dense(ci_vals=all_ci_raw[first_magnitude][k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_dense(
+                ci_vals=all_ci_upper_leaky_raw[first_magnitude][k]
+            )
+        else:
+            # Default: identity permutation
+            ci[k], _ = permute_to_identity(ci_vals=all_ci_raw[first_magnitude][k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(
+                ci_vals=all_ci_upper_leaky_raw[first_magnitude][k]
+            )
+
+    # Create figures dictionary
+    figures: dict[str, Image.Image] = {}
+
+    # TODO: Need to handle this differently for e.g. convolutional tasks
+    has_pos_dim = len(batch_shape) == 3
+
+    if plot_raw_cis:
+        ci_fig = _plot_multi_magnitude_causal_importances_figure(
+            all_ci_vals={mag: all_ci_raw[mag] for mag in input_magnitudes},
+            title_prefix="importance values lower leaky relu",
+            colormap="Blues",
+            input_magnitudes=input_magnitudes,
+            has_pos_dim=has_pos_dim,
+            title_formatter=title_formatter,
+            perm_indices=all_perm_indices,
+        )
+        figures["causal_importances_multi_magnitude"] = ci_fig
+
+    ci_upper_leaky_fig = _plot_multi_magnitude_causal_importances_figure(
+        all_ci_vals={mag: all_ci_upper_leaky_raw[mag] for mag in input_magnitudes},
+        title_prefix="importance values",
+        colormap="Reds",
+        input_magnitudes=input_magnitudes,
+        has_pos_dim=has_pos_dim,
+        title_formatter=title_formatter,
+        perm_indices=all_perm_indices,
+    )
+    figures["causal_importances_upper_leaky_multi_magnitude"] = ci_upper_leaky_fig
+
+    return figures, all_perm_indices
 
 
 def plot_causal_importance_vals(

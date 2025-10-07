@@ -105,6 +105,13 @@ class PermutedCIPlotsConfig(BaseModel):
     dense_patterns: list[str] | None
 
 
+class MultiMagnitudeCIPlotsConfig(BaseModel):
+    classname: Literal["MultiMagnitudeCIPlots"] = "MultiMagnitudeCIPlots"
+    sigmoid_type: SigmoidTypes
+    identity_patterns: list[str] | None
+    dense_patterns: list[str] | None
+
+
 class StochasticReconSubsetCEAndKLConfig(BaseModel):
     classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
     include_patterns: dict[str, list[str]] | None
@@ -144,6 +151,7 @@ EvalMetricConfigType = (
     | ComponentActivationDensityConfig
     | IdentityCIErrorConfig
     | PermutedCIPlotsConfig
+    | MultiMagnitudeCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
     | StochasticHiddenActsReconLossEvalConfig
