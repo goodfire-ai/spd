@@ -23,11 +23,11 @@ from spd.spd_types import ModelPath, Probability
 from spd.utils.general_utils import BaseModel
 
 
-#### Train Metric Configs ####
+#### Metrics that can be used in training (or eval) ####
 class TrainMetricConfig(BaseModel):
-    coeff: float = Field(
-        ...,
-        description="Coefficient used for weighting into loss/total.",
+    coeff: float | None = Field(
+        default=None,
+        description="Loss coefficient. Used when metric is in loss_metric_configs.",
     )
 
 
@@ -68,7 +68,11 @@ class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
 
 
-#### Eval Metric Configs ####
+class StochasticHiddenActsReconLossConfig(TrainMetricConfig):
+    classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
+
+
+#### Metrics that can only be used in eval ####
 class CEandKLLossesConfig(BaseModel):
     classname: Literal["CEandKLLosses"] = "CEandKLLosses"
     rounding_threshold: float
@@ -111,10 +115,6 @@ class StochasticReconSubsetCEAndKLConfig(BaseModel):
     exclude_patterns: dict[str, list[str]] | None
 
 
-class StochasticHiddenActsReconLossConfig(BaseModel):
-    classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
-
-
 class UVPlotsConfig(BaseModel):
     classname: Literal["UVPlots"] = "UVPlots"
     identity_patterns: list[str] | None
@@ -130,8 +130,9 @@ TrainMetricConfigType = (
     | StochasticReconLayerwiseLossTrainConfig
     | StochasticReconLossTrainConfig
     | StochasticReconSubsetLossTrainConfig
+    | StochasticHiddenActsReconLossConfig
 )
-EvalMetricConfigType = (
+EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
     | CIHistogramsConfig
     | CI_L0Config
@@ -141,9 +142,8 @@ EvalMetricConfigType = (
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
-    | StochasticHiddenActsReconLossConfig
 )
-MetricConfigType = TrainMetricConfigType | EvalMetricConfigType
+MetricConfigType = TrainMetricConfigType | EvalOnlyMetricConfigType
 
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
@@ -307,7 +307,7 @@ class Config(BaseModel):
         description="Interval (in steps) at which to save model checkpoints (None disables saving "
         "until the end of training).",
     )
-    eval_metric_configs: list[Annotated[EvalMetricConfigType, Field(discriminator="classname")]] = (
+    eval_metric_configs: list[Annotated[MetricConfigType, Field(discriminator="classname")]] = (
         Field(
             default=[],
             description="List of configs for metrics to use for evaluation",
@@ -439,5 +439,8 @@ class Config(BaseModel):
         assert self.slow_eval_freq // self.eval_freq >= 1, (
             "slow_eval_freq must be at least eval_freq"
         )
+
+        for cfg in self.loss_metric_configs:
+            assert cfg.coeff is not None, "All loss_metric_configs must have a coeff"
 
         return self

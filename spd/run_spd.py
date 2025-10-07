@@ -254,6 +254,7 @@ def optimize(
                 ci_upper_leaky=causal_importances_upper_leaky,
                 target_out=target_model_output.output,
                 weight_deltas=weight_deltas,
+                pre_weight_acts=target_model_output.cache,
                 current_frac_of_training=step / config.steps,
                 sampling=config.sampling,
                 use_delta_component=config.use_delta_component,
