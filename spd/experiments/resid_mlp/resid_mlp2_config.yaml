@@ -36,7 +36,7 @@ lr_schedule: constant
 lr_warmup_pct: 0.00
 
 # --- Faithfulness Warmup ---
-faithfulness_warmup_steps: 200
+faithfulness_warmup_steps: 0
 faithfulness_warmup_lr: 0.01
 faithfulness_warmup_weight_decay: 0.1
 
