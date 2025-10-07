@@ -10,7 +10,11 @@ the model, namely, allowing us to decompose the identity operation.
 from typing import Any
 
 import torch.nn as nn
-from transformers.modeling_utils import Conv1D as RadfordConv1D
+
+# see https://github.com/goodfire-ai/spd/issues/139
+from transformers.modeling_utils import (
+    Conv1D as RadfordConv1D,  # pyright: ignore[reportAttributeAccessIssue]
+)
 
 from spd.log import logger
 from spd.models.components import Identity
