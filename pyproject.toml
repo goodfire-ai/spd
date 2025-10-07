@@ -11,6 +11,7 @@ dependencies = [
     "torchvision",
     "pydantic",
     "wandb>=0.20.1", # Avoid wandb.sdk.wandb_manager.ManagerConnectionRefusedError
+    "markupsafe>=2.1",
     "fire",
     "tqdm",
     "ipykernel",
