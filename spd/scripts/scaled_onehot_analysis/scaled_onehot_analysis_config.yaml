@@ -10,7 +10,8 @@ min_scale: -1.5          # Minimum scale for one-hot vectors
 max_scale: 1.5           # Maximum scale for one-hot vectors  
 n_steps: 50              # Number of scale steps
 n_features_to_plot: 5    # Number of input features to analyze
-subtract_inputs: true    # Whether to subtract inputs from outputs
+subtract_inputs: false   # Whether to subtract inputs from outputs
+compare_to_target: true  # Whether to compare model output to expected target function
 
 # --- Plotting ---
 figsize: [12, 8]         # Figure size per plot (width, height)

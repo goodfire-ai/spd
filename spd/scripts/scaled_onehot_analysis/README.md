@@ -7,10 +7,11 @@ This script analyzes how ResidMLP models respond to scaled one-hot vectors by cr
 For a given ResidMLP model, the script:
 1. Creates scaled one-hot vectors (one feature active at different scales)
 2. Passes these through the model to get outputs
-3. Creates plots for each layer/module showing:
+3. Creates plots showing:
    - X-axis: Scale of the one-hot vector
    - Y-axis: Output dimension values
-   - Multiple lines: One per input/output dimension combination
+   - Multiple lines: One per output dimension
+   - Optional: Comparison to expected target function (e.g., ReLU(coeff*x) + x for resid_mlp models)
 
 ## Usage
 
@@ -34,10 +35,23 @@ The script accepts a YAML configuration file with the following parameters:
 - `n_steps`: Number of scale steps (default: 100)
 - `n_features_to_plot`: Number of input features to analyze (default: 20)
 - `subtract_inputs`: Whether to subtract inputs from outputs (default: true)
+- `compare_to_target`: Whether to compare model output to expected target function (default: false)
 - `figsize`: Figure size per plot [width, height] (default: [12, 8])
 - `dpi`: DPI for figures (default: 150)
 - `device`: Device to use (default: "auto")
 - `output_dir`: Directory to save results (default: null, uses script directory/out)
+
+## Target Function Comparison
+
+When `compare_to_target: true`, the script will overlay the expected target function on the plots. For resid_mlp models, this is typically a residual function of the form:
+
+**`y_i = ReLU(coeff_i * x_i) + x_i`**
+
+Where:
+- `coeff_i` is the label coefficient for dimension `i` (learned during target model training)
+- This creates a residual connection where the output is the input plus a ReLU transformation
+
+The comparison helps verify that the model is learning the correct target function rather than a simple ReLU.
 
 ## Output
 

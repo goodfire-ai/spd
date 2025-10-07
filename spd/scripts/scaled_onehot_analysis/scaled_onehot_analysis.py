@@ -5,10 +5,8 @@ Plot ResidMLP model responses to scaled one-hot vectors.
 This script creates plots showing how individual output dimensions respond as we gradually
 increase the scale of one-hot input vectors from min_scale to max_scale.
 
-For each layer/module in the model, there is one plot. Each plot shows:
-- X-axis: Scale of the one-hot vector
-- Y-axis: Output dimension values
-- Multiple lines: One per input/output dimension
+The script can analyze both the final model output and compare it to the expected target function
+(which is typically a residual function like ReLU(coeff*x) + x for resid_mlp models).
 
 Usage:
     python spd/scripts/scaled_onehot_analysis/scaled_onehot_analysis.py spd/scripts/scaled_onehot_analysis/scaled_onehot_analysis_config.yaml
@@ -18,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from pydantic import Field
 
@@ -55,6 +54,10 @@ class ScaledOnehotAnalysisConfig(BaseModel):
     device: str = Field(default="auto", description="Device to use (default: auto)")
     subtract_inputs: bool = Field(
         default=True, description="Whether to subtract inputs from outputs (default: True)"
+    )
+    compare_to_target: bool = Field(
+        default=False,
+        description="Whether to compare model output to expected target function (default: False)",
     )
 
     output_dir: str | None = Field(
@@ -136,13 +139,54 @@ def compute_scaled_onehot_responses(
     return responses, scales
 
 
+def get_expected_target_function(
+    model: ComponentModel, input_range: torch.Tensor, dim_to_test: int
+) -> torch.Tensor:
+    """Get the expected target function for a given dimension.
+
+    For resid_mlp models, the target function is typically ReLU(coeff * x) + x.
+    """
+    try:
+        # Try to get the pretrained model path from the SPD model's config
+        if hasattr(model, "config") and hasattr(model.config, "pretrained_model_path"):
+            pretrained_path = model.config.pretrained_model_path
+        else:
+            # Fallback: try to get it from the run info
+            from spd.models.component_model import SPDRunInfo
+
+            run_info = SPDRunInfo.from_path(
+                "wandb:goodfire/spd/fi1phj8l"
+            )  # Use the current model path
+            pretrained_path = run_info.config.pretrained_model_path
+
+        logger.info(f"Loading target run info from: {pretrained_path}")
+        target_run_info = ResidMLPTargetRunInfo.from_path(pretrained_path)
+        label_coeffs = target_run_info.label_coeffs
+        coeff = label_coeffs[dim_to_test].item()
+
+        logger.info(f"Using coefficient {coeff:.3f} for dimension {dim_to_test}")
+
+        # Compute expected residual function: ReLU(coeff * x) + x
+        expected_outputs = []
+        for x in input_range:
+            expected_outputs.append(max(0, coeff * x.item()) + x.item())
+
+        return torch.tensor(expected_outputs)
+    except Exception as e:
+        logger.warning(f"Could not get label coefficients: {e}")
+        # Fallback: assume simple ReLU if we can't get coefficients
+        return torch.relu(input_range)
+
+
 def plot_scaled_onehot_responses(
     responses: dict[str, Any],
     scales: Any,
     output_dir: str | Path,
+    model: ComponentModel | None = None,
     figsize: tuple[float, float] = (12, 8),
     dpi: int = 150,
     subtract_inputs: bool = True,
+    compare_to_target: bool = False,
 ) -> None:
     """Create plots showing scaled one-hot vector responses - one plot per input feature.
 
@@ -177,6 +221,10 @@ def plot_scaled_onehot_responses(
         # Get responses for this input feature across all output dimensions
         input_responses = responses_np[:, input_feature_idx, :]  # Shape: (n_steps, n_features)
 
+        # Plot reference lines first
+        ax.plot(scales_np, scales_np, "k:", linewidth=1, alpha=0.5, label="y = x")
+        ax.plot(scales_np, np.maximum(0, scales_np), "g:", linewidth=1, alpha=0.5, label="ReLU(x)")
+
         # Plot each output dimension as a separate line
         for output_dim in range(n_features):
             ax.plot(
@@ -184,8 +232,24 @@ def plot_scaled_onehot_responses(
                 input_responses[:, output_dim],
                 alpha=0.7,
                 linewidth=1.0,
-                label=f"Output {output_dim}",
+                label=f"Model Output {output_dim}",
             )
+
+        # If comparing to target, plot the expected target function for this input feature
+        if compare_to_target and model is not None:
+            try:
+                expected_output = get_expected_target_function(model, scales, input_feature_idx)
+                expected_np = expected_output.detach().cpu().numpy()
+                ax.plot(
+                    scales_np,
+                    expected_np,
+                    "r--",
+                    linewidth=3,
+                    alpha=0.9,
+                    label=f"Expected: ReLU(x) + x (dim {input_feature_idx})",
+                )
+            except Exception as e:
+                logger.warning(f"Could not compute expected target function: {e}")
 
         # Customize plot
         ax.set_xlabel("Scale of One-Hot Vector")
@@ -202,22 +266,49 @@ def plot_scaled_onehot_responses(
 
         ax.grid(True, alpha=0.3)
 
-        # Add legend for output dimensions (limit to first 20 to avoid clutter)
-        if n_features <= 20:
-            ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=8)
-        else:
-            # Add text box with summary info instead of legend
-            textstr = f"Input feature: {input_feature_idx}\nOutput dimensions: {n_features}\nShowing all {n_features} output lines"
-            props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
-            ax.text(
-                0.02,
-                0.98,
-                textstr,
-                transform=ax.transAxes,
-                fontsize=10,
-                verticalalignment="top",
-                bbox=props,
+        # Add legend - show reference lines and expected target, but limit model output lines
+        legend_elements = []
+
+        # Always show reference lines
+        legend_elements.extend(
+            [
+                plt.Line2D([0], [0], color="k", linestyle=":", alpha=0.5, label="y = x"),
+                plt.Line2D([0], [0], color="g", linestyle=":", alpha=0.5, label="ReLU(x)"),
+            ]
+        )
+
+        # Show expected target if available
+        if compare_to_target and model is not None:
+            legend_elements.append(
+                plt.Line2D(
+                    [0],
+                    [0],
+                    color="r",
+                    linestyle="--",
+                    linewidth=3,
+                    alpha=0.9,
+                    label=f"Expected: ReLU(x) + x (dim {input_feature_idx})",
+                )
             )
+
+        # Show a few model output lines as examples
+        if n_features <= 5:
+            # Show all if few features
+            for output_dim in range(n_features):
+                legend_elements.append(
+                    plt.Line2D([0], [0], color="b", alpha=0.7, label=f"Model Output {output_dim}")
+                )
+        else:
+            # Show first few as examples
+            for output_dim in range(min(3, n_features)):
+                legend_elements.append(
+                    plt.Line2D([0], [0], color="b", alpha=0.7, label=f"Model Output {output_dim}")
+                )
+            legend_elements.append(
+                plt.Line2D([0], [0], color="b", alpha=0.7, label=f"... and {n_features - 3} more")
+            )
+
+        ax.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=8)
 
         # Save plot for this input feature
         plot_filename = f"scaled_onehot_output_input_{input_feature_idx}.png"
@@ -337,9 +428,11 @@ def main(config_path_or_obj: str | ScaledOnehotAnalysisConfig | None = None) -> 
         responses=responses,
         scales=scales,
         output_dir=str(output_dir),
+        model=model,
         figsize=config.figsize,
         dpi=config.dpi,
         subtract_inputs=config.subtract_inputs,
+        compare_to_target=config.compare_to_target,
     )
 
     logger.info(f"All plots saved to: {output_dir}")
