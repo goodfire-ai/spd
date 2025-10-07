@@ -10,10 +10,10 @@ the model, namely, allowing us to decompose the identity operation.
 from typing import Any
 
 import torch.nn as nn
-from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.log import logger
 from spd.models.components import Identity
+from spd.utils.conv1d import RadfordConv1D
 from spd.utils.distributed_utils import is_main_process
 from spd.utils.module_utils import get_target_module_paths
 

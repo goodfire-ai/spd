@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 
 import wandb
 import wandb_workspaces.reports.v2 as wr
@@ -11,6 +12,7 @@ from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.settings import REPO_ROOT
 from spd.utils.general_utils import BaseModel, _fetch_latest_checkpoint_name, replace_pydantic_model
+from spd.utils.run_utils import METRIC_CONFIG_SHORT_NAMES
 
 WORKSPACE_TEMPLATES = {
     "default": "https://wandb.ai/goodfire/spd?nw=css034maye",
@@ -22,6 +24,43 @@ WORKSPACE_TEMPLATES = {
     "resid_mlp2": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
     "resid_mlp3": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
 }
+
+
+def flatten_metric_configs(config_dict: dict[str, Any]) -> dict[str, Any]:
+    """Flatten loss_metric_configs and eval_metric_configs into dot-notation for wandb searchability.
+
+    Converts:
+        loss_metric_configs: [{"classname": "ImportanceMinimalityLoss", "coeff": 0.1, "pnorm": 1.0}]
+    To:
+        loss_metric_configs.ImportanceMinimalityLoss.coeff: 0.1
+        loss_metric_configs.ImportanceMinimalityLoss.pnorm: 1.0
+    """
+    flattened: dict[str, Any] = {}
+
+    for config_list_name in ["loss_metric_configs", "eval_metric_configs"]:
+        if config_list_name not in config_dict:
+            continue
+
+        configs = config_dict[config_list_name]
+        assert isinstance(configs, list), f"{config_list_name} should be a list"
+
+        for config_item in configs:
+            assert isinstance(config_item, dict), f"{config_list_name} should have dicts"
+
+            classname = config_item["classname"]
+            assert isinstance(classname, str), f"{config_list_name} should have a classname"
+            short_name = METRIC_CONFIG_SHORT_NAMES[classname]
+
+            for key, value in config_item.items():
+                if key == "classname":
+                    continue
+                # Get a "loss" or "eval" prefix
+                prefix = config_list_name.split("_")[0]
+                # Create flattened key
+                flat_key = f"{prefix}.{short_name}.{key}"
+                flattened[flat_key] = value
+
+    return flattened
 
 
 def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None = None) -> File:
@@ -107,8 +146,13 @@ def init_wandb[T_config: BaseModel](
     # Update the config with the hyperparameters for this sweep (if any)
     config = replace_pydantic_model(config, wandb.config.as_dict())
 
-    # Update the non-frozen keys in the wandb config (only relevant for sweeps)
-    wandb.config.update(config.model_dump(mode="json"))
+    config_dict = config.model_dump(mode="json")
+    # We also want flattened names for easier wandb searchability
+    flattened_config_dict = flatten_metric_configs(config_dict)
+    # Remove the nested metric configs to avoid duplication
+    del config_dict["loss_metric_configs"]
+    del config_dict["eval_metric_configs"]
+    wandb.config.update({**config_dict, **flattened_config_dict})
     return config
 
 

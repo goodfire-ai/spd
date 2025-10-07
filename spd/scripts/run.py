@@ -9,7 +9,6 @@ For full CLI usage and examples, see the bottom of this file (or run `spd-run --
 
 import argparse
 import copy
-import itertools
 import json
 import shlex
 import subprocess
@@ -25,30 +24,11 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import apply_nested_updates, load_config
+from spd.utils.general_utils import load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
+from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
 from spd.utils.wandb_utils import wandb_setup
-
-
-def generate_run_name(
-    params: dict[str, Any],
-) -> str:
-    """Generate a run name based on the present parameters.
-
-    Uses only leaf-node parameters.
-    Example:
-        >>> params = {"a": {"b": 1}, "c": 2}
-        >>> generate_run_name(params)
-        "b-1_c-2"
-    """
-    parts: list[str] = []
-    for k, v in params.items():
-        if isinstance(v, dict):
-            parts.append(generate_run_name(v))
-        else:
-            parts.append(f"{k}-{v}")
-    return "_".join(parts)
 
 
 def generate_run_id() -> str:
@@ -63,39 +43,6 @@ def resolve_sweep_params_path(sweep_params_file: str) -> Path:
         return REPO_ROOT / "spd/scripts" / sweep_params_file
     else:
         return REPO_ROOT / sweep_params_file
-
-
-def generate_grid_combinations(parameters: dict[str, Any]) -> list[dict[str, Any]]:
-    """Generate all combinations for a grid search from parameter specifications."""
-    # Flatten nested parameters first
-    flattened_params = {}
-
-    def flatten_params(params: dict[str, Any], prefix: str = "") -> None:
-        """Recursively flatten nested parameters."""
-        for key, value in params.items():
-            full_key = f"{prefix}.{key}" if prefix else key
-
-            if isinstance(value, dict):
-                if "values" in value:
-                    # This is a parameter specification
-                    flattened_params[full_key] = value["values"]
-                else:
-                    # This might be a direct nested structure
-                    flatten_params(value, full_key)
-
-    flatten_params(parameters)
-
-    # Extract parameter names and their values
-    param_names = list(flattened_params.keys())
-    param_values = [flattened_params[name] for name in param_names]
-
-    # Generate all combinations
-    combinations = []
-    for values in itertools.product(*param_values):
-        combination = dict(zip(param_names, values, strict=True))
-        combinations.append(combination)
-
-    return combinations
 
 
 def load_sweep_params(experiment_name: str, sweep_params_path: Path) -> dict[str, Any]:
