@@ -152,10 +152,12 @@ class StochasticReconSubsetCEAndKL(Metric):
         # Generate stochastic masks
         masks_list: list[dict[str, ComponentsMaskInfo]] = [
             calc_stochastic_component_mask_info(
-                ci,
-                sampling=sampling,
+                causal_importances=ci,
+                component_mask_sampling=sampling,
+                weight_deltas_and_mask_sampling=(weight_deltas, "continuous")
+                if use_delta_component
+                else None,
                 routing="all",
-                weight_deltas=weight_deltas if use_delta_component else None,
             )
             for _ in range(n_mask_samples)
         ]

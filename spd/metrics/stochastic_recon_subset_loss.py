@@ -32,8 +32,10 @@ def _stochastic_recon_subset_loss_update(
     stoch_mask_infos_list = [
         calc_stochastic_component_mask_info(
             causal_importances=ci,
-            sampling=sampling,
-            weight_deltas=weight_deltas if use_delta_component else None,
+            component_mask_sampling=sampling,
+            weight_deltas_and_mask_sampling=(weight_deltas, "continuous")
+            if use_delta_component
+            else None,
             routing="uniform_k-stochastic",
         )
         for _ in range(n_mask_samples)

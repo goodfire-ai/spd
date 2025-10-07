@@ -288,6 +288,10 @@ def calc_sum_recon_loss_lm(
             loss = ((pred - target) ** 2).sum()
         case "kl":
             loss = calc_kl_divergence_lm(pred=pred, target=target, reduce=False).sum()
+        case "ce":
+            log_q = torch.log_softmax(pred, dim=-1)
+            p = torch.softmax(target, dim=-1)
+            loss = (-p * log_q).sum()
     return loss
 
 

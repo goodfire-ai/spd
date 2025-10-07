@@ -17,6 +17,7 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
+from spd.metrics.pgd_utils import PGDInitStrategy
 from spd.models.components import CiFnType
 from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
@@ -29,18 +30,6 @@ class TrainMetricConfig(BaseModel):
         ...,
         description="Coefficient used for weighting into loss/total.",
     )
-
-
-class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
-
-
-class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
-
-
-class CIMaskedReconLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
 
 
 class FaithfulnessLossTrainConfig(TrainMetricConfig):
@@ -56,16 +45,56 @@ class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
     eps: float = 1e-12
 
 
-class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
-    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
+class CIMaskedReconLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
+
+
+class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
+
+
+class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
 
 
 class StochasticReconLossTrainConfig(TrainMetricConfig):
     classname: Literal["StochasticReconLoss"] = "StochasticReconLoss"
 
 
+class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
+    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
+
+
 class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+
+
+class PGDReconLossTrainConfig(TrainMetricConfig):
+    classname: Literal["PGDReconLoss"] = "PGDReconLoss"
+    init: PGDInitStrategy
+    step_size: float
+    n_steps: int
+
+
+class PGDReconLayerwiseLossTrainConfig(TrainMetricConfig):
+    classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
+    init: PGDInitStrategy
+    step_size: float
+    n_steps: int
+
+
+class PGDReconSubsetLossTrainConfig(TrainMetricConfig):
+    classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
+    init: PGDInitStrategy
+    step_size: float
+    n_steps: int
+
+
+# TODO: factor the above into:
+# class ReconstructionLossConfig(TrainMetricConfig):
+#     classname: Literal["ReconstructionLoss"] = "ReconstructionLoss"
+#     routing: Literal["all", "uniform_k-stochastic", "layerwise"]
+#     masking: Literal["stochastic", "ci", "pgd-adversarial"]
 
 
 #### Eval Metric Configs ####
@@ -122,14 +151,19 @@ class UVPlotsConfig(BaseModel):
 
 
 TrainMetricConfigType = (
-    CIMaskedReconSubsetLossTrainConfig
-    | CIMaskedReconLayerwiseLossTrainConfig
-    | CIMaskedReconLossTrainConfig
-    | FaithfulnessLossTrainConfig
+    FaithfulnessLossTrainConfig
     | ImportanceMinimalityLossTrainConfig
-    | StochasticReconLayerwiseLossTrainConfig
-    | StochasticReconLossTrainConfig
-    | StochasticReconSubsetLossTrainConfig
+    | (  # reconstruction losses (just grouped to make it clearer they're all just {ci, stochastic, pgd} + {all, subset, layerwise})
+        CIMaskedReconLossTrainConfig
+        | CIMaskedReconSubsetLossTrainConfig
+        | CIMaskedReconLayerwiseLossTrainConfig
+        | StochasticReconLossTrainConfig
+        | StochasticReconSubsetLossTrainConfig
+        | StochasticReconLayerwiseLossTrainConfig
+        | PGDReconLossTrainConfig
+        | PGDReconSubsetLossTrainConfig
+        | PGDReconLayerwiseLossTrainConfig
+    )
 )
 EvalMetricConfigType = (
     CEandKLLossesConfig

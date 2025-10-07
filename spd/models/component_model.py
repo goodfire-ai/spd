@@ -420,10 +420,10 @@ class ComponentModel(LoadableModule):
                 weight_delta_and_mask=mask_info.weight_delta_and_mask,
             )
 
-            if mask_info.routing_mask is not None:
-                return torch.where(mask_info.routing_mask[..., None], components_out, output)
+            if mask_info.routing_mask == "all":
+                return components_out
 
-            return components_out
+            return torch.where(mask_info.routing_mask[..., None], components_out, output)
 
         # No component replacement - keep original output
         return None

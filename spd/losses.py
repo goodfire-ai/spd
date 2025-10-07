@@ -10,6 +10,9 @@ from spd.configs import (
     CIMaskedReconSubsetLossTrainConfig,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
+    PGDReconLayerwiseLossTrainConfig,
+    PGDReconLossTrainConfig,
+    PGDReconSubsetLossTrainConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
     StochasticReconSubsetLossTrainConfig,
@@ -21,6 +24,9 @@ from spd.metrics import (
     ci_masked_recon_subset_loss,
     faithfulness_loss,
     importance_minimality_loss,
+    pgd_recon_layerwise_loss,
+    pgd_recon_loss,
+    pgd_recon_subset_loss,
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
@@ -122,6 +128,44 @@ def compute_total_loss(
                     target_out=target_out,
                     ci=ci,
                     weight_deltas=weight_deltas,
+                )
+            case PGDReconLossTrainConfig():
+                loss = pgd_recon_loss(
+                    model=model,
+                    output_loss_type=output_loss_type,
+                    batch=batch,
+                    target_out=target_out,
+                    ci=ci,
+                    weight_deltas=weight_deltas,
+                    init=cfg.init,
+                    step_size=cfg.step_size,
+                    n_steps=cfg.n_steps,
+                )
+            case PGDReconSubsetLossTrainConfig():
+                loss = pgd_recon_subset_loss(
+                    model=model,
+                    output_loss_type=output_loss_type,
+                    batch=batch,
+                    target_out=target_out,
+                    ci=ci,
+                    use_delta_component=use_delta_component,
+                    weight_deltas=weight_deltas,
+                    init=cfg.init,
+                    step_size=cfg.step_size,
+                    n_steps=cfg.n_steps,
+                )
+            case PGDReconLayerwiseLossTrainConfig():
+                loss = pgd_recon_layerwise_loss(
+                    model=model,
+                    output_loss_type=output_loss_type,
+                    batch=batch,
+                    target_out=target_out,
+                    ci=ci,
+                    use_delta_component=use_delta_component,
+                    weight_deltas=weight_deltas,
+                    init=cfg.init,
+                    step_size=cfg.step_size,
+                    n_steps=cfg.n_steps,
                 )
         terms[cfg.classname] = loss.item()
         total = total + cfg.coeff * loss
