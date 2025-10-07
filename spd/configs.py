@@ -45,56 +45,15 @@ class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
     eps: float = 1e-12
 
 
-class CIMaskedReconLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
-
-
-class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
-
-
-class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
-
-
-class StochasticReconLossTrainConfig(TrainMetricConfig):
-    classname: Literal["StochasticReconLoss"] = "StochasticReconLoss"
-
-
-class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
-    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
-
-
-class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
-    classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
-
-
-class PGDReconLossTrainConfig(TrainMetricConfig):
-    classname: Literal["PGDReconLoss"] = "PGDReconLoss"
+class PGDConfig(BaseModel):
     init: PGDInitStrategy
     step_size: float
     n_steps: int
 
-
-class PGDReconLayerwiseLossTrainConfig(TrainMetricConfig):
-    classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
-    init: PGDInitStrategy
-    step_size: float
-    n_steps: int
-
-
-class PGDReconSubsetLossTrainConfig(TrainMetricConfig):
-    classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
-    init: PGDInitStrategy
-    step_size: float
-    n_steps: int
-
-
-# TODO: factor the above into:
-# class ReconstructionLossConfig(TrainMetricConfig):
-#     classname: Literal["ReconstructionLoss"] = "ReconstructionLoss"
-#     routing: Literal["all", "uniform_k-stochastic", "layerwise"]
-#     masking: Literal["stochastic", "ci", "pgd-adversarial"]
+class ReconstructionLossConfig(TrainMetricConfig):
+    classname: Literal["ReconstructionLoss"] = "ReconstructionLoss"
+    routing: Literal["all", "uniform_k-stochastic", "layerwise"]
+    masking: Literal["stochastic", "ci"] | PGDConfig
 
 
 #### Eval Metric Configs ####
@@ -153,17 +112,7 @@ class UVPlotsConfig(BaseModel):
 TrainMetricConfigType = (
     FaithfulnessLossTrainConfig
     | ImportanceMinimalityLossTrainConfig
-    | (  # reconstruction losses (just grouped to make it clearer they're all just {ci, stochastic, pgd} + {all, subset, layerwise})
-        CIMaskedReconLossTrainConfig
-        | CIMaskedReconSubsetLossTrainConfig
-        | CIMaskedReconLayerwiseLossTrainConfig
-        | StochasticReconLossTrainConfig
-        | StochasticReconSubsetLossTrainConfig
-        | StochasticReconLayerwiseLossTrainConfig
-        | PGDReconLossTrainConfig
-        | PGDReconSubsetLossTrainConfig
-        | PGDReconLayerwiseLossTrainConfig
-    )
+    | ReconstructionLossConfig
 )
 EvalMetricConfigType = (
     CEandKLLossesConfig
