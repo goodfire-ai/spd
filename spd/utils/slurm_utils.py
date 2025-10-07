@@ -28,6 +28,7 @@ def create_slurm_array_script(
     commands: list[str],
     snapshot_branch: str,
     n_gpus_per_job: int,
+    partition: str,
     time_limit: str = "72:00:00",
     max_concurrent_tasks: int | None = None,
 ) -> None:
@@ -63,6 +64,7 @@ def create_slurm_array_script(
         #!/bin/bash
         #SBATCH --nodes=1
         #SBATCH --gres=gpu:{n_gpus_per_job}
+        #SBATCH --partition={partition}
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}
