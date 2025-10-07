@@ -10,8 +10,8 @@ install-dev: copy-templates
 
 .PHONY: install-ci
 install-ci: copy-templates
-	uv pip install torch>=2.6 torchvision --torch-backend=cpu
-	uv sync --no-group pytorch --link-mode copy
+	uv sync --no-default-groups --link-mode copy
+	uv pip install --torch-backend=cpu torch torchvision --reinstall
 
 .PHONY: copy-templates
 copy-templates:

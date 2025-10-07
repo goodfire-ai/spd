@@ -23,7 +23,6 @@ dependencies = [
     "streamlit",
     "streamlit-antd-components",
     "datasets",
-    "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
 ]
 
 [dependency-groups]
@@ -35,10 +34,12 @@ dev = [
     "pre-commit",
 ]
 
+# NOTE: anything that depends on pytorch MUST go in this group
 # NOTE: if you need to pin versions here, also change them in the `install-ci` recipe in the Makefile
 pytorch = [
     "torch>=2.6",
     "torchvision",
+    "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
 ]
 
 [tool.uv]
