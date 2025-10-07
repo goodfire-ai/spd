@@ -1,15 +1,17 @@
 # setup
-CUDA_EXTRA ?= cu128
-
 .PHONY: install
 install: copy-templates
-	uv sync --no-dev --extra ${CUDA_EXTRA}
+	uv sync --no-dev
 
 .PHONY: install-dev
 install-dev: copy-templates
-	uv sync --extra ${CUDA_EXTRA}
+	uv sync
 	pre-commit install
 
+.PHONY: install-ci
+install-ci: copy-templates
+	uv pip install torch>=2.6 torchvision --torch-backend=cpu
+	uv sync --no-group pytorch --link-mode copy
 
 .PHONY: copy-templates
 copy-templates:

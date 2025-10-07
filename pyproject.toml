@@ -7,9 +7,6 @@ urls = { "Homepage" = "https://github.com/goodfire-ai/spd" }
 license = { text = "MIT" }
 readme = "README.md"
 dependencies = [
-    # NOTE: if you need to change either torch dep, also change them in [project.optional-dependencies]
-    "torch>=2.6",
-    "torchvision",
     "pydantic",
     "wandb>=0.20.1", # Avoid wandb.sdk.wandb_manager.ManagerConnectionRefusedError
     "fire",
@@ -37,6 +34,16 @@ dev = [
     "basedpyright",
     "pre-commit",
 ]
+
+# NOTE: if you need to pin versions here, also change them in the `install-ci` recipe in the Makefile
+pytorch = [
+    "torch>=2.6",
+    "torchvision",
+]
+
+[tool.uv]
+default-groups = ["dev", "pytorch"]
+
 
 [project.scripts]
 spd-run = "spd.scripts.run:cli"
@@ -131,40 +138,40 @@ filterwarnings = [
 
 # installing with only CPU in CI
 
-[project.optional-dependencies]
-cu128 = [
-    "torch>=2.6",
-    "torchvision",
-]
-cpu = [
-    "torch>=2.6",
-    "torchvision",
-]
+# [project.optional-dependencies]
+# cu128 = [
+#     "torch>=2.6",
+#     "torchvision",
+# ]
+# cpu = [
+#     "torch>=2.6",
+#     "torchvision",
+# ]
 
-[tool.uv]
-conflicts = [
-  [
-    { extra = "cu128" },
-    { extra = "cpu" },
-  ],
-]
+# [tool.uv]
+# conflicts = [
+#   [
+#     { extra = "cu128" },
+#     { extra = "cpu" },
+#   ],
+# ]
 
-[tool.uv.sources]
-torch = [
-  { index = "pytorch-cu128", extra = "cu128" },
-  { index = "pytorch-cpu", extra = "cpu" },
-]
-torchvision = [
-  { index = "pytorch-cu128", extra = "cu128" },
-  { index = "pytorch-cpu", extra = "cpu" },
-]
+# [tool.uv.sources]
+# torch = [
+#   { index = "pytorch-cu128", extra = "cu128" },
+#   { index = "pytorch-cpu", extra = "cpu" },
+# ]
+# torchvision = [
+#   { index = "pytorch-cu128", extra = "cu128" },
+#   { index = "pytorch-cpu", extra = "cpu" },
+# ]
 
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
+# [[tool.uv.index]]
+# name = "pytorch-cpu"
+# url = "https://download.pytorch.org/whl/cpu"
+# explicit = true
 
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
+# [[tool.uv.index]]
+# name = "pytorch-cu128"
+# url = "https://download.pytorch.org/whl/cu128"
+# explicit = true
