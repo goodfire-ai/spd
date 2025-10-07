@@ -1,5 +1,7 @@
 """Utilities for managing experiment run directories and IDs."""
 
+import copy
+import itertools
 import json
 import secrets
 import string
@@ -11,6 +13,12 @@ import wandb
 import yaml
 
 from spd.settings import SPD_CACHE_DIR
+
+# Fields that use discriminated union merging: field_name -> discriminator_field
+_DISCRIMINATED_LIST_FIELDS: dict[str, str] = {
+    "loss_metric_configs": "classname",
+    "eval_metric_configs": "classname",
+}
 
 
 def get_local_run_id() -> str:
@@ -128,3 +136,329 @@ def save_file(data: dict[str, Any] | Any, path: Path | str, **kwargs: Any) -> No
         # Default to text file
         assert isinstance(data, str), f"For {suffix} files, data must be a string, got {type(data)}"
         _save_text(data, path, encoding=kwargs.get("encoding", "utf-8"))
+
+
+def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
+    """Apply nested updates to a dictionary with flattened keys.
+
+    Supports dot notation for all fields:
+        - Regular: "task_config.max_seq_len"
+        - Discriminated lists: "loss_metric_configs.Loss1.coeff"
+
+    For discriminated list fields, matches items by discriminator value in the path.
+    Preserves base items not mentioned in updates and adds new items from updates.
+
+    Args:
+        base_dict: The base configuration dictionary
+        updates: Dictionary of flattened key-value pairs
+
+    Returns:
+        Updated dictionary (deep copy, original unchanged)
+    """
+    result = copy.deepcopy(base_dict)
+
+    for key, value in updates.items():
+        if "." in key:
+            keys = key.split(".")
+
+            # Check if this is a discriminator-based list key
+            # Format: "list_field.discriminator_value.field_name..."
+            if len(keys) >= 3 and keys[0] in _DISCRIMINATED_LIST_FIELDS:
+                list_field = keys[0]
+                discriminator_value = keys[1]
+                field_path = keys[2:]  # Remaining path after discriminator
+
+                # Ensure the list exists
+                if list_field not in result:
+                    result[list_field] = []
+
+                if not isinstance(result[list_field], list):
+                    raise ValueError(
+                        f"Expected '{list_field}' to be a list, got {type(result[list_field])}"
+                    )
+
+                # Find or create the item with matching discriminator
+                discriminator_field = _DISCRIMINATED_LIST_FIELDS[list_field]
+                target_item = None
+                for item in result[list_field]:
+                    if item.get(discriminator_field) == discriminator_value:
+                        target_item = item
+                        break
+
+                if target_item is None:
+                    # Create new item with discriminator
+                    target_item = {discriminator_field: discriminator_value}
+                    result[list_field].append(target_item)
+
+                # Navigate the remaining path within the item
+                current_item: dict[str, Any] = target_item
+                for k in field_path[:-1]:
+                    if k not in current_item:
+                        current_item[k] = {}
+                    assert isinstance(current_item[k], dict)
+                    current_item = current_item[k]
+
+                # Set the final value
+                current_item[field_path[-1]] = value
+            else:
+                # Regular dot notation (non-discriminated)
+                current: dict[str, Any] = result
+
+                # Navigate to the parent of the final key
+                for k in keys[:-1]:
+                    if k not in current:
+                        current[k] = {}
+                    assert isinstance(current[k], dict)
+                    current = current[k]
+
+                # Set the final value
+                current[keys[-1]] = value
+        else:
+            # Simple key replacement (no dot notation)
+            result[key] = value
+
+    return result
+
+
+def _extract_value_specs_from_sweep_params(
+    obj: Any,
+    path: list[str],
+    value_specs: list[tuple[str, list[Any]]],
+) -> None:
+    """Recursively extract all {"values": [...]} specs with flattened paths."""
+    if isinstance(obj, dict):
+        if "values" in obj and len(obj) == 1:
+            # This is a value spec - create flattened key
+            flattened_key = ".".join(path)
+            value_specs.append((flattened_key, obj["values"]))
+        else:
+            # Regular dict, recurse
+            for key, value in obj.items():
+                _extract_value_specs_from_sweep_params(value, path + [key], value_specs)
+    elif isinstance(obj, list):
+        # All lists must be discriminated
+        if len(path) == 0:
+            raise ValueError("Cannot have a list at the root level of sweep parameters")
+
+        parent_key = path[-1]
+        if parent_key not in _DISCRIMINATED_LIST_FIELDS:
+            raise ValueError(
+                f"List field '{parent_key}' is not in _DISCRIMINATED_LIST_FIELDS. "
+                f"All list fields must be discriminated unions. "
+                f"Known discriminated fields: {list(_DISCRIMINATED_LIST_FIELDS.keys())}"
+            )
+
+        discriminator_field = _DISCRIMINATED_LIST_FIELDS[parent_key]
+        seen_discriminators: set[str] = set()
+
+        for item in obj:
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"All items in discriminated list '{parent_key}' must be dicts, got {type(item)}"
+                )
+            if discriminator_field not in item:
+                raise ValueError(
+                    f"Item in discriminated list '{parent_key}' missing discriminator field '{discriminator_field}': {item}"
+                )
+
+            disc_value = item[discriminator_field]
+            if not isinstance(disc_value, str):
+                raise ValueError(
+                    f"Discriminator field '{discriminator_field}' must be a string, got {type(disc_value)}: {disc_value}"
+                )
+
+            if disc_value in seen_discriminators:
+                raise ValueError(
+                    f"Duplicate discriminator value '{disc_value}' in list field '{parent_key}'"
+                )
+            seen_discriminators.add(disc_value)
+
+            # Recurse into item's fields with discriminator in path
+            for field_key, field_value in item.items():
+                if field_key == discriminator_field:
+                    # Skip the discriminator field - it's already in the path
+                    continue
+                field_path = path + [disc_value, field_key]
+                _extract_value_specs_from_sweep_params(field_value, field_path, value_specs)
+
+
+def _validate_sweep_params_have_values(
+    obj: Any,
+    path: list[str],
+    parent_list_key: str | None = None,
+) -> None:
+    """Validate that all leaves have {"values": [...]}, except discriminator fields."""
+    if isinstance(obj, dict):
+        if "values" in obj:
+            return  # This is a value spec
+        if not obj:
+            return  # Empty dict is ok
+        for key, value in obj.items():
+            _validate_sweep_params_have_values(value, path + [key], parent_list_key)
+    elif isinstance(obj, list):
+        # Track that we're inside a discriminated list
+        list_field = path[-1] if path else None
+        for item in obj:
+            _validate_sweep_params_have_values(item, path, parent_list_key=list_field)
+    else:
+        # Primitive value - check if it's a discriminator field
+        if parent_list_key and parent_list_key in _DISCRIMINATED_LIST_FIELDS:
+            discriminator_field = _DISCRIMINATED_LIST_FIELDS[parent_list_key]
+            if path and path[-1] == discriminator_field:
+                return  # This is a discriminator field, it's allowed to be a primitive
+
+        # Otherwise, this is an error
+        path_str = ".".join(path) if path else "(root)"
+        raise ValueError(
+            f'All leaf values in sweep parameters must be {{"values": [...]}}, '
+            f"but found {type(obj).__name__} at path '{path_str}': {obj}"
+        )
+
+
+def generate_grid_combinations(parameters: dict[str, Any]) -> list[dict[str, Any]]:
+    """Generate all combinations for a grid search from parameter specifications.
+
+    All leaf values (except discriminator fields) must be {"values": [...]}.
+    Discriminated lists use discriminator values in flattened keys instead of indices.
+
+    Args:
+        parameters: Nested dict/list structure where all leaves are {"values": [...]}
+
+    Returns:
+        List of parameter combinations with flattened keys (e.g., "loss_metric_configs.Loss1.coeff")
+
+    Example:
+        >>> params = {
+        ...     "seed": {"values": [0, 1]},
+        ...     "loss_metric_configs": [
+        ...         {
+        ...             "classname": "ImportanceMinimalityLoss",
+        ...             "coeff": {"values": [0.1, 0.2]},
+        ...         }
+        ...     ],
+        ... }
+        >>> combos = generate_grid_combinations(params)
+        >>> len(combos)
+        4
+        >>> combos[0]["seed"]
+        0
+        >>> combos[0]["loss_metric_configs.ImportanceMinimalityLoss.coeff"]
+        0.1
+    """
+    # Extract all value specs with their flattened paths
+    value_specs: list[tuple[str, list[Any]]] = []
+    _extract_value_specs_from_sweep_params(parameters, [], value_specs)
+
+    # Validate all non-discriminator leaves have {"values": [...]}
+    _validate_sweep_params_have_values(parameters, [])
+
+    if not value_specs:
+        # No value specs found, return single empty combination
+        return [{}]
+
+    # Generate cartesian product of all value specs
+    keys, value_lists = zip(*value_specs, strict=True)
+    all_value_combinations = list(itertools.product(*value_lists))
+
+    # Create flattened dicts for each combination
+    combinations: list[dict[str, Any]] = []
+    for value_combo in all_value_combinations:
+        combo_dict = dict(zip(keys, value_combo, strict=True))
+        combinations.append(combo_dict)
+
+    return combinations
+
+
+METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
+    # Train metrics
+    "CIMaskedReconSubsetLoss": "CIMaskReconSub",
+    "CIMaskedReconLayerwiseLoss": "CIMaskReconLayer",
+    "CIMaskedReconLoss": "CIMaskRecon",
+    "FaithfulnessLoss": "Faith",
+    "ImportanceMinimalityLoss": "ImpMin",
+    "StochasticReconLayerwiseLoss": "StochReconLayer",
+    "StochasticReconLoss": "StochRecon",
+    "StochasticReconSubsetLoss": "StochReconSub",
+    # Eval metrics
+    "CEandKLLosses": "CEandKL",
+    "CIHistograms": "CIHist",
+    "CI_L0": "CI_L0",
+    "CIMeanPerComponent": "CIMeanPerComp",
+    "ComponentActivationDensity": "CompActDens",
+    "IdentityCIError": "IdCIErr",
+    "PermutedCIPlots": "PermCIPlots",
+    "UVPlots": "UVPlots",
+    "StochasticReconSubsetCEAndKL": "StochReconSubCEKL",
+    "StochasticHiddenActsReconLoss": "StochHiddenRecon",
+}
+
+
+def _parse_metric_config_key(key: str) -> tuple[str, str, str] | None:
+    """Parse a metric config key into (list_field, classname, param).
+
+    Args:
+        key: Flattened key like "loss_metric_configs.ImportanceMinimalityLoss.pnorm"
+
+    Returns:
+        Tuple of (list_field, classname, param) if it's a metric config key, None otherwise
+    """
+    parts = key.split(".")
+    if len(parts) >= 3 and parts[0] in ("loss_metric_configs", "eval_metric_configs"):
+        list_field = parts[0]
+        classname = parts[1]
+        param = ".".join(parts[2:])  # Handle nested params like "task_config.feature_probability"
+        return (list_field, classname, param)
+    return None
+
+
+def generate_run_name(params: dict[str, Any]) -> str:
+    """Generate a run name based on sweep parameters.
+
+    Handles special formatting for metric configs (loss_metric_configs, eval_metric_configs)
+    by abbreviating classnames and grouping parameters by metric type.
+
+    Args:
+        params: Dictionary of flattened sweep parameters
+
+    Returns:
+        Formatted run name string
+
+    Example:
+        >>> params = {
+        ...     "seed": 42,
+        ...     "loss_metric_configs.ImportanceMinimalityLoss.pnorm": 0.9,
+        ...     "loss_metric_configs.ImportanceMinimalityLoss.coeff": 0.001,
+        ... }
+        >>> generate_run_name(params)
+        "seed-42-ImpMin-coeff-0.001-pnorm-0.9"
+    """
+    # Group parameters by type: regular params and metric config params
+    regular_params: list[tuple[str, Any]] = []
+    metric_params: dict[str, list[tuple[str, Any]]] = {}  # classname -> [(param, value), ...]
+
+    for key, value in params.items():
+        parsed = _parse_metric_config_key(key)
+        if parsed:
+            _, classname, param = parsed
+            # Get short name for the classname
+            short_name = METRIC_CONFIG_SHORT_NAMES.get(classname, classname)
+            if short_name not in metric_params:
+                metric_params[short_name] = []
+            metric_params[short_name].append((param, value))
+        else:
+            regular_params.append((key, value))
+
+    # Build parts list
+    parts: list[str] = []
+
+    # Add regular params (sorted for consistency)
+    for key, value in sorted(regular_params):
+        parts.append(f"{key}-{value}")
+
+    # Add metric config params (sorted by classname, then by param)
+    for short_name in sorted(metric_params.keys()):
+        parts.append(short_name)
+        for param, value in sorted(metric_params[short_name]):
+            parts.append(f"{param}-{value}")
+
+    return "-".join(parts)
