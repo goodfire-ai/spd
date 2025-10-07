@@ -153,6 +153,7 @@ def init_metric(
             layer_selector, masker = create_reconstruction_loss_components(
                 routing_cfg=cfg.routing,
                 masking_cfg=cfg.masking,
+                output_loss_type=run_config.output_loss_type,
                 use_delta_component=run_config.use_delta_component,
                 sampling=run_config.sampling,
             )
@@ -169,7 +170,7 @@ def init_metric(
                 device=device,
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
-                n_mask_samples=cfg.n_mask_samples,
+                n_mask_samples=cfg.n_mask_samples, # run_config.n_mask_samples,
                 include_patterns=cfg.include_patterns,
                 exclude_patterns=cfg.exclude_patterns,
             )

@@ -7,13 +7,14 @@ from torch.distributed import ReduceOp
 
 from spd.configs import (
     MaskingConfigType,
+    PGDConfig,
     RoutingConfigType,
     StochasticConfig,
     SubsetSelectorConfig,
 )
 from spd.metrics.base import Metric
 from spd.metrics.layer_selector import AllSelector, LayerSelector, LayerwiseSelector, SubsetSelector
-from spd.metrics.masker import CIMasker, Masker, StochasticMaskSampler
+from spd.metrics.masker import CIMasker, Masker, PGDMasker, StochasticMaskSampler
 from spd.models.component_model import ComponentModel
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
@@ -99,10 +100,19 @@ def _reconstruction_loss_update(
 def create_reconstruction_loss_components(
     routing_cfg: RoutingConfigType,
     masking_cfg: MaskingConfigType,
+    output_loss_type: Literal["mse", "kl"],
     use_delta_component: bool,
     sampling: Literal["continuous", "binomial"],
 ):
     match masking_cfg:
+        case PGDConfig():
+            masker = PGDMasker(
+                init=masking_cfg.init,
+                step_size=masking_cfg.step_size,
+                n_steps=masking_cfg.n_steps,
+                output_loss_type=output_loss_type,
+                n_mask_samples=masking_cfg.n_mask_samples,
+            )
         case StochasticConfig():
             masker = StochasticMaskSampler(
                 use_delta_component=use_delta_component,
@@ -134,6 +144,14 @@ def reconstruction_loss(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
 ):
     match masking_cfg:
+        case PGDConfig():
+            masker = PGDMasker(
+                init=masking_cfg.init,
+                step_size=masking_cfg.step_size,
+                n_steps=masking_cfg.n_steps,
+                output_loss_type=output_loss_type,
+                n_mask_samples=masking_cfg.n_mask_samples,
+            )
         case StochasticConfig():
             masker = StochasticMaskSampler(
                 use_delta_component=use_delta_component,
