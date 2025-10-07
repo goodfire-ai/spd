@@ -11,6 +11,7 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
+from transformers.pytorch_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
 from spd.configs import Config
@@ -29,7 +30,6 @@ from spd.models.components import (
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.conv1d import RadfordConv1D
 from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class
 from spd.utils.module_utils import get_target_module_paths
 from spd.utils.run_utils import check_run_exists
