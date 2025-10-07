@@ -48,10 +48,16 @@ jobs:
 
       - name: Run ruff format
         run: uv run ruff format .
-
+      
+      - name: disk usage
+        run: df -h
+      
       - name: Run tests
         run: uv run python -m pytest tests/ --runslow --durations=10
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
           OMPI_ALLOW_RUN_AS_ROOT: 1
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+      
+      - name: disk usage
+        run: df -h
