@@ -7,6 +7,8 @@ urls = { "Homepage" = "https://github.com/goodfire-ai/spd" }
 license = { text = "MIT" }
 readme = "README.md"
 dependencies = [
+    "torch>=2.6",
+    "torchvision",
     "pydantic",
     "wandb>=0.20.1", # Avoid wandb.sdk.wandb_manager.ManagerConnectionRefusedError
     "fire",
@@ -23,6 +25,7 @@ dependencies = [
     "streamlit",
     "streamlit-antd-components",
     "datasets",
+    "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
 ]
 
 [dependency-groups]
@@ -33,17 +36,6 @@ dev = [
     "basedpyright",
     "pre-commit",
 ]
-
-# NOTE: anything that depends on pytorch MUST go in this group
-# NOTE: if you need to pin versions here, also change them in the `install-ci` recipe in the Makefile
-pytorch = [
-    "torch>=2.6",
-    "torchvision",
-    "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
-]
-
-[tool.uv]
-default-groups = ["dev", "pytorch"]
 
 [project.scripts]
 spd-run = "spd.scripts.run:cli"

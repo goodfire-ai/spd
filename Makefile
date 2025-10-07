@@ -8,11 +8,6 @@ install-dev: copy-templates
 	uv sync
 	pre-commit install
 
-.PHONY: install-ci
-install-ci: copy-templates
-	uv sync --no-default-groups --link-mode copy
-	uv pip install --torch-backend=cpu torch torchvision --reinstall
-
 .PHONY: copy-templates
 copy-templates:
 	@if [ ! -f spd/scripts/sweep_params.yaml ]; then \
