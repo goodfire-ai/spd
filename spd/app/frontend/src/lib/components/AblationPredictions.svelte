@@ -1,15 +1,19 @@
 <script lang="ts">
     import TokenPredictions from "./TokenPredictions.svelte";
-    import type { OutputTokenLogit, ComponentMask, MaskOverrideDTO } from "$lib/api";
+    import AblationHeatmap from "./AblationHeatmap.svelte";
+    import type { OutputTokenLogit, ComponentMask, MaskOverrideDTO, AblationStats } from "$lib/api";
 
     export let tokenLogits: OutputTokenLogit[][];
     export let promptTokens: string[];
     export let appliedMask: ComponentMask;
     export let maskOverride: MaskOverrideDTO | undefined = undefined;
+    export let ablationStats: AblationStats;
 </script>
 
 <div class="ablation-output-section">
     <TokenPredictions {tokenLogits} {promptTokens} containerClass="" {appliedMask} />
+
+    <AblationHeatmap {ablationStats} {promptTokens} />
 
     <div class="ablation-summary">
         <h3>Applied ablations:</h3>

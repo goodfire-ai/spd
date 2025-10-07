@@ -36,6 +36,7 @@
     let savedMasksPanel: SavedMasksPanel;
     let availablePrompts: AvailablePrompt[] | null = null;
     let showAvailablePrompts = false;
+    let currentAblationPage = 0;
 
     let popupData: PopupData | null = null;
     let dashboard: ClusterDashboardResponse | null = null;
@@ -138,7 +139,8 @@
                     tokenLogits: maskResult.token_logits,
                     applied_mask: {}, // The mask was applied uniformly to all tokens
                     id: Date.now(),
-                    maskOverride: appliedMask // Store mask info for display
+                    maskOverride: appliedMask, // Store mask info for display
+                    ablationStats: maskResult.ablation_stats
                 }
             ];
         } catch (error: any) {
@@ -204,7 +206,8 @@
                 {
                     tokenLogits: data.token_logits,
                     applied_mask: deepCopyMask,
-                    id: Date.now()
+                    id: Date.now(),
+                    ablationStats: data.ablation_stats
                 }
             ];
         } catch (error: any) {
@@ -348,15 +351,34 @@
                 />
             {/if}
 
-            {#if result}
-                {#each $ablationResults as ablationResult}
+            {#if result && $ablationResults.length > 0}
+                <div class="ablation-results-container">
+                    <div class="pagination-header">
+                        <h3>Ablation Results ({$ablationResults.length} total)</h3>
+                        <div class="pagination-controls">
+                            <button
+                                on:click={() => (currentAblationPage = Math.max(0, currentAblationPage - 1))}
+                                disabled={currentAblationPage === 0}
+                            >
+                                ←
+                            </button>
+                            <span>{currentAblationPage + 1} / {$ablationResults.length}</span>
+                            <button
+                                on:click={() => (currentAblationPage = Math.min($ablationResults.length - 1, currentAblationPage + 1))}
+                                disabled={currentAblationPage === $ablationResults.length - 1}
+                            >
+                                →
+                            </button>
+                        </div>
+                    </div>
                     <AblationPredictions
-                        tokenLogits={ablationResult.tokenLogits}
+                        tokenLogits={$ablationResults[currentAblationPage].tokenLogits}
                         promptTokens={result.prompt_tokens}
-                        appliedMask={ablationResult.applied_mask}
-                        maskOverride={ablationResult.maskOverride}
+                        appliedMask={$ablationResults[currentAblationPage].applied_mask}
+                        maskOverride={$ablationResults[currentAblationPage].maskOverride}
+                        ablationStats={$ablationResults[currentAblationPage].ablationStats}
                     />
-                {/each}
+                </div>
             {/if}
         </div>
     </div>
@@ -574,5 +596,59 @@
         text-align: center;
         color: #6c757d;
         font-style: italic;
+    }
+
+    .ablation-results-container {
+        margin-top: 1rem;
+    }
+
+    .pagination-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+        padding: 0.5rem;
+        background: #f8f9fa;
+        border-radius: 6px;
+    }
+
+    .pagination-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        color: #333;
+    }
+
+    .pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .pagination-controls button {
+        padding: 0.25rem 0.75rem;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: all 0.2s;
+    }
+
+    .pagination-controls button:hover:not(:disabled) {
+        background: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+
+    .pagination-controls button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .pagination-controls span {
+        font-size: 0.9rem;
+        color: #666;
+        min-width: 4rem;
+        text-align: center;
     }
 </style>

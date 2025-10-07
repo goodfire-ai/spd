@@ -136,22 +136,21 @@ def ablate_subcomponents(request: SubcomponentAblationRequest) -> SubcomponentAb
 @app.post("/ablate_components")
 @handle_errors
 def ablate_components(request: ComponentAblationRequest) -> InterventionResponse:
-    tokens_logits = ablation_service.ablate_components(
+    tokens_logits, ablation_stats = ablation_service.ablate_components(
         request.prompt_id,
         request.component_mask,
     )
-    return InterventionResponse(token_logits=tokens_logits)
+    return InterventionResponse(token_logits=tokens_logits, ablation_stats=ablation_stats)
 
 
 @app.post("/apply_mask")
 @handle_errors
 def apply_mask_as_ablation(request: ApplyMaskRequest) -> InterventionResponse:
     """Apply a saved mask as an ablation to a specific prompt."""
-    return InterventionResponse(
-        token_logits=ablation_service.run_with_mask_override(
-            request.prompt_id, request.mask_override_id
-        )
+    tokens_logits, ablation_stats = ablation_service.run_with_mask_override(
+        request.prompt_id, request.mask_override_id
     )
+    return InterventionResponse(token_logits=tokens_logits, ablation_stats=ablation_stats)
 
 
 @app.post("/runs/load/{wandb_run_id}")

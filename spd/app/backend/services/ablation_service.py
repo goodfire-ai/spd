@@ -4,17 +4,19 @@ from dataclasses import dataclass
 from typing import cast
 
 import torch
-import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch._tensor import Tensor
 
 from spd.app.backend.api import (
+    AblationStats,
+    LayerAblationStats,
     LayerCIs,
     MaskOverrideDTO,
     MatrixCausalImportances,
     OutputTokenLogit,
     RunResponse,
     SimulateMergeResponse,
+    TokenAblationStats,
 )
 from spd.app.backend.services.cluster_dashboard_service import ComponentActivationContextsService
 from spd.app.backend.services.run_context_service import RunContextService
@@ -49,6 +51,7 @@ class MaskOverride:
 
 
 DEVICE = get_device()
+ACTIVE_THRESHOLD = 0.01
 
 
 class AblationService:
@@ -207,26 +210,30 @@ class AblationService:
 
     def run_with_mask_override(
         self, prompt_id: str, mask_override_id: str
-    ) -> list[list[OutputTokenLogit]]:
+    ) -> tuple[list[list[OutputTokenLogit]], AblationStats]:
         """Apply a saved mask override as an ablation to a specific prompt."""
         assert (ctx := self.run_context_service.train_run_context) is not None
         assert (prompt_context := self.prompt_contexts.get(prompt_id)) is not None
         assert (mask_override := self.mask_overrides.get(mask_override_id)) is not None
 
         # Start with the prompt's causal importances
-        masked_ci = prompt_context.subcomponent_causal_importances.copy()
+        original_cis = prompt_context.subcomponent_causal_importances.copy()
+        ablated_cis = prompt_context.subcomponent_causal_importances.copy()
 
         # Override the specified layer with the saved mask for ALL tokens
-        masked_ci[mask_override.layer].copy_(mask_override.combined_mask)
+        ablated_cis[mask_override.layer].copy_(mask_override.combined_mask)
+
+        # Compute stats before running inference
+        ablation_stats = self._compute_ablation_stats(original_cis, ablated_cis)
 
         # Run with the mask override
         ci_masked_logits = ctx.cm(
             prompt_context.input_token_ids[None],
             mode="components",
-            mask_infos=make_mask_infos(masked_ci),
+            mask_infos=make_mask_infos(ablated_cis),
         )[0]
 
-        return self._logits_to_token_logits(ci_masked_logits)
+        return self._logits_to_token_logits(ci_masked_logits), ablation_stats
 
     def ablate_subcomponents(
         self, prompt_id: str, subcomponent_mask: dict[str, list[list[int]]]
@@ -251,27 +258,79 @@ class AblationService:
         self,
         prompt_id: str,
         component_mask: dict[str, list[list[int]]],
-    ) -> list[list[OutputTokenLogit]]:
+    ) -> tuple[list[list[OutputTokenLogit]], AblationStats]:
         assert (ctx := self.run_context_service.train_run_context) is not None
         assert (prompt_context := self.prompt_contexts.get(prompt_id)) is not None
         assert (cluster_ctx := self.run_context_service.cluster_run_context) is not None
 
-        masked_ci = prompt_context.subcomponent_causal_importances.copy()
+        original_cis = prompt_context.subcomponent_causal_importances.copy()
+        ablated_cis = prompt_context.subcomponent_causal_importances.copy()
+
         for module, token_component_masks in component_mask.items():
             components = cluster_ctx.clustering_shape.module_component_groups[module]
             for token_idx, token_component_mask in enumerate(token_component_masks):
                 for component_idx in token_component_mask:
                     assert component_idx < len(components)
                     component_subcomponent_indices = components[component_idx]
-                    masked_ci[module][token_idx][component_subcomponent_indices] = 0
+                    ablated_cis[module][token_idx][component_subcomponent_indices] = 0
+
+        # Compute stats
+        ablation_stats = self._compute_ablation_stats(original_cis, ablated_cis)
 
         ci_masked_logits = ctx.cm(
             prompt_context.input_token_ids[None],  # add batch dim
             mode="components",
-            mask_infos=make_mask_infos(masked_ci),
+            mask_infos=make_mask_infos(ablated_cis),
         )[0]  # remove batch dim
 
-        return self._logits_to_token_logits(ci_masked_logits)
+        return self._logits_to_token_logits(ci_masked_logits), ablation_stats
+
+    def _compute_ablation_stats(
+        self,
+        original_cis: dict[str, Float[Tensor, "seq_len C"]],
+        ablated_cis: dict[str, Float[Tensor, "seq_len C"]],
+    ) -> AblationStats:
+        """Compute statistics about what was ablated."""
+        assert self.run_context_service.cluster_run_context is not None
+
+        layer_stats = []
+        for module in original_cis.keys():
+            original_layer_cis = original_cis[module]
+            ablated_layer_cis = ablated_cis[module]
+            seq_len = original_layer_cis.shape[0]
+
+            # Aggregate to component level
+            original_component_cis = self._aggregate_cis(module, original_layer_cis)
+            ablated_component_cis = self._aggregate_cis(module, ablated_layer_cis)
+
+            token_stats = []
+            for token_idx in range(seq_len):
+                orig_token_cis = original_component_cis[token_idx]
+                abl_token_cis = ablated_component_cis[token_idx]
+
+                # Binary: count active components
+                originally_active = orig_token_cis > ACTIVE_THRESHOLD
+                now_inactive = abl_token_cis <= ACTIVE_THRESHOLD
+                ablated_mask = originally_active & now_inactive
+
+                original_active_count = int(originally_active.sum().item())
+                ablated_count = int(ablated_mask.sum().item())
+
+                # Magnitude: sum of CI lost
+                ci_diff = orig_token_cis - abl_token_cis
+                ablated_magnitude = float(ci_diff.clamp_min(0).sum().item())
+
+                token_stats.append(
+                    TokenAblationStats(
+                        original_active_count=original_active_count,
+                        ablated_count=ablated_count,
+                        ablated_magnitude=ablated_magnitude,
+                    )
+                )
+
+            layer_stats.append(LayerAblationStats(module=module, token_stats=token_stats))
+
+        return AblationStats(layer_stats=layer_stats)
 
     TOP_K = 5
 

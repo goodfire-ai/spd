@@ -124,8 +124,24 @@ export async function runPromptByIndex(datasetIndex: number): Promise<RunPromptR
     return response.json();
 }
 
+export type TokenAblationStats = {
+    original_active_count: number;
+    ablated_count: number;
+    ablated_magnitude: number;
+};
+
+export type LayerAblationStats = {
+    module: string;
+    token_stats: TokenAblationStats[];
+};
+
+export type AblationStats = {
+    layer_stats: LayerAblationStats[];
+};
+
 export type InterventionResponse = {
     token_logits: OutputTokenLogit[][];
+    ablation_stats: AblationStats;
 };
 
 export async function applyMaskAsAblation(

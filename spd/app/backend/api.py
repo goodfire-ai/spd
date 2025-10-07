@@ -79,8 +79,27 @@ class ComponentAblationRequest(BaseModel):
     component_mask: dict[str, list[list[int]]]
 
 
+class TokenAblationStats(BaseModel):
+    original_active_count: int
+    """Number of components that were active (above threshold) in the original run"""
+    ablated_count: int
+    """Number of originally-active components that were ablated"""
+    ablated_magnitude: float
+    """Total CI magnitude lost due to ablation"""
+
+
+class LayerAblationStats(BaseModel):
+    module: str
+    token_stats: list[TokenAblationStats]
+
+
+class AblationStats(BaseModel):
+    layer_stats: list[LayerAblationStats]
+
+
 class InterventionResponse(BaseModel):
     token_logits: list[list[OutputTokenLogit]]
+    ablation_stats: AblationStats
 
 
 class CombineMasksRequest(BaseModel):

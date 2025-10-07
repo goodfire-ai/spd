@@ -5,7 +5,8 @@ import type {
     MaskOverrideDTO,
     ComponentMask,
     LayerCIs,
-    MatrixCausalImportances
+    MatrixCausalImportances,
+    AblationStats
 } from "$lib/api";
 
 export interface AblationResult {
@@ -13,6 +14,7 @@ export interface AblationResult {
     applied_mask: ComponentMask;
     id: number;
     maskOverride?: MaskOverrideDTO;
+    ablationStats: AblationStats;
 }
 
 export interface SelectedToken {
