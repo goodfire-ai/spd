@@ -58,6 +58,10 @@ eval_metric_configs:
     sigmoid_type: "leaky_hard"
     identity_patterns: ["layers.*.mlp_in"]
     dense_patterns: ["layers.*.mlp_out"]
+  - classname: "MultiMagnitudeCIPlots"
+    sigmoid_type: "leaky_hard"
+    identity_patterns: ["layers.*.mlp_in"]
+    dense_patterns: ["layers.*.mlp_out"]
   - classname: "IdentityCIError"
     identity_ci:
       - layer_pattern: "layers.*.mlp_in"
