@@ -79,6 +79,7 @@ eval_metric_configs:
       all_but_layer_1: ["h.1.*"]
       all_but_layer_2: ["h.2.*"]
       all_but_layer_3: ["h.3.*"]
+  - classname: "StochasticHiddenActsReconLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
