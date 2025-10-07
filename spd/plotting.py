@@ -194,7 +194,7 @@ def get_single_feature_causal_importances(
     Returns:
         Tuple of (ci_raw, ci_upper_leaky_raw) dictionaries of causal importance arrays (2D tensors)
     """
-    device: torch.device = get_module_device(model)
+    device = get_module_device(model)
     # Create a batch of inputs with single active features
     has_pos_dim = len(batch_shape) == 3
     n_features = batch_shape[-1]

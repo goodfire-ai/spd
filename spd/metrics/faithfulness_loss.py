@@ -15,7 +15,7 @@ def _faithfulness_loss_update(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
 ) -> tuple[Float[Tensor, ""], int]:
     assert weight_deltas, "Empty weight deltas"
-    device: torch.device = get_obj_device(weight_deltas)
+    device = get_obj_device(weight_deltas)
     sum_loss = torch.tensor(0.0, device=device)
     total_params = 0
     for delta in weight_deltas.values():

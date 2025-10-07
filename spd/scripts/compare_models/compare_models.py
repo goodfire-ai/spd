@@ -241,7 +241,7 @@ class ModelComparator:
         model_config = self.current_config if model is self.current_model else self.reference_config
         ci_alive_threshold = self.config.ci_alive_threshold
 
-        device: torch.device = get_module_device(model)
+        device = get_module_device(model)
         n_tokens = 0
         component_activation_counts: dict[str, Float[Tensor, " C"]] = {
             module_name: torch.zeros(model.C, device=device) for module_name in model.components
