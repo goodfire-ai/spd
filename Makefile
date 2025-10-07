@@ -61,8 +61,6 @@ NUM_PROCESSES ?= auto
 test:
 	pytest tests/ --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
 
-NUM_PROCESSES ?= auto
-
 .PHONY: test-all
 test-all:
 	pytest tests/ --runslow --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
