@@ -11,13 +11,9 @@ from typing import Any
 
 import torch.nn as nn
 
-# see https://github.com/goodfire-ai/spd/issues/139
-from transformers.modeling_utils import (
-    Conv1D as RadfordConv1D,  # pyright: ignore[reportAttributeAccessIssue]
-)
-
 from spd.log import logger
 from spd.models.components import Identity
+from spd.utils.conv1d import RadfordConv1D
 from spd.utils.distributed_utils import is_main_process
 from spd.utils.module_utils import get_target_module_paths
 

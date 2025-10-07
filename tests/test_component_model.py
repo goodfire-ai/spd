@@ -7,11 +7,6 @@ import torch
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 
-# see https://github.com/goodfire-ai/spd/issues/139
-from transformers.modeling_utils import (
-    Conv1D as RadfordConv1D,  # pyright: ignore[reportAttributeAccessIssue]
-)
-
 from spd.configs import Config, ImportanceMinimalityLossTrainConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.identity_insertion import insert_identity_operations_
@@ -31,6 +26,7 @@ from spd.models.components import (
     make_mask_infos,
 )
 from spd.spd_types import ModelPath
+from spd.utils.conv1d import RadfordConv1D
 from spd.utils.run_utils import save_file
 
 
@@ -54,7 +50,7 @@ class SimpleTestModel(LoadableModule):
         self.other_layer = nn.ReLU()  # Non‑target layer (should never be wrapped)
 
     @override
-    def forward(self, x: Float[Tensor, "... 10"]):  # noqa: D401,E501 # pyright: ignore[reportUnknownParameterType]
+    def forward(self, x: Float[Tensor, "... 10"]):  # noqa: D401,E501
         x = self.linear2(self.linear1(x))
         x = self.conv1d2(self.conv1d1(x))
         return x

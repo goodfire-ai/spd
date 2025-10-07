@@ -11,11 +11,6 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
-
-# see https://github.com/goodfire-ai/spd/issues/139
-from transformers.modeling_utils import (
-    Conv1D as RadfordConv1D,  # pyright: ignore[reportAttributeAccessIssue]
-)
 from wandb.apis.public import Run
 
 from spd.configs import Config
@@ -34,6 +29,7 @@ from spd.models.components import (
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
+from spd.utils.conv1d import RadfordConv1D
 from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class
 from spd.utils.module_utils import get_target_module_paths
 from spd.utils.run_utils import check_run_exists
@@ -174,7 +170,7 @@ class ComponentModel(LoadableModule):
                     C=C,
                     d_in=d_in,
                     d_out=d_out,
-                    bias=target_module.bias.data if target_module.bias is not None else None,
+                    bias=target_module.bias.data if target_module.bias is not None else None,  # pyright: ignore[reportUnnecessaryComparison]
                 )
             case Identity():
                 component = LinearComponents(
