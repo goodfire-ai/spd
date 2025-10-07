@@ -55,13 +55,15 @@ check-pre-commit:
 	SKIP=no-commit-to-branch pre-commit run -a --hook-stage commit
 
 # tests
+NUM_PROCESSES ?= auto
+
 .PHONY: test
 test:
-	pytest tests/
+	pytest tests/ --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
 
 .PHONY: test-all
 test-all:
-	pytest tests/ --runslow
+	pytest tests/ --runslow --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
 
 COVERAGE_DIR=docs/coverage
 

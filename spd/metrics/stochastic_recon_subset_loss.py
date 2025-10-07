@@ -9,7 +9,7 @@ from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm
+from spd.utils.general_utils import calc_sum_recon_loss_lm, get_obj_device
 
 
 def _stochastic_recon_subset_loss_update(
@@ -25,7 +25,7 @@ def _stochastic_recon_subset_loss_update(
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     assert weight_deltas, "Empty weight deltas"
-    device = next(iter(ci.values())).device
+    device = get_obj_device(ci)
     sum_loss = torch.tensor(0.0, device=device)
     n_examples = 0
 

@@ -13,6 +13,7 @@ from torch import Tensor
 from spd.models.component_model import ComponentModel
 from spd.models.components import Components
 from spd.models.sigmoids import SigmoidTypes
+from spd.utils.general_utils import get_obj_device
 from spd.utils.target_ci_solutions import permute_to_dense, permute_to_identity
 
 
@@ -193,7 +194,7 @@ def get_single_feature_causal_importances(
     Returns:
         Tuple of (ci_raw, ci_upper_leaky_raw) dictionaries of causal importance arrays (2D tensors)
     """
-    device = next(iter(model.parameters())).device
+    device = get_obj_device(model)
     # Create a batch of inputs with single active features
     has_pos_dim = len(batch_shape) == 3
     n_features = batch_shape[-1]

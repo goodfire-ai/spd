@@ -34,6 +34,7 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-cov", # for coverage reports
+    "pytest-xdist", # parallel test execution
     "ruff",
     "basedpyright",
     "pre-commit",

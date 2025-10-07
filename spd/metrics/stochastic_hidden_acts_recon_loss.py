@@ -9,6 +9,7 @@ from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
+from spd.utils.general_utils import get_obj_device
 
 
 def _stochastic_hidden_acts_recon_loss_update(
@@ -24,7 +25,7 @@ def _stochastic_hidden_acts_recon_loss_update(
     assert ci, "Empty ci"
     assert weight_deltas, "Empty weight deltas"
     assert pre_weight_acts, "Empty pre_weight_acts"
-    device = next(iter(ci.values())).device
+    device = get_obj_device(ci)
     sum_mse = torch.tensor(0.0, device=device)
     n_examples = 0
 
