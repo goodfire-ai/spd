@@ -13,9 +13,6 @@ from spd.configs import (
     CEandKLLossesConfig,
     CI_L0Config,
     CIHistogramsConfig,
-    CIMaskedReconLayerwiseLossTrainConfig,
-    CIMaskedReconLossTrainConfig,
-    CIMaskedReconSubsetLossTrainConfig,
     CIMeanPerComponentConfig,
     ComponentActivationDensityConfig,
     Config,
@@ -24,31 +21,27 @@ from spd.configs import (
     ImportanceMinimalityLossTrainConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
+    PGDConfig,
+    ReconstructionLossConfig,
     StochasticHiddenActsReconLossConfig,
-    StochasticReconLayerwiseLossTrainConfig,
-    StochasticReconLossTrainConfig,
     StochasticReconSubsetCEAndKLConfig,
-    StochasticReconSubsetLossTrainConfig,
     UVPlotsConfig,
 )
 from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
 from spd.metrics.ci_l0 import CI_L0
-from spd.metrics.ci_masked_recon_layerwise_loss import CIMaskedReconLayerwiseLoss
-from spd.metrics.ci_masked_recon_loss import CIMaskedReconLoss
-from spd.metrics.ci_masked_recon_subset_loss import CIMaskedReconSubsetLoss
 from spd.metrics.ci_mean_per_component import CIMeanPerComponent
 from spd.metrics.component_activation_density import ComponentActivationDensity
 from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
+from spd.metrics.layer_selector import AllSelector, LayerwiseSelector, SubsetSelector
+from spd.metrics.masker import CIMasker, PGDMasker, StochasticMaskSampler
 from spd.metrics.permuted_ci_plots import PermutedCIPlots
+from spd.metrics.reconstruction_loss import ReconstructionLoss
 from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
-from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
-from spd.metrics.stochastic_recon_loss import StochasticReconLoss
 from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
-from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
@@ -132,18 +125,6 @@ def init_metric(
                 ci_alive_threshold=run_config.ci_alive_threshold,
                 groups=cfg.groups,
             )
-        case CIMaskedReconSubsetLossTrainConfig():
-            metric = CIMaskedReconSubsetLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
-            )
-        case CIMaskedReconLayerwiseLossTrainConfig():
-            metric = CIMaskedReconLayerwiseLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
-            )
-        case CIMaskedReconLossTrainConfig():
-            metric = CIMaskedReconLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
-            )
         case CIMeanPerComponentConfig():
             metric = CIMeanPerComponent(model=model, device=device)
         case ComponentActivationDensityConfig():
@@ -168,32 +149,38 @@ def init_metric(
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
             )
-        case StochasticReconLayerwiseLossTrainConfig():
-            metric = StochasticReconLayerwiseLoss(
+        case ReconstructionLossConfig():
+            match cfg.masking:
+                case PGDConfig():
+                    masker = PGDMasker(
+                        init=cfg.masking.init,
+                        step_size=cfg.masking.step_size,
+                        n_steps=cfg.masking.n_steps,
+                        output_loss_type=run_config.output_loss_type,
+                    )
+                case "stochastic":
+                    masker = StochasticMaskSampler(
+                        use_delta_component=run_config.use_delta_component,
+                        sampling=run_config.sampling,
+                    )
+                case "ci":
+                    masker = CIMasker()
+
+            match cfg.routing:
+                case "all":
+                    layer_selector = AllSelector()
+                case "uniform_k-stochastic":
+                    layer_selector = SubsetSelector(n_subsets=run_config.n_mask_samples)
+                case "layerwise":
+                    layer_selector = LayerwiseSelector()
+
+            metric = ReconstructionLoss(
                 model=model,
                 device=device,
-                sampling=run_config.sampling,
-                use_delta_component=run_config.use_delta_component,
-                n_mask_samples=run_config.n_mask_samples,
                 output_loss_type=run_config.output_loss_type,
-            )
-        case StochasticReconLossTrainConfig():
-            metric = StochasticReconLoss(
-                model=model,
-                device=device,
-                sampling=run_config.sampling,
-                use_delta_component=run_config.use_delta_component,
-                n_mask_samples=run_config.n_mask_samples,
-                output_loss_type=run_config.output_loss_type,
-            )
-        case StochasticReconSubsetLossTrainConfig():
-            metric = StochasticReconSubsetLoss(
-                model=model,
-                device=device,
-                sampling=run_config.sampling,
-                use_delta_component=run_config.use_delta_component,
-                n_mask_samples=run_config.n_mask_samples,
-                output_loss_type=run_config.output_loss_type,
+                layer_selector=layer_selector,
+                masker=masker,
+                n_samples=cfg.n_mask_samples,
             )
         case StochasticReconSubsetCEAndKLConfig():
             metric = StochasticReconSubsetCEAndKL(

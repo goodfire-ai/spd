@@ -50,6 +50,7 @@ class PGDConfig(BaseModel):
     step_size: float
     n_steps: int
 
+
 class ReconstructionLossConfig(TrainMetricConfig):
     classname: Literal["ReconstructionLoss"] = "ReconstructionLoss"
     routing: Literal["all", "uniform_k-stochastic", "layerwise"]
@@ -110,9 +111,7 @@ class UVPlotsConfig(BaseModel):
 
 
 TrainMetricConfigType = (
-    FaithfulnessLossTrainConfig
-    | ImportanceMinimalityLossTrainConfig
-    | ReconstructionLossConfig
+    FaithfulnessLossTrainConfig | ImportanceMinimalityLossTrainConfig | ReconstructionLossConfig
 )
 EvalMetricConfigType = (
     CEandKLLossesConfig
