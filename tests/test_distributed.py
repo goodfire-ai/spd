@@ -117,6 +117,7 @@ class TestDistributedDeterminicity:
                 yaml.dump(config_dp1, f)
 
             # ports should be globally unique in tests to allow test parallelization
+            # see discussion at: https://github.com/goodfire-ai/spd/pull/186
             self._run_experiment(config_path_dp1, n_processes=1, port=29501)
 
             # Run with dp=2
@@ -127,6 +128,8 @@ class TestDistributedDeterminicity:
             with open(config_path_dp2, "w") as f:
                 yaml.dump(config_dp2, f)
 
+            # ports should be globally unique in tests to allow test parallelization
+            # see discussion at: https://github.com/goodfire-ai/spd/pull/186
             self._run_experiment(config_path_dp2, n_processes=2, port=29502)
 
             # Load and compare metrics from metrics.jsonl files

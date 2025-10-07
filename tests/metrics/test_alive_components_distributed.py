@@ -233,8 +233,9 @@ class TestDistributedAliveComponentsTracker:
         script_path = Path(__file__).resolve()
 
         # ports should be globally unique in tests to allow test parallelization
+        # see discussion at: https://github.com/goodfire-ai/spd/pull/186
         env = {
-            "MASTER_PORT": "29503",
+            "MASTER_PORT": "29504",
             "OMP_NUM_THREADS": "1",
         }
 
