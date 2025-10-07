@@ -202,7 +202,7 @@ def create_data_loader(
             ds_num_shards = getattr(dataset, "num_shards", None)
             if isinstance(ds_num_shards, int) and ds_num_shards >= ddp_world_size:
                 # TODO: not sure why this causes an error
-                dataset = dataset.shard(num_shards=ddp_world_size, index=ddp_rank)  # pyright: ignore[reportAttributeAccessIssue]
+                dataset = dataset.shard(num_shards=ddp_world_size, index=ddp_rank)
             else:
                 # Fallback: example-level partitioning before shuffle
                 dataset = dataset.filter(
