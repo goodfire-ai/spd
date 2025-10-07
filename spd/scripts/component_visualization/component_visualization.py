@@ -25,6 +25,7 @@ from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import BaseModel, load_config
+from spd.utils.target_ci_solutions import permute_to_identity
 
 
 class ComponentVisualizationConfig(BaseModel):
@@ -213,65 +214,12 @@ def plot_individual_components(
         plt.close(fig)
 
 
-def create_activation_heatmap(
-    activation_matrix: Float[Tensor, "n_features n_components"],
-    module_name: str,
-    output_dir: str = "activation_plots",
-    figsize: tuple[float, float] = (12, 8),
-    dpi: int = 150,
-) -> None:
-    """Create a heatmap showing which components activate for which inputs.
-
-    Args:
-        activation_matrix: Binary matrix (n_features, n_components) where 1 = active, 0 = inactive
-        module_name: Name of the module for the plot title
-        output_dir: Directory to save the plot
-        figsize: Figure size
-        dpi: DPI for the figure
-    """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-
-    # Convert to numpy
-    matrix_np = activation_matrix.detach().cpu().numpy()
-
-    # Create heatmap using the same colormap as upper leaky plots
-    im = ax.imshow(
-        matrix_np,
-        cmap="Reds",  # Same colormap as causal_importances_upper_leaky plots
-        aspect="auto",
-        interpolation="nearest",
-    )
-
-    # Set labels
-    ax.set_xlabel("Component Index")
-    ax.set_ylabel("Input Feature Index")
-    ax.set_title(f"{module_name} - Component Activation Pattern\n(Red=Active, White=Inactive)")
-
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax, shrink=0.8)
-    cbar.set_label("Activation (0=Inactive, 1=Active)")
-
-    # Add grid for better readability
-    ax.grid(True, alpha=0.3)
-
-    # Save plot
-    safe_name = module_name.replace(".", "_").replace("/", "_")
-    output_path = output_dir / f"{safe_name}_activation_pattern.png"
-    plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
-    print(f"Activation pattern plot saved to: {output_path}")
-
-    plt.close(fig)
-
-
 def analyze_component_behavior(
     model: ComponentModel,
     device: str,
     output_dir: Path,
     n_features: int | None = None,
-    input_magnitude: float = 0.75,
+    input_magnitudes: list[float] | None = None,
     threshold: float = 0.1,
 ) -> None:
     """Analyze component behavior by computing gate activations for different inputs.
@@ -282,7 +230,7 @@ def analyze_component_behavior(
         model: The trained ComponentModel
         device: Device to run on
         n_features: Number of input features to test (if None, will get from model)
-        input_magnitude: Magnitude of input features
+        input_magnitudes: List of input magnitudes to test (default: [0.0, 0.25, 0.75, 1.0])
         threshold: Threshold for considering a gate as "active"
     """
     print("\n" + "=" * 60)
@@ -290,6 +238,10 @@ def analyze_component_behavior(
     print("=" * 60)
 
     model.eval()
+
+    # Set default input magnitudes if not provided
+    if input_magnitudes is None:
+        input_magnitudes = [0.0, 0.25, 0.75, 1.0]
 
     # Get n_features from the model if not provided
     if n_features is None:
@@ -300,125 +252,168 @@ def analyze_component_behavior(
             n_features = model.target_model.W_E.shape[0]
 
     print(f"Using n_features: {n_features}")
+    print(f"Testing input magnitudes: {input_magnitudes}")
 
-    # Create test inputs - one-hot vectors for each feature
-    test_inputs = torch.eye(n_features, device=device) * input_magnitude
+    # Store results for all magnitudes
+    all_causal_importances = {}
+    all_perm_indices = {}
 
-    # Get pre-weight activations by running through target model with input caching
-    with torch.no_grad():
-        _, pre_weight_acts = model(test_inputs, cache_type="input")
+    # Process each input magnitude
+    for magnitude in input_magnitudes:
+        print(f"\nProcessing magnitude: {magnitude}")
 
-        # Compute causal importances
-        causal_importances, _ = model.calc_causal_importances(
-            pre_weight_acts=pre_weight_acts,
-            sigmoid_type=model.config.sigmoid_type if hasattr(model, "config") else "leaky_hard",
-            sampling="continuous",
-            detach_inputs=True,
-        )
+        # Create test inputs - one-hot vectors for each feature (match evals exactly)
+        test_inputs = torch.eye(n_features, device=device) * magnitude
 
-    # Analyze each module
-    for module_name, ci in causal_importances.items():
-        print(f"\n{module_name}:")
-        print(f"  Causal importance shape: {ci.shape}")
+        # Get pre-weight activations by running through target model with input caching
+        with torch.no_grad():
+            pre_weight_acts = model(test_inputs, cache_type="input").cache
 
-        # ci has shape (n_features, C) where C is number of components
-        n_components = ci.shape[1]
-        n_features = ci.shape[0]
-
-        # For each component, count how many inputs activate it above threshold
-        component_stats = []
-        for c in range(n_components):
-            component_ci = ci[:, c]  # Shape: (n_features,)
-            active_inputs = torch.sum(component_ci > threshold).item()
-            total_inputs = component_ci.shape[0]
-            activation_ratio = active_inputs / total_inputs
-
-            max_ci = torch.max(component_ci).item()
-            mean_ci = torch.mean(component_ci).item()
-
-            component_stats.append(
-                {
-                    "component": c,
-                    "active_inputs": active_inputs,
-                    "activation_ratio": activation_ratio,
-                    "max_ci": max_ci,
-                    "mean_ci": mean_ci,
-                }
+            # Compute causal importances (use upper_leaky like evals)
+            _, causal_importances = model.calc_causal_importances(
+                pre_weight_acts=pre_weight_acts,
+                sigmoid_type=model.config.sigmoid_type
+                if hasattr(model, "config")
+                else "leaky_hard",
+                sampling="continuous",
+                detach_inputs=False,  # Match evals behavior
             )
 
-        # Sort components by activation ratio (most active first)
-        component_stats.sort(key=lambda x: x["activation_ratio"], reverse=True)
+        # Apply sorting using the same logic as evals
+        sorted_causal_importances = {}
+        perm_indices = {}
 
-        # Print top components
+        for layer_name, ci_vals in causal_importances.items():
+            # Use permute_to_identity for sorting (same as evals)
+            sorted_ci, perm_idx = permute_to_identity(ci_vals)
+            sorted_causal_importances[layer_name] = sorted_ci
+            perm_indices[layer_name] = perm_idx
+
+        all_causal_importances[magnitude] = sorted_causal_importances
+        all_perm_indices[magnitude] = perm_indices
+
+    # Create side-by-side comparison plots for each module
+    for module_name in all_causal_importances[input_magnitudes[0]]:
+        print(f"\n{module_name}:")
+
+        # Collect CI values for all magnitudes
+        ci_data = {}
+        for magnitude in input_magnitudes:
+            ci_data[magnitude] = all_causal_importances[magnitude][module_name]
+
+        # Print analysis for the first magnitude (0.75 by default)
+        primary_magnitude = 0.75 if 0.75 in input_magnitudes else input_magnitudes[0]
+        ci = ci_data[primary_magnitude]
+        print(f"  Causal importance shape: {ci.shape}")
+
+        # Find active components (above threshold)
+        active_mask = ci > threshold
+        active_counts = active_mask.sum(dim=0)  # Count per component
+
+        # Sort components by activity
+        sorted_indices = torch.argsort(active_counts, descending=True)
+        top_components = sorted_indices[:10]  # Top 10 most active
+
         print("  Top 10 most active components:")
-        for stats in component_stats[:10]:
-            c = stats["component"]
-            active_inputs = stats["active_inputs"]
-            activation_ratio = stats["activation_ratio"]
-            max_ci = stats["max_ci"]
-            mean_ci = stats["mean_ci"]
+        for comp_idx in top_components:
+            count = active_counts[comp_idx].item()
+            percentage = count / ci.shape[0] * 100
+            max_ci = ci[:, comp_idx].max().item()
+            mean_ci = ci[:, comp_idx].mean().item()
 
             print(
-                f"    Component {c}: {active_inputs}/{n_features} inputs activate gate ({activation_ratio:.3f})"
+                f"    Component {comp_idx.item()}: {count}/{ci.shape[0]} inputs activate gate ({percentage:.3f})"
             )
             print(f"      Max CI: {max_ci:.4f}, Mean CI: {mean_ci:.4f}")
 
-            if activation_ratio > 0.8:  # Component gate activates for most inputs
+            # Warning for highly active components
+            if percentage > 50:
                 print(
-                    f"      🚨 BROAD ACTIVATION: Component {c} gate activates for {activation_ratio:.1%} of inputs!"
-                )
-            elif activation_ratio > 0.5:  # Component gate activates for more than half the inputs
-                print(
-                    f"      ⚠️  WARNING: Component {c} gate activates for {activation_ratio:.1%} of inputs!"
+                    f"      ⚠️  WARNING: Component {comp_idx.item()} gate activates for {percentage:.1f}% of inputs!"
                 )
 
-        # Analyze input-specific patterns
+        # Input-specific analysis
         print("\n  Input-specific analysis:")
-        for input_idx in range(min(10, n_features)):  # Check first 10 inputs
-            input_ci = ci[input_idx, :]  # Shape: (n_components,)
-            active_components = torch.sum(input_ci > threshold).item()
-            max_ci_val = torch.max(input_ci).item()
+        for input_idx in range(min(10, ci.shape[0])):  # Show first 10 inputs
+            input_ci = ci[input_idx]
+            active_components = torch.where(input_ci > threshold)[0]
+            max_ci = input_ci.max().item()
 
             print(
-                f"    Input {input_idx}: {active_components} components active (max CI: {max_ci_val:.4f})"
+                f"    Input {input_idx}: {len(active_components)} components active (max CI: {max_ci:.4f})"
             )
+            if len(active_components) > 0:
+                active_list = active_components.cpu().numpy().tolist()
+                print(f"      Active components: {active_list}")
 
-            # Show which components are active for this input
-            active_component_indices = torch.where(input_ci > threshold)[0].tolist()
-            if len(active_component_indices) > 0:
-                print(f"      Active components: {active_component_indices}")
+        # Activation pattern analysis
+        n_active_per_input = active_mask.sum(dim=1)
+        unique_counts, counts = torch.unique(n_active_per_input, return_counts=True)
 
-        # Find the "universal" component (activates for most inputs)
-        universal_components = [s for s in component_stats if s["activation_ratio"] > 0.8]
-        if universal_components:
-            print("\n  🚨 UNIVERSAL COMPONENTS (activate for >80% of inputs):")
-            for stats in universal_components:
-                c = stats["component"]
-                activation_ratio = stats["activation_ratio"]
-                print(f"    Component {c}: {activation_ratio:.1%} of inputs")
-
-        # Count how many inputs have exactly 1, 2, 3+ components active
-        input_component_counts = torch.sum(ci > threshold, dim=1)  # Shape: (n_features,)
-        unique_counts, counts = torch.unique(input_component_counts, return_counts=True)
         print("\n  Input activation patterns:")
-        for count, freq in zip(unique_counts.tolist(), counts.tolist(), strict=False):
-            print(f"    {freq} inputs have exactly {count} components active")
+        for n_active, count in zip(unique_counts, counts, strict=False):
+            print(f"    {count} inputs have exactly {n_active.item()} components active")
 
-        # Create a binary activation matrix for visualization
-        activation_matrix = (ci > threshold).float()  # Shape: (n_features, n_components)
+        # Save activation matrix for primary magnitude
+        activation_matrix_path = (
+            output_dir / f"{module_name.replace('.', '_')}_activation_matrix.pt"
+        )
+        torch.save(ci.cpu(), activation_matrix_path)
+        print(f"  Saved activation matrix to: {activation_matrix_path}")
 
-        # Save activation matrix for further analysis
-        torch.save(
-            activation_matrix, output_dir / f"{module_name.replace('.', '_')}_activation_matrix.pt"
-        )
-        print(
-            f"  Saved activation matrix to: {output_dir / f'{module_name.replace(".", "_")}_activation_matrix.pt'}"
-        )
+        # Create side-by-side activation pattern plots
+        plot_multi_magnitude_activation_patterns(ci_data, module_name, output_dir, input_magnitudes)
 
-        # Create activation pattern heatmap
-        create_activation_heatmap(
-            activation_matrix, module_name, output_dir=output_dir / "activation_plots"
-        )
+
+def plot_multi_magnitude_activation_patterns(
+    ci_data: dict[float, Float[Tensor, "n_features n_components"]],
+    module_name: str,
+    output_dir: Path,
+    input_magnitudes: list[float],
+) -> None:
+    """Create side-by-side activation pattern plots for multiple input magnitudes.
+
+    Args:
+        ci_data: Dictionary mapping magnitude to causal importance tensor
+        module_name: Name of the module being analyzed
+        output_dir: Directory to save plots
+        input_magnitudes: List of input magnitudes used
+    """
+    n_magnitudes = len(input_magnitudes)
+
+    # Create figure with subplots for each magnitude
+    fig, axes = plt.subplots(1, n_magnitudes, figsize=(4 * n_magnitudes, 8))
+    if n_magnitudes == 1:
+        axes = [axes]
+
+    # Create activation matrices for each magnitude (plot raw values like evals)
+    for i, magnitude in enumerate(input_magnitudes):
+        ci = ci_data[magnitude]
+        # Plot raw causal importance values (no threshold) like evals do
+        ax = axes[i]
+        im = ax.imshow(ci.cpu().numpy(), cmap="Reds", aspect="auto")
+        ax.set_title(f"Input Magnitude: {magnitude}")
+        ax.set_xlabel("Component Index")
+        ax.set_ylabel("Input Feature Index")
+
+        # Add colorbar
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    # Set overall title
+    fig.suptitle(f"Activation Patterns - {module_name}", fontsize=14)
+    plt.tight_layout()
+
+    # Save plot
+    output_path = (
+        output_dir
+        / "activation_plots"
+        / f"{module_name.replace('.', '_')}_multi_magnitude_activation_pattern.png"
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Multi-magnitude activation pattern plot saved to: {output_path}")
 
 
 def main(config_path_or_obj: str | ComponentVisualizationConfig = None) -> None:
