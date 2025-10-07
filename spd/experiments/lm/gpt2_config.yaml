@@ -58,7 +58,7 @@ eval_metric_configs:
   - classname: "CEandKLLosses"
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
-  - classname: "StochasticHiddenActsRecon"
+  - classname: "StochasticHiddenActsReconLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.GPT2LMHeadModel

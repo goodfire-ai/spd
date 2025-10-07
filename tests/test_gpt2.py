@@ -78,10 +78,10 @@ def test_gpt_2_decomposition_happy_path() -> None:
             task_name="lm",
             max_seq_len=16,
             buffer_size=1000,
-            dataset_name="roneneldan/TinyStories",
-            column_name="text",
+            dataset_name="SimpleStories/SimpleStories",
+            column_name="story",
             train_data_split="train[:100]",
-            eval_data_split="validation[:100]",
+            eval_data_split="test[100:200]",
         ),
     )
 
