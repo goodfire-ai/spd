@@ -8,6 +8,11 @@ install-dev: copy-templates
 	uv sync
 	pre-commit install
 
+.PHONY: install-ci
+install-ci:
+	uv venv --clear # clear existing venv for when running locally
+	uv sync --link-mode copy --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
+
 .PHONY: copy-templates
 copy-templates:
 	@if [ ! -f spd/scripts/sweep_params.yaml ]; then \
