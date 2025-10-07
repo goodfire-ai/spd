@@ -6,7 +6,6 @@ import pytest
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor, nn
-from transformers.modeling_utils import Conv1D as RadfordConv1D
 
 from spd.configs import Config, ImportanceMinimalityLossTrainConfig
 from spd.experiments.tms.configs import TMSTaskConfig
@@ -27,6 +26,7 @@ from spd.models.components import (
     make_mask_infos,
 )
 from spd.spd_types import ModelPath
+from spd.utils.conv1d import RadfordConv1D
 from spd.utils.run_utils import save_file
 
 

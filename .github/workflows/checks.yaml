@@ -50,6 +50,7 @@ jobs:
 
 
       - name: Install dependencies
+<<<<<<< HEAD
         run: uv sync --extra cpu --link-mode copy
 
 
@@ -62,6 +63,13 @@ jobs:
       - name: disk usage
         run: make diskinfo || true
 
+=======
+        run:  make install-ci
+      
+      - name: clear uv cache
+        run: uv cache clean || true
+    
+>>>>>>> feature/clustering
       - name: Print dependencies
         run: uv pip list
 

@@ -25,7 +25,7 @@ def _stochastic_recon_layerwise_loss_update(
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     assert weight_deltas, "Empty weight deltas"
-    device: torch.device = get_obj_device(ci)
+    device = get_obj_device(ci)
     sum_loss = torch.tensor(0.0, device=device)
     n_examples = 0
 

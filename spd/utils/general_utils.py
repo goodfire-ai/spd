@@ -1,4 +1,3 @@
-import copy
 import importlib
 import json
 import random
@@ -292,31 +291,6 @@ def calc_sum_recon_loss_lm(
     return loss
 
 
-def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
-    """Apply nested updates to a dictionary."""
-    result = copy.deepcopy(base_dict)
-
-    for key, value in updates.items():
-        if "." in key:
-            # Handle nested keys
-            keys = key.split(".")
-            current = result
-
-            # Navigate to the parent of the final key
-            for k in keys[:-1]:
-                if k not in current:
-                    current[k] = {}
-                current = current[k]
-
-            # Set the final value
-            current[keys[-1]] = value
-        else:
-            # Simple key
-            result[key] = value
-
-    return result
-
-
 def runtime_cast[T](type_: type[T], obj: Any) -> T:
     """typecast with a runtime check"""
     if not isinstance(obj, type_):
@@ -468,7 +442,7 @@ def get_obj_devices(d: CanGetDevice) -> set[torch.device]:
 
 
 def get_obj_device(d: CanGetDevice) -> torch.device:
-    """try to get the device of an object's parameters. Assumes all parameters are on the same device."""
+    """Try to get the device of an object's parameters. Asserts that all parameters are on the same device."""
     devices: set[torch.device] = get_obj_devices(d)
     assert len(devices) == 1, f"Object parameters are on multiple devices: {devices}"
     return devices.pop()
