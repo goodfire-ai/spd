@@ -23,6 +23,7 @@ from spd.configs import (
     IdentityCIErrorConfig,
     ImportanceMinimalityLossTrainConfig,
     MetricConfigType,
+    MultiMagnitudeCIPlotsConfig,
     PermutedCIPlotsConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticHiddenActsReconLossEvalConfig,
@@ -44,7 +45,7 @@ from spd.metrics.component_activation_density import ComponentActivationDensity
 from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
-from spd.metrics.permuted_ci_plots import PermutedCIPlots
+from spd.metrics.permuted_ci_plots import MultiMagnitudeCIPlots, PermutedCIPlots
 from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
@@ -163,6 +164,14 @@ def init_metric(
             )
         case PermutedCIPlotsConfig():
             metric = PermutedCIPlots(
+                model=model,
+                sampling=run_config.sampling,
+                sigmoid_type=cfg.sigmoid_type,
+                identity_patterns=cfg.identity_patterns,
+                dense_patterns=cfg.dense_patterns,
+            )
+        case MultiMagnitudeCIPlotsConfig():
+            metric = MultiMagnitudeCIPlots(
                 model=model,
                 sampling=run_config.sampling,
                 sigmoid_type=cfg.sigmoid_type,
