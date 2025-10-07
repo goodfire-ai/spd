@@ -38,7 +38,7 @@ jobs:
         run: df -h
 
       - name: Install dependencies
-        run: uv sync --link-mode copy --extra-index-url https://download.pytorch.org/whl/cpu
+        run: uv sync --link-mode copy --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-first-match
       
       - name: disk usage
         run: df -h
