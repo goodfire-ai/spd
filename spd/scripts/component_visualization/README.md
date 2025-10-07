@@ -4,15 +4,11 @@ This script loads a trained SPD model and creates heatmaps of the rank-one matri
 
 ## Usage
 
-### Using configuration file (recommended):
+### Using configuration file:
 ```bash
 python spd/scripts/component_visualization/component_visualization.py spd/scripts/component_visualization/component_visualization_config.yaml
 ```
 
-### Using command line arguments:
-```bash
-python spd/scripts/component_visualization/component_visualization.py --model_path="wandb:goodfire/spd/runs/2ki9tfsx" --threshold=0.01
-```
 
 ## Configuration
 

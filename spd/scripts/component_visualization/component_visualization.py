@@ -8,13 +8,11 @@ and white for zero.
 
 Usage:
     python spd/scripts/component_visualization/component_visualization.py spd/scripts/component_visualization/component_visualization_config.yaml
-    python spd/scripts/component_visualization/component_visualization.py --model_path="wandb:..." --threshold=0.01
 """
 
 from pathlib import Path
 from typing import Any
 
-import fire
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -480,4 +478,4 @@ def main(config_path_or_obj: str | ComponentVisualizationConfig = None) -> None:
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

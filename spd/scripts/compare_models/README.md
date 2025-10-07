@@ -14,8 +14,6 @@ This directory contains the model comparison script for geometric similarity ana
 # Using config file
 python spd/scripts/compare_models/compare_models.py spd/scripts/compare_models/compare_models_config.yaml
 
-# Using command line arguments
-python spd/scripts/compare_models/compare_models.py --current_model_path="wandb:..." --reference_model_path="wandb:..."
 ```
 
 ## Output

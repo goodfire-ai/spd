@@ -7,12 +7,10 @@ responds as we gradually increase one input dimension from 0 to 1.
 
 Usage:
     python spd/scripts/causal_importance_sweep/causal_importance_sweep.py spd/scripts/causal_importance_sweep/causal_importance_sweep_config.yaml
-    python spd/scripts/causal_importance_sweep/causal_importance_sweep.py --model_path="wandb:..." --feature_idx=0
 """
 
 from pathlib import Path
 
-import fire
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -278,4 +276,4 @@ def main(config_path_or_obj: str | CausalImportanceSweepConfig = None) -> None:
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

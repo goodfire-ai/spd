@@ -9,25 +9,29 @@ The x-axis represents the input magnitude, and the y-axes show:
 1. Individual neuron activations in the ResidMLP layers
 2. Causal importance function values for gates that actually activate
 
+This script uses a hook-based approach to efficiently capture all needed values in a single
+forward pass per magnitude step, making it much more efficient than multiple forward passes.
+
 Usage:
     python spd/scripts/magnitude_sweep/magnitude_sweep.py spd/scripts/magnitude_sweep/magnitude_sweep_config.yaml
-    python spd/scripts/magnitude_sweep/magnitude_sweep.py --model_path="wandb:..." --feature_idx=0
 """
 
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
-import fire
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Float
 from pydantic import Field
-from torch import Tensor
+from torch import Tensor, nn
+from torch.utils.hooks import RemovableHandle
 
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.models.components import LinearCiFn, MLPCiFn, VectorMLPCiFn, VectorSharedMLPCiFn
+from spd.models.components import Components
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import BaseModel, load_config
 
@@ -36,7 +40,8 @@ class MagnitudeSweepConfig(BaseModel):
     """Configuration for magnitude sweep plotting script."""
 
     model_path: str = Field(
-        ..., description="Path to the trained SPD model (wandb:project/run_id or local path)"
+        default="wandb:goodfire/spd/runs/2ki9tfsx",
+        description="Path to the trained SPD model (wandb:project/run_id or local path)",
     )
     feature_idx: int = Field(default=0, description="Which feature to activate (default: 0)")
     n_steps: int = Field(
@@ -60,6 +65,142 @@ class MagnitudeSweepConfig(BaseModel):
         default=None,
         description="Directory to save results (defaults to 'out' directory relative to script location)",
     )
+
+
+class MagnitudeSweepHookCollector:
+    """Hook-based collector for capturing all needed values during magnitude sweep.
+
+    This class uses PyTorch hooks to capture:
+    1. ResidMLP layer activations (pre/post activation)
+    2. Causal importance values from CI functions
+    3. Gate outputs (pre-sigmoid) from CI functions
+    4. Gate inputs (inner acts) from components
+    5. Final model output
+
+    All values are captured in a single forward pass, making it much more efficient
+    than the previous approach of multiple forward passes.
+    """
+
+    def __init__(self, model: ComponentModel, pre_activation: bool = False):
+        self.model = model
+        self.pre_activation = pre_activation
+        self.target_model = model.target_model
+        assert isinstance(self.target_model, ResidMLP), "Model must be a ResidMLP"
+
+        # Storage for captured values
+        self.activations: dict[str, Tensor] = {}
+        self.causal_importances: dict[str, Tensor] = {}
+        self.gate_outputs: dict[str, Tensor] = {}
+        self.gate_inputs: dict[str, Tensor] = {}
+        self.final_output: Tensor | None = None
+
+        # Hook handles for cleanup
+        self.hook_handles: list[RemovableHandle] = []
+
+    def _residmlp_activation_hook(
+        self, layer_idx: int, _module: nn.Module, input_args: Any, output: Tensor
+    ) -> None:
+        """Hook to capture ResidMLP layer activations."""
+        layer_name = f"layers.{layer_idx}.mlp_in"
+
+        if self.pre_activation:
+            # Store pre-activation (before ReLU/GELU)
+            self.activations[layer_name] = input_args[0].clone()
+        else:
+            # Store post-activation (after ReLU/GELU)
+            self.activations[layer_name] = output.clone()
+
+    def _ci_fn_hook(
+        self, layer_name: str, _module: nn.Module, _input_args: Any, output: Tensor
+    ) -> None:
+        """Hook to capture CI function outputs (pre-sigmoid gate outputs)."""
+        self.gate_outputs[layer_name] = output.clone()
+
+    def _component_inner_acts_hook(
+        self, layer_name: str, module: nn.Module, input_args: Any, _output: Tensor
+    ) -> None:
+        """Hook to capture component inner activations (gate inputs)."""
+        # Get the inner acts using the component's get_inner_acts method
+        # module is a Components instance, so get_inner_acts is a method
+        if isinstance(module, Components):
+            inner_acts = module.get_inner_acts(input_args[0])
+            self.gate_inputs[layer_name] = inner_acts.clone()
+
+    @contextmanager
+    def hooks_active(self):
+        """Context manager to register and clean up hooks."""
+        try:
+            # Register ResidMLP activation hooks
+            for i, layer in enumerate(self.target_model.layers):
+                handle = layer.mlp_in.register_forward_hook(
+                    lambda module, input, output, idx=i: self._residmlp_activation_hook(
+                        idx, module, input, output
+                    )
+                )
+                self.hook_handles.append(handle)
+
+            # Register CI function hooks
+            for layer_name, ci_fn in self.model.ci_fns.items():
+                handle = ci_fn.register_forward_hook(
+                    lambda module, input, output, name=layer_name: self._ci_fn_hook(
+                        name, module, input, output
+                    )
+                )
+                self.hook_handles.append(handle)
+
+            # Register component inner acts hooks
+            for layer_name, component in self.model.components.items():
+                handle = component.register_forward_hook(
+                    lambda module, input, output, name=layer_name: self._component_inner_acts_hook(
+                        name, module, input, output
+                    )
+                )
+                self.hook_handles.append(handle)
+
+            yield self
+
+        finally:
+            # Clean up all hooks
+            for handle in self.hook_handles:
+                handle.remove()
+            self.hook_handles.clear()
+
+    def forward_with_capture(self, input_tensor: Tensor) -> Tensor:
+        """Perform forward pass and capture all intermediate values."""
+        # Clear previous captures
+        self.activations.clear()
+        self.causal_importances.clear()
+        self.gate_outputs.clear()
+        self.gate_inputs.clear()
+        self.final_output = None
+
+        # Single forward pass through target model to get final output
+        # This ensures we get the correct ReLU-like behavior
+        self.final_output = self.target_model(input_tensor)
+
+        # Now get pre-weight activations for ComponentModel (this will be a separate call)
+        # but we need this for causal importance calculations
+        _, pre_weight_acts = self.model(input_tensor, cache_type="input")
+
+        # Calculate causal importances using the captured pre-weight acts
+        ci_dict, _ = self.model.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts,
+            sigmoid_type="leaky_hard",
+            sampling="continuous",
+            detach_inputs=True,
+        )
+        self.causal_importances = ci_dict
+
+        # Manually call components to trigger their hooks and capture gate inputs
+        for layer_name, acts in pre_weight_acts.items():
+            if layer_name in self.model.components:
+                component = self.model.components[layer_name]
+                # This will trigger the component hook and capture gate inputs
+                _ = component(acts)
+
+        # Ensure we return a tensor (should never be None at this point)
+        assert self.final_output is not None, "Final output should not be None"
+        return self.final_output
 
 
 def get_residmlp_activations(
@@ -123,6 +264,10 @@ def compute_magnitude_sweep_data(
 ]:
     """Compute neuron activations and causal importance as input magnitude increases.
 
+    This function uses a hook-based approach to capture all needed values in a single
+    forward pass per magnitude step, making it much more efficient than the previous
+    approach of multiple forward passes.
+
     Args:
         model: The trained ComponentModel containing ResidMLP
         device: Device to run on
@@ -130,6 +275,7 @@ def compute_magnitude_sweep_data(
         feature_idx: Which feature to activate (default: 0)
         n_steps: Number of steps from 0 to max_magnitude
         max_magnitude: Maximum input magnitude
+        pre_activation: Whether to capture pre-activation values (before ReLU/GELU)
 
     Returns:
         Tuple of (activations_dict, causal_importance_dict, output_responses_dict, gate_outputs_dict, gate_inputs_dict) where:
@@ -158,23 +304,27 @@ def compute_magnitude_sweep_data(
     # Get layer names and dimensions
     layer_names = []
     for i in range(target_model.config.n_layers):
-        layer_names.append(f"layers.{i}.mlp_in")
+        layer_name = f"layers.{i}.mlp_in"
+        layer_names.append(layer_name)
 
-    # Initialize tensors
-    for layer_name in layer_names:
+        # Initialize tensors with proper dimensions
         d_mlp = target_model.config.d_mlp
         n_components = model.components[layer_name].U.shape[0]
-        # For gate inputs, we need to determine the actual input dimension based on CI function type
-        # We'll initialize with a placeholder and resize later
+
         activations[layer_name] = torch.zeros(n_steps, d_mlp, device=device)
         causal_importances[layer_name] = torch.zeros(n_steps, n_components, device=device)
         output_responses[layer_name] = torch.zeros(n_steps, n_features, device=device)
         gate_outputs[layer_name] = torch.zeros(n_steps, n_components, device=device)
+
         # Initialize gate_inputs with a placeholder - will be resized when we know the actual dimension
         gate_inputs[layer_name] = None
 
     print(f"Computing magnitude sweep for feature {feature_idx}...")
-    print(f"Magnitude range: 0 to {max_magnitude} in {n_steps} steps")
+    print(f"Magnitude range: -{max_magnitude} to {max_magnitude} in {n_steps} steps")
+    print("Using hook-based approach for efficient data collection")
+
+    # Create hook collector
+    hook_collector = MagnitudeSweepHookCollector(model, pre_activation=pre_activation)
 
     # For each magnitude step
     for step_idx, magnitude in enumerate(magnitudes):
@@ -185,79 +335,36 @@ def compute_magnitude_sweep_data(
         input_tensor = torch.zeros(1, n_features, device=device)
         input_tensor[0, feature_idx] = magnitude
 
-        with torch.no_grad():
-            # Get ResidMLP activations
-            residmlp_acts = get_residmlp_activations(
-                target_model, input_tensor, return_pre_activation=pre_activation
-            )
+        with torch.no_grad(), hook_collector.hooks_active():
+            # Single forward pass captures everything via hooks
+            final_output = hook_collector.forward_with_capture(input_tensor)
 
-            # Get the full model output
-            model_output = target_model(input_tensor)  # Shape: (1, n_features)
-
-            # Get pre-weight activations for ComponentModel
-            _, pre_weight_acts = model(
-                input_tensor, mode="input_cache", module_names=list(model.components.keys())
-            )
-
-            # Calculate causal importances
-            ci_dict, _ = model.calc_causal_importances(
-                pre_weight_acts=pre_weight_acts,
-                sigmoid_type="leaky_hard",
-                sampling="continuous",
-                detach_inputs=True,
-            )
-
-            # Calculate pre-sigmoid gate outputs (ci_fn outputs before sigmoid)
-            gate_outputs_dict = {}
-            for param_name in pre_weight_acts:
-                acts = pre_weight_acts[param_name]
-                ci_fns = model.ci_fns[param_name]
-
-                match ci_fns:
-                    case MLPCiFn() | LinearCiFn():
-                        ci_fn_input = model.components[param_name].get_inner_acts(acts)
-                    case VectorMLPCiFn() | VectorSharedMLPCiFn():
-                        ci_fn_input = acts
-                    case _:
-                        raise ValueError(f"Unknown ci_fn type: {type(ci_fns)}")
-
-                if True:  # detach_inputs
-                    ci_fn_input = ci_fn_input.detach()
-
-                gate_outputs_dict[param_name] = ci_fns(ci_fn_input)
-
-            # Store results
+            # Store results from the hook collector
             for layer_name in layer_names:
-                if layer_name in residmlp_acts:
-                    activations[layer_name][step_idx] = residmlp_acts[layer_name][
+                # Store activations
+                if layer_name in hook_collector.activations:
+                    activations[layer_name][step_idx] = hook_collector.activations[layer_name][
                         0
                     ]  # [0] for batch dimension
-                if layer_name in ci_dict:
-                    causal_importances[layer_name][step_idx] = ci_dict[layer_name][
-                        0
-                    ]  # [0] for batch dimension
-                if layer_name in gate_outputs_dict:
-                    gate_outputs[layer_name][step_idx] = gate_outputs_dict[layer_name][
-                        0
-                    ]  # [0] for batch dimension
-                # Store output response for this layer (same for all layers since it's the final output)
-                output_responses[layer_name][step_idx] = model_output[0]  # [0] for batch dimension
 
-                # Store gate inputs (inner acts) - need to compute these
-                if layer_name in pre_weight_acts:
-                    acts = pre_weight_acts[layer_name]
-                    ci_fns = model.ci_fns[layer_name]
+                # Store causal importances
+                if layer_name in hook_collector.causal_importances:
+                    causal_importances[layer_name][step_idx] = hook_collector.causal_importances[
+                        layer_name
+                    ][0]  # [0] for batch dimension
 
-                    # Get gate input based on ci_fn type
-                    match ci_fns:
-                        case MLPCiFn() | LinearCiFn():
-                            # For MLP/Linear CI functions, get_inner_acts returns (..., C) - one per component
-                            gate_input = model.components[layer_name].get_inner_acts(acts)
-                        case VectorMLPCiFn() | VectorSharedMLPCiFn():
-                            # For Vector CI functions, all components use the same input
-                            gate_input = acts
-                        case _:
-                            gate_input = acts  # Default fallback
+                # Store gate outputs (pre-sigmoid)
+                if layer_name in hook_collector.gate_outputs:
+                    gate_outputs[layer_name][step_idx] = hook_collector.gate_outputs[layer_name][
+                        0
+                    ]  # [0] for batch dimension
+
+                # Store output response (same for all layers since it's the final output)
+                output_responses[layer_name][step_idx] = final_output[0]  # [0] for batch dimension
+
+                # Store gate inputs (inner acts)
+                if layer_name in hook_collector.gate_inputs:
+                    gate_input = hook_collector.gate_inputs[layer_name]
 
                     # Initialize gate_inputs tensor if not already done
                     if gate_inputs[layer_name] is None:
@@ -526,9 +633,13 @@ def plot_unified_grid(
         print(f"  Saved unified grid: {plot_path}")
 
 
-def main(config_path_or_obj: str | MagnitudeSweepConfig = None) -> None:
+def main(config_path_or_obj: str | MagnitudeSweepConfig | None = None) -> None:
     """Main function for magnitude sweep plotting."""
-    config = load_config(config_path_or_obj, config_model=MagnitudeSweepConfig)
+    if config_path_or_obj is None:
+        # Create default config if none provided
+        config = MagnitudeSweepConfig()
+    else:
+        config = load_config(config_path_or_obj, config_model=MagnitudeSweepConfig)
 
     # Set up output directory
     if config.output_dir is None:
@@ -621,4 +732,4 @@ def main(config_path_or_obj: str | MagnitudeSweepConfig = None) -> None:
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

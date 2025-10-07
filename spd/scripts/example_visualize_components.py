@@ -23,19 +23,23 @@ def run_visualization(model_path: str, output_name: str, threshold: float = 0.1)
     output_dir = Path("spd/scripts/component_visualization/out") / output_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Create config file for this visualization
+    config_content = f"""# Example configuration for component visualization
+model_path: "{model_path}"
+threshold: {threshold}
+figsize: [10, 8]
+output_dir: "{output_dir}"
+"""
+
+    config_path = output_dir / "example_config.yaml"
+    with open(config_path, "w") as f:
+        f.write(config_content)
+
     # Run the visualization script
     cmd = [
         sys.executable,
         "spd/scripts/component_visualization/component_visualization.py",
-        "--model_path",
-        model_path,
-        "--threshold",
-        str(threshold),
-        "--figsize",
-        "10",
-        "8",
-        "--output_dir",
-        str(output_dir),
+        str(config_path),
     ]
 
     try:

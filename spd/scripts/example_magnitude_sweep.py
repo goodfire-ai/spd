@@ -18,27 +18,27 @@ def run_magnitude_sweep_example():
     # This could be a wandb path like "wandb:your-project/run-id" or a local path
     model_path = "wandb:your-project/your-run-id"  # Replace with actual model path
 
+    # Create a temporary config file for this example
+    config_content = f"""# Example configuration for magnitude sweep
+model_path: "{model_path}"
+feature_idx: 0
+n_steps: 200
+max_magnitude: 3.0
+ci_threshold: 0.05
+figsize_per_subplot: [18, 12]
+dpi: 200
+output_dir: "spd/scripts/magnitude_sweep/out/example_magnitude_sweep"
+"""
+
+    config_path = "spd/scripts/magnitude_sweep/example_config.yaml"
+    with open(config_path, "w") as f:
+        f.write(config_content)
+
     # Base command
     cmd = [
         sys.executable,
         "spd/scripts/magnitude_sweep/magnitude_sweep.py",
-        "--model_path",
-        model_path,
-        "--output_dir",
-        "spd/scripts/magnitude_sweep/out/example_magnitude_sweep",
-        "--feature_idx",
-        "0",  # Activate feature 0
-        "--n_steps",
-        "200",  # More steps for smoother curves
-        "--max_magnitude",
-        "3.0",  # Go up to magnitude 3
-        "--ci_threshold",
-        "0.05",  # Lower threshold to see more gates
-        "--figsize_per_subplot",
-        "18",
-        "12",  # Larger figure size
-        "--dpi",
-        "200",  # Higher DPI for better quality
+        config_path,
     ]
 
     print("Running magnitude sweep with example parameters...")
@@ -95,26 +95,26 @@ def run_high_resolution_example():
 
     model_path = "wandb:your-project/your-run-id"  # Replace with actual model path
 
+    # Create high-resolution config file
+    high_res_config_content = f"""# High-resolution example configuration for magnitude sweep
+model_path: "{model_path}"
+feature_idx: 0
+n_steps: 500
+max_magnitude: 2.0
+ci_threshold: 0.01
+figsize_per_subplot: [24, 16]
+dpi: 300
+output_dir: "spd/scripts/magnitude_sweep/out/high_res_sweep"
+"""
+
+    high_res_config_path = "spd/scripts/magnitude_sweep/example_high_res_config.yaml"
+    with open(high_res_config_path, "w") as f:
+        f.write(high_res_config_content)
+
     cmd = [
         sys.executable,
         "spd/scripts/magnitude_sweep/magnitude_sweep.py",
-        "--model_path",
-        model_path,
-        "--output_dir",
-        "spd/scripts/magnitude_sweep/out/high_res_sweep",
-        "--feature_idx",
-        "0",
-        "--n_steps",
-        "500",  # Very high resolution
-        "--max_magnitude",
-        "2.0",
-        "--ci_threshold",
-        "0.01",  # Very low threshold
-        "--figsize_per_subplot",
-        "24",
-        "16",  # Very large figures
-        "--dpi",
-        "300",  # Publication quality DPI
+        high_res_config_path,
     ]
 
     print("Running high-resolution magnitude sweep...")

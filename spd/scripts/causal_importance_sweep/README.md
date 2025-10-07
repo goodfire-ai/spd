@@ -4,15 +4,11 @@ This script creates plots showing how each component's causal importance respond
 
 ## Usage
 
-### Using configuration file (recommended):
+### Using configuration file:
 ```bash
 python spd/scripts/causal_importance_sweep/causal_importance_sweep.py spd/scripts/causal_importance_sweep/causal_importance_sweep_config.yaml
 ```
 
-### Using command line arguments:
-```bash
-python spd/scripts/causal_importance_sweep/causal_importance_sweep.py --model_path="wandb:goodfire/spd/runs/2ki9tfsx" --feature_idx=0 --n_steps=50
-```
 
 ## Configuration
 

@@ -74,7 +74,7 @@ All analysis scripts follow a consistent structure:
 
 ```
 script_name/
-├── script_name.py          # Main script with fire.Fire() interface
+├── script_name.py          # Main script
 ├── script_name_config.yaml # Configuration file
 ├── README.md               # Detailed documentation
 └── out/                    # Results directory (auto-created)
@@ -83,9 +83,7 @@ script_name/
 
 ## Configuration
 
-Each script supports both:
-1. **Configuration files** (recommended): YAML files with all parameters
-2. **Command-line arguments**: Direct parameter specification
+Each script uses **configuration files**: YAML files with all parameters. This ensures consistent and reproducible analysis runs.
 
 ## Common Parameters
 
@@ -99,7 +97,7 @@ Most scripts share these common parameters:
 1. **Choose your analysis type** from the available scripts above
 2. **Copy the example config** from the script's directory
 3. **Modify the config** with your model path and desired parameters
-4. **Run the script** using the config file or command-line arguments
+4. **Run the script** using the config file
 
 ## Examples
 

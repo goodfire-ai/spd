@@ -2,8 +2,8 @@
 # This script analyzes how ResidMLP models respond to scaled one-hot vectors
 
 # --- Model ---
-model_path: "wandb:goodfire/spd/runs/6hk3uciu"  # Wandb URL for resid_mlp model
-model_type: "target"  # Model type: 'spd', 'target', or 'auto' (auto-detect based on path)
+model_path: "wandb:goodfire/spd/fi1phj8l"  # Wandb URL for resid_mlp model
+model_type: "auto"  # Model type: 'spd', 'target', or 'auto' (auto-detect based on path)
 
 # --- Analysis Parameters ---
 min_scale: -1.5          # Minimum scale for one-hot vectors

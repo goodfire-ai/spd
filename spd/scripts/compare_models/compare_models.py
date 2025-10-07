@@ -5,7 +5,6 @@ their learned subcomponents. It's designed for post-hoc analysis of completed ru
 
 Usage:
     python spd/scripts/compare_models/compare_models.py spd/scripts/compare_models/compare_models_config.yaml
-    python spd/scripts/compare_models/compare_models.py --current_model_path="wandb:..." --reference_model_path="wandb:..."
 """
 
 from collections.abc import Callable, Iterator
@@ -13,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import einops
-import fire
 import torch
 import torch.nn.functional as F
 from jaxtyping import Float
@@ -408,4 +406,6 @@ def main(config_path_or_obj: Path | str | CompareModelsConfig) -> None:
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    # Use the default config file in the same directory
+    config_path = Path(__file__).parent / "compare_models_config.yaml"
+    main(config_path)

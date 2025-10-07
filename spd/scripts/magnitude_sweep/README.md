@@ -4,15 +4,11 @@ This script creates plots showing how individual neuron activations and causal i
 
 ## Usage
 
-### Using configuration file (recommended):
+### Using configuration file:
 ```bash
 python spd/scripts/magnitude_sweep/magnitude_sweep.py spd/scripts/magnitude_sweep/magnitude_sweep_config.yaml
 ```
 
-### Using command line arguments:
-```bash
-python spd/scripts/magnitude_sweep/magnitude_sweep.py --model_path="wandb:goodfire/spd/runs/2ki9tfsx" --feature_idx=0 --n_steps=100 --max_magnitude=2.0
-```
 
 ## Configuration
 

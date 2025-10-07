@@ -19,17 +19,6 @@ For a given ResidMLP model, the script:
 python spd/scripts/scaled_onehot_analysis/scaled_onehot_analysis.py spd/scripts/scaled_onehot_analysis/scaled_onehot_analysis_config.yaml
 ```
 
-### Command Line Usage
-```bash
-# Using SPD model (auto-detected from wandb: URL)
-python spd/scripts/scaled_onehot_analysis/scaled_onehot_analysis.py --model_path="wandb:goodfire/spd/runs/any9ekl9" --min_scale=-2.0 --max_scale=2.0 --n_features_to_plot=20
-
-# Using target model directly
-python spd/scripts/scaled_onehot_analysis/scaled_onehot_analysis.py --model_path="/path/to/target/model.pt" --model_type="target" --min_scale=-2.0 --max_scale=2.0
-
-# Explicitly specify SPD model
-python spd/scripts/scaled_onehot_analysis/scaled_onehot_analysis.py --model_path="wandb:goodfire/spd/runs/any9ekl9" --model_type="spd"
-```
 
 ## Configuration
 
