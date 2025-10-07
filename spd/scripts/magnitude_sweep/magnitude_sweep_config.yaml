@@ -1,7 +1,7 @@
 # Configuration for magnitude_sweep.py
 
 # Model path (supports both wandb: and local paths)
-model_path: "wandb:goodfire/spd/fi1phj8l"
+model_path: "wandb:goodfire/spd/in10bwoo"
 
 # Analysis parameters
 feature_idx: 0  # Which feature to activate

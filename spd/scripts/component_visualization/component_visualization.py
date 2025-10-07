@@ -239,9 +239,9 @@ def analyze_component_behavior(
 
     model.eval()
 
-    # Set default input magnitudes if not provided
+    # Set default input magnitudes if not provided (include negative values)
     if input_magnitudes is None:
-        input_magnitudes = [0.0, 0.25, 0.75, 1.0]
+        input_magnitudes = [-1.0, -0.75, -0.25, 0.0, 0.25, 0.75, 1.0]
 
     # Get n_features from the model if not provided
     if n_features is None:
