@@ -306,9 +306,7 @@ def analyze_component_behavior(
 
     # Get pre-weight activations by running through target model with input caching
     with torch.no_grad():
-        _, pre_weight_acts = model(
-            test_inputs, mode="input_cache", module_names=list(model.components.keys())
-        )
+        _, pre_weight_acts = model(test_inputs, cache_type="input")
 
         # Compute causal importances
         causal_importances, _ = model.calc_causal_importances(
@@ -427,17 +425,28 @@ def main(config_path_or_obj: str | ComponentVisualizationConfig = None) -> None:
     """Main function for component visualization."""
     config = load_config(config_path_or_obj, config_model=ComponentVisualizationConfig)
 
-    # Set up output directory
-    if config.output_dir is None:
-        output_dir_path = Path(__file__).parent / "out"
-    else:
-        output_dir_path = Path(config.output_dir)
-    output_dir_path.mkdir(parents=True, exist_ok=True)
-
     # Set device
     device = get_device() if config.device == "auto" else config.device
     logger.info(f"Using device: {device}")
     logger.info(f"Loading model from: {config.model_path}")
+
+    # Extract model ID from the model path for directory organization
+    if config.model_path.startswith("wandb:"):
+        # Extract run ID from wandb path (e.g., "wandb:goodfire/spd/fi1phj8l" -> "fi1phj8l")
+        model_id = config.model_path.split("/")[-1]
+    else:
+        # For local paths, use the directory name
+        model_id = Path(config.model_path).name
+
+    # Set up output directory with model ID subdirectory
+    if config.output_dir is None:
+        base_output_dir = Path(__file__).parent / "out"
+    else:
+        base_output_dir = Path(config.output_dir)
+
+    output_dir_path = base_output_dir / model_id
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Output directory: {output_dir_path}")
 
     # Load the model
     try:
@@ -478,4 +487,6 @@ def main(config_path_or_obj: str | ComponentVisualizationConfig = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # Use the config file directly
+    config_path = Path(__file__).parent / "component_visualization_config.yaml"
+    main(config_path)
