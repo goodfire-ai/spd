@@ -419,6 +419,46 @@ function createHistogramFilter(statKey, filterValue) {
     };
 }
 
+/**
+ * Get the top token string for sorting
+ * @param {object} value - Cell value (stats object)
+ * @param {object} row - The data row
+ * @returns {string} The top token string for sorting
+ */
+function sortTopToken(value, row) {
+    const tokenStats = row.stats.token_activations;
+    if (!tokenStats || !tokenStats.top_tokens || tokenStats.top_tokens.length === 0) {
+        return '';
+    }
+    return tokenStats.top_tokens[0].token.toLowerCase();
+}
+
+/**
+ * Create a filter function for top tokens
+ * @param {string} filterValue - The filter string
+ * @returns {Function|null} Filter function or null if invalid
+ */
+function createTopTokenFilter(filterValue) {
+    if (!filterValue || !filterValue.trim()) return null;
+
+    const pattern = filterValue.toLowerCase().trim();
+
+    return (cellValue, row) => {
+        const tokenStats = row.stats.token_activations;
+        if (!tokenStats || !tokenStats.top_tokens) return false;
+
+        // Search in top 10 tokens
+        const topN = Math.min(10, tokenStats.top_tokens.length);
+        for (let i = 0; i < topN; i++) {
+            const token = tokenStats.top_tokens[i].token.toLowerCase();
+            if (token.includes(pattern)) {
+                return true;
+            }
+        }
+        return false;
+    };
+}
+
 async function loadModelInfo() {
     const response = await fetch(CONFIG.getDataPath('modelInfo'));
     modelInfo = await response.json();
@@ -567,19 +607,25 @@ async function loadData() {
             align: 'right'
         },
         {
-            key: 'componentCount',
+            key: 'modules',
             label: 'Model View',
-            type: 'number',
+            type: 'string',
             width: '21px',
             align: 'center',
-            renderer: columnRenderers.modelView
+            renderer: columnRenderers.modelView,
+            sortFunction: (modules) => sortModules(modules),
+            filterFunction: (filterValue) => createModuleFilter(filterValue),
+            filterTooltip: 'Filter by module name. Use * for wildcards (e.g., *mlp*, blocks.0.*)'
         },
         {
             key: 'modules',
             label: 'Modules',
             type: 'string',
             width: '10px',
-            renderer: columnRenderers.modulesSummary
+            renderer: columnRenderers.modulesSummary,
+            sortFunction: (modules) => sortModules(modules),
+            filterFunction: (filterValue) => createModuleFilter(filterValue),
+            filterTooltip: 'Filter by module name. Use * for wildcards (e.g., *mlp*, blocks.0.*)'
         }
     ];
 
@@ -604,10 +650,13 @@ async function loadData() {
         columns.push({
             key: 'stats',
             label: label,
-            type: 'string',
+            type: 'number',
             width: '200px',
             align: 'center',
-            renderer: columnRenderers.genericHistogram(statKey, color, label)
+            renderer: columnRenderers.genericHistogram(statKey, color, label),
+            sortFunction: (value, row) => getHistogramStatistic(statKey, row, 'mean'),
+            filterFunction: (filterValue) => createHistogramFilter(statKey, filterValue),
+            filterTooltip: 'Filter by statistics. Use: mean>0.5, median<0.2, max>=1.0, min>-0.1, range<5, sum>100. Combine with commas (e.g., mean>0.5, max<10)'
         });
     });
 
