@@ -97,6 +97,18 @@ clustering-dashboard: bundle-dashboard
 		--n-batches 4 \
 		--batch-size 128
 
+.PHONY: clustering-dashboard-profile
+clustering-dashboard-profile: bundle-dashboard
+	python -m cProfile -o dashboard.prof spd/clustering/dashboard/run.py \
+		--wandb-run goodfire/spd-cluster/runs/j8dgvemf \
+		--iteration 7000 \
+		--n-samples 32 \
+		--n-batches 4 \
+		--batch-size 128
+	@echo "\nProfile saved to dashboard.prof"
+	@echo "View with: python -m pstats dashboard.prof"
+	@echo "Or install snakeviz and run: snakeviz dashboard.prof"
+
 
 .PHONY: diskinfo
 diskinfo:

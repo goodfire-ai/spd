@@ -3,6 +3,7 @@ docs/coverage/**
 artifacts/**
 docs/dep_graph/**
 tests/.temp/**
+*.prof
 
 **/out/
 neuronpedia_outputs/

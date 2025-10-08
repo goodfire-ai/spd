@@ -16,6 +16,11 @@ def tokenize_and_create_text_samples(
 ) -> list[TextSample]:
     """Tokenize batch and create TextSample objects.
 
+    Note: This function decodes tokens by converting IDs to token strings and joining with spaces.
+    This bypasses the tokenizer's native .decode() logic, which may handle special tokens,
+    BPE merge undoing, and special whitespace differently. For display purposes in the dashboard,
+    this simplified approach is acceptable and significantly faster.
+
     Args:
         batch: Input token IDs
         tokenizer: Tokenizer for decoding
@@ -26,14 +31,9 @@ def tokenize_and_create_text_samples(
     """
     batch_size: int = batch.shape[0]
 
-    # Convert to numpy and use optimized batch decode
-    batch_np = batch.cpu().numpy()
-    batch_token_bytes = simple_batch_decode(tokenizer, batch_np)  # [batch_size, n_ctx] of bytes
-
-    # Decode bytes to strings
-    batch_token_strings: list[list[str]] = [
-        [token.decode("utf-8", errors="replace") for token in seq] for seq in batch_token_bytes
-    ]
+    batch_token_strings: list[list[str]] = simple_batch_decode(
+        tokenizer, batch.cpu().numpy()
+    ).tolist()  # [batch_size, n_ctx] of strings
 
     # Create text samples for entire batch
     batch_text_samples: list[TextSample] = []
