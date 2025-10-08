@@ -10,6 +10,7 @@ from muutils.spinner import SpinnerContext
 from torch import Tensor
 from tqdm import tqdm
 from transformers import PreTrainedTokenizer
+from muutils.dbg import dbg_tensor
 
 from spd.clustering.activations import (
     ProcessedActivations,
@@ -46,26 +47,47 @@ def _tokenize_and_create_text_samples(
     Returns:
         List of TextSample objects for the batch
     """
+    print("\n\nB1\n\n", flush=True)
     # Move to CPU
-    batch_cpu: Int[Tensor, "batch_size n_ctx"] = batch.cpu()
-    batch_size, n_ctx = batch_cpu.shape
+    # dbg_tensor(batch)
+    print("\n\nB2\n\n", flush=True)
+    with SpinnerContext(message="tokenizing: move to CPU"):
+        print("\n\nB3\n\n", flush=True)
+        # batch_cpu: Int[Tensor, "batch_size n_ctx"] = batch.cpu()
+        print("\n\nB4\n\n", flush=True)
+        batch_size, n_ctx = batch.shape
+        print("\n\nB5\n\n", flush=True)
 
+    print("\n\nB6\n\n", flush=True)
     # Batch decode full texts
-    batch_texts: list[str] = tokenizer.batch_decode(batch_cpu)  # pyright: ignore[reportAttributeAccessIssue]
+    with SpinnerContext(message="tokenizing: batch decode full texts"):
+        print("\n\nB7\n\n", flush=True)
+        batch_texts: list[str] = tokenizer.batch_decode(batch)  # pyright: ignore[reportAttributeAccessIssue]
+        print("\n\nB8\n\n", flush=True)
 
     # Batch decode individual tokens - reshape and pass tensor directly
     # Reshape [batch_size, n_ctx] -> [batch_size * n_ctx, 1]
-    flattened_tokens: Int[Tensor, "total 1"] = batch_cpu.reshape(-1, 1)
-    all_token_strings: list[str] = tokenizer.batch_decode(flattened_tokens)  # pyright: ignore[reportAttributeAccessIssue]
+    print("\n\nB9\n\n", flush=True)
+    with SpinnerContext(message="tokenizing: batch decode tokens"):
+        print("\n\nB10\n\n", flush=True)
+        flattened_tokens: Int[Tensor, "total 1"] = batch.reshape(-1, 1)
+        print("\n\nB11\n\n", flush=True)
+        all_token_strings: list[str] = tokenizer.batch_decode(flattened_tokens)  # pyright: ignore[reportAttributeAccessIssue]
+        print("\n\nB12\n\n", flush=True)
 
     # Reshape back to [batch_size, n_ctx]
-    batch_token_strings: list[list[str]] = [
-        all_token_strings[i * n_ctx : (i + 1) * n_ctx] for i in range(batch_size)
-    ]
+    print("\n\nB13\n\n", flush=True)
+    with SpinnerContext(message="tokenizing: reshape tokens"):
+        print("\n\nB14\n\n", flush=True)
+        batch_token_strings: list[list[str]] = [
+            all_token_strings[i * n_ctx : (i + 1) * n_ctx] for i in range(batch_size)
+        ]
+        print("\n\nB15\n\n", flush=True)
 
     # Create text samples for entire batch
+    print("\n\nB16\n\n", flush=True)
     batch_text_samples: list[TextSample] = []
-    for text, token_strings in zip(batch_texts, batch_token_strings, strict=True):
+    for text, token_strings in tqdm(zip(batch_texts, batch_token_strings, strict=True), total=batch_size):
         text_sample = TextSample(full_text=text, tokens=token_strings)
         text_hash = text_sample.text_hash
         if text_hash not in text_samples:
@@ -101,6 +123,7 @@ class BatchProcessingStorage:
     # Pre-computed to avoid recomputation
     cluster_id_map: dict[int, ClusterId]
     cluster_components: dict[int, list[dict[str, Any]]]
+    cluster_hash_map: dict[int, ClusterIdHash]
 
     @classmethod
     def create(
@@ -154,6 +177,7 @@ class BatchProcessingStorage:
             all_cluster_activations=all_cluster_activations,
             cluster_id_map=cluster_id_map,
             cluster_components=cluster_components,
+            cluster_hash_map=cluster_hashes,
         )
 
     def process_batch(
@@ -186,16 +210,20 @@ class BatchProcessingStorage:
                 batch=batch,
                 sigmoid_type=sigmoid_type,
             )
+        
+        with SpinnerContext(message="Processing activations"):
+            print("\n\nA1\n\n", flush=True)
             processed: ProcessedActivations = process_activations(
                 activations, seq_mode="concat", filter_dead_threshold=0
             )
+            print("\n\nA2\n\n", flush=True)
 
-        with SpinnerContext(message="tokenizing and creating text samples"):
-            batch_text_samples: list[TextSample] = _tokenize_and_create_text_samples(
-                batch=batch,
-                tokenizer=tokenizer,
-                text_samples=self.text_samples,
-            )
+        print("\n\nA3\n\n", flush=True)
+        batch_text_samples: list[TextSample] = _tokenize_and_create_text_samples(
+            batch=batch,
+            tokenizer=tokenizer,
+            text_samples=self.text_samples,
+        )
 
         with SpinnerContext(message="Computing cluster activations"):
             cluster_acts: ClusterActivations = compute_all_cluster_activations(
@@ -233,58 +261,94 @@ class BatchProcessingStorage:
         # Store for coactivation computation
         self.all_cluster_activations.append(cluster_acts)
 
-        # Reshape to [batch_size, seq_len, n_clusters] for easier indexing
+        # Move all GPU→CPU transfers outside loops (CRITICAL OPTIMIZATION)
+        # Reshape cluster activations to [batch_size, seq_len, n_clusters]
         acts_3d: Float[Tensor, "batch_size seq_len n_clusters"] = cluster_acts.activations.view(
             batch_size, seq_len, -1
         )
         acts_3d_cpu: Float[np.ndarray, "batch_size seq_len n_clusters"] = acts_3d.cpu().numpy()
 
-        # Store activations per cluster
+        # Move component activations to CPU and reshape to [batch_size, seq_len, n_components]
+        processed_acts_cpu: Float[np.ndarray, "batch*seq n_components"] = (
+            processed.activations.cpu().numpy()
+        )
+        processed_acts_3d: Float[np.ndarray, "batch_size seq_len n_components"] = (
+            processed_acts_cpu.reshape(batch_size, seq_len, -1)
+        )
+
+        # Pre-extract text hashes and tokens to avoid repeated lookups
+        batch_text_hashes: list[TextSampleHash] = [
+            sample.text_hash for sample in batch_text_samples
+        ]
+        batch_tokens: list[list[str]] = [sample.tokens for sample in batch_text_samples]
+
+        # Pre-compute component label→index mapping to avoid repeated lookups
+        # Build set of all component labels we'll need
+        all_component_labels: set[str] = set()
+        for cluster_components_list in self.cluster_components.values():
+            for comp_info in cluster_components_list:
+                all_component_labels.add(comp_info["label"])
+
+        # Cache the indices
+        label_to_index: dict[str, int | None] = {
+            label: processed.get_label_index(label) for label in all_component_labels
+        }
+
+        # Filter empty clusters early - find which clusters have non-zero activations
+        active_cluster_mask: Float[np.ndarray, " n_clusters"] = (
+            np.abs(acts_3d_cpu).max(axis=(0, 1)) > 0
+        )
+        active_cluster_indices: list[tuple[int, int]] = [
+            (col_idx, cluster_idx)
+            for col_idx, cluster_idx in enumerate(cluster_acts.cluster_indices)
+            if active_cluster_mask[col_idx]
+        ]
+
+        # Store activations per cluster (only active clusters)
         for cluster_col_idx, cluster_idx in tqdm(
-            enumerate(cluster_acts.cluster_indices),
-            total=len(cluster_acts.cluster_indices),
+            active_cluster_indices,
+            total=len(active_cluster_indices),
             desc="  Storing cluster activations",
-            leave=False,
+            leave=True,
         ):
             cluster_acts_2d: Float[np.ndarray, "batch_size seq_len"] = acts_3d_cpu[
                 :, :, cluster_col_idx
             ]
 
-            # Skip if no activations
-            if np.abs(cluster_acts_2d).max() == 0:
-                continue
+            # Use pre-computed hash instead of calling .to_string()
+            current_cluster_hash: ClusterIdHash = self.cluster_hash_map[cluster_idx]
 
-            current_cluster_id: ClusterId = self.cluster_id_map[cluster_idx]
-            current_cluster_hash: ClusterIdHash = current_cluster_id.to_string()
+            # Get components for this cluster once (move invariant out of batch loop)
+            components_in_cluster: list[dict[str, Any]] = self.cluster_components[cluster_idx]
 
-            # Store activations for each sample in batch
-            for batch_sample_idx in range(batch_size):
-                text_sample = batch_text_samples[batch_sample_idx]
-                text_hash = text_sample.text_hash
+            # Cache dictionary lookups - get list references once
+            cluster_acts_list = self.cluster_activations[current_cluster_hash]
+            cluster_text_hashes_list = self.cluster_text_hashes[current_cluster_hash]
+            cluster_tokens_list = self.cluster_tokens[current_cluster_hash]
 
-                # Store cluster-level activations
-                activations_np: Float[np.ndarray, " n_ctx"] = cluster_acts_2d[batch_sample_idx]
-                self.cluster_activations[current_cluster_hash].append(activations_np)
-                self.cluster_text_hashes[current_cluster_hash].append(text_hash)
-                self.cluster_tokens[current_cluster_hash].append(text_sample.tokens)
+            # Vectorize storage - use .extend() instead of repeated .append()
+            # Store cluster-level activations for entire batch at once
+            cluster_acts_list.extend(cluster_acts_2d[i] for i in range(batch_size))
+            cluster_text_hashes_list.extend(batch_text_hashes)
+            cluster_tokens_list.extend(batch_tokens)
 
-                # Store component-level activations
-                components_in_cluster: list[dict[str, Any]] = self.cluster_components[cluster_idx]
-                for component_info in components_in_cluster:
-                    component_label: str = component_info["label"]
-                    comp_idx: int | None = processed.get_label_index(component_label)
+            # Store component-level activations
+            for component_info in components_in_cluster:
+                component_label: str = component_info["label"]
+                comp_idx: int | None = label_to_index[component_label]
 
-                    if comp_idx is not None:
-                        sample_offset: int = batch_sample_idx * seq_len
-                        comp_acts_1d: Float[np.ndarray, " seq_len"] = (
-                            processed.activations[sample_offset : sample_offset + seq_len, comp_idx]
-                            .cpu()
-                            .numpy()
-                        )
+                if comp_idx is not None:
+                    # Cache nested dictionary lookups
+                    comp_acts_list = self.component_activations[current_cluster_hash][
+                        component_label
+                    ]
+                    comp_text_hashes_list = self.component_text_hashes[current_cluster_hash][
+                        component_label
+                    ]
 
-                        self.component_activations[current_cluster_hash][component_label].append(
-                            comp_acts_1d
-                        )
-                        self.component_text_hashes[current_cluster_hash][component_label].append(
-                            text_hash
-                        )
+                    # Collect all component activations for this batch
+                    batch_comp_acts = [processed_acts_3d[i, :, comp_idx] for i in range(batch_size)]
+
+                    # Extend once instead of appending in loop
+                    comp_acts_list.extend(batch_comp_acts)
+                    comp_text_hashes_list.extend(batch_text_hashes)
