@@ -12,6 +12,18 @@ from spd.utils.module_utils import _NonlinearityType, init_param_
 CiFnType = Literal["mlp", "vector_mlp", "shared_mlp", "linear"]
 
 
+class LearnableLeakyReLU(nn.Module):
+    """Learnable LeakyReLU activation function with a learnable negative slope parameter."""
+
+    def __init__(self, negative_slope: float = 0.01):
+        super().__init__()
+        self.negative_slope = nn.Parameter(torch.tensor(negative_slope), requires_grad=True)
+
+    @override
+    def forward(self, x: Float[Tensor, "..."]) -> Float[Tensor, "..."]:
+        return torch.where(x >= 0, x, self.negative_slope * x)
+
+
 class ParallelLinear(nn.Module):
     """C parallel linear layers"""
 
@@ -63,7 +75,13 @@ class LinearCiFn(nn.Module):
 class MLPCiFn(nn.Module):
     """MLP-based function that map component 'inner acts' to a scalar output for each component."""
 
-    def __init__(self, C: int, hidden_dims: list[int]):
+    def __init__(
+        self,
+        C: int,
+        hidden_dims: list[int],
+        nonlinearity: str = "gelu",
+        negative_slope: float = 0.01,
+    ):
         super().__init__()
 
         self.hidden_dims = hidden_dims
@@ -73,7 +91,15 @@ class MLPCiFn(nn.Module):
             input_dim = 1 if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
             self.layers.append(ParallelLinear(C, input_dim, output_dim, nonlinearity="relu"))
-            self.layers.append(nn.GELU())
+
+            # Add the specified nonlinearity
+            if nonlinearity == "gelu":
+                self.layers.append(nn.GELU())
+            elif nonlinearity == "leaky_relu":
+                self.layers.append(LearnableLeakyReLU(negative_slope=negative_slope))
+            else:
+                raise ValueError(f"Unsupported nonlinearity: {nonlinearity}")
+
         self.layers.append(ParallelLinear(C, hidden_dims[-1], 1, nonlinearity="linear"))
 
     @override
@@ -87,7 +113,14 @@ class MLPCiFn(nn.Module):
 class VectorMLPCiFn(nn.Module):
     """Contains a separate network for each component and takes a module's input vector as input."""
 
-    def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
+    def __init__(
+        self,
+        C: int,
+        input_dim: int,
+        hidden_dims: list[int],
+        nonlinearity: str = "gelu",
+        negative_slope: float = 0.01,
+    ):
         super().__init__()
 
         self.hidden_dims = hidden_dims
@@ -97,7 +130,14 @@ class VectorMLPCiFn(nn.Module):
             input_dim = input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
             self.layers.append(ParallelLinear(C, input_dim, output_dim, nonlinearity="relu"))
-            self.layers.append(nn.GELU())
+
+            # Add the specified nonlinearity
+            if nonlinearity == "gelu":
+                self.layers.append(nn.GELU())
+            elif nonlinearity == "leaky_relu":
+                self.layers.append(LearnableLeakyReLU(negative_slope=negative_slope))
+            else:
+                raise ValueError(f"Unsupported nonlinearity: {nonlinearity}")
 
         self.layers.append(ParallelLinear(C, hidden_dims[-1], 1, nonlinearity="linear"))
 
@@ -112,14 +152,29 @@ class VectorMLPCiFn(nn.Module):
 class VectorSharedMLPCiFn(nn.Module):
     """Maps a module's input vector to a scalar output for each component with a 'pure' MLP."""
 
-    def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
+    def __init__(
+        self,
+        C: int,
+        input_dim: int,
+        hidden_dims: list[int],
+        nonlinearity: str = "gelu",
+        negative_slope: float = 0.01,
+    ):
         super().__init__()
         self.layers = nn.Sequential()
         for i in range(len(hidden_dims)):
             in_dim = input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
             self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
-            self.layers.append(nn.GELU())
+
+            # Add the specified nonlinearity
+            if nonlinearity == "gelu":
+                self.layers.append(nn.GELU())
+            elif nonlinearity == "leaky_relu":
+                self.layers.append(LearnableLeakyReLU(negative_slope=negative_slope))
+            else:
+                raise ValueError(f"Unsupported nonlinearity: {nonlinearity}")
+
         final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else input_dim
         self.layers.append(Linear(final_dim, C, nonlinearity="linear"))
 

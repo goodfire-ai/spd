@@ -1,0 +1,4 @@
+---
+description: When defining function arguments, be careful with default values. They can be dangerous. Err on the side of not including them.
+alwaysApply: false
+---

@@ -194,6 +194,14 @@ class Config(BaseModel):
         default=[8],
         description="Hidden dimensions for the causal importance function used to calculate the causal importance",
     )
+    ci_fn_nonlinearity: str = Field(
+        default="gelu",
+        description="Nonlinearity to use in the causal importance function. Options: 'gelu', 'leaky_relu'",
+    )
+    ci_fn_negative_slope: float = Field(
+        default=0.01,
+        description="Negative slope for LeakyReLU activation function (only used when ci_fn_nonlinearity='leaky_relu')",
+    )
     sampling: Literal["continuous", "binomial"] = Field(
         default="continuous",
         description="Sampling mode for stochastic elements: 'continuous' (default) or 'binomial'",

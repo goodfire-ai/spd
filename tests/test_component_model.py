@@ -19,6 +19,7 @@ from spd.models.component_model import (
 from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
+    LearnableLeakyReLU,
     LinearComponents,
     MLPCiFn,
     ParallelLinear,
@@ -503,3 +504,109 @@ def test_routing():
 
     # but it should be the same for the second example (where it's not routed to components)
     assert torch.allclose(cm_routed_out[1], target_out[1])
+
+
+def test_learnable_leaky_relu():
+    """Test that LearnableLeakyReLU works correctly and has learnable parameters."""
+    leaky_relu = LearnableLeakyReLU(negative_slope=0.1)
+
+    # Test that the negative slope parameter is learnable
+    assert leaky_relu.negative_slope.requires_grad
+    torch.testing.assert_close(leaky_relu.negative_slope, torch.tensor(0.1))
+
+    # Test forward pass with positive and negative values
+    x = torch.tensor([2.0, -1.0, 0.0, -3.0])
+    y = leaky_relu(x)
+
+    expected = torch.tensor([2.0, -0.1, 0.0, -0.3])  # 0.1 * negative values
+    torch.testing.assert_close(y, expected)
+
+
+@pytest.mark.parametrize("hidden_dims", [[8], [4, 3]])
+def test_mlp_ci_fn_with_leaky_relu(hidden_dims: list[int]):
+    """Test that MLPCiFn works correctly with LeakyReLU nonlinearity."""
+    C = 5
+    ci_fns = MLPCiFn(C=C, hidden_dims=hidden_dims, nonlinearity="leaky_relu")
+    x = torch.randn(BATCH_SIZE, C)  # two items, C components
+    y = ci_fns(x)
+    assert y.shape == (BATCH_SIZE, C)
+
+
+@pytest.mark.parametrize("hidden_dims", [[4], [6, 3]])
+def test_vector_mlp_ci_fn_with_leaky_relu(hidden_dims: list[int]):
+    """Test that VectorMLPCiFn works correctly with LeakyReLU nonlinearity."""
+    C = 3
+    d_in = 10
+    ci_fns = VectorMLPCiFn(C=C, input_dim=d_in, hidden_dims=hidden_dims, nonlinearity="leaky_relu")
+    x = torch.randn(BATCH_SIZE, d_in)
+    y = ci_fns(x)
+    assert y.shape == (BATCH_SIZE, C)
+
+
+@pytest.mark.parametrize("hidden_dims", [[], [7], [8, 5]])
+def test_vector_shared_mlp_fn_with_leaky_relu(hidden_dims: list[int]):
+    """Test that VectorSharedMLPCiFn works correctly with LeakyReLU nonlinearity."""
+    C = 3
+    d_in = 10
+    ci_fn = VectorSharedMLPCiFn(
+        C=C, input_dim=d_in, hidden_dims=hidden_dims, nonlinearity="leaky_relu"
+    )
+    x = torch.randn(BATCH_SIZE, d_in)
+    y = ci_fn(x)
+    assert y.shape == (BATCH_SIZE, C)
+
+
+def test_component_model_with_leaky_relu_nonlinearity():
+    """Test that ComponentModel works with LeakyReLU nonlinearity."""
+    target_model = tiny_target()
+    target_module_paths = ["embed", "mlp", "out"]
+
+    # Test mlp with LeakyReLU
+    cm_mlp_leaky = ComponentModel(
+        target_model=target_model,
+        target_module_patterns=target_module_paths,
+        C=4,
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[4],
+        pretrained_model_output_attr=None,
+        ci_fn_nonlinearity="leaky_relu",
+    )
+
+    # Test vector_mlp with LeakyReLU
+    cm_vector_mlp_leaky = ComponentModel(
+        target_model=target_model,
+        target_module_patterns=["mlp", "out"],  # Skip embedding for vector types
+        C=4,
+        ci_fn_type="vector_mlp",
+        ci_fn_hidden_dims=[4],
+        pretrained_model_output_attr=None,
+        ci_fn_nonlinearity="leaky_relu",
+    )
+
+    # Test shared_mlp with LeakyReLU
+    cm_shared_mlp_leaky = ComponentModel(
+        target_model=target_model,
+        target_module_patterns=["mlp", "out"],  # Skip embedding for vector types
+        C=4,
+        ci_fn_type="shared_mlp",
+        ci_fn_hidden_dims=[4],
+        pretrained_model_output_attr=None,
+        ci_fn_nonlinearity="leaky_relu",
+    )
+
+    # Test that all models can forward pass
+    token_ids = torch.randint(
+        low=0, high=target_model.embed.num_embeddings, size=(BATCH_SIZE,), dtype=torch.long
+    )
+
+    # Test mlp with LeakyReLU forward pass
+    out_mlp_leaky = cm_mlp_leaky(token_ids, mode="target")
+    assert out_mlp_leaky.shape == (BATCH_SIZE, target_model.out.out_features)
+
+    # Test vector_mlp with LeakyReLU forward pass
+    out_vector_mlp_leaky = cm_vector_mlp_leaky(token_ids, mode="target")
+    assert out_vector_mlp_leaky.shape == (BATCH_SIZE, target_model.out.out_features)
+
+    # Test shared_mlp with LeakyReLU forward pass
+    out_shared_mlp_leaky = cm_shared_mlp_leaky(token_ids, mode="target")
+    assert out_shared_mlp_leaky.shape == (BATCH_SIZE, target_model.out.out_features)

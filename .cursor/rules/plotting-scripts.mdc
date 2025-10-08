@@ -1,0 +1,4 @@
+---
+description: When developing plotting scripts and producing results, don't just place these scripts or results in any random place (e.g. the root directory). There is a place for them and a structure to follow.
+alwaysApply: false
+---
