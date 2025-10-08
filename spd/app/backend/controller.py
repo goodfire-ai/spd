@@ -85,7 +85,7 @@ DEFAULT_RUN_ID = "cztuy3va"
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global run_context_service
-    run_context_service.load_run(f"{ENTITY}/{TRAIN_PROJECT}/{DEFAULT_RUN_ID}")
+    # run_context_service.load_run(f"{ENTITY}/{TRAIN_PROJECT}/{DEFAULT_RUN_ID}")
     try:
         yield
     finally:
