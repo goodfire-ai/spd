@@ -2,14 +2,14 @@
 
 from transformers import AutoTokenizer
 import numpy as np
+import torch
 from torch import Tensor
 from jaxtyping import Int
 
 
 tokenizer = AutoTokenizer.from_pretrained('SimpleStories/SimpleStories-1.25M')
-
-#%%
 # tokenizer.vocab
+
 # dir(tokenizer)
 
 
@@ -55,18 +55,30 @@ def attach_vocab_arr(tokenizer: PreTrainedTokenizer) -> None:
 
 
 attach_vocab_arr(tokenizer)
-tokenizer.vocab_arr
+print(f"{tokenizer.vocab_arr = }")
+
 
 
 def simple_batch_decode(
     tokenizer: PreTrainedTokenizer,
-    batch: Int[Tensor, "batch_size n_ctx"],
+    batch,#: Int[Tensor, "batch_size n_ctx"],
 ) -> list[list[str]]:
     assert hasattr(tokenizer, "vocab_arr"), "Tokenizer missing vocab_arr attribute, call attach_vocab_arr first"
-    batch_size: int = batch.shape[0]
-    batch_token_strings: list[list[str]] = [
-        [tokenizer.vocab_arr[token_id] for token_id in seq]
-        for seq in batch
-    ]
+    return tokenizer.vocab_arr[batch]
+
+
+
+vocab_size: int = tokenizer.vocab_size
+
+random_batch: Int[Tensor, "batch_size n_ctx"] = (
+	torch.randint(low=0, high=vocab_size, size=(4, 10), dtype=torch.int64)
+)
+
+print(f"{random_batch = }")
+
+batch_token_strings: list[list[str]] = simple_batch_decode(tokenizer, random_batch)
+print(f"{batch_token_strings = }")
+
+torch.tensor(batch_token_strings)
 
 
