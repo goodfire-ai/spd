@@ -129,7 +129,7 @@ def _get_topk_by_subcomponent(
     C = run_context.cm.C
 
     logger.info("worker: starting data iteration")
-    data_iter = iter(run_context.batched_loader)
+    data_iter = iter(run_context.train_loader)
     for i in tqdm(range(n_steps), desc="Processing data", file=sys.stderr):
         batch = extract_batch_data(next(data_iter)).to(DEVICE)
         assert isinstance(batch, torch.Tensor)

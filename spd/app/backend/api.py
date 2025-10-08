@@ -156,6 +156,7 @@ class TrainRunDTO(BaseModel):
     wandb_path: str
     component_layers: list[str]
     available_cluster_runs: list[str]
+    config: dict[str, Any]
 
 
 class Status(BaseModel):

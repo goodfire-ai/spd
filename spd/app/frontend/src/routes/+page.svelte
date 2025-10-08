@@ -149,6 +149,12 @@
                 </button>
             {/if}
         </div>
+        {#if status?.train_run}
+            <div class="config">
+                <h4>Config</h4>
+                <pre>{JSON.stringify(status?.train_run?.config, null, 2)}</pre>
+            </div>
+        {/if}
     </aside>
 
     <!-- Main Content -->
@@ -383,5 +389,18 @@
     .input-group button:disabled {
         background-color: #ccc;
         cursor: not-allowed;
+    }
+
+    .config {
+        margin-top: 1rem;
+    }
+
+    .config h4 {
+        margin: 0;
+    }
+
+    .config pre {
+        margin: 0;
+        font-size: 0.8rem;
     }
 </style>

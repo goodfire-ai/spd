@@ -52,7 +52,7 @@ class TrainRunContext:
     cm: ComponentModel
     tokenizer: PreTrainedTokenizer
     train_loader: DataLoader[Any]
-    batched_loader: DataLoader[Any]
+    # batched_loader: DataLoader[Any]
     available_cluster_runs: list[str]
 
 
@@ -162,6 +162,7 @@ class RunContextService:
             wandb_path=train_ctx.wandb_path,
             component_layers=list(train_ctx.cm.components.keys()),
             available_cluster_runs=train_ctx.available_cluster_runs,
+            config=train_ctx.config.model_dump(),
         )
 
         if (cluster_ctx := self.cluster_run_context) is None:
@@ -222,14 +223,14 @@ class RunContextService:
             ddp_world_size=0,
         )
 
-        batched_loader, _ = create_data_loader(
-            dataset_config=train_data_config,
-            batch_size=run_info.config.batch_size,
-            buffer_size=task_config.buffer_size,
-            global_seed=run_info.config.seed,
-            ddp_rank=0,
-            ddp_world_size=0,
-        )
+        # batched_loader, _ = create_data_loader(
+        #     dataset_config=train_data_config,
+        #     batch_size=run_info.config.microbatch_size,
+        #     buffer_size=task_config.buffer_size,
+        #     global_seed=run_info.config.seed,
+        #     ddp_rank=0,
+        #     ddp_world_size=0,
+        # )
 
 
         logger.info("Creating component model from run info")
@@ -246,7 +247,7 @@ class RunContextService:
             cm=cm,
             tokenizer=tokenizer,
             train_loader=train_loader,
-            batched_loader=batched_loader,
+            # batched_loader=batched_loader,
             available_cluster_runs=available_cluster_runs,
         )
 

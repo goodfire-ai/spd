@@ -1,25 +1,22 @@
-<script context="module">
-    export type PopupData = {
+<!-- <script context="module">
+</script> -->
+
+<script lang="ts">
+    type PopupData = {
         token: string;
         tokenIdx: number;
         layerIdx: number;
         layerName: string;
         tokenCIs: MatrixCausalImportances;
     };
-</script>
-
-<script lang="ts">
     import type { ClusterRunDTO, MatrixCausalImportances } from "$lib/api";
+
     import * as api from "$lib/api";
     import ComponentCard from "./ComponentCard.svelte";
     import HorizontalVirtualList from "./HorizontalVirtualList.svelte";
 
     export let onClose: () => void;
-    export let toggleComponent: (
-        layerName: string,
-        tokenIdx: number,
-        componentIdx: number
-    ) => void;
+    export let toggleComponent: (layerName: string, tokenIdx: number, componentIdx: number) => void;
     export let isComponentDisabled: (
         layerName: string,
         tokenIdx: number,
@@ -47,7 +44,11 @@
             componentAggCi: popupData.tokenCIs.component_agg_cis[componentIdx]
         }));
 
-        componentItems.sort((a, b) => b.componentAggCi - a.componentAggCi || b.subcomponentCis.length - a.subcomponentCis.length);
+        componentItems.sort(
+            (a, b) =>
+                b.componentAggCi - a.componentAggCi ||
+                b.subcomponentCis.length - a.subcomponentCis.length
+        );
 
         return componentItems;
     })();
@@ -58,7 +59,6 @@
         offsetMapping: [number, number][];
         activations: number[];
     };
-
 
     // Build activation examples from dashboard data (like ClusterDashboardBody)
     $: textSampleLookup = Object.fromEntries(

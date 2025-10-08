@@ -57,10 +57,6 @@
     function nextPage() {
         if (currentPage < totalPages - 1) currentPage++;
     }
-
-    onMount(() => {
-        loadContexts();
-    });
 </script>
 
 <div class="tab-content">
@@ -105,7 +101,7 @@
                     <input
                         id="n-steps"
                         type="number"
-                        step="100"
+                        step="1"
                         min="1"
                         bind:value={nSteps}
                     />

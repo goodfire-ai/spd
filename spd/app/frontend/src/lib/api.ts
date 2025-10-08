@@ -16,6 +16,7 @@ export type TrainRunDTO = {
     wandb_path: string;
     component_layers: string[];
     available_cluster_runs: string[];
+    config: Record<string, any>;
 };
 
 export type ClusteringShape = {

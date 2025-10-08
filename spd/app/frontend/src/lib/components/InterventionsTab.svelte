@@ -20,9 +20,9 @@
 
     import ComponentHeatmap from "$lib/components/ComponentHeatmap.svelte";
     import DisabledComponentsPanel from "$lib/components/DisabledComponentsPanel.svelte";
-    import ComponentDetailModal, {
-        type PopupData
-    } from "$lib/components/ComponentDetailModal.svelte";
+    // import ComponentDetailModal, {
+    //     type PopupData
+    // } from "$lib/components/ComponentDetailModal.svelte";
     import OriginalPredictions from "$lib/components/OriginalPredictions.svelte";
     import AblationPredictions from "$lib/components/AblationPredictions.svelte";
     import SavedMasksPanel from "$lib/components/SavedMasksPanel.svelte";
@@ -37,6 +37,13 @@
     let availablePrompts: AvailablePrompt[] | null = null;
     let showAvailablePrompts = false;
     let currentAblationPage = 0;
+    type PopupData = {
+        token: string;
+        tokenIdx: number;
+        layerIdx: number;
+        layerName: string;
+        tokenCIs: MatrixCausalImportances;
+    };
 
     let popupData: PopupData | null = null;
     let dashboard: ClusterDashboardResponse | null = null;
