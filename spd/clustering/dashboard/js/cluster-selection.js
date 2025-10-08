@@ -601,6 +601,52 @@ function createTopTokenFilter(filterValue) {
     };
 }
 
+/**
+ * Create a filter function for numeric comparisons with operators
+ * @param {string} filterValue - The filter string (e.g., ">2.5", "<=0.8")
+ * @param {Function} valueExtractor - Function to extract numeric value from row
+ * @returns {Function|null} Filter function or null if invalid
+ */
+function createNumericFilter(filterValue, valueExtractor) {
+    if (!filterValue || !filterValue.trim()) return null;
+
+    const trimmed = filterValue.trim();
+
+    // Match pattern: operator value (e.g., ">2.5", "<=0.8")
+    const match = trimmed.match(/^(==|!=|>=|<=|>|<)\s*(-?\d+\.?\d*)$/);
+
+    if (!match) {
+        // Try plain number (defaults to ==)
+        const plainNum = parseFloat(trimmed);
+        if (!isNaN(plainNum)) {
+            return (cellValue, row) => {
+                const value = valueExtractor(row);
+                if (value === null || value === undefined) return false;
+                return Math.abs(value - plainNum) < 0.0001;
+            };
+        }
+        return null;
+    }
+
+    const operator = match[1];
+    const targetValue = parseFloat(match[2]);
+
+    return (cellValue, row) => {
+        const value = valueExtractor(row);
+        if (value === null || value === undefined) return false;
+
+        switch (operator) {
+            case '==': return Math.abs(value - targetValue) < 0.0001;
+            case '!=': return Math.abs(value - targetValue) >= 0.0001;
+            case '>': return value > targetValue;
+            case '<': return value < targetValue;
+            case '>=': return value >= targetValue;
+            case '<=': return value <= targetValue;
+            default: return false;
+        }
+    };
+}
+
 function processClusterData() {
     const tableData = [];
 
@@ -749,6 +795,10 @@ async function loadData() {
             const tokenStats = row.stats.token_activations;
             return tokenStats ? tokenStats.entropy : null;
         },
+        filterFunction: (filterValue) => createNumericFilter(filterValue, (row) => {
+            const tokenStats = row.stats.token_activations;
+            return tokenStats ? tokenStats.entropy : null;
+        }),
         filterTooltip: 'Filter by entropy. Use operators: >, <, >=, <=, ==, != (e.g., >2.5)'
     });
 
@@ -763,6 +813,10 @@ async function loadData() {
             const tokenStats = row.stats.token_activations;
             return tokenStats ? tokenStats.concentration_ratio : null;
         },
+        filterFunction: (filterValue) => createNumericFilter(filterValue, (row) => {
+            const tokenStats = row.stats.token_activations;
+            return tokenStats ? tokenStats.concentration_ratio : null;
+        }),
         filterTooltip: 'Filter by concentration (0-1). Use operators: >, <, >=, <=, ==, != (e.g., >0.5)'
     });
 
