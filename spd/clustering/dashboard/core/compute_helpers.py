@@ -11,7 +11,7 @@ from torch import Tensor
 from spd.clustering.activations import ProcessedActivations
 
 
-@dataclass
+@dataclass(slots=True, kw_only=True)
 class ClusterActivations:
     """Vectorized cluster activations for all clusters.
 
@@ -192,3 +192,66 @@ def compute_component_cosine_similarities(
     cosine_sim: Float[Tensor, "n_comps n_comps"] = normalized_acts.T @ normalized_acts
 
     return cosine_sim.cpu().numpy()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ComponentMetrics:
+    """Combined metrics for components within a cluster.
+
+    Attributes:
+        coactivations: Matrix where coact[i,j] is count of samples where both i and j activate
+        cosine_similarities: Matrix where sim[i,j] is cosine similarity between i and j
+    """
+
+    coactivations: Float[np.ndarray, "n_comps n_comps"]
+    cosine_similarities: Float[np.ndarray, "n_comps n_comps"]
+
+
+def compute_component_metrics_from_storage(
+    component_labels: list[str],
+    component_activations: dict[str, list[Float[np.ndarray, " n_ctx"]]],
+) -> ComponentMetrics | None:
+    """Compute coactivations and cosine similarities from stored component activations.
+
+    Args:
+        component_labels: List of component labels in this cluster
+        component_activations: Dict mapping component labels to their activation lists
+
+    Returns:
+        ComponentMetrics with coactivations and cosine similarities, or None if insufficient data
+    """
+    if not component_labels:
+        return None
+
+    n_comps: int = len(component_labels)
+
+    # Build activation matrix for all components: [n_comps, n_total_samples]
+    comp_act_matrix_list: list[Float[np.ndarray, "n_samples n_ctx"]] = []
+    for comp_label in component_labels:
+        if comp_label in component_activations:
+            comp_acts_list = component_activations[comp_label]
+            if comp_acts_list:
+                comp_act_matrix_list.append(np.stack(comp_acts_list))
+
+    if not comp_act_matrix_list or len(comp_act_matrix_list) != n_comps:
+        # Return zero matrices if not all components have data
+        return ComponentMetrics(
+            coactivations=np.zeros((n_comps, n_comps), dtype=np.float32),
+            cosine_similarities=np.zeros((n_comps, n_comps), dtype=np.float32),
+        )
+
+    # Flatten to [n_total] per component, then stack to [n_comps, n_total]
+    comp_act_flat: list[Float[np.ndarray, " n_total"]] = [arr.flatten() for arr in comp_act_matrix_list]
+    comp_act_matrix: Float[np.ndarray, "n_comps n_total"] = np.stack(comp_act_flat, axis=0)
+
+    # Compute coactivations (binarized)
+    comp_act_bin: Float[np.ndarray, "n_comps n_total"] = (comp_act_matrix > 0).astype(np.float32)
+    coactivations: Float[np.ndarray, "n_comps n_comps"] = comp_act_bin @ comp_act_bin.T
+
+    # Compute cosine similarities
+    norms: Float[np.ndarray, " n_comps"] = np.linalg.norm(comp_act_matrix, axis=1)
+    norms = np.where(norms > 0, norms, 1.0)
+    normalized: Float[np.ndarray, "n_comps n_total"] = comp_act_matrix / norms[:, np.newaxis]
+    cosine_sims: Float[np.ndarray, "n_comps n_comps"] = normalized @ normalized.T
+
+    return ComponentMetrics(coactivations=coactivations, cosine_similarities=cosine_sims)

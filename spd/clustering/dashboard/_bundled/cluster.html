@@ -1349,7 +1349,7 @@
             this.showInfo = config.showInfo === true; // Default to false
             this.minColumnWidth = config.minColumnWidth || _TABLE_CONSTS.SPACING.MIN_COLUMN_WIDTH;
             this.currentPage = 1;
-            this.sortColumn = null;
+            this.sortColumnId = null;
             this.sortDirection = null;
             this.filters = {};
             this.filteredData = [];
@@ -1389,6 +1389,11 @@
                 value = value[k];
             }
             return value;
+        }
+    
+        getColumnId(col) {
+            // Use id if provided, otherwise fall back to key
+            return col.id || col.key;
         }
     
         cssClass(className) {
@@ -1481,7 +1486,7 @@
                 sortIcon.innerHTML = _TABLE_CONSTS.ICONS.sort;
                 headerContent.appendChild(sortIcon);
     
-                headerContent.onclick = () => this.handleSort(col.key);
+                headerContent.onclick = () => this.handleSort(this.getColumnId(col));
     
                 // Add resize handle
                 const resizeHandle = this.createStyledElement('div', 'resize-handle', {
@@ -1685,17 +1690,17 @@
             };
         }
     
-        handleSort(columnKey) {
-            if (this.sortColumn === columnKey) {
+        handleSort(columnId) {
+            if (this.sortColumnId === columnId) {
                 // Cycle through: asc -> desc -> none
                 if (this.sortDirection === 'asc') {
                     this.sortDirection = 'desc';
                 } else if (this.sortDirection === 'desc') {
-                    this.sortColumn = null;
+                    this.sortColumnId = null;
                     this.sortDirection = null;
                 }
             } else {
-                this.sortColumn = columnKey;
+                this.sortColumnId = columnId;
                 this.sortDirection = 'asc';
             }
     
@@ -1886,15 +1891,15 @@
             });
     
             // Apply sorting
-            if (this.sortColumn) {
+            if (this.sortColumnId) {
                 // Find the column config for custom sort function
-                const columnConfig = this.columns.find(col => col.key === this.sortColumn);
+                const columnConfig = this.columns.find(col => this.getColumnId(col) === this.sortColumnId);
                 const sortFunction = columnConfig?.sortFunction;
     
                 filtered.sort((a, b) => {
-                    // Get values using nested key support
-                    let aVal = this.getNestedValue(a, this.sortColumn);
-                    let bVal = this.getNestedValue(b, this.sortColumn);
+                    // Get values using nested key support (use column's key, not id)
+                    let aVal = this.getNestedValue(a, columnConfig.key);
+                    let bVal = this.getNestedValue(b, columnConfig.key);
     
                     // Apply custom sort function if provided
                     if (sortFunction) {
@@ -1954,7 +1959,7 @@
                 const sortIcon = th.querySelector(`.${this.cssClass('sort-icon')}`);
                 if (!sortIcon) return;
     
-                if (this.sortColumn === col.key) {
+                if (this.sortColumnId === this.getColumnId(col)) {
                     if (this.sortDirection === 'asc') {
                         sortIcon.innerHTML = _TABLE_CONSTS.ICONS.sortUp;
                         sortIcon.style.opacity = _TABLE_CONSTS.FEEDBACK.ICON_OPACITY_ACTIVE;

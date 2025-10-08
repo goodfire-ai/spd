@@ -90,7 +90,7 @@ class DataTable {
         this.showInfo = config.showInfo === true; // Default to false
         this.minColumnWidth = config.minColumnWidth || _TABLE_CONSTS.SPACING.MIN_COLUMN_WIDTH;
         this.currentPage = 1;
-        this.sortColumn = null;
+        this.sortColumnId = null;
         this.sortDirection = null;
         this.filters = {};
         this.filteredData = [];
@@ -130,6 +130,11 @@ class DataTable {
             value = value[k];
         }
         return value;
+    }
+
+    getColumnId(col) {
+        // Use id if provided, otherwise fall back to key
+        return col.id || col.key;
     }
 
     cssClass(className) {
@@ -222,7 +227,7 @@ class DataTable {
             sortIcon.innerHTML = _TABLE_CONSTS.ICONS.sort;
             headerContent.appendChild(sortIcon);
 
-            headerContent.onclick = () => this.handleSort(col.key);
+            headerContent.onclick = () => this.handleSort(this.getColumnId(col));
 
             // Add resize handle
             const resizeHandle = this.createStyledElement('div', 'resize-handle', {
@@ -349,11 +354,11 @@ class DataTable {
                     clearBtn.title = _TABLE_CONSTS.MESSAGES.CLEAR_FILTER;
 
                     input.addEventListener('input', (e) => {
-                        this.handleFilter(col.key, e.target.value, col.type, input, col);
+                        this.handleFilter(this.getColumnId(col), col.key, e.target.value, col.type, input, col);
                     });
 
                     clearBtn.addEventListener('click', () => {
-                        this.clearFilter(col.key, input);
+                        this.clearFilter(this.getColumnId(col), input);
                     });
 
                     filterContainer.appendChild(filterIcon);
@@ -426,17 +431,17 @@ class DataTable {
         };
     }
 
-    handleSort(columnKey) {
-        if (this.sortColumn === columnKey) {
+    handleSort(columnId) {
+        if (this.sortColumnId === columnId) {
             // Cycle through: asc -> desc -> none
             if (this.sortDirection === 'asc') {
                 this.sortDirection = 'desc';
             } else if (this.sortDirection === 'desc') {
-                this.sortColumn = null;
+                this.sortColumnId = null;
                 this.sortDirection = null;
             }
         } else {
-            this.sortColumn = columnKey;
+            this.sortColumnId = columnId;
             this.sortDirection = 'asc';
         }
 
@@ -528,16 +533,15 @@ class DataTable {
         }
     }
 
-    handleFilter(columnKey, filterValue, type, inputElement, col) {
+    handleFilter(columnId, columnKey, filterValue, type, inputElement, col) {
         if (!filterValue) {
-            delete this.filters[columnKey];
+            delete this.filters[columnId];
             inputElement.style.backgroundColor = '';
         } else {
             let isValid = true;
             let customFilter = null;
 
-            // Check for custom filter function in column definition
-            const col = this.columns.find(c => c.key === columnKey);
+            // col is already passed in
             if (col?.filterFunction) {
                 try {
                     customFilter = col.filterFunction(filterValue);
@@ -559,7 +563,8 @@ class DataTable {
                 isValid = numFilter !== null;
             }
 
-            this.filters[columnKey] = {
+            this.filters[columnId] = {
+                key: columnKey,  // Store the key for data access
                 value: filterValue,
                 type: type,
                 valid: isValid,
@@ -575,9 +580,9 @@ class DataTable {
         this.render();
     }
 
-    clearFilter(columnKey, inputElement) {
+    clearFilter(columnId, inputElement) {
         inputElement.value = '';
-        delete this.filters[columnKey];
+        delete this.filters[columnId];
         inputElement.style.backgroundColor = '';
         this.currentPage = 1;
         this.applyFiltersAndSort();
@@ -590,10 +595,11 @@ class DataTable {
         let filtered = [...this.data];
 
         filtered = filtered.filter(row => {
-            for (const [key, filter] of Object.entries(this.filters)) {
+            for (const [columnId, filter] of Object.entries(this.filters)) {
                 if (!filter.valid) continue;
 
-                const cellValue = row[key];
+                // Get cellValue using the stored key
+                const cellValue = row[filter.key];
 
                 // Apply custom filter if available
                 if (filter.customFilter) {
@@ -627,15 +633,15 @@ class DataTable {
         });
 
         // Apply sorting
-        if (this.sortColumn) {
+        if (this.sortColumnId) {
             // Find the column config for custom sort function
-            const columnConfig = this.columns.find(col => col.key === this.sortColumn);
+            const columnConfig = this.columns.find(col => this.getColumnId(col) === this.sortColumnId);
             const sortFunction = columnConfig?.sortFunction;
 
             filtered.sort((a, b) => {
-                // Get values using nested key support
-                let aVal = this.getNestedValue(a, this.sortColumn);
-                let bVal = this.getNestedValue(b, this.sortColumn);
+                // Get values using nested key support (use column's key, not id)
+                let aVal = this.getNestedValue(a, columnConfig.key);
+                let bVal = this.getNestedValue(b, columnConfig.key);
 
                 // Apply custom sort function if provided
                 if (sortFunction) {
@@ -695,7 +701,7 @@ class DataTable {
             const sortIcon = th.querySelector(`.${this.cssClass('sort-icon')}`);
             if (!sortIcon) return;
 
-            if (this.sortColumn === col.key) {
+            if (this.sortColumnId === this.getColumnId(col)) {
                 if (this.sortDirection === 'asc') {
                     sortIcon.innerHTML = _TABLE_CONSTS.ICONS.sortUp;
                     sortIcon.style.opacity = _TABLE_CONSTS.FEEDBACK.ICON_OPACITY_ACTIVE;

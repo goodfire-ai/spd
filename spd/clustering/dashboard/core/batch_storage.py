@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import torch
 from jaxtyping import Float, Int
+from muutils.spinner import SpinnerContext
 from torch import Tensor
 from transformers import PreTrainedTokenizer
 
@@ -69,7 +70,7 @@ def _tokenize_and_create_text_samples(
     return batch_text_samples
 
 
-@dataclass
+@dataclass(slots=True, kw_only=True)
 class BatchProcessingStorage:
     """Storage for accumulating activations during batch processing.
 
@@ -113,21 +114,26 @@ class BatchProcessingStorage:
         """
         unique_cluster_indices: list[int] = list(cluster_id_map.keys())
 
+        # Compute cluster hash strings once to avoid redundant .to_string() calls
+        cluster_hashes: dict[int, ClusterIdHash] = {
+            idx: cluster_id_map[idx].to_string() for idx in unique_cluster_indices
+        }
+
         cluster_activations: dict[ClusterIdHash, list[Float[np.ndarray, " n_ctx"]]] = {
-            cluster_id_map[idx].to_string(): [] for idx in unique_cluster_indices
+            cluster_hashes[idx]: [] for idx in unique_cluster_indices
         }
         cluster_text_hashes: dict[ClusterIdHash, list[TextSampleHash]] = {
-            cluster_id_map[idx].to_string(): [] for idx in unique_cluster_indices
+            cluster_hashes[idx]: [] for idx in unique_cluster_indices
         }
         cluster_tokens: dict[ClusterIdHash, list[list[str]]] = {
-            cluster_id_map[idx].to_string(): [] for idx in unique_cluster_indices
+            cluster_hashes[idx]: [] for idx in unique_cluster_indices
         }
         component_activations: dict[ClusterIdHash, dict[str, list[Float[np.ndarray, " n_ctx"]]]] = {
-            cluster_id_map[idx].to_string(): {comp["label"]: [] for comp in cluster_components[idx]}
+            cluster_hashes[idx]: {comp["label"]: [] for comp in cluster_components[idx]}
             for idx in unique_cluster_indices
         }
         component_text_hashes: dict[ClusterIdHash, dict[str, list[TextSampleHash]]] = {
-            cluster_id_map[idx].to_string(): {comp["label"]: [] for comp in cluster_components[idx]}
+            cluster_hashes[idx]: {comp["label"]: [] for comp in cluster_components[idx]}
             for idx in unique_cluster_indices
         }
         text_samples: dict[TextSampleHash, TextSample] = {}
@@ -169,39 +175,43 @@ class BatchProcessingStorage:
         batch_size, seq_len = batch.shape
 
         # Get component activations from model
-        activations: dict[str, Float[Tensor, "n_steps C"]] = component_activations(
-            model,
-            device,
-            batch=batch,
-            sigmoid_type=sigmoid_type,
-        )
-        processed: ProcessedActivations = process_activations(
-            activations, seq_mode="concat", filter_dead_threshold=0
-        )
+        with SpinnerContext(message="Computing component activations"):
+            activations: dict[str, Float[Tensor, "n_steps C"]] = component_activations(
+                model,
+                device,
+                batch=batch,
+                sigmoid_type=sigmoid_type,
+            )
+            processed: ProcessedActivations = process_activations(
+                activations, seq_mode="concat", filter_dead_threshold=0
+            )
 
         # Tokenize and create text samples
-        batch_text_samples: list[TextSample] = _tokenize_and_create_text_samples(
-            batch=batch,
-            tokenizer=tokenizer,
-            text_samples=self.text_samples,
-        )
+        with SpinnerContext(message="Tokenizing batch"):
+            batch_text_samples: list[TextSample] = _tokenize_and_create_text_samples(
+                batch=batch,
+                tokenizer=tokenizer,
+                text_samples=self.text_samples,
+            )
 
         # Compute cluster activations
-        cluster_acts: ClusterActivations = compute_all_cluster_activations(
-            processed=processed,
-            cluster_components=self.cluster_components,
-            batch_size=batch_size,
-            seq_len=seq_len,
-        )
+        with SpinnerContext(message="Computing cluster activations"):
+            cluster_acts: ClusterActivations = compute_all_cluster_activations(
+                processed=processed,
+                cluster_components=self.cluster_components,
+                batch_size=batch_size,
+                seq_len=seq_len,
+            )
 
         # Store activations
-        self._store_activations(
-            cluster_acts=cluster_acts,
-            processed=processed,
-            batch_text_samples=batch_text_samples,
-            batch_size=batch_size,
-            seq_len=seq_len,
-        )
+        with SpinnerContext(message="Storing activations"):
+            self._store_activations(
+                cluster_acts=cluster_acts,
+                processed=processed,
+                batch_text_samples=batch_text_samples,
+                batch_size=batch_size,
+                seq_len=seq_len,
+            )
 
     def _store_activations(
         self,

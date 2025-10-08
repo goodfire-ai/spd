@@ -4,7 +4,6 @@ This package provides all data structures for the clustering dashboard.
 All symbols are re-exported from this __init__ for backward compatibility.
 """
 
-from spd.clustering.dashboard.core.activations_accumulator import GlobalActivationsAccumulator
 from spd.clustering.dashboard.core.base import (
     ACTIVATION_SAMPLE_BATCH_STATS,
     ActivationSampleBatch,
@@ -27,10 +26,12 @@ from spd.clustering.dashboard.core.cluster_data import (
 )
 from spd.clustering.dashboard.core.compute_helpers import (
     ClusterActivations,
+    ComponentMetrics,
     compute_all_cluster_activations,
     compute_cluster_coactivations,
     compute_component_coactivations_in_cluster,
     compute_component_cosine_similarities,
+    compute_component_metrics_from_storage,
 )
 from spd.clustering.dashboard.core.dashboard_data import DashboardData
 
@@ -58,12 +59,12 @@ __all__ = [
     "DashboardData",
     # Classes from batch_storage
     "BatchProcessingStorage",
-    # Classes from activations_accumulator
-    "GlobalActivationsAccumulator",
     # Classes and functions from compute_helpers
     "ClusterActivations",
+    "ComponentMetrics",
     "compute_all_cluster_activations",
     "compute_cluster_coactivations",
     "compute_component_coactivations_in_cluster",
     "compute_component_cosine_similarities",
+    "compute_component_metrics_from_storage",
 ]

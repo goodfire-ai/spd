@@ -1916,7 +1916,7 @@
             this.showInfo = config.showInfo === true; // Default to false
             this.minColumnWidth = config.minColumnWidth || _TABLE_CONSTS.SPACING.MIN_COLUMN_WIDTH;
             this.currentPage = 1;
-            this.sortColumn = null;
+            this.sortColumnId = null;
             this.sortDirection = null;
             this.filters = {};
             this.filteredData = [];
@@ -1956,6 +1956,11 @@
                 value = value[k];
             }
             return value;
+        }
+    
+        getColumnId(col) {
+            // Use id if provided, otherwise fall back to key
+            return col.id || col.key;
         }
     
         cssClass(className) {
@@ -2048,7 +2053,7 @@
                 sortIcon.innerHTML = _TABLE_CONSTS.ICONS.sort;
                 headerContent.appendChild(sortIcon);
     
-                headerContent.onclick = () => this.handleSort(col.key);
+                headerContent.onclick = () => this.handleSort(this.getColumnId(col));
     
                 // Add resize handle
                 const resizeHandle = this.createStyledElement('div', 'resize-handle', {
@@ -2252,17 +2257,17 @@
             };
         }
     
-        handleSort(columnKey) {
-            if (this.sortColumn === columnKey) {
+        handleSort(columnId) {
+            if (this.sortColumnId === columnId) {
                 // Cycle through: asc -> desc -> none
                 if (this.sortDirection === 'asc') {
                     this.sortDirection = 'desc';
                 } else if (this.sortDirection === 'desc') {
-                    this.sortColumn = null;
+                    this.sortColumnId = null;
                     this.sortDirection = null;
                 }
             } else {
-                this.sortColumn = columnKey;
+                this.sortColumnId = columnId;
                 this.sortDirection = 'asc';
             }
     
@@ -2453,15 +2458,15 @@
             });
     
             // Apply sorting
-            if (this.sortColumn) {
+            if (this.sortColumnId) {
                 // Find the column config for custom sort function
-                const columnConfig = this.columns.find(col => col.key === this.sortColumn);
+                const columnConfig = this.columns.find(col => this.getColumnId(col) === this.sortColumnId);
                 const sortFunction = columnConfig?.sortFunction;
     
                 filtered.sort((a, b) => {
-                    // Get values using nested key support
-                    let aVal = this.getNestedValue(a, this.sortColumn);
-                    let bVal = this.getNestedValue(b, this.sortColumn);
+                    // Get values using nested key support (use column's key, not id)
+                    let aVal = this.getNestedValue(a, columnConfig.key);
+                    let bVal = this.getNestedValue(b, columnConfig.key);
     
                     // Apply custom sort function if provided
                     if (sortFunction) {
@@ -2521,7 +2526,7 @@
                 const sortIcon = th.querySelector(`.${this.cssClass('sort-icon')}`);
                 if (!sortIcon) return;
     
-                if (this.sortColumn === col.key) {
+                if (this.sortColumnId === this.getColumnId(col)) {
                     if (this.sortDirection === 'asc') {
                         sortIcon.innerHTML = _TABLE_CONSTS.ICONS.sortUp;
                         sortIcon.style.opacity = _TABLE_CONSTS.FEEDBACK.ICON_OPACITY_ACTIVE;
@@ -3767,6 +3772,52 @@
         };
     }
     
+    /**
+     * Create a filter function for numeric comparisons with operators
+     * @param {string} filterValue - The filter string (e.g., ">2.5", "<=0.8")
+     * @param {Function} valueExtractor - Function to extract numeric value from cellValue
+     * @returns {Function|null} Filter function or null if invalid
+     */
+    function createNumericFilter(filterValue, valueExtractor) {
+        if (!filterValue || !filterValue.trim()) return null;
+    
+        const trimmed = filterValue.trim();
+    
+        // Match pattern: operator value (e.g., ">2.5", "<=0.8")
+        const match = trimmed.match(/^(==|!=|>=|<=|>|<)\s*(-?\d+\.?\d*)$/);
+    
+        if (!match) {
+            // Try plain number (defaults to ==)
+            const plainNum = parseFloat(trimmed);
+            if (!isNaN(plainNum)) {
+                return (cellValue, row) => {
+                    const value = valueExtractor(cellValue);
+                    if (value === null || value === undefined) return false;
+                    return Math.abs(value - plainNum) < 0.0001;
+                };
+            }
+            return null;
+        }
+    
+        const operator = match[1];
+        const targetValue = parseFloat(match[2]);
+    
+        return (cellValue, row) => {
+            const value = valueExtractor(cellValue);
+            if (value === null || value === undefined) return false;
+    
+            switch (operator) {
+                case '==': return Math.abs(value - targetValue) < 0.0001;
+                case '!=': return Math.abs(value - targetValue) >= 0.0001;
+                case '>': return value > targetValue;
+                case '<': return value < targetValue;
+                case '>=': return value >= targetValue;
+                case '<=': return value <= targetValue;
+                default: return false;
+            }
+        };
+    }
+    
     function processClusterData() {
         const tableData = [];
     
@@ -3879,6 +3930,7 @@
                 .join(' ');
     
             columns.push({
+                id: 'histogram_' + statKey,
                 key: 'stats',
                 label: label,
                 type: 'number',
@@ -3893,6 +3945,7 @@
     
         // Token activation columns
         columns.push({
+            id: 'top_tokens',
             key: 'stats',
             label: 'Top Tokens',
             type: 'string',
@@ -3905,6 +3958,7 @@
         });
     
         columns.push({
+            id: 'token_entropy',
             key: 'stats',
             label: 'Token Entropy',
             type: 'number',
@@ -3913,12 +3967,17 @@
             renderer: columnRenderers.tokenEntropy,
             sortFunction: (value, row) => {
                 const tokenStats = row.stats.token_activations;
-                return tokenStats ? tokenStats.entropy : null;
+                return tokenStats ? tokenStats.entropy : -Infinity;
             },
+            filterFunction: (filterValue) => createNumericFilter(filterValue, (stats) => {
+                const tokenStats = stats?.token_activations;
+                return tokenStats ? tokenStats.entropy : null;
+            }),
             filterTooltip: 'Filter by entropy. Use operators: >, <, >=, <=, ==, != (e.g., >2.5)'
         });
     
         columns.push({
+            id: 'token_concentration',
             key: 'stats',
             label: 'Token Conc.',
             type: 'number',
@@ -3927,8 +3986,12 @@
             renderer: columnRenderers.tokenConcentration,
             sortFunction: (value, row) => {
                 const tokenStats = row.stats.token_activations;
-                return tokenStats ? tokenStats.concentration_ratio : null;
+                return tokenStats ? tokenStats.concentration_ratio : -Infinity;
             },
+            filterFunction: (filterValue) => createNumericFilter(filterValue, (stats) => {
+                const tokenStats = stats?.token_activations;
+                return tokenStats ? tokenStats.concentration_ratio : null;
+            }),
             filterTooltip: 'Filter by concentration (0-1). Use operators: >, <, >=, <=, ==, != (e.g., >0.5)'
         });
     
