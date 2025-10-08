@@ -35,6 +35,17 @@ class ComponentInfo:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ComponentActivationData:
+    """Per-component activation data within a cluster."""
+
+    component_label: str  # e.g., "model.layers.0.mlp.up_proj:42"
+    activation_sample_hashes: list[ActivationSampleHash]
+    # Indices into global activations array for this component's activations
+    activation_indices: list[int]
+    stats: dict[str, Any]  # mean, max, min, median, etc.
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ClusterId:
     """Unique identifier for a cluster. This should uniquely identify a cluster *globally*"""
 
@@ -187,6 +198,10 @@ class ClusterData:
     components: list[ComponentInfo]  # Component info: module, index, label
     criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]]
     stats: dict[str, Any]
+    # New fields for component-level data
+    component_activations: dict[str, ComponentActivationData] | None = None  # keyed by component label
+    component_coactivations: Float[np.ndarray, "n_comps n_comps"] | None = None
+    component_cosine_similarities: Float[np.ndarray, "n_comps n_comps"] | None = None
 
     @classmethod
     def generate(
@@ -344,7 +359,19 @@ class ClusterData:
             else:
                 serialized_stats[key] = value
 
-        return {
+        # Serialize component activations
+        serialized_component_activations: dict[str, Any] | None = None
+        if self.component_activations is not None:
+            serialized_component_activations = {}
+            for comp_label, comp_data in self.component_activations.items():
+                serialized_component_activations[comp_label] = {
+                    "component_label": comp_data.component_label,
+                    "activation_sample_hashes": [str(h) for h in comp_data.activation_sample_hashes],
+                    "activation_indices": comp_data.activation_indices,
+                    "stats": comp_data.stats,
+                }
+
+        result: dict[str, Any] = {
             "cluster_hash": self.cluster_hash,
             "components": [
                 {"module": comp.module, "index": comp.index, "label": comp.label}
@@ -355,6 +382,16 @@ class ClusterData:
             },
             "stats": serialized_stats,
         }
+
+        # Add component-level data if available
+        if serialized_component_activations is not None:
+            result["component_activations"] = serialized_component_activations
+        if self.component_coactivations is not None:
+            result["component_coactivations"] = self.component_coactivations.tolist()
+        if self.component_cosine_similarities is not None:
+            result["component_cosine_similarities"] = self.component_cosine_similarities.tolist()
+
+        return result
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

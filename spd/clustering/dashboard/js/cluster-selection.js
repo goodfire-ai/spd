@@ -306,82 +306,69 @@ const columnRenderers = {
 
 /**
  * Create a filter function for module arrays that supports wildcards, multiple patterns, and negation
- * @param {string} filterValue - The filter pattern (supports * wildcards, comma-separated, & for all-match, ! for negation)
+ * @param {string} filterValue - The filter pattern (supports * wildcards, , for OR, & for AND, @ for all-match, ! for negation)
  * @returns {Function|null} Filter function or null if invalid
  */
 function createModuleFilter(filterValue) {
     if (!filterValue || !filterValue.trim()) return null;
 
-    // Parse patterns separated by commas
-    const patterns = filterValue.split(',').map(p => p.trim()).filter(p => p);
+    // Split by comma for OR groups
+    const orGroups = filterValue.split(',').map(g => g.trim()).filter(g => g);
 
-    // Separate inclusion, all-match, and exclusion patterns
-    const inclusions = [];
-    const allMatches = [];
-    const exclusions = [];
+    // Parse each OR group (which may contain & for AND)
+    const parsedOrGroups = orGroups.map(group => {
+        // Split by & for AND conditions within this OR group
+        const andConditions = group.split('&').map(c => c.trim()).filter(c => c);
 
-    for (const pattern of patterns) {
-        if (pattern.startsWith('!')) {
-            // Exclusion pattern (remove ! prefix)
-            const excPattern = pattern.substring(1).toLowerCase();
-            const regex = excPattern.includes('*')
-                ? new RegExp('^' + excPattern.replace(/\*/g, '.*') + '$')
+        return andConditions.map(condition => {
+            let mode = 'some'; // default: at least one module matches
+            let negate = false;
+            let pattern = condition.toLowerCase();
+
+            // Check for @ prefix (all modules must match)
+            if (pattern.startsWith('@')) {
+                mode = 'every';
+                pattern = pattern.substring(1);
+            }
+            // Check for ! prefix (no modules can match)
+            else if (pattern.startsWith('!')) {
+                negate = true;
+                pattern = pattern.substring(1);
+            }
+
+            const regex = pattern.includes('*')
+                ? new RegExp('^' + pattern.replace(/\*/g, '.*') + '$')
                 : null;
-            exclusions.push({ pattern: excPattern, regex });
-        } else if (pattern.startsWith('&')) {
-            // All-match pattern (remove & prefix)
-            const allPattern = pattern.substring(1).toLowerCase();
-            const regex = allPattern.includes('*')
-                ? new RegExp('^' + allPattern.replace(/\*/g, '.*') + '$')
-                : null;
-            allMatches.push({ pattern: allPattern, regex });
-        } else {
-            // Inclusion pattern (at least one must match)
-            const incPattern = pattern.toLowerCase();
-            const regex = incPattern.includes('*')
-                ? new RegExp('^' + incPattern.replace(/\*/g, '.*') + '$')
-                : null;
-            inclusions.push({ pattern: incPattern, regex });
-        }
-    }
+
+            return { mode, negate, pattern, regex };
+        });
+    });
 
     return (cellValue) => {
         // cellValue is the modules array
         if (!Array.isArray(cellValue)) return false;
 
-        // Check exclusions first (any match = reject)
-        for (const exc of exclusions) {
-            const hasExclusion = cellValue.some(module => {
-                const moduleLower = module.toLowerCase();
-                return exc.regex
-                    ? exc.regex.test(moduleLower)
-                    : moduleLower.includes(exc.pattern);
+        // OR logic across groups
+        return parsedOrGroups.some(andGroup => {
+            // AND logic within group
+            return andGroup.every(condition => {
+                const matchFn = (module) => {
+                    const moduleLower = module.toLowerCase();
+                    return condition.regex
+                        ? condition.regex.test(moduleLower)
+                        : moduleLower.includes(condition.pattern);
+                };
+
+                if (condition.mode === 'every') {
+                    // ALL modules must match
+                    const result = cellValue.every(matchFn);
+                    return condition.negate ? !result : result;
+                } else {
+                    // At least ONE module must match (or none if negated)
+                    const result = cellValue.some(matchFn);
+                    return condition.negate ? !result : result;
+                }
             });
-            if (hasExclusion) return false;
-        }
-
-        // Check all-match patterns (ALL modules must match)
-        for (const all of allMatches) {
-            const allMatch = cellValue.every(module => {
-                const moduleLower = module.toLowerCase();
-                return all.regex
-                    ? all.regex.test(moduleLower)
-                    : moduleLower.includes(all.pattern);
-            });
-            if (!allMatch) return false;
-        }
-
-        // If no inclusions specified, accept (only exclusions/all-matches applied)
-        if (inclusions.length === 0) return true;
-
-        // Check inclusions (at least one match = accept)
-        return cellValue.some(module => {
-            const moduleLower = module.toLowerCase();
-            return inclusions.some(inc =>
-                inc.regex
-                    ? inc.regex.test(moduleLower)
-                    : moduleLower.includes(inc.pattern)
-            );
         });
     };
 }
@@ -668,7 +655,7 @@ async function loadData() {
             renderer: columnRenderers.modelView,
             sortFunction: (modules) => sortModules(modules),
             filterFunction: (filterValue) => createModuleFilter(filterValue),
-            filterTooltip: 'Filter by module. Use * for wildcards. Comma-separate multiple patterns. Prefix & for all-match, ! to exclude. Examples: *mlp*, &*proj*, !*o_proj*, &*attn*,!*q_proj*'
+            filterTooltip: 'Filter by module. Separate with , (OR) or & (AND). Use * for wildcards. Prefix @ for all-match, ! to exclude. Examples: *mlp*,*attn* (OR), *mlp*&*attn* (AND), @*proj* (all), !*o_proj* (exclude)'
         },
         {
             key: 'modules',
@@ -678,7 +665,7 @@ async function loadData() {
             renderer: columnRenderers.modulesSummary,
             sortFunction: (modules) => sortModules(modules),
             filterFunction: (filterValue) => createModuleFilter(filterValue),
-            filterTooltip: 'Filter by module. Use * for wildcards. Comma-separate multiple patterns. Prefix & for all-match, ! to exclude. Examples: *mlp*, &*proj*, !*o_proj*, &*attn*,!*q_proj*'
+            filterTooltip: 'Filter by module. Separate with , (OR) or & (AND). Use * for wildcards. Prefix @ for all-match, ! to exclude. Examples: *mlp*,*attn* (OR), *mlp*&*attn* (AND), @*proj* (all), !*o_proj* (exclude)'
         }
     ];
 

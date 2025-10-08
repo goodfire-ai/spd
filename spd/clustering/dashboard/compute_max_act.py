@@ -24,6 +24,7 @@ from spd.clustering.dashboard.core import (
     ClusterId,
     ClusterIdHash,
     ClusterLabel,
+    ComponentActivationData,
     ComponentInfo,
     DashboardData,
     TextSample,
@@ -170,6 +171,91 @@ def compute_cluster_coactivations(
     return coact.cpu().numpy(), cluster_indices
 
 
+def compute_component_coactivations_in_cluster(
+    processed: ProcessedActivations,
+    component_labels: list[str],
+    activation_threshold: float = 0.0,
+) -> Float[np.ndarray, "n_comps n_comps"]:
+    """Compute coactivation matrix for components within a cluster.
+
+    Args:
+        processed: ProcessedActivations containing all component activations
+        component_labels: List of component labels in this cluster
+        activation_threshold: Threshold for considering a component "active"
+
+    Returns:
+        Coactivation matrix where coact[i,j] is the number of samples where
+        both component i and j activate above threshold
+    """
+    n_components: int = len(component_labels)
+
+    # Get indices for these components
+    comp_indices: list[int] = []
+    for label in component_labels:
+        comp_idx: int | None = processed.get_label_index(label)
+        if comp_idx is not None:
+            comp_indices.append(comp_idx)
+
+    if not comp_indices:
+        return np.zeros((n_components, n_components), dtype=np.float32)
+
+    # Extract activations for these components: [n_samples, n_components]
+    component_acts: Float[Tensor, "n_samples n_comps"] = processed.activations[:, comp_indices]
+
+    # Binarize activations (1 if component activates above threshold, 0 otherwise)
+    activation_mask: Float[Tensor, "n_samples n_comps"] = (component_acts > activation_threshold).float()
+
+    # Compute coactivation matrix: coact[i,j] = sum over samples of (comp_i_active * comp_j_active)
+    coact: Float[Tensor, "n_comps n_comps"] = activation_mask.T @ activation_mask
+
+    return coact.cpu().numpy()
+
+
+def compute_component_cosine_similarities(
+    processed: ProcessedActivations,
+    component_labels: list[str],
+) -> Float[np.ndarray, "n_comps n_comps"]:
+    """Compute cosine similarity matrix for components within a cluster.
+
+    Args:
+        processed: ProcessedActivations containing all component activations
+        component_labels: List of component labels in this cluster
+
+    Returns:
+        Cosine similarity matrix where sim[i,j] is the cosine similarity
+        between component i and j activation patterns
+    """
+    n_components: int = len(component_labels)
+
+    # Get indices for these components
+    comp_indices: list[int] = []
+    for label in component_labels:
+        comp_idx: int | None = processed.get_label_index(label)
+        if comp_idx is not None:
+            comp_indices.append(comp_idx)
+
+    if not comp_indices:
+        return np.zeros((n_components, n_components), dtype=np.float32)
+
+    # Extract activations for these components: [n_samples, n_components]
+    component_acts: Float[Tensor, "n_samples n_comps"] = processed.activations[:, comp_indices]
+
+    # Normalize each component's activation vector (columns)
+    # L2 norm for each component across samples
+    norms: Float[Tensor, " n_comps"] = torch.norm(component_acts, p=2, dim=0)
+
+    # Avoid division by zero
+    norms = torch.where(norms > 0, norms, torch.ones_like(norms))
+
+    # Normalize: [n_samples, n_comps]
+    normalized_acts: Float[Tensor, "n_samples n_comps"] = component_acts / norms.unsqueeze(0)
+
+    # Compute cosine similarity matrix: sim[i,j] = normalized_i · normalized_j
+    cosine_sim: Float[Tensor, "n_comps n_comps"] = normalized_acts.T @ normalized_acts
+
+    return cosine_sim.cpu().numpy()
+
+
 def compute_max_activations(
     model: ComponentModel,
     sigmoid_type: SigmoidTypes,
@@ -240,6 +326,18 @@ def compute_max_activations(
     }
     cluster_tokens: dict[ClusterIdHash, list[list[str]]] = {
         cluster_id_map[idx].to_string(): [] for idx in unique_cluster_indices
+    }
+    # Storage for component-level activations per cluster
+    # Format: component_activations[cluster_hash][component_label] = list of activation arrays
+    component_activations_storage: dict[ClusterIdHash, dict[str, list[Float[np.ndarray, " n_ctx"]]]] = {
+        cluster_id_map[idx].to_string(): {
+            comp["label"]: [] for comp in cluster_components[idx]
+        } for idx in unique_cluster_indices
+    }
+    component_text_hashes_storage: dict[ClusterIdHash, dict[str, list[TextSampleHash]]] = {
+        cluster_id_map[idx].to_string(): {
+            comp["label"]: [] for comp in cluster_components[idx]
+        } for idx in unique_cluster_indices
     }
     text_samples: dict[TextSampleHash, TextSample] = {}
 
@@ -334,6 +432,25 @@ def compute_max_activations(
                 cluster_text_hashes[current_cluster_hash].append(text_hash)
                 cluster_tokens[current_cluster_hash].append(text_sample.tokens)
 
+                # Store activations for each component in this cluster
+                components_in_cluster: list[dict[str, Any]] = cluster_components[cluster_idx]
+                for component_info in components_in_cluster:
+                    comp_label: str = component_info["label"]
+                    comp_idx: int | None = processed.get_label_index(comp_label)
+
+                    if comp_idx is not None:
+                        # Get activation for this component: [seq_len]
+                        # processed.activations shape: [n_samples, n_components]
+                        sample_offset: int = batch_sample_idx * seq_len
+                        comp_acts_1d: Float[np.ndarray, " seq_len"] = (
+                            processed.activations[sample_offset:sample_offset+seq_len, comp_idx]
+                            .cpu().numpy()
+                        )
+
+                        # Store component activation
+                        component_activations_storage[current_cluster_hash][comp_label].append(comp_acts_1d)
+                        component_text_hashes_storage[current_cluster_hash][comp_label].append(text_hash)
+
     # Build ClusterData for each cluster
     clusters: dict[ClusterIdHash, ClusterData] = {}
     all_activations_list: list[Float[np.ndarray, " n_ctx"]] = []
@@ -375,9 +492,7 @@ def compute_max_activations(
             components=components_info,
         )
 
-        clusters[cluster_hash] = cluster_data
-
-        # Add to global activations storage
+        # Add to global activations storage (cluster-level)
         act_hashes: list[ActivationSampleHash] = activation_batch.activation_hashes
         for i, (text_hash, acts) in enumerate(zip(text_hashes_list, acts_array, strict=True)):
             act_hash: ActivationSampleHash = act_hashes[i]
@@ -385,6 +500,106 @@ def compute_max_activations(
             all_activations_list.append(acts)
             all_text_hashes_list.append(text_hash)
             current_idx += 1
+
+        # Build component-level data
+        component_data_dict: dict[str, ComponentActivationData] = {}
+        component_labels: list[str] = []
+
+        for comp_info in components_info:
+            comp_label: str = comp_info.label
+            component_labels.append(comp_label)
+
+            # Get stored component activations
+            comp_acts_list: list[Float[np.ndarray, " n_ctx"]] = component_activations_storage[cluster_hash][comp_label]
+            comp_text_hashes: list[TextSampleHash] = component_text_hashes_storage[cluster_hash][comp_label]
+
+            if not comp_acts_list:
+                continue
+
+            # Stack activations
+            comp_acts_array: Float[np.ndarray, "n_samples n_ctx"] = np.stack(comp_acts_list)
+
+            # Store component activations in global array and track indices
+            comp_activation_indices: list[int] = []
+            comp_act_sample_hashes: list[ActivationSampleHash] = []
+
+            for j, (text_hash, comp_acts) in enumerate(zip(comp_text_hashes, comp_acts_array, strict=True)):
+                # Create activation sample hash for this component
+                comp_act_hash = ActivationSampleHash(f"{cluster_hash}:{comp_label}:{text_hash}")
+                comp_act_sample_hashes.append(comp_act_hash)
+
+                # Store in global activations array
+                activations_map[comp_act_hash] = current_idx
+                all_activations_list.append(comp_acts)
+                all_text_hashes_list.append(text_hash)
+                comp_activation_indices.append(current_idx)
+                current_idx += 1
+
+            # Compute component statistics
+            comp_stats: dict[str, Any] = {
+                "mean": float(np.mean(comp_acts_array)),
+                "max": float(np.max(comp_acts_array)),
+                "min": float(np.min(comp_acts_array)),
+                "median": float(np.median(comp_acts_array)),
+                "n_samples": len(comp_acts_list),
+            }
+
+            # Create ComponentActivationData
+            component_data_dict[comp_label] = ComponentActivationData(
+                component_label=comp_label,
+                activation_sample_hashes=comp_act_sample_hashes,
+                activation_indices=comp_activation_indices,
+                stats=comp_stats,
+            )
+
+        # Compute component coactivations and cosine similarities
+        # We need to load the activations for all batches to compute these properly
+        # For now, we'll compute them from the stored activations
+        comp_coactivations: Float[np.ndarray, "n_comps n_comps"] | None = None
+        comp_cosine_sims: Float[np.ndarray, "n_comps n_comps"] | None = None
+
+        if component_labels:
+            # We need ProcessedActivations to compute these, but we don't have it here
+            # We'll compute approximations from stored activations
+            n_comps: int = len(component_labels)
+            comp_coactivations = np.zeros((n_comps, n_comps), dtype=np.float32)
+            comp_cosine_sims = np.zeros((n_comps, n_comps), dtype=np.float32)
+
+            # Build activation matrix for all components: [n_samples, n_comps]
+            comp_act_matrix_list: list[Float[np.ndarray, "n_samples n_ctx"]] = []
+            for comp_label in component_labels:
+                if comp_label in component_activations_storage[cluster_hash]:
+                    comp_acts_list = component_activations_storage[cluster_hash][comp_label]
+                    if comp_acts_list:
+                        comp_act_matrix_list.append(np.stack(comp_acts_list))
+
+            if comp_act_matrix_list and len(comp_act_matrix_list) == n_comps:
+                # Flatten to [n_samples * n_ctx] per component, then stack
+                comp_act_flat: list[Float[np.ndarray, " n_total"]] = [
+                    arr.flatten() for arr in comp_act_matrix_list
+                ]
+                comp_act_matrix: Float[np.ndarray, "n_comps n_total"] = np.stack(comp_act_flat, axis=0)
+
+                # Compute coactivations (binarized)
+                comp_act_bin: Float[np.ndarray, "n_comps n_total"] = (comp_act_matrix > 0).astype(np.float32)
+                comp_coactivations = comp_act_bin @ comp_act_bin.T
+
+                # Compute cosine similarities
+                norms: Float[np.ndarray, " n_comps"] = np.linalg.norm(comp_act_matrix, axis=1)
+                norms = np.where(norms > 0, norms, 1.0)
+                normalized: Float[np.ndarray, "n_comps n_total"] = comp_act_matrix / norms[:, np.newaxis]
+                comp_cosine_sims = normalized @ normalized.T
+
+        # Create updated ClusterData with component-level data
+        from dataclasses import replace
+        cluster_data = replace(
+            cluster_data,
+            component_activations=component_data_dict if component_data_dict else None,
+            component_coactivations=comp_coactivations,
+            component_cosine_similarities=comp_cosine_sims,
+        )
+
+        clusters[cluster_hash] = cluster_data
 
     # TODO: spinner here
     with SpinnerContext(message="Creating combined activations and dashboard data"):
