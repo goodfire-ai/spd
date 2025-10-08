@@ -168,9 +168,9 @@ def _get_topk_by_subcomponent(
 
                 # Enforce separation within this batch's sequence only
                 lp_key = (module_name, m, b)
-                last = last_pos_in_seq.get(lp_key, -separation_threshold_tokens - 1)
-                if s < last + separation_threshold_tokens:
-                    continue
+                # last = last_pos_in_seq.get(lp_key, -separation_threshold_tokens - 1)
+                # if s < last + separation_threshold_tokens:
+                #     continue
 
                 importance_val = float(causal_importances[b, s, m].item())
 
