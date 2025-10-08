@@ -42,6 +42,10 @@ class ComponentVisualizationConfig(BaseModel):
     )
     dpi: int = Field(default=150, description="DPI for the figures (default: 150)")
     device: str = Field(default="auto", description="Device to use (default: auto)")
+    generate_both_permutations: bool = Field(
+        default=True,
+        description="Generate both permuted and non-permuted activation plots (default: True)",
+    )
 
     output_dir: str | None = Field(
         default=None,
@@ -221,6 +225,7 @@ def analyze_component_behavior(
     n_features: int | None = None,
     input_magnitudes: list[float] | None = None,
     threshold: float = 0.1,
+    generate_both_permutations: bool = True,
 ) -> None:
     """Analyze component behavior by computing gate activations for different inputs.
 
@@ -279,18 +284,23 @@ def analyze_component_behavior(
                 detach_inputs=False,  # Match evals behavior
             )
 
-        # Apply sorting using the same logic as evals
-        sorted_causal_importances = {}
-        perm_indices = {}
+        # Store original causal importances
+        all_causal_importances[magnitude] = causal_importances
 
-        for layer_name, ci_vals in causal_importances.items():
-            # Use permute_to_identity for sorting (same as evals)
-            sorted_ci, perm_idx = permute_to_identity(ci_vals)
-            sorted_causal_importances[layer_name] = sorted_ci
-            perm_indices[layer_name] = perm_idx
+        if generate_both_permutations:
+            # Apply sorting using the same logic as evals
+            sorted_causal_importances = {}
+            perm_indices = {}
 
-        all_causal_importances[magnitude] = sorted_causal_importances
-        all_perm_indices[magnitude] = perm_indices
+            for layer_name, ci_vals in causal_importances.items():
+                # Use permute_to_identity for sorting (same as evals)
+                sorted_ci, perm_idx = permute_to_identity(ci_vals)
+                sorted_causal_importances[layer_name] = sorted_ci
+                perm_indices[layer_name] = perm_idx
+
+            # Store permuted data separately
+            all_causal_importances[f"{magnitude}_permuted"] = sorted_causal_importances
+            all_perm_indices[magnitude] = perm_indices
 
     # Create side-by-side comparison plots for each module
     for module_name in all_causal_importances[input_magnitudes[0]]:
@@ -362,7 +372,28 @@ def analyze_component_behavior(
         print(f"  Saved activation matrix to: {activation_matrix_path}")
 
         # Create side-by-side activation pattern plots
-        plot_multi_magnitude_activation_patterns(ci_data, module_name, output_dir, input_magnitudes)
+        if generate_both_permutations:
+            # Create non-permuted plots
+            non_permuted_data = {
+                mag: all_causal_importances[mag][module_name] for mag in input_magnitudes
+            }
+            plot_multi_magnitude_activation_patterns(
+                non_permuted_data, module_name, output_dir, input_magnitudes, is_permuted=False
+            )
+
+            # Create permuted plots
+            permuted_data = {
+                mag: all_causal_importances[f"{mag}_permuted"][module_name]
+                for mag in input_magnitudes
+            }
+            plot_multi_magnitude_activation_patterns(
+                permuted_data, module_name, output_dir, input_magnitudes, is_permuted=True
+            )
+        else:
+            # Create only non-permuted plots (original behavior)
+            plot_multi_magnitude_activation_patterns(
+                ci_data, module_name, output_dir, input_magnitudes, is_permuted=False
+            )
 
 
 def plot_multi_magnitude_activation_patterns(
@@ -370,6 +401,7 @@ def plot_multi_magnitude_activation_patterns(
     module_name: str,
     output_dir: Path,
     input_magnitudes: list[float],
+    is_permuted: bool = False,
 ) -> None:
     """Create side-by-side activation pattern plots for multiple input magnitudes.
 
@@ -378,6 +410,7 @@ def plot_multi_magnitude_activation_patterns(
         module_name: Name of the module being analyzed
         output_dir: Directory to save plots
         input_magnitudes: List of input magnitudes used
+        is_permuted: Whether the data has been permuted to identity (affects file naming)
     """
     n_magnitudes = len(input_magnitudes)
 
@@ -400,14 +433,18 @@ def plot_multi_magnitude_activation_patterns(
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     # Set overall title
-    fig.suptitle(f"Activation Patterns - {module_name}", fontsize=14)
+    permutation_suffix = "_permuted" if is_permuted else "_non_permuted"
+    fig.suptitle(
+        f"Activation Patterns - {module_name}{permutation_suffix.replace('_', ' ').title()}",
+        fontsize=14,
+    )
     plt.tight_layout()
 
     # Save plot
     output_path = (
         output_dir
         / "activation_plots"
-        / f"{module_name.replace('.', '_')}_multi_magnitude_activation_pattern.png"
+        / f"{module_name.replace('.', '_')}_multi_magnitude_activation_pattern{permutation_suffix}.png"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -459,7 +496,13 @@ def main(config_path_or_obj: str | ComponentVisualizationConfig = None) -> None:
     rank_one_matrices = create_rank_one_matrices(model.components)
 
     # Analyze component behavior using gate activations
-    analyze_component_behavior(model, device, output_dir_path, threshold=config.threshold)
+    analyze_component_behavior(
+        model,
+        device,
+        output_dir_path,
+        threshold=config.threshold,
+        generate_both_permutations=config.generate_both_permutations,
+    )
 
     # Create combined plot
     output_path = output_dir_path / "component_matrices.png"

@@ -1,10 +1,11 @@
 # Configuration for component_visualization.py
 
 # Model path (supports both wandb: and local paths)
-model_path: "wandb:goodfire/spd/in10bwoo"
+model_path: "wandb:goodfire/spd/5q3xxmmy"
 
 # Analysis parameters
 threshold: 0.01  # Threshold for considering a value as 'active'
+generate_both_permutations: true  # Generate both permuted and non-permuted activation plots
 
 # Plotting parameters
 figsize: [8, 6]  # Figure size per component (width height)
