@@ -203,7 +203,7 @@ class RunContextService:
             name=task_config.dataset_name,
             hf_tokenizer_path=run_info.config.tokenizer_name,
             split=task_config.train_data_split,
-            n_ctx=24,  # task_config.max_seq_len,
+            n_ctx=task_config.max_seq_len,
             is_tokenized=task_config.is_tokenized,
             streaming=task_config.streaming,
             column_name=task_config.column_name,

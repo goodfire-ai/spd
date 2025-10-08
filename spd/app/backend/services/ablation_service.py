@@ -343,7 +343,7 @@ class AblationService:
         )
 
         assert logits.ndim == 2, "Logits must be 2D (seq_len, vocab)"
-        assert logits.shape[0] == 24
+        # assert logits.shape[0] == 24
         assert logits.shape[1] == len(ctx.tokenizer.vocab), (  # pyright: ignore[reportAttributeAccessIssue]
             f"Logits must have the same length as the vocabulary, {logits.shape[2]} != {len(ctx.tokenizer.vocab)}"  # pyright: ignore[reportAttributeAccessIssue]
         )

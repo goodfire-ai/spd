@@ -13,7 +13,6 @@
     import * as api from "$lib/api";
     import ComponentCard from "./ComponentCard.svelte";
     import HorizontalVirtualList from "./HorizontalVirtualList.svelte";
-    import { onMount } from "svelte";
 
     export let onClose: () => void;
     export let toggleComponent: (
