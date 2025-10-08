@@ -27,7 +27,7 @@ def jaccard_index(
 ) -> Float[Tensor, "s s"]:
     """Compute the pairwise jaccard index between rows of X"""
 
-    s_ensemble, n_components = X.shape
+    s_ensemble, _n_components = X.shape
     dbg_auto(X)
     matches: Bool[Tensor, "s n n"] = X[:, :, None] == X[:, None, :]
     dbg_auto(matches)
@@ -50,6 +50,8 @@ def jaccard_index(
     #             jaccard[i, j] = M11 / (M11 + M10 + M01)
     #         jaccard[j, i] = jaccard[i, j]
     #         dbg_auto(i, j, M11, M10, M01, jaccard[i, j])
+
+    return _jaccard
 
 
 jaccard_index(
