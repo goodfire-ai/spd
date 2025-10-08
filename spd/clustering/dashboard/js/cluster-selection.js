@@ -306,7 +306,7 @@ const columnRenderers = {
 
 /**
  * Create a filter function for module arrays that supports wildcards, multiple patterns, and negation
- * @param {string} filterValue - The filter pattern (supports * wildcards, comma-separated, ! for negation)
+ * @param {string} filterValue - The filter pattern (supports * wildcards, comma-separated, & for all-match, ! for negation)
  * @returns {Function|null} Filter function or null if invalid
  */
 function createModuleFilter(filterValue) {
@@ -315,8 +315,9 @@ function createModuleFilter(filterValue) {
     // Parse patterns separated by commas
     const patterns = filterValue.split(',').map(p => p.trim()).filter(p => p);
 
-    // Separate inclusion and exclusion patterns
+    // Separate inclusion, all-match, and exclusion patterns
     const inclusions = [];
+    const allMatches = [];
     const exclusions = [];
 
     for (const pattern of patterns) {
@@ -327,8 +328,15 @@ function createModuleFilter(filterValue) {
                 ? new RegExp('^' + excPattern.replace(/\*/g, '.*') + '$')
                 : null;
             exclusions.push({ pattern: excPattern, regex });
+        } else if (pattern.startsWith('&')) {
+            // All-match pattern (remove & prefix)
+            const allPattern = pattern.substring(1).toLowerCase();
+            const regex = allPattern.includes('*')
+                ? new RegExp('^' + allPattern.replace(/\*/g, '.*') + '$')
+                : null;
+            allMatches.push({ pattern: allPattern, regex });
         } else {
-            // Inclusion pattern
+            // Inclusion pattern (at least one must match)
             const incPattern = pattern.toLowerCase();
             const regex = incPattern.includes('*')
                 ? new RegExp('^' + incPattern.replace(/\*/g, '.*') + '$')
@@ -352,10 +360,21 @@ function createModuleFilter(filterValue) {
             if (hasExclusion) return false;
         }
 
-        // If no inclusions specified, accept (only exclusions applied)
+        // Check all-match patterns (ALL modules must match)
+        for (const all of allMatches) {
+            const allMatch = cellValue.every(module => {
+                const moduleLower = module.toLowerCase();
+                return all.regex
+                    ? all.regex.test(moduleLower)
+                    : moduleLower.includes(all.pattern);
+            });
+            if (!allMatch) return false;
+        }
+
+        // If no inclusions specified, accept (only exclusions/all-matches applied)
         if (inclusions.length === 0) return true;
 
-        // Check inclusions (any match = accept)
+        // Check inclusions (at least one match = accept)
         return cellValue.some(module => {
             const moduleLower = module.toLowerCase();
             return inclusions.some(inc =>
@@ -649,7 +668,7 @@ async function loadData() {
             renderer: columnRenderers.modelView,
             sortFunction: (modules) => sortModules(modules),
             filterFunction: (filterValue) => createModuleFilter(filterValue),
-            filterTooltip: 'Filter by module. Use * for wildcards. Comma-separate multiple patterns (OR). Prefix ! to exclude. Examples: *mlp*, !*o_proj*, *attn*,!*q_proj*'
+            filterTooltip: 'Filter by module. Use * for wildcards. Comma-separate multiple patterns. Prefix & for all-match, ! to exclude. Examples: *mlp*, &*proj*, !*o_proj*, &*attn*,!*q_proj*'
         },
         {
             key: 'modules',
@@ -659,7 +678,7 @@ async function loadData() {
             renderer: columnRenderers.modulesSummary,
             sortFunction: (modules) => sortModules(modules),
             filterFunction: (filterValue) => createModuleFilter(filterValue),
-            filterTooltip: 'Filter by module. Use * for wildcards. Comma-separate multiple patterns (OR). Prefix ! to exclude. Examples: *mlp*, !*o_proj*, *attn*,!*q_proj*'
+            filterTooltip: 'Filter by module. Use * for wildcards. Comma-separate multiple patterns. Prefix & for all-match, ! to exclude. Examples: *mlp*, &*proj*, !*o_proj*, &*attn*,!*q_proj*'
         }
     ];
 
