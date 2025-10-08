@@ -100,8 +100,7 @@ class DashboardData:
 
         # Convert component info to ComponentInfo objects
         components_info: list[ComponentInfo] = [
-            ComponentInfo(module=comp["module"], index=comp["index"])
-            for comp in cluster_components
+            ComponentInfo(module=comp["module"], index=comp["index"]) for comp in cluster_components
         ]
 
         # Generate ClusterData with stats and top-k samples
@@ -123,8 +122,8 @@ class DashboardData:
                 component_labels.append(comp_label)
 
                 # Get stored component activations
-                comp_acts_list: list[Float[np.ndarray, " n_ctx"]] = component_activations_storage.get(
-                    comp_label, []
+                comp_acts_list: list[Float[np.ndarray, " n_ctx"]] = (
+                    component_activations_storage.get(comp_label, [])
                 )
 
                 if not comp_acts_list:

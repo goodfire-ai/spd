@@ -241,7 +241,9 @@ def compute_component_metrics_from_storage(
         )
 
     # Flatten to [n_total] per component, then stack to [n_comps, n_total]
-    comp_act_flat: list[Float[np.ndarray, " n_total"]] = [arr.flatten() for arr in comp_act_matrix_list]
+    comp_act_flat: list[Float[np.ndarray, " n_total"]] = [
+        arr.flatten() for arr in comp_act_matrix_list
+    ]
     comp_act_matrix: Float[np.ndarray, "n_comps n_total"] = np.stack(comp_act_flat, axis=0)
 
     # Compute coactivations (binarized)

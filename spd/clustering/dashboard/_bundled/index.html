@@ -2180,11 +2180,11 @@
                         clearBtn.title = _TABLE_CONSTS.MESSAGES.CLEAR_FILTER;
     
                         input.addEventListener('input', (e) => {
-                            this.handleFilter(col.key, e.target.value, col.type, input, col);
+                            this.handleFilter(this.getColumnId(col), col.key, e.target.value, col.type, input, col);
                         });
     
                         clearBtn.addEventListener('click', () => {
-                            this.clearFilter(col.key, input);
+                            this.clearFilter(this.getColumnId(col), input);
                         });
     
                         filterContainer.appendChild(filterIcon);
@@ -2359,16 +2359,15 @@
             }
         }
     
-        handleFilter(columnKey, filterValue, type, inputElement, col) {
+        handleFilter(columnId, columnKey, filterValue, type, inputElement, col) {
             if (!filterValue) {
-                delete this.filters[columnKey];
+                delete this.filters[columnId];
                 inputElement.style.backgroundColor = '';
             } else {
                 let isValid = true;
                 let customFilter = null;
     
-                // Check for custom filter function in column definition
-                const col = this.columns.find(c => c.key === columnKey);
+                // col is already passed in
                 if (col?.filterFunction) {
                     try {
                         customFilter = col.filterFunction(filterValue);
@@ -2390,7 +2389,8 @@
                     isValid = numFilter !== null;
                 }
     
-                this.filters[columnKey] = {
+                this.filters[columnId] = {
+                    key: columnKey,  // Store the key for data access
                     value: filterValue,
                     type: type,
                     valid: isValid,
@@ -2406,9 +2406,9 @@
             this.render();
         }
     
-        clearFilter(columnKey, inputElement) {
+        clearFilter(columnId, inputElement) {
             inputElement.value = '';
-            delete this.filters[columnKey];
+            delete this.filters[columnId];
             inputElement.style.backgroundColor = '';
             this.currentPage = 1;
             this.applyFiltersAndSort();
@@ -2421,10 +2421,11 @@
             let filtered = [...this.data];
     
             filtered = filtered.filter(row => {
-                for (const [key, filter] of Object.entries(this.filters)) {
+                for (const [columnId, filter] of Object.entries(this.filters)) {
                     if (!filter.valid) continue;
     
-                    const cellValue = row[key];
+                    // Get cellValue using the stored key
+                    const cellValue = row[filter.key];
     
                     // Apply custom filter if available
                     if (filter.customFilter) {
