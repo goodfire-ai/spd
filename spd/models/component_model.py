@@ -95,6 +95,8 @@ class ComponentModel(LoadableModule):
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
         pretrained_model_output_attr: str | None,
+        ci_fn_nonlinearity: str = "gelu",
+        ci_fn_negative_slope: float = 0.01,
     ):
         super().__init__()
 
@@ -124,6 +126,8 @@ class ComponentModel(LoadableModule):
             C=C,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
+            ci_fn_nonlinearity=ci_fn_nonlinearity,
+            ci_fn_negative_slope=ci_fn_negative_slope,
         )
         self._ci_fns = nn.ModuleDict(
             {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
@@ -201,13 +205,20 @@ class ComponentModel(LoadableModule):
         component_C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
+        ci_fn_nonlinearity: str = "gelu",
+        ci_fn_negative_slope: float = 0.01,
     ) -> nn.Module:
         """Helper to create a causal importance function (ci_fn) based on ci_fn_type and module type."""
         if isinstance(target_module, nn.Embedding):
             assert ci_fn_type == "mlp", "Embedding modules only supported for ci_fn_type='mlp'"
 
         if ci_fn_type == "mlp":
-            return MLPCiFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
+            return MLPCiFn(
+                C=component_C,
+                hidden_dims=ci_fn_hidden_dims,
+                nonlinearity=ci_fn_nonlinearity,
+                negative_slope=ci_fn_negative_slope,
+            )
 
         match target_module:
             case nn.Linear():
@@ -222,11 +233,19 @@ class ComponentModel(LoadableModule):
         match ci_fn_type:
             case "vector_mlp":
                 return VectorMLPCiFn(
-                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
+                    C=component_C,
+                    input_dim=input_dim,
+                    hidden_dims=ci_fn_hidden_dims,
+                    nonlinearity=ci_fn_nonlinearity,
+                    negative_slope=ci_fn_negative_slope,
                 )
             case "shared_mlp":
                 return VectorSharedMLPCiFn(
-                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
+                    C=component_C,
+                    input_dim=input_dim,
+                    hidden_dims=ci_fn_hidden_dims,
+                    nonlinearity=ci_fn_nonlinearity,
+                    negative_slope=ci_fn_negative_slope,
                 )
 
     @staticmethod
@@ -236,6 +255,8 @@ class ComponentModel(LoadableModule):
         C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
+        ci_fn_nonlinearity: str = "gelu",
+        ci_fn_negative_slope: float = 0.01,
     ) -> dict[str, nn.Module]:
         ci_fns: dict[str, nn.Module] = {}
         for module_path in module_paths:
@@ -245,6 +266,8 @@ class ComponentModel(LoadableModule):
                 C,
                 ci_fn_type,
                 ci_fn_hidden_dims,
+                ci_fn_nonlinearity,
+                ci_fn_negative_slope,
             )
         return ci_fns
 
