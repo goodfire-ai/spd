@@ -13,9 +13,14 @@ gate_hidden_dims: [200]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["linear1", "linear2", "hidden_layers.0"]
 use_delta_component: true
-pgd_mask_enabled: true
-pgd_mask_steps: 2
-pgd_mask_step_size: 0.5
+pgd_mask_random_init: true
+pgd_mask_enabled: false
+pgd_mask_steps: 5
+pgd_mask_step_size: 0.2
+adv_mix_adv_weight_start: 0.0
+adv_mix_adv_weight_end: 0.0
+adv_mix_rand_weight_start: 1.0
+adv_mix_rand_weight_end: 1.0
 
 # --- Loss Coefficients ---
 faithfulness_coeff: null
