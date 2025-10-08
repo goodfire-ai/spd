@@ -2,6 +2,48 @@ let clusterData = {};
 let modelInfo = {};
 let dataTable = null;
 
+// Alpine.js data component for model info
+const modelInfoData = {
+    data: {},
+    hasData: false,
+
+    async loadData() {
+        try {
+            const response = await fetch(CONFIG.getDataPath('modelInfo'));
+            this.data = await response.json();
+            this.hasData = Object.keys(this.data).length > 0;
+            console.log('Model info loaded:', this.hasData, Object.keys(this.data));
+        } catch (error) {
+            console.error('Failed to load model info:', error);
+            this.hasData = false;
+        }
+    },
+
+    formatParameters(totalParams) {
+        if (!totalParams) return '-';
+        if (totalParams >= 1000000) return (totalParams / 1000000).toFixed(1) + 'M';
+        if (totalParams >= 1000) return (totalParams / 1000).toFixed(1) + 'K';
+        return totalParams.toString();
+    },
+
+    formatWandBLink(path) {
+        if (!path) return '-';
+
+        // Remove "wandb:" prefix if present
+        const cleanPath = path.replace(/^wandb:/, '');
+
+        // Convert to WandB URL
+        const url = `https://wandb.ai/${cleanPath}`;
+
+        // Show shortened path in link text
+        const displayText = cleanPath.length > 60
+            ? cleanPath.substring(0, 57) + '...'
+            : cleanPath;
+
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`;
+    }
+};
+
 // Custom column renderers
 const columnRenderers = {
     modelView: function(value, row, col) {
@@ -43,7 +85,20 @@ const columnRenderers = {
         const container = document.createElement('div');
         container.className = 'sparkline-cell';
 
-        const svg = sparkbars(histData.bin_counts, null, {
+        // Calculate bin centers for x-axis
+        const binCenters = [];
+        for (let i = 0; i < histData.bin_counts.length; i++) {
+            binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
+        }
+
+        const min = row.stats.min_activation;
+        const max = row.stats.max_activation;
+
+        // Set x-axis limits to [0, 1] if data is in that range
+        const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
+
+        // Pass bin centers as x-values and counts as y-values
+        const svg = sparkbars(binCenters, histData.bin_counts, {
             width: CONFIG.visualization.sparklineWidth,
             height: CONFIG.visualization.sparklineHeight,
             color: '#4169E1',
@@ -51,6 +106,7 @@ const columnRenderers = {
             lineWidth: 0,
             markers: '',
             margin: 2,
+            xlims: xlims,
             ylims: [0, null],
             logScale: true,
             xAxis: {line: true, ticks: true, label_margin: 10},
@@ -59,13 +115,11 @@ const columnRenderers = {
 
         container.innerHTML = svg;
 
-        const min = row.stats.min_activation;
-        const max = row.stats.max_activation;
         const mean = row.stats.mean_activation;
+        const median = calculateHistogramMedian(histData);
         const n = row.stats.n_tokens;
-        const maxBinCount = Math.max(...histData.bin_counts);
 
-        container.title = `All Activations Histogram (n=${n})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMax bin: ${maxBinCount} values`;
+        container.title = `All Activations Histogram (n=${n})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
 
         return container;
     },
@@ -79,7 +133,20 @@ const columnRenderers = {
         const container = document.createElement('div');
         container.className = 'sparkline-cell';
 
-        const svg = sparkbars(histData.bin_counts, null, {
+        // Calculate bin centers for x-axis
+        const binCenters = [];
+        for (let i = 0; i < histData.bin_counts.length; i++) {
+            binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
+        }
+
+        const min = histData.bin_edges[0];
+        const max = histData.bin_edges[histData.bin_edges.length - 1];
+
+        // Set x-axis limits to [0, 1] if data is in that range
+        const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
+
+        // Pass bin centers as x-values and counts as y-values
+        const svg = sparkbars(binCenters, histData.bin_counts, {
             width: CONFIG.visualization.sparklineWidth,
             height: CONFIG.visualization.sparklineHeight,
             color: '#DC143C',
@@ -87,6 +154,7 @@ const columnRenderers = {
             lineWidth: 0,
             markers: '',
             margin: 2,
+            xlims: xlims,
             ylims: [0, null],
             logScale: true,
             xAxis: {line: true, ticks: true, label_margin: 10},
@@ -96,11 +164,10 @@ const columnRenderers = {
         container.innerHTML = svg;
 
         const n = row.stats.n_samples;
-        const maxBinCount = Math.max(...histData.bin_counts);
-        const min = histData.bin_edges[0];
-        const max = histData.bin_edges[histData.bin_edges.length - 1];
+        const mean = calculateHistogramMean(histData);
+        const median = calculateHistogramMedian(histData);
 
-        container.title = `Max Activation Distribution (n=${n} samples)\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMax bin: ${maxBinCount} samples`;
+        container.title = `Max Activation Distribution (n=${n} samples)\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
 
         return container;
     },
@@ -187,7 +254,21 @@ const columnRenderers = {
             const container = document.createElement('div');
             container.className = 'sparkline-cell';
 
-            const svg = sparkbars(histData.bin_counts, null, {
+            // Calculate bin centers for x-axis
+            const binCenters = [];
+            for (let i = 0; i < histData.bin_counts.length; i++) {
+                binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
+            }
+
+            // Calculate statistics of underlying data
+            const min = histData.bin_edges[0];
+            const max = histData.bin_edges[histData.bin_edges.length - 1];
+
+            // Set x-axis limits to [0, 1] if data is in that range
+            const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
+
+            // Pass bin centers as x-values and counts as y-values
+            const svg = sparkbars(binCenters, histData.bin_counts, {
                 width: CONFIG.visualization.sparklineWidth,
                 height: CONFIG.visualization.sparklineHeight,
                 color: color,
@@ -195,6 +276,7 @@ const columnRenderers = {
                 lineWidth: 0,
                 markers: '',
                 margin: 2,
+                xlims: xlims,
                 ylims: [0, null],
                 logScale: true,
                 xAxis: {line: true, ticks: true, label_margin: 10},
@@ -203,11 +285,11 @@ const columnRenderers = {
 
             container.innerHTML = svg;
 
-            const maxBinCount = Math.max(...histData.bin_counts);
-            const min = histData.bin_edges[0];
-            const max = histData.bin_edges[histData.bin_edges.length - 1];
+            const mean = calculateHistogramMean(histData);
+            const median = calculateHistogramMedian(histData);
+            const totalCount = histData.bin_counts.reduce((a, b) => a + b, 0);
 
-            container.title = `${title}\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMax bin: ${maxBinCount} values`;
+            container.title = `${title} (n=${totalCount})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
 
             return container;
         };
@@ -459,89 +541,6 @@ function createTopTokenFilter(filterValue) {
     };
 }
 
-async function loadModelInfo() {
-    const response = await fetch(CONFIG.getDataPath('modelInfo'));
-    modelInfo = await response.json();
-    displayModelInfo();
-}
-
-/**
- * Format a WandB path as a clickable link
- * @param {string} path - WandB path (with or without "wandb:" prefix)
- * @returns {string} HTML string with link
- */
-function formatWandBLink(path) {
-    if (!path) return '-';
-
-    // Remove "wandb:" prefix if present
-    const cleanPath = path.replace(/^wandb:/, '');
-
-    // Convert to WandB URL
-    const url = `https://wandb.ai/${cleanPath}`;
-
-    // Show shortened path in link text
-    const displayText = cleanPath.length > 60
-        ? cleanPath.substring(0, 57) + '...'
-        : cleanPath;
-
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`;
-}
-
-/**
- * Format number of parameters with K/M suffix
- */
-function formatParameters(totalParams) {
-    if (!totalParams) return '-';
-    if (totalParams >= 1000000) return (totalParams / 1000000).toFixed(1) + 'M';
-    if (totalParams >= 1000) return (totalParams / 1000).toFixed(1) + 'K';
-    return totalParams.toString();
-}
-
-/**
- * Generate HTML for model info section
- * @param {object} info - Model info object
- * @returns {string} HTML string
- */
-function generateModelInfoHTML(info) {
-    const cfg = info.config || {};
-
-    return `
-        <h2 style="margin-top: 0;">Model Information</h2>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-            <div><strong>Total Modules:</strong> ${info.total_modules || '-'}</div>
-            <div><strong>Total Components:</strong> ${info.total_components || '-'}</div>
-            <div><strong>Total Clusters:</strong> ${info.total_clusters || '-'}</div>
-            <div><strong>Model Parameters:</strong> ${formatParameters(info.total_parameters)}</div>
-            <div><strong>Iteration:</strong> ${info.iteration !== undefined ? info.iteration : '-'}</div>
-            <div><strong>Component Size:</strong> ${info.component_size || '-'}</div>
-            <div style="grid-column: 1 / -1;"><strong>Source SPD Run:</strong> ${formatWandBLink(info.model_path)}</div>
-            <div style="grid-column: 1 / -1;"><strong>Clustering Run:</strong> ${formatWandBLink(info.wandb_clustering_run)}</div>
-            <div style="grid-column: 1 / -1;"><strong>Pretrained Model:</strong> ${cfg.pretrained_model_name || '-'}</div>
-        </div>
-        <details style="margin-top: 15px;">
-            <summary style="cursor: pointer; font-weight: 600;">Configuration Details</summary>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; font-size: 13px;">
-                <div><strong>Seed:</strong> ${cfg.seed !== undefined ? cfg.seed : '-'}</div>
-                <div><strong>Steps:</strong> ${cfg.steps || '-'}</div>
-                <div><strong>Learning Rate:</strong> ${cfg.lr || '-'}</div>
-                <div><strong>Batch Size:</strong> ${cfg.batch_size || '-'}</div>
-                <div><strong>Sigmoid Type:</strong> ${cfg.sigmoid_type || '-'}</div>
-                <div><strong>Sampling:</strong> ${cfg.sampling || '-'}</div>
-                <div><strong>LR Schedule:</strong> ${cfg.lr_schedule || '-'}</div>
-                <div><strong>Output Loss:</strong> ${cfg.output_loss_type || '-'}</div>
-            </div>
-        </details>
-    `;
-}
-
-function displayModelInfo() {
-    const modelInfoDiv = document.getElementById('modelInfo');
-    if (Object.keys(modelInfo).length > 0) {
-        modelInfoDiv.innerHTML = generateModelInfoHTML(modelInfo);
-        modelInfoDiv.style.display = 'block';
-    }
-}
-
 function processClusterData() {
     const tableData = [];
 
@@ -570,10 +569,8 @@ function processClusterData() {
 }
 
 async function loadData() {
-    const [clusters] = await Promise.all([
-        loadJSONL(CONFIG.getDataPath('clusters'), 'cluster_hash'),
-        loadModelInfo()
-    ]);
+    // Load cluster data (model info is handled by Alpine.js)
+    const clusters = await loadJSONL(CONFIG.getDataPath('clusters'), 'cluster_hash');
 
     clusterData = clusters;
 
@@ -667,7 +664,10 @@ async function loadData() {
         type: 'string',
         width: '150px',
         align: 'left',
-        renderer: columnRenderers.topToken
+        renderer: columnRenderers.topToken,
+        sortFunction: (value, row) => sortTopToken(value, row),
+        filterFunction: (filterValue) => createTopTokenFilter(filterValue),
+        filterTooltip: 'Search for tokens (case-insensitive substring match)'
     });
 
     columns.push({
@@ -676,16 +676,26 @@ async function loadData() {
         type: 'number',
         width: '60px',
         align: 'right',
-        renderer: columnRenderers.tokenEntropy
+        renderer: columnRenderers.tokenEntropy,
+        sortFunction: (value, row) => {
+            const tokenStats = row.stats.token_activations;
+            return tokenStats ? tokenStats.entropy : null;
+        },
+        filterTooltip: 'Filter by entropy. Use operators: >, <, >=, <=, ==, != (e.g., >2.5)'
     });
 
     columns.push({
         key: 'stats',
         label: 'Token Conc.',
-        type: 'string',
+        type: 'number',
         width: '60px',
         align: 'right',
-        renderer: columnRenderers.tokenConcentration
+        renderer: columnRenderers.tokenConcentration,
+        sortFunction: (value, row) => {
+            const tokenStats = row.stats.token_activations;
+            return tokenStats ? tokenStats.concentration_ratio : null;
+        },
+        filterTooltip: 'Filter by concentration (0-1). Use operators: >, <, >=, <=, ==, != (e.g., >0.5)'
     });
 
     // Actions column
@@ -695,7 +705,8 @@ async function loadData() {
         type: 'string',
         width: '20px',
         align: 'center',
-        renderer: columnRenderers.clusterLink
+        renderer: columnRenderers.clusterLink,
+        filterable: false
     });
 
     const tableConfig = {
@@ -713,5 +724,13 @@ async function loadData() {
 
 document.addEventListener('DOMContentLoaded', async () => {
     await initConfig();
+
+    // Manually trigger Alpine component's loadData now that CONFIG is ready
+    const modelInfoEl = document.getElementById('modelInfo');
+    if (modelInfoEl && Alpine.$data(modelInfoEl)) {
+        Alpine.$data(modelInfoEl).loadData();
+    }
+
+    // Load cluster data and render table
     loadData();
 });

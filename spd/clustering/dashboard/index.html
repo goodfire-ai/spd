@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Cluster Selection</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/notif.css">
     <link rel="stylesheet" href="css/model-view.css">
@@ -68,63 +69,63 @@
 <body>
     <h1>Cluster Selection Dashboard</h1>
 
-    <div id="modelInfo" style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px; display: none;">
+    <div id="modelInfo" x-data="modelInfoData" x-show="hasData" style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px;">
         <h2 style="margin-top: 0;">Model Information</h2>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
             <div>
-                <strong>Total Modules:</strong> <span id="totalModules">-</span>
+                <strong>Total Modules:</strong> <span x-text="data.total_modules || '-'"></span>
             </div>
             <div>
-                <strong>Total Components:</strong> <span id="totalComponents">-</span>
+                <strong>Total Components:</strong> <span x-text="data.total_components || '-'"></span>
             </div>
             <div>
-                <strong>Total Clusters:</strong> <span id="totalClusters">-</span>
+                <strong>Total Clusters:</strong> <span x-text="data.total_clusters || '-'"></span>
             </div>
             <div>
-                <strong>Model Parameters:</strong> <span id="totalParameters">-</span>
+                <strong>Model Parameters:</strong> <span x-text="formatParameters(data.total_parameters)"></span>
             </div>
             <div>
-                <strong>Iteration:</strong> <span id="iteration">-</span>
+                <strong>Iteration:</strong> <span x-text="data.iteration !== undefined ? data.iteration : '-'"></span>
             </div>
             <div>
-                <strong>Component Size:</strong> <span id="componentSize">-</span>
+                <strong>Component Size:</strong> <span x-text="data.component_size || '-'"></span>
             </div>
             <div style="grid-column: 1 / -1;">
-                <strong>Source SPD Run:</strong> <span id="modelPath">-</span>
+                <strong>Source SPD Run:</strong> <span x-html="formatWandBLink(data.model_path)"></span>
             </div>
             <div style="grid-column: 1 / -1;">
-                <strong>Clustering Run:</strong> <span id="clusteringRun">-</span>
+                <strong>Clustering Run:</strong> <span x-html="formatWandBLink(data.wandb_clustering_run)"></span>
             </div>
             <div style="grid-column: 1 / -1;">
-                <strong>Pretrained Model:</strong> <span id="pretrainedModel">-</span>
+                <strong>Pretrained Model:</strong> <span x-text="data.config?.pretrained_model_name || '-'"></span>
             </div>
         </div>
         <details style="margin-top: 15px;">
             <summary style="cursor: pointer; font-weight: 600;">Configuration Details</summary>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; font-size: 13px;">
                 <div>
-                    <strong>Seed:</strong> <span id="configSeed">-</span>
+                    <strong>Seed:</strong> <span x-text="data.config?.seed !== undefined ? data.config.seed : '-'"></span>
                 </div>
                 <div>
-                    <strong>Steps:</strong> <span id="configSteps">-</span>
+                    <strong>Steps:</strong> <span x-text="data.config?.steps || '-'"></span>
                 </div>
                 <div>
-                    <strong>Learning Rate:</strong> <span id="configLr">-</span>
+                    <strong>Learning Rate:</strong> <span x-text="data.config?.lr || '-'"></span>
                 </div>
                 <div>
-                    <strong>Batch Size:</strong> <span id="configBatchSize">-</span>
+                    <strong>Batch Size:</strong> <span x-text="data.config?.batch_size || '-'"></span>
                 </div>
                 <div>
-                    <strong>Sigmoid Type:</strong> <span id="configSigmoidType">-</span>
+                    <strong>Sigmoid Type:</strong> <span x-text="data.config?.sigmoid_type || '-'"></span>
                 </div>
                 <div>
-                    <strong>Sampling:</strong> <span id="configSampling">-</span>
+                    <strong>Sampling:</strong> <span x-text="data.config?.sampling || '-'"></span>
                 </div>
                 <div>
-                    <strong>LR Schedule:</strong> <span id="configLrSchedule">-</span>
+                    <strong>LR Schedule:</strong> <span x-text="data.config?.lr_schedule || '-'"></span>
                 </div>
                 <div>
-                    <strong>Output Loss:</strong> <span id="configOutputLoss">-</span>
+                    <strong>Output Loss:</strong> <span x-text="data.config?.output_loss_type || '-'"></span>
                 </div>
             </div>
         </details>
