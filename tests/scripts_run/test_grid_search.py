@@ -174,14 +174,18 @@ class TestApplyNestedUpdates:
             "lr": 0.001,
             "loss_metric_configs": [
                 {
-                    "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.5,
-                    "pnorm": 1.0,
-                    "eps": 1e-12,
+                    "metric": {
+                        "classname": "ImportanceMinimalityLoss",
+                        "pnorm": 1.0,
+                        "eps": 1e-12,
+                    },
                 },
                 {
-                    "classname": "FaithfulnessLoss",
                     "coeff": 1.0,
+                    "metric": {
+                        "classname": "FaithfulnessLoss",
+                    },
                 },
             ],
         }
@@ -199,14 +203,18 @@ class TestApplyNestedUpdates:
             "lr": 0.001,
             "loss_metric_configs": [
                 {
-                    "classname": "ImportanceMinimalityLoss",
-                    "coeff": 0.1,  # Updated
-                    "pnorm": 2.0,  # Updated
-                    "eps": 1e-12,  # Preserved
+                    "coeff": 0.1,
+                    "metric": {
+                        "classname": "ImportanceMinimalityLoss",
+                        "pnorm": 2.0,
+                        "eps": 1e-12,
+                    },
                 },
                 {
-                    "classname": "FaithfulnessLoss",
-                    "coeff": 1.0,  # Preserved
+                    "coeff": 1.0,
+                    "metric": {
+                        "classname": "FaithfulnessLoss",
+                    },
                 },
             ],
         }
@@ -216,7 +224,10 @@ class TestApplyNestedUpdates:
         base = {
             "seed": 0,
             "loss_metric_configs": [
-                {"classname": "FaithfulnessLoss", "coeff": 1.0},
+                {
+                    "coeff": 1.0,
+                    "metric": {"classname": "FaithfulnessLoss"},
+                },
             ],
         }
 
@@ -230,12 +241,17 @@ class TestApplyNestedUpdates:
         assert result == {
             "seed": 0,
             "loss_metric_configs": [
-                {"classname": "FaithfulnessLoss", "coeff": 1.0},  # Preserved
                 {
-                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": 1.0,
+                    "metric": {"classname": "FaithfulnessLoss"},
+                },
+                {
                     "coeff": 0.1,
-                    "pnorm": 1.0,
-                },  # Added
+                    "metric": {
+                        "classname": "ImportanceMinimalityLoss",
+                        "pnorm": 1.0,
+                    },
+                },
             ],
         }
 
@@ -244,9 +260,22 @@ class TestApplyNestedUpdates:
         base = {
             "seed": 0,
             "loss_metric_configs": [
-                {"classname": "ImportanceMinimalityLoss", "coeff": 0.5, "pnorm": 1.0, "eps": 1e-12},
-                {"classname": "FaithfulnessLoss", "coeff": 1.0},
-                {"classname": "StochasticReconLoss", "coeff": 0.2},
+                {
+                    "coeff": 0.5,
+                    "metric": {
+                        "classname": "ImportanceMinimalityLoss",
+                        "pnorm": 1.0,
+                        "eps": 1e-12,
+                    },
+                },
+                {
+                    "coeff": 1.0,
+                    "metric": {"classname": "FaithfulnessLoss"},
+                },
+                {
+                    "coeff": 0.2,
+                    "metric": {"classname": "StochasticReconLoss"},
+                },
             ],
         }
 
@@ -263,14 +292,25 @@ class TestApplyNestedUpdates:
             "seed": 42,
             "loss_metric_configs": [
                 {
-                    "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.1,
-                    "pnorm": 2.0,
-                    "eps": 1e-12,
+                    "metric": {
+                        "classname": "ImportanceMinimalityLoss",
+                        "pnorm": 2.0,
+                        "eps": 1e-12,
+                    },
                 },
-                {"classname": "FaithfulnessLoss", "coeff": 1.0},
-                {"classname": "StochasticReconLoss", "coeff": 0.2},
-                {"classname": "CIMaskedReconLoss", "coeff": 0.3},
+                {
+                    "coeff": 1.0,
+                    "metric": {"classname": "FaithfulnessLoss"},
+                },
+                {
+                    "coeff": 0.2,
+                    "metric": {"classname": "StochasticReconLoss"},
+                },
+                {
+                    "coeff": 0.3,
+                    "metric": {"classname": "CIMaskedReconLoss"},
+                },
             ],
         }
 
@@ -297,8 +337,14 @@ class TestApplyNestedUpdates:
         base = {
             "ci_fn_hidden_dims": [8],
             "loss_metric_configs": [
-                {"classname": "ImportanceMinimalityLoss", "coeff": 0.1},
-                {"classname": "FaithfulnessLoss", "coeff": 0.2},
+                {
+                    "coeff": 0.1,
+                    "metric": {"classname": "ImportanceMinimalityLoss"},
+                },
+                {
+                    "coeff": 0.2,
+                    "metric": {"classname": "FaithfulnessLoss"},
+                },
             ],
         }
         updates = {
@@ -311,8 +357,14 @@ class TestApplyNestedUpdates:
         assert result == {
             "ci_fn_hidden_dims": [[4, 3], [3]],
             "loss_metric_configs": [
-                {"classname": "ImportanceMinimalityLoss", "coeff": 0.2},
-                {"classname": "FaithfulnessLoss", "coeff": 0.2},
+                {
+                    "coeff": 0.2,
+                    "metric": {"classname": "ImportanceMinimalityLoss"},
+                },
+                {
+                    "coeff": 0.2,
+                    "metric": {"classname": "FaithfulnessLoss"},
+                },
             ],
         }
 
@@ -328,14 +380,18 @@ class TestConfigIntegration:
             "target_module_patterns": ["linear1"],
             "loss_metric_configs": [
                 {
-                    "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
-                    "pnorm": 1.0,
-                    "eps": 1e-12,
+                    "metric": {
+                        "classname": "ImportanceMinimalityLoss",
+                        "pnorm": 1.0,
+                        "eps": 1e-12,
+                    },
                 },
                 {
-                    "classname": "FaithfulnessLoss",
                     "coeff": 1.0,
+                    "metric": {
+                        "classname": "FaithfulnessLoss",
+                    },
                 },
             ],
             "output_loss_type": "mse",
@@ -370,9 +426,9 @@ class TestConfigIntegration:
         assert isinstance(config.task_config, TMSTaskConfig)
         assert config.task_config.feature_probability == 0.1
         assert config.loss_metric_configs[0].coeff == 0.01
-        assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossTrainConfig)
-        assert config.loss_metric_configs[0].eps == 1e-12  # Preserved
-        assert config.loss_metric_configs[1].coeff == 1.0  # Preserved
+        assert isinstance(config.loss_metric_configs[0].metric, ImportanceMinimalityLossTrainConfig)
+        assert config.loss_metric_configs[0].metric.eps == 1e-12
+        assert config.loss_metric_configs[1].coeff == 1.0
 
     def test_lm_config_with_loss_sweep(self):
         """Test LM config with loss_metric_configs sweep."""
@@ -382,10 +438,12 @@ class TestConfigIntegration:
             "target_module_patterns": ["transformer"],
             "loss_metric_configs": [
                 {
-                    "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
-                    "pnorm": 1.0,
-                    "eps": 1e-12,
+                    "metric": {
+                        "classname": "ImportanceMinimalityLoss",
+                        "pnorm": 1.0,
+                        "eps": 1e-12,
+                    },
                 }
             ],
             "output_loss_type": "kl",
@@ -423,9 +481,9 @@ class TestConfigIntegration:
         assert isinstance(config.task_config, LMTaskConfig)
         assert config.task_config.max_seq_len == 256
         assert config.loss_metric_configs[0].coeff == 0.01
-        assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossTrainConfig)
-        assert config.loss_metric_configs[0].pnorm == 2.0
-        assert config.loss_metric_configs[0].eps == 1e-12  # Preserved
+        assert isinstance(config.loss_metric_configs[0].metric, ImportanceMinimalityLossTrainConfig)
+        assert config.loss_metric_configs[0].metric.pnorm == 2.0
+        assert config.loss_metric_configs[0].metric.eps == 1e-12
 
     def test_full_sweep_workflow(self):
         """Test complete sweep workflow: generate combinations → apply → create config."""
@@ -447,14 +505,16 @@ class TestConfigIntegration:
             "target_module_patterns": ["linear1"],
             "loss_metric_configs": [
                 {
-                    "classname": "ImportanceMinimalityLoss",
-                    "coeff": 0.5,  # Will be overridden
-                    "pnorm": 1.0,
-                    "eps": 1e-12,
+                    "coeff": 0.5,
+                    "metric": {
+                        "classname": "ImportanceMinimalityLoss",
+                        "pnorm": 1.0,
+                        "eps": 1e-12,
+                    },
                 }
             ],
             "output_loss_type": "mse",
-            "lr": 0.01,  # Will be overridden
+            "lr": 0.01,
             "steps": 1000,
             "batch_size": 32,
             "train_log_freq": 100,
@@ -467,7 +527,7 @@ class TestConfigIntegration:
             "pretrained_model_class": "spd.experiments.tms.models.TMSModel",
             "task_config": {
                 "task_name": "tms",
-                "feature_probability": 0.2,  # Will be overridden
+                "feature_probability": 0.2,
                 "data_generation_type": "at_least_zero_active",
             },
         }
@@ -494,9 +554,11 @@ class TestConfigIntegration:
 
             # Check preserved values
             assert config.task_config.data_generation_type == "at_least_zero_active"
-            assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossTrainConfig)
-            assert config.loss_metric_configs[0].pnorm == 1.0
-            assert config.loss_metric_configs[0].eps == 1e-12
+            assert isinstance(
+                config.loss_metric_configs[0].metric, ImportanceMinimalityLossTrainConfig
+            )
+            assert config.loss_metric_configs[0].metric.pnorm == 1.0
+            assert config.loss_metric_configs[0].metric.eps == 1e-12
 
             # Verify JSON serialization round-trip
             json_str = f"json:{json.dumps(config.model_dump(mode='json'))}"

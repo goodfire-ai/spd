@@ -24,30 +24,23 @@ from spd.utils.general_utils import BaseModel
 
 
 #### Metrics that can be used in training (or eval) ####
-class TrainMetricConfig(BaseModel):
-    coeff: float | None = Field(
-        default=None,
-        description="Loss coefficient. Used when metric is in loss_metric_configs.",
-    )
-
-
-class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconSubsetLossTrainConfig(BaseModel):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
 
 
-class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconLayerwiseLossTrainConfig(BaseModel):
     classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
 
 
-class CIMaskedReconLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconLossTrainConfig(BaseModel):
     classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
 
 
-class FaithfulnessLossTrainConfig(TrainMetricConfig):
+class FaithfulnessLossTrainConfig(BaseModel):
     classname: Literal["FaithfulnessLoss"] = "FaithfulnessLoss"
 
 
-class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
+class ImportanceMinimalityLossTrainConfig(BaseModel):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
     pnorm: float
     p_anneal_start_frac: float = 1.0
@@ -56,19 +49,19 @@ class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
     eps: float = 1e-12
 
 
-class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
+class StochasticReconLayerwiseLossTrainConfig(BaseModel):
     classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
 
 
-class StochasticReconLossTrainConfig(TrainMetricConfig):
+class StochasticReconLossTrainConfig(BaseModel):
     classname: Literal["StochasticReconLoss"] = "StochasticReconLoss"
 
 
-class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
+class StochasticReconSubsetLossTrainConfig(BaseModel):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
 
 
-class StochasticHiddenActsReconLossConfig(TrainMetricConfig):
+class StochasticHiddenActsReconLossConfig(BaseModel):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
 
@@ -145,6 +138,12 @@ EvalOnlyMetricConfigType = (
 )
 MetricConfigType = TrainMetricConfigType | EvalOnlyMetricConfigType
 
+
+class LossMetricConfig(BaseModel):
+    coeff: float
+    metric: Annotated[TrainMetricConfigType, Field(discriminator="classname")]
+
+
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 
@@ -212,9 +211,7 @@ class Config(BaseModel):
         "model and component weights. This allows for removing the faithfulness loss.",
     )
 
-    loss_metric_configs: list[
-        Annotated[TrainMetricConfigType, Field(discriminator="classname")]
-    ] = Field(
+    loss_metric_configs: list[LossMetricConfig] = Field(
         default=[],
         description=(
             "List of configs for loss metrics to compute (used for both training logs and eval); "
@@ -439,8 +436,5 @@ class Config(BaseModel):
         assert self.slow_eval_freq // self.eval_freq >= 1, (
             "slow_eval_freq must be at least eval_freq"
         )
-
-        for cfg in self.loss_metric_configs:
-            assert cfg.coeff is not None, "All loss_metric_configs must have a coeff"
 
         return self

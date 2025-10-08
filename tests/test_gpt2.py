@@ -6,6 +6,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
+    LossMetricConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
 )
@@ -37,14 +38,16 @@ def test_gpt_2_decomposition_happy_path() -> None:
         target_module_patterns=["transformer.h.2.attn.c_attn", "transformer.h.3.mlp.c_fc"],
         identity_module_patterns=["transformer.h.1.attn.c_attn"],
         loss_metric_configs=[
-            ImportanceMinimalityLossTrainConfig(
+            LossMetricConfig(
                 coeff=1e-2,
-                pnorm=0.9,
-                eps=1e-12,
+                metric=ImportanceMinimalityLossTrainConfig(
+                    pnorm=0.9,
+                    eps=1e-12,
+                ),
             ),
-            StochasticReconLayerwiseLossTrainConfig(coeff=1.0),
-            StochasticReconLossTrainConfig(coeff=1.0),
-            FaithfulnessLossTrainConfig(coeff=200),
+            LossMetricConfig(coeff=1.0, metric=StochasticReconLayerwiseLossTrainConfig()),
+            LossMetricConfig(coeff=1.0, metric=StochasticReconLossTrainConfig()),
+            LossMetricConfig(coeff=200, metric=FaithfulnessLossTrainConfig()),
         ],
         output_loss_type="kl",
         # Training

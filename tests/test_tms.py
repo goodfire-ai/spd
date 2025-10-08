@@ -7,6 +7,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
+    LossMetricConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
 )
@@ -49,14 +50,16 @@ def test_tms_decomposition_happy_path() -> None:
         target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
         identity_module_patterns=["linear1"],
         loss_metric_configs=[
-            ImportanceMinimalityLossTrainConfig(
+            LossMetricConfig(
                 coeff=3e-3,
-                pnorm=2.0,
-                eps=1e-12,
+                metric=ImportanceMinimalityLossTrainConfig(
+                    pnorm=2.0,
+                    eps=1e-12,
+                ),
             ),
-            StochasticReconLayerwiseLossTrainConfig(coeff=1.0),
-            StochasticReconLossTrainConfig(coeff=1.0),
-            FaithfulnessLossTrainConfig(coeff=1.0),
+            LossMetricConfig(coeff=1.0, metric=StochasticReconLayerwiseLossTrainConfig()),
+            LossMetricConfig(coeff=1.0, metric=StochasticReconLossTrainConfig()),
+            LossMetricConfig(coeff=1.0, metric=FaithfulnessLossTrainConfig()),
         ],
         output_loss_type="mse",
         # Training

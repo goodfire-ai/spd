@@ -5,6 +5,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
+    LossMetricConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
@@ -52,14 +53,16 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         identity_module_patterns=["blocks.*.attn.q_proj"],
         # Loss Coefficients
         loss_metric_configs=[
-            ImportanceMinimalityLossTrainConfig(
+            LossMetricConfig(
                 coeff=1e-2,
-                pnorm=0.9,
-                eps=1e-12,
+                metric=ImportanceMinimalityLossTrainConfig(
+                    pnorm=0.9,
+                    eps=1e-12,
+                ),
             ),
-            StochasticReconLayerwiseLossTrainConfig(coeff=1.0),
-            StochasticReconLossTrainConfig(coeff=1.0),
-            FaithfulnessLossTrainConfig(coeff=200),
+            LossMetricConfig(coeff=1.0, metric=StochasticReconLayerwiseLossTrainConfig()),
+            LossMetricConfig(coeff=1.0, metric=StochasticReconLossTrainConfig()),
+            LossMetricConfig(coeff=200, metric=FaithfulnessLossTrainConfig()),
         ],
         output_loss_type="kl",
         # Training

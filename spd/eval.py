@@ -22,6 +22,7 @@ from spd.configs import (
     FaithfulnessLossTrainConfig,
     IdentityCIErrorConfig,
     ImportanceMinimalityLossTrainConfig,
+    LossMetricConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
     StochasticHiddenActsReconLossConfig,
@@ -101,11 +102,13 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
 
 
 def init_metric(
-    cfg: MetricConfigType,
+    cfg: MetricConfigType | LossMetricConfig,
     model: ComponentModel,
     run_config: Config,
     device: str,
 ) -> Metric:
+    if isinstance(cfg, LossMetricConfig):
+        cfg = cfg.metric
     match cfg:
         case ImportanceMinimalityLossTrainConfig():
             metric = ImportanceMinimalityLoss(
@@ -225,7 +228,7 @@ def init_metric(
 
 
 def evaluate(
-    metric_configs: list[MetricConfigType],
+    metric_configs: list[MetricConfigType | LossMetricConfig],
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."] | tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: str,

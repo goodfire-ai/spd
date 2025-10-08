@@ -10,11 +10,11 @@ from spd.configs import (
     CIMaskedReconSubsetLossTrainConfig,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
+    LossMetricConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
     StochasticReconSubsetLossTrainConfig,
-    TrainMetricConfigType,
 )
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
@@ -31,7 +31,7 @@ from spd.models.component_model import ComponentModel
 
 
 def compute_total_loss(
-    loss_metric_configs: list[TrainMetricConfigType],
+    loss_metric_configs: list[LossMetricConfig],
     model: ComponentModel,
     batch: Int[Tensor, "..."],
     ci: dict[str, Float[Tensor, "batch C"]],
@@ -52,10 +52,9 @@ def compute_total_loss(
     total = torch.tensor(0.0, device=batch.device)
     terms: dict[str, float] = {}
 
-    for cfg in loss_metric_configs:
-        assert cfg.coeff is not None, "All loss metric configs must have a coeff"
-        match cfg:
-            case ImportanceMinimalityLossTrainConfig():
+    for loss_cfg in loss_metric_configs:
+        match loss_cfg.metric:
+            case ImportanceMinimalityLossTrainConfig() as cfg:
                 loss = importance_minimality_loss(
                     ci_upper_leaky=ci_upper_leaky,
                     current_frac_of_training=current_frac_of_training,
@@ -138,8 +137,8 @@ def compute_total_loss(
                     ci=ci,
                     weight_deltas=weight_deltas,
                 )
-        terms[cfg.classname] = loss.item()
-        total = total + cfg.coeff * loss
+        terms[loss_cfg.metric.classname] = loss.item()
+        total = total + loss_cfg.coeff * loss
 
     terms["total"] = total.item()
 

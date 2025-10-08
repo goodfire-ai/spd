@@ -26,39 +26,60 @@ WORKSPACE_TEMPLATES = {
 }
 
 
+def _extract_metric_info(config_item: dict[str, Any], is_loss: bool) -> tuple[str, dict[str, Any]]:
+    """Extract classname and params from a metric config item.
+
+    Args:
+        config_item: Either a loss metric config {"coeff": X, "metric": {...}}
+                     or an eval metric config {"classname": Y, ...}
+        is_loss: True if this is from loss_metric_configs, False for eval_metric_configs
+
+    Returns:
+        Tuple of (classname, params_dict) where params_dict contains all non-classname fields
+    """
+    if is_loss:
+        assert "metric" in config_item, "loss_metric_configs items should have 'metric'"
+        assert "coeff" in config_item, "loss_metric_configs items should have 'coeff'"
+        metric_dict = config_item["metric"]
+        classname = metric_dict["classname"]
+        # Include both coeff and metric params
+        params = {"coeff": config_item["coeff"]}
+        params.update({k: v for k, v in metric_dict.items() if k != "classname"})
+    else:
+        classname = config_item["classname"]
+        assert isinstance(classname, str), "eval_metric_configs should have a classname"
+        params = {k: v for k, v in config_item.items() if k != "classname"}
+
+    return classname, params
+
+
 def flatten_metric_configs(config_dict: dict[str, Any]) -> dict[str, Any]:
     """Flatten loss_metric_configs and eval_metric_configs into dot-notation for wandb searchability.
 
     Converts:
-        loss_metric_configs: [{"classname": "ImportanceMinimalityLoss", "coeff": 0.1, "pnorm": 1.0}]
+        loss_metric_configs: [{"coeff": 0.1, "metric": {"classname": "ImportanceMinimalityLoss", "pnorm": 1.0}}]
     To:
-        loss_metric_configs.ImportanceMinimalityLoss.coeff: 0.1
-        loss_metric_configs.ImportanceMinimalityLoss.pnorm: 1.0
+        loss.ImportanceMinimalityLoss.coeff: 0.1
+        loss.ImportanceMinimalityLoss.pnorm: 1.0
     """
     flattened: dict[str, Any] = {}
 
-    for config_list_name in ["loss_metric_configs", "eval_metric_configs"]:
-        if config_list_name not in config_dict:
+    for field_name, prefix in [("loss_metric_configs", "loss"), ("eval_metric_configs", "eval")]:
+        if field_name not in config_dict:
             continue
 
-        configs = config_dict[config_list_name]
-        assert isinstance(configs, list), f"{config_list_name} should be a list"
+        configs = config_dict[field_name]
+        assert isinstance(configs, list), f"{field_name} should be a list"
 
+        is_loss = field_name == "loss_metric_configs"
         for config_item in configs:
-            assert isinstance(config_item, dict), f"{config_list_name} should have dicts"
+            assert isinstance(config_item, dict), f"{field_name} should have dicts"
 
-            classname = config_item["classname"]
-            assert isinstance(classname, str), f"{config_list_name} should have a classname"
+            classname, params = _extract_metric_info(config_item, is_loss)
             short_name = METRIC_CONFIG_SHORT_NAMES[classname]
 
-            for key, value in config_item.items():
-                if key == "classname":
-                    continue
-                # Get a "loss" or "eval" prefix
-                prefix = config_list_name.split("_")[0]
-                # Create flattened key
-                flat_key = f"{prefix}.{short_name}.{key}"
-                flattened[flat_key] = value
+            for key, value in params.items():
+                flattened[f"{prefix}.{short_name}.{key}"] = value
 
     return flattened
 

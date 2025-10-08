@@ -177,29 +177,57 @@ def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> 
                         f"Expected '{list_field}' to be a list, got {type(result[list_field])}"
                     )
 
-                # Find or create the item with matching discriminator
                 discriminator_field = _DISCRIMINATED_LIST_FIELDS[list_field]
+
+                # Find or create the target item
                 target_item = None
-                for item in result[list_field]:
-                    if item.get(discriminator_field) == discriminator_value:
-                        target_item = item
-                        break
+                if list_field == "loss_metric_configs":
+                    # Loss configs have nested metric structure
+                    for item in result[list_field]:
+                        if (
+                            isinstance(item, dict)
+                            and "metric" in item
+                            and item["metric"].get(discriminator_field) == discriminator_value
+                        ):
+                            target_item = item
+                            break
 
-                if target_item is None:
-                    # Create new item with discriminator
-                    target_item = {discriminator_field: discriminator_value}
-                    result[list_field].append(target_item)
+                    if target_item is None:
+                        target_item = {"metric": {discriminator_field: discriminator_value}}
+                        result[list_field].append(target_item)
+                else:
+                    assert list_field == "eval_metric_configs"
+                    # Eval configs have flat structure
+                    for item in result[list_field]:
+                        if item.get(discriminator_field) == discriminator_value:
+                            target_item = item
+                            break
 
-                # Navigate the remaining path within the item
-                current_item: dict[str, Any] = target_item
-                for k in field_path[:-1]:
-                    if k not in current_item:
-                        current_item[k] = {}
-                    assert isinstance(current_item[k], dict)
-                    current_item = current_item[k]
+                    if target_item is None:
+                        target_item = {discriminator_field: discriminator_value}
+                        result[list_field].append(target_item)
 
-                # Set the final value
-                current_item[field_path[-1]] = value
+                # Navigate to the correct nested location and set value
+                if list_field == "loss_metric_configs" and field_path[0] == "coeff":
+                    # Special case: coeff is at top level for loss configs
+                    target_item["coeff"] = value
+                else:
+                    # Navigate into metric dict for loss configs, or directly into item for eval configs
+                    nav: dict[str, Any]
+                    if list_field == "loss_metric_configs":
+                        assert isinstance(target_item, dict) and "metric" in target_item
+                        metric = target_item["metric"]
+                        assert isinstance(metric, dict)
+                        nav = metric
+                    else:
+                        nav = target_item
+
+                    for k in field_path[:-1]:
+                        if k not in nav:
+                            nav[k] = {}
+                        assert isinstance(nav[k], dict)
+                        nav = nav[k]
+                    nav[field_path[-1]] = value
             else:
                 # Regular dot notation (non-discriminated)
                 current: dict[str, Any] = result
