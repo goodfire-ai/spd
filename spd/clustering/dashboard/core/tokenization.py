@@ -2,6 +2,9 @@ import numpy as np
 from jaxtyping import Int
 from transformers import PreTrainedTokenizer
 
+# TODO: pyright.... hates tokenizers???
+# pyright: reportAttributeAccessIssue=false, reportUnknownParameterType=false
+
 
 def attach_vocab_arr(tokenizer: PreTrainedTokenizer) -> None:
     """Attach a numpy array of token strings to the tokenizer for fast batch decoding.

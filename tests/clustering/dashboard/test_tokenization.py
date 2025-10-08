@@ -12,6 +12,8 @@ from spd.clustering.dashboard.core.tokenization import (
     simple_batch_decode,
 )
 
+# pyright: reportAttributeAccessIssue=false, reportUnknownParameterType=false
+
 
 @pytest.fixture
 def tokenizer() -> PreTrainedTokenizer:
@@ -204,7 +206,7 @@ class TestRoundTripping:
             tokenizer_with_vocab.pad_token = tokenizer_with_vocab.eos_token
 
         # Encode to token IDs
-        encoded = tokenizer_with_vocab(texts, padding=True, truncation=True, return_tensors="np")
+        encoded = tokenizer_with_vocab(texts, padding=True, truncation=True, return_tensors="np")  # pyright: ignore[reportCallIssue]
         token_ids = encoded["input_ids"]  # type: ignore
 
         # Decode using simple_batch_decode

@@ -153,8 +153,8 @@ def compute_component_coactivations_in_cluster(
 
 
 def compute_component_cosine_similarities(
-    model: "ComponentModel",
-    component_labels: list[str],
+    model: "ComponentModel",  # pyright: ignore[reportUnusedParameter]
+    component_labels: list[str],  # pyright: ignore[reportUnusedParameter]
 ) -> Float[np.ndarray, "2 n_comps n_comps"]:
     """Compute cosine similarity matrices for U and V vectors of components.
 
