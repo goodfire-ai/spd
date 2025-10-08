@@ -220,29 +220,21 @@ def get_mask_overrides() -> list[MaskOverrideDTO]:
 @handle_errors
 async def get_layer_subcomponent_activation_contexts(
     layer: str,
-    importance_threshold: float = 0.01,
-    max_examples_per_subcomponent: int = 100,
-    n_steps: int = 10_000,
-    n_tokens_either_side: int = 10,
+    importance_threshold: float,
+    max_examples_per_subcomponent: int,
+    n_batches: int,
+    n_tokens_either_side: int,
+    batch_size: int,
 ) -> list[SubcomponentActivationContexts]:
     f = subcomponent_activations_context_service.get_layer_subcomponents_activation_contexts
     return await f(
         layer=layer,
         importance_threshold=importance_threshold,
         max_examples_per_subcomponent=max_examples_per_subcomponent,
-        n_steps=n_steps,
+        n_batches=n_batches,
         n_tokens_either_side=n_tokens_either_side,
+        batch_size=batch_size,
     )
-
-
-@app.get("/activation_contexts/{layer}/subcomponents/{subcomponent_idx}")
-@handle_errors
-async def get_subcomponent_activation_contexts(
-    layer: str,
-    subcomponent_idx: int,
-) -> list[ActivationContext]:
-    f = subcomponent_activations_context_service.get_layer_subcomponent_activation_contexts
-    return await f(layer=layer, subcomponent_idx=subcomponent_idx)
 
 
 @app.get("/cluster-dashboard/data")

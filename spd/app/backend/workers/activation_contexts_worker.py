@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import gc
 import heapq
 import sys
 from collections import defaultdict
+from collections.abc import Generator, Iterable
 from dataclasses import dataclass
 
 import torch
@@ -75,8 +77,9 @@ class WorkerArgs:
     importance_threshold: float
     # separation_threshold_tokens: int
     max_examples_per_subcomponent: int
-    n_steps: int
+    n_batches: int
     n_tokens_either_side: int
+    batch_size: int
 
 
 def worker_main(args: WorkerArgs) -> ModelActivationContexts:
@@ -89,37 +92,42 @@ def worker_main(args: WorkerArgs) -> ModelActivationContexts:
 
     run_context.cm.to(DEVICE)
 
-    topk_by_subcomponent = _get_topk_by_subcomponent(
+    topk_by_subcomponent = get_topk_by_subcomponent(
         run_context,
         args.importance_threshold,
-        # args.separation_threshold_tokens,
         args.max_examples_per_subcomponent,
-        args.n_steps,
+        args.n_batches,
         args.n_tokens_either_side,
-    )
-
-    return map_to_model_ctxs(run_context, topk_by_subcomponent)
-
-def main(run_context: TrainRunContext, args: WorkerArgs) -> ModelActivationContexts:
-    topk_by_subcomponent = _get_topk_by_subcomponent(
-        run_context,
-        args.importance_threshold,
-        # args.separation_threshold_tokens,
-        args.max_examples_per_subcomponent,
-        args.n_steps,
-        args.n_tokens_either_side,
+        args.batch_size,
     )
 
     return map_to_model_ctxs(run_context, topk_by_subcomponent)
 
 
-def _get_topk_by_subcomponent(
+def roll_batch_size_1_into_x(
+    singleton_batches: Iterable[torch.Tensor],
+    batch_size: int,
+) -> Generator[torch.Tensor, None, None]:
+    logger.info(f"worker: rolling batch size 1 into {batch_size}")
+    examples = []
+    for batch in singleton_batches:
+        assert batch.shape[0] == 1, "Batch size must be 1"
+        examples.append(batch[0])
+        if len(examples) == batch_size:
+            yield torch.stack(examples)
+            examples = []
+    if examples:
+        yield torch.stack(examples)
+
+
+def get_topk_by_subcomponent(
     run_context: TrainRunContext,
     importance_threshold: float,
     # separation_threshold_tokens: int,
     max_examples_per_subcomponent: int,
-    n_steps: int,
+    n_batches: int,
     n_tokens_either_side: int,
+    batch_size: int,
 ) -> dict[tuple[str, int], _TopKExamples]:
     # Tracks top-k examples per (module_name, component_idx)
     topk_by_subcomponent: dict[tuple[str, int], _TopKExamples] = {}
@@ -129,15 +137,20 @@ def _get_topk_by_subcomponent(
     C = run_context.cm.C
 
     logger.info("worker: starting data iteration")
-    data_iter = iter(run_context.train_loader)
-    for i in tqdm(range(n_steps), desc="Processing data", file=sys.stderr):
-        batch = extract_batch_data(next(data_iter)).to(DEVICE)
+
+    batches = roll_batch_size_1_into_x(
+        singleton_batches=(extract_batch_data(b).to(DEVICE) for b in run_context.train_loader),
+        batch_size=batch_size,
+    )
+
+    for i in tqdm(range(n_batches), desc="Processing data", file=sys.stderr):
+        batch = next(batches)
+
         assert isinstance(batch, torch.Tensor)
         assert batch.ndim == 2, "Expected batch tensor of shape (B, S)"
         B, S = batch.shape
         if i == 0:
-            print(f"Batch shape: {B}, {S}")
-
+            print(f"Batch shape: {B}, {S}, batch_size: {batch_size}")
 
         # IMPORTANT: separation should be enforced only *within this batch's sequences*.
         # Reset cache each batch so slots (b = 0..B-1) from previous batches don't suppress new sequences.

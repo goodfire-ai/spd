@@ -152,7 +152,6 @@ class RunContextService:
 
     def get_status(self) -> Status:
         if (train_ctx := self.train_run_context) is None:
-            logger.info("No train run context found")
             return Status(
                 train_run=None,
                 cluster_run=None,
@@ -166,7 +165,6 @@ class RunContextService:
         )
 
         if (cluster_ctx := self.cluster_run_context) is None:
-            logger.info("No cluster run context found")
             return Status(
                 train_run=train_run,
                 cluster_run=None,

@@ -23,7 +23,8 @@
     // Track previous layers to detect when run changes
     let previousLayers: string[] = availableComponentLayers;
     $: {
-        const layersChanged = JSON.stringify(availableComponentLayers) !== JSON.stringify(previousLayers);
+        const layersChanged =
+            JSON.stringify(availableComponentLayers) !== JSON.stringify(previousLayers);
         if (layersChanged) {
             subcomponentsActivationContexts = null;
             selectedLayer = availableComponentLayers[0];
@@ -36,6 +37,7 @@
 
     async function loadContexts() {
         loading = true;
+        subcomponentsActivationContexts = null;
         try {
             console.log(`loading contexts for layer ${selectedLayer}`);
             const config: ActivationContextsConfig = {
@@ -107,13 +109,7 @@
 
                 <div class="config-item">
                     <label for="n-steps">Number of Sequences:</label>
-                    <input
-                        id="n-steps"
-                        type="number"
-                        step="1"
-                        min="1"
-                        bind:value={nSteps}
-                    />
+                    <input id="n-steps" type="number" step="1" min="1" bind:value={nSteps} />
                 </div>
 
                 <div class="config-item">
@@ -152,10 +148,13 @@
 
         <div class="subcomponent-section-header">
             <h4>Subcomponent {currentItem.subcomponent_idx}</h4>
-
             {#if currentItem.token_densities && currentItem.token_densities.length > 0}
                 <div class="token-densities">
-                    <h5>Token Activation Densities (top 20)</h5>
+                    <h5>
+                        Token Activation Densities {currentItem.token_densities.length > 20
+                            ? `(top 20) of ${currentItem.token_densities.length}`
+                            : ""}
+                    </h5>
                     <div class="densities-grid">
                         {#each currentItem.token_densities.slice(0, 20) as { token, density }}
                             <div class="density-item">
@@ -171,8 +170,11 @@
             {/if}
 
             <div class="subcomponent-section">
-                {#each currentItem.examples as example}
-                    <ActivationContext example={example} />
+                {currentItem.examples.length > 200
+                    ? `Showing top 200 examples of ${currentItem.examples.length} examples`
+                    : ""}
+                {#each currentItem.examples.slice(0, 200) as example}
+                    <ActivationContext {example} />
                 {/each}
             </div>
         </div>

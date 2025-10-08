@@ -1,16 +1,14 @@
 import asyncio
-import json
-import os
-import uuid
-from concurrent.futures import ProcessPoolExecutor
+import gc
 from pathlib import Path
 
-from spd.app.backend.api import ActivationContext, ModelActivationContexts
+import torch
+
+from spd.app.backend.api import ModelActivationContexts
 from spd.app.backend.services.run_context_service import RunContextService
 from spd.app.backend.workers.activation_contexts_worker import (
-    WorkerArgs,
-    main,
-    worker_main,
+    get_topk_by_subcomponent,
+    map_to_model_ctxs,
 )
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
@@ -29,49 +27,44 @@ class SubcomponentActivationContextsService:
     async def get_layer_subcomponents_activation_contexts(
         self,
         layer: str,
-        importance_threshold: float = 0.01,
-        max_examples_per_subcomponent: int = 100,
-        n_steps: int = 10_000,
-        n_tokens_either_side: int = 10,
+        importance_threshold: float,
+        max_examples_per_subcomponent: int,
+        n_batches: int,
+        n_tokens_either_side: int,
+        batch_size: int,
     ):
-        assert (ctx := self.run_context_service.train_run_context) is not None, (
+        assert (run_context := self.run_context_service.train_run_context) is not None, (
             "Run context not found"
         )
-        layer_activations = main(
-            ctx,
-            WorkerArgs(
-                wandb_path=ctx.wandb_path,
-                importance_threshold=importance_threshold,
-                max_examples_per_subcomponent=max_examples_per_subcomponent,
-                n_steps=n_steps,
-                n_tokens_either_side=n_tokens_either_side,
-            ),
-        )
-        return layer_activations.layers[layer]
+        logger.info(f"worker: starting with batch size {batch_size}")
 
-    async def get_layer_subcomponent_activation_contexts(
-        self,
-        layer: str,
-        subcomponent_idx: int,
-        importance_threshold: float = 0.01,
-        max_examples_per_subcomponent: int = 100,
-        n_steps: int = 10_000,
-        n_tokens_either_side: int = 10,
-    ) -> list[ActivationContext]:
-        assert (ctx := self.run_context_service.train_run_context) is not None, (
-            "Run context not found"
+        topk_by_subcomponent = None
+        while batch_size > 0:
+            try:
+                gc.collect()
+                torch.cuda.empty_cache()
+                topk_by_subcomponent = get_topk_by_subcomponent(
+                    run_context,
+                    importance_threshold,
+                    max_examples_per_subcomponent,
+                    n_batches,
+                    n_tokens_either_side,
+                    batch_size,
+                )
+                break
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    old_batch_size = batch_size
+                    batch_size //= 2
+                    n_batches = int(n_batches * (old_batch_size / batch_size))
+                    logger.error(
+                        f"worker: out of memory, halving batch size to {batch_size}, "
+                        f"increasing n_batches to {n_batches} [factor: {old_batch_size / batch_size}]"
+                    )
+                    continue
+                raise e
+        assert topk_by_subcomponent is not None, (
+            f"topk_by_subcomponent not found, batch size: {batch_size}"
         )
-        layer_activations = main(
-            ctx,
-            WorkerArgs(
-                wandb_path=ctx.wandb_path,
-                importance_threshold=importance_threshold,
-                max_examples_per_subcomponent=max_examples_per_subcomponent,
-                n_steps=n_steps,
-                n_tokens_either_side=n_tokens_either_side,
-            ),
-        ).layers[layer]
-        for sub in layer_activations:
-            if sub.subcomponent_idx == subcomponent_idx:
-                return sub.examples
-        return []
+
+        return map_to_model_ctxs(run_context, topk_by_subcomponent).layers[layer]

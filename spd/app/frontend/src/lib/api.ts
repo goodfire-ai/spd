@@ -375,22 +375,22 @@ export async function getLayerActivationContexts(
     return response.json();
 }
 
-export async function getSubcomponentActivationContexts(
-    subcomponentIdx: number,
-    layer: string
-): Promise<ActivationContext[]> {
-    const response = await fetch(
-        `${apiUrl}/activation_contexts/${layer}/subcomponents/${subcomponentIdx}`,
-        { method: "GET" }
-    );
+// export async function getSubcomponentActivationContexts(
+//     subcomponentIdx: number,
+//     layer: string
+// ): Promise<ActivationContext[]> {
+//     const response = await fetch(
+//         `${apiUrl}/activation_contexts/${layer}/subcomponents/${subcomponentIdx}`,
+//         { method: "GET" }
+//     );
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Failed to get activation contexts");
-    }
+//     if (!response.ok) {
+//         const error = await response.json();
+//         throw new Error(error.detail || "Failed to get activation contexts");
+//     }
 
-    return response.json();
-}
+//     return response.json();
+// }
 
 export type ClusterComponentDTO = {
     module: string;
