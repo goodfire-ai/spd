@@ -62,7 +62,7 @@ function getDefaultConfig() {
         textSamples: "text_samples.jsonl",
         activations: "activations.npz",
         activationsMap: "activations_map.json",
-        explanations: "cluster_explanations.json"
+        explanations: "explanations.jsonl"
       }
     },
 

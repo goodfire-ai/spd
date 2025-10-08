@@ -34,7 +34,7 @@ from spd.clustering.dashboard.core import (
 from spd.clustering.merge_history import MergeHistory
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
-from spd.utils.general_utils import extract_batch_data, get_module_device
+from spd.utils.general_utils import extract_batch_data, get_obj_device
 
 
 @dataclass
@@ -285,7 +285,7 @@ def compute_max_activations(
         is the number of samples where both cluster i and j activate, and cluster_indices maps
         matrix positions to cluster IDs
     """
-    device: torch.device = get_module_device(model)
+    device: torch.device = get_obj_device(model)
 
     # Get unique cluster indices and component info
     unique_cluster_indices: list[int] = merge_history.get_unique_clusters(iteration)
@@ -435,8 +435,8 @@ def compute_max_activations(
                 # Store activations for each component in this cluster
                 components_in_cluster: list[dict[str, Any]] = cluster_components[cluster_idx]
                 for component_info in components_in_cluster:
-                    comp_label: str = component_info["label"]
-                    comp_idx: int | None = processed.get_label_index(comp_label)
+                    component_label: str = component_info["label"]
+                    comp_idx: int | None = processed.get_label_index(component_label)
 
                     if comp_idx is not None:
                         # Get activation for this component: [seq_len]
@@ -448,8 +448,8 @@ def compute_max_activations(
                         )
 
                         # Store component activation
-                        component_activations_storage[current_cluster_hash][comp_label].append(comp_acts_1d)
-                        component_text_hashes_storage[current_cluster_hash][comp_label].append(text_hash)
+                        component_activations_storage[current_cluster_hash][component_label].append(comp_acts_1d)
+                        component_text_hashes_storage[current_cluster_hash][component_label].append(text_hash)
 
     # Build ClusterData for each cluster
     clusters: dict[ClusterIdHash, ClusterData] = {}
@@ -523,7 +523,7 @@ def compute_max_activations(
             comp_activation_indices: list[int] = []
             comp_act_sample_hashes: list[ActivationSampleHash] = []
 
-            for j, (text_hash, comp_acts) in enumerate(zip(comp_text_hashes, comp_acts_array, strict=True)):
+            for text_hash, comp_acts in zip(comp_text_hashes, comp_acts_array, strict=True):
                 # Create activation sample hash for this component
                 comp_act_hash = ActivationSampleHash(f"{cluster_hash}:{comp_label}:{text_hash}")
                 comp_act_sample_hashes.append(comp_act_hash)

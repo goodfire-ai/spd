@@ -264,6 +264,11 @@ class ClusterData:
         # Normalize positions to [0, 1] range
         n_ctx: int = all_activations.shape[1]
         normalized_positions: np.ndarray = max_positions.astype(float) / max(1, n_ctx - 1)
+
+        # Sanity check: positions should always be in [0, 1]
+        assert normalized_positions.min() >= 0, f"Position min={normalized_positions.min()} < 0"
+        assert normalized_positions.max() <= 1, f"Position max={normalized_positions.max()} > 1"
+
         stats["max_activation_position"] = BinnedData.from_arr(
             normalized_positions,
             n_bins=hist_bins,

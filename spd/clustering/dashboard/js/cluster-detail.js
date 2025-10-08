@@ -5,6 +5,12 @@ let activationsArray = null;
 let activationsMap = {};
 let currentClusterHash = null;
 let modelInfo = {};
+let explanations = {};
+
+// Component-level data
+let componentActivations = {};  // Map component labels to their activation data
+let enabledComponents = new Set();  // Track which components are enabled
+let combinationStrategy = 'max';  // How to combine component activations: 'max', 'sum', 'mean'
 
 async function init() {
     // Get cluster hash from URL
@@ -32,6 +38,7 @@ async function loadData() {
         const textSamplesPath = CONFIG.getDataPath('textSamples');
         const activationsMapPath = CONFIG.getDataPath('activationsMap');
         const modelInfoPath = CONFIG.getDataPath('modelInfo');
+        const explanationsPath = CONFIG.getDataPath('explanations');
 
         try {
             [clusters, samples, activationsMapResponse, modelInfoResponse] = await Promise.all([
@@ -48,6 +55,9 @@ async function loadData() {
                     throw new Error(`Failed to load ${modelInfoPath}: ${e.message}`);
                 })
             ]);
+
+            // Load explanations (non-critical, don't fail if missing)
+            explanations = await loadJSONL(explanationsPath, 'cluster_id').catch(() => ({}));
         } catch (error) {
             progressBar.complete();
             NOTIF.error(error.message, error, null);
@@ -129,6 +139,13 @@ function displayCluster() {
     const componentCount = document.getElementById('componentCount');
     componentCount.textContent = clusterData.components.length;
 
+    // Display explanation and setup copy handler
+    displayExplanation();
+    setupCopyHandler();
+
+    // Initialize component data
+    initializeComponentData();
+
     // Display model visualization
     displayModelVisualization();
 
@@ -148,6 +165,67 @@ function displayCluster() {
 
     // Display samples
     displaySamples();
+}
+
+function displayExplanation() {
+    const explanationSpan = document.getElementById('clusterExplanation');
+    if (!explanationSpan) return;
+
+    const explanationData = explanations[currentClusterHash];
+    if (explanationData && explanationData.explanation) {
+        explanationSpan.textContent = explanationData.explanation;
+        explanationSpan.style.fontStyle = 'normal';
+        explanationSpan.style.color = '#000';
+    } else {
+        explanationSpan.textContent = 'No explanation';
+        explanationSpan.style.fontStyle = 'italic';
+        explanationSpan.style.color = '#666';
+    }
+}
+
+function setupCopyHandler() {
+    const copyBtn = document.getElementById('copyTemplateBtn');
+    if (!copyBtn) return;
+
+    copyBtn.addEventListener('click', async () => {
+        const template = JSON.stringify({
+            cluster_id: currentClusterHash,
+            explanation: ""
+        }) + '\n';
+
+        try {
+            await navigator.clipboard.writeText(template);
+            NOTIF.success('Template copied to clipboard!');
+        } catch (err) {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = template;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                NOTIF.success('Template copied to clipboard!');
+            } catch (e) {
+                NOTIF.error('Failed to copy template', e, null);
+            }
+            document.body.removeChild(textArea);
+        }
+    });
+}
+
+function initializeComponentData() {
+    // Load component activations if available
+    if (clusterData.component_activations) {
+        componentActivations = clusterData.component_activations;
+    }
+
+    // Enable all components by default
+    enabledComponents.clear();
+    clusterData.components.forEach(comp => {
+        enabledComponents.add(comp.label);
+    });
 }
 
 function displayModelVisualization() {
@@ -364,13 +442,33 @@ function displayTokenActivations() {
 
 function setupComponentsTable() {
     const tableData = clusterData.components.map(comp => ({
+        label: comp.label,
         module: comp.module,
-        index: comp.index
+        index: comp.index,
+        enabled: enabledComponents.has(comp.label)
     }));
 
     const tableConfig = {
         data: tableData,
         columns: [
+            {
+                key: 'enabled',
+                label: '✓',
+                type: 'boolean',
+                width: '40px',
+                align: 'center',
+                renderer: (value, row) => {
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = value;
+                    checkbox.style.cursor = 'pointer';
+                    checkbox.addEventListener('change', (e) => {
+                        onComponentToggle(row.label, e.target.checked);
+                    });
+                    return checkbox;
+                },
+                filterable: false
+            },
             {
                 key: 'module',
                 label: 'Module',
@@ -390,6 +488,81 @@ function setupComponentsTable() {
     };
 
     new DataTable('#componentsTable', tableConfig);
+}
+
+function onComponentToggle(componentLabel, isEnabled) {
+    if (isEnabled) {
+        enabledComponents.add(componentLabel);
+    } else {
+        enabledComponents.delete(componentLabel);
+    }
+
+    // Recompute and redisplay activations
+    recomputeDisplayedActivations();
+}
+
+async function recomputeDisplayedActivations() {
+    // If no components are enabled or component activations not available, use cluster-level
+    if (enabledComponents.size === 0 || !componentActivations || Object.keys(componentActivations).length === 0) {
+        // Just redisplay with cluster-level activations (default)
+        displaySamples();
+        return;
+    }
+
+    // If all components are enabled, use cluster-level activations (faster)
+    if (enabledComponents.size === clusterData.components.length) {
+        displaySamples();
+        return;
+    }
+
+    // Recompute activations based on enabled components
+    displaySamples();
+}
+
+function combineComponentActivations(componentActsList, strategy) {
+    // componentActsList: array of activation arrays [n_ctx]
+    // Returns: combined activation array [n_ctx]
+
+    if (componentActsList.length === 0) {
+        return null;
+    }
+
+    if (componentActsList.length === 1) {
+        return componentActsList[0];
+    }
+
+    const n_ctx = componentActsList[0].length;
+    const combined = new Array(n_ctx).fill(0);
+
+    if (strategy === 'max') {
+        for (let i = 0; i < n_ctx; i++) {
+            let maxVal = componentActsList[0][i];
+            for (let j = 1; j < componentActsList.length; j++) {
+                if (componentActsList[j][i] > maxVal) {
+                    maxVal = componentActsList[j][i];
+                }
+            }
+            combined[i] = maxVal;
+        }
+    } else if (strategy === 'sum') {
+        for (let i = 0; i < n_ctx; i++) {
+            let sum = 0;
+            for (let j = 0; j < componentActsList.length; j++) {
+                sum += componentActsList[j][i];
+            }
+            combined[i] = sum;
+        }
+    } else if (strategy === 'mean') {
+        for (let i = 0; i < n_ctx; i++) {
+            let sum = 0;
+            for (let j = 0; j < componentActsList.length; j++) {
+                sum += componentActsList[j][i];
+            }
+            combined[i] = sum / componentActsList.length;
+        }
+    }
+
+    return combined;
 }
 
 function setupModelViewHighlighting() {
@@ -442,6 +615,11 @@ function displaySamples() {
     const sampleHashes = clusterData.criterion_samples[criterionKey];
     const samplesToShow = Math.min(CONFIG.clusterPage.maxSamplesPerCluster, sampleHashes.length);
 
+    // Check if we need to use component-level activations
+    const useComponentActivations = componentActivations &&
+                                     Object.keys(componentActivations).length > 0 &&
+                                     enabledComponents.size < clusterData.components.length;
+
     for (let i = 0; i < samplesToShow; i++) {
         const textHash = sampleHashes[i];
         const textSample = textSamples[textHash];
@@ -451,16 +629,45 @@ function displaySamples() {
             continue;
         }
 
-        // Get activations for this sample using full hash
-        const fullHash = `${currentClusterHash}:${textHash}`;
-        const activationIdx = activationsMap[fullHash];
+        let activationsData;
+
+        if (useComponentActivations) {
+            // Compute combined activations from enabled components
+            const componentActsList = [];
+
+            for (const comp of clusterData.components) {
+                if (enabledComponents.has(comp.label) && componentActivations[comp.label]) {
+                    const compData = componentActivations[comp.label];
+                    // Find the activation for this text sample
+                    const hashIdx = compData.activation_sample_hashes.indexOf(`${currentClusterHash}:${comp.label}:${textHash}`);
+                    if (hashIdx !== -1) {
+                        const activationIdx = compData.activation_indices[hashIdx];
+                        if (activationIdx !== undefined && activationsArray) {
+                            const compActivations = activationsArray.get(activationIdx);
+                            componentActsList.push(Array.from(compActivations.data));
+                        }
+                    }
+                }
+            }
+
+            if (componentActsList.length > 0) {
+                activationsData = combineComponentActivations(componentActsList, combinationStrategy);
+            }
+        }
+
+        // Fall back to cluster-level activations if component activations not available
+        if (!activationsData) {
+            const fullHash = `${currentClusterHash}:${textHash}`;
+            const activationIdx = activationsMap[fullHash];
+
+            if (activationIdx !== undefined && activationsArray) {
+                const activations = activationsArray.get(activationIdx);
+                activationsData = Array.from(activations.data);
+            }
+        }
 
         let tokenViz;
-        if (activationIdx !== undefined && activationsArray) {
-            // Get activation data from the NDArray
-            const activations = activationsArray.get(activationIdx);
-            const activationsData = Array.from(activations.data);
-
+        if (activationsData) {
             // Find max position
             const maxPosition = activationsData.indexOf(Math.max(...activationsData));
 
@@ -472,7 +679,7 @@ function displaySamples() {
             );
         } else {
             // Fallback to simple visualization if no activations
-            console.warn(`No activations found for ${shortHash}`);
+            console.warn(`No activations found for sample ${i}`);
             tokenViz = createSimpleTokenViz(textSample.tokens);
         }
 

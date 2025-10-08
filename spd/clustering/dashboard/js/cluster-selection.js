@@ -1,6 +1,7 @@
 let clusterData = {};
 let modelInfo = {};
 let dataTable = null;
+let explanations = {};
 
 // Alpine.js data component for model info
 const modelInfoData = {
@@ -178,6 +179,22 @@ const columnRenderers = {
 
     clusterLink: function(value, row, col) {
         return `<a href="cluster.html?id=${row.clusterHash}">View →</a>`;
+    },
+
+    explanation: function(value, row, col) {
+        if (!value) {
+            return '<span style="color: #999; font-style: italic;">—</span>';
+        }
+        // Truncate long explanations
+        const maxLength = 60;
+        if (value.length > maxLength) {
+            const truncated = value.substring(0, maxLength) + '...';
+            const span = document.createElement('span');
+            span.textContent = truncated;
+            span.title = value;  // Show full text on hover
+            return span;
+        }
+        return value;
     },
 
     tokenEntropy: function(value, row, col) {
@@ -599,12 +616,17 @@ function processClusterData() {
         const parts = clusterHash.split('-');
         const clusterId = parseInt(parts[parts.length - 1]);
 
+        // Get explanation for this cluster
+        const explanationData = explanations[clusterHash];
+        const explanation = explanationData ? explanationData.explanation : null;
+
         tableData.push({
             id: clusterId,
             clusterHash: clusterHash,
             componentCount: cluster.components.length,
             modules: Array.from(modules),
-            stats: stats
+            stats: stats,
+            explanation: explanation
         });
     }
 
@@ -616,6 +638,9 @@ async function loadData() {
     const clusters = await loadJSONL(CONFIG.getDataPath('clusters'), 'cluster_hash');
 
     clusterData = clusters;
+
+    // Load explanations (non-critical, don't fail if missing)
+    explanations = await loadJSONL(CONFIG.getDataPath('explanations'), 'cluster_id').catch(() => ({}));
 
     const tableData = processClusterData();
 
@@ -739,6 +764,17 @@ async function loadData() {
             return tokenStats ? tokenStats.concentration_ratio : null;
         },
         filterTooltip: 'Filter by concentration (0-1). Use operators: >, <, >=, <=, ==, != (e.g., >0.5)'
+    });
+
+    // Explanation column
+    columns.push({
+        key: 'explanation',
+        label: 'Explanation',
+        type: 'string',
+        width: '200px',
+        align: 'left',
+        renderer: columnRenderers.explanation,
+        filterTooltip: 'Filter by explanation text (case-insensitive substring match)'
     });
 
     // Actions column

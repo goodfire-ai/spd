@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Cluster Selection</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
         <!-- begin 'css/styles.css' -->
     <style>
     body {
@@ -369,22 +370,66 @@
 <body>
     <h1>Cluster Selection Dashboard</h1>
 
-    <div id="modelInfo" style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px; display: none;">
+    <div id="modelInfo" x-data="modelInfoData" x-show="hasData" style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px;">
         <h2 style="margin-top: 0;">Model Information</h2>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
             <div>
-                <strong>Total Modules:</strong> <span id="totalModules">-</span>
+                <strong>Total Modules:</strong> <span x-text="data.total_modules || '-'"></span>
             </div>
             <div>
-                <strong>Total Components:</strong> <span id="totalComponents">-</span>
+                <strong>Total Components:</strong> <span x-text="data.total_components || '-'"></span>
             </div>
             <div>
-                <strong>Total Clusters:</strong> <span id="totalClusters">-</span>
+                <strong>Total Clusters:</strong> <span x-text="data.total_clusters || '-'"></span>
             </div>
             <div>
-                <strong>Model Parameters:</strong> <span id="totalParameters">-</span>
+                <strong>Model Parameters:</strong> <span x-text="formatParameters(data.total_parameters)"></span>
+            </div>
+            <div>
+                <strong>Iteration:</strong> <span x-text="data.iteration !== undefined ? data.iteration : '-'"></span>
+            </div>
+            <div>
+                <strong>Component Size:</strong> <span x-text="data.component_size || '-'"></span>
+            </div>
+            <div style="grid-column: 1 / -1;">
+                <strong>Source SPD Run:</strong> <span x-html="formatWandBLink(data.model_path)"></span>
+            </div>
+            <div style="grid-column: 1 / -1;">
+                <strong>Clustering Run:</strong> <span x-html="formatWandBLink(data.wandb_clustering_run)"></span>
+            </div>
+            <div style="grid-column: 1 / -1;">
+                <strong>Pretrained Model:</strong> <span x-text="data.config?.pretrained_model_name || '-'"></span>
             </div>
         </div>
+        <details style="margin-top: 15px;">
+            <summary style="cursor: pointer; font-weight: 600;">Configuration Details</summary>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; font-size: 13px;">
+                <div>
+                    <strong>Seed:</strong> <span x-text="data.config?.seed !== undefined ? data.config.seed : '-'"></span>
+                </div>
+                <div>
+                    <strong>Steps:</strong> <span x-text="data.config?.steps || '-'"></span>
+                </div>
+                <div>
+                    <strong>Learning Rate:</strong> <span x-text="data.config?.lr || '-'"></span>
+                </div>
+                <div>
+                    <strong>Batch Size:</strong> <span x-text="data.config?.batch_size || '-'"></span>
+                </div>
+                <div>
+                    <strong>Sigmoid Type:</strong> <span x-text="data.config?.sigmoid_type || '-'"></span>
+                </div>
+                <div>
+                    <strong>Sampling:</strong> <span x-text="data.config?.sampling || '-'"></span>
+                </div>
+                <div>
+                    <strong>LR Schedule:</strong> <span x-text="data.config?.lr_schedule || '-'"></span>
+                </div>
+                <div>
+                    <strong>Output Loss:</strong> <span x-text="data.config?.output_loss_type || '-'"></span>
+                </div>
+            </div>
+        </details>
     </div>
 
     <div id="clusterTableContainer"></div>
@@ -730,7 +775,7 @@
             textSamples: "text_samples.jsonl",
             activations: "activations.npz",
             activationsMap: "activations_map.json",
-            explanations: "cluster_explanations.json"
+            explanations: "explanations.jsonl"
           }
         },
     
@@ -3122,6 +3167,53 @@
     let clusterData = {};
     let modelInfo = {};
     let dataTable = null;
+    let explanations = {};
+    
+    // Alpine.js data component for model info
+    const modelInfoData = {
+        data: {},
+        hasData: false,
+    
+        async loadData() {
+            try {
+                const response = await fetch(CONFIG.getDataPath('modelInfo'));
+                this.data = await response.json();
+                this.hasData = Object.keys(this.data).length > 0;
+    
+                // Also populate global modelInfo for DataTable renderers
+                modelInfo = this.data;
+    
+                console.log('Model info loaded:', this.hasData, Object.keys(this.data));
+            } catch (error) {
+                console.error('Failed to load model info:', error);
+                this.hasData = false;
+            }
+        },
+    
+        formatParameters(totalParams) {
+            if (!totalParams) return '-';
+            if (totalParams >= 1000000) return (totalParams / 1000000).toFixed(1) + 'M';
+            if (totalParams >= 1000) return (totalParams / 1000).toFixed(1) + 'K';
+            return totalParams.toString();
+        },
+    
+        formatWandBLink(path) {
+            if (!path) return '-';
+    
+            // Remove "wandb:" prefix if present
+            const cleanPath = path.replace(/^wandb:/, '');
+    
+            // Convert to WandB URL
+            const url = `https://wandb.ai/${cleanPath}`;
+    
+            // Show shortened path in link text
+            const displayText = cleanPath.length > 60
+                ? cleanPath.substring(0, 57) + '...'
+                : cleanPath;
+    
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`;
+        }
+    };
     
     // Custom column renderers
     const columnRenderers = {
@@ -3164,7 +3256,20 @@
             const container = document.createElement('div');
             container.className = 'sparkline-cell';
     
-            const svg = sparkbars(histData.bin_counts, null, {
+            // Calculate bin centers for x-axis
+            const binCenters = [];
+            for (let i = 0; i < histData.bin_counts.length; i++) {
+                binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
+            }
+    
+            const min = row.stats.min_activation;
+            const max = row.stats.max_activation;
+    
+            // Set x-axis limits to [0, 1] if data is in that range
+            const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
+    
+            // Pass bin centers as x-values and counts as y-values
+            const svg = sparkbars(binCenters, histData.bin_counts, {
                 width: CONFIG.visualization.sparklineWidth,
                 height: CONFIG.visualization.sparklineHeight,
                 color: '#4169E1',
@@ -3172,6 +3277,7 @@
                 lineWidth: 0,
                 markers: '',
                 margin: 2,
+                xlims: xlims,
                 ylims: [0, null],
                 logScale: true,
                 xAxis: {line: true, ticks: true, label_margin: 10},
@@ -3180,13 +3286,11 @@
     
             container.innerHTML = svg;
     
-            const min = row.stats.min_activation;
-            const max = row.stats.max_activation;
             const mean = row.stats.mean_activation;
+            const median = calculateHistogramMedian(histData);
             const n = row.stats.n_tokens;
-            const maxBinCount = Math.max(...histData.bin_counts);
     
-            container.title = `All Activations Histogram (n=${n})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMax bin: ${maxBinCount} values`;
+            container.title = `All Activations Histogram (n=${n})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
     
             return container;
         },
@@ -3200,7 +3304,20 @@
             const container = document.createElement('div');
             container.className = 'sparkline-cell';
     
-            const svg = sparkbars(histData.bin_counts, null, {
+            // Calculate bin centers for x-axis
+            const binCenters = [];
+            for (let i = 0; i < histData.bin_counts.length; i++) {
+                binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
+            }
+    
+            const min = histData.bin_edges[0];
+            const max = histData.bin_edges[histData.bin_edges.length - 1];
+    
+            // Set x-axis limits to [0, 1] if data is in that range
+            const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
+    
+            // Pass bin centers as x-values and counts as y-values
+            const svg = sparkbars(binCenters, histData.bin_counts, {
                 width: CONFIG.visualization.sparklineWidth,
                 height: CONFIG.visualization.sparklineHeight,
                 color: '#DC143C',
@@ -3208,6 +3325,7 @@
                 lineWidth: 0,
                 markers: '',
                 margin: 2,
+                xlims: xlims,
                 ylims: [0, null],
                 logScale: true,
                 xAxis: {line: true, ticks: true, label_margin: 10},
@@ -3217,17 +3335,32 @@
             container.innerHTML = svg;
     
             const n = row.stats.n_samples;
-            const maxBinCount = Math.max(...histData.bin_counts);
-            const min = histData.bin_edges[0];
-            const max = histData.bin_edges[histData.bin_edges.length - 1];
+            const mean = calculateHistogramMean(histData);
+            const median = calculateHistogramMedian(histData);
     
-            container.title = `Max Activation Distribution (n=${n} samples)\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMax bin: ${maxBinCount} samples`;
+            container.title = `Max Activation Distribution (n=${n} samples)\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
     
             return container;
         },
     
         clusterLink: function(value, row, col) {
             return `<a href="cluster.html?id=${row.clusterHash}">View →</a>`;
+        },
+    
+        explanation: function(value, row, col) {
+            if (!value) {
+                return '<span style="color: #999; font-style: italic;">—</span>';
+            }
+            // Truncate long explanations
+            const maxLength = 60;
+            if (value.length > maxLength) {
+                const truncated = value.substring(0, maxLength) + '...';
+                const span = document.createElement('span');
+                span.textContent = truncated;
+                span.title = value;  // Show full text on hover
+                return span;
+            }
+            return value;
         },
     
         tokenEntropy: function(value, row, col) {
@@ -3308,7 +3441,21 @@
                 const container = document.createElement('div');
                 container.className = 'sparkline-cell';
     
-                const svg = sparkbars(histData.bin_counts, null, {
+                // Calculate bin centers for x-axis
+                const binCenters = [];
+                for (let i = 0; i < histData.bin_counts.length; i++) {
+                    binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
+                }
+    
+                // Calculate statistics of underlying data
+                const min = histData.bin_edges[0];
+                const max = histData.bin_edges[histData.bin_edges.length - 1];
+    
+                // Set x-axis limits to [0, 1] if data is in that range
+                const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
+    
+                // Pass bin centers as x-values and counts as y-values
+                const svg = sparkbars(binCenters, histData.bin_counts, {
                     width: CONFIG.visualization.sparklineWidth,
                     height: CONFIG.visualization.sparklineHeight,
                     color: color,
@@ -3316,6 +3463,7 @@
                     lineWidth: 0,
                     markers: '',
                     margin: 2,
+                    xlims: xlims,
                     ylims: [0, null],
                     logScale: true,
                     xAxis: {line: true, ticks: true, label_margin: 10},
@@ -3324,40 +3472,299 @@
     
                 container.innerHTML = svg;
     
-                const maxBinCount = Math.max(...histData.bin_counts);
-                const min = histData.bin_edges[0];
-                const max = histData.bin_edges[histData.bin_edges.length - 1];
+                const mean = calculateHistogramMean(histData);
+                const median = calculateHistogramMedian(histData);
+                const totalCount = histData.bin_counts.reduce((a, b) => a + b, 0);
     
-                container.title = `${title}\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMax bin: ${maxBinCount} values`;
+                container.title = `${title} (n=${totalCount})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
     
                 return container;
             };
         }
     };
     
-    async function loadModelInfo() {
-        const response = await fetch(CONFIG.getDataPath('modelInfo'));
-        modelInfo = await response.json();
-        displayModelInfo();
+    // ============================================================================
+    // Helper Functions for Filtering and Sorting
+    // ============================================================================
+    
+    /**
+     * Create a filter function for module arrays that supports wildcards, multiple patterns, and negation
+     * @param {string} filterValue - The filter pattern (supports * wildcards, , for OR, & for AND, @ for all-match, ! for negation)
+     * @returns {Function|null} Filter function or null if invalid
+     */
+    function createModuleFilter(filterValue) {
+        if (!filterValue || !filterValue.trim()) return null;
+    
+        // Split by comma for OR groups
+        const orGroups = filterValue.split(',').map(g => g.trim()).filter(g => g);
+    
+        // Parse each OR group (which may contain & for AND)
+        const parsedOrGroups = orGroups.map(group => {
+            // Split by & for AND conditions within this OR group
+            const andConditions = group.split('&').map(c => c.trim()).filter(c => c);
+    
+            return andConditions.map(condition => {
+                let mode = 'some'; // default: at least one module matches
+                let negate = false;
+                let pattern = condition.toLowerCase();
+    
+                // Check for @ prefix (all modules must match)
+                if (pattern.startsWith('@')) {
+                    mode = 'every';
+                    pattern = pattern.substring(1);
+                }
+                // Check for ! prefix (no modules can match)
+                else if (pattern.startsWith('!')) {
+                    negate = true;
+                    pattern = pattern.substring(1);
+                }
+    
+                const regex = pattern.includes('*')
+                    ? new RegExp('^' + pattern.replace(/\*/g, '.*') + '$')
+                    : null;
+    
+                return { mode, negate, pattern, regex };
+            });
+        });
+    
+        return (cellValue) => {
+            // cellValue is the modules array
+            if (!Array.isArray(cellValue)) return false;
+    
+            // OR logic across groups
+            return parsedOrGroups.some(andGroup => {
+                // AND logic within group
+                return andGroup.every(condition => {
+                    const matchFn = (module) => {
+                        const moduleLower = module.toLowerCase();
+                        return condition.regex
+                            ? condition.regex.test(moduleLower)
+                            : moduleLower.includes(condition.pattern);
+                    };
+    
+                    if (condition.mode === 'every') {
+                        // ALL modules must match
+                        const result = cellValue.every(matchFn);
+                        return condition.negate ? !result : result;
+                    } else {
+                        // At least ONE module must match (or none if negated)
+                        const result = cellValue.some(matchFn);
+                        return condition.negate ? !result : result;
+                    }
+                });
+            });
+        };
     }
     
-    function displayModelInfo() {
-        const modelInfoDiv = document.getElementById('modelInfo');
-        if (Object.keys(modelInfo).length > 0) {
-            document.getElementById('totalModules').textContent = modelInfo.total_modules;
-            document.getElementById('totalComponents').textContent = modelInfo.total_components;
-            document.getElementById('totalClusters').textContent = modelInfo.total_clusters;
+    /**
+     * Sort function for module arrays
+     * Primary: number of modules (ascending)
+     * Secondary: alphabetically by first module name
+     * @param {Array} modules - Array of module names
+     * @returns {string} Sortable string representation
+     */
+    function sortModules(modules) {
+        if (!Array.isArray(modules) || modules.length === 0) return '';
     
-            const totalParams = modelInfo.total_parameters;
-            const formatted = totalParams >= 1000000
-                ? (totalParams / 1000000).toFixed(1) + 'M'
-                : totalParams >= 1000
-                ? (totalParams / 1000).toFixed(1) + 'K'
-                : totalParams.toString();
-            document.getElementById('totalParameters').textContent = formatted;
+        // Pad module count for proper numeric sorting, then add first module name
+        const count = modules.length.toString().padStart(5, '0');
+        const firstName = modules[0].toLowerCase();
+        return `${count}_${firstName}`;
+    }
     
-            modelInfoDiv.style.display = 'block';
+    /**
+     * Extract a statistic value from histogram data for sorting/filtering
+     * @param {string} statKey - The statistics key (e.g., 'all_activations', 'max_activation-max-16')
+     * @param {object} row - The data row
+     * @param {string} statType - Type of statistic ('mean', 'median', 'max', 'min', 'range')
+     * @returns {number|null} The extracted statistic or null if unavailable
+     */
+    function getHistogramStatistic(statKey, row, statType = 'mean') {
+        const histData = row.stats[statKey];
+        if (!histData || !histData.bin_counts || !histData.bin_edges) return null;
+    
+        switch (statType) {
+            case 'mean':
+                // For all_activations, use the precomputed mean
+                if (statKey === 'all_activations' && row.stats.mean_activation !== undefined) {
+                    return row.stats.mean_activation;
+                }
+                // Otherwise calculate weighted mean from histogram
+                return calculateHistogramMean(histData);
+    
+            case 'median':
+                return calculateHistogramMedian(histData);
+    
+            case 'max':
+                return histData.bin_edges[histData.bin_edges.length - 1];
+    
+            case 'min':
+                return histData.bin_edges[0];
+    
+            case 'range':
+                return histData.bin_edges[histData.bin_edges.length - 1] - histData.bin_edges[0];
+    
+            case 'sum':
+                return histData.bin_counts.reduce((a, b) => a + b, 0);
+    
+            default:
+                return null;
         }
+    }
+    
+    /**
+     * Calculate mean from histogram data
+     */
+    function calculateHistogramMean(histData) {
+        const { bin_counts, bin_edges } = histData;
+        let sum = 0;
+        let count = 0;
+    
+        for (let i = 0; i < bin_counts.length; i++) {
+            // Use bin center
+            const binCenter = (bin_edges[i] + bin_edges[i + 1]) / 2;
+            sum += binCenter * bin_counts[i];
+            count += bin_counts[i];
+        }
+    
+        return count > 0 ? sum / count : 0;
+    }
+    
+    /**
+     * Calculate median from histogram data (approximate)
+     */
+    function calculateHistogramMedian(histData) {
+        const { bin_counts, bin_edges } = histData;
+        const totalCount = bin_counts.reduce((a, b) => a + b, 0);
+        const halfCount = totalCount / 2;
+    
+        let cumulativeCount = 0;
+        for (let i = 0; i < bin_counts.length; i++) {
+            cumulativeCount += bin_counts[i];
+            if (cumulativeCount >= halfCount) {
+                // Return bin center as approximate median
+                return (bin_edges[i] + bin_edges[i + 1]) / 2;
+            }
+        }
+    
+        return 0;
+    }
+    
+    /**
+     * Parse extended histogram filter syntax (e.g., "mean>0.5", "max<10", "mean>0.5, max<10")
+     * @param {string} filterValue - The filter string (can be comma-separated for multiple conditions)
+     * @returns {Array|null} Array of parsed filters [{ statType, operator, value }] or null if plain numeric
+     */
+    function parseHistogramFilter(filterValue) {
+        const trimmed = filterValue.trim();
+        if (!trimmed) return null;
+    
+        // Split by comma to support multiple conditions
+        const conditions = trimmed.split(',').map(c => c.trim());
+        const parsedConditions = [];
+    
+        for (const condition of conditions) {
+            // Match pattern: statType operator value (e.g., "mean>0.5", "median<=0.2")
+            const match = condition.match(/^(mean|median|max|min|range|sum)\s*(==|!=|>=|<=|>|<)\s*(-?\d+\.?\d*)$/i);
+    
+            if (match) {
+                parsedConditions.push({
+                    statType: match[1].toLowerCase(),
+                    operator: match[2],
+                    value: parseFloat(match[3])
+                });
+            } else {
+                // If any condition doesn't match, return null to use default filter
+                return null;
+            }
+        }
+    
+        // Return array of conditions, or null if none were found
+        return parsedConditions.length > 0 ? parsedConditions : null;
+    }
+    
+    /**
+     * Create a filter function for histogram columns with extended syntax
+     * Supports multiple comma-separated conditions (AND logic)
+     * @param {string} statKey - The statistics key
+     * @param {string} filterValue - The filter string (e.g., "mean>0.5, max<10")
+     * @returns {Function|null} Filter function or null to use default
+     */
+    function createHistogramFilter(statKey, filterValue) {
+        const parsedConditions = parseHistogramFilter(filterValue);
+    
+        if (!parsedConditions) {
+            // Return null to let default numeric filter handle it
+            // Default will filter on the sort value (mean by default)
+            return null;
+        }
+    
+        return (cellValue, row) => {
+            // All conditions must be satisfied (AND logic)
+            for (const condition of parsedConditions) {
+                const { statType, operator, value } = condition;
+                const statValue = getHistogramStatistic(statKey, row, statType);
+    
+                if (statValue === null) return false;
+    
+                let conditionMet = false;
+                switch (operator) {
+                    case '==': conditionMet = Math.abs(statValue - value) < 0.0001; break;
+                    case '!=': conditionMet = Math.abs(statValue - value) >= 0.0001; break;
+                    case '>': conditionMet = statValue > value; break;
+                    case '<': conditionMet = statValue < value; break;
+                    case '>=': conditionMet = statValue >= value; break;
+                    case '<=': conditionMet = statValue <= value; break;
+                    default: conditionMet = false;
+                }
+    
+                // If any condition fails, return false
+                if (!conditionMet) return false;
+            }
+    
+            // All conditions passed
+            return true;
+        };
+    }
+    
+    /**
+     * Get the top token string for sorting
+     * @param {object} value - Cell value (stats object)
+     * @param {object} row - The data row
+     * @returns {string} The top token string for sorting
+     */
+    function sortTopToken(value, row) {
+        const tokenStats = row.stats.token_activations;
+        if (!tokenStats || !tokenStats.top_tokens || tokenStats.top_tokens.length === 0) {
+            return '';
+        }
+        return tokenStats.top_tokens[0].token.toLowerCase();
+    }
+    
+    /**
+     * Create a filter function for top tokens
+     * @param {string} filterValue - The filter string
+     * @returns {Function|null} Filter function or null if invalid
+     */
+    function createTopTokenFilter(filterValue) {
+        if (!filterValue || !filterValue.trim()) return null;
+    
+        const pattern = filterValue.toLowerCase().trim();
+    
+        return (cellValue, row) => {
+            const tokenStats = row.stats.token_activations;
+            if (!tokenStats || !tokenStats.top_tokens) return false;
+    
+            // Search in top 10 tokens
+            const topN = Math.min(10, tokenStats.top_tokens.length);
+            for (let i = 0; i < topN; i++) {
+                const token = tokenStats.top_tokens[i].token.toLowerCase();
+                if (token.includes(pattern)) {
+                    return true;
+                }
+            }
+            return false;
+        };
     }
     
     function processClusterData() {
@@ -3375,12 +3782,17 @@
             const parts = clusterHash.split('-');
             const clusterId = parseInt(parts[parts.length - 1]);
     
+            // Get explanation for this cluster
+            const explanationData = explanations[clusterHash];
+            const explanation = explanationData ? explanationData.explanation : null;
+    
             tableData.push({
                 id: clusterId,
                 clusterHash: clusterHash,
                 componentCount: cluster.components.length,
                 modules: Array.from(modules),
-                stats: stats
+                stats: stats,
+                explanation: explanation
             });
         }
     
@@ -3388,12 +3800,13 @@
     }
     
     async function loadData() {
-        const [clusters] = await Promise.all([
-            loadJSONL(CONFIG.getDataPath('clusters'), 'cluster_hash'),
-            loadModelInfo()
-        ]);
+        // Load cluster data (model info is handled by Alpine.js)
+        const clusters = await loadJSONL(CONFIG.getDataPath('clusters'), 'cluster_hash');
     
         clusterData = clusters;
+    
+        // Load explanations (non-critical, don't fail if missing)
+        explanations = await loadJSONL(CONFIG.getDataPath('explanations'), 'cluster_id').catch(() => ({}));
     
         const tableData = processClusterData();
     
@@ -3425,19 +3838,25 @@
                 align: 'right'
             },
             {
-                key: 'componentCount',
+                key: 'modules',
                 label: 'Model View',
-                type: 'number',
+                type: 'string',
                 width: '21px',
                 align: 'center',
-                renderer: columnRenderers.modelView
+                renderer: columnRenderers.modelView,
+                sortFunction: (modules) => sortModules(modules),
+                filterFunction: (filterValue) => createModuleFilter(filterValue),
+                filterTooltip: 'Filter by module. Separate with , (OR) or & (AND). Use * for wildcards. Prefix @ for all-match, ! to exclude. Examples: *mlp*,*attn* (OR), *mlp*&*attn* (AND), @*proj* (all), !*o_proj* (exclude)'
             },
             {
                 key: 'modules',
                 label: 'Modules',
                 type: 'string',
                 width: '10px',
-                renderer: columnRenderers.modulesSummary
+                renderer: columnRenderers.modulesSummary,
+                sortFunction: (modules) => sortModules(modules),
+                filterFunction: (filterValue) => createModuleFilter(filterValue),
+                filterTooltip: 'Filter by module. Separate with , (OR) or & (AND). Use * for wildcards. Prefix @ for all-match, ! to exclude. Examples: *mlp*,*attn* (OR), *mlp*&*attn* (AND), @*proj* (all), !*o_proj* (exclude)'
             }
         ];
     
@@ -3462,10 +3881,13 @@
             columns.push({
                 key: 'stats',
                 label: label,
-                type: 'string',
+                type: 'number',
                 width: '200px',
                 align: 'center',
-                renderer: columnRenderers.genericHistogram(statKey, color, label)
+                renderer: columnRenderers.genericHistogram(statKey, color, label),
+                sortFunction: (value, row) => getHistogramStatistic(statKey, row, 'mean'),
+                filterFunction: (filterValue) => createHistogramFilter(statKey, filterValue),
+                filterTooltip: 'Filter by statistics. Use: mean>0.5, median<0.2, max>=1.0, min>-0.1, range<5, sum>100. Combine with commas (e.g., mean>0.5, max<10)'
             });
         });
     
@@ -3476,7 +3898,10 @@
             type: 'string',
             width: '150px',
             align: 'left',
-            renderer: columnRenderers.topToken
+            renderer: columnRenderers.topToken,
+            sortFunction: (value, row) => sortTopToken(value, row),
+            filterFunction: (filterValue) => createTopTokenFilter(filterValue),
+            filterTooltip: 'Search for tokens (case-insensitive substring match)'
         });
     
         columns.push({
@@ -3485,16 +3910,37 @@
             type: 'number',
             width: '60px',
             align: 'right',
-            renderer: columnRenderers.tokenEntropy
+            renderer: columnRenderers.tokenEntropy,
+            sortFunction: (value, row) => {
+                const tokenStats = row.stats.token_activations;
+                return tokenStats ? tokenStats.entropy : null;
+            },
+            filterTooltip: 'Filter by entropy. Use operators: >, <, >=, <=, ==, != (e.g., >2.5)'
         });
     
         columns.push({
             key: 'stats',
             label: 'Token Conc.',
-            type: 'string',
+            type: 'number',
             width: '60px',
             align: 'right',
-            renderer: columnRenderers.tokenConcentration
+            renderer: columnRenderers.tokenConcentration,
+            sortFunction: (value, row) => {
+                const tokenStats = row.stats.token_activations;
+                return tokenStats ? tokenStats.concentration_ratio : null;
+            },
+            filterTooltip: 'Filter by concentration (0-1). Use operators: >, <, >=, <=, ==, != (e.g., >0.5)'
+        });
+    
+        // Explanation column
+        columns.push({
+            key: 'explanation',
+            label: 'Explanation',
+            type: 'string',
+            width: '200px',
+            align: 'left',
+            renderer: columnRenderers.explanation,
+            filterTooltip: 'Filter by explanation text (case-insensitive substring match)'
         });
     
         // Actions column
@@ -3504,7 +3950,8 @@
             type: 'string',
             width: '20px',
             align: 'center',
-            renderer: columnRenderers.clusterLink
+            renderer: columnRenderers.clusterLink,
+            filterable: false
         });
     
         const tableConfig = {
@@ -3522,6 +3969,14 @@
     
     document.addEventListener('DOMContentLoaded', async () => {
         await initConfig();
+    
+        // Manually trigger Alpine component's loadData now that CONFIG is ready
+        const modelInfoEl = document.getElementById('modelInfo');
+        if (modelInfoEl && Alpine.$data(modelInfoEl)) {
+            Alpine.$data(modelInfoEl).loadData();
+        }
+    
+        // Load cluster data and render table
         loadData();
     });
     
