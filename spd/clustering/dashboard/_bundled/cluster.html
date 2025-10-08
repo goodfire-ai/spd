@@ -3806,7 +3806,44 @@
         const modelViewDiv = document.getElementById('modelView');
         renderModelView(modelViewDiv, currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap, CONFIG.visualization.modelViewCellSize);
     }
-    
+
+    /**
+     * Calculate the mean of a histogram by treating bin centers as representative values
+     */
+    function calculateHistogramMean(histData) {
+        let totalCount = 0;
+        let weightedSum = 0;
+
+        for (let i = 0; i < histData.bin_counts.length; i++) {
+            const binCenter = (histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2;
+            const count = histData.bin_counts[i];
+            totalCount += count;
+            weightedSum += binCenter * count;
+        }
+
+        return totalCount > 0 ? weightedSum / totalCount : 0;
+    }
+
+    /**
+     * Calculate the median of a histogram using bin centers
+     */
+    function calculateHistogramMedian(histData) {
+        const totalCount = histData.bin_counts.reduce((a, b) => a + b, 0);
+        if (totalCount === 0) return 0;
+
+        const targetCount = totalCount / 2;
+        let cumulativeCount = 0;
+
+        for (let i = 0; i < histData.bin_counts.length; i++) {
+            cumulativeCount += histData.bin_counts[i];
+            if (cumulativeCount >= targetCount) {
+                return (histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2;
+            }
+        }
+
+        return 0;
+    }
+
     function displayHistograms() {
         const stats = clusterData.stats;
         if (!stats) return;
@@ -3861,8 +3898,20 @@
             // Create sparkline
             const sparklineContainer = document.createElement('div');
             sparklineContainer.className = 'sparkline-cell';
-    
-            const svg = sparkbars(histData.bin_counts, null, {
+
+            // Calculate bin centers for x-axis
+            const binCenters = [];
+            for (let i = 0; i < histData.bin_counts.length; i++) {
+                binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
+            }
+
+            const min = histData.bin_edges[0];
+            const max = histData.bin_edges[histData.bin_edges.length - 1];
+
+            // Set x-axis limits to [0, 1] if data is in that range
+            const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
+
+            const svg = sparkbars(binCenters, histData.bin_counts, {
                 width: CONFIG.visualization.sparklineWidth || 200,
                 height: CONFIG.visualization.sparklineHeight || 60,
                 color: color,
@@ -3870,19 +3919,20 @@
                 lineWidth: 0,
                 markers: '',
                 margin: 2,
+                xlims: xlims,
                 ylims: [0, null],
                 logScale: true,
                 xAxis: {line: true, ticks: true, label_margin: 10},
                 yAxis: {line: true, ticks: true, label_margin: CONFIG.visualization.sparklineYAxisMargin || 35}
             });
-    
+
             sparklineContainer.innerHTML = svg;
-    
-            // Add tooltip
-            const maxBinCount = Math.max(...histData.bin_counts);
-            const min = histData.bin_edges[0];
-            const max = histData.bin_edges[histData.bin_edges.length - 1];
-            sparklineContainer.title = `${label}\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMax bin: ${maxBinCount} values`;
+
+            // Add tooltip with statistics
+            const mean = calculateHistogramMean(histData);
+            const median = calculateHistogramMedian(histData);
+            const totalCount = histData.bin_counts.reduce((a, b) => a + b, 0);
+            sparklineContainer.title = `${label} (n=${totalCount})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
     
             plotContainer.appendChild(sparklineContainer);
             histogramPlots.appendChild(plotContainer);

@@ -12,6 +12,10 @@ const modelInfoData = {
             const response = await fetch(CONFIG.getDataPath('modelInfo'));
             this.data = await response.json();
             this.hasData = Object.keys(this.data).length > 0;
+
+            // Also populate global modelInfo for DataTable renderers
+            modelInfo = this.data;
+
             console.log('Model info loaded:', this.hasData, Object.keys(this.data));
         } catch (error) {
             console.error('Failed to load model info:', error);
@@ -301,31 +305,64 @@ const columnRenderers = {
 // ============================================================================
 
 /**
- * Create a filter function for module arrays that supports wildcards
- * @param {string} filterValue - The filter pattern (supports * wildcards)
+ * Create a filter function for module arrays that supports wildcards, multiple patterns, and negation
+ * @param {string} filterValue - The filter pattern (supports * wildcards, comma-separated, ! for negation)
  * @returns {Function|null} Filter function or null if invalid
  */
 function createModuleFilter(filterValue) {
     if (!filterValue || !filterValue.trim()) return null;
 
-    const pattern = filterValue.toLowerCase().trim();
+    // Parse patterns separated by commas
+    const patterns = filterValue.split(',').map(p => p.trim()).filter(p => p);
 
-    // Convert wildcard pattern to regex
-    const regexPattern = pattern.includes('*')
-        ? '^' + pattern.replace(/\*/g, '.*') + '$'
-        : null;
+    // Separate inclusion and exclusion patterns
+    const inclusions = [];
+    const exclusions = [];
+
+    for (const pattern of patterns) {
+        if (pattern.startsWith('!')) {
+            // Exclusion pattern (remove ! prefix)
+            const excPattern = pattern.substring(1).toLowerCase();
+            const regex = excPattern.includes('*')
+                ? new RegExp('^' + excPattern.replace(/\*/g, '.*') + '$')
+                : null;
+            exclusions.push({ pattern: excPattern, regex });
+        } else {
+            // Inclusion pattern
+            const incPattern = pattern.toLowerCase();
+            const regex = incPattern.includes('*')
+                ? new RegExp('^' + incPattern.replace(/\*/g, '.*') + '$')
+                : null;
+            inclusions.push({ pattern: incPattern, regex });
+        }
+    }
 
     return (cellValue) => {
         // cellValue is the modules array
         if (!Array.isArray(cellValue)) return false;
 
+        // Check exclusions first (any match = reject)
+        for (const exc of exclusions) {
+            const hasExclusion = cellValue.some(module => {
+                const moduleLower = module.toLowerCase();
+                return exc.regex
+                    ? exc.regex.test(moduleLower)
+                    : moduleLower.includes(exc.pattern);
+            });
+            if (hasExclusion) return false;
+        }
+
+        // If no inclusions specified, accept (only exclusions applied)
+        if (inclusions.length === 0) return true;
+
+        // Check inclusions (any match = accept)
         return cellValue.some(module => {
             const moduleLower = module.toLowerCase();
-            if (regexPattern) {
-                return new RegExp(regexPattern).test(moduleLower);
-            } else {
-                return moduleLower.includes(pattern);
-            }
+            return inclusions.some(inc =>
+                inc.regex
+                    ? inc.regex.test(moduleLower)
+                    : moduleLower.includes(inc.pattern)
+            );
         });
     };
 }
@@ -612,7 +649,7 @@ async function loadData() {
             renderer: columnRenderers.modelView,
             sortFunction: (modules) => sortModules(modules),
             filterFunction: (filterValue) => createModuleFilter(filterValue),
-            filterTooltip: 'Filter by module name. Use * for wildcards (e.g., *mlp*, blocks.0.*)'
+            filterTooltip: 'Filter by module. Use * for wildcards. Comma-separate multiple patterns (OR). Prefix ! to exclude. Examples: *mlp*, !*o_proj*, *attn*,!*q_proj*'
         },
         {
             key: 'modules',
@@ -622,7 +659,7 @@ async function loadData() {
             renderer: columnRenderers.modulesSummary,
             sortFunction: (modules) => sortModules(modules),
             filterFunction: (filterValue) => createModuleFilter(filterValue),
-            filterTooltip: 'Filter by module name. Use * for wildcards (e.g., *mlp*, blocks.0.*)'
+            filterTooltip: 'Filter by module. Use * for wildcards. Comma-separate multiple patterns (OR). Prefix ! to exclude. Examples: *mlp*, !*o_proj*, *attn*,!*q_proj*'
         }
     ];
 
