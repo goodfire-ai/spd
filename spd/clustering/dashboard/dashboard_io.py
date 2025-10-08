@@ -112,7 +112,7 @@ def generate_model_info(
     model_path: str,
     tokenizer_name: str,
     config_dict: dict[str, Any] | None = None,
-    wandb_run_path: str | None = None,
+    wandb_clustering_run: str | None = None,
 ) -> dict[str, Any]:
     """Generate model information dictionary.
 
@@ -155,12 +155,7 @@ def generate_model_info(
         "module_list": sorted(list(unique_modules)),
     }
 
-    # Add config information if available
-    if config_dict is not None:
-        model_info["config"] = config_dict
-
-    # Add wandb run information if available
-    if wandb_run_path is not None:
-        model_info["wandb_run"] = wandb_run_path
+    model_info["config"] = config_dict
+    model_info["wandb_clustering_run"] = wandb_clustering_run
 
     return model_info

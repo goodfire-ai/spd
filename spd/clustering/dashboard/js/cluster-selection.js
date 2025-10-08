@@ -214,27 +214,290 @@ const columnRenderers = {
     }
 };
 
+// ============================================================================
+// Helper Functions for Filtering and Sorting
+// ============================================================================
+
+/**
+ * Create a filter function for module arrays that supports wildcards
+ * @param {string} filterValue - The filter pattern (supports * wildcards)
+ * @returns {Function|null} Filter function or null if invalid
+ */
+function createModuleFilter(filterValue) {
+    if (!filterValue || !filterValue.trim()) return null;
+
+    const pattern = filterValue.toLowerCase().trim();
+
+    // Convert wildcard pattern to regex
+    const regexPattern = pattern.includes('*')
+        ? '^' + pattern.replace(/\*/g, '.*') + '$'
+        : null;
+
+    return (cellValue) => {
+        // cellValue is the modules array
+        if (!Array.isArray(cellValue)) return false;
+
+        return cellValue.some(module => {
+            const moduleLower = module.toLowerCase();
+            if (regexPattern) {
+                return new RegExp(regexPattern).test(moduleLower);
+            } else {
+                return moduleLower.includes(pattern);
+            }
+        });
+    };
+}
+
+/**
+ * Sort function for module arrays
+ * Primary: number of modules (ascending)
+ * Secondary: alphabetically by first module name
+ * @param {Array} modules - Array of module names
+ * @returns {string} Sortable string representation
+ */
+function sortModules(modules) {
+    if (!Array.isArray(modules) || modules.length === 0) return '';
+
+    // Pad module count for proper numeric sorting, then add first module name
+    const count = modules.length.toString().padStart(5, '0');
+    const firstName = modules[0].toLowerCase();
+    return `${count}_${firstName}`;
+}
+
+/**
+ * Extract a statistic value from histogram data for sorting/filtering
+ * @param {string} statKey - The statistics key (e.g., 'all_activations', 'max_activation-max-16')
+ * @param {object} row - The data row
+ * @param {string} statType - Type of statistic ('mean', 'median', 'max', 'min', 'range')
+ * @returns {number|null} The extracted statistic or null if unavailable
+ */
+function getHistogramStatistic(statKey, row, statType = 'mean') {
+    const histData = row.stats[statKey];
+    if (!histData || !histData.bin_counts || !histData.bin_edges) return null;
+
+    switch (statType) {
+        case 'mean':
+            // For all_activations, use the precomputed mean
+            if (statKey === 'all_activations' && row.stats.mean_activation !== undefined) {
+                return row.stats.mean_activation;
+            }
+            // Otherwise calculate weighted mean from histogram
+            return calculateHistogramMean(histData);
+
+        case 'median':
+            return calculateHistogramMedian(histData);
+
+        case 'max':
+            return histData.bin_edges[histData.bin_edges.length - 1];
+
+        case 'min':
+            return histData.bin_edges[0];
+
+        case 'range':
+            return histData.bin_edges[histData.bin_edges.length - 1] - histData.bin_edges[0];
+
+        case 'sum':
+            return histData.bin_counts.reduce((a, b) => a + b, 0);
+
+        default:
+            return null;
+    }
+}
+
+/**
+ * Calculate mean from histogram data
+ */
+function calculateHistogramMean(histData) {
+    const { bin_counts, bin_edges } = histData;
+    let sum = 0;
+    let count = 0;
+
+    for (let i = 0; i < bin_counts.length; i++) {
+        // Use bin center
+        const binCenter = (bin_edges[i] + bin_edges[i + 1]) / 2;
+        sum += binCenter * bin_counts[i];
+        count += bin_counts[i];
+    }
+
+    return count > 0 ? sum / count : 0;
+}
+
+/**
+ * Calculate median from histogram data (approximate)
+ */
+function calculateHistogramMedian(histData) {
+    const { bin_counts, bin_edges } = histData;
+    const totalCount = bin_counts.reduce((a, b) => a + b, 0);
+    const halfCount = totalCount / 2;
+
+    let cumulativeCount = 0;
+    for (let i = 0; i < bin_counts.length; i++) {
+        cumulativeCount += bin_counts[i];
+        if (cumulativeCount >= halfCount) {
+            // Return bin center as approximate median
+            return (bin_edges[i] + bin_edges[i + 1]) / 2;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Parse extended histogram filter syntax (e.g., "mean>0.5", "max<10", "mean>0.5, max<10")
+ * @param {string} filterValue - The filter string (can be comma-separated for multiple conditions)
+ * @returns {Array|null} Array of parsed filters [{ statType, operator, value }] or null if plain numeric
+ */
+function parseHistogramFilter(filterValue) {
+    const trimmed = filterValue.trim();
+    if (!trimmed) return null;
+
+    // Split by comma to support multiple conditions
+    const conditions = trimmed.split(',').map(c => c.trim());
+    const parsedConditions = [];
+
+    for (const condition of conditions) {
+        // Match pattern: statType operator value (e.g., "mean>0.5", "median<=0.2")
+        const match = condition.match(/^(mean|median|max|min|range|sum)\s*(==|!=|>=|<=|>|<)\s*(-?\d+\.?\d*)$/i);
+
+        if (match) {
+            parsedConditions.push({
+                statType: match[1].toLowerCase(),
+                operator: match[2],
+                value: parseFloat(match[3])
+            });
+        } else {
+            // If any condition doesn't match, return null to use default filter
+            return null;
+        }
+    }
+
+    // Return array of conditions, or null if none were found
+    return parsedConditions.length > 0 ? parsedConditions : null;
+}
+
+/**
+ * Create a filter function for histogram columns with extended syntax
+ * Supports multiple comma-separated conditions (AND logic)
+ * @param {string} statKey - The statistics key
+ * @param {string} filterValue - The filter string (e.g., "mean>0.5, max<10")
+ * @returns {Function|null} Filter function or null to use default
+ */
+function createHistogramFilter(statKey, filterValue) {
+    const parsedConditions = parseHistogramFilter(filterValue);
+
+    if (!parsedConditions) {
+        // Return null to let default numeric filter handle it
+        // Default will filter on the sort value (mean by default)
+        return null;
+    }
+
+    return (cellValue, row) => {
+        // All conditions must be satisfied (AND logic)
+        for (const condition of parsedConditions) {
+            const { statType, operator, value } = condition;
+            const statValue = getHistogramStatistic(statKey, row, statType);
+
+            if (statValue === null) return false;
+
+            let conditionMet = false;
+            switch (operator) {
+                case '==': conditionMet = Math.abs(statValue - value) < 0.0001; break;
+                case '!=': conditionMet = Math.abs(statValue - value) >= 0.0001; break;
+                case '>': conditionMet = statValue > value; break;
+                case '<': conditionMet = statValue < value; break;
+                case '>=': conditionMet = statValue >= value; break;
+                case '<=': conditionMet = statValue <= value; break;
+                default: conditionMet = false;
+            }
+
+            // If any condition fails, return false
+            if (!conditionMet) return false;
+        }
+
+        // All conditions passed
+        return true;
+    };
+}
+
 async function loadModelInfo() {
     const response = await fetch(CONFIG.getDataPath('modelInfo'));
     modelInfo = await response.json();
     displayModelInfo();
 }
 
+/**
+ * Format a WandB path as a clickable link
+ * @param {string} path - WandB path (with or without "wandb:" prefix)
+ * @returns {string} HTML string with link
+ */
+function formatWandBLink(path) {
+    if (!path) return '-';
+
+    // Remove "wandb:" prefix if present
+    const cleanPath = path.replace(/^wandb:/, '');
+
+    // Convert to WandB URL
+    const url = `https://wandb.ai/${cleanPath}`;
+
+    // Show shortened path in link text
+    const displayText = cleanPath.length > 60
+        ? cleanPath.substring(0, 57) + '...'
+        : cleanPath;
+
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`;
+}
+
+/**
+ * Format number of parameters with K/M suffix
+ */
+function formatParameters(totalParams) {
+    if (!totalParams) return '-';
+    if (totalParams >= 1000000) return (totalParams / 1000000).toFixed(1) + 'M';
+    if (totalParams >= 1000) return (totalParams / 1000).toFixed(1) + 'K';
+    return totalParams.toString();
+}
+
+/**
+ * Generate HTML for model info section
+ * @param {object} info - Model info object
+ * @returns {string} HTML string
+ */
+function generateModelInfoHTML(info) {
+    const cfg = info.config || {};
+
+    return `
+        <h2 style="margin-top: 0;">Model Information</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div><strong>Total Modules:</strong> ${info.total_modules || '-'}</div>
+            <div><strong>Total Components:</strong> ${info.total_components || '-'}</div>
+            <div><strong>Total Clusters:</strong> ${info.total_clusters || '-'}</div>
+            <div><strong>Model Parameters:</strong> ${formatParameters(info.total_parameters)}</div>
+            <div><strong>Iteration:</strong> ${info.iteration !== undefined ? info.iteration : '-'}</div>
+            <div><strong>Component Size:</strong> ${info.component_size || '-'}</div>
+            <div style="grid-column: 1 / -1;"><strong>Source SPD Run:</strong> ${formatWandBLink(info.model_path)}</div>
+            <div style="grid-column: 1 / -1;"><strong>Clustering Run:</strong> ${formatWandBLink(info.wandb_clustering_run)}</div>
+            <div style="grid-column: 1 / -1;"><strong>Pretrained Model:</strong> ${cfg.pretrained_model_name || '-'}</div>
+        </div>
+        <details style="margin-top: 15px;">
+            <summary style="cursor: pointer; font-weight: 600;">Configuration Details</summary>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; font-size: 13px;">
+                <div><strong>Seed:</strong> ${cfg.seed !== undefined ? cfg.seed : '-'}</div>
+                <div><strong>Steps:</strong> ${cfg.steps || '-'}</div>
+                <div><strong>Learning Rate:</strong> ${cfg.lr || '-'}</div>
+                <div><strong>Batch Size:</strong> ${cfg.batch_size || '-'}</div>
+                <div><strong>Sigmoid Type:</strong> ${cfg.sigmoid_type || '-'}</div>
+                <div><strong>Sampling:</strong> ${cfg.sampling || '-'}</div>
+                <div><strong>LR Schedule:</strong> ${cfg.lr_schedule || '-'}</div>
+                <div><strong>Output Loss:</strong> ${cfg.output_loss_type || '-'}</div>
+            </div>
+        </details>
+    `;
+}
+
 function displayModelInfo() {
     const modelInfoDiv = document.getElementById('modelInfo');
     if (Object.keys(modelInfo).length > 0) {
-        document.getElementById('totalModules').textContent = modelInfo.total_modules;
-        document.getElementById('totalComponents').textContent = modelInfo.total_components;
-        document.getElementById('totalClusters').textContent = modelInfo.total_clusters;
-
-        const totalParams = modelInfo.total_parameters;
-        const formatted = totalParams >= 1000000
-            ? (totalParams / 1000000).toFixed(1) + 'M'
-            : totalParams >= 1000
-            ? (totalParams / 1000).toFixed(1) + 'K'
-            : totalParams.toString();
-        document.getElementById('totalParameters').textContent = formatted;
-
+        modelInfoDiv.innerHTML = generateModelInfoHTML(modelInfo);
         modelInfoDiv.style.display = 'block';
     }
 }

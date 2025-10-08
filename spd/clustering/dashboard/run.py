@@ -64,18 +64,18 @@ def main(
         context_length: Context length for tokenization
     """
     # Parse wandb run path
-    wandb_path: str = wandb_run.removeprefix("wandb:")
-    logger.info(f"Loading WandB run: {wandb_path}")
+    wandb_clustering_run: str = wandb_run.removeprefix("wandb:")
+    logger.info(f"Loading WandB run: {wandb_clustering_run}")
 
     # Load artifacts from WandB
     merge_history: MergeHistory
     run_config: dict[str, Any]
     with SpinnerContext(message="Loading WandB artifacts"):
-        merge_history, run_config = load_wandb_artifacts(wandb_path)
+        merge_history, run_config = load_wandb_artifacts(wandb_clustering_run)
 
     # Extract run_id for output directory
     api: wandb.Api = wandb.Api()
-    run: Run = api.run(wandb_path)
+    run: Run = api.run(wandb_clustering_run)
     run_id: str = run.id
 
     # Get actual iteration number (handle negative indexing)
@@ -124,7 +124,7 @@ def main(
             model_path=run_config["model_path"],
             tokenizer_name=config.tokenizer_name,  # pyright: ignore[reportArgumentType]
             config_dict=config.model_dump(mode="json"),
-            wandb_run_path=run_config["model_path"],
+            wandb_clustering_run=wandb_clustering_run,
         )
 
         # Save dashboard data using new structure

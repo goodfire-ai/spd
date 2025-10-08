@@ -83,7 +83,51 @@
             <div>
                 <strong>Model Parameters:</strong> <span id="totalParameters">-</span>
             </div>
+            <div>
+                <strong>Iteration:</strong> <span id="iteration">-</span>
+            </div>
+            <div>
+                <strong>Component Size:</strong> <span id="componentSize">-</span>
+            </div>
+            <div style="grid-column: 1 / -1;">
+                <strong>Source SPD Run:</strong> <span id="modelPath">-</span>
+            </div>
+            <div style="grid-column: 1 / -1;">
+                <strong>Clustering Run:</strong> <span id="clusteringRun">-</span>
+            </div>
+            <div style="grid-column: 1 / -1;">
+                <strong>Pretrained Model:</strong> <span id="pretrainedModel">-</span>
+            </div>
         </div>
+        <details style="margin-top: 15px;">
+            <summary style="cursor: pointer; font-weight: 600;">Configuration Details</summary>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; font-size: 13px;">
+                <div>
+                    <strong>Seed:</strong> <span id="configSeed">-</span>
+                </div>
+                <div>
+                    <strong>Steps:</strong> <span id="configSteps">-</span>
+                </div>
+                <div>
+                    <strong>Learning Rate:</strong> <span id="configLr">-</span>
+                </div>
+                <div>
+                    <strong>Batch Size:</strong> <span id="configBatchSize">-</span>
+                </div>
+                <div>
+                    <strong>Sigmoid Type:</strong> <span id="configSigmoidType">-</span>
+                </div>
+                <div>
+                    <strong>Sampling:</strong> <span id="configSampling">-</span>
+                </div>
+                <div>
+                    <strong>LR Schedule:</strong> <span id="configLrSchedule">-</span>
+                </div>
+                <div>
+                    <strong>Output Loss:</strong> <span id="configOutputLoss">-</span>
+                </div>
+            </div>
+        </details>
     </div>
 
     <div id="clusterTableContainer"></div>
