@@ -138,33 +138,30 @@ class BatchProcessingStorage:
         seq_len: int
         batch_size, seq_len = batch.shape
 
-        with SpinnerContext(message="Computing component activations"):
-            activations: dict[str, Float[Tensor, "n_steps C"]] = component_activations(
-                model,
-                device,
-                batch=batch,
-                sigmoid_type=sigmoid_type,
-            )
+        activations: dict[str, Float[Tensor, "n_steps C"]] = component_activations(
+            model,
+            device,
+            batch=batch,
+            sigmoid_type=sigmoid_type,
+        )
 
-        with SpinnerContext(message="Processing activations"):
-            processed: ProcessedActivations = process_activations(
-                activations, seq_mode="concat", filter_dead_threshold=0
-            )
+        processed: ProcessedActivations = process_activations(
+            activations, seq_mode="concat", filter_dead_threshold=0
+        )
 
-        with SpinnerContext(message="Decoding tokens to text samples"):
-            batch_text_samples: list[TextSample] = tokenize_and_create_text_samples(
-                batch=batch,
-                tokenizer=tokenizer,
-                text_samples=self.text_samples,
-            )
+        batch_text_samples: list[TextSample] = tokenize_and_create_text_samples(
+            batch=batch,
+            tokenizer=tokenizer,
+            text_samples=self.text_samples,
+        )
 
-        with SpinnerContext(message="Computing cluster activations"):
-            cluster_acts: ClusterActivations = compute_all_cluster_activations(
-                processed=processed,
-                cluster_components=self.cluster_components,
-                batch_size=batch_size,
-                seq_len=seq_len,
-            )
+    
+        cluster_acts: ClusterActivations = compute_all_cluster_activations(
+            processed=processed,
+            cluster_components=self.cluster_components,
+            batch_size=batch_size,
+            seq_len=seq_len,
+        )
 
         self._store_activations(
             cluster_acts=cluster_acts,
@@ -237,13 +234,9 @@ class BatchProcessingStorage:
             if active_cluster_mask[col_idx]
         ]
 
+        
         # Store activations per cluster (only active clusters)
-        for cluster_col_idx, cluster_idx in tqdm(
-            active_cluster_indices,
-            total=len(active_cluster_indices),
-            desc="  Storing cluster activations",
-            leave=True,
-        ):
+        for cluster_col_idx, cluster_idx in active_cluster_indices:
             cluster_acts_2d: Float[np.ndarray, "batch_size seq_len"] = acts_3d_cpu[
                 :, :, cluster_col_idx
             ]

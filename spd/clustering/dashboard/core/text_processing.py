@@ -37,7 +37,7 @@ def tokenize_and_create_text_samples(
 
     # Create text samples for entire batch
     batch_text_samples: list[TextSample] = []
-    for token_strings in tqdm(batch_token_strings, total=batch_size, desc="Creating text samples"):
+    for token_strings in batch_token_strings:
         text: str = " ".join(token_strings)
         text_sample: TextSample = TextSample(full_text=text, tokens=token_strings)
         text_samples[text_sample.text_hash] = text_sample

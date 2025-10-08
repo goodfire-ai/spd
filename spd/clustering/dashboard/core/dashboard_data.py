@@ -127,6 +127,7 @@ class DashboardData:
                 continue
 
             # Stack activations
+            # TODO: all this stacking/unstacking is slow, refactor to avoid
             comp_acts_array: Float[np.ndarray, "n_samples n_ctx"] = np.stack(comp_acts_list)
 
             # Compute component statistics

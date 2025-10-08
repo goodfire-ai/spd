@@ -91,14 +91,18 @@ def compute_max_activations(
         if batch_idx >= n_batches:
             break
 
-        print(f"  Batch {batch_idx + 1}/{n_batches}")
-        storage.process_batch(
-            batch_data=batch_data,
-            model=model,
-            tokenizer=tokenizer,
-            device=device,
-            sigmoid_type=sigmoid_type,
-        )
+        with SpinnerContext(
+            message=f"  Batch {batch_idx + 1}/{n_batches}",
+            format_string = "  \r{spinner} ({elapsed_time:.2f}s) {message}{value}",
+            update_interval=0.33,
+        ):
+            storage.process_batch(
+                batch_data=batch_data,
+                model=model,
+                tokenizer=tokenizer,
+                device=device,
+                sigmoid_type=sigmoid_type,
+            )
 
     # Create DashboardData and add clusters incrementally
     dashboard: DashboardData = DashboardData.create(text_samples=storage.text_samples)
