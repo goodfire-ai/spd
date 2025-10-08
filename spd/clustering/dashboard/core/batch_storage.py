@@ -30,31 +30,6 @@ from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
 
-
-def attach_vocab_arr(tokenizer: PreTrainedTokenizer) -> None:
-    vocab_size: int = tokenizer.vocab_size
-    vocab_list: list[str] = [
-        tokenizer.convert_ids_to_tokens(i) for i in range(vocab_size)
-    ]
-    max_token_length: int = max(len(token) for token in vocab_list)
-    vocab_arr: np.ndarray = np.array(
-        [token.ljust(max_token_length) for token in vocab_list], dtype=f"S{max_token_length}"
-    )
-    tokenizer.vocab_arr = vocab_arr  # type: ignore[attr-defined]
-
-
-def simple_batch_decode(
-    tokenizer: PreTrainedTokenizer,
-    batch: Int[Tensor, "batch_size n_ctx"],
-) -> list[list[str]]:
-    assert hasattr(tokenizer, "vocab_arr"), "Tokenizer missing vocab_arr attribute, call attach_vocab_arr first"
-    batch_size: int = batch.shape[0]
-    batch_token_strings: list[list[str]] = [
-        [tokenizer.vocab_arr[token_id] for token_id in seq]
-        for seq in batch
-    ]
-
-
 def _tokenize_and_create_text_samples(
     batch: Int[Tensor, "batch_size n_ctx"],
     tokenizer: PreTrainedTokenizer,
