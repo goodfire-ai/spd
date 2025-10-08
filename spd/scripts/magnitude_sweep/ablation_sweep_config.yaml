@@ -1,4 +1,4 @@
-# Configuration for magnitude_sweep.py
+# Configuration for ablation_sweep.py
 
 # Model path (supports both wandb: and local paths)
 model_path: "wandb:goodfire/spd/5q3xxmmy"

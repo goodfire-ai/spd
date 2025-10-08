@@ -98,17 +98,25 @@ class MagnitudeSweepHookCollector:
         self.hook_handles: list[RemovableHandle] = []
 
     def _residmlp_activation_hook(
-        self, layer_idx: int, _module: nn.Module, input_args: Any, output: Tensor
+        self, layer_idx: int, _module: nn.Module, _input_args: Any, output: Tensor
     ) -> None:
         """Hook to capture ResidMLP layer activations."""
         layer_name = f"layers.{layer_idx}.mlp_in"
 
         if self.pre_activation:
-            # Store pre-activation (before ReLU/GELU)
-            self.activations[layer_name] = input_args[0].clone()
-        else:
-            # Store post-activation (after ReLU/GELU)
+            # Store pre-activation (before ReLU/GELU) - this is the output of mlp_in linear layer
             self.activations[layer_name] = output.clone()
+        else:
+            # Store post-activation (after ReLU/GELU) - apply activation function to mlp_in output
+            # Use the activation function from the model config
+            if self.target_model.config.act_fn_name == "gelu":
+                import torch.nn.functional as F
+
+                self.activations[layer_name] = F.gelu(output).clone()
+            else:  # relu
+                import torch.nn.functional as F
+
+                self.activations[layer_name] = F.relu(output).clone()
 
     def _ci_fn_hook(
         self, layer_name: str, _module: nn.Module, _input_args: Any, output: Tensor
@@ -477,10 +485,55 @@ def plot_unified_grid(
             # Plot neuron activation
             ax.plot(magnitudes_np, acts[:, neuron_idx], "b-", linewidth=1.5, alpha=0.8)
 
+            # Fit lines for positive and negative magnitudes
+            neuron_values = acts[:, neuron_idx]
+
+            # Split data at zero
+            neg_mask = magnitudes_np <= 0
+            pos_mask = magnitudes_np >= 0
+
+            # Initialize slope variables
+            pos_slope = 0.0
+            neg_slope = 0.0
+
+            # Fit line for negative magnitudes
+            if np.sum(neg_mask) > 1:
+                neg_mags = magnitudes_np[neg_mask]
+                neg_neurons = neuron_values[neg_mask]
+                neg_slope, neg_intercept = np.polyfit(neg_mags, neg_neurons, 1)
+                neg_line = neg_slope * neg_mags + neg_intercept
+                ax.plot(neg_mags, neg_line, "b--", linewidth=1, alpha=0.7)
+
+            # Fit line for positive magnitudes
+            if np.sum(pos_mask) > 1:
+                pos_mags = magnitudes_np[pos_mask]
+                pos_neurons = neuron_values[pos_mask]
+                pos_slope, pos_intercept = np.polyfit(pos_mags, pos_neurons, 1)
+                pos_line = pos_slope * pos_mags + pos_intercept
+                ax.plot(pos_mags, pos_line, "g--", linewidth=1, alpha=0.7)
+
             # Customize subplot
             ax.set_title(f"Neuron {neuron_idx}", fontsize=8)
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=6)
+
+            # Add slope information as text
+            slope_text = ""
+            if np.sum(pos_mask) > 1:
+                slope_text += f"Pos slope: {pos_slope:.3f}\n"
+            if np.sum(neg_mask) > 1:
+                slope_text += f"Neg slope: {neg_slope:.3f}"
+
+            if slope_text:
+                ax.text(
+                    0.02,
+                    0.98,
+                    slope_text.strip(),
+                    transform=ax.transAxes,
+                    fontsize=6,
+                    verticalalignment="top",
+                    bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+                )
 
             # Set y-axis limits based on data range
             y_min, y_max = np.min(acts[:, neuron_idx]), np.max(acts[:, neuron_idx])
@@ -499,10 +552,69 @@ def plot_unified_grid(
             # Plot output response
             ax.plot(magnitudes_np, outputs[:, feature_idx], "r-", linewidth=1.5, alpha=0.8)
 
+            # Fit lines for positive and negative magnitudes
+            output_values = outputs[:, feature_idx]
+
+            # Split data at zero
+            neg_mask = magnitudes_np <= 0
+            pos_mask = magnitudes_np >= 0
+
+            # Initialize slope variables
+            pos_slope = 0.0
+            neg_slope = 0.0
+
+            # Fit line for negative magnitudes
+            if np.sum(neg_mask) > 1:
+                neg_mags = magnitudes_np[neg_mask]
+                neg_outputs = output_values[neg_mask]
+                neg_slope, neg_intercept = np.polyfit(neg_mags, neg_outputs, 1)
+                neg_line = neg_slope * neg_mags + neg_intercept
+                ax.plot(
+                    neg_mags,
+                    neg_line,
+                    "b--",
+                    linewidth=1,
+                    alpha=0.7,
+                    label=f"Neg slope: {neg_slope:.3f}",
+                )
+
+            # Fit line for positive magnitudes
+            if np.sum(pos_mask) > 1:
+                pos_mags = magnitudes_np[pos_mask]
+                pos_outputs = output_values[pos_mask]
+                pos_slope, pos_intercept = np.polyfit(pos_mags, pos_outputs, 1)
+                pos_line = pos_slope * pos_mags + pos_intercept
+                ax.plot(
+                    pos_mags,
+                    pos_line,
+                    "g--",
+                    linewidth=1,
+                    alpha=0.7,
+                    label=f"Pos slope: {pos_slope:.3f}",
+                )
+
             # Customize subplot
             ax.set_title(f"Output Feature {feature_idx}", fontsize=8)
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=6)
+
+            # Add slope information as text
+            slope_text = ""
+            if np.sum(pos_mask) > 1:
+                slope_text += f"Pos slope: {pos_slope:.3f}\n"
+            if np.sum(neg_mask) > 1:
+                slope_text += f"Neg slope: {neg_slope:.3f}"
+
+            if slope_text:
+                ax.text(
+                    0.02,
+                    0.98,
+                    slope_text.strip(),
+                    transform=ax.transAxes,
+                    fontsize=6,
+                    verticalalignment="top",
+                    bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+                )
 
             # Set y-axis limits
             y_min, y_max = np.min(outputs[:, feature_idx]), np.max(outputs[:, feature_idx])
@@ -584,9 +696,54 @@ def plot_unified_grid(
                 ax.plot(magnitudes_np, gate_ins[:, input_idx], "purple", linewidth=1.5, alpha=0.8)
                 ax.set_title(f"Gate Input {input_idx} (Shared, CI {comp_idx})", fontsize=8)
 
+            # Fit lines for positive and negative magnitudes
+            gate_input_values = gate_ins[:, input_idx]
+
+            # Split data at zero
+            neg_mask = magnitudes_np <= 0
+            pos_mask = magnitudes_np >= 0
+
+            # Initialize slope variables
+            pos_slope = 0.0
+            neg_slope = 0.0
+
+            # Fit line for negative magnitudes
+            if np.sum(neg_mask) > 1:
+                neg_mags = magnitudes_np[neg_mask]
+                neg_gate_inputs = gate_input_values[neg_mask]
+                neg_slope, neg_intercept = np.polyfit(neg_mags, neg_gate_inputs, 1)
+                neg_line = neg_slope * neg_mags + neg_intercept
+                ax.plot(neg_mags, neg_line, "b--", linewidth=1, alpha=0.7)
+
+            # Fit line for positive magnitudes
+            if np.sum(pos_mask) > 1:
+                pos_mags = magnitudes_np[pos_mask]
+                pos_gate_inputs = gate_input_values[pos_mask]
+                pos_slope, pos_intercept = np.polyfit(pos_mags, pos_gate_inputs, 1)
+                pos_line = pos_slope * pos_mags + pos_intercept
+                ax.plot(pos_mags, pos_line, "g--", linewidth=1, alpha=0.7)
+
             # Customize subplot
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=6)
+
+            # Add slope information as text
+            slope_text = ""
+            if np.sum(pos_mask) > 1:
+                slope_text += f"Pos slope: {pos_slope:.3f}\n"
+            if np.sum(neg_mask) > 1:
+                slope_text += f"Neg slope: {neg_slope:.3f}"
+
+            if slope_text:
+                ax.text(
+                    0.02,
+                    0.98,
+                    slope_text.strip(),
+                    transform=ax.transAxes,
+                    fontsize=6,
+                    verticalalignment="top",
+                    bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+                )
 
             # Set y-axis limits
             y_min, y_max = np.min(gate_ins[:, input_idx]), np.max(gate_ins[:, input_idx])
