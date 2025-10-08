@@ -343,11 +343,27 @@ export type TokenDensity = {
     density: number;
 };
 
+export type ActivationContextsConfig = {
+    importance_threshold?: number;
+    max_examples_per_subcomponent?: number;
+    n_steps?: number;
+    n_tokens_either_side?: number;
+};
+
 export async function getLayerActivationContexts(
-    layer: string
+    layer: string,
+    config?: ActivationContextsConfig
     // signal?: AbortSignal
 ): Promise<SubcomponentActivationContexts[]> {
-    const response = await fetch(`${apiUrl}/activation_contexts/${layer}/subcomponents`, {
+    const url = new URL(`${apiUrl}/activation_contexts/${layer}/subcomponents`);
+    if (config) {
+        for (const [key, value] of Object.entries(config)) {
+            if (value !== undefined) {
+                url.searchParams.set(key, String(value));
+            }
+        }
+    }
+    const response = await fetch(url.toString(), {
         method: "GET"
         // signal
     });

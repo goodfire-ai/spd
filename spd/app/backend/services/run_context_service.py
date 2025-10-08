@@ -52,6 +52,7 @@ class TrainRunContext:
     cm: ComponentModel
     tokenizer: PreTrainedTokenizer
     train_loader: DataLoader[Any]
+    batched_loader: DataLoader[Any]
     available_cluster_runs: list[str]
 
 
@@ -211,17 +212,25 @@ class RunContextService:
             seed=None,
         )
 
-        batch_size = 1
-
         logger.info("Creating train loader from run info")
         train_loader, tokenizer = create_data_loader(
             dataset_config=train_data_config,
-            batch_size=batch_size,
+            batch_size=1,
             buffer_size=task_config.buffer_size,
             global_seed=run_info.config.seed,
             ddp_rank=0,
             ddp_world_size=0,
         )
+
+        batched_loader, _ = create_data_loader(
+            dataset_config=train_data_config,
+            batch_size=run_info.config.batch_size,
+            buffer_size=task_config.buffer_size,
+            global_seed=run_info.config.seed,
+            ddp_rank=0,
+            ddp_world_size=0,
+        )
+
 
         logger.info("Creating component model from run info")
         cm = ComponentModel.from_run_info(run_info)
@@ -237,6 +246,7 @@ class RunContextService:
             cm=cm,
             tokenizer=tokenizer,
             train_loader=train_loader,
+            batched_loader=batched_loader,
             available_cluster_runs=available_cluster_runs,
         )
 

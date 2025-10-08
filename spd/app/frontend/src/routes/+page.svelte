@@ -8,24 +8,24 @@
     import ActivationContextsTab from "$lib/components/ActivationContextsTab.svelte";
     import NewClusterDashboard from "$lib/components/ClusterDashboardTab.svelte";
     import InterventionsTab from "$lib/components/InterventionsTab.svelte";
-    import RunSelector from "$lib/components/RunSelector.svelte";
 
     let trainWandbRunId: string | null = null;
-    let loadingTrainRun = false;
+    let loadingTrainRun: boolean = false;
 
-    let availableClusterRuns: string[] | null = null;
     let status: Status | null = null;
+    $: availableClusterRuns = status?.train_run?.available_cluster_runs;
 
-    let clusterWandbRunPath: string | null = "goodfire/spd-cluster/wj3xq8ds"; // defaults for dev
-    let clusterIteration: number = 7000;
-    let loadingCluster: "none" | "loading" | "loaded" = "none";
+    let clusterWandbRunPath: string | null = null; // "goodfire/spd-cluster/wj3xq8ds"; // defaults for dev
+    let clusterIteration: number | null = null; // 7000;
+    let loadingClusterRun: boolean = false;
 
     async function loadStatus() {
         console.log("getting status");
         status = await api.getStatus();
         console.log("status:", status);
-
-        if (!status.train_run) return;
+        if (!status.train_run) {
+            return;
+        }
 
         trainWandbRunId = status.train_run.wandb_path.split("/").pop()!;
         availableClusterRuns = status.train_run.available_cluster_runs;
@@ -41,6 +41,16 @@
         }
     }
 
+    async function loadRun() {
+        if (!trainWandbRunId?.trim()) return;
+
+        loadingTrainRun = true;
+        await api.loadRun(trainWandbRunId);
+        loadingTrainRun = false;
+
+        await loadStatus();
+    }
+
     async function loadClusterRun() {
         console.log("loading cluster run", clusterWandbRunPath, clusterIteration);
         const canLoadCluster = clusterWandbRunPath !== null && clusterIteration !== null;
@@ -52,10 +62,11 @@
             return;
         }
 
-        loadingCluster = "loading";
+        loadingClusterRun = true;
         await api.loadClusterRun(clusterWandbRunPath!.split("/").pop()!, clusterIteration!);
+        loadingClusterRun = false;
+
         await loadStatus();
-        loadingCluster = "loaded";
     }
 
     onMount(() => {
@@ -68,23 +79,39 @@
 <div class="app-layout">
     <!-- Left Sidebar -->
     <aside class="sidebar">
-        <RunSelector bind:loadingRun={loadingTrainRun} bind:trainWandbRunId />
+        <div class="run-selector">
+            <label for="wandb-run-id">W&B Run ID</label>
+            <div class="input-group">
+                <input
+                    type="text"
+                    id="wandb-run-id"
+                    list="run-options"
+                    bind:value={trainWandbRunId}
+                    disabled={loadingTrainRun}
+                    placeholder="Select or enter run ID"
+                />
+                <button on:click={loadRun} disabled={loadingTrainRun || !trainWandbRunId?.trim()}>
+                    {loadingTrainRun ? "Loading..." : "Load Run"}
+                </button>
+            </div>
+        </div>
         <div class="tab-navigation">
-            <button
-                class="tab-button"
-                class:active={activeTab === "activation-contexts"}
-                on:click={() => (activeTab = "activation-contexts")}
-            >
-                Activation Contexts
-            </button>
             {#if status?.train_run}
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "activation-contexts"}
+                    on:click={() => (activeTab = "activation-contexts")}
+                >
+                    Activation Contexts
+                </button>
                 <div class="cluster-settings">
                     <h4>Cluster Settings</h4>
+                    <!-- svelte-ignore a11y_consider_explicit_label -->
                     <form on:submit|preventDefault={loadClusterRun}>
                         <label>
                             Clustering Run
                             <select bind:value={clusterWandbRunPath}>
-                                {#if availableClusterRuns !== null}
+                                {#if availableClusterRuns != null}
                                     {#each availableClusterRuns as run}
                                         <option value={run}>{run}</option>
                                     {/each}
@@ -97,41 +124,30 @@
                                 <input type="number" bind:value={clusterIteration} />
                             </label>
                         </div>
-                        <button
-                            class="cluster-load"
-                            type="submit"
-                            disabled={loadingCluster === "loading"}
-                            class:done={loadingCluster === "loaded"}
+                        <button class="cluster-load" type="submit" disabled={loadingClusterRun}
+                            >Load Cluster Run</button
                         >
-                            {(
-                                {
-                                    none: "Load Cluster",
-                                    loading: "Loading...",
-                                    loaded: "Loaded"
-                                } as const
-                            )[loadingCluster]}
-                        </button>
                     </form>
                 </div>
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "ablation"}
+                    disabled={status?.cluster_run == null}
+                    on:click={() => (activeTab = "ablation")}
+                >
+                    Component Ablation
+                    <div class="spinner" class:hidden={!loadingClusterRun}></div>
+                </button>
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "cluster-dashboard"}
+                    disabled={status?.cluster_run == null}
+                    on:click={() => (activeTab = "cluster-dashboard")}
+                >
+                    Cluster Dashboard
+                    <div class="spinner" class:hidden={!loadingClusterRun}></div>
+                </button>
             {/if}
-            <button
-                class="tab-button"
-                class:active={activeTab === "ablation"}
-                disabled={loadingCluster !== "loaded"}
-                on:click={() => (activeTab = "ablation")}
-            >
-                Component Ablation
-                <div class="spinner" class:hidden={loadingCluster !== "loading"}></div>
-            </button>
-            <button
-                class="tab-button"
-                class:active={activeTab === "cluster-dashboard"}
-                disabled={loadingCluster !== "loaded"}
-                on:click={() => (activeTab = "cluster-dashboard")}
-            >
-                Cluster Dashboard
-                <div class="spinner" class:hidden={loadingCluster !== "loading"}></div>
-            </button>
         </div>
     </aside>
 
@@ -160,9 +176,6 @@
                     <div class="status">No cluster run selected.</div>
                 {/if}
             </div>
-        {:else}
-            <div class="spinner"></div>
-            <div class="status">... No train run selected.</div>
         {/if}
     </div>
 </div>
@@ -319,5 +332,56 @@
         100% {
             transform: rotate(360deg);
         }
+    }
+
+    .run-selector {
+        margin-bottom: 1rem;
+    }
+
+    .run-selector label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+        color: #333;
+        font-size: 0.9rem;
+    }
+
+    .input-group {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .input-group input[type="text"] {
+        flex: 1;
+        padding: 0.5rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 1rem;
+    }
+
+    .input-group input[type="text"]:focus {
+        outline: none;
+        border-color: #4a90e2;
+        box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.1);
+    }
+
+    .input-group button {
+        padding: 0.5rem 1rem;
+        background-color: #4a90e2;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 1rem;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .input-group button:hover:not(:disabled) {
+        background-color: #357abd;
+    }
+
+    .input-group button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
     }
 </style>

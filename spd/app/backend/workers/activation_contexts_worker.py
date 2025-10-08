@@ -73,13 +73,13 @@ class _TopKExamples:
 class WorkerArgs:
     wandb_path: str
     importance_threshold: float
-    separation_threshold_tokens: int
+    # separation_threshold_tokens: int
     max_examples_per_subcomponent: int
     n_steps: int
     n_tokens_either_side: int
 
 
-def main(args: WorkerArgs) -> ModelActivationContexts:
+def worker_main(args: WorkerArgs) -> ModelActivationContexts:
     logger.info("worker: Getting activation contexts")
 
     rcs = RunContextService()
@@ -92,7 +92,19 @@ def main(args: WorkerArgs) -> ModelActivationContexts:
     topk_by_subcomponent = _get_topk_by_subcomponent(
         run_context,
         args.importance_threshold,
-        args.separation_threshold_tokens,
+        # args.separation_threshold_tokens,
+        args.max_examples_per_subcomponent,
+        args.n_steps,
+        args.n_tokens_either_side,
+    )
+
+    return map_to_model_ctxs(run_context, topk_by_subcomponent)
+
+def main(run_context: TrainRunContext, args: WorkerArgs) -> ModelActivationContexts:
+    topk_by_subcomponent = _get_topk_by_subcomponent(
+        run_context,
+        args.importance_threshold,
+        # args.separation_threshold_tokens,
         args.max_examples_per_subcomponent,
         args.n_steps,
         args.n_tokens_either_side,
@@ -104,7 +116,7 @@ def main(args: WorkerArgs) -> ModelActivationContexts:
 def _get_topk_by_subcomponent(
     run_context: TrainRunContext,
     importance_threshold: float,
-    separation_threshold_tokens: int,
+    # separation_threshold_tokens: int,
     max_examples_per_subcomponent: int,
     n_steps: int,
     n_tokens_either_side: int,
@@ -117,12 +129,15 @@ def _get_topk_by_subcomponent(
     C = run_context.cm.C
 
     logger.info("worker: starting data iteration")
-    data_iter = iter(run_context.train_loader)
-    for _ in tqdm(range(n_steps), desc="Processing data", file=sys.stderr):
+    data_iter = iter(run_context.batched_loader)
+    for i in tqdm(range(n_steps), desc="Processing data", file=sys.stderr):
         batch = extract_batch_data(next(data_iter)).to(DEVICE)
         assert isinstance(batch, torch.Tensor)
         assert batch.ndim == 2, "Expected batch tensor of shape (B, S)"
         B, S = batch.shape
+        if i == 0:
+            print(f"Batch shape: {B}, {S}")
+
 
         # IMPORTANT: separation should be enforced only *within this batch's sequences*.
         # Reset cache each batch so slots (b = 0..B-1) from previous batches don't suppress new sequences.
