@@ -31,6 +31,30 @@ from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
 
 
+def attach_vocab_arr(tokenizer: PreTrainedTokenizer) -> None:
+    vocab_size: int = tokenizer.vocab_size
+    vocab_list: list[str] = [
+        tokenizer.convert_ids_to_tokens(i) for i in range(vocab_size)
+    ]
+    max_token_length: int = max(len(token) for token in vocab_list)
+    vocab_arr: np.ndarray = np.array(
+        [token.ljust(max_token_length) for token in vocab_list], dtype=f"S{max_token_length}"
+    )
+    tokenizer.vocab_arr = vocab_arr  # type: ignore[attr-defined]
+
+
+def simple_batch_decode(
+    tokenizer: PreTrainedTokenizer,
+    batch: Int[Tensor, "batch_size n_ctx"],
+) -> list[list[str]]:
+    assert hasattr(tokenizer, "vocab_arr"), "Tokenizer missing vocab_arr attribute, call attach_vocab_arr first"
+    batch_size: int = batch.shape[0]
+    batch_token_strings: list[list[str]] = [
+        [tokenizer.vocab_arr[token_id] for token_id in seq]
+        for seq in batch
+    ]
+
+
 def _tokenize_and_create_text_samples(
     batch: Int[Tensor, "batch_size n_ctx"],
     tokenizer: PreTrainedTokenizer,
@@ -46,53 +70,20 @@ def _tokenize_and_create_text_samples(
     Returns:
         List of TextSample objects for the batch
     """
-    print("\n\nB1\n\n", flush=True)
-    # Move to CPU
-    # dbg_tensor(batch)
-    print("\n\nB2\n\n", flush=True)
-    with SpinnerContext(message="tokenizing: move to CPU"):
-        print("\n\nB3\n\n", flush=True)
-        # batch_cpu: Int[Tensor, "batch_size n_ctx"] = batch.cpu()
-        print("\n\nB4\n\n", flush=True)
-        batch_size, n_ctx = batch.shape
-        print("\n\nB5\n\n", flush=True)
 
-    print("\n\nB6\n\n", flush=True)
-    # Batch decode full texts
-    with SpinnerContext(message="tokenizing: batch decode full texts"):
-        print("\n\nB7\n\n", flush=True)
-        batch_texts: list[str] = tokenizer.batch_decode(batch)  # pyright: ignore[reportAttributeAccessIssue]
-        print("\n\nB8\n\n", flush=True)
-
-    # Batch decode individual tokens - reshape and pass tensor directly
-    # Reshape [batch_size, n_ctx] -> [batch_size * n_ctx, 1]
-    print("\n\nB9\n\n", flush=True)
-    with SpinnerContext(message="tokenizing: batch decode tokens"):
-        print("\n\nB10\n\n", flush=True)
-        flattened_tokens: Int[Tensor, "total 1"] = batch.reshape(-1, 1)
-        print("\n\nB11\n\n", flush=True)
-        all_token_strings: list[str] = tokenizer.batch_decode(flattened_tokens)  # pyright: ignore[reportAttributeAccessIssue]
-        print("\n\nB12\n\n", flush=True)
-
-    # Reshape back to [batch_size, n_ctx]
-    print("\n\nB13\n\n", flush=True)
-    with SpinnerContext(message="tokenizing: reshape tokens"):
-        print("\n\nB14\n\n", flush=True)
+    with SpinnerContext(message="tokenizing: batch convert ids to tokens"):
         batch_token_strings: list[list[str]] = [
-            all_token_strings[i * n_ctx : (i + 1) * n_ctx] for i in range(batch_size)
+            tokenizer.convert_ids_to_tokens(seq)
+            for seq in batch
         ]
-        print("\n\nB15\n\n", flush=True)
 
     # Create text samples for entire batch
-    print("\n\nB16\n\n", flush=True)
+    batch_size: int = batch.shape[0]
     batch_text_samples: list[TextSample] = []
-    for text, token_strings in tqdm(
-        zip(batch_texts, batch_token_strings, strict=True), total=batch_size
-    ):
-        text_sample = TextSample(full_text=text, tokens=token_strings)
-        text_hash = text_sample.text_hash
-        if text_hash not in text_samples:
-            text_samples[text_hash] = text_sample
+    for token_strings in tqdm(batch_token_strings, total=batch_size):
+        text: str = " ".join(token_strings)
+        text_sample: TextSample = TextSample(full_text=text, tokens=token_strings)
+        text_samples[text_sample.text_hash] = text_sample
         batch_text_samples.append(text_sample)
 
     return batch_text_samples
