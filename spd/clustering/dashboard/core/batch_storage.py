@@ -10,7 +10,6 @@ from muutils.spinner import SpinnerContext
 from torch import Tensor
 from tqdm import tqdm
 from transformers import PreTrainedTokenizer
-from muutils.dbg import dbg_tensor
 
 from spd.clustering.activations import (
     ProcessedActivations,
@@ -87,7 +86,9 @@ def _tokenize_and_create_text_samples(
     # Create text samples for entire batch
     print("\n\nB16\n\n", flush=True)
     batch_text_samples: list[TextSample] = []
-    for text, token_strings in tqdm(zip(batch_texts, batch_token_strings, strict=True), total=batch_size):
+    for text, token_strings in tqdm(
+        zip(batch_texts, batch_token_strings, strict=True), total=batch_size
+    ):
         text_sample = TextSample(full_text=text, tokens=token_strings)
         text_hash = text_sample.text_hash
         if text_hash not in text_samples:
@@ -210,7 +211,7 @@ class BatchProcessingStorage:
                 batch=batch,
                 sigmoid_type=sigmoid_type,
             )
-        
+
         with SpinnerContext(message="Processing activations"):
             print("\n\nA1\n\n", flush=True)
             processed: ProcessedActivations = process_activations(
