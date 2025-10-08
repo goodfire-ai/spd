@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, PreTrainedTokenizer
 from wandb.apis.public import Run
 
+from spd.clustering.dashboard.core.tokenization import attach_vocab_arr
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
 from spd.configs import Config
@@ -77,6 +78,10 @@ def setup_model_and_data(
     # Load tokenizer
     tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     logger.info(f"Loaded: {tokenizer = }")
+
+    # Attach vocab array for optimized batch decoding
+    attach_vocab_arr(tokenizer)
+    logger.info("Attached vocab array to tokenizer for optimized decoding")
 
     # Create dataloader
     # TODO: read this from batches_config.json

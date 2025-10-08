@@ -26,42 +26,10 @@ from spd.clustering.dashboard.core.compute_helpers import (
     ClusterActivations,
     compute_all_cluster_activations,
 )
+from spd.clustering.dashboard.core.text_processing import tokenize_and_create_text_samples
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
-
-def _tokenize_and_create_text_samples(
-    batch: Int[Tensor, "batch_size n_ctx"],
-    tokenizer: PreTrainedTokenizer,
-    text_samples: dict[TextSampleHash, TextSample],
-) -> list[TextSample]:
-    """Tokenize batch and create TextSample objects.
-
-    Args:
-        batch: Input token IDs
-        tokenizer: Tokenizer for decoding
-        text_samples: Existing text samples dict (for deduplication)
-
-    Returns:
-        List of TextSample objects for the batch
-    """
-
-    with SpinnerContext(message="tokenizing: batch convert ids to tokens"):
-        batch_token_strings: list[list[str]] = [
-            tokenizer.convert_ids_to_tokens(seq)
-            for seq in batch
-        ]
-
-    # Create text samples for entire batch
-    batch_size: int = batch.shape[0]
-    batch_text_samples: list[TextSample] = []
-    for token_strings in tqdm(batch_token_strings, total=batch_size):
-        text: str = " ".join(token_strings)
-        text_sample: TextSample = TextSample(full_text=text, tokens=token_strings)
-        text_samples[text_sample.text_hash] = text_sample
-        batch_text_samples.append(text_sample)
-
-    return batch_text_samples
 
 
 @dataclass(slots=True, kw_only=True)
@@ -186,11 +154,12 @@ class BatchProcessingStorage:
             print("\n\nA2\n\n", flush=True)
 
         print("\n\nA3\n\n", flush=True)
-        batch_text_samples: list[TextSample] = _tokenize_and_create_text_samples(
-            batch=batch,
-            tokenizer=tokenizer,
-            text_samples=self.text_samples,
-        )
+        with SpinnerContext(message="Decoding tokens to text samples"):
+            batch_text_samples: list[TextSample] = tokenize_and_create_text_samples(
+                batch=batch,
+                tokenizer=tokenizer,
+                text_samples=self.text_samples,
+            )
 
         with SpinnerContext(message="Computing cluster activations"):
             cluster_acts: ClusterActivations = compute_all_cluster_activations(

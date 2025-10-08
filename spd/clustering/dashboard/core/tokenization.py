@@ -30,3 +30,50 @@ def simple_batch_decode(
     """
     assert hasattr(tokenizer, "vocab_arr"), "Tokenizer missing vocab_arr attribute, call attach_vocab_arr first"
     return tokenizer.vocab_arr[batch]
+
+
+"""
+
+
+================================================================================
+TOKENIZATION BENCHMARKING
+================================================================================
+
+Small batch: 4 x 10 = 40 tokens
+--------------------------------------------------------------------------------
+Method 1 (original)           :   0.418 ms/batch (0.042s total for 100 iterations)
+Method 3 (vocab_arr)          :   0.013 ms/batch (0.001s total for 100 iterations)
+Method 4 (loop convert)       :   0.095 ms/batch (0.010s total for 100 iterations)
+
+Fastest: vocab_arr
+Speedup vs original:
+  vocab_arr           : 33.22x
+  loop_convert        :  4.38x
+
+Medium batch: 16 x 32 = 512 tokens
+--------------------------------------------------------------------------------
+Method 1 (original)           :   4.817 ms/batch (0.482s total for 100 iterations)
+Method 3 (vocab_arr)          :   0.011 ms/batch (0.001s total for 100 iterations)
+Method 4 (loop convert)       :   0.955 ms/batch (0.095s total for 100 iterations)
+
+Fastest: vocab_arr
+Speedup vs original:
+  vocab_arr           : 456.34x
+  loop_convert        :  5.05x
+
+Large batch: 32 x 128 = 4096 tokens
+--------------------------------------------------------------------------------
+Method 1 (original)           :  40.417 ms/batch (4.042s total for 100 iterations)
+Method 3 (vocab_arr)          :   0.026 ms/batch (0.003s total for 100 iterations)
+Method 4 (loop convert)       :   7.174 ms/batch (0.717s total for 100 iterations)
+
+Fastest: vocab_arr
+Speedup vs original:
+  vocab_arr           : 1560.87x
+  loop_convert        :  5.63x
+
+================================================================================
+
+
+
+"""
