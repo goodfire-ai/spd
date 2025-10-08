@@ -7,6 +7,7 @@ import numpy as np
 from jaxtyping import Float
 
 from spd.clustering.dashboard.core.base import (
+    _SEPARATOR_3,
     ActivationSampleBatch,
     ActivationSampleHash,
     ClusterId,
@@ -165,7 +166,6 @@ class DashboardData:
             cluster_data,
             component_activations=component_data_dict if component_data_dict else None,
             component_coactivations=metrics.coactivations if metrics else None,
-            component_cosine_similarities=metrics.cosine_similarities if metrics else None,
         )
 
         # Add cluster-level activations to global storage
@@ -180,6 +180,10 @@ class DashboardData:
 
         # Add component-level activations to global storage
         if cluster_data.component_activations:
+            # Track hashes and indices for each component
+            component_hashes_map: dict[str, list[ActivationSampleHash]] = {}
+            component_indices_map: dict[str, list[int]] = {}
+
             for comp_label in cluster_data.component_activations:
                 comp_acts_list = component_activations_storage.get(comp_label, [])
                 comp_text_hashes = component_text_hashes_storage.get(comp_label, [])
@@ -189,14 +193,43 @@ class DashboardData:
 
                 comp_acts_stacked: Float[np.ndarray, "n_samples n_ctx"] = np.stack(comp_acts_list)
 
+                # Collect hashes and indices for this component
+                comp_hashes: list[ActivationSampleHash] = []
+                comp_indices: list[int] = []
+
                 for text_hash, comp_acts in zip(comp_text_hashes, comp_acts_stacked, strict=True):
-                    comp_act_hash = ActivationSampleHash(f"{cluster_hash}:{comp_label}:{text_hash}")
+                    comp_act_hash = ActivationSampleHash(
+                        f"{cluster_hash}{_SEPARATOR_3}{comp_label}{_SEPARATOR_3}{text_hash}"
+                    )
                     self._activations_map[comp_act_hash] = self._current_idx
                     self._activations_list.append(comp_acts)
                     self._text_hashes_list.append(text_hash)
+
+                    # Track for updating ComponentActivationData
+                    comp_hashes.append(comp_act_hash)
+                    comp_indices.append(self._current_idx)
+
                     self._current_idx += 1
 
-        # Store cluster
+                component_hashes_map[comp_label] = comp_hashes
+                component_indices_map[comp_label] = comp_indices
+
+            # Update ComponentActivationData objects with actual hashes and indices
+            updated_component_data: dict[str, ComponentActivationData] = {}
+            for comp_label, comp_data in cluster_data.component_activations.items():
+                updated_component_data[comp_label] = replace(
+                    comp_data,
+                    activation_sample_hashes=component_hashes_map.get(comp_label, []),
+                    activation_indices=component_indices_map.get(comp_label, []),
+                )
+
+            # Update cluster_data with populated component data
+            cluster_data = replace(
+                cluster_data,
+                component_activations=updated_component_data,
+            )
+
+        # Store cluster (now with populated component activation data)
         self.clusters[cluster_hash] = cluster_data
 
     def _finalize(self) -> None:

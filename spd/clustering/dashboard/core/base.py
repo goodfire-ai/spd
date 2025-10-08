@@ -17,8 +17,9 @@ TrackingCriterionHash = NewType("TrackingCriterionHash", str)
 ClusterLabel = NewType("ClusterLabel", int)  # Just a cluster index
 Direction = Literal["max", "min"]
 
-_SEPARATOR_1: str = "-"
-_SEPARATOR_2: str = ":"
+_SEPARATOR_1: str = "-"  # For cluster_id parts (e.g., runid-iteration-label)
+_SEPARATOR_2: str = ":"  # ONLY for component labels (e.g., module:component_index)
+_SEPARATOR_3: str = "|"  # For ALL activation hashes (cluster|text or cluster|comp|text)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -110,15 +111,15 @@ class ActivationSampleBatch:
 
     @cached_property
     def activation_hashes(self) -> list[ActivationSampleHash]:
-        """Hashes uniquely identifying each activation sample (cluster_hash + text_hash)."""
+        """Hashes uniquely identifying each activation sample (cluster_hash | text_hash)."""
         cluster_str = self.cluster_id.to_string()
-        return [ActivationSampleHash(f"{cluster_str}{_SEPARATOR_2}{th}") for th in self.text_hashes]
+        return [ActivationSampleHash(f"{cluster_str}{_SEPARATOR_3}{th}") for th in self.text_hashes]
 
     @cached_property
     def activation_hashes_short(self) -> list[str]:
-        """Short hashes for frontend (clusterLabel:textHash) without run ID and iteration."""
+        """Short hashes for frontend (clusterLabel|textHash) without run ID and iteration."""
         cluster_label = str(self.cluster_id.cluster_label)
-        return [f"{cluster_label}{_SEPARATOR_2}{th}" for th in self.text_hashes]
+        return [f"{cluster_label}{_SEPARATOR_3}{th}" for th in self.text_hashes]
 
     @property
     def shape(self) -> tuple[int, int]:

@@ -1,7 +1,7 @@
 """Helper functions for computing cluster and component activations."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -9,6 +9,9 @@ from jaxtyping import Float
 from torch import Tensor
 
 from spd.clustering.activations import ProcessedActivations
+
+if TYPE_CHECKING:
+    from spd.models.component_model import ComponentModel
 
 
 @dataclass(slots=True, kw_only=True)
@@ -150,48 +153,78 @@ def compute_component_coactivations_in_cluster(
 
 
 def compute_component_cosine_similarities(
-    processed: ProcessedActivations,
+    model: "ComponentModel",
     component_labels: list[str],
-) -> Float[np.ndarray, "n_comps n_comps"]:
-    """Compute cosine similarity matrix for components within a cluster.
+) -> Float[np.ndarray, "2 n_comps n_comps"]:
+    """Compute cosine similarity matrices for U and V vectors of components.
+
+    NOTE: Not implemented - U and V vectors may have different dimensions across components.
 
     Args:
-        processed: ProcessedActivations containing all component activations
-        component_labels: List of component labels in this cluster
+        model: ComponentModel containing the components with U and V matrices
+        component_labels: List of component labels in format "module_name:component_idx"
 
     Returns:
-        Cosine similarity matrix where sim[i,j] is the cosine similarity
-        between component i and j activation patterns
+        Array of shape (2, n_comps, n_comps) where:
+        - [0, i, j] is cosine similarity between U vectors of components i and j
+        - [1, i, j] is cosine similarity between V vectors of components i and j
     """
-    n_components: int = len(component_labels)
+    raise NotImplementedError(
+        "compute_component_cosine_similarities is not implemented - "
+        "U and V vectors may have different dimensions across components"
+    )
 
-    # Get indices for these components
-    comp_indices: list[int] = []
-    for label in component_labels:
-        comp_idx: int | None = processed.get_label_index(label)
-        if comp_idx is not None:
-            comp_indices.append(comp_idx)
-
-    if not comp_indices:
-        return np.zeros((n_components, n_components), dtype=np.float32)
-
-    # Extract activations for these components: [n_samples, n_components]
-    component_acts: Float[Tensor, "n_samples n_comps"] = processed.activations[:, comp_indices]
-
-    # Normalize each component's activation vector (columns)
-    # L2 norm for each component across samples
-    norms: Float[Tensor, " n_comps"] = torch.norm(component_acts, p=2, dim=0)
-
-    # Avoid division by zero
-    norms = torch.where(norms > 0, norms, torch.ones_like(norms))
-
-    # Normalize: [n_samples, n_comps]
-    normalized_acts: Float[Tensor, "n_samples n_comps"] = component_acts / norms.unsqueeze(0)
-
-    # Compute cosine similarity matrix: sim[i,j] = normalized_i · normalized_j
-    cosine_sim: Float[Tensor, "n_comps n_comps"] = normalized_acts.T @ normalized_acts
-
-    return cosine_sim.cpu().numpy()
+    # Code kept for reference:
+    # n_components: int = len(component_labels)
+    #
+    # if n_components == 0:
+    #     return np.zeros((2, 0, 0), dtype=np.float32)
+    #
+    # # Parse labels and extract U and V vectors
+    # u_vectors: list[Tensor] = []
+    # v_vectors: list[Tensor] = []
+    #
+    # for label in component_labels:
+    #     # Parse label format: "module_name:component_idx"
+    #     module_name, comp_idx_str = label.rsplit(":", 1)
+    #     comp_idx: int = int(comp_idx_str)
+    #
+    #     # Get the Components object for this module
+    #     if module_name not in model.components:
+    #         raise ValueError(f"Module '{module_name}' not found in model.components")
+    #
+    #     components = model.components[module_name]
+    #
+    #     # Extract U vector: components.U[comp_idx, :] shape (u_dim,)
+    #     u_vec: Tensor = components.U[comp_idx, :]
+    #     u_vectors.append(u_vec)
+    #
+    #     # Extract V vector: components.V[:, comp_idx] shape (v_dim,)
+    #     v_vec: Tensor = components.V[:, comp_idx]
+    #     v_vectors.append(v_vec)
+    #
+    # # Stack vectors: [n_comps, u_dim] and [n_comps, v_dim]
+    # u_matrix: Tensor = torch.stack(u_vectors, dim=0)  # [n_comps, u_dim]
+    # v_matrix: Tensor = torch.stack(v_vectors, dim=0)  # [n_comps, v_dim]
+    #
+    # # Compute cosine similarities for U vectors
+    # u_norms: Tensor = torch.norm(u_matrix, p=2, dim=1)  # [n_comps]
+    # u_norms = torch.where(u_norms > 0, u_norms, torch.ones_like(u_norms))
+    # u_normalized: Tensor = u_matrix / u_norms.unsqueeze(1)  # [n_comps, u_dim]
+    # u_cosine_sim: Tensor = u_normalized @ u_normalized.T  # [n_comps, n_comps]
+    #
+    # # Compute cosine similarities for V vectors
+    # v_norms: Tensor = torch.norm(v_matrix, p=2, dim=1)  # [n_comps]
+    # v_norms = torch.where(v_norms > 0, v_norms, torch.ones_like(v_norms))
+    # v_normalized: Tensor = v_matrix / v_norms.unsqueeze(1)  # [n_comps, v_dim]
+    # v_cosine_sim: Tensor = v_normalized @ v_normalized.T  # [n_comps, n_comps]
+    #
+    # # Stack and return: [2, n_comps, n_comps]
+    # result: np.ndarray = np.stack(
+    #     [u_cosine_sim.detach().cpu().numpy(), v_cosine_sim.detach().cpu().numpy()], axis=0
+    # )
+    #
+    # return result
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -200,25 +233,27 @@ class ComponentMetrics:
 
     Attributes:
         coactivations: Matrix where coact[i,j] is count of samples where both i and j activate
-        cosine_similarities: Matrix where sim[i,j] is cosine similarity between i and j
+
+    TODO: Add cosine_similarities field for U/V vectors when dimension mismatch is resolved
     """
 
     coactivations: Float[np.ndarray, "n_comps n_comps"]
-    cosine_similarities: Float[np.ndarray, "n_comps n_comps"]
 
 
 def compute_component_metrics_from_storage(
     component_labels: list[str],
     component_activations: dict[str, list[Float[np.ndarray, " n_ctx"]]],
 ) -> ComponentMetrics | None:
-    """Compute coactivations and cosine similarities from stored component activations.
+    """Compute coactivations from stored component activations.
 
     Args:
         component_labels: List of component labels in this cluster
         component_activations: Dict mapping component labels to their activation lists
 
     Returns:
-        ComponentMetrics with coactivations and cosine similarities, or None if insufficient data
+        ComponentMetrics with coactivations, or None if insufficient data
+
+    TODO: Add cosine similarities for U/V vectors when dimension mismatch is resolved
     """
     if not component_labels:
         return None
@@ -237,7 +272,6 @@ def compute_component_metrics_from_storage(
         # Return zero matrices if not all components have data
         return ComponentMetrics(
             coactivations=np.zeros((n_comps, n_comps), dtype=np.float32),
-            cosine_similarities=np.zeros((n_comps, n_comps), dtype=np.float32),
         )
 
     # Flatten to [n_total] per component, then stack to [n_comps, n_total]
@@ -250,10 +284,4 @@ def compute_component_metrics_from_storage(
     comp_act_bin: Float[np.ndarray, "n_comps n_total"] = (comp_act_matrix > 0).astype(np.float32)
     coactivations: Float[np.ndarray, "n_comps n_comps"] = comp_act_bin @ comp_act_bin.T
 
-    # Compute cosine similarities
-    norms: Float[np.ndarray, " n_comps"] = np.linalg.norm(comp_act_matrix, axis=1)
-    norms = np.where(norms > 0, norms, 1.0)
-    normalized: Float[np.ndarray, "n_comps n_total"] = comp_act_matrix / norms[:, np.newaxis]
-    cosine_sims: Float[np.ndarray, "n_comps n_comps"] = normalized @ normalized.T
-
-    return ComponentMetrics(coactivations=coactivations, cosine_similarities=cosine_sims)
+    return ComponentMetrics(coactivations=coactivations)

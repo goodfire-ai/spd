@@ -8,7 +8,7 @@ from jaxtyping import Float
 
 from spd.clustering.dashboard.core.base import (
     _SEPARATOR_1,
-    _SEPARATOR_2,
+    _SEPARATOR_3,
     ACTIVATION_SAMPLE_BATCH_STATS,
     ActivationSampleBatch,
     ActivationSampleHash,
@@ -82,7 +82,7 @@ class ClusterData:
         None  # keyed by component label
     )
     component_coactivations: Float[np.ndarray, "n_comps n_comps"] | None = None
-    component_cosine_similarities: Float[np.ndarray, "n_comps n_comps"] | None = None
+    # TODO: Add component_cosine_similarities for U/V vectors when dimension mismatch is resolved
 
     @classmethod
     def generate(
@@ -224,7 +224,7 @@ class ClusterData:
         cluster_str = self.cluster_hash
         for hashes in self.criterion_samples.values():
             unique_hashes.update(
-                ActivationSampleHash(f"{cluster_str}{_SEPARATOR_2}{th}") for th in hashes
+                ActivationSampleHash(f"{cluster_str}{_SEPARATOR_3}{th}") for th in hashes
             )
         return unique_hashes
 
@@ -276,7 +276,6 @@ class ClusterData:
             result["component_activations"] = serialized_component_activations
         if self.component_coactivations is not None:
             result["component_coactivations"] = self.component_coactivations.tolist()
-        if self.component_cosine_similarities is not None:
-            result["component_cosine_similarities"] = self.component_cosine_similarities.tolist()
+        # TODO: Serialize component_cosine_similarities when implemented
 
         return result
