@@ -3632,46 +3632,6 @@
     }
     
     /**
-     * Extract a statistic value from histogram data for sorting/filtering
-     * @param {string} statKey - The statistics key (e.g., 'all_activations', 'max_activation-max-16')
-     * @param {object} row - The data row
-     * @param {string} statType - Type of statistic ('mean', 'median', 'max', 'min', 'range')
-     * @returns {number|null} The extracted statistic or null if unavailable
-     */
-    function getHistogramStatistic(statKey, row, statType = 'mean') {
-        const histData = row.stats[statKey];
-        if (!histData || !histData.bin_counts || !histData.bin_edges) return null;
-    
-        switch (statType) {
-            case 'mean':
-                // For all_activations, use the precomputed mean
-                if (statKey === 'all_activations' && row.stats.mean_activation !== undefined) {
-                    return row.stats.mean_activation;
-                }
-                // Otherwise calculate weighted mean from histogram
-                return calculateHistogramMean(histData);
-    
-            case 'median':
-                return calculateHistogramMedian(histData);
-    
-            case 'max':
-                return histData.bin_edges[histData.bin_edges.length - 1];
-    
-            case 'min':
-                return histData.bin_edges[0];
-    
-            case 'range':
-                return histData.bin_edges[histData.bin_edges.length - 1] - histData.bin_edges[0];
-    
-            case 'sum':
-                return histData.bin_counts.reduce((a, b) => a + b, 0);
-    
-            default:
-                return null;
-        }
-    }
-    
-    /**
      * Parse extended histogram filter syntax (e.g., "mean>0.5", "max<10", "mean>0.5, max<10")
      * @param {string} filterValue - The filter string (can be comma-separated for multiple conditions)
      * @returns {Array|null} Array of parsed filters [{ statType, operator, value }] or null if plain numeric
@@ -3724,9 +3684,41 @@
             // All conditions must be satisfied (AND logic)
             for (const condition of parsedConditions) {
                 const { statType, operator, value } = condition;
-                const statValue = getHistogramStatistic(statKey, row, statType);
+                const histData = row.stats[statKey];
     
-                if (statValue === null) return false;
+                if (!histData || !histData.bin_counts || !histData.bin_edges) return false;
+    
+                // Calculate the requested statistic
+                let statValue;
+                switch (statType) {
+                    case 'mean':
+                        // For all_activations, use precomputed mean
+                        if (statKey === 'all_activations' && row.stats.mean_activation !== undefined) {
+                            statValue = row.stats.mean_activation;
+                        } else {
+                            statValue = calculateHistogramMean(histData);
+                        }
+                        break;
+                    case 'median':
+                        statValue = calculateHistogramMedian(histData);
+                        break;
+                    case 'max':
+                        statValue = histData.bin_edges[histData.bin_edges.length - 1];
+                        break;
+                    case 'min':
+                        statValue = histData.bin_edges[0];
+                        break;
+                    case 'range':
+                        statValue = histData.bin_edges[histData.bin_edges.length - 1] - histData.bin_edges[0];
+                        break;
+                    case 'sum':
+                        statValue = histData.bin_counts.reduce((a, b) => a + b, 0);
+                        break;
+                    default:
+                        return false;
+                }
+    
+                if (statValue === null || statValue === undefined) return false;
     
                 let conditionMet = false;
                 switch (operator) {
@@ -3953,7 +3945,16 @@
                 width: '200px',
                 align: 'center',
                 renderer: columnRenderers.genericHistogram(statKey, color, label),
-                sortFunction: (value, row) => getHistogramStatistic(statKey, row, 'mean'),
+                sortFunction: (value, row) => {
+                    const histData = row.stats[statKey];
+                    if (!histData || !histData.bin_counts || !histData.bin_edges) return -Infinity;
+                    // For all_activations, use precomputed mean
+                    if (statKey === 'all_activations' && row.stats.mean_activation !== undefined) {
+                        return row.stats.mean_activation;
+                    }
+                    // Otherwise calculate mean from histogram
+                    return calculateHistogramMean(histData);
+                },
                 filterFunction: (filterValue) => createHistogramFilter(statKey, filterValue),
                 filterTooltip: 'Filter by statistics. Use: mean>0.5, median<0.2, max>=1.0, min>-0.1, range<5, sum>100. Combine with commas (e.g., mean>0.5, max<10)'
             });
@@ -4043,16 +4044,30 @@
     
         dataTable = new DataTable('#clusterTableContainer', tableConfig);
     
-        document.getElementById('loading').style.display = 'none';
+        const loading = document.getElementById('loading');
+        if (!loading) {
+            const msg = 'Fatal error: loading element not found in HTML';
+            NOTIF.error(msg, null, null);
+            console.error(msg);
+            return;
+        }
+        loading.style.display = 'none';
     }
     
     document.addEventListener('DOMContentLoaded', async () => {
         await initConfig();
     
-        // Manually trigger Alpine component's loadData now that CONFIG is ready
-        const modelInfoEl = document.getElementById('modelInfo');
-        if (modelInfoEl && Alpine.$data(modelInfoEl)) {
-            Alpine.$data(modelInfoEl).loadData();
+        // Check if Alpine.js loaded
+        if (typeof Alpine === 'undefined') {
+            const msg = 'Fatal error: Alpine.js failed to load. Check your internet connection or CDN.';
+            NOTIF.error(msg, null, null);
+            console.error(msg);
+        } else {
+            // Manually trigger Alpine component's loadData now that CONFIG is ready
+            const modelInfoEl = document.getElementById('modelInfo');
+            if (modelInfoEl && Alpine.$data(modelInfoEl)) {
+                Alpine.$data(modelInfoEl).loadData();
+            }
         }
     
         // Load cluster data and render table
