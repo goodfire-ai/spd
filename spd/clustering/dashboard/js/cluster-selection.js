@@ -793,7 +793,7 @@ async function loadData() {
         renderer: columnRenderers.tokenEntropy,
         sortFunction: (value, row) => {
             const tokenStats = row.stats.token_activations;
-            return tokenStats ? tokenStats.entropy : null;
+            return tokenStats ? tokenStats.entropy : -Infinity;
         },
         filterFunction: (filterValue) => createNumericFilter(filterValue, (row) => {
             const tokenStats = row.stats.token_activations;
@@ -811,7 +811,7 @@ async function loadData() {
         renderer: columnRenderers.tokenConcentration,
         sortFunction: (value, row) => {
             const tokenStats = row.stats.token_activations;
-            return tokenStats ? tokenStats.concentration_ratio : null;
+            return tokenStats ? tokenStats.concentration_ratio : -Infinity;
         },
         filterFunction: (filterValue) => createNumericFilter(filterValue, (row) => {
             const tokenStats = row.stats.token_activations;
