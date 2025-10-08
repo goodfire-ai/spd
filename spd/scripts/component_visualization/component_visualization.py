@@ -525,6 +525,12 @@ def main(config_path_or_obj: str | ComponentVisualizationConfig = None) -> None:
 
 
 if __name__ == "__main__":
-    # Use the config file directly
-    config_path = Path(__file__).parent / "component_visualization_config.yaml"
+    import sys
+
+    if len(sys.argv) > 1:
+        config_path = sys.argv[1]
+    else:
+        # Default to the config file in the same directory if no argument provided
+        config_path = Path(__file__).parent / "component_visualization_config.yaml"
+
     main(config_path)

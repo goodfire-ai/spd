@@ -525,6 +525,8 @@ class ComponentModel(LoadableModule):
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
+            ci_fn_nonlinearity=config.ci_fn_nonlinearity,
+            ci_fn_negative_slope=config.ci_fn_negative_slope,
         )
 
         comp_model_weights = torch.load(
