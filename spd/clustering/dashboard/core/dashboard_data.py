@@ -104,62 +104,59 @@ class DashboardData:
         ]
 
         # Generate ClusterData with stats and top-k samples
-        with SpinnerContext(message="Generating cluster data and top-k samples"):
-            cluster_data: ClusterData = ClusterData.generate(
-                cluster_id=cluster_id,
-                activation_samples=activation_batch,
-                criteria=criteria,
-                components=components_info,
-            )
+        cluster_data: ClusterData = ClusterData.generate(
+            cluster_id=cluster_id,
+            activation_samples=activation_batch,
+            criteria=criteria,
+            components=components_info,
+        )
 
         # Build component-level data
-        with SpinnerContext(message="Building component-level statistics"):
-            component_data_dict: dict[str, ComponentActivationData] = {}
-            component_labels: list[str] = []
+        component_data_dict: dict[str, ComponentActivationData] = {}
+        component_labels: list[str] = []
 
-            for comp_info in components_info:
-                comp_label: str = comp_info.label
-                component_labels.append(comp_label)
+        for comp_info in components_info:
+            comp_label: str = comp_info.label
+            component_labels.append(comp_label)
 
-                # Get stored component activations
-                comp_acts_list: list[Float[np.ndarray, " n_ctx"]] = (
-                    component_activations_storage.get(comp_label, [])
-                )
+            # Get stored component activations
+            comp_acts_list: list[Float[np.ndarray, " n_ctx"]] = (
+                component_activations_storage.get(comp_label, [])
+            )
 
-                if not comp_acts_list:
-                    continue
+            if not comp_acts_list:
+                continue
 
-                # Stack activations
-                comp_acts_array: Float[np.ndarray, "n_samples n_ctx"] = np.stack(comp_acts_list)
+            # Stack activations
+            comp_acts_array: Float[np.ndarray, "n_samples n_ctx"] = np.stack(comp_acts_list)
 
-                # Compute component statistics
-                comp_stats: dict[str, Any] = {
-                    "mean": float(np.mean(comp_acts_array)),
-                    "max": float(np.max(comp_acts_array)),
-                    "min": float(np.min(comp_acts_array)),
-                    "median": float(np.median(comp_acts_array)),
-                    "n_samples": len(comp_acts_list),
-                }
+            # Compute component statistics
+            comp_stats: dict[str, Any] = {
+                "mean": float(np.mean(comp_acts_array)),
+                "max": float(np.max(comp_acts_array)),
+                "min": float(np.min(comp_acts_array)),
+                "median": float(np.median(comp_acts_array)),
+                "n_samples": len(comp_acts_list),
+            }
 
-                # Create ComponentActivationData
-                # Note: activation_sample_hashes and activation_indices filled below
-                component_data_dict[comp_label] = ComponentActivationData(
-                    component_label=comp_label,
-                    activation_sample_hashes=[],  # Filled below
-                    activation_indices=[],  # Filled below
-                    stats=comp_stats,
-                )
+            # Create ComponentActivationData
+            # Note: activation_sample_hashes and activation_indices filled below
+            component_data_dict[comp_label] = ComponentActivationData(
+                component_label=comp_label,
+                activation_sample_hashes=[],  # Filled below
+                activation_indices=[],  # Filled below
+                stats=comp_stats,
+            )
 
         # Compute component metrics
-        with SpinnerContext(message="Computing component coactivations and similarities"):
-            from spd.clustering.dashboard.core.compute_helpers import (
-                compute_component_metrics_from_storage,
-            )
+        from spd.clustering.dashboard.core.compute_helpers import (
+            compute_component_metrics_from_storage,
+        )
 
-            metrics = compute_component_metrics_from_storage(
-                component_labels=component_labels,
-                component_activations=component_activations_storage,
-            )
+        metrics = compute_component_metrics_from_storage(
+            component_labels=component_labels,
+            component_activations=component_activations_storage,
+        )
 
         # Update cluster_data with component-level data
         from dataclasses import replace

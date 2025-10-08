@@ -8,6 +8,7 @@ import torch
 from jaxtyping import Float, Int
 from muutils.spinner import SpinnerContext
 from torch import Tensor
+from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
 from spd.clustering.activations import (
@@ -45,17 +46,16 @@ def _tokenize_and_create_text_samples(
     Returns:
         List of TextSample objects for the batch
     """
-    # Move to CPU and convert to list
+    # Move to CPU
     batch_cpu: Int[Tensor, "batch_size n_ctx"] = batch.cpu()
     batch_size, n_ctx = batch_cpu.shape
 
     # Batch decode full texts
     batch_texts: list[str] = tokenizer.batch_decode(batch_cpu)  # pyright: ignore[reportAttributeAccessIssue]
 
-    # Optimize: flatten all tokens and batch decode once
-    # Instead of: for each sample, decode all its tokens individually
-    # Do: flatten all tokens from all samples, decode once, then reshape
-    flattened_tokens: list[list[int]] = [[tid] for row in batch_cpu for tid in row]
+    # Batch decode individual tokens - reshape and pass tensor directly
+    # Reshape [batch_size, n_ctx] -> [batch_size * n_ctx, 1]
+    flattened_tokens: Int[Tensor, "total 1"] = batch_cpu.reshape(-1, 1)
     all_token_strings: list[str] = tokenizer.batch_decode(flattened_tokens)  # pyright: ignore[reportAttributeAccessIssue]
 
     # Reshape back to [batch_size, n_ctx]
@@ -179,7 +179,6 @@ class BatchProcessingStorage:
         seq_len: int
         batch_size, seq_len = batch.shape
 
-        # Get component activations from model
         with SpinnerContext(message="Computing component activations"):
             activations: dict[str, Float[Tensor, "n_steps C"]] = component_activations(
                 model,
@@ -191,15 +190,13 @@ class BatchProcessingStorage:
                 activations, seq_mode="concat", filter_dead_threshold=0
             )
 
-        # Tokenize and create text samples
-        with SpinnerContext(message="Tokenizing batch"):
+        with SpinnerContext(message="tokenizing and creating text samples"):
             batch_text_samples: list[TextSample] = _tokenize_and_create_text_samples(
                 batch=batch,
                 tokenizer=tokenizer,
                 text_samples=self.text_samples,
             )
 
-        # Compute cluster activations
         with SpinnerContext(message="Computing cluster activations"):
             cluster_acts: ClusterActivations = compute_all_cluster_activations(
                 processed=processed,
@@ -208,15 +205,13 @@ class BatchProcessingStorage:
                 seq_len=seq_len,
             )
 
-        # Store activations
-        with SpinnerContext(message="Storing activations"):
-            self._store_activations(
-                cluster_acts=cluster_acts,
-                processed=processed,
-                batch_text_samples=batch_text_samples,
-                batch_size=batch_size,
-                seq_len=seq_len,
-            )
+        self._store_activations(
+            cluster_acts=cluster_acts,
+            processed=processed,
+            batch_text_samples=batch_text_samples,
+            batch_size=batch_size,
+            seq_len=seq_len,
+        )
 
     def _store_activations(
         self,
@@ -245,7 +240,12 @@ class BatchProcessingStorage:
         acts_3d_cpu: Float[np.ndarray, "batch_size seq_len n_clusters"] = acts_3d.cpu().numpy()
 
         # Store activations per cluster
-        for cluster_col_idx, cluster_idx in enumerate(cluster_acts.cluster_indices):
+        for cluster_col_idx, cluster_idx in tqdm(
+            enumerate(cluster_acts.cluster_indices),
+            total=len(cluster_acts.cluster_indices),
+            desc="  Storing cluster activations",
+            leave=False,
+        ):
             cluster_acts_2d: Float[np.ndarray, "batch_size seq_len"] = acts_3d_cpu[
                 :, :, cluster_col_idx
             ]

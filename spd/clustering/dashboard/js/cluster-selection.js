@@ -91,10 +91,7 @@ const columnRenderers = {
         container.className = 'sparkline-cell';
 
         // Calculate bin centers for x-axis
-        const binCenters = [];
-        for (let i = 0; i < histData.bin_counts.length; i++) {
-            binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
-        }
+        const binCenters = calculateBinCenters(histData.bin_edges);
 
         const min = row.stats.min_activation;
         const max = row.stats.max_activation;
@@ -139,10 +136,7 @@ const columnRenderers = {
         container.className = 'sparkline-cell';
 
         // Calculate bin centers for x-axis
-        const binCenters = [];
-        for (let i = 0; i < histData.bin_counts.length; i++) {
-            binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
-        }
+        const binCenters = calculateBinCenters(histData.bin_edges);
 
         const min = histData.bin_edges[0];
         const max = histData.bin_edges[histData.bin_edges.length - 1];
@@ -276,10 +270,7 @@ const columnRenderers = {
             container.className = 'sparkline-cell';
 
             // Calculate bin centers for x-axis
-            const binCenters = [];
-            for (let i = 0; i < histData.bin_counts.length; i++) {
-                binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
-            }
+            const binCenters = calculateBinCenters(histData.bin_edges);
 
             // Calculate statistics of underlying data
             const min = histData.bin_edges[0];
@@ -444,44 +435,6 @@ function getHistogramStatistic(statKey, row, statType = 'mean') {
         default:
             return null;
     }
-}
-
-/**
- * Calculate mean from histogram data
- */
-function calculateHistogramMean(histData) {
-    const { bin_counts, bin_edges } = histData;
-    let sum = 0;
-    let count = 0;
-
-    for (let i = 0; i < bin_counts.length; i++) {
-        // Use bin center
-        const binCenter = (bin_edges[i] + bin_edges[i + 1]) / 2;
-        sum += binCenter * bin_counts[i];
-        count += bin_counts[i];
-    }
-
-    return count > 0 ? sum / count : 0;
-}
-
-/**
- * Calculate median from histogram data (approximate)
- */
-function calculateHistogramMedian(histData) {
-    const { bin_counts, bin_edges } = histData;
-    const totalCount = bin_counts.reduce((a, b) => a + b, 0);
-    const halfCount = totalCount / 2;
-
-    let cumulativeCount = 0;
-    for (let i = 0; i < bin_counts.length; i++) {
-        cumulativeCount += bin_counts[i];
-        if (cumulativeCount >= halfCount) {
-            // Return bin center as approximate median
-            return (bin_edges[i] + bin_edges[i + 1]) / 2;
-        }
-    }
-
-    return 0;
 }
 
 /**

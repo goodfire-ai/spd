@@ -233,43 +233,6 @@ function displayModelVisualization() {
     renderModelView(modelViewDiv, currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap, CONFIG.visualization.modelViewCellSize);
 }
 
-/**
- * Calculate the mean of a histogram by treating bin centers as representative values
- */
-function calculateHistogramMean(histData) {
-    let totalCount = 0;
-    let weightedSum = 0;
-
-    for (let i = 0; i < histData.bin_counts.length; i++) {
-        const binCenter = (histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2;
-        const count = histData.bin_counts[i];
-        totalCount += count;
-        weightedSum += binCenter * count;
-    }
-
-    return totalCount > 0 ? weightedSum / totalCount : 0;
-}
-
-/**
- * Calculate the median of a histogram using bin centers
- */
-function calculateHistogramMedian(histData) {
-    const totalCount = histData.bin_counts.reduce((a, b) => a + b, 0);
-    if (totalCount === 0) return 0;
-
-    const targetCount = totalCount / 2;
-    let cumulativeCount = 0;
-
-    for (let i = 0; i < histData.bin_counts.length; i++) {
-        cumulativeCount += histData.bin_counts[i];
-        if (cumulativeCount >= targetCount) {
-            return (histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2;
-        }
-    }
-
-    return 0;
-}
-
 function displayHistograms() {
     const stats = clusterData.stats;
     if (!stats) return;
@@ -326,10 +289,7 @@ function displayHistograms() {
         sparklineContainer.className = 'sparkline-cell';
 
         // Calculate bin centers for x-axis
-        const binCenters = [];
-        for (let i = 0; i < histData.bin_counts.length; i++) {
-            binCenters.push((histData.bin_edges[i] + histData.bin_edges[i + 1]) / 2);
-        }
+        const binCenters = calculateBinCenters(histData.bin_edges);
 
         const min = histData.bin_edges[0];
         const max = histData.bin_edges[histData.bin_edges.length - 1];
