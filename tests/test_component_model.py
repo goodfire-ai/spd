@@ -186,7 +186,7 @@ class TinyTarget(nn.Module):
         self.out = nn.Linear(d_mid, d_out)
 
     @override
-    def forward(self, token_ids: Int[Tensor, "..."]) -> Float[Tensor, "..."]:
+    def forward(self, token_ids: Int[Tensor, "..."], **kwargs: Any) -> Float[Tensor, "..."]:
         x = self.embed(token_ids)
         x = self.mlp(x)
         x = self.out(x)
