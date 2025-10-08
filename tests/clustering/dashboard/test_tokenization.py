@@ -204,9 +204,7 @@ class TestRoundTripping:
             tokenizer_with_vocab.pad_token = tokenizer_with_vocab.eos_token
 
         # Encode to token IDs
-        encoded = tokenizer_with_vocab(
-            texts, padding=True, truncation=True, return_tensors="np"
-        )
+        encoded = tokenizer_with_vocab(texts, padding=True, truncation=True, return_tensors="np")
         token_ids = encoded["input_ids"]  # type: ignore
 
         # Decode using simple_batch_decode

@@ -147,13 +147,10 @@ class BatchProcessingStorage:
             )
 
         with SpinnerContext(message="Processing activations"):
-            print("\n\nA1\n\n", flush=True)
             processed: ProcessedActivations = process_activations(
                 activations, seq_mode="concat", filter_dead_threshold=0
             )
-            print("\n\nA2\n\n", flush=True)
 
-        print("\n\nA3\n\n", flush=True)
         with SpinnerContext(message="Decoding tokens to text samples"):
             batch_text_samples: list[TextSample] = tokenize_and_create_text_samples(
                 batch=batch,
