@@ -1,7 +1,6 @@
 <script lang="ts">
     import type { ActivationContextsConfig, SubcomponentActivationContexts } from "$lib/api";
     import * as api from "$lib/api";
-    import { onMount } from "svelte";
     import ActivationContext from "./ActivationContext.svelte";
 
     export let availableComponentLayers: string[];
@@ -21,6 +20,17 @@
     let nSteps = 1;
     let nTokensEitherSide = 10;
 
+    // Track previous layers to detect when run changes
+    let previousLayers: string[] = availableComponentLayers;
+    $: {
+        const layersChanged = JSON.stringify(availableComponentLayers) !== JSON.stringify(previousLayers);
+        if (layersChanged) {
+            subcomponentsActivationContexts = null;
+            selectedLayer = availableComponentLayers[0];
+            previousLayers = availableComponentLayers;
+        }
+    }
+
     $: totalPages = subcomponentsActivationContexts?.length ?? 0;
     $: currentItem = subcomponentsActivationContexts?.[currentPage] ?? null;
 
@@ -35,9 +45,8 @@
                 n_tokens_either_side: nTokensEitherSide
             };
             const data = await api.getLayerActivationContexts(selectedLayer, config);
-            data.sort((a, b) => b.examples.length - a.examples.length);
             for (const d of data) {
-                d.examples = d.examples.slice(0, 100);
+                d.examples = d.examples.slice(0, 1000);
             }
             subcomponentsActivationContexts = data;
             currentPage = 0;
@@ -97,7 +106,7 @@
                 </div>
 
                 <div class="config-item">
-                    <label for="n-steps">Number of Batches:</label>
+                    <label for="n-steps">Number of Sequences:</label>
                     <input
                         id="n-steps"
                         type="number"

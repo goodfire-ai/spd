@@ -57,7 +57,7 @@
                 class="token-highlight"
                 class:active-token={segment.isActive}
                 style={`background-color:${getHighlightColor(segment.ciValue)};`}
-                title={`Importance: ${segment.ciValue.toFixed(precision)}`}
+                data-ci={`CI: ${segment.ciValue.toFixed(precision)}`}
             >{segment.text}</span>
         {:else}
             {segment.text}
@@ -75,6 +75,29 @@
         display: inline;
         padding: 2px 4px;
         border-radius: 3px;
+        position: relative;
+    }
+
+    .token-highlight::after {
+        content: attr(data-ci);
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0s;
+        margin-bottom: 4px;
+    }
+
+    .token-highlight:hover::after {
+        opacity: 1;
     }
 
     .token-highlight.active-token {
