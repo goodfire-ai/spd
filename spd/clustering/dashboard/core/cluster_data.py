@@ -7,6 +7,8 @@ import numpy as np
 from jaxtyping import Float
 
 from spd.clustering.dashboard.core.base import (
+    _SEPARATOR_1,
+    _SEPARATOR_2,
     ACTIVATION_SAMPLE_BATCH_STATS,
     ActivationSampleBatch,
     ActivationSampleHash,
@@ -17,8 +19,6 @@ from spd.clustering.dashboard.core.base import (
     Direction,
     TextSampleHash,
     TrackingCriterionHash,
-    _SEPARATOR_1,
-    _SEPARATOR_2,
 )
 
 
@@ -78,7 +78,9 @@ class ClusterData:
     criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]]
     stats: dict[str, Any]
     # New fields for component-level data
-    component_activations: dict[str, ComponentActivationData] | None = None  # keyed by component label
+    component_activations: dict[str, ComponentActivationData] | None = (
+        None  # keyed by component label
+    )
     component_coactivations: Float[np.ndarray, "n_comps n_comps"] | None = None
     component_cosine_similarities: Float[np.ndarray, "n_comps n_comps"] | None = None
 
@@ -250,7 +252,9 @@ class ClusterData:
             for comp_label, comp_data in self.component_activations.items():
                 serialized_component_activations[comp_label] = {
                     "component_label": comp_data.component_label,
-                    "activation_sample_hashes": [str(h) for h in comp_data.activation_sample_hashes],
+                    "activation_sample_hashes": [
+                        str(h) for h in comp_data.activation_sample_hashes
+                    ],
                     "activation_indices": comp_data.activation_indices,
                     "stats": comp_data.stats,
                 }
