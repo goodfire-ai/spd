@@ -18,7 +18,14 @@ async function init() {
     currentClusterHash = urlParams.get('id');
 
     if (!currentClusterHash) {
-        document.getElementById('loading').textContent = 'No cluster ID specified';
+        const loading = document.getElementById('loading');
+        if (!loading) {
+            const msg = 'Fatal error: loading element not found in HTML';
+            NOTIF.error(msg, null, null);
+            console.error(msg);
+            return;
+        }
+        loading.textContent = 'No cluster ID specified';
         return;
     }
 
@@ -61,7 +68,12 @@ async function loadData() {
         } catch (error) {
             progressBar.complete();
             NOTIF.error(error.message, error, null);
-            document.getElementById('loading').textContent = error.message;
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.textContent = error.message;
+            } else {
+                console.error('loading element not found, cannot display error message');
+            }
             throw error;
         }
 
@@ -102,7 +114,12 @@ async function loadData() {
         if (!allClusters[currentClusterHash]) {
             const msg = 'Cluster not found';
             NOTIF.error(msg, null, null);
-            document.getElementById('loading').textContent = msg;
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.textContent = msg;
+            } else {
+                console.error('loading element not found, cannot display error message');
+            }
             progressBar.complete();
             return;
         }
@@ -123,7 +140,14 @@ async function loadData() {
 
         displayCluster();
         progressBar.complete();
-        document.getElementById('loading').style.display = 'none';
+        const loading = document.getElementById('loading');
+        if (!loading) {
+            const msg = 'Fatal error: loading element not found in HTML';
+            NOTIF.error(msg, null, null);
+            console.error(msg);
+            return;
+        }
+        loading.style.display = 'none';
     } catch (error) {
         progressBar.complete();
         console.error('Load error:', error);
@@ -133,10 +157,23 @@ async function loadData() {
 
 function displayCluster() {
     // Update title
-    document.getElementById('clusterTitle').textContent = `Cluster ${currentClusterHash}`;
+    const clusterTitle = document.getElementById('clusterTitle');
+    if (!clusterTitle) {
+        const msg = 'Fatal error: clusterTitle element not found in HTML';
+        NOTIF.error(msg, null, null);
+        console.error(msg);
+        return;
+    }
+    clusterTitle.textContent = `Cluster ${currentClusterHash}`;
 
     // Display component count
     const componentCount = document.getElementById('componentCount');
+    if (!componentCount) {
+        const msg = 'Fatal error: componentCount element not found in HTML';
+        NOTIF.error(msg, null, null);
+        console.error(msg);
+        return;
+    }
     componentCount.textContent = clusterData.components.length;
 
     // Display explanation and setup copy handler
@@ -230,6 +267,12 @@ function initializeComponentData() {
 
 function displayModelVisualization() {
     const modelViewDiv = document.getElementById('modelView');
+    if (!modelViewDiv) {
+        const msg = 'Fatal error: modelView element not found in HTML';
+        NOTIF.error(msg, null, null);
+        console.error(msg);
+        return;
+    }
     renderModelView(modelViewDiv, currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap, CONFIG.visualization.modelViewCellSize);
 }
 
@@ -238,6 +281,12 @@ function displayHistograms() {
     if (!stats) return;
 
     const histogramPlots = document.getElementById('histogramPlots');
+    if (!histogramPlots) {
+        const msg = 'Fatal error: histogramPlots element not found in HTML';
+        NOTIF.error(msg, null, null);
+        console.error(msg);
+        return;
+    }
     histogramPlots.innerHTML = '';
 
     // Color mapping for different histogram types
@@ -329,7 +378,14 @@ function displayTokenActivations() {
     const tokenStats = clusterData.stats.token_activations;
 
     // Show the section
-    document.getElementById('tokenActivations').style.display = 'block';
+    const tokenActivations = document.getElementById('tokenActivations');
+    if (!tokenActivations) {
+        const msg = 'Fatal error: tokenActivations element not found in HTML';
+        NOTIF.error(msg, null, null);
+        console.error(msg);
+        return;
+    }
+    tokenActivations.style.display = 'block';
 
     // Setup top tokens table
     if (tokenStats.top_tokens && tokenStats.top_tokens.length > 0) {
@@ -542,8 +598,8 @@ function setupModelViewHighlighting() {
             const tableRows = componentsTable.querySelectorAll('.tablejs-data-row');
             tableRows.forEach(row => {
                 const cells = row.querySelectorAll('td');
-                if (cells.length > 0) {
-                    const moduleCell = cells[0]; // First column is module name
+                if (cells.length > 1) {
+                    const moduleCell = cells[1]; // Second column is module name (first is checkbox)
                     if (moduleCell && moduleCell.textContent === moduleName) {
                         row.style.backgroundColor = '#fff3cd'; // Light yellow highlight
                     }
@@ -563,6 +619,12 @@ function setupModelViewHighlighting() {
 
 function displaySamples() {
     const tbody = document.getElementById('samplesTableBody');
+    if (!tbody) {
+        const msg = 'Fatal error: samplesTableBody element not found in HTML';
+        NOTIF.error(msg, null, null);
+        console.error(msg);
+        return;
+    }
     tbody.innerHTML = '';
 
     // Get the main criterion samples (max_activation)

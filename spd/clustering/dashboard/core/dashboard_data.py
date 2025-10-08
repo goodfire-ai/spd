@@ -5,7 +5,6 @@ from typing import Any
 
 import numpy as np
 from jaxtyping import Float
-from muutils.spinner import SpinnerContext
 
 from spd.clustering.dashboard.core.base import (
     ActivationSampleBatch,
@@ -120,8 +119,8 @@ class DashboardData:
             component_labels.append(comp_label)
 
             # Get stored component activations
-            comp_acts_list: list[Float[np.ndarray, " n_ctx"]] = (
-                component_activations_storage.get(comp_label, [])
+            comp_acts_list: list[Float[np.ndarray, " n_ctx"]] = component_activations_storage.get(
+                comp_label, []
             )
 
             if not comp_acts_list:
