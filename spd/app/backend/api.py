@@ -11,9 +11,15 @@ class ActivationContext(BaseModel):
     ci_value: float
 
 
+class TokenDensity(BaseModel):
+    token: str
+    density: float
+
+
 class SubcomponentActivationContexts(BaseModel):
     subcomponent_idx: int
     examples: list[ActivationContext]
+    token_densities: list[TokenDensity]
 
 
 class ModelActivationContexts(BaseModel):

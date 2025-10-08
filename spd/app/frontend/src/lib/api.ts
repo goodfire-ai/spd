@@ -335,6 +335,12 @@ export type ActivationContext = {
 export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     examples: ActivationContext[];
+    token_densities: TokenDensity[];
+};
+
+export type TokenDensity = {
+    token: string;
+    density: number;
 };
 
 export async function getLayerActivationContexts(

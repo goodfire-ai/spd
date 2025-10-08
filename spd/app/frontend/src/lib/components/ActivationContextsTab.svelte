@@ -11,36 +11,39 @@
     }
 
     let selectedLayer: string = availableComponentLayers[0];
-
     let subcomponentsActivationContexts: SubcomponentActivationContexts[] | null = null;
-
     let loading = false;
+    let currentPage = 0;
 
-    // let currentAbort: AbortController | null = null;
+    $: totalPages = subcomponentsActivationContexts?.length ?? 0;
+    $: currentItem = subcomponentsActivationContexts?.[currentPage] ?? null;
 
     async function loadContexts() {
-        // if (currentAbort) {
-        //     currentAbort.abort();
-        // }
-        // const ac = new AbortController();
-        // currentAbort = ac;
         loading = true;
         try {
             console.log(`loading contexts for layer ${selectedLayer}`);
-            subcomponentsActivationContexts = await api.getLayerActivationContexts(
-                selectedLayer
-                // ac.signal
-            );
+            const data = await api.getLayerActivationContexts(selectedLayer);
+            data.sort((a, b) => b.examples.length - a.examples.length);
+            for (const d of data) {
+                d.examples = d.examples.slice(0, 100);
+            }
+            subcomponentsActivationContexts = data;
+            currentPage = 0;
         } catch (e) {
             if ((e as any)?.name !== "AbortError") {
                 console.error(e);
             }
         } finally {
-            // if (currentAbort === ac) {
-            //     currentAbort = null;
-            // }
             loading = false;
         }
+    }
+
+    function previousPage() {
+        if (currentPage > 0) currentPage--;
+    }
+
+    function nextPage() {
+        if (currentPage < totalPages - 1) currentPage++;
     }
 
     onMount(() => {
@@ -57,19 +60,49 @@
             {/each}
         </select>
     </div>
+    {#if loading}
+        <div class="loading">Loading...</div>
+    {/if}
 
-    {#if subcomponentsActivationContexts}
-        <div class="subcomponents-list">
-            {#each subcomponentsActivationContexts as { subcomponent_idx, examples }}
-                <div class="subcomponent-section-header">
-                    <h4>Subcomponent {subcomponent_idx}</h4>
-                    <div class="subcomponent-section">
-                        {#each examples as example}
-                            <ActivationContext {example} />
+    {#if currentItem}
+        <div class="pagination-controls">
+            <button on:click={previousPage} disabled={currentPage === 0}>&lt;</button>
+            <input
+                type="number"
+                min="0"
+                max={totalPages - 1}
+                bind:value={currentPage}
+                class="page-input"
+            />
+            <span>of {totalPages - 1}</span>
+            <button on:click={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
+        </div>
+
+        <div class="subcomponent-section-header">
+            <h4>Subcomponent {currentItem.subcomponent_idx}</h4>
+
+            {#if currentItem.token_densities && currentItem.token_densities.length > 0}
+                <div class="token-densities">
+                    <h5>Token Activation Densities (top 20)</h5>
+                    <div class="densities-grid">
+                        {#each currentItem.token_densities.slice(0, 20) as { token, density }}
+                            <div class="density-item">
+                                <span class="token">{token}</span>
+                                <div class="density-bar-container">
+                                    <div class="density-bar" style="width: {density * 100}%"></div>
+                                </div>
+                                <span class="density-value">{(density * 100).toFixed(1)}%</span>
+                            </div>
                         {/each}
                     </div>
                 </div>
-            {/each}
+            {/if}
+
+            <div class="subcomponent-section">
+                {#each currentItem.examples as example}
+                    <ActivationContext example={example} />
+                {/each}
+            </div>
         </div>
     {/if}
 </div>
@@ -83,8 +116,6 @@
     }
 
     .controls {
-        /* display: flex;
-        flex-wrap: wrap; */
         gap: 0.5rem;
         padding: 1rem;
         background: #f8f9fa;
@@ -93,18 +124,42 @@
         flex-direction: column;
     }
 
+    .pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+
+    .pagination-controls button {
+        padding: 0.5rem 1rem;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: white;
+        cursor: pointer;
+        font-size: 1rem;
+    }
+
+    .pagination-controls button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .page-input {
+        width: 60px;
+        padding: 0.5rem;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        text-align: center;
+    }
+
     .subcomponent-section-header {
         display: flex;
         flex-direction: column;
         gap: 0.4rem;
-    }
-
-    .subcomponents-list {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-        overflow-y: auto;
-        padding: 0.5rem;
     }
 
     .subcomponent-section {
@@ -121,5 +176,61 @@
         background: white;
         cursor: pointer;
         width: 100%;
+    }
+
+    .token-densities {
+        margin: 1rem 0;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+
+    .token-densities h5 {
+        margin: 0 0 1rem 0;
+        font-size: 1rem;
+        color: #495057;
+    }
+
+    .densities-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .density-item {
+        display: grid;
+        grid-template-columns: 100px 1fr 60px;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .token {
+        font-family: monospace;
+        font-weight: 600;
+        color: #212529;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .density-bar-container {
+        height: 20px;
+        background: #e9ecef;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .density-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #4dabf7, #228be6);
+        transition: width 0.3s ease;
+    }
+
+    .density-value {
+        text-align: right;
+        color: #495057;
+        font-weight: 500;
     }
 </style>

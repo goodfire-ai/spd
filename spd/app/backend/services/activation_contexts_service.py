@@ -55,8 +55,8 @@ class SubcomponentActivationContextsService:
                 wandb_path=wandb_path,
                 importance_threshold=0.01,
                 separation_threshold_tokens=10,
-                max_examples_per_subcomponent=10,
-                n_steps=1000,
+                max_examples_per_subcomponent=100,
+                n_steps=10_000,
                 n_tokens_either_side=10,
             )
 

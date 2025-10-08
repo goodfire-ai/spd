@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import heapq
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 
 import torch
+from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
 from spd.app.backend.api import (
     ActivationContext,
     ModelActivationContexts,
     SubcomponentActivationContexts,
+    TokenDensity,
 )
 from spd.app.backend.services.run_context_service import RunContextService, TrainRunContext
 from spd.configs import Config
@@ -77,9 +80,10 @@ class WorkerArgs:
 
 
 def main(args: WorkerArgs) -> ModelActivationContexts:
-    logger.info("activation contexts")
+    logger.info("worker: Getting activation contexts")
 
     rcs = RunContextService()
+    logger.info("worker: Loading run context")
     rcs.load_run(args.wandb_path)
     assert (run_context := rcs.train_run_context) is not None, "Run context not found"
 
@@ -105,31 +109,33 @@ def _get_topk_by_subcomponent(
     n_steps: int,
     n_tokens_either_side: int,
 ) -> dict[tuple[str, int], _TopKExamples]:
-    # Tracking structures
+    # Tracks top-k examples per (module_name, component_idx)
     topk_by_subcomponent: dict[tuple[str, int], _TopKExamples] = {}
-    last_pos_in_seq: dict[tuple[str, int, int], int] = {}
+    # Counts of total firings per (module_name, component_idx) (kept for density)
     firing_counts: dict[tuple[str, int], int] = {}
-    tokens_seen_total: int = 0
 
     C = run_context.cm.C
 
-    # Iterate limited steps over data
+    logger.info("worker: starting data iteration")
     data_iter = iter(run_context.train_loader)
-    for _ in range(n_steps):
+    for _ in tqdm(range(n_steps), desc="Processing data", file=sys.stderr):
         batch = extract_batch_data(next(data_iter)).to(DEVICE)
         assert isinstance(batch, torch.Tensor)
         assert batch.ndim == 2, "Expected batch tensor of shape (B, S)"
-
         B, S = batch.shape
+
+        # IMPORTANT: separation should be enforced only *within this batch's sequences*.
+        # Reset cache each batch so slots (b = 0..B-1) from previous batches don't suppress new sequences.
+        last_pos_in_seq: dict[tuple[str, int, int], int] = {}
 
         importances_by_module = _get_importances_by_module(
             run_context.cm, batch, run_context.config
         )
 
-        # Process each module tensor: threshold -> where -> counts -> gather examples
         for module_name, causal_importances in importances_by_module.items():
             assert causal_importances.shape == (B, S, C), "Expected (B,S,C) per module"
 
+            # Thresholding to find "firings"
             mask = causal_importances > importance_threshold
             if not mask.any():
                 continue
@@ -147,20 +153,20 @@ def _get_topk_by_subcomponent(
                         firing_counts.get((module_name, comp_i), 0) + c
                     )
 
-            # Sort to iterate in cache-friendly order
+            # Sort for cache-friendly iteration
             order = torch.argsort(b_idx * S + s_idx)
             b_idx = b_idx[order]
             s_idx = s_idx[order]
             m_idx = m_idx[order]
 
-            # Iterate once across the K firings, enforcing intra-sequence separation and top-k cap
+            # Iterate across K firings
             for j in range(K):
                 b = int(b_idx[j].item())
                 s = int(s_idx[j].item())
                 m = int(m_idx[j].item())
                 key = (module_name, m)
 
-                # Separation within this sequence only
+                # Enforce separation within this batch's sequence only
                 lp_key = (module_name, m, b)
                 last = last_pos_in_seq.get(lp_key, -separation_threshold_tokens - 1)
                 if s < last + separation_threshold_tokens:
@@ -168,17 +174,18 @@ def _get_topk_by_subcomponent(
 
                 importance_val = float(causal_importances[b, s, m].item())
 
-                # Enforce component-local top-k with a bounded heap
+                # Maintain bounded top-k heap per subcomponent
                 if key not in topk_by_subcomponent:
                     topk_by_subcomponent[key] = _TopKExamples(max_examples_per_subcomponent)
 
                 heap = topk_by_subcomponent[key].heap
                 if len(heap) == max_examples_per_subcomponent and importance_val <= heap[0][0]:
-                    # still advance separation to avoid clustering
+                    # Keep original behavior: still advance separation to avoid clustering,
+                    # even when we skip due to not beating the heap minimum.
                     last_pos_in_seq[lp_key] = s
                     continue
 
-                # Materialize a window of tokens around the firing position
+                # Build window around the firing position
                 start_idx = max(0, s - n_tokens_either_side)
                 end_idx = min(S, s + n_tokens_either_side + 1)
 
@@ -204,9 +211,9 @@ def _get_topk_by_subcomponent(
                     last_tok_importance=importance_val,
                 )
                 topk_by_subcomponent[key].maybe_add(ex)
-                last_pos_in_seq[lp_key] = s
 
-        tokens_seen_total += B * S
+                # Update separation cursor for this sequence slot
+                last_pos_in_seq[lp_key] = s
 
     return topk_by_subcomponent
 
@@ -267,9 +274,47 @@ def map_to_model_ctxs(
     return ModelActivationContexts(
         layers={
             layer: [
-                SubcomponentActivationContexts(subcomponent_idx=subcomponent_idx, examples=examples)
+                SubcomponentActivationContexts(
+                    subcomponent_idx=subcomponent_idx,
+                    examples=examples,
+                    token_densities=_compute_token_densities(examples, run_context),
+                )
                 for subcomponent_idx, examples in subcomponents.items()
             ]
             for layer, subcomponents in layers.items()
         }
     )
+
+
+def _compute_token_densities(
+    examples: list[ActivationContext], run_context: TrainRunContext
+) -> list[TokenDensity]:
+    from collections import Counter
+
+    from spd.app.backend.api import TokenDensity
+
+    token_counts = Counter[int]()
+    total = 0
+
+    for context in examples:
+        active_tok_idx = context.active_position
+        if 0 <= active_tok_idx < len(context.offset_mapping):
+            start, end = context.offset_mapping[active_tok_idx]
+            token_text = context.raw_text[start:end]
+            try:
+                token_id = run_context.tokenizer.encode(token_text, add_special_tokens=False)[0]  # pyright: ignore[reportAttributeAccessIssue]
+                token_counts[token_id] += 1
+                total += 1
+            except (IndexError, KeyError):
+                continue
+
+    if total == 0:
+        return []
+
+    return [
+        TokenDensity(
+            token=run_context.tokenizer.decode([tok_id]),  # pyright: ignore[reportAttributeAccessIssue]
+            density=count / total,
+        )
+        for tok_id, count in token_counts.most_common()
+    ]
