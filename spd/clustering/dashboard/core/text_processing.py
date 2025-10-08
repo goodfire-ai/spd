@@ -2,7 +2,6 @@
 
 from jaxtyping import Int
 from torch import Tensor
-from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
 from spd.clustering.dashboard.core.base import TextSample, TextSampleHash
@@ -29,8 +28,6 @@ def tokenize_and_create_text_samples(
     Returns:
         List of TextSample objects for the batch
     """
-    batch_size: int = batch.shape[0]
-
     batch_token_strings: list[list[str]] = simple_batch_decode(
         tokenizer, batch.cpu().numpy()
     ).tolist()  # [batch_size, n_ctx] of strings

@@ -6,9 +6,7 @@ from typing import Any
 import numpy as np
 import torch
 from jaxtyping import Float, Int
-from muutils.spinner import SpinnerContext
 from torch import Tensor
-from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
 from spd.clustering.activations import (
@@ -155,7 +153,6 @@ class BatchProcessingStorage:
             text_samples=self.text_samples,
         )
 
-    
         cluster_acts: ClusterActivations = compute_all_cluster_activations(
             processed=processed,
             cluster_components=self.cluster_components,
@@ -234,7 +231,6 @@ class BatchProcessingStorage:
             if active_cluster_mask[col_idx]
         ]
 
-        
         # Store activations per cluster (only active clusters)
         for cluster_col_idx, cluster_idx in active_cluster_indices:
             cluster_acts_2d: Float[np.ndarray, "batch_size seq_len"] = acts_3d_cpu[

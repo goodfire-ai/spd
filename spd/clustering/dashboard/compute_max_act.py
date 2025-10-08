@@ -93,7 +93,7 @@ def compute_max_activations(
 
         with SpinnerContext(
             message=f"  Batch {batch_idx + 1}/{n_batches}",
-            format_string = "  \r{spinner} ({elapsed_time:.2f}s) {message}{value}",
+            format_string="  \r{spinner} ({elapsed_time:.2f}s) {message}{value}",
             update_interval=0.33,
         ):
             storage.process_batch(
