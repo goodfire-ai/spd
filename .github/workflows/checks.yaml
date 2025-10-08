@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository }}/ci-mpi:latest
-    # timeout-minutes: 15 # TODO: see https://github.com/goodfire-ai/spd/issues/114
+    timeout-minutes: 15
     steps:
       - name: disk usage
         run: |

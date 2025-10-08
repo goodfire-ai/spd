@@ -397,18 +397,6 @@ def get_linear_annealed_p(
         return initial_p + (p_anneal_final_p - initial_p) * progress
 
 
-def get_module_devices(model: nn.Module) -> set[torch.device]:
-    """Get the set of devices on which the model's parameters are located."""
-    return {param.device for param in model.parameters()}
-
-
-def get_module_device(model: nn.Module) -> torch.device:
-    """Get the device of the model's parameters. Assumes all parameters are on the same device."""
-    devices: set[torch.device] = get_module_devices(model)
-    assert len(devices) == 1, f"Model parameters are on multiple devices: {devices}"
-    return devices.pop()
-
-
 class _HasDevice(Protocol):
     """Protocol for objects with a `.device` attribute that is a `torch.device`."""
 
@@ -428,12 +416,12 @@ CanGetDevice = (
 
 def get_obj_devices(d: CanGetDevice) -> set[torch.device]:
     """try to get the set of devices on which an object's parameters are located"""
-    if isinstance(d, Tensor) or hasattr(d, "device"):
+    if hasattr(d, "device"):
         # pyright doesn't realize that we just checked for a `.device` attribute, hence the ignores
         assert isinstance(d.device, torch.device)  # pyright: ignore[reportAttributeAccessIssue]
         return {d.device}  # pyright: ignore[reportAttributeAccessIssue]
     elif isinstance(d, nn.Module):
-        return get_module_devices(d)
+        return {param.device for param in d.parameters()}
     elif isinstance(d, dict):
         return {obj.device for obj in d.values()}
     else:
