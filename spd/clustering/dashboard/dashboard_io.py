@@ -153,9 +153,8 @@ def generate_model_info(
         "trainable_parameters": trainable_params,
         "component_size": getattr(model, "C", None),
         "module_list": sorted(list(unique_modules)),
+        "config": config_dict,
+        "wandb_clustering_run": wandb_clustering_run,
     }
-
-    model_info["config"] = config_dict
-    model_info["wandb_clustering_run"] = wandb_clustering_run
 
     return model_info
