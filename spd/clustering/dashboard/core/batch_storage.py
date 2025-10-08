@@ -47,15 +47,20 @@ def _tokenize_and_create_text_samples(
     """
     # Move to CPU and convert to list
     batch_cpu: Int[Tensor, "batch_size n_ctx"] = batch.cpu()
-    batch_tokens_list: list[list[int]] = batch_cpu.tolist()
+    batch_size, n_ctx = batch_cpu.shape
 
     # Batch decode full texts
     batch_texts: list[str] = tokenizer.batch_decode(batch_cpu)  # pyright: ignore[reportAttributeAccessIssue]
 
-    # Batch decode individual tokens for all samples
+    # Optimize: flatten all tokens and batch decode once
+    # Instead of: for each sample, decode all its tokens individually
+    # Do: flatten all tokens from all samples, decode once, then reshape
+    flattened_tokens: list[list[int]] = [[tid] for row in batch_cpu for tid in row]
+    all_token_strings: list[str] = tokenizer.batch_decode(flattened_tokens)  # pyright: ignore[reportAttributeAccessIssue]
+
+    # Reshape back to [batch_size, n_ctx]
     batch_token_strings: list[list[str]] = [
-        tokenizer.batch_decode([[tid] for tid in tokens_list])  # pyright: ignore[reportAttributeAccessIssue]
-        for tokens_list in batch_tokens_list
+        all_token_strings[i * n_ctx : (i + 1) * n_ctx] for i in range(batch_size)
     ]
 
     # Create text samples for entire batch

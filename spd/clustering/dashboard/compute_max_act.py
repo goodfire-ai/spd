@@ -86,12 +86,12 @@ def compute_max_activations(
     )
 
     # Process batches
-    for batch_idx, batch_data in enumerate(
-        tqdm(dataloader, total=n_batches, desc="Processing batches")
-    ):
+    print(f"\nProcessing {n_batches} batches...")
+    for batch_idx, batch_data in enumerate(dataloader):
         if batch_idx >= n_batches:
             break
 
+        print(f"  Batch {batch_idx + 1}/{n_batches}")
         storage.process_batch(
             batch_data=batch_data,
             model=model,
