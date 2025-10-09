@@ -1,0 +1,10 @@
+model_path: "wandb/5q3xxmmy/files/model_20000.pth"
+feature_idx: 0
+n_steps: 50
+max_magnitude: 2.0
+figsize_per_subplot: [2, 1.5]
+dpi: 150
+ci_threshold: 0.1
+pre_activation: false
+device: "auto"
+output_dir: "spd/scripts/magnitude_sweep/out/5q3xxmmy"

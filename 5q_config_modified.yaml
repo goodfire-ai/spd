@@ -1,0 +1,84 @@
+C: 400
+batch_size: 2048
+ci_alive_threshold: 0.1
+ci_fn_hidden_dims:
+- 16
+ci_fn_type: mlp
+eval_batch_size: 2048
+eval_freq: 500
+eval_metric_configs:
+- classname: CIHistograms
+  n_batches_accum: 5
+- classname: ComponentActivationDensity
+- classname: PermutedCIPlots
+  dense_patterns:
+  - layers.*.mlp_out
+  identity_patterns:
+  - layers.*.mlp_in
+  sigmoid_type: leaky_hard
+- classname: IdentityCIError
+  dense_ci:
+  - k: 25
+    layer_pattern: layers.*.mlp_out
+  identity_ci:
+  - layer_pattern: layers.*.mlp_in
+    n_features: 100
+- classname: CI_L0
+  groups: null
+- classname: CIMeanPerComponent
+- classname: StochasticHiddenActsReconLoss
+faithfulness_warmup_lr: 0.01
+faithfulness_warmup_steps: 200
+faithfulness_warmup_weight_decay: 0.1
+gradient_accumulation_steps: 1
+identity_module_patterns: null
+loss_metric_configs:
+- classname: ImportanceMinimalityLoss
+  coeff: 1.0e-05
+  eps: 1.0e-12
+  p_anneal_end_frac: 1.0
+  p_anneal_final_p: null
+  p_anneal_start_frac: 1.0
+  pnorm: 0.9
+- classname: StochasticReconLayerwiseLoss
+  coeff: 1.0
+- classname: StochasticReconLoss
+  coeff: 1.0
+- classname: StochasticHiddenActsReconLoss
+  coeff: 0.0
+- classname: FaithfulnessLoss
+  coeff: 0.0
+lr: 0.001
+lr_exponential_halflife: null
+lr_schedule: constant
+lr_warmup_pct: 0.0
+n_eval_steps: 100
+n_examples_until_dead: 1024000
+n_mask_samples: 1
+out_dir: null
+output_loss_type: mse
+pretrained_model_class: spd.experiments.resid_mlp.models.ResidMLP
+pretrained_model_name: null
+pretrained_model_output_attr: null
+pretrained_model_path: wandb/any9ekl9/files/resid_mlp.pth
+sampling: continuous
+save_freq: null
+seed: 0
+sigmoid_type: leaky_hard
+slow_eval_freq: 5000
+slow_eval_on_first_step: true
+steps: 20000
+target_module_patterns:
+- layers.*.mlp_in
+- layers.*.mlp_out
+task_config:
+  data_generation_type: at_least_zero_active
+  feature_probability: 0.01
+  task_name: resid_mlp
+tokenizer_name: null
+train_log_freq: 50
+use_abs_inner_acts: false
+use_delta_component: true
+wandb_project: spd
+wandb_run_name: resid_mlp2-ci_fn_type-mlp-faithfulness_warmup_steps-200-seed-0-Faith-coeff-0.0-ImpMin-coeff-1e-5-pnorm-0.9-StochHiddenRecon-coeff-0.0
+wandb_run_name_prefix: ''
