@@ -81,7 +81,9 @@ WeightDeltaSamplingData = (
 )
 
 RoutingType = (
-    Literal["uniform_k-stochastic", "all"] | tuple[Literal["given"], dict[str, Bool[Tensor, "..."]]]
+    Literal[
+        "uniform_k-stochastic", "all"
+    ]  #  | tuple[Literal["given"], dict[str, Bool[Tensor, "..."]]]
 )
 """How to choose which (batch,) or (batch, seq_len) positions to route to components or target.
 
@@ -144,8 +146,8 @@ def calc_stochastic_component_mask_info(
                 list(causal_importances.keys()),
                 device,
             )
-        case ("given", adversarial_routing_masks):
-            routing_masks = adversarial_routing_masks
+        # case ("given", adversarial_routing_masks):
+        #     routing_masks = adversarial_routing_masks
 
     return make_mask_infos(
         component_masks=component_masks,

@@ -5,8 +5,9 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import PGDConfig
 from spd.metrics.base import Metric
-from spd.metrics.pgd_utils import MaskScope, PGDInitStrategy, pgd_masked_recon_loss_update
+from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
 from spd.models.component_model import ComponentModel
 from spd.utils.distributed_utils import all_reduce
 
@@ -18,32 +19,24 @@ def _pgd_recon_layerwise_loss_update(
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl"],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
-    use_delta_component: bool,
-    init: PGDInitStrategy,
-    step_size: float,
-    n_steps: int,
-    mask_scope: MaskScope,
-    # TODO: nice args order
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    pgd_config: PGDConfig,
 ) -> tuple[Float[Tensor, ""], Int[Tensor, ""]]:
     device = next(iter(ci.values())).device
     sum_loss = torch.tensor(0.0, device=device)
     n_examples = torch.tensor(0, device=device)
     for layer in model.module_paths:
         layer_ci = {layer: ci[layer]}
-        layer_weight_deltas = {layer: weight_deltas[layer]} if use_delta_component else None
+        layer_weight_deltas = {layer: weight_deltas[layer]} if weight_deltas is not None else None
         sum_loss_layer, n_examples_layer = pgd_masked_recon_loss_update(
             model=model,
-            init=init,
             ci=layer_ci,
             weight_deltas=layer_weight_deltas,
-            step_size=step_size,
-            n_steps=n_steps,
             output_loss_type=output_loss_type,
-            mask_scope=mask_scope,
             batch=batch,
             target_out=target_out,
             routing="all",
+            pgd_config=pgd_config,
         )
         sum_loss += sum_loss_layer
         n_examples += n_examples_layer
@@ -51,18 +44,14 @@ def _pgd_recon_layerwise_loss_update(
 
 
 def pgd_recon_layerwise_loss(
+    *,
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl"],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
-    use_delta_component: bool,
-    init: PGDInitStrategy,
-    step_size: float,
-    n_steps: int,
-    mask_scope: MaskScope,
-    # TODO: nice args order
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    pgd_config: PGDConfig,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _pgd_recon_layerwise_loss_update(
         model=model,
@@ -71,11 +60,7 @@ def pgd_recon_layerwise_loss(
         output_loss_type=output_loss_type,
         ci=ci,
         weight_deltas=weight_deltas,
-        use_delta_component=use_delta_component,
-        init=init,
-        step_size=step_size,
-        n_steps=n_steps,
-        mask_scope=mask_scope,
+        pgd_config=pgd_config,
     )
     return sum_loss / n_examples
 
@@ -87,22 +72,14 @@ class PGDReconLayerwiseLoss(Metric):
         self,
         model: ComponentModel,
         output_loss_type: Literal["mse", "kl"],
-        init: PGDInitStrategy,
+        pgd_config: PGDConfig,
         device: str,
-        step_size: float,
-        n_steps: int,
-        mask_scope: MaskScope,
-        use_delta_component: bool,
     ) -> None:
         self.model = model
-        self.init: PGDInitStrategy = init
-        self.step_size: float = step_size
-        self.n_steps: int = n_steps
+        self.pgd_config: PGDConfig = pgd_config
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        self.use_delta_component: bool = use_delta_component
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
-        self.mask_scope: MaskScope = mask_scope
 
     @override
     def update(
@@ -111,7 +88,7 @@ class PGDReconLayerwiseLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        weight_deltas: dict[str, Float[Tensor, "... C"]],
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _pgd_recon_layerwise_loss_update(
@@ -121,11 +98,7 @@ class PGDReconLayerwiseLoss(Metric):
             output_loss_type=self.output_loss_type,
             ci=ci,
             weight_deltas=weight_deltas,
-            use_delta_component=self.use_delta_component,
-            init=self.init,
-            step_size=self.step_size,
-            n_steps=self.n_steps,
-            mask_scope=self.mask_scope,
+            pgd_config=self.pgd_config,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

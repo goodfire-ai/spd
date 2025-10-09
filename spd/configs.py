@@ -73,11 +73,15 @@ PGDInitStrategy = Literal["random", "ones", "zeroes"]
 MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
 
 
-class PGDReconTrainConfig(TrainMetricConfig):
+class PGDConfig(BaseModel):
     init: PGDInitStrategy
     step_size: float
     n_steps: int
     mask_scope: MaskScope
+
+
+class PGDReconTrainConfig(TrainMetricConfig):
+    pgd_config: PGDConfig
 
 
 class PGDReconLossTrainConfig(PGDReconTrainConfig):

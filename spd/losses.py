@@ -141,10 +141,7 @@ def compute_total_loss(
                     target_out=target_out,
                     ci=ci,
                     weight_deltas=weight_deltas,
-                    init=cfg.init,
-                    step_size=cfg.step_size,
-                    n_steps=cfg.n_steps,
-                    mask_scope=cfg.mask_scope,
+                    pgd_config=cfg.pgd_config,
                 )
             case PGDReconSubsetLossTrainConfig():
                 loss = pgd_recon_subset_loss(
@@ -155,10 +152,7 @@ def compute_total_loss(
                     ci=ci,
                     use_delta_component=use_delta_component,
                     weight_deltas=weight_deltas,
-                    init=cfg.init,
-                    step_size=cfg.step_size,
-                    n_steps=cfg.n_steps,
-                    mask_scope=cfg.mask_scope,
+                    pgd_config=cfg.pgd_config,
                 )
             case PGDReconLayerwiseLossTrainConfig():
                 loss = pgd_recon_layerwise_loss(
@@ -169,10 +163,7 @@ def compute_total_loss(
                     ci=ci,
                     use_delta_component=use_delta_component,
                     weight_deltas=weight_deltas,
-                    init=cfg.init,
-                    step_size=cfg.step_size,
-                    n_steps=cfg.n_steps,
-                    mask_scope=cfg.mask_scope,
+                    pgd_config=cfg.pgd_config,
                 )
             case StochasticHiddenActsReconLossConfig():
                 loss = stochastic_hidden_acts_recon_loss(

@@ -23,6 +23,9 @@ from spd.configs import (
     IdentityCIErrorConfig,
     ImportanceMinimalityLossTrainConfig,
     MetricConfigType,
+    PGDReconLayerwiseLossTrainConfig,
+    PGDReconLossTrainConfig,
+    PGDReconSubsetLossTrainConfig,
     PermutedCIPlotsConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossTrainConfig,
@@ -44,6 +47,9 @@ from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
 from spd.metrics.permuted_ci_plots import PermutedCIPlots
+from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
+from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
+from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
 from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
@@ -116,66 +122,10 @@ def init_metric(
                 p_anneal_final_p=cfg.p_anneal_final_p,
                 p_anneal_end_frac=cfg.p_anneal_end_frac,
             )
-        case CEandKLLossesConfig():
-            metric = CEandKLLosses(
-                model=model,
-                device=device,
-                sampling=run_config.sampling,
-                rounding_threshold=cfg.rounding_threshold,
-            )
-        case CIHistogramsConfig():
-            metric = CIHistograms(model=model, n_batches_accum=cfg.n_batches_accum)
-        case CI_L0Config():
-            metric = CI_L0(
-                model=model,
-                device=device,
-                ci_alive_threshold=run_config.ci_alive_threshold,
-                groups=cfg.groups,
-            )
-        case CIMaskedReconSubsetLossTrainConfig():
-            metric = CIMaskedReconSubsetLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
-            )
-        case CIMaskedReconLayerwiseLossTrainConfig():
-            metric = CIMaskedReconLayerwiseLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
-            )
-        case CIMaskedReconLossTrainConfig():
-            metric = CIMaskedReconLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
-            )
-        case CIMeanPerComponentConfig():
-            metric = CIMeanPerComponent(model=model, device=device)
-        case ComponentActivationDensityConfig():
-            metric = ComponentActivationDensity(
-                model=model, device=device, ci_alive_threshold=run_config.ci_alive_threshold
-            )
         case FaithfulnessLossTrainConfig():
-            metric = FaithfulnessLoss(model=model, device=device)
-        case IdentityCIErrorConfig():
-            metric = IdentityCIError(
-                model=model,
-                sampling=run_config.sampling,
-                sigmoid_type=run_config.sigmoid_type,
-                identity_ci=cfg.identity_ci,
-                dense_ci=cfg.dense_ci,
-            )
-        case PermutedCIPlotsConfig():
-            metric = PermutedCIPlots(
-                model=model,
-                sampling=run_config.sampling,
-                sigmoid_type=cfg.sigmoid_type,
-                identity_patterns=cfg.identity_patterns,
-                dense_patterns=cfg.dense_patterns,
-            )
-        case StochasticReconLayerwiseLossTrainConfig():
-            metric = StochasticReconLayerwiseLoss(
+            metric = FaithfulnessLoss(
                 model=model,
                 device=device,
-                sampling=run_config.sampling,
-                use_delta_component=run_config.use_delta_component,
-                n_mask_samples=run_config.n_mask_samples,
-                output_loss_type=run_config.output_loss_type,
             )
         case StochasticReconLossTrainConfig():
             metric = StochasticReconLoss(
@@ -194,6 +144,100 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
                 output_loss_type=run_config.output_loss_type,
+            )
+        case StochasticReconLayerwiseLossTrainConfig():
+            metric = StochasticReconLayerwiseLoss(
+                model=model,
+                device=device,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+                output_loss_type=run_config.output_loss_type,
+            )
+        case CIMaskedReconLossTrainConfig():
+            metric = CIMaskedReconLoss(
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+            )
+        case CIMaskedReconSubsetLossTrainConfig():
+            metric = CIMaskedReconSubsetLoss(
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+            )
+        case CIMaskedReconLayerwiseLossTrainConfig():
+            metric = CIMaskedReconLayerwiseLoss(
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+            )
+        case PGDReconLossTrainConfig():
+            metric = PGDReconLoss(
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+                pgd_config=cfg.pgd_config,
+            )
+        case PGDReconSubsetLossTrainConfig():
+            metric = PGDReconSubsetLoss(
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+                pgd_config=cfg.pgd_config,
+            )
+        case PGDReconLayerwiseLossTrainConfig():
+            metric = PGDReconLayerwiseLoss(
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+                pgd_config=cfg.pgd_config,
+            )
+        case CEandKLLossesConfig():
+            metric = CEandKLLosses(
+                model=model,
+                device=device,
+                sampling=run_config.sampling,
+                rounding_threshold=cfg.rounding_threshold,
+            )
+        case CIHistogramsConfig():
+            metric = CIHistograms(
+                model=model,
+                n_batches_accum=cfg.n_batches_accum,
+            )
+        case CI_L0Config():
+            metric = CI_L0(
+                model=model,
+                device=device,
+                ci_alive_threshold=run_config.ci_alive_threshold,
+                groups=cfg.groups,
+            )
+        case CIMeanPerComponentConfig():
+            metric = CIMeanPerComponent(
+                model=model,
+                device=device,
+            )
+        case ComponentActivationDensityConfig():
+            metric = ComponentActivationDensity(
+                model=model,
+                device=device,
+                ci_alive_threshold=run_config.ci_alive_threshold,
+            )
+        case IdentityCIErrorConfig():
+            metric = IdentityCIError(
+                model=model,
+                sampling=run_config.sampling,
+                sigmoid_type=run_config.sigmoid_type,
+                identity_ci=cfg.identity_ci,
+                dense_ci=cfg.dense_ci,
+            )
+        case PermutedCIPlotsConfig():
+            metric = PermutedCIPlots(
+                model=model,
+                sampling=run_config.sampling,
+                sigmoid_type=cfg.sigmoid_type,
+                identity_patterns=cfg.identity_patterns,
+                dense_patterns=cfg.dense_patterns,
             )
         case StochasticReconSubsetCEAndKLConfig():
             metric = StochasticReconSubsetCEAndKL(
