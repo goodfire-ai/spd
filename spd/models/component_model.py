@@ -11,7 +11,7 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
-from transformers.modeling_utils import Conv1D as RadfordConv1D
+from transformers.pytorch_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
 from spd.configs import Config

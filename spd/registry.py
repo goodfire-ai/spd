@@ -2,11 +2,12 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 
 from spd.settings import REPO_ROOT
+from spd.spd_types import TaskName
 
 
 @dataclass
@@ -23,7 +24,7 @@ class ExperimentConfig:
             `tests/test_wandb_run_loading.py`. If None, no canonical run is available.
     """
 
-    task_name: Literal["tms", "resid_mlp", "lm", "ih"]
+    task_name: TaskName
     decomp_script: Path
     config_path: Path
     expected_runtime: int
