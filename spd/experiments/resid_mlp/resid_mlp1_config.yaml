@@ -72,7 +72,7 @@ eval_metric_configs:
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"
-pretrained_model_path: "wandb:goodfire/spd/runs/pziyck78"
+pretrained_model_path: "wandb:goodfire/spd-pre-Sep-2025/runs/pziyck78"
 
 # --- Task Specific ---
 task_config:

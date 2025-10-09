@@ -4,6 +4,7 @@ import torch
 from jaxtyping import Float, Int
 from torch import Tensor
 
+from spd.configs import MaskScope, PGDInitStrategy
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import (
@@ -23,9 +24,6 @@ class PGDObjective(Protocol):
     ) -> Tensor: ...
 
 
-PGDInitStrategy = Literal["random", "ones", "zeroes"]
-
-
 def get_pgd_init_tensor(
     init: PGDInitStrategy,
     shape: tuple[int, ...],
@@ -38,9 +36,6 @@ def get_pgd_init_tensor(
             return torch.full(shape, 1.0, device=device)
         case "zeroes":
             return torch.full(shape, 0.0, device=device)
-
-
-MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
 
 
 def create_forward_pass_as_function_of_masks(

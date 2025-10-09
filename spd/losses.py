@@ -13,6 +13,7 @@ from spd.configs import (
     PGDReconLayerwiseLossTrainConfig,
     PGDReconLossTrainConfig,
     PGDReconSubsetLossTrainConfig,
+    StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
     StochasticReconSubsetLossTrainConfig,
@@ -27,6 +28,7 @@ from spd.metrics import (
     pgd_recon_layerwise_loss,
     pgd_recon_loss,
     pgd_recon_subset_loss,
+    stochastic_hidden_acts_recon_loss,
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
@@ -42,6 +44,7 @@ def compute_total_loss(
     ci_upper_leaky: dict[str, Float[Tensor, "batch C"]],
     target_out: Tensor,
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+    pre_weight_acts: dict[str, Float[Tensor, "..."]],
     current_frac_of_training: float,
     sampling: Literal["continuous", "binomial"],
     use_delta_component: bool,
@@ -56,6 +59,7 @@ def compute_total_loss(
     terms: dict[str, float] = {}
 
     for cfg in loss_metric_configs:
+        assert cfg.coeff is not None, "All loss metric configs must have a coeff"
         match cfg:
             case ImportanceMinimalityLossTrainConfig():
                 loss = importance_minimality_loss(
@@ -140,6 +144,7 @@ def compute_total_loss(
                     init=cfg.init,
                     step_size=cfg.step_size,
                     n_steps=cfg.n_steps,
+                    mask_scope=cfg.mask_scope,
                 )
             case PGDReconSubsetLossTrainConfig():
                 loss = pgd_recon_subset_loss(
@@ -153,6 +158,7 @@ def compute_total_loss(
                     init=cfg.init,
                     step_size=cfg.step_size,
                     n_steps=cfg.n_steps,
+                    mask_scope=cfg.mask_scope,
                 )
             case PGDReconLayerwiseLossTrainConfig():
                 loss = pgd_recon_layerwise_loss(
@@ -166,6 +172,18 @@ def compute_total_loss(
                     init=cfg.init,
                     step_size=cfg.step_size,
                     n_steps=cfg.n_steps,
+                    mask_scope=cfg.mask_scope,
+                )
+            case StochasticHiddenActsReconLossConfig():
+                loss = stochastic_hidden_acts_recon_loss(
+                    model=model,
+                    sampling=sampling,
+                    use_delta_component=use_delta_component,
+                    n_mask_samples=n_mask_samples,
+                    batch=batch,
+                    pre_weight_acts=pre_weight_acts,
+                    ci=ci,
+                    weight_deltas=weight_deltas,
                 )
         terms[cfg.classname] = loss.item()
         total = total + cfg.coeff * loss
