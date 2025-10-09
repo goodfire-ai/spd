@@ -1,10 +1,10 @@
 import importlib
 import json
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal, overload
+from typing import Any, ClassVar, Literal, Protocol, overload
 
 import einops
 import numpy as np
@@ -397,6 +397,45 @@ def get_linear_annealed_p(
         return initial_p + (p_anneal_final_p - initial_p) * progress
 
 
+class _HasDevice(Protocol):
+    """Protocol for objects with a `.device` attribute that is a `torch.device`."""
+
+    device: torch.device
+
+
+CanGetDevice = (
+    nn.Module
+    | _HasDevice
+    | Tensor
+    | dict[str, Tensor]
+    | dict[str, _HasDevice]
+    | Sequence[Tensor]
+    | Sequence[_HasDevice]
+)
+
+
+def get_obj_devices(d: CanGetDevice) -> set[torch.device]:
+    """try to get the set of devices on which an object's parameters are located"""
+    if hasattr(d, "device"):
+        # pyright doesn't realize that we just checked for a `.device` attribute, hence the ignores
+        assert isinstance(d.device, torch.device)  # pyright: ignore[reportAttributeAccessIssue]
+        return {d.device}  # pyright: ignore[reportAttributeAccessIssue]
+    elif isinstance(d, nn.Module):
+        return {param.device for param in d.parameters()}
+    elif isinstance(d, dict):
+        return {obj.device for obj in d.values()}
+    else:
+        # this might fail, we don't really know what `d` is at this point
+        return {obj.device for obj in d}  # pyright: ignore[reportGeneralTypeIssues]
+
+
+def get_obj_device(d: CanGetDevice) -> torch.device:
+    """Try to get the device of an object's parameters. Asserts that all parameters are on the same device."""
+    devices: set[torch.device] = get_obj_devices(d)
+    assert len(devices) == 1, f"Object parameters are on multiple devices: {devices}"
+    return devices.pop()
+
+
 @overload
 def zip_dicts[T1, T2](d1: dict[str, T1], d2: dict[str, T2], /) -> dict[str, tuple[T1, T2]]: ...
 
@@ -405,18 +444,6 @@ def zip_dicts[T1, T2](d1: dict[str, T1], d2: dict[str, T2], /) -> dict[str, tupl
 def zip_dicts[T1, T2, T3](
     d1: dict[str, T1], d2: dict[str, T2], d3: dict[str, T3], /
 ) -> dict[str, tuple[T1, T2, T3]]: ...
-
-
-@overload
-def zip_dicts[T1, T2, T3, T4](
-    d1: dict[str, T1], d2: dict[str, T2], d3: dict[str, T3], d4: dict[str, T4], /
-) -> dict[str, tuple[T1, T2, T3, T4]]: ...
-
-
-@overload
-def zip_dicts[T1, T2, T3, T4, T5](
-    d1: dict[str, T1], d2: dict[str, T2], d3: dict[str, T3], d4: dict[str, T4], d5: dict[str, T5], /
-) -> dict[str, tuple[T1, T2, T3, T4, T5]]: ...
 
 
 def zip_dicts(*dicts: dict[str, Any]) -> dict[str, tuple[Any, ...]]:
