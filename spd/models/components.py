@@ -9,7 +9,7 @@ from torch import Tensor, nn
 
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
-CiFnType = Literal["mlp", "vector_mlp", "shared_mlp", "linear"]
+CiFnType = Literal["mlp", "vector_mlp", "shared_mlp", "linear", "mlp_residual"]
 
 
 class LearnableLeakyReLU(nn.Module):
@@ -106,6 +106,50 @@ class MLPCiFn(nn.Module):
     def forward(self, x: Float[Tensor, "... C"]) -> Float[Tensor, "... C"]:
         x = einops.rearrange(x, "... C -> ... C 1")
         x = self.layers(x)
+        assert x.shape[-1] == 1, "Last dimension should be 1 after the final layer"
+        return x[..., 0]
+
+
+class MLPResidualCiFn(nn.Module):
+    """Residual MLP-based function that map component 'inner acts' to a scalar output for each component."""
+
+    def __init__(
+        self,
+        C: int,
+        hidden_dims: list[int],
+        nonlinearity: str = "gelu",
+        negative_slope: float = 0.01,
+    ):
+        super().__init__()
+
+        self.hidden_dims = hidden_dims
+
+        resid_dim = 1
+        self.scalar_embedding = (ParallelLinear(C, 1, resid_dim, nonlinearity="linear"))
+        self.scalar_unembedding = (ParallelLinear(C, resid_dim, 1, nonlinearity="linear"))
+        
+        self.blocks = nn.ModuleList()
+        for i in range(len(hidden_dims)):
+            mlp_dim = 1 if i == 0 else hidden_dims[i]
+            block = nn.Sequential()
+            block.append(ParallelLinear(C, resid_dim, mlp_dim, nonlinearity="relu"))
+            # Add the specified nonlinearity
+            if nonlinearity == "gelu":
+                block.append(nn.GELU())
+            elif nonlinearity == "leaky_relu":
+                block.append(LearnableLeakyReLU(negative_slope=negative_slope))
+            else:
+                raise ValueError(f"Unsupported nonlinearity: {nonlinearity}")
+            block.append(ParallelLinear(C, mlp_dim, resid_dim, nonlinearity="relu"))
+            self.blocks.append(block)
+
+    @override
+    def forward(self, x: Float[Tensor, "... C"]) -> Float[Tensor, "... C"]:
+        x = einops.rearrange(x, "... C -> ... C 1")
+        residual = self.scalar_embedding(x)
+        for block in self.blocks:
+            x = block(x) + residual
+        x = self.scalar_unembedding(x)
         assert x.shape[-1] == 1, "Last dimension should be 1 after the final layer"
         return x[..., 0]
 
