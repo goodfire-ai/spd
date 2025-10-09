@@ -23,10 +23,10 @@ from spd.configs import (
     IdentityCIErrorConfig,
     ImportanceMinimalityLossTrainConfig,
     MetricConfigType,
+    PermutedCIPlotsConfig,
     PGDReconLayerwiseLossTrainConfig,
     PGDReconLossTrainConfig,
     PGDReconSubsetLossTrainConfig,
-    PermutedCIPlotsConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossTrainConfig,
     StochasticReconLossTrainConfig,
@@ -176,6 +176,7 @@ def init_metric(
             metric = PGDReconLoss(
                 model=model,
                 device=device,
+                use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
                 pgd_config=cfg.pgd_config,
             )
@@ -183,6 +184,7 @@ def init_metric(
             metric = PGDReconSubsetLoss(
                 model=model,
                 device=device,
+                use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
                 pgd_config=cfg.pgd_config,
             )
@@ -190,6 +192,7 @@ def init_metric(
             metric = PGDReconLayerwiseLoss(
                 model=model,
                 device=device,
+                use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
                 pgd_config=cfg.pgd_config,
             )

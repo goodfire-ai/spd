@@ -15,15 +15,13 @@ from spd.utils.general_utils import get_obj_device
 def _stochastic_hidden_acts_recon_loss_update(
     model: ComponentModel,
     sampling: Literal["continuous", "binomial"],
-    use_delta_component: bool,
     n_mask_samples: int,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
-    assert weight_deltas, "Empty weight deltas"
     assert pre_weight_acts, "Empty pre_weight_acts"
     device = get_obj_device(ci)
     sum_mse = torch.tensor(0.0, device=device)
@@ -33,9 +31,7 @@ def _stochastic_hidden_acts_recon_loss_update(
         calc_stochastic_component_mask_info(
             causal_importances=ci,
             component_mask_sampling=sampling,
-            weight_deltas_and_mask_sampling=(weight_deltas, "continuous")
-            if use_delta_component
-            else None,
+            weight_deltas=weight_deltas,
             routing="all",
         )
         for _ in range(n_mask_samples)
@@ -64,17 +60,15 @@ def _stochastic_hidden_acts_recon_loss_compute(
 def stochastic_hidden_acts_recon_loss(
     model: ComponentModel,
     sampling: Literal["continuous", "binomial"],
-    use_delta_component: bool,
     n_mask_samples: int,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
 ) -> Float[Tensor, ""]:
     sum_mse, n_examples = _stochastic_hidden_acts_recon_loss_update(
         model,
         sampling,
-        use_delta_component,
         n_mask_samples,
         batch,
         pre_weight_acts,
@@ -115,12 +109,11 @@ class StochasticHiddenActsReconLoss(Metric):
         sum_mse, n_examples = _stochastic_hidden_acts_recon_loss_update(
             model=self.model,
             sampling=self.sampling,
-            use_delta_component=self.use_delta_component,
             n_mask_samples=self.n_mask_samples,
             batch=batch,
             pre_weight_acts=pre_weight_acts,
             ci=ci,
-            weight_deltas=weight_deltas,
+            weight_deltas=weight_deltas if self.use_delta_component else None,
         )
         self.sum_mse += sum_mse
         self.n_examples += n_examples

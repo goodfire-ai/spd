@@ -109,7 +109,7 @@ class CEandKLLosses(Metric):
         # Sample stochastic masks based on the causal importances
         mask_infos = calc_stochastic_component_mask_info(
             causal_importances=ci,
-            sampling=self.sampling,
+            component_mask_sampling=self.sampling,
             routing="all",
             weight_deltas=None,
         )

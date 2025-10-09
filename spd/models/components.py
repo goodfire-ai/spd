@@ -308,9 +308,12 @@ class ComponentsMaskInfo:
     weight_delta_and_mask: WeightDeltaAndMask | None = None
 
 
+RoutingMasks = dict[str, Bool[Tensor, "..."]] | Literal["all"]
+
+
 def make_mask_infos(
     component_masks: dict[str, Float[Tensor, "... C"]],
-    routing_masks: dict[str, Bool[Tensor, "..."]] | Literal["all"] = "all",
+    routing_masks: RoutingMasks = "all",
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
     """Create ComponentsMaskInfo dict from dicts of component masks, and optionally routing masks,

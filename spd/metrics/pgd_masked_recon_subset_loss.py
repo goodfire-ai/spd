@@ -43,11 +43,13 @@ class PGDReconSubsetLoss(Metric):
         model: ComponentModel,
         device: str,
         output_loss_type: Literal["mse", "kl"],
+        use_delta_component: bool,
         pgd_config: PGDConfig,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.use_delta_component: bool = use_delta_component
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -58,13 +60,13 @@ class PGDReconSubsetLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
     ) -> None:
         sum_loss, n_examples = pgd_masked_recon_loss_update(
             model=self.model,
             ci=ci,
-            weight_deltas=weight_deltas,
+            weight_deltas=weight_deltas if self.use_delta_component else None,
             output_loss_type=self.output_loss_type,
             batch=batch,
             target_out=target_out,

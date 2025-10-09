@@ -4,7 +4,12 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from spd.models.components import ComponentsMaskInfo, WeightDeltaAndMask, make_mask_infos
+from spd.models.components import (
+    ComponentsMaskInfo,
+    RoutingMasks,
+    WeightDeltaAndMask,
+    make_mask_infos,
+)
 
 
 def rand_perm(
@@ -76,10 +81,6 @@ SamplingData = (
     | tuple[Literal["given"], dict[str, Float[Tensor, "... C"]]]
 )
 
-WeightDeltaSamplingData = (
-    Literal["continuous"] | tuple[Literal["given"], dict[str, Float[Tensor, "d_out d_in"]]]
-)
-
 RoutingType = (
     Literal[
         "uniform_k-stochastic", "all"
@@ -97,13 +98,23 @@ given:
 """
 
 
+def calc_routing_masks(
+    routing: RoutingType,
+    leading_dims: tuple[int, ...],
+    module_names: list[str],
+    device: torch.device | str,
+) -> RoutingMasks:
+    match routing:
+        case "all":
+            return "all"
+        case "uniform_k-stochastic":
+            return sample_uniform_k_subset_routing_masks(leading_dims, module_names, device)
+
+
 def calc_stochastic_component_mask_info(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     component_mask_sampling: SamplingData,
-    weight_deltas_and_mask_sampling: tuple[
-        dict[str, Float[Tensor, " d_out d_in"]], WeightDeltaSamplingData
-    ]
-    | None,
+    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
     routing: RoutingType,
 ) -> dict[str, ComponentsMaskInfo]:
     ci_sample = next(iter(causal_importances.values()))
@@ -123,36 +134,20 @@ def calc_stochastic_component_mask_info(
         component_masks[layer] = ci + (1 - ci) * rand_tensor
 
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None
-    if weight_deltas_and_mask_sampling is not None:
-        weight_deltas, wd_mask_sampling = weight_deltas_and_mask_sampling
+    if weight_deltas is not None:
         weight_deltas_and_masks = {}
         for layer in causal_importances:
-            match wd_mask_sampling:
-                case "continuous":
-                    wdm = (
-                        weight_deltas[layer],
-                        torch.rand(leading_dims, device=device, dtype=dtype),
-                    )
-                case ("given", adversarial_wdm):
-                    wdm = (weight_deltas[layer], adversarial_wdm[layer])
-            weight_deltas_and_masks[layer] = wdm
-
-    match routing:
-        case "all":
-            routing_masks = "all"
-        case "uniform_k-stochastic":
-            routing_masks = sample_uniform_k_subset_routing_masks(
-                leading_dims,
-                list(causal_importances.keys()),
-                device,
+            weight_deltas_and_masks[layer] = (
+                weight_deltas[layer],
+                torch.rand(leading_dims, device=device, dtype=dtype),
             )
-        # case ("given", adversarial_routing_masks):
-        #     routing_masks = adversarial_routing_masks
 
     return make_mask_infos(
         component_masks=component_masks,
         weight_deltas_and_masks=weight_deltas_and_masks,
-        routing_masks=routing_masks,
+        routing_masks=calc_routing_masks(
+            routing, leading_dims, list(causal_importances.keys()), device
+        ),
     )
 
 

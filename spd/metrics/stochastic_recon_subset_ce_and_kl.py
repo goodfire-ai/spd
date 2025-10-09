@@ -88,9 +88,6 @@ class StochasticReconSubsetCEAndKL(Metric):
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
-            sampling=self.sampling,
-            use_delta_component=self.use_delta_component,
-            n_mask_samples=self.n_mask_samples,
         )
         for key, value in losses.items():
             self.metric_values[key].append(value)
@@ -122,10 +119,7 @@ class StochasticReconSubsetCEAndKL(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        weight_deltas: dict[str, Tensor],
-        sampling: Literal["continuous", "binomial"],
-        use_delta_component: bool,
-        n_mask_samples: int,
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     ) -> dict[str, float]:
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
 
@@ -153,13 +147,11 @@ class StochasticReconSubsetCEAndKL(Metric):
         masks_list: list[dict[str, ComponentsMaskInfo]] = [
             calc_stochastic_component_mask_info(
                 causal_importances=ci,
-                component_mask_sampling=sampling,
-                weight_deltas_and_mask_sampling=(weight_deltas, "continuous")
-                if use_delta_component
-                else None,
+                component_mask_sampling=self.sampling,
+                weight_deltas=weight_deltas if self.use_delta_component else None,
                 routing="all",
             )
-            for _ in range(n_mask_samples)
+            for _ in range(self.n_mask_samples)
         ]
         results: dict[str, float] = {}
 

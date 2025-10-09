@@ -101,37 +101,34 @@ def compute_total_loss(
                 loss = stochastic_recon_layerwise_loss(
                     model=model,
                     sampling=sampling,
-                    use_delta_component=use_delta_component,
                     n_mask_samples=n_mask_samples,
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci,
-                    weight_deltas=weight_deltas,
+                    weight_deltas=weight_deltas if use_delta_component else None,
                 )
             case StochasticReconLossTrainConfig():
                 loss = stochastic_recon_loss(
                     model=model,
                     sampling=sampling,
-                    use_delta_component=use_delta_component,
                     n_mask_samples=n_mask_samples,
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci,
-                    weight_deltas=weight_deltas,
+                    weight_deltas=weight_deltas if use_delta_component else None,
                 )
             case StochasticReconSubsetLossTrainConfig():
                 loss = stochastic_recon_subset_loss(
                     model=model,
                     sampling=sampling,
-                    use_delta_component=use_delta_component,
                     n_mask_samples=n_mask_samples,
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci,
-                    weight_deltas=weight_deltas,
+                    weight_deltas=weight_deltas if use_delta_component else None,
                 )
             case PGDReconLossTrainConfig():
                 loss = pgd_recon_loss(
@@ -140,7 +137,7 @@ def compute_total_loss(
                     batch=batch,
                     target_out=target_out,
                     ci=ci,
-                    weight_deltas=weight_deltas,
+                    weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg.pgd_config,
                 )
             case PGDReconSubsetLossTrainConfig():
@@ -150,8 +147,7 @@ def compute_total_loss(
                     batch=batch,
                     target_out=target_out,
                     ci=ci,
-                    use_delta_component=use_delta_component,
-                    weight_deltas=weight_deltas,
+                    weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg.pgd_config,
                 )
             case PGDReconLayerwiseLossTrainConfig():
@@ -161,20 +157,18 @@ def compute_total_loss(
                     batch=batch,
                     target_out=target_out,
                     ci=ci,
-                    use_delta_component=use_delta_component,
-                    weight_deltas=weight_deltas,
+                    weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg.pgd_config,
                 )
             case StochasticHiddenActsReconLossConfig():
                 loss = stochastic_hidden_acts_recon_loss(
                     model=model,
                     sampling=sampling,
-                    use_delta_component=use_delta_component,
                     n_mask_samples=n_mask_samples,
                     batch=batch,
                     pre_weight_acts=pre_weight_acts,
                     ci=ci,
-                    weight_deltas=weight_deltas,
+                    weight_deltas=weight_deltas if use_delta_component else None,
                 )
         terms[cfg.classname] = loss.item()
         total = total + cfg.coeff * loss

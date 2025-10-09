@@ -74,10 +74,12 @@ class PGDReconLayerwiseLoss(Metric):
         output_loss_type: Literal["mse", "kl"],
         pgd_config: PGDConfig,
         device: str,
+        use_delta_component: bool,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.use_delta_component: bool = use_delta_component
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -97,7 +99,7 @@ class PGDReconLayerwiseLoss(Metric):
             target_out=target_out,
             output_loss_type=self.output_loss_type,
             ci=ci,
-            weight_deltas=weight_deltas,
+            weight_deltas=weight_deltas if self.use_delta_component else None,
             pgd_config=self.pgd_config,
         )
         self.sum_loss += sum_loss

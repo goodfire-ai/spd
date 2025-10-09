@@ -44,10 +44,12 @@ class PGDReconLoss(Metric):
         device: str,
         output_loss_type: Literal["mse", "kl"],
         pgd_config: PGDConfig,
+        use_delta_component: bool,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.use_delta_component: bool = use_delta_component
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -64,7 +66,7 @@ class PGDReconLoss(Metric):
         sum_loss, n_examples = pgd_masked_recon_loss_update(
             model=self.model,
             ci=ci,
-            weight_deltas=weight_deltas,
+            weight_deltas=weight_deltas if self.use_delta_component else None,
             output_loss_type=self.output_loss_type,
             batch=batch,
             target_out=target_out,

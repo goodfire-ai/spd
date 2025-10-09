@@ -66,7 +66,7 @@ class TestStochasticHiddenActsReconLoss:
             masks = {"fc1": sample_masks_fc1[idx], "fc2": sample_masks_fc2[idx]}
 
             return make_mask_infos(
-                component_masks=masks, routing_masks=None, weight_deltas_and_masks=None
+                component_masks=masks, routing_masks="all", weight_deltas_and_masks=None
             )
 
         with patch(
@@ -104,12 +104,11 @@ class TestStochasticHiddenActsReconLoss:
             actual_loss = stochastic_hidden_acts_recon_loss(
                 model=model,
                 sampling="continuous",
-                use_delta_component=False,
                 n_mask_samples=2,
                 batch=batch,
                 pre_weight_acts=target_pre_weight_acts,
                 ci=ci,
-                weight_deltas={k: torch.empty(0) for k in ci},
+                weight_deltas=None,
             )
 
             assert torch.allclose(actual_loss, torch.tensor(expected_loss), rtol=1e-5), (
