@@ -26,6 +26,7 @@ from spd.models.components import (
     LinearCiFn,
     LinearComponents,
     MLPCiFn,
+    MLPResidualCiFn,
     VectorMLPCiFn,
     VectorSharedMLPCiFn,
 )
@@ -230,6 +231,13 @@ class ComponentModel(LoadableModule):
 
         if ci_fn_type == "mlp":
             return MLPCiFn(
+                C=component_C,
+                hidden_dims=ci_fn_hidden_dims,
+                nonlinearity=ci_fn_nonlinearity,
+                negative_slope=ci_fn_negative_slope,
+            )
+        elif ci_fn_type == "mlp_residual":
+            return MLPResidualCiFn(
                 C=component_C,
                 hidden_dims=ci_fn_hidden_dims,
                 nonlinearity=ci_fn_nonlinearity,
