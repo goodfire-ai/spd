@@ -55,11 +55,13 @@ check-pre-commit:
 	SKIP=no-commit-to-branch pre-commit run -a --hook-stage commit
 
 # tests
-NUM_PROCESSES ?= auto
 
 .PHONY: test
 test:
-	pytest tests/ --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
+	pytest tests/ --durations 10
+
+# Use min(4, nproc) for numprocesses. Any more and it slows down the tests.
+NUM_PROCESSES ?= $(shell nproc | awk '{print ($$1<4?$$1:4)}')
 
 .PHONY: test-all
 test-all:
