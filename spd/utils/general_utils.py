@@ -4,7 +4,7 @@ import random
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, overload
 
 import einops
 import numpy as np
@@ -395,3 +395,33 @@ def get_linear_annealed_p(
         # Linear interpolation between start and end fractions
         progress = (cur_frac - p_anneal_start_frac) / (p_anneal_end_frac - p_anneal_start_frac)
         return initial_p + (p_anneal_final_p - initial_p) * progress
+
+
+@overload
+def zip_dicts[T1, T2](d1: dict[str, T1], d2: dict[str, T2], /) -> dict[str, tuple[T1, T2]]: ...
+
+
+@overload
+def zip_dicts[T1, T2, T3](
+    d1: dict[str, T1], d2: dict[str, T2], d3: dict[str, T3], /
+) -> dict[str, tuple[T1, T2, T3]]: ...
+
+
+@overload
+def zip_dicts[T1, T2, T3, T4](
+    d1: dict[str, T1], d2: dict[str, T2], d3: dict[str, T3], d4: dict[str, T4], /
+) -> dict[str, tuple[T1, T2, T3, T4]]: ...
+
+
+@overload
+def zip_dicts[T1, T2, T3, T4, T5](
+    d1: dict[str, T1], d2: dict[str, T2], d3: dict[str, T3], d4: dict[str, T4], d5: dict[str, T5], /
+) -> dict[str, tuple[T1, T2, T3, T4, T5]]: ...
+
+
+def zip_dicts(*dicts: dict[str, Any]) -> dict[str, tuple[Any, ...]]:
+    all_keys = set(dicts[0])
+    for d in dicts[1:]:
+        assert set(d.keys()) == all_keys
+        all_keys.update(d.keys())
+    return {k: tuple(d[k] for d in dicts) for k in all_keys}
