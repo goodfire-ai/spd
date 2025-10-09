@@ -123,7 +123,7 @@ class StochasticReconSubsetCEAndKLConfig(BaseModel):
 
 
 class StochasticHiddenActsReconLossEvalConfig(BaseModel):
-    classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
+    classname: Literal["StochasticHiddenActsReconLossEval"] = "StochasticHiddenActsReconLossEval"
 
 
 class UVPlotsConfig(BaseModel):
