@@ -13,6 +13,15 @@ gate_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["linear1", "linear2", "hidden_layers.0"]
 use_delta_component: true
+pgd_mask_random_init: true
+pgd_mask_enabled: true
+pgd_mask_steps: 2
+pgd_mask_step_size: 0.5
+adv_mix_adv_weight_start: 1.0
+adv_mix_adv_weight_end: 1.0
+adv_mix_rand_weight_start: 0
+adv_mix_rand_weight_end: 0
+
 
 # --- Loss Coefficients ---
 faithfulness_coeff: null
@@ -69,7 +78,7 @@ eval_metrics:
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"
-pretrained_model_path: "wandb:goodfire/spd/runs/gfgchmxj" # 1 hidden w/fixed identity
+pretrained_model_path: "wandb:goodfire/spd-pre-Sep-2025/gfgchmxj" # 1 hidden w/fixed identity
 
 # --- Task Specific ---
 task_config:
