@@ -37,7 +37,7 @@ from spd.utils.distributed_utils import (
 )
 from spd.utils.general_utils import (
     extract_batch_data,
-    get_cosine_ramp_value,
+    get_exp_ramp_value,
     get_linear_annealed_p,
     get_linear_ramp_value,
     get_lr_schedule_fn,
@@ -214,7 +214,7 @@ def optimize(
             config.importance_minimality_coeff_final is not None
             and config.importance_minimality_coeff_start_frac < 1.0
         ):
-            current_importance_minimality_coeff = get_cosine_ramp_value(
+            current_importance_minimality_coeff = get_exp_ramp_value(
                 step=step,
                 steps=config.steps,
                 start_frac=config.importance_minimality_coeff_start_frac,
