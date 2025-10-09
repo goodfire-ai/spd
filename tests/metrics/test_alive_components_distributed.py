@@ -230,15 +230,17 @@ class TestDistributedAliveComponentsTracker:
         """Run distributed tests via mpirun in subprocess."""
         script_path = Path(__file__).resolve()
 
+        # ports should be globally unique in tests to allow test parallelization
+        # see discussion at: https://github.com/goodfire-ai/spd/pull/186
         env = {
-            "MASTER_PORT": "29501",
+            "MASTER_PORT": "29504",
             "OMP_NUM_THREADS": "1",
         }
 
         cmd = ["mpirun", "-np", "2", sys.executable, str(script_path)]
 
         result = subprocess.run(
-            cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=60
+            cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=120
         )
 
         if result.returncode != 0:

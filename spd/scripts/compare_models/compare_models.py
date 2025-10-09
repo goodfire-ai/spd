@@ -22,7 +22,7 @@ from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import BaseModel, extract_batch_data, load_config
+from spd.utils.general_utils import BaseModel, extract_batch_data, get_obj_device, load_config
 from spd.utils.run_utils import save_file
 
 
@@ -239,7 +239,7 @@ class ModelComparator:
         model_config = self.current_config if model is self.current_model else self.reference_config
         ci_alive_threshold = self.config.ci_alive_threshold
 
-        device = next(iter(model.parameters())).device
+        device = get_obj_device(model)
         n_tokens = 0
         component_activation_counts: dict[str, Float[Tensor, " C"]] = {
             module_name: torch.zeros(model.C, device=device) for module_name in model.components

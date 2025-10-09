@@ -23,6 +23,8 @@ analyse results, and optionally a train a target model:
   representations
 - `spd/experiments/ih` - Small model trained on a toy induction head task.
 - `spd/experiments/lm` - Language model loaded from huggingface.
+- There is also a toy MLP memorization experiment at `feature/memorization-experiments` which has
+  not been merged to `main` (much less effort has gone in to validating it).
 
 Note that the `lm` experiment allows for running SPD on any model from huggingface or that is
 accessible to the environment, provided that you only need to decompose `nn.Linear`, `nn.Embedding`

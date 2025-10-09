@@ -53,6 +53,7 @@ def compute_total_loss(
     terms: dict[str, float] = {}
 
     for cfg in loss_metric_configs:
+        assert cfg.coeff is not None, "All loss metric configs must have a coeff"
         match cfg:
             case ImportanceMinimalityLossTrainConfig():
                 loss = importance_minimality_loss(

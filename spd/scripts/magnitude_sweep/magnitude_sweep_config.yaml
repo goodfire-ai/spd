@@ -1,4 +1,4 @@
-# Configuration for magnitude_sweep.py
+# Configuration for magnitude sweep with ablation analysis
 
 # Model path (supports both wandb: and local paths)
 model_path: "wandb:goodfire/spd/5q3xxmmy"
@@ -9,6 +9,11 @@ n_steps: 50  # Number of steps from 0 to max_magnitude
 max_magnitude: 1.5  # Maximum input magnitude
 ci_threshold: 0.1  # CI threshold for active gates
 pre_activation: false  # Show pre-activation values (before ReLU) instead of post-activation
+
+# Ablation analysis parameters
+enable_ablation: true  # Enable ablation analysis
+ablation_ci_threshold: 0.1  # CI threshold for identifying components to ablate
+max_ablation_components: 3  # Maximum number of components to ablate per layer
 
 # Plotting parameters
 figsize_per_subplot: [2, 1.5]  # Figure size per subplot (width height)

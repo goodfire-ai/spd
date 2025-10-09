@@ -8,13 +8,14 @@ from torch.distributed import ReduceOp
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.utils.distributed_utils import all_reduce
+from spd.utils.general_utils import get_obj_device
 
 
 def _faithfulness_loss_update(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
 ) -> tuple[Float[Tensor, ""], int]:
     assert weight_deltas, "Empty weight deltas"
-    device = next(iter(weight_deltas.values())).device
+    device = get_obj_device(weight_deltas)
     sum_loss = torch.tensor(0.0, device=device)
     total_params = 0
     for delta in weight_deltas.values():
