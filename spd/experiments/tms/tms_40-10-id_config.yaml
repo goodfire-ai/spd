@@ -70,7 +70,7 @@ eval_metric_configs:
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"
-pretrained_model_path: "wandb:goodfire/spd/runs/eggs3wp8" # 1 hidden w/fixed identity
+pretrained_model_path: "wandb:goodfire/spd-pre-Sep-2025/runs/eggs3wp8" # 1 hidden w/fixed identity
 
 # --- Task Specific ---
 task_config:
