@@ -414,7 +414,7 @@ CanGetDevice = (
 )
 
 
-def get_obj_devices(d: CanGetDevice) -> set[torch.device]:
+def _get_obj_devices(d: CanGetDevice) -> set[torch.device]:
     """try to get the set of devices on which an object's parameters are located"""
     if hasattr(d, "device"):
         # pyright doesn't realize that we just checked for a `.device` attribute, hence the ignores
@@ -431,7 +431,7 @@ def get_obj_devices(d: CanGetDevice) -> set[torch.device]:
 
 def get_obj_device(d: CanGetDevice) -> torch.device:
     """Try to get the device of an object's parameters. Asserts that all parameters are on the same device."""
-    devices: set[torch.device] = get_obj_devices(d)
+    devices: set[torch.device] = _get_obj_devices(d)
     assert len(devices) == 1, f"Object parameters are on multiple devices: {devices}"
     return devices.pop()
 
