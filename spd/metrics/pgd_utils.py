@@ -38,7 +38,6 @@ def optimize_adversarial_stochastic_masks(
     *,
     model: ComponentModel,
     init: PGDInitStrategy,
-    # device: str,
     step_size: float,
     n_steps: int,
     objective: PGDObjective,
@@ -59,19 +58,20 @@ def optimize_adversarial_stochastic_masks(
 
     ci_dims = ci_sample.shape
     device = ci_sample.device
+    dtype = ci_sample.dtype
     leading_dims = ci_dims[:-1]
 
     component_mask: dict[str, Float[Tensor, "... C"]] = {}
-    for layer, ci in causal_importances.items():
-        mask = get_pgd_init_tensor(init, ci_dims, device, ci.dtype)
+    for layer in causal_importances:
+        mask = get_pgd_init_tensor(init, ci_dims, device, dtype)
         mask.requires_grad_(True)
         component_mask[layer] = mask
 
     weight_delta_mask: dict[str, Float[Tensor, " ..."]] | None = None
     if weight_deltas is not None:
         weight_delta_mask = {}
-        for layer, ci in causal_importances.items():
-            wd_init = get_pgd_init_tensor(init, leading_dims, device, ci.dtype)
+        for layer in causal_importances:
+            wd_init = get_pgd_init_tensor(init, leading_dims, device, dtype)
             wd_init.requires_grad_(True)
             weight_delta_mask[layer] = wd_init
 
