@@ -287,7 +287,7 @@ def _validate_sweep_params_have_values(
     path: list[str],
     parent_list_key: str | None = None,
 ) -> None:
-    """Validate that all leaves have {"values": [...]}, except discriminator fields."""
+    """Validate that all leaves have {"values": [...]}, except discriminator fields and fixed values in discriminated lists."""
     if isinstance(obj, dict):
         if "values" in obj:
             return  # This is a value spec
@@ -301,11 +301,15 @@ def _validate_sweep_params_have_values(
         for item in obj:
             _validate_sweep_params_have_values(item, path, parent_list_key=list_field)
     else:
-        # Primitive value - check if it's a discriminator field
+        # Primitive value - check if it's allowed
         if parent_list_key and parent_list_key in _DISCRIMINATED_LIST_FIELDS:
             discriminator_field = _DISCRIMINATED_LIST_FIELDS[parent_list_key]
             if path and path[-1] == discriminator_field:
                 return  # This is a discriminator field, it's allowed to be a primitive
+
+            # If we're inside a discriminated list item, allow fixed values
+            # (This allows fixed values like pnorm: 2.0 within loss_metric_configs items)
+            return
 
         # Otherwise, this is an error
         path_str = ".".join(path) if path else "(root)"
