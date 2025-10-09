@@ -14,7 +14,6 @@ from spd.clustering.dashboard.core.base import (
     ActivationSampleHash,
     ClusterId,
     ClusterIdHash,
-    ComponentActivationData,
     ComponentInfo,
     Direction,
     TextSampleHash,
@@ -77,10 +76,7 @@ class ClusterData:
     components: list[ComponentInfo]  # Component info: module, index, label
     criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]]
     stats: dict[str, Any]
-    # New fields for component-level data
-    component_activations: dict[str, ComponentActivationData] | None = (
-        None  # keyed by component label
-    )
+    # Component-level metrics
     component_coactivations: Float[np.ndarray, "n_comps n_comps"] | None = None
     # TODO: Add component_cosine_similarities for U/V vectors when dimension mismatch is resolved
 
@@ -245,20 +241,6 @@ class ClusterData:
             else:
                 serialized_stats[key] = value
 
-        # Serialize component activations
-        serialized_component_activations: dict[str, Any] | None = None
-        if self.component_activations is not None:
-            serialized_component_activations = {}
-            for comp_label, comp_data in self.component_activations.items():
-                serialized_component_activations[comp_label] = {
-                    "component_label": comp_data.component_label,
-                    "activation_sample_hashes": [
-                        str(h) for h in comp_data.activation_sample_hashes
-                    ],
-                    "activation_indices": comp_data.activation_indices,
-                    "stats": comp_data.stats,
-                }
-
         result: dict[str, Any] = {
             "cluster_hash": self.cluster_hash,
             "components": [
@@ -271,9 +253,7 @@ class ClusterData:
             "stats": serialized_stats,
         }
 
-        # Add component-level data if available
-        if serialized_component_activations is not None:
-            result["component_activations"] = serialized_component_activations
+        # Add component-level metrics if available
         if self.component_coactivations is not None:
             result["component_coactivations"] = self.component_coactivations.tolist()
         # TODO: Serialize component_cosine_similarities when implemented

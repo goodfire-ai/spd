@@ -4,7 +4,7 @@ import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, Literal, NewType
+from typing import Literal, NewType
 
 import numpy as np
 from jaxtyping import Float
@@ -33,17 +33,6 @@ class ComponentInfo:
     def label(self) -> str:
         """Component label as 'module:index'."""
         return f"{self.module}:{self.index}"
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ComponentActivationData:
-    """Per-component activation data within a cluster."""
-
-    component_label: str  # e.g., "model.layers.0.mlp.up_proj:42"
-    activation_sample_hashes: list[ActivationSampleHash]
-    # Indices into global activations array for this component's activations
-    activation_indices: list[int]
-    stats: dict[str, Any]  # mean, max, min, median, etc.
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
