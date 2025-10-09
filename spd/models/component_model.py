@@ -40,6 +40,14 @@ from spd.utils.wandb_utils import (
     fetch_wandb_run_dir,
 )
 
+# Import extended hooks (conditional to avoid circular imports)
+try:
+    import importlib.util
+
+    _extended_hooks_available = importlib.util.find_spec("spd.models.extended_hooks") is not None
+except ImportError:
+    _extended_hooks_available = False
+
 
 @dataclass
 class SPDRunInfo(RunInfo[Config]):
@@ -611,6 +619,171 @@ class ComponentModel(LoadableModule):
         for comp_name, components in self.components.items():
             weight_deltas[comp_name] = self.target_weight(comp_name) - components.weight
         return weight_deltas
+
+    def forward_with_extended_hooks(
+        self,
+        *args: Any,
+        hook_config: Any = None,  # HookConfig | None, but avoiding forward reference issues
+        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
+        **kwargs: Any,
+    ) -> tuple[Tensor, dict[str, Any]]:
+        """Forward pass with comprehensive hook-based data capture.
+
+        This method extends the standard forward pass to capture additional quantities
+        like component inner activations, CI function outputs, and model-specific
+        intermediate values (e.g., ResidMLP pre/post activations).
+
+        Args:
+            *args: Forward pass arguments
+            hook_config: Configuration for what to capture via hooks
+            mask_infos: Optional component replacement configuration
+            **kwargs: Additional forward pass keyword arguments
+
+        Returns:
+            Tuple of (model_output, captured_data) where captured_data contains:
+            - target_inputs: Input activations to target modules
+            - target_outputs: Output activations from target modules
+            - component_inner_acts: Component inner activations (gate inputs)
+            - ci_fn_outputs: CI function outputs (pre-sigmoid gate outputs)
+            - causal_importances: Post-sigmoid causal importance values
+            - residmlp_pre_activations: Pre-activation values for ResidMLP layers
+            - final_output: Final model output
+
+        Raises:
+            ImportError: If extended hooks module is not available
+            ValueError: If hook configuration is invalid
+        """
+        if not _extended_hooks_available:
+            raise ImportError(
+                "Extended hooks module not available. "
+                "This feature requires the extended_hooks module to be properly installed."
+            )
+
+        # Use default configuration if none provided
+        if hook_config is None:
+            if not _extended_hooks_available:
+                raise ImportError("Extended hooks module not available")
+            # Import here to satisfy type checker
+            from spd.models.extended_hooks import HookConfig
+
+            hook_config = HookConfig()
+
+        # Create hook manager
+        if not _extended_hooks_available:
+            raise ImportError("Extended hooks module not available")
+        # Import here to satisfy type checker
+        from spd.models.extended_hooks import ExtendedHookManager
+
+        hook_manager = ExtendedHookManager(self, hook_config)
+
+        with hook_manager.hooks_active():
+            # Perform the standard forward pass
+            if mask_infos is not None:
+                output = self.forward(*args, mask_infos=mask_infos, **kwargs)
+            else:
+                output = self.forward(*args, **kwargs)
+
+            # Extract output tensor
+            if isinstance(output, OutputWithCache):
+                final_output = output.output
+                # Merge cached data with hook-captured data
+                hook_manager.capture_data["cached_inputs"] = output.cache
+            else:
+                final_output = output
+
+            # Store final output
+            hook_manager.capture_data["final_output"] = final_output
+
+            # Manually call components to trigger their hooks if needed
+            if hook_config.capture_component_inner_acts or hook_config.capture_ci_fn_outputs:
+                # Get pre-weight activations for component calls
+                pre_weight_acts = hook_manager.capture_data.get("target_inputs", {})
+                if not pre_weight_acts and isinstance(output, OutputWithCache):
+                    pre_weight_acts = output.cache
+
+                if not pre_weight_acts:
+                    # Fallback: get pre-weight acts via separate call
+                    _, pre_weight_acts = self(*args, cache_type="input", **kwargs)
+
+                # Call components to trigger their hooks
+                for layer_name, acts in pre_weight_acts.items():
+                    if layer_name in self.components:
+                        component = self.components[layer_name]
+                        _ = component(acts)
+
+            # Calculate causal importances if requested
+            if hook_config.capture_causal_importances:
+                try:
+                    # Get pre-weight activations (either from hooks or cache)
+                    pre_weight_acts = hook_manager.capture_data.get("target_inputs", {})
+                    if not pre_weight_acts and isinstance(output, OutputWithCache):
+                        pre_weight_acts = output.cache
+
+                    if pre_weight_acts:
+                        ci_dict, _ = self.calc_causal_importances(
+                            pre_weight_acts=pre_weight_acts,
+                            sigmoid_type="leaky_hard",
+                            sampling="continuous",
+                            detach_inputs=True,
+                        )
+                        hook_manager.capture_data["causal_importances"] = ci_dict
+                    else:
+                        # Fallback: get pre-weight acts via separate call
+                        _, pre_weight_acts = self(*args, cache_type="input", **kwargs)
+                        ci_dict, _ = self.calc_causal_importances(
+                            pre_weight_acts=pre_weight_acts,
+                            sigmoid_type="leaky_hard",
+                            sampling="continuous",
+                            detach_inputs=True,
+                        )
+                        hook_manager.capture_data["causal_importances"] = ci_dict
+
+                except Exception as e:
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Failed to calculate causal importances: {e}")
+                    hook_manager.capture_data["causal_importances"] = {}
+
+        return final_output, hook_manager.capture_data
+
+    def get_extended_hook_manager(
+        self, hook_config: Any = None
+    ) -> Any:  # ExtendedHookManager, but avoiding forward reference issues
+        """Get an ExtendedHookManager instance for manual hook management.
+
+        This allows for more fine-grained control over hook registration and
+        data capture, useful for custom analysis workflows.
+
+        Args:
+            hook_config: Configuration for hook behavior
+
+        Returns:
+            ExtendedHookManager instance
+
+        Raises:
+            ImportError: If extended hooks module is not available
+        """
+        if not _extended_hooks_available:
+            raise ImportError(
+                "Extended hooks module not available. "
+                "This feature requires the extended_hooks module to be properly installed."
+            )
+
+        if hook_config is None:
+            if not _extended_hooks_available:
+                raise ImportError("Extended hooks module not available")
+            # Import here to satisfy type checker
+            from spd.models.extended_hooks import HookConfig
+
+            hook_config = HookConfig()
+
+        if not _extended_hooks_available:
+            raise ImportError("Extended hooks module not available")
+        # Import here to satisfy type checker
+        from spd.models.extended_hooks import ExtendedHookManager
+
+        return ExtendedHookManager(self, hook_config)
 
 
 def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
