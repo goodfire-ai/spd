@@ -155,7 +155,6 @@ def optimize_adversarial_stochastic_masks(
         assert all(isinstance(g, Tensor) for g in grads)
         print(f"PASSED GRAD CHECK --- REMOVE NOW {__file__}")
         # ========
-
         with torch.no_grad():
             for v, g in zip(adv_vars, grads, strict=True):
                 v.add_(step_size * g.sign())

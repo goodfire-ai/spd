@@ -98,10 +98,12 @@ given:
 def calc_stochastic_component_mask_info(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     component_mask_sampling: SamplingData,
-    weight_deltas_and_mask_sampling: tuple[dict[str, Float[Tensor, " d_out d_in"]], WeightDeltaSamplingData] | None,
+    weight_deltas_and_mask_sampling: tuple[
+        dict[str, Float[Tensor, " d_out d_in"]], WeightDeltaSamplingData
+    ]
+    | None,
     routing: RoutingType,
 ) -> dict[str, ComponentsMaskInfo]:
-
     ci_sample = next(iter(causal_importances.values()))
     leading_dims = ci_sample.shape[:-1]
     device = ci_sample.device
