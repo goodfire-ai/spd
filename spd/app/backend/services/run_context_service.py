@@ -18,8 +18,9 @@ from spd.app.backend.api import (
     Status,
     TrainRunDTO,
 )
-from spd.clustering.dashboard.dashboard_io import load_wandb_artifacts
-from spd.clustering.merge_history import MergeHistory
+
+# from spd.clustering.dashboard.dashboard_io import load_wandb_artifacts
+# from spd.clustering.merge_history import MergeHistory
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -99,56 +100,56 @@ class RunContextService:
         )
         return sorted(set(runs))
 
-    def _get_cluster_data(
-        self,
-        wandb_path: str,
-        iteration: int,
-        train_ctx: TrainRunContext,
-    ):
-        merge_history, _ = load_wandb_artifacts(wandb_path)
-        unique_cluster_indices = merge_history.get_unique_clusters(iteration)
+    # def _get_cluster_data(
+    #     self,
+    #     wandb_path: str,
+    #     iteration: int,
+    #     train_ctx: TrainRunContext,
+    # ):
+    #     merge_history, _ = load_wandb_artifacts(wandb_path)
+    #     unique_cluster_indices = merge_history.get_unique_clusters(iteration)
 
-        # todo: validate this these are actually subcomponents, not components
-        subcomponents_by_cluster_id: dict[int, list[MergeHistory.ClusterComponentInfo]] = {
-            cid: merge_history.get_cluster_components_info(iteration, cid)
-            for cid in unique_cluster_indices
-        }
+    #     # todo: validate this these are actually subcomponents, not components
+    #     subcomponents_by_cluster_id: dict[int, list[MergeHistory.ClusterComponentInfo]] = {
+    #         cid: merge_history.get_cluster_components_info(iteration, cid)
+    #         for cid in unique_cluster_indices
+    #     }
 
-        module_cluster_map: dict[str, dict[int, list[int]]] = defaultdict(lambda: defaultdict(list))
-        for cluster_id, cluster_subcomponents in subcomponents_by_cluster_id.items():
-            for component in cluster_subcomponents:
-                module_cluster_map[component.module][cluster_id].append(component.index)
+    #     module_cluster_map: dict[str, dict[int, list[int]]] = defaultdict(lambda: defaultdict(list))
+    #     for cluster_id, cluster_subcomponents in subcomponents_by_cluster_id.items():
+    #         for component in cluster_subcomponents:
+    #             module_cluster_map[component.module][cluster_id].append(component.index)
 
-        module_component_assignments: dict[str, list[int]] = {}
-        module_component_groups: dict[str, list[list[int]]] = {}
+    #     module_component_assignments: dict[str, list[int]] = {}
+    #     module_component_groups: dict[str, list[list[int]]] = {}
 
-        for module_name, components_module in train_ctx.cm.components.items():
-            C = components_module.C
-            assignments = [-1] * C
-            groups: list[list[int]] = []
+    #     for module_name, components_module in train_ctx.cm.components.items():
+    #         C = components_module.C
+    #         assignments = [-1] * C
+    #         groups: list[list[int]] = []
 
-            cluster_groups = module_cluster_map.get(module_name, {})
-            for indices in sorted(cluster_groups.values()):
-                if any(int(i) < 0 or int(i) >= C for i in indices):
-                    raise ValueError(f"Invalid indices: {indices}")
-                unique_indices = sorted({int(i) for i in indices})
-                component_idx = len(groups)
-                for sub_idx in unique_indices:
-                    assignments[sub_idx] = component_idx
-                groups.append(unique_indices)
+    #         cluster_groups = module_cluster_map.get(module_name, {})
+    #         for indices in sorted(cluster_groups.values()):
+    #             if any(int(i) < 0 or int(i) >= C for i in indices):
+    #                 raise ValueError(f"Invalid indices: {indices}")
+    #             unique_indices = sorted({int(i) for i in indices})
+    #             component_idx = len(groups)
+    #             for sub_idx in unique_indices:
+    #                 assignments[sub_idx] = component_idx
+    #             groups.append(unique_indices)
 
-            unassigned = [sub_idx for sub_idx in range(C) if assignments[sub_idx] == -1]
-            for sub_idx in unassigned:
-                assignments[sub_idx] = len(groups)
-                groups.append([sub_idx])
+    #         unassigned = [sub_idx for sub_idx in range(C) if assignments[sub_idx] == -1]
+    #         for sub_idx in unassigned:
+    #             assignments[sub_idx] = len(groups)
+    #             groups.append([sub_idx])
 
-            module_component_assignments[module_name] = assignments
-            module_component_groups[module_name] = groups
+    #         module_component_assignments[module_name] = assignments
+    #         module_component_groups[module_name] = groups
 
-        return ClusteringShape(
-            module_component_assignments=module_component_assignments,
-            module_component_groups=module_component_groups,
-        )
+    #     return ClusteringShape(
+    #         module_component_assignments=module_component_assignments,
+    #         module_component_groups=module_component_groups,
+    #     )
 
     def get_status(self) -> Status:
         if (train_ctx := self.train_run_context) is None:
@@ -230,7 +231,6 @@ class RunContextService:
         #     ddp_world_size=0,
         # )
 
-
         logger.info("Creating component model from run info")
         cm = ComponentModel.from_run_info(run_info)
         cm.to(DEVICE)
@@ -249,27 +249,27 @@ class RunContextService:
             available_cluster_runs=available_cluster_runs,
         )
 
-    def load_cluster_run(self, wandb_path: str, iteration: int):
-        logger.info(f"Loading cluster run from wandb path: {wandb_path}")
-        # self.cluster_run_context = get_pickle_cached(
-        #     key=f"{wandb_path.replace('/', '-')}-{iteration}",
-        #     get_func=lambda: self._load_cluster_run_from_wandb_path(wandb_path, iteration),
-        # )
-        self.cluster_run_context = self._load_cluster_run_from_wandb_path(wandb_path, iteration)
-        logger.info(f"Loaded cluster run from wandb path: {wandb_path}")
+    # def load_cluster_run(self, wandb_path: str, iteration: int):
+    #     logger.info(f"Loading cluster run from wandb path: {wandb_path}")
+    #     # self.cluster_run_context = get_pickle_cached(
+    #     #     key=f"{wandb_path.replace('/', '-')}-{iteration}",
+    #     #     get_func=lambda: self._load_cluster_run_from_wandb_path(wandb_path, iteration),
+    #     # )
+    #     self.cluster_run_context = self._load_cluster_run_from_wandb_path(wandb_path, iteration)
+    #     logger.info(f"Loaded cluster run from wandb path: {wandb_path}")
 
-    def _load_cluster_run_from_wandb_path(self, wandb_path: str, iteration: int):
-        assert (train_ctx := self.train_run_context) is not None
-        # assert (cluster_run_ctx := self.cluster_run_context) is not None
+    # def _load_cluster_run_from_wandb_path(self, wandb_path: str, iteration: int):
+    #     assert (train_ctx := self.train_run_context) is not None
+    #     # assert (cluster_run_ctx := self.cluster_run_context) is not None
 
-        logger.info(f"Loading cluster run from wandb path: {wandb_path}")
-        # wandb_run = runtime_cast(Run, self.api.run(wandb_path))
+    #     logger.info(f"Loading cluster run from wandb path: {wandb_path}")
+    #     # wandb_run = runtime_cast(Run, self.api.run(wandb_path))
 
-        return ClusterRunContext(
-            wandb_path=wandb_path,
-            iteration=iteration,
-            clustering_shape=self._get_cluster_data(wandb_path, iteration, train_ctx),
-        )
+    #     return ClusterRunContext(
+    #         wandb_path=wandb_path,
+    #         iteration=iteration,
+    #         clustering_shape=self._get_cluster_data(wandb_path, iteration, train_ctx),
+    #     )
 
     def get_available_prompts(self) -> list[AvailablePrompt]:
         """Get first 100 prompts from the dataset with their indices and text."""

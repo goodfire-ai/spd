@@ -18,7 +18,6 @@ from spd.app.backend.api import (
     SimulateMergeResponse,
     TokenAblationStats,
 )
-from spd.app.backend.services.cluster_dashboard_service import ComponentActivationContextsService
 from spd.app.backend.services.run_context_service import RunContextService
 from spd.app.backend.utils import tensor_to_sparse_vector
 from spd.log import logger
@@ -58,7 +57,6 @@ class AblationService:
     def __init__(
         self,
         run_context_service: RunContextService,
-        cluster_dashboard_service: ComponentActivationContextsService,
         *,
         dashboard_iteration: int = 3000,
         dashboard_n_samples: int = 16,
@@ -67,7 +65,6 @@ class AblationService:
         dashboard_context_length: int = 64,
     ):
         self.run_context_service = run_context_service
-        self.cluster_dashboard_service = cluster_dashboard_service
         self.prompt_contexts: dict[str, PromptContext] = {}
         self.mask_overrides: dict[str, MaskOverride] = {}
 
@@ -138,11 +135,8 @@ class AblationService:
 
         logger.info(f"Inputs shape: {inputs.shape}")
 
-        target_logits_out, pre_weight_acts = ctx.cm.forward(
-            inputs[None],
-            mode="input_cache",
-            module_names=list(ctx.cm.components.keys()),
-        )
+        target_logits_out, pre_weight_acts = ctx.cm(inputs[None], cache_type="input")
+        target_logits_out = target_logits_out[0]
 
         logger.info(f"Pre-weight acts shape: {pre_weight_acts.keys()}")
 
@@ -156,10 +150,9 @@ class AblationService:
 
         # Run with overridden mask
         ci_masked_logits = ctx.cm(
-            inputs[None],
-            mode="components",
+            inputs[None],  # add batch dim
             mask_infos=make_mask_infos(causal_importances),
-        )
+        )[0]
 
         logger.info(f"CI masked logits shape: {ci_masked_logits.shape}")
 
@@ -180,8 +173,8 @@ class AblationService:
             prompt_id=prompt_id,
             prompt_tokens=prompt_tokens,
             layer_cis=self._to_layer_cis({k: v[0] for k, v in causal_importances.items()}),
-            full_run_token_logits=self._logits_to_token_logits(target_logits_out[0]),
-            ci_masked_token_logits=self._logits_to_token_logits(ci_masked_logits[0]),
+            full_run_token_logits=self._logits_to_token_logits(target_logits_out),
+            ci_masked_token_logits=self._logits_to_token_logits(ci_masked_logits),
         )
 
     def _to_layer_cis(
@@ -228,10 +221,9 @@ class AblationService:
 
         # Run with the mask override
         ci_masked_logits = ctx.cm(
-            prompt_context.input_token_ids[None],
-            mode="components",
+            prompt_context.input_token_ids[None],  # add batch dim
             mask_infos=make_mask_infos(ablated_cis),
-        )[0]
+        )[0]  # remove batch dim
 
         return self._logits_to_token_logits(ci_masked_logits), ablation_stats
 
@@ -247,10 +239,9 @@ class AblationService:
                 masked_ci[module][token_idx][token_subcomponent_mask] = 0
 
         ci_masked_logits = ctx.cm(
-            prompt_context.input_token_ids[None],
-            mode="components",
+            prompt_context.input_token_ids[None],  # add batch dim
             mask_infos=make_mask_infos(masked_ci),
-        )[0]
+        )[0]  # remove batch dim
 
         return self._logits_to_token_logits(ci_masked_logits)
 
@@ -279,7 +270,6 @@ class AblationService:
 
         ci_masked_logits = ctx.cm(
             prompt_context.input_token_ids[None],  # add batch dim
-            mode="components",
             mask_infos=make_mask_infos(ablated_cis),
         )[0]  # remove batch dim
 
@@ -294,7 +284,7 @@ class AblationService:
         assert self.run_context_service.cluster_run_context is not None
 
         layer_stats = []
-        for module in original_cis.keys():
+        for module in original_cis:
             original_layer_cis = original_cis[module]
             ablated_layer_cis = ablated_cis[module]
             seq_len = original_layer_cis.shape[0]

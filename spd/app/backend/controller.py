@@ -31,7 +31,7 @@ from spd.app.backend.services.ablation_service import AblationService
 from spd.app.backend.services.activation_contexts_service import (
     SubcomponentActivationContextsService,
 )
-from spd.app.backend.services.cluster_dashboard_service import ComponentActivationContextsService
+# from spd.app.backend.services.cluster_dashboard_service import ComponentActivationContextsService
 from spd.app.backend.services.geometry_service import GeometryService
 from spd.app.backend.services.run_context_service import (
     CLUSTER_PROJECT,
@@ -44,7 +44,7 @@ run_context_service = RunContextService()
 subcomponent_activations_context_service = SubcomponentActivationContextsService(
     run_context_service
 )
-component_activation_contexts_service = ComponentActivationContextsService(run_context_service)
+# component_activation_contexts_service = ComponentActivationContextsService(run_context_service)
 ablation_service = AblationService(run_context_service, component_activation_contexts_service)
 geometry_service = GeometryService(run_context_service)
 
@@ -255,4 +255,4 @@ async def get_cluster_dashboard_data(
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
