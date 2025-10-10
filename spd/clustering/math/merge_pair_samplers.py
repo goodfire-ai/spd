@@ -5,22 +5,32 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+<<<<<<< HEAD
 from spd.clustering.consts import ClusterCoactivationShaped, MergePair
 
+=======
+>>>>>>> chinyemba/feature/clustering-sjcs
 MergePairSamplerKey = Literal["range", "mcmc"]
 
 
 class MergePairSamplerConfigurable(Protocol):
     def __call__(
         self,
+<<<<<<< HEAD
         costs: ClusterCoactivationShaped,
         **kwargs: Any,
     ) -> MergePair: ...
+=======
+        costs: Float[Tensor, "k_groups k_groups"],
+        **kwargs: Any,
+    ) -> tuple[int, int]: ...
+>>>>>>> chinyemba/feature/clustering-sjcs
 
 
 class MergePairSampler(Protocol):
     def __call__(
         self,
+<<<<<<< HEAD
         costs: ClusterCoactivationShaped,
     ) -> MergePair: ...
 
@@ -30,6 +40,17 @@ def range_sampler(
     threshold: float = 0.05,
     **kwargs: Any,
 ) -> MergePair:
+=======
+        costs: Float[Tensor, "k_groups k_groups"],
+    ) -> tuple[int, int]: ...
+
+
+def range_sampler(
+    costs: Float[Tensor, "k_groups k_groups"],
+    threshold: float = 0.05,
+    **kwargs: Any,
+) -> tuple[int, int]:
+>>>>>>> chinyemba/feature/clustering-sjcs
     """Sample a merge pair using threshold-based range selection.
 
     Considers all pairs with costs below a threshold defined as a fraction
@@ -48,7 +69,11 @@ def range_sampler(
     assert costs.shape[1] == k_groups, "Cost matrix must be square"
 
     # Find the range of non-diagonal costs
+<<<<<<< HEAD
     non_diag_costs: Float[Tensor, " k_groups_squared_minus_k"] = costs[
+=======
+    non_diag_costs: Float[Tensor, " k^2-k"] = costs[
+>>>>>>> chinyemba/feature/clustering-sjcs
         ~torch.eye(k_groups, dtype=torch.bool, device=costs.device)
     ]
     min_cost: float = float(non_diag_costs.min().item())
@@ -66,6 +91,7 @@ def range_sampler(
 
     # Randomly select one of the considered pairs
     selected_idx: int = random.randint(0, considered_idxs.shape[0] - 1)
+<<<<<<< HEAD
     pair_tuple: tuple[int, int] = tuple(considered_idxs[selected_idx].tolist())  # type: ignore[assignment]
     return MergePair(pair_tuple)
 
@@ -75,6 +101,16 @@ def mcmc_sampler(
     temperature: float = 1.0,
     **kwargs: Any,
 ) -> MergePair:
+=======
+    return tuple(considered_idxs[selected_idx].tolist())
+
+
+def mcmc_sampler(
+    costs: Float[Tensor, "k_groups k_groups"],
+    temperature: float = 1.0,
+    **kwargs: Any,
+) -> tuple[int, int]:
+>>>>>>> chinyemba/feature/clustering-sjcs
     """Sample a merge pair using MCMC with probability proportional to exp(-cost/temperature).
 
     Args:
@@ -96,15 +132,26 @@ def mcmc_sampler(
 
     # Compute probabilities: exp(-cost/temperature)
     # Use stable softmax computation to avoid overflow
+<<<<<<< HEAD
     costs_masked: ClusterCoactivationShaped = costs.clone()
+=======
+    costs_masked: Float[Tensor, "k_groups k_groups"] = costs.clone()
+>>>>>>> chinyemba/feature/clustering-sjcs
     costs_masked[~valid_mask] = float("inf")  # Set diagonal to inf so exp gives 0
 
     # Subtract min for numerical stability
     min_cost: float = float(costs_masked[valid_mask].min())
+<<<<<<< HEAD
     probs: ClusterCoactivationShaped = (
         torch.exp((min_cost - costs_masked) / temperature) * valid_mask
     )  # Zero out diagonal
     probs_flatten: Float[Tensor, " k_groups_squared"] = probs.flatten()
+=======
+    probs: Float[Tensor, "k_groups k_groups"] = (
+        torch.exp((min_cost - costs_masked) / temperature) * valid_mask
+    )  # Zero out diagonal
+    probs_flatten: Float[Tensor, " k_groups^2"] = probs.flatten()
+>>>>>>> chinyemba/feature/clustering-sjcs
     probs_flatten = probs_flatten / probs_flatten.sum()
 
     # Sample from multinomial distribution
@@ -112,7 +159,11 @@ def mcmc_sampler(
     row: int = idx // k_groups
     col: int = idx % k_groups
 
+<<<<<<< HEAD
     return MergePair((row, col))
+=======
+    return (row, col)
+>>>>>>> chinyemba/feature/clustering-sjcs
 
 
 MERGE_PAIR_SAMPLERS: dict[MergePairSamplerKey, MergePairSamplerConfigurable] = {

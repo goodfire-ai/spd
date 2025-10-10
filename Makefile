@@ -63,6 +63,8 @@ test:
 # Use min(4, nproc) for numprocesses. Any more and it slows down the tests.
 NUM_PROCESSES ?= $(shell nproc | awk '{print ($$1<4?$$1:4)}')
 
+NUM_PROCESSES ?= auto
+
 .PHONY: test-all
 test-all:
 	pytest tests/ --runslow --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
@@ -75,3 +77,27 @@ coverage:
 	mkdir -p $(COVERAGE_DIR)
 	uv run python -m coverage report -m > $(COVERAGE_DIR)/coverage.txt
 	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/
+
+DEP_GRAPH_DIR=docs/dep_graph
+
+.PHONY: dep-graph
+dep-graph:
+	ruff analyze graph > $(DEP_GRAPH_DIR)/import_graph.json
+
+.PHONY: clustering-ss
+clustering-ss:
+	spd-cluster \
+	  --config spd/clustering/configs/simplestories_dev.json \
+	  --devices cuda:0 \
+	  --max-concurrency 1
+
+.PHONY: clustering-resid_mlp1
+clustering-resid_mlp1:
+	spd-cluster \
+	  --config spd/clustering/configs/resid_mlp1.json \
+	  --devices cuda:0 \
+	  --max-concurrency 8
+
+.PHONY: clustering-test
+clustering-test:
+	pytest tests/clustering/test_clustering_experiments.py --runslow -vvv --durations 10 --numprocesses $(NUM_PROCESSES)

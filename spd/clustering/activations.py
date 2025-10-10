@@ -5,6 +5,7 @@ from typing import Literal, NamedTuple
 import torch
 from jaxtyping import Bool, Float, Float16, Int
 from torch import Tensor
+<<<<<<< HEAD
 
 from spd.clustering.consts import (
     ActivationsTensor,
@@ -15,11 +16,20 @@ from spd.clustering.consts import (
 from spd.clustering.util import ModuleFilterFunc
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.sigmoids import SigmoidTypes
+=======
+from torch.utils.data import DataLoader
+
+from spd.clustering.util import ModuleFilterFunc
+from spd.models.component_model import ComponentModel
+from spd.models.sigmoids import SigmoidTypes
+from spd.utils.general_utils import extract_batch_data
+>>>>>>> chinyemba/feature/clustering-sjcs
 
 
 def component_activations(
     model: ComponentModel,
     device: torch.device | str,
+<<<<<<< HEAD
     batch: Int[Tensor, "batch_size n_ctx"],
     sigmoid_type: SigmoidTypes,
 ) -> dict[str, ActivationsTensor]:
@@ -44,10 +54,48 @@ def component_activations(
 def compute_coactivatons(
     activations: ActivationsTensor | BoolActivationsTensor,
 ) -> ClusterCoactivationShaped:
+=======
+    dataloader: DataLoader[Int[Tensor, "..."]]
+    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
+    | None = None,
+    batch: Int[Tensor, "batch_size n_ctx"] | None = None,
+    sigmoid_type: SigmoidTypes = "normal",
+) -> dict[str, Float[Tensor, " n_steps C"]]:
+    """Get the component activations over a **single** batch."""
+    with torch.no_grad():
+        batch_: Tensor
+        if batch is None:
+            assert dataloader is not None, "provide either a batch or a dataloader, not both"
+            batch_ = extract_batch_data(next(iter(dataloader)))
+        else:
+            assert dataloader is None, "provide either a batch or a dataloader, not both"
+            batch_ = batch
+
+        batch_ = batch_.to(device)
+
+        _, pre_weight_acts = model._forward_with_pre_forward_cache_hooks(
+            batch_, module_names=model.target_module_paths
+        )
+
+        causal_importances, _ = model.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts,
+            sigmoid_type=sigmoid_type,
+            detach_inputs=False,
+            sampling="continuous", 
+        )
+
+        return causal_importances
+
+
+def compute_coactivatons(
+    activations: Float[Tensor, " n_steps c"] | Bool[Tensor, " n_steps c"],
+) -> Float16[Tensor, " c c"]:
+>>>>>>> chinyemba/feature/clustering-sjcs
     """Compute the coactivations matrix from the activations."""
     # TODO: this works for both boolean and continuous activations,
     # but we could do better by just using OR for boolean activations
     # and maybe even some bitshift hacks. but for now, we convert to float16
+<<<<<<< HEAD
     activations_f16: Float16[Tensor, "samples C"] = activations.to(torch.float16)
     return activations_f16.T @ activations_f16
 
@@ -60,6 +108,84 @@ class FilteredActivations(NamedTuple):
     "list of length c with labels for each preserved component"
 
     dead_components_labels: ComponentLabels | None
+=======
+    activations = activations.to(torch.float16)
+    return activations.T @ activations
+
+
+def sort_module_components_by_similarity(
+    activations: Float[Tensor, "n_steps C"],
+) -> tuple[Float[Tensor, "n_steps C"], Int[Tensor, " C"]]:
+    """Sort components within a single module by their similarity using greedy ordering.
+
+    Uses a greedy nearest-neighbor approach: starts with the component most similar
+    to all others, then iteratively picks the most similar unvisited component.
+
+    Args:
+        activations: Activations for a single module
+
+    Returns:
+        Tuple of (sorted_activations, sort_indices)
+    """
+    n_components = activations.shape[1]
+
+    # If only one component, no sorting needed
+    if n_components <= 1:
+        return activations, torch.arange(n_components, device=activations.device)
+
+    # Compute coactivation matrix
+    coact = activations.T @ activations
+
+    # Convert to similarity matrix (normalize by diagonal)
+    diag = torch.diagonal(coact).sqrt()
+    # Avoid division by zero
+    diag = torch.where(diag > 1e-8, diag, torch.ones_like(diag))
+    similarity = coact / (diag.unsqueeze(0) * diag.unsqueeze(1))
+
+    # Greedy ordering: start with component most similar to all others
+    # (highest average similarity)
+    avg_similarity = similarity.mean(dim=1)
+    start_idx = int(torch.argmax(avg_similarity).item())
+
+    # Build ordering greedily
+    ordered_indices = [start_idx]
+    remaining = set(range(n_components))
+    remaining.remove(start_idx)
+
+    # Greedily add the nearest unvisited component
+    current_idx = start_idx
+    while remaining:
+        # Find the unvisited component most similar to current
+        best_similarity = -1
+        best_idx = -1
+        for idx in remaining:
+            sim = similarity[current_idx, idx].item()
+            if sim > best_similarity:
+                best_similarity = sim
+                best_idx = idx
+
+        ordered_indices.append(best_idx)
+        remaining.remove(best_idx)
+        current_idx = best_idx
+
+    # Create sorting tensor
+    sort_indices = torch.tensor(ordered_indices, dtype=torch.long, device=activations.device)
+
+    # Apply sorting
+    sorted_act = activations[:, sort_indices]
+
+    return sorted_act, sort_indices
+
+
+class FilteredActivations(NamedTuple):
+    activations: Float[Tensor, " n_steps c"]
+    "activations after filtering dead components"
+
+    labels: list[str]
+    "list of length c with labels for each preserved component"
+
+    dead_components_labels: list[str] | None
+>>>>>>> chinyemba/feature/clustering-sjcs
     "list of labels for dead components, or None if no filtering was applied"
 
     @property
@@ -78,8 +204,13 @@ class FilteredActivations(NamedTuple):
 
 
 def filter_dead_components(
+<<<<<<< HEAD
     activations: ActivationsTensor,
     labels: ComponentLabels,
+=======
+    activations: Float[Tensor, " n_steps c"],
+    labels: list[str],
+>>>>>>> chinyemba/feature/clustering-sjcs
     filter_dead_threshold: float = 0.01,
 ) -> FilteredActivations:
     """Filter out dead components based on a threshold
@@ -91,11 +222,19 @@ def filter_dead_components(
     are considered dead and filtered out. The labels of these components are returned in `dead_components_labels`.
     `dead_components_labels` will also be `None` if no components were below the threshold.
     """
+<<<<<<< HEAD
     dead_components_lst: ComponentLabels | None = None
     if filter_dead_threshold > 0:
         dead_components_lst = ComponentLabels(list())
         max_act: Float[Tensor, " c"] = activations.max(dim=0).values
         dead_components: Bool[Tensor, " c"] = max_act < filter_dead_threshold
+=======
+    dead_components_lst: list[str] | None = None
+    if filter_dead_threshold > 0:
+        dead_components_lst = list()
+        max_act: Float[Tensor, " c"] = activations.max(dim=0).values
+        dead_components: Bool[Tensor, " n_steps c"] = max_act < filter_dead_threshold
+>>>>>>> chinyemba/feature/clustering-sjcs
 
         if dead_components.any():
             activations = activations[:, ~dead_components]
@@ -104,15 +243,24 @@ def filter_dead_components(
                 for lbl, keep in zip(labels, ~dead_components, strict=False)
             ]
             # re-assign labels only if we are filtering
+<<<<<<< HEAD
             labels = ComponentLabels([label for label, keep in alive_labels if keep])
             dead_components_lst = ComponentLabels(
                 [label for label, keep in alive_labels if not keep]
             )
+=======
+            labels = [label for label, keep in alive_labels if keep]
+            dead_components_lst = [label for label, keep in alive_labels if not keep]
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     return FilteredActivations(
         activations=activations,
         labels=labels,
+<<<<<<< HEAD
         dead_components_labels=dead_components_lst if dead_components_lst else None,
+=======
+        dead_components_labels=dead_components_lst,
+>>>>>>> chinyemba/feature/clustering-sjcs
     )
 
 
@@ -120,6 +268,7 @@ def filter_dead_components(
 class ProcessedActivations:
     """Processed activations after filtering and concatenation"""
 
+<<<<<<< HEAD
     activations_raw: dict[str, ActivationsTensor]
     "activations after filtering, but prior to concatenation"
 
@@ -130,6 +279,18 @@ class ProcessedActivations:
     "list of length c with labels for each preserved component, format `{module_name}:{component_index}`"
 
     dead_components_lst: ComponentLabels | None
+=======
+    activations_raw: dict[str, Float[Tensor, " n_steps C"]]
+    "activations after filtering, but prior to concatenation"
+
+    activations: Float[Tensor, " n_steps c"]
+    "activations after filtering and concatenation"
+
+    labels: list[str]
+    "list of length c with labels for each preserved component, format `{module_name}:{component_index}`"
+
+    dead_components_lst: list[str] | None
+>>>>>>> chinyemba/feature/clustering-sjcs
     "list of labels for dead components, or None if no filtering was applied"
 
     def validate(self) -> None:
@@ -190,19 +351,34 @@ class ProcessedActivations:
 
     def get_module_indices(self, module_key: str) -> list[int | None]:
         """given a module key, return a list len "num components in that moduel", with int index in alive components, or None if dead"""
+<<<<<<< HEAD
         num_components: int = self.activations_raw[module_key].shape[1]
         return [self.label_index[f"{module_key}:{i}"] for i in range(num_components)]
+=======
+        return [
+            self.label_index[f"{module_key}:{i}"]
+            for i in range(self.activations_raw[module_key].shape[1])
+        ]
+>>>>>>> chinyemba/feature/clustering-sjcs
 
 
 def process_activations(
     activations: dict[
         str,  # module name to
+<<<<<<< HEAD
         Float[Tensor, "samples C"]  # (sample x component gate activations)
+=======
+        Float[Tensor, " n_steps C"]  # (sample x component gate activations)
+>>>>>>> chinyemba/feature/clustering-sjcs
         | Float[Tensor, " n_sample n_ctx C"],  # (sample x seq index x component gate activations)
     ],
     filter_dead_threshold: float = 0.01,
     seq_mode: Literal["concat", "seq_mean", None] = None,
     filter_modules: ModuleFilterFunc | None = None,
+<<<<<<< HEAD
+=======
+    sort_components: bool = False,
+>>>>>>> chinyemba/feature/clustering-sjcs
 ) -> ProcessedActivations:
     """get back a dict of coactivations, slices, and concated activations
 
@@ -216,7 +392,11 @@ def process_activations(
 
     # reshape -- special cases for llms
     # ============================================================
+<<<<<<< HEAD
     activations_: dict[str, ActivationsTensor]
+=======
+    activations_: dict[str, Float[Tensor, " n_steps C"]]
+>>>>>>> chinyemba/feature/clustering-sjcs
     if seq_mode == "concat":
         # Concatenate the sequence dimension into the sample dimension
         activations_ = {
@@ -239,6 +419,7 @@ def process_activations(
     if filter_modules is not None:
         activations_ = {key: act for key, act in activations_.items() if filter_modules(key)}
 
+<<<<<<< HEAD
     # compute the labels and total component count
     total_c: int = 0
     labels: ComponentLabels = ComponentLabels(list())
@@ -249,6 +430,35 @@ def process_activations(
 
     # concat the activations
     act_concat: ActivationsTensor = torch.cat([activations_[key] for key in activations_], dim=-1)
+=======
+    # Sort components within each module if requested
+    sort_indices_dict: dict[str, Int[Tensor, " C"]] = {}
+    if sort_components:
+        sorted_activations = {}
+        for key, act in activations_.items():
+            sorted_act, sort_idx = sort_module_components_by_similarity(act)
+            sorted_activations[key] = sorted_act
+            sort_indices_dict[key] = sort_idx
+        activations_ = sorted_activations
+
+    # compute the labels and total component count
+    total_c: int = 0
+    labels: list[str] = list()
+    for key, act in activations_.items():
+        c = act.shape[-1]
+        if sort_components and key in sort_indices_dict:
+            # Use sorted indices for labeling
+            sort_idx = sort_indices_dict[key]
+            labels.extend([f"{key}:{int(sort_idx[i].item())}" for i in range(c)])
+        else:
+            labels.extend([f"{key}:{i}" for i in range(c)])
+        total_c += c
+
+    # concat the activations
+    act_concat: Float[Tensor, " n_steps c"] = torch.cat(
+        [activations_[key] for key in activations_], dim=-1
+    )
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     # filter dead components
     filtered_components: FilteredActivations = filter_dead_components(
@@ -261,6 +471,17 @@ def process_activations(
         f"({filtered_components.n_alive = }) + ({filtered_components.n_dead = }) != ({total_c = })"
     )
 
+<<<<<<< HEAD
+=======
+    # logger.values({
+    #     "total_components": total_c,
+    #     "n_alive_components": len(labels),
+    #     "n_dead_components": len(dead_components_lst),
+    # })
+
+    # return
+    # ============================================================
+>>>>>>> chinyemba/feature/clustering-sjcs
     return ProcessedActivations(
         activations_raw=activations_,
         activations=filtered_components.activations,

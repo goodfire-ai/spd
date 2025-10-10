@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+<<<<<<< HEAD
 
 import torch
 from jaxtyping import Bool, Int
@@ -8,6 +9,18 @@ from torch import Tensor
 from spd.clustering.consts import GroupIdxsTensor
 
 # pyright: reportUnnecessaryTypeIgnoreComment=false
+=======
+from typing import TYPE_CHECKING, Any
+
+import torch
+from jaxtyping import Bool, Int
+from torch import Tensor
+
+from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming
+
+if TYPE_CHECKING:
+    import matplotlib.pyplot as plt
+>>>>>>> chinyemba/feature/clustering-sjcs
 
 
 @dataclass(kw_only=True, slots=True)
@@ -18,6 +31,7 @@ class GroupMerge:
     gives the group index (0 to `k_groups-1`) that contains component `c`.
     """
 
+<<<<<<< HEAD
     group_idxs: GroupIdxsTensor
     k_groups: int
     old_to_new_idx: dict[int | None, int | None] | None = None
@@ -33,13 +47,25 @@ class GroupMerge:
 
     @property
     def _n_components(self) -> int:
+=======
+    group_idxs: Int[Tensor, " n_components"]
+    k_groups: int
+    old_to_new_idx: dict[int | None, int | None] | None = None
+
+    @property
+    def n_components(self) -> int:
+>>>>>>> chinyemba/feature/clustering-sjcs
         return int(self.group_idxs.shape[0])
 
     @property
     def components_per_group(self) -> Int[Tensor, " k_groups"]:
         return torch.bincount(self.group_idxs, minlength=self.k_groups)
 
+<<<<<<< HEAD
     def components_in_group_mask(self, group_idx: int) -> Bool[Tensor, " n_components"]:
+=======
+    def components_in_group_mask(self, group_idx: int) -> Bool[Tensor, "n_components"]:
+>>>>>>> chinyemba/feature/clustering-sjcs
         """Returns a boolean mask for components in the specified group."""
         if group_idx < 0 or group_idx >= self.k_groups:
             raise ValueError("group index out of range")
@@ -47,10 +73,14 @@ class GroupMerge:
 
     def components_in_group(self, group_idx: int) -> list[int]:
         """Returns a list of component indices in the specified group."""
+<<<<<<< HEAD
         indices: Int[Tensor, " n_matches"] = (
             (self.group_idxs == group_idx).nonzero(as_tuple=False).squeeze(-1)
         )
         return indices.tolist()
+=======
+        return (self.group_idxs == group_idx).nonzero(as_tuple=False).squeeze().tolist()
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     def validate(self, *, require_nonempty: bool = True) -> None:
         v_min: int = int(self.group_idxs.min().item())
@@ -59,7 +89,11 @@ class GroupMerge:
             raise ValueError("group indices out of range")
 
         if require_nonempty:
+<<<<<<< HEAD
             has_empty_groups: bool = bool(self.components_per_group.eq(0).any().item())
+=======
+            has_empty_groups = self.components_per_group.eq(0).any().item()
+>>>>>>> chinyemba/feature/clustering-sjcs
             if has_empty_groups:
                 raise ValueError("one or more groups are empty")
 
@@ -69,10 +103,17 @@ class GroupMerge:
         if device is None:
             device = self.group_idxs.device
         mat: Bool[Tensor, "k_groups n_components"] = torch.zeros(
+<<<<<<< HEAD
             (self.k_groups, self._n_components), dtype=torch.bool, device=device
         )
         idxs: Int[Tensor, " n_components"] = torch.arange(
             self._n_components, device=device, dtype=torch.int
+=======
+            (self.k_groups, self.n_components), dtype=torch.bool, device=device
+        )
+        idxs: Int[Tensor, " n_components"] = torch.arange(
+            self.n_components, device=device, dtype=torch.int
+>>>>>>> chinyemba/feature/clustering-sjcs
         )
         mat[self.group_idxs.to(dtype=torch.int), idxs] = True
         return mat
@@ -83,8 +124,13 @@ class GroupMerge:
             raise TypeError("mat must have dtype bool")
         if not mat.sum(dim=0).eq(1).all():
             raise ValueError("each column must contain exactly one True")
+<<<<<<< HEAD
         group_idxs: GroupIdxsTensor = mat.argmax(dim=0).to(torch.int64)
         inst: GroupMerge = cls(group_idxs=group_idxs, k_groups=int(mat.shape[0]))
+=======
+        group_idxs = mat.argmax(dim=0).to(torch.int64)
+        inst = cls(group_idxs=group_idxs, k_groups=int(mat.shape[0]))
+>>>>>>> chinyemba/feature/clustering-sjcs
         inst.validate(require_nonempty=False)
         return inst
 
@@ -99,6 +145,7 @@ class GroupMerge:
     ) -> "GroupMerge":
         if ensure_groups_nonempty and n_components < k_groups:
             raise ValueError("n_components must be >= k_groups when ensure_groups_nonempty is True")
+<<<<<<< HEAD
 
         group_idxs: GroupIdxsTensor
 
@@ -108,13 +155,23 @@ class GroupMerge:
                 extra: Int[Tensor, " n_extra"] = torch.randint(
                     0, k_groups, (n_components - k_groups,), device=device
                 )
+=======
+        if ensure_groups_nonempty:
+            base = torch.arange(k_groups, device=device)
+            if n_components > k_groups:
+                extra = torch.randint(0, k_groups, (n_components - k_groups,), device=device)
+>>>>>>> chinyemba/feature/clustering-sjcs
                 group_idxs = torch.cat((base, extra))
                 group_idxs = group_idxs[torch.randperm(n_components, device=device)]
             else:
                 group_idxs = base
         else:
             group_idxs = torch.randint(0, k_groups, (n_components,), device=device)
+<<<<<<< HEAD
         inst: GroupMerge = cls(group_idxs=group_idxs, k_groups=k_groups)
+=======
+        inst = cls(group_idxs=group_idxs, k_groups=k_groups)
+>>>>>>> chinyemba/feature/clustering-sjcs
         inst.validate(require_nonempty=ensure_groups_nonempty)
         return inst
 
@@ -138,7 +195,11 @@ class GroupMerge:
             group_a, group_b = group_b, group_a
 
         # make a copy
+<<<<<<< HEAD
         new_idxs: GroupIdxsTensor = self.group_idxs.clone()
+=======
+        new_idxs = self.group_idxs.clone()
+>>>>>>> chinyemba/feature/clustering-sjcs
         # wherever its currently b, change it to a
         new_idxs[new_idxs == group_b] = group_a
         # wherever i currently above b, change it to i-1
@@ -174,7 +235,78 @@ class GroupMerge:
                 downstream.append(self.merge_groups(i, j))
                 idxs.append((i, j))
 
+<<<<<<< HEAD
         return BatchedGroupMerge.from_list(merge_matrices=downstream)
+=======
+        return BatchedGroupMerge.from_list(
+            merge_matrices=downstream,
+            meta=[{"merge_pair": t} for t in idxs],
+        )
+
+    def plot(
+        self,
+        show: bool = True,
+        figsize: tuple[int, int] = (10, 3),
+        show_row_sums: bool | None = None,
+        ax: "plt.Axes | None" = None,
+        component_labels: list[str] | None = None,
+    ) -> None:
+        import matplotlib.pyplot as plt
+
+        merge_matrix = self.to_matrix()
+        k_groups, _ = merge_matrix.shape
+        group_sizes = merge_matrix.sum(dim=1)
+
+        if show_row_sums is None:
+            show_row_sums = k_groups <= 20
+
+        ax_lbl: plt.Axes | None = None
+        if ax is not None:
+            show_row_sums = False  # don't show row sums if we have an ax to plot on
+            ax_mat = ax
+            assert not show_row_sums
+        else:
+            if show_row_sums:
+                _fig, (ax_mat, ax_lbl) = plt.subplots(  # pyright: ignore[reportGeneralTypeIssues]
+                    1, 2, figsize=figsize, gridspec_kw={"width_ratios": [10, 1]}
+                )
+            else:
+                _fig, ax_mat = plt.subplots(figsize=figsize)
+
+        ax_mat.matshow(merge_matrix.cpu(), aspect="auto", cmap="Blues", interpolation="nearest")
+        ax_mat.set_xlabel("Components")
+        ax_mat.set_ylabel("Groups")
+        ax_mat.set_title("Merge Matrix")
+
+        # Add component labeling if component labels are provided
+        if component_labels is not None:
+            # Import the function here to avoid circular imports
+            from spd.clustering.plotting.activations import add_component_labeling
+
+            add_component_labeling(ax_mat, component_labels, axis="x")
+
+        if show_row_sums:
+            assert ax_lbl is not None
+            ax_lbl.set_xlim(0, 1)
+            ax_lbl.set_ylim(-0.5, k_groups - 0.5)
+            ax_lbl.invert_yaxis()
+            ax_lbl.set_title("Row Sums")
+            ax_lbl.axis("off")
+            for i, size in enumerate(group_sizes):
+                ax_lbl.text(0.5, i, str(size.item()), va="center", ha="center", fontsize=12)
+
+        plt.tight_layout()
+        if show:
+            plt.show()
+
+    def dist(self, other: "GroupMerge") -> float:
+        """Calculates the distance between two GroupMerge instances."""
+        return perm_invariant_hamming(
+            self.group_idxs.cpu().numpy(),
+            other.group_idxs.cpu().numpy(),
+            return_mapping=False,
+        )[0]
+>>>>>>> chinyemba/feature/clustering-sjcs
 
 
 @dataclass(slots=True)
@@ -185,6 +317,7 @@ class BatchedGroupMerge:
     group index for every component in that matrix.
     """
 
+<<<<<<< HEAD
     group_idxs: Int[Tensor, "batch n_components"]
     k_groups: Int[Tensor, " batch"]
 
@@ -195,6 +328,11 @@ class BatchedGroupMerge:
             # TODO: re-add metadata (which pairs merged at each step)
             # meta=f"len={len(self.meta)}" if self.meta is not None else None,
         )
+=======
+    group_idxs: Int[Tensor, " batch n_components"]
+    k_groups: Int[Tensor, " batch"]
+    meta: list[dict[str, Any] | None] | None = None
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     @classmethod
     def init_empty(cls, batch_size: int, n_components: int) -> "BatchedGroupMerge":
@@ -202,6 +340,7 @@ class BatchedGroupMerge:
         return cls(
             group_idxs=torch.full((batch_size, n_components), -1, dtype=torch.int16),
             k_groups=torch.zeros(batch_size, dtype=torch.int16),
+<<<<<<< HEAD
         )
 
     @property
@@ -210,6 +349,34 @@ class BatchedGroupMerge:
 
     @property
     def _n_components(self) -> int:
+=======
+            meta=[None for _ in range(batch_size)],
+        )
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the BatchedGroupMerge to a dictionary."""
+        return dict(
+            group_idxs=self.group_idxs.cpu(),
+            k_groups=self.k_groups.cpu(),
+            meta=self.meta,
+        )
+
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> "BatchedGroupMerge":
+        """Load a BatchedGroupMerge from a serialized dictionary."""
+        return cls(
+            group_idxs=data["group_idxs"].clone().to(dtype=torch.int64),
+            k_groups=data["k_groups"].clone().to(dtype=torch.int64),
+            meta=data.get("meta"),
+        )
+
+    @property
+    def batch_size(self) -> int:
+        return int(self.group_idxs.shape[0])
+
+    @property
+    def n_components(self) -> int:
+>>>>>>> chinyemba/feature/clustering-sjcs
         return int(self.group_idxs.shape[1])
 
     @property
@@ -220,6 +387,17 @@ class BatchedGroupMerge:
             raise ValueError("All matrices must have the same number of groups")
         return k_groups_set.pop()
 
+<<<<<<< HEAD
+=======
+    # def validate(self, *, require_nonempty: bool = True) -> None:
+    #     v_min: Int[Tensor, ""]
+    #     v_max:
+    #     print(f"{v_min=}, {v_max=}")
+    #     print(f"{type(v_min)=}, {type(v_max)=}")
+    #     if v_min < 0 or v_max >= self.k_groups.m
+    #         raise ValueError("group indices out of range")
+
+>>>>>>> chinyemba/feature/clustering-sjcs
     def to_matrix(
         self, device: torch.device | None = None
     ) -> Bool[Tensor, "batch k_groups n_components"]:
@@ -248,6 +426,7 @@ class BatchedGroupMerge:
     def from_list(
         cls,
         merge_matrices: list[GroupMerge],
+<<<<<<< HEAD
     ) -> "BatchedGroupMerge":
         group_idxs: Int[Tensor, "batch n_components"] = torch.stack(
             [mm.group_idxs for mm in merge_matrices], dim=0
@@ -256,28 +435,82 @@ class BatchedGroupMerge:
             [mm.k_groups for mm in merge_matrices], dtype=torch.int64
         )
         inst: BatchedGroupMerge = cls(group_idxs=group_idxs, k_groups=k_groups)
+=======
+        meta: list[dict[str, Any] | None] | None = None,
+    ) -> "BatchedGroupMerge":
+        group_idxs = torch.stack([mm.group_idxs for mm in merge_matrices], dim=0)
+        k_groups = torch.tensor([mm.k_groups for mm in merge_matrices], dtype=torch.int64)
+        inst = cls(group_idxs=group_idxs, k_groups=k_groups, meta=meta)
+>>>>>>> chinyemba/feature/clustering-sjcs
         # inst.validate(require_nonempty=False)
         return inst
 
     def __getitem__(self, idx: int) -> GroupMerge:
+<<<<<<< HEAD
         if not (0 <= idx < self._batch_size):
             raise IndexError("index out of range")
         group_idxs: GroupIdxsTensor = self.group_idxs[idx]
+=======
+        if not (0 <= idx < self.batch_size):
+            raise IndexError("index out of range")
+        group_idxs = self.group_idxs[idx]
+>>>>>>> chinyemba/feature/clustering-sjcs
         k_groups: int = int(self.k_groups[idx].item())
         return GroupMerge(group_idxs=group_idxs, k_groups=k_groups)
 
     def __setitem__(self, idx: int, value: GroupMerge) -> None:
+<<<<<<< HEAD
         if not (0 <= idx < self._batch_size):
             raise IndexError("index out of range")
         if value._n_components != self._n_components:
+=======
+        if not (0 <= idx < self.batch_size):
+            raise IndexError("index out of range")
+        if value.n_components != self.n_components:
+>>>>>>> chinyemba/feature/clustering-sjcs
             raise ValueError("value must have the same number of components as the batch")
         self.group_idxs[idx] = value.group_idxs
         self.k_groups[idx] = value.k_groups
 
     def __iter__(self):
         """Iterate over the GroupMerge instances in the batch."""
+<<<<<<< HEAD
         for i in range(self._batch_size):
             yield self[i]
 
     def __len__(self) -> int:
         return self._batch_size
+=======
+        for i in range(self.batch_size):
+            yield self[i]
+
+    def __len__(self) -> int:
+        return self.batch_size
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        """Returns the shape of the merge matrices as (batch_size, n_components)."""
+        return self.batch_size, self.n_components
+
+    @classmethod
+    def random(
+        cls,
+        batch_size: int,
+        n_components: int,
+        k_groups: int,
+        *,
+        ensure_groups_nonempty: bool = False,
+        device: torch.device | str = "cpu",
+    ) -> "BatchedGroupMerge":
+        return cls.from_list(
+            [
+                GroupMerge.random(
+                    n_components=n_components,
+                    k_groups=k_groups,
+                    ensure_groups_nonempty=ensure_groups_nonempty,
+                    device=device,
+                )
+                for _ in range(batch_size)
+            ]
+        )
+>>>>>>> chinyemba/feature/clustering-sjcs

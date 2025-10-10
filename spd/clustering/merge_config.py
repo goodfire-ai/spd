@@ -2,6 +2,7 @@ import functools
 import hashlib
 from typing import Any, Literal
 
+from jaxtyping import Float
 from pydantic import (
     BaseModel,
     Field,
@@ -9,6 +10,8 @@ from pydantic import (
 )
 
 from spd.clustering.consts import ClusterCoactivationShaped, MergePair
+from torch import Tensor
+
 from spd.clustering.math.merge_pair_samplers import (
     MERGE_PAIR_SAMPLERS,
     MergePairSampler,
@@ -100,6 +103,7 @@ class MergeConfig(BaseModel):
         """Get the module filter function based on the provided source."""
         return _to_module_filter(self.module_name_filter)
 
+<<<<<<< HEAD
     def get_num_iters(self, n_components: int) -> PositiveInt:
         """Get the number of iterations to run the merge algorithm for.
 
@@ -117,3 +121,17 @@ class MergeConfig(BaseModel):
     @property
     def stable_hash(self) -> str:
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
+=======
+    @property
+    def stable_hash(self) -> str:
+        return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
+
+    @property
+    def config_identifier(self) -> str:
+        """Unique identifier for this specific config on this specific model.
+
+        Format: model_abc123-a0.1-i1k-b64-n10-h_12ab
+        Allows filtering in WandB for all runs with this exact config and model.
+        """
+        return f"a{self.alpha:g}-h_{self.stable_hash}"
+>>>>>>> chinyemba/feature/clustering-sjcs

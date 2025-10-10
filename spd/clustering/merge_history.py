@@ -1,15 +1,24 @@
 import io
 import json
+<<<<<<< HEAD
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, override
+=======
+import sys
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+>>>>>>> chinyemba/feature/clustering-sjcs
 
 import numpy as np
 import torch
 from jaxtyping import Float, Int
 from muutils.dbg import dbg_tensor
 
+<<<<<<< HEAD
 from spd.clustering.consts import (
     ComponentLabels,
     DistancesArray,
@@ -30,29 +39,53 @@ class IterationInfo:
     idx: int
     selected_pair: list[int]
     merges: GroupMerge
+=======
+from spd.clustering.math.merge_distances import (
+    DistancesArray,
+    DistancesMethod,
+    MergesArray,
+    compute_distances,
+)
+from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
+from spd.clustering.merge_config import MergeConfig
+
+IterationInfo = dict[str, int | list[int] | GroupMerge]
+>>>>>>> chinyemba/feature/clustering-sjcs
 
 
 def _zip_save_arr(zf: zipfile.ZipFile, name: str, arr: np.ndarray) -> None:
     """Save a numpy array to a zip file."""
+<<<<<<< HEAD
     buf: io.BytesIO = io.BytesIO()
+=======
+    buf = io.BytesIO()
+>>>>>>> chinyemba/feature/clustering-sjcs
     np.save(buf, arr)
     zf.writestr(name, buf.getvalue())
 
 
 def _zip_save_arr_dict(zf: zipfile.ZipFile, data: dict[str, np.ndarray]) -> None:
     """Save a dictionary of numpy arrays to a zip file, {key}.npy used as path"""
+<<<<<<< HEAD
     key: str
     arr: np.ndarray
+=======
+>>>>>>> chinyemba/feature/clustering-sjcs
     for key, arr in data.items():
         _zip_save_arr(zf, f"{key}.npy", arr)
 
 
 @dataclass(kw_only=True)
+<<<<<<< HEAD
 class MergeHistory(SaveableObject):
+=======
+class MergeHistory:
+>>>>>>> chinyemba/feature/clustering-sjcs
     """Track merge iteration history"""
 
     merges: BatchedGroupMerge
     selected_pairs: Int[np.ndarray, " n_iters 2"]
+<<<<<<< HEAD
     labels: ComponentLabels
     merge_config: MergeConfig
     n_iters_current: int
@@ -72,10 +105,30 @@ class MergeHistory(SaveableObject):
         n_components: int = len(labels)
         n_iters_target: int = merge_config.get_num_iters(n_components)
         return MergeHistory(
+=======
+    labels: list[str]
+    config: MergeConfig
+    wandb_url: str | None
+    c_components: int
+    n_iters_current: int
+
+    @classmethod
+    def from_config(
+        cls,
+        config: MergeConfig,
+        c_components: int,
+        labels: list[str],
+        wandb_url: str | None,
+    ) -> "MergeHistory":
+        n_iters_target: int = config.iters
+        return MergeHistory(
+            c_components=c_components,
+>>>>>>> chinyemba/feature/clustering-sjcs
             labels=labels,
             n_iters_current=0,
             selected_pairs=np.full((n_iters_target, 2), -1, dtype=np.int16),
             merges=BatchedGroupMerge.init_empty(
+<<<<<<< HEAD
                 batch_size=n_iters_target, n_components=n_components
             ),
             merge_config=merge_config,
@@ -105,6 +158,18 @@ class MergeHistory(SaveableObject):
         self,
         idx: int,
         selected_pair: MergePair,
+=======
+                batch_size=n_iters_target, n_components=c_components
+            ),
+            config=config,
+            wandb_url=wandb_url,
+        )
+
+    def add_iteration(
+        self,
+        idx: int,
+        selected_pair: tuple[int, int],
+>>>>>>> chinyemba/feature/clustering-sjcs
         current_merge: GroupMerge,
     ) -> None:
         """Add data for one iteration."""
@@ -121,11 +186,19 @@ class MergeHistory(SaveableObject):
                 f"Index {idx} out of range for history with {self.n_iters_current} iterations"
             )
 
+<<<<<<< HEAD
         return IterationInfo(
             idx=idx,
             selected_pair=self.selected_pairs[idx].tolist(),
             merges=self.merges[idx],
         )
+=======
+        return {
+            "idx": idx,
+            "selected_pair": self.selected_pairs[idx].tolist(),
+            "merges": self.merges[idx],
+        }
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     def __len__(self) -> int:
         """Get the number of iterations in the history."""
@@ -138,6 +211,7 @@ class MergeHistory(SaveableObject):
         latest_idx: int = self.n_iters_current - 1
         return self[latest_idx]
 
+<<<<<<< HEAD
     def get_unique_clusters(self, iteration: int) -> list[int]:
         """Get unique cluster IDs at a given iteration.
 
@@ -193,6 +267,8 @@ class MergeHistory(SaveableObject):
             result.append({"module": module, "index": int(idx_str), "label": label})
         return result
 
+=======
+>>>>>>> chinyemba/feature/clustering-sjcs
     # Convenience properties for sweep analysis
     @property
     def total_iterations(self) -> int:
@@ -213,9 +289,13 @@ class MergeHistory(SaveableObject):
             return self.c_components
         return int(self.merges.k_groups[0].item())
 
+<<<<<<< HEAD
     @override
     def save(self, path: Path, wandb_url: str | None = None) -> None:
         zf: zipfile.ZipFile
+=======
+    def save(self, path: Path) -> None:
+>>>>>>> chinyemba/feature/clustering-sjcs
         with zipfile.ZipFile(path, "w") as zf:
             # save arrays
             _zip_save_arr_dict(
@@ -233,19 +313,31 @@ class MergeHistory(SaveableObject):
                 "metadata.json",
                 json.dumps(
                     dict(
+<<<<<<< HEAD
                         merge_config=self.merge_config.model_dump(mode="json"),
                         wandb_url=wandb_url,
                         c_components=self.c_components,
                         n_iters_current=self.n_iters_current,
                         labels=self.labels,
+=======
+                        config=self.config.model_dump(mode="json"),
+                        wandb_url=self.wandb_url,
+                        c_components=self.c_components,
+                        n_iters_current=self.n_iters_current,
+>>>>>>> chinyemba/feature/clustering-sjcs
                     )
                 ),
             )
 
+<<<<<<< HEAD
     @override
     @classmethod
     def read(cls, path: Path) -> "MergeHistory":
         zf: zipfile.ZipFile
+=======
+    @classmethod
+    def read(cls, path: Path) -> "MergeHistory":
+>>>>>>> chinyemba/feature/clustering-sjcs
         with zipfile.ZipFile(path, "r") as zf:
             group_idxs: np.ndarray = np.load(io.BytesIO(zf.read("merge.group_idxs.npy")))
             k_groups: np.ndarray = np.load(io.BytesIO(zf.read("merge.k_groups.npy")))
@@ -254,20 +346,33 @@ class MergeHistory(SaveableObject):
                 group_idxs=torch.from_numpy(group_idxs),
                 k_groups=torch.from_numpy(k_groups),
             )
+<<<<<<< HEAD
             labels_raw: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
             labels: ComponentLabels = ComponentLabels(labels_raw)
             metadata: dict[str, Any] = json.loads(zf.read("metadata.json").decode("utf-8"))
             merge_config: MergeConfig = MergeConfig.model_validate(metadata["merge_config"])
 
         metadata["origin_path"] = path
+=======
+            labels: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
+            metadata: dict[str, Any] = json.loads(zf.read("metadata.json").decode("utf-8"))
+            config: MergeConfig = MergeConfig.model_validate(metadata["config"])
+>>>>>>> chinyemba/feature/clustering-sjcs
 
         return cls(
             merges=merges,
             selected_pairs=selected_pairs,
             labels=labels,
+<<<<<<< HEAD
             merge_config=merge_config,
             n_iters_current=metadata["n_iters_current"],
             meta=metadata,
+=======
+            config=config,
+            wandb_url=metadata["wandb_url"],
+            c_components=metadata["c_components"],
+            n_iters_current=metadata["n_iters_current"],
+>>>>>>> chinyemba/feature/clustering-sjcs
         )
 
 
@@ -285,15 +390,22 @@ class MergeHistoryEnsemble:
         """Ensure all histories have the same merge config."""
         if not self.data:
             return
+<<<<<<< HEAD
         first_config: MergeConfig = self.data[0].merge_config
         for history in self.data[1:]:
             if history.merge_config != first_config:
+=======
+        first_config: MergeConfig = self.data[0].config
+        for history in self.data[1:]:
+            if history.config != first_config:
+>>>>>>> chinyemba/feature/clustering-sjcs
                 raise ValueError("All histories must have the same merge config")
 
     @property
     def config(self) -> MergeConfig:
         """Get the merge config used in the ensemble."""
         self._validate_configs_match()
+<<<<<<< HEAD
         return self.data[0].merge_config
 
     @property
@@ -311,6 +423,18 @@ class MergeHistoryEnsemble:
         """Range of iterations (min, max) across all histories in the ensemble."""
         iter_counts = [len(history.merges.k_groups) for history in self.data]
         return (min(iter_counts), max(iter_counts))
+=======
+        return self.data[0].config
+
+    @property
+    def n_iters(self) -> int:
+        """Number of iterations in the ensemble."""
+        n_iterations: int = len(self.data[0].merges.k_groups)
+        assert all(len(history.merges.k_groups) == n_iterations for history in self.data), (
+            "All histories must have the same number of iterations"
+        )
+        return n_iterations
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     @property
     def n_ensemble(self) -> int:
@@ -329,12 +453,20 @@ class MergeHistoryEnsemble:
     @property
     def shape(self) -> tuple[int, int, int]:
         """Shape of the ensemble data."""
+<<<<<<< HEAD
         return (self.n_ensemble, self.n_iters_min, self.c_components)
+=======
+        return (self.n_ensemble, self.n_iters, self.c_components)
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     @property
     def merges_array(self) -> MergesArray:
         n_ens: int = self.n_ensemble
+<<<<<<< HEAD
         n_iters: int = self.n_iters_min
+=======
+        n_iters: int = self.n_iters
+>>>>>>> chinyemba/feature/clustering-sjcs
         c_components: int = self.c_components
 
         output: MergesArray = np.full(
@@ -363,8 +495,12 @@ class MergeHistoryEnsemble:
         for history in self.data:
             unique_labels_set.update(history.labels)
 
+<<<<<<< HEAD
         unique_labels_list: list[str] = sorted(unique_labels_set)
         unique_labels: ComponentLabels = ComponentLabels(unique_labels_list)
+=======
+        unique_labels: list[str] = sorted(unique_labels_set)
+>>>>>>> chinyemba/feature/clustering-sjcs
         c_components: int = len(unique_labels)
         component_label_idxs: dict[str, int] = {
             label: idx for idx, label in enumerate(unique_labels)
@@ -372,17 +508,31 @@ class MergeHistoryEnsemble:
 
         try:
             merges_array: MergesArray = np.full(
+<<<<<<< HEAD
                 (self.n_ensemble, self.n_iters_min, c_components),
+=======
+                (self.n_ensemble, self.n_iters, c_components),
+>>>>>>> chinyemba/feature/clustering-sjcs
                 fill_value=-1,
                 dtype=np.int16,
             )
         except Exception as e:
+<<<<<<< HEAD
             err_msg = (
                 f"failed to create merge array, probably due to issues with getting shape.\n"
                 f"{self = }\n"
                 f"{self.data = }\n"
             )
             raise RuntimeError(err_msg) from e
+=======
+            print(
+                f"failed to create merge array, probably due to issues with getting shape.\n"
+                f"{self = }\n"
+                f"{self.data = }\n",
+                file=sys.stderr,
+            )
+            raise e
+>>>>>>> chinyemba/feature/clustering-sjcs
 
         overlap_stats: Float[np.ndarray, " n_ens"] = np.full(
             self.n_ensemble,
@@ -396,6 +546,7 @@ class MergeHistoryEnsemble:
             hist_n_components: int = len(hist_c_labels)
             overlap_stats[i_ens] = hist_n_components / c_components
             # map from old component indices to new component indices
+<<<<<<< HEAD
             i_comp_old: int
             comp_label: str
             for i_comp_old, comp_label in enumerate(hist_c_labels):
@@ -408,16 +559,33 @@ class MergeHistoryEnsemble:
             #     f"Max component index in history {i_ens} should be {hist_n_components - 1}, "
             #     f"but got {np.max(merges_array[i_ens])}"
             # )
+=======
+            for i_comp_old, comp_label in enumerate(hist_c_labels):
+                i_comp_new: int = component_label_idxs[comp_label]
+                merges_array[i_ens, :, i_comp_new] = history.merges.group_idxs[:, i_comp_old]
+
+            assert np.max(merges_array[i_ens]) == hist_n_components - 1, (
+                f"Max component index in history {i_ens} should be {hist_n_components - 1}, "
+                f"but got {np.max(merges_array[i_ens])}"
+            )
+>>>>>>> chinyemba/feature/clustering-sjcs
 
             # put each missing label into its own group
             hist_missing_labels: set[str] = unique_labels_set - set(hist_c_labels)
             assert len(hist_missing_labels) == c_components - hist_n_components
+<<<<<<< HEAD
             idx_missing: int
             missing_label: str
             for idx_missing, missing_label in enumerate(hist_missing_labels):
                 i_comp_new_relabel: int = component_label_idxs[missing_label]
                 merges_array[i_ens, :, i_comp_new_relabel] = np.full(
                     self.n_iters_min,
+=======
+            for idx_missing, missing_label in enumerate(hist_missing_labels):
+                i_comp_new_relabel: int = component_label_idxs[missing_label]
+                merges_array[i_ens, :, i_comp_new_relabel] = np.full(
+                    self.n_iters,
+>>>>>>> chinyemba/feature/clustering-sjcs
                     fill_value=idx_missing + hist_n_components,
                     dtype=np.int16,
                 )
@@ -426,6 +594,7 @@ class MergeHistoryEnsemble:
         # For now, keep using dbg_tensor for overlap_stats analysis
         dbg_tensor(overlap_stats)
 
+<<<<<<< HEAD
         # TODO: double check this
         # Convert any Path objects to strings for JSON serialization
         history_metadatas: list[dict[str, Any] | None] = []
@@ -442,20 +611,35 @@ class MergeHistoryEnsemble:
 
         return (
             # TODO: dataclass this
+=======
+        return (
+>>>>>>> chinyemba/feature/clustering-sjcs
             merges_array,
             dict(
                 component_labels=unique_labels,
                 n_ensemble=self.n_ensemble,
+<<<<<<< HEAD
                 n_iters_min=self.n_iters_min,
                 n_iters_max=self.n_iters_max,
                 n_iters_range=self.n_iters_range,
                 c_components=c_components,
                 config=self.config.model_dump(mode="json"),
                 history_metadatas=history_metadatas,
+=======
+                n_iters=self.n_iters,
+                c_components=c_components,
+                config=self.config.model_dump(mode="json"),
+>>>>>>> chinyemba/feature/clustering-sjcs
             ),
         )
 
     def get_distances(self, method: DistancesMethod = "perm_invariant_hamming") -> DistancesArray:
+<<<<<<< HEAD
+=======
+        _n_iters: int = self.n_iters
+        _n_ens: int = self.n_ensemble
+
+>>>>>>> chinyemba/feature/clustering-sjcs
         merges_array: MergesArray = self.merges_array
         return compute_distances(
             normalized_merge_array=merges_array,

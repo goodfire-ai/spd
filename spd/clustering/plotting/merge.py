@@ -8,7 +8,11 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+<<<<<<< HEAD
 from spd.clustering.consts import ClusterCoactivationShaped, ComponentLabels, DistancesArray
+=======
+from spd.clustering.math.merge_distances import DistancesArray
+>>>>>>> chinyemba/feature/clustering-sjcs
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.util import format_scientific_latex
@@ -17,6 +21,7 @@ DEFAULT_PLOT_CONFIG: dict[str, Any] = dict(
     figsize=(16, 10),
     tick_spacing=5,
     save_pdf=False,
+<<<<<<< HEAD
     figure_prefix="merge_iteration",
 )
 
@@ -85,6 +90,19 @@ def plot_merge_iteration(
     # pair_cost: float,
     iteration: int,
     component_labels: ComponentLabels | None = None,
+=======
+    pdf_prefix="merge_iteration",
+)
+
+
+def plot_merge_iteration(
+    current_merge: GroupMerge,
+    current_coact: Float[Tensor, "k_groups k_groups"],
+    costs: Float[Tensor, "k_groups k_groups"],
+    # pair_cost: float,
+    iteration: int,
+    component_labels: list[str] | None = None,
+>>>>>>> chinyemba/feature/clustering-sjcs
     plot_config: dict[str, Any] | None = None,
     nan_diag: bool = True,
     show: bool = False,
@@ -119,6 +137,7 @@ def plot_merge_iteration(
     )
 
     # Merge plot
+<<<<<<< HEAD
     plot_merge_matrix(
         current_merge.to_matrix(),
         ax=axs[0],
@@ -126,6 +145,9 @@ def plot_merge_iteration(
         component_labels=component_labels,
     )
 
+=======
+    current_merge.plot(ax=axs[0], show=False, component_labels=component_labels)
+>>>>>>> chinyemba/feature/clustering-sjcs
     axs[0].set_title("Merge")
 
     # Coactivations plot
@@ -168,9 +190,13 @@ def plot_merge_iteration(
 
     if plot_config_["save_pdf"]:
         fig.savefig(
+<<<<<<< HEAD
             f"{plot_config_['figure_prefix']}_iter_{iteration:03d}.pdf",
             bbox_inches="tight",
             dpi=300,
+=======
+            f"{plot_config_['pdf_prefix']}_iter_{iteration:03d}.pdf", bbox_inches="tight", dpi=300
+>>>>>>> chinyemba/feature/clustering-sjcs
         )
 
     if show:
@@ -195,9 +221,13 @@ def plot_dists_distribution(
     if ax is not None and kwargs_fig is not None:
         raise ValueError("Cannot provide both ax and kwargs_fig")
 
+<<<<<<< HEAD
     dists_flat: Float[np.ndarray, " n_iters n_ens*n_ens"] = distances.reshape(
         distances.shape[0], -1
     )
+=======
+    dists_flat: Float[np.ndarray, "n_iters n_ens*n_ens"] = distances.reshape(distances.shape[0], -1)
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     # Create figure if ax not provided
     if ax is None:
@@ -232,6 +262,7 @@ def plot_dists_distribution(
     elif mode == "dist":
         # Distribution statistics mode
         # Generate a random color for this plot
+<<<<<<< HEAD
         color: Float[np.ndarray, " 3"] = np.random.rand(3)
 
         # Calculate statistics for each iteration
@@ -252,6 +283,30 @@ def plot_dists_distribution(
                 medians.append(float(np.median(valid_dists)))
                 q1s.append(float(np.percentile(valid_dists, 25)))
                 q3s.append(float(np.percentile(valid_dists, 75)))
+=======
+        color = np.random.rand(
+            3,
+        )
+
+        # Calculate statistics for each iteration
+        mins = []
+        maxs = []
+        means = []
+        medians = []
+        q1s = []
+        q3s = []
+
+        for i in range(n_iters):
+            # Filter out NaN values (diagonal and upper triangle)
+            valid_dists = dists_flat[i][~np.isnan(dists_flat[i])]
+            if len(valid_dists) > 0:
+                mins.append(np.min(valid_dists))
+                maxs.append(np.max(valid_dists))
+                means.append(np.mean(valid_dists))
+                medians.append(np.median(valid_dists))
+                q1s.append(np.percentile(valid_dists, 25))
+                q3s.append(np.percentile(valid_dists, 75))
+>>>>>>> chinyemba/feature/clustering-sjcs
             else:
                 # Handle case with no valid distances
                 mins.append(np.nan)
@@ -261,7 +316,11 @@ def plot_dists_distribution(
                 q1s.append(np.nan)
                 q3s.append(np.nan)
 
+<<<<<<< HEAD
         iterations: Int[np.ndarray, " n_iters"] = np.arange(n_iters)
+=======
+        iterations = np.arange(n_iters)
+>>>>>>> chinyemba/feature/clustering-sjcs
 
         # Plot statistics
         ax_.plot(iterations, mins, "-", color=color, alpha=0.5)
@@ -275,12 +334,57 @@ def plot_dists_distribution(
         ax_.fill_between(iterations, q1s, q3s, color=color, alpha=0.2)
 
     ax_.set_xlabel("Iteration #")
+<<<<<<< HEAD
     ax_.set_ylabel("distance")
+=======
+    ax_.set_ylabel("permutation invariant hamming distance")
+>>>>>>> chinyemba/feature/clustering-sjcs
     ax_.set_title("Distribution of pairwise distances between group merges in an ensemble")
 
     return ax_
 
 
+<<<<<<< HEAD
+=======
+def plot_merge_history_costs(
+    history: MergeHistory,
+    figsize: tuple[int, int] = (10, 5),
+    fmt: str = "pdf",
+    file_prefix: str | None = None,
+    ylim: tuple[float, float] | None = None,
+) -> plt.Figure:
+    """Plot cost evolution from merge history.
+
+    Note:
+        Caller is responsible for closing the returned figure with plt.close(fig)
+        to prevent memory leaks.
+    """
+    assert history
+    raise NotImplementedError("we dont keep costs in history anymore, rely on wandb for this")
+    fig, ax = plt.subplots(figsize=figsize)  # pyright: ignore[reportUnreachable]
+    # ax.plot(history.costs_stats["min"], label="min")
+    # ax.plot(history.costs_stats["max"], label="max")
+    # ax.plot(history.costs_stats["mean"], ":", label="mean")
+    # ax.plot(history.costs_stats["median"], label="median")
+    # ax.plot(history.costs_stats["q01"], label="1% quantile", alpha=0.2)
+    # ax.plot(history.costs_stats["q05"], label="5% quantile", alpha=0.2)
+    # ax.plot(history.costs_stats["q10"], label="10% quantile", alpha=0.2)
+    # ax.plot(history.costs_stats["chosen_pair"], label="selected pair cost")
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Non-diagonal costs")
+    ax.axhline(0, color="black", linestyle="--", linewidth=0.5)
+    ax.legend()
+
+    if ylim is not None:
+        ax.set_ylim(ylim)
+
+    if file_prefix:
+        fig.savefig(f"{file_prefix}_cost_evolution.{fmt}", bbox_inches="tight", dpi=300)
+
+    return fig
+
+
+>>>>>>> chinyemba/feature/clustering-sjcs
 def plot_merge_history_cluster_sizes(
     history: MergeHistory,
     figsize: tuple[int, int] = (10, 5),

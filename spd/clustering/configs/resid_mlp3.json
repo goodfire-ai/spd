@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "merge_config": {
     "activation_threshold": 0.01,
     "alpha": 1,
@@ -9,6 +10,16 @@
     "filter_dead_threshold": 0.01,
     "module_name_filter": null
   },
+=======
+  "activation_threshold": 0.01,
+  "alpha": 1,
+  "iters": 350,
+  "merge_pair_sampling_method": "range",
+  "merge_pair_sampling_kwargs": {"threshold": 0.05},
+  "pop_component_prob": 0,
+  "filter_dead_threshold": 0.01,
+  "module_name_filter": null,
+>>>>>>> chinyemba/feature/clustering-sjcs
   "experiment_key": "resid_mlp3",
   "n_batches": 4,
   "batch_size": 1024,

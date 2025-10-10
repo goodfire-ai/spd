@@ -5,7 +5,10 @@ import torch
 from torch import Tensor
 
 from spd.clustering.activations import FilteredActivations, filter_dead_components
+<<<<<<< HEAD
 from spd.clustering.consts import ComponentLabels
+=======
+>>>>>>> chinyemba/feature/clustering-sjcs
 
 
 @pytest.mark.parametrize(
@@ -37,22 +40,38 @@ def test_filter_dead_components_thresholds(
     n_components: int = len(max_values)
 
     activations: Tensor
+<<<<<<< HEAD
     labels: ComponentLabels
     if n_components == 0:
         activations = torch.zeros(n_steps, 0)
         labels = ComponentLabels([])
+=======
+    labels: list[str]
+    if n_components == 0:
+        activations = torch.zeros(n_steps, 0)
+        labels = []
+>>>>>>> chinyemba/feature/clustering-sjcs
     else:
         activations = torch.zeros(n_steps, n_components)
         # Set max values in first row
         for i, val in enumerate(max_values):
             activations[0, i] = val
+<<<<<<< HEAD
         labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+=======
+        labels = [f"comp_{i}" for i in range(n_components)]
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     result: FilteredActivations = filter_dead_components(
         activations=activations, labels=labels, filter_dead_threshold=threshold
     )
 
+<<<<<<< HEAD
     assert result.labels == [f"comp_{i}" for i in expected_alive_indices]
+=======
+    expected_labels: list[str] = [f"comp_{i}" for i in expected_alive_indices]
+    assert result.labels == expected_labels
+>>>>>>> chinyemba/feature/clustering-sjcs
     assert result.n_alive == len(expected_alive_indices)
     assert result.n_dead == n_components - len(expected_alive_indices)
     assert result.activations.shape == (n_steps, len(expected_alive_indices))
@@ -95,7 +114,11 @@ def test_max_across_steps(step_locations: list[int], threshold: float) -> None:
     for i, step in enumerate(step_locations):
         activations[step, i] = threshold + 0.01
 
+<<<<<<< HEAD
     labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+=======
+    labels: list[str] = [f"comp_{i}" for i in range(n_components)]
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     result: FilteredActivations = filter_dead_components(
         activations=activations, labels=labels, filter_dead_threshold=threshold
@@ -121,7 +144,11 @@ def test_linear_gradient_thresholds(threshold: float) -> None:
     labels: list[str] = [f"comp_{i}" for i in range(n_components)]
 
     result: FilteredActivations = filter_dead_components(
+<<<<<<< HEAD
         activations=activations, labels=ComponentLabels(labels), filter_dead_threshold=threshold
+=======
+        activations=activations, labels=labels, filter_dead_threshold=threshold
+>>>>>>> chinyemba/feature/clustering-sjcs
     )
 
     # Count how many components should be alive

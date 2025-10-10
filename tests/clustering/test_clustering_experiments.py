@@ -6,15 +6,22 @@ from pathlib import Path
 
 import pytest
 
+<<<<<<< HEAD
 # Test resource directories
 NOTEBOOK_DIR: Path = Path("tests/clustering/scripts")
 CONFIG_DIR: Path = Path("spd/clustering/configs")
 
+=======
+>>>>>>> chinyemba/feature/clustering-sjcs
 
 @pytest.mark.slow
 def test_cluster_resid_mlp_notebook():
     """Test running the cluster_resid_mlp.py notebook-style script."""
+<<<<<<< HEAD
     script_path = NOTEBOOK_DIR / "cluster_resid_mlp.py"
+=======
+    script_path = Path("spd/clustering/experiments/cluster_resid_mlp.py")
+>>>>>>> chinyemba/feature/clustering-sjcs
     assert script_path.exists(), f"Script not found: {script_path}"
 
     # Run the script as-is
@@ -34,7 +41,11 @@ def test_cluster_resid_mlp_notebook():
 @pytest.mark.slow
 def test_clustering_with_resid_mlp1_config():
     """Test running clustering with test-resid_mlp1.json config."""
+<<<<<<< HEAD
     config_path = CONFIG_DIR / "test-resid_mlp1.json"
+=======
+    config_path = Path("spd/clustering/configs/test-resid_mlp1.json")
+>>>>>>> chinyemba/feature/clustering-sjcs
     assert config_path.exists(), f"Config not found: {config_path}"
 
     # Run the clustering main script with the test config
@@ -58,7 +69,11 @@ def test_clustering_with_resid_mlp1_config():
 @pytest.mark.slow
 def test_cluster_ss_notebook():
     """Test running the cluster_ss.py notebook-style script."""
+<<<<<<< HEAD
     script_path = NOTEBOOK_DIR / "cluster_ss.py"
+=======
+    script_path = Path("spd/clustering/experiments/cluster_ss.py")
+>>>>>>> chinyemba/feature/clustering-sjcs
     assert script_path.exists(), f"Script not found: {script_path}"
 
     # Run the script as-is
@@ -78,7 +93,11 @@ def test_cluster_ss_notebook():
 @pytest.mark.slow
 def test_clustering_with_simplestories_config():
     """Test running clustering with test-simplestories.json config."""
+<<<<<<< HEAD
     config_path = CONFIG_DIR / "test-simplestories.json"
+=======
+    config_path = Path("spd/clustering/configs/test-simplestories.json")
+>>>>>>> chinyemba/feature/clustering-sjcs
     assert config_path.exists(), f"Config not found: {config_path}"
 
     # Run the clustering main script with the test config
@@ -87,7 +106,10 @@ def test_clustering_with_simplestories_config():
             "spd-cluster",
             "--config",
             str(config_path),
+<<<<<<< HEAD
             "--dataset-streaming",  # see https://github.com/goodfire-ai/spd/pull/199
+=======
+>>>>>>> chinyemba/feature/clustering-sjcs
         ],
         capture_output=True,
         text=True,

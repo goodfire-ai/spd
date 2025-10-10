@@ -5,6 +5,10 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+<<<<<<< HEAD
+=======
+import plotly.graph_objects as go
+>>>>>>> chinyemba/feature/clustering-sjcs
 import wandb
 import wandb.sdk.wandb_run
 from muutils.dbg import dbg_tensor
@@ -12,6 +16,7 @@ from muutils.tensor_info import array_info
 from torch import Tensor
 
 
+<<<<<<< HEAD
 def wandb_log_tensor(
     run: wandb.sdk.wandb_run.Run,
     data: Tensor | dict[str, Tensor],
@@ -43,6 +48,8 @@ def wandb_log_tensor(
         raise e
 
 
+=======
+>>>>>>> chinyemba/feature/clustering-sjcs
 def _create_histogram(
     info: dict[str, Any], tensor: Tensor, name: str, logy: bool = True
 ) -> plt.Figure:
@@ -127,6 +134,104 @@ def _create_histogram(
     return fig
 
 
+<<<<<<< HEAD
+=======
+def _create_histogram_wandb(tensor: Tensor, name: str) -> go.Figure:  # pyright: ignore[reportUnusedFunction]
+    """Create Plotly histogram figure."""
+    # get the values and stats about them
+    values: np.ndarray = tensor.flatten().detach().cpu().numpy()
+    if np.isnan(values).any():
+        values = values[~np.isnan(values)]
+    info: dict[str, Any] = array_info(tensor)
+
+    # Create Plotly histogram
+    fig: go.Figure = go.Figure()
+    fig.add_trace(
+        go.Histogram(
+            x=values,
+            nbinsx=50,
+            name=name,
+            opacity=0.7,
+        )
+    )
+
+    # Add vertical lines for mean, median, std
+    if info["mean"] is not None:
+        mean_val: float = info["mean"]
+        median_val: float = info["median"]
+        std_val: float = info["std"]
+
+        fig.add_vline(
+            x=mean_val, line_dash="solid", line_color="red", annotation_text=f"μ={mean_val:.3g}"
+        )
+
+        fig.add_vline(
+            x=median_val,
+            line_dash="solid",
+            line_color="blue",
+            annotation_text=f"x̃={median_val:.3g}",
+        )
+
+        if std_val:
+            fig.add_vline(
+                x=mean_val + std_val, line_dash="dash", line_color="orange", annotation_text="μ+σ"
+            )
+            fig.add_vline(
+                x=mean_val - std_val, line_dash="dash", line_color="orange", annotation_text="μ-σ"
+            )
+
+    # Update layout with stats
+    title_text: str = f"{name}"
+    if info.get("shape"):
+        shape_str: str = str(tuple(info["shape"]))
+        dtype_str: str = str(info.get("dtype", "unknown")).replace("torch.", "")
+        title_text += f"<br>shape={shape_str}, dtype={dtype_str}"
+
+    if info["mean"] is not None:
+        title_text += f"<br>range=[{info['min']:.3g}, {info['max']:.3g}], μ={info['mean']:.3g}, x̃={info['median']:.3g}, σ={info['std']:.3g}"
+
+    fig.update_layout(
+        title=title_text,
+        xaxis_title="Value",
+        yaxis_title="Count",
+        showlegend=False,
+    )
+
+    return fig
+
+
+def wandb_log_tensor(
+    run: wandb.sdk.wandb_run.Run,
+    data: Tensor | dict[str, Tensor],
+    name: str,
+    step: int,
+    single: bool = False,
+) -> None:
+    """Log tensor(s) with stats to WandB as metrics and histograms.
+
+    Args:
+        run: Current WandB run (None if WandB disabled)
+        data: Either a Tensor or dict[str, Tensor]
+        name: Name for logging
+        step: WandB step
+        single: True if this tensor is only logged once (component activations)
+    """
+    try:
+        if isinstance(data, dict):
+            # Handle dict of tensors
+            for key, tensor in data.items():
+                full_name: str = f"{name}.{key}"
+                _log_one(run, tensor, full_name, step, single=single)
+        else:
+            # Handle single tensor
+            _log_one(run, data, name, step, single=single)
+    except Exception as e:
+        warnings.warn(f"Failed to log tensor {name}: {e}")  # noqa: B028
+        dbg_tensor(data)
+        raise e
+
+
+>>>>>>> chinyemba/feature/clustering-sjcs
 def _log_one(
     run: wandb.sdk.wandb_run.Run,
     tensor_: Tensor,

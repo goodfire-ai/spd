@@ -4,7 +4,10 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+<<<<<<< HEAD
 from spd.clustering.consts import ClusterCoactivationShaped, MergePair
+=======
+>>>>>>> chinyemba/feature/clustering-sjcs
 from spd.clustering.math.merge_matrix import GroupMerge
 
 
@@ -36,19 +39,34 @@ def compute_mdl_cost(
 
 
 def compute_merge_costs(
+<<<<<<< HEAD
     coact: ClusterCoactivationShaped,
     merges: GroupMerge,
     alpha: float = 1.0,
 ) -> ClusterCoactivationShaped:
+=======
+    coact: Float[Tensor, "k_groups k_groups"],
+    merges: GroupMerge,
+    alpha: float = 1.0,
+) -> Float[Tensor, "k_groups k_groups"]:
+>>>>>>> chinyemba/feature/clustering-sjcs
     r"""Compute MDL costs for merge matrices
 
     $$
         F(P_i, P_j)
+<<<<<<< HEAD
         = \alpha |s_i| r(P_i) + \alpha |s_j| r(P_j)
             - s_i s_j ( \alpha r(P_i) + \alpha r(P_j) + c )
         = \alpha (
             |s_i| r(P_i)
             + |s_j| r(P_j)
+=======
+        = \alpha |s_i| r(P_j) + \alpha |s_j| r(P_i)
+        - s_i s_j ( \alpha r(P_i) + \alpha r(P_j) + c )
+        = \alpha (
+            |s_i| r(P_j)
+            + |s_j| r(P_i)
+>>>>>>> chinyemba/feature/clustering-sjcs
             - s_i s_j ( r(P_i) + r(P_j) + c/\alpha )
         )
     $$
@@ -58,7 +76,11 @@ def compute_merge_costs(
     $$
         (s_\Sigma - s_i - s_j) log((c-1)/c)
         + s_{i,j} log(c-1) - s_i log(c) - s_j log(c)
+<<<<<<< HEAD
         + alpha ( s_{i,j} r(P_{i,j}) - s_i r(P_i) - s_j r(P_j) )
+=======
+        + alpha ( s_{i,j} r(P_{i,j} - s_i r(P_i) - s_j r(P_j) )
+>>>>>>> chinyemba/feature/clustering-sjcs
     $$
     where:
      - $s_\Sigma$ average activation of all components
@@ -79,7 +101,11 @@ def compute_merge_costs(
     # term_si_rpj: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) * (ranks.view(1, -1) + 1/alpha)
     term_si_rpi: Float[Tensor, " k_groups"] = s_diag * ranks
     # dbg_auto(term_si_rpi)
+<<<<<<< HEAD
     rank_sum: ClusterCoactivationShaped = ranks.view(-1, 1) + ranks.view(1, -1)
+=======
+    rank_sum: Float[Tensor, "k_groups k_groups"] = ranks.view(-1, 1) + ranks.view(1, -1)
+>>>>>>> chinyemba/feature/clustering-sjcs
     # TODO: use dynamic rank computation
     # return alpha * (
     #     term_si_rpj  # |s_i| r(P_j)
@@ -90,6 +116,7 @@ def compute_merge_costs(
     #     )
     # )
 
+<<<<<<< HEAD
     coact_OR: ClusterCoactivationShaped = s_diag.view(-1, 1) + s_diag.view(1, -1) - coact
 
     # reduce penalty for sending dictionary by 1
@@ -104,25 +131,52 @@ def compute_merge_costs(
     ) * math.log2((k_groups - 1) / k_groups)
 
     bits_local: ClusterCoactivationShaped = (
+=======
+    coact_OR: Float[Tensor, "k_groups k_groups"] = s_diag.view(-1, 1) + s_diag.view(1, -1) - coact
+
+    # (s_\Sigma - s_i - s_j) log((c-1)/c)
+    # + s_{i,j} log(c-1) - s_i log(c) - s_j log(c)
+    # + alpha ( s_{i,j} r(P_{i,j} - s_i r(P_i) - s_j r(P_j) )
+
+    s_other: Float[Tensor, "k_groups k_groups"] = (
+        s_diag.sum() - s_diag.view(-1, 1) - s_diag.view(1, -1)
+    ) * math.log2((k_groups - 1) / k_groups)
+
+    bits_local: Float[Tensor, "k_groups k_groups"] = (
+>>>>>>> chinyemba/feature/clustering-sjcs
         coact_OR * math.log2(k_groups - 1)
         - s_diag.view(-1, 1) * math.log2(k_groups)
         - s_diag.view(1, -1) * math.log2(k_groups)
     )
 
+<<<<<<< HEAD
     penalty: ClusterCoactivationShaped = (
+=======
+    penalty: Float[Tensor, "k_groups k_groups"] = (
+>>>>>>> chinyemba/feature/clustering-sjcs
         coact_OR * rank_sum  # s_{i,j} r(P_{i,j})
         - term_si_rpi.view(-1, 1)  # s_i r(P_i)
         - term_si_rpi.view(1, -1)  # s_j r(P_j)
     )
 
+<<<<<<< HEAD
     output: ClusterCoactivationShaped = s_other + bits_local + alpha * penalty
+=======
+    output: Float[Tensor, "k_groups k_groups"] = s_other + bits_local + alpha * penalty
+>>>>>>> chinyemba/feature/clustering-sjcs
     return output
 
 
 def recompute_coacts_merge_pair(
+<<<<<<< HEAD
     coact: ClusterCoactivationShaped,
     merges: GroupMerge,
     merge_pair: MergePair,
+=======
+    coact: Float[Tensor, "k_groups k_groups"],
+    merges: GroupMerge,
+    merge_pair: tuple[int, int],
+>>>>>>> chinyemba/feature/clustering-sjcs
     activation_mask: Bool[Tensor, "samples k_groups"],
 ) -> tuple[
     GroupMerge,
@@ -162,7 +216,11 @@ def recompute_coacts_merge_pair(
     # TODO: check that the rest are in order? probably not necessary
 
     # reindex coactivations
+<<<<<<< HEAD
     coact_temp: ClusterCoactivationShaped = coact.clone()
+=======
+    coact_temp: Float[Tensor, "k_groups k_groups"] = coact.clone()
+>>>>>>> chinyemba/feature/clustering-sjcs
     # add in the similarities with the new group
     coact_temp[new_group_idx, :] = coact_with_merge
     coact_temp[:, new_group_idx] = coact_with_merge
@@ -190,7 +248,11 @@ def recompute_coacts_merge_pair(
 
 
 def recompute_coacts_pop_group(
+<<<<<<< HEAD
     coact: ClusterCoactivationShaped,
+=======
+    coact: Float[Tensor, "k_groups k_groups"],
+>>>>>>> chinyemba/feature/clustering-sjcs
     merges: GroupMerge,
     component_idx: int,
     activation_mask: Bool[Tensor, "n_samples k_groups"],

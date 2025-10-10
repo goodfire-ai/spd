@@ -14,7 +14,7 @@ dependencies = [
     "fire",
     "tqdm",
     "ipykernel",
-    "transformers",
+    "transformers==4.53.2", # latest `transformers` causes pyright issues, see https://github.com/goodfire-ai/spd/issues/139
     "jaxtyping",
     "einops",
     "matplotlib==3.9.1", # Avoid frequent pyright errors with new matplotlib versions
@@ -36,11 +36,31 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-cov", # for coverage reports
+<<<<<<< HEAD
     "pytest-xdist", # parallel test execution
+=======
+    "pytest-xdist", # for parallel test execution
+>>>>>>> chinyemba/feature/clustering-sjcs
     "ruff",
     "basedpyright",
     "pre-commit",
+    # wip deps for grouping. some of these can probably be removed later.
+    "scipy>=1.14.1",
+    "scikit-learn",
+    "nbconvert",
+    "seaborn",
+    "muutils", # custom (by mivanit) utils, using it for debugging
+    "zanj", # custom (by mivanit), with `muutils` it makes it easier to save/load merge histories
+    "js-embedding-vis", # custom (by mivanit) embedding vis
+    "plotly",  # wandb.errors.errors.Error: plotly is required to log interactive plots, install with: `pip install plotly` or convert the plot to an image with `wandb.Image(plt)`
+    # broken for python >=3.10 ?
+    # "umap-learn>=0.5.7",
+    # RuntimeError: Cannot install on Python version 3.12.10; only versions >=3.6,<3.10 are supported.
+    # help: `llvmlite` (v0.36.0) was included because `spd:dev-grouping` (v0.0.1) depends on `umap-learn` (v0.5.9.post2) which depends on `pynndescent` (v0.5.13) which depends on `llvmlite`
 ]
+
+[tool.uv.sources]
+js_embedding_vis = { git = "https://github.com/mivanit/js-embedding-vis/"}
 
 [project.scripts]
 spd-run = "spd.scripts.run:cli"
@@ -85,6 +105,13 @@ docstring-code-format = true
 
 [tool.ruff.lint.isort]
 known-third-party = ["wandb"]
+
+
+# TODO: remove this when actually cleaned up
+[tool.ruff.lint.per-file-ignores]
+"spd/clustering/experiments/*" = [
+    "E703", # semicolons fine for notebooks
+]
 
 [tool.pyright]
 include = ["spd", "tests"]

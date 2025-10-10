@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "merge_config": {
     "activation_threshold": 0.01,
     "alpha": 1,
@@ -12,6 +13,18 @@
   "experiment_key": "resid_mlp1",
   "distances_method": "perm_invariant_hamming",
   "n_batches": 8,
+=======
+  "activation_threshold": 0.01,
+  "alpha": 1,
+  "iters": 140,
+  "merge_pair_sampling_method": "range",
+  "merge_pair_sampling_kwargs": {"threshold": 0.05},
+  "pop_component_prob": 0,
+  "filter_dead_threshold": 0.01,
+  "module_name_filter": null,
+  "experiment_key": "resid_mlp1",
+  "n_batches": 4,
+>>>>>>> chinyemba/feature/clustering-sjcs
   "batch_size": 1024,
   "wandb_enabled": true,
   "wandb_project": "spd-cluster",

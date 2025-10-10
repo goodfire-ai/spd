@@ -1,10 +1,16 @@
 from typing import Literal
 
 import torch
+<<<<<<< HEAD
 from jaxtyping import Float
 from torch import Tensor
 
 StatsKey = Literal[
+=======
+from torch import Tensor
+
+StatsKeys = Literal[
+>>>>>>> chinyemba/feature/clustering-sjcs
     "mean",
     "std",
     "median",
@@ -31,11 +37,19 @@ def _flatten_if_needed(x: Tensor) -> Tensor:
 
 def _approx_quantile(
     x: Tensor,
+<<<<<<< HEAD
     qs: Float[Tensor, " n_quantiles"],
     *,
     max_elems: int = 5_000_000,
     generator: torch.Generator | None = None,
 ) -> Float[Tensor, " n_quantiles"]:
+=======
+    qs: Tensor,
+    *,
+    max_elems: int = 5_000_000,
+    generator: torch.Generator | None = None,
+) -> Tensor:
+>>>>>>> chinyemba/feature/clustering-sjcs
     """Approximate quantiles by subsampling if needed, else exact.
 
     If x.numel() > max_elems, draws a random subset of size max_elems (with replacement)
@@ -57,12 +71,19 @@ def _approx_quantile(
     return q
 
 
+<<<<<<< HEAD
 def _exact_quantile_all_at_once(
     x: Tensor, qs: Float[Tensor, " n_quantiles"]
 ) -> Float[Tensor, " n_quantiles"]:
     """Exact quantiles without repeated sorts."""
     x1d: Tensor = _flatten_if_needed(x)
     q: Float[Tensor, " n_quantiles"] = torch.quantile(x1d, qs, interpolation="linear")
+=======
+def _exact_quantile_all_at_once(x: Tensor, qs: Tensor) -> Tensor:
+    """Exact quantiles without repeated sorts."""
+    x1d: Tensor = _flatten_if_needed(x)
+    q: Tensor = torch.quantile(x1d, qs, interpolation="linear")
+>>>>>>> chinyemba/feature/clustering-sjcs
     return q
 
 
@@ -72,7 +93,11 @@ def stats_dict(
     approx_if_large: bool = True,
     max_elems_for_quantile: int = 5_000_000,
     rng: torch.Generator | None = None,
+<<<<<<< HEAD
 ) -> dict[StatsKey, float]:
+=======
+) -> dict[StatsKeys, float]:
+>>>>>>> chinyemba/feature/clustering-sjcs
     """summary
 
     Compute common stats plus a set of quantiles. Uses a single quantile() call
@@ -90,7 +115,11 @@ def stats_dict(
         Optional torch generator for reproducible subsampling.
 
     # Returns:
+<<<<<<< HEAD
      - `dict[StatsKey, float]`
+=======
+     - `dict[StatsKeys, float]`
+>>>>>>> chinyemba/feature/clustering-sjcs
         Mapping from stat name to Python float.
 
     # Modifies:
@@ -125,14 +154,23 @@ def stats_dict(
 
     # median is a quantile; we can either reuse below or do .median() directly.
     # We will get it from the quantiles call to avoid extra work.
+<<<<<<< HEAD
     q_values: Float[Tensor, " 9"] = torch.tensor(
+=======
+    q_values: Tensor = torch.tensor(
+>>>>>>> chinyemba/feature/clustering-sjcs
         [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99],
         device=xf.device,
         dtype=xf.dtype,
     )
+<<<<<<< HEAD
     qs_all: Float[Tensor, " 9"]
     if approx_if_large:
         qs_all = _approx_quantile(
+=======
+    if approx_if_large:
+        qs_all: Tensor = _approx_quantile(
+>>>>>>> chinyemba/feature/clustering-sjcs
             xf,
             q_values,
             max_elems=max_elems_for_quantile,
@@ -141,7 +179,11 @@ def stats_dict(
     else:
         qs_all = _exact_quantile_all_at_once(xf, q_values)
 
+<<<<<<< HEAD
     out: dict[StatsKey, float] = {
+=======
+    out: dict[StatsKeys, float] = {
+>>>>>>> chinyemba/feature/clustering-sjcs
         "mean": float(mean.item()),
         "std": float(std.item()),
         "median": float(qs_all[4].item()),  # median is at index 4

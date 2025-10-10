@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+<<<<<<< HEAD
 import tomllib
 import warnings
 from pathlib import Path
@@ -12,6 +13,16 @@ from muutils.misc.numerical import shorten_numerical_to_str
 from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from spd.clustering.consts import DistancesMethod
+=======
+import warnings
+from pathlib import Path
+from typing import Any, Literal, Self, override
+
+import yaml
+from muutils.misc.numerical import shorten_numerical_to_str
+from pydantic import Field, PositiveInt, model_validator
+
+>>>>>>> chinyemba/feature/clustering-sjcs
 from spd.clustering.merge_config import MergeConfig
 from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
 from spd.spd_types import TaskName
@@ -37,6 +48,7 @@ _DEFAULT_INTERVALS: IntervalsDict = {
 }
 
 
+<<<<<<< HEAD
 def toml_read_file_with_none(path: Path, null_sentinel: str = "__NULL__") -> dict[str, Any]:
     """Read a TOML file and recursively convert sentinel values to None.
 
@@ -78,6 +90,15 @@ class ClusteringRunConfig(BaseModel):
         description="Merge configuration",
     )
 
+=======
+class MergeRunConfig(MergeConfig):
+    """Configuration for a complete merge clustering run.
+
+    Extends MergeConfig with parameters for model, dataset, and batch configuration.
+    CLI-only parameters (base_path, devices, max_concurrency) are intentionally excluded.
+    """
+
+>>>>>>> chinyemba/feature/clustering-sjcs
     model_path: str = Field(
         description="WandB path to the model (format: wandb:entity/project/run_id)",
     )
@@ -96,6 +117,7 @@ class ClusteringRunConfig(BaseModel):
         default=64,
         description="Size of each batch for processing",
     )
+<<<<<<< HEAD
     distances_method: DistancesMethod = Field(
         default="perm_invariant_hamming",
         description="Method to use for computing distances between clusterings",
@@ -120,6 +142,8 @@ class ClusteringRunConfig(BaseModel):
         default_factory=lambda: ["cpu"],
         description="Devices to use for clustering",
     )
+=======
+>>>>>>> chinyemba/feature/clustering-sjcs
 
     # WandB configuration
     wandb_enabled: bool = Field(
@@ -165,6 +189,7 @@ class ClusteringRunConfig(BaseModel):
 
         return self
 
+<<<<<<< HEAD
     @model_validator(mode="after")
     def validate_streaming_compatibility(self) -> Self:
         """Ensure dataset_streaming is only enabled for compatible tasks."""
@@ -174,6 +199,8 @@ class ClusteringRunConfig(BaseModel):
             )
         return self
 
+=======
+>>>>>>> chinyemba/feature/clustering-sjcs
     @property
     def wandb_decomp_model(self) -> str:
         """Extract the WandB run ID of the source decomposition from the model_path
@@ -195,25 +222,40 @@ class ClusteringRunConfig(BaseModel):
     @property
     def _iters_str(self) -> str:
         """Shortened string representation of iterations for run ID"""
+<<<<<<< HEAD
         if self.merge_config.iters is None:
             return "_auto"
         return shorten_numerical_to_str(self.merge_config.iters)
 
     @property
+=======
+        return shorten_numerical_to_str(self.iters)
+
+    @property
+    @override
+>>>>>>> chinyemba/feature/clustering-sjcs
     def config_identifier(self) -> str:
         """Unique identifier for this specific config on this specific model.
 
         Format: model_abc123-a0.1-i1k-b64-n10-h_12ab
         Allows filtering in WandB for all runs with this exact config and model.
         """
+<<<<<<< HEAD
         return f"task_{self.task_name}-w_{self.wandb_decomp_model}-a{self.merge_config.alpha:g}-i{self._iters_str}-b{self.batch_size}-n{self.n_batches}-h_{self.stable_hash}"
 
     @property
+=======
+        return f"task_{self.task_name}-w_{self.wandb_decomp_model}-a{self.alpha:g}-i{self._iters_str}-b{self.batch_size}-n{self.n_batches}-h_{self.stable_hash}"
+
+    @property
+    @override
+>>>>>>> chinyemba/feature/clustering-sjcs
     def stable_hash(self) -> str:
         """Generate a stable hash including all config parameters."""
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
 
     @classmethod
+<<<<<<< HEAD
     def read(cls, path: Path) -> "ClusteringRunConfig":
         """Load config from JSON, YAML, or TOML file.
 
@@ -235,6 +277,22 @@ class ClusteringRunConfig(BaseModel):
             raise ValueError(
                 f"Unsupported file extension '{path.suffix}' on file '{path}' -- must be .json, .yaml, .yml, or .toml"
             )
+=======
+    def from_file(cls, path: Path) -> "MergeRunConfig":
+        """Load config from JSON or YAML file.
+
+        Handles legacy spd_exp: model_path format and enforces consistency.
+        """
+        # read the file contents, load them according to extension
+        content: str = path.read_text()
+        data: dict[str, Any]
+        if path.suffix == ".json":
+            data = json.loads(content)
+        elif path.suffix in [".yaml", ".yml"]:
+            data = yaml.safe_load(content)
+        else:
+            raise ValueError(f"Unsupported file extension: {path.suffix}")
+>>>>>>> chinyemba/feature/clustering-sjcs
 
         # if we provide an experiment_key, then:
         # 1. use the `EXPERIMENT_REGISTRY` to fill in model_path and task_name
@@ -261,9 +319,16 @@ class ClusteringRunConfig(BaseModel):
 
         return cls.model_validate(data)
 
+<<<<<<< HEAD
     def save(self, path: Path) -> None:
         """Save config to file (format inferred from extension)."""
         path.parent.mkdir(parents=True, exist_ok=True)
+=======
+    def to_file(self, path: Path) -> None:
+        """Save config to file (format inferred from extension)."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+>>>>>>> chinyemba/feature/clustering-sjcs
         if path.suffix == ".json":
             path.write_text(self.model_dump_json(indent=2))
         elif path.suffix in [".yaml", ".yml"]:
@@ -277,6 +342,13 @@ class ClusteringRunConfig(BaseModel):
         else:
             raise ValueError(f"Unsupported file extension: {path.suffix}")
 
+<<<<<<< HEAD
+=======
+    def to_merge_config(self) -> MergeConfig:
+        """Extract the base MergeConfig from this instance."""
+        return MergeConfig(**{field: getattr(self, field) for field in MergeConfig.model_fields})
+
+>>>>>>> chinyemba/feature/clustering-sjcs
     def model_dump_with_properties(self) -> dict[str, Any]:
         """Serialize config including computed properties for WandB logging."""
         base_dump: dict[str, Any] = self.model_dump()
