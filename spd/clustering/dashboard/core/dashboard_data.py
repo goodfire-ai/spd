@@ -7,7 +7,6 @@ import numpy as np
 from jaxtyping import Float
 
 from spd.clustering.dashboard.core.base import (
-    _SEPARATOR_3,
     ActivationSampleBatch,
     ActivationSampleHash,
     ClusterId,
@@ -63,8 +62,9 @@ class DashboardData:
         cluster_activations: list[Float[np.ndarray, " n_ctx"]],
         cluster_text_hashes: list[TextSampleHash],
         cluster_tokens: list[list[str]],
-        component_activations_storage: dict[str, list[Float[np.ndarray, " n_ctx"]]],
-        component_text_hashes_storage: dict[str, list[TextSampleHash]],
+        # TODO: check this
+        # component_activations_storage: dict[str, list[Float[np.ndarray, " n_ctx"]]],
+        # _component_text_hashes_storage: dict[str, list[TextSampleHash]],
     ) -> None:
         """Build and add a cluster to the dashboard.
 
@@ -110,51 +110,49 @@ class DashboardData:
             components=components_info,
         )
 
+        # TODO: this is wrong
         # Build component-level data
-        component_labels: list[str] = []
+        # component_labels: list[str] = []
 
-        for comp_info in components_info:
-            comp_label: str = comp_info.label
-            component_labels.append(comp_label)
+        # for comp_info in components_info:
+        #     comp_label: str = comp_info.label
+        #     component_labels.append(comp_label)
 
-            # Get stored component activations
-            comp_acts_list: list[Float[np.ndarray, " n_ctx"]] = component_activations_storage.get(
-                comp_label, []
-            )
+        #     # Get stored component activations
+        #     comp_acts_list: list[Float[np.ndarray, " n_ctx"]] = component_activations_storage.get(
+        #         comp_label, []
+        #     )
 
-            if not comp_acts_list:
-                continue
+        #     if not comp_acts_list:
+        #         continue
 
-            # Stack activations
-            # TODO: all this stacking/unstacking is slow, refactor to avoid
-            comp_acts_array: Float[np.ndarray, "n_samples n_ctx"] = np.stack(comp_acts_list)
+        #     # Stack activations
+        #     # TODO: all this stacking/unstacking is slow, refactor to avoid
+        #     comp_acts_array: Float[np.ndarray, "n_samples n_ctx"] = np.stack(comp_acts_list)
 
-            # Compute component statistics
-            # TODO: store this
-            _comp_stats: dict[str, Any] = {
-                "mean": float(np.mean(comp_acts_array)),
-                "max": float(np.max(comp_acts_array)),
-                "min": float(np.min(comp_acts_array)),
-                "median": float(np.median(comp_acts_array)),
-                "n_samples": len(comp_acts_list),
-            }
+        #     # Compute component statistics
+        #     # TODO: store this
+        #     _comp_stats: dict[str, Any] = {
+        #         "mean": float(np.mean(comp_acts_array)),
+        #         "max": float(np.max(comp_acts_array)),
+        #         "min": float(np.min(comp_acts_array)),
+        #         "median": float(np.median(comp_acts_array)),
+        #         "n_samples": len(comp_acts_list),
+        #     }
 
         # Compute component metrics
-        from spd.clustering.dashboard.core.compute_helpers import (
-            compute_component_metrics_from_storage,
-        )
 
-        metrics = compute_component_metrics_from_storage(
-            component_labels=component_labels,
-            component_activations=component_activations_storage,
-        )
+        # metrics = compute_component_metrics_from_storage(
+        #     component_labels=component_labels,
+        #     component_activations=component_activations_storage,
+        # )
 
         # Update cluster_data with component-level data
         from dataclasses import replace
 
         cluster_data = replace(
             cluster_data,
-            component_coactivations=metrics.coactivations if metrics else None,
+            # component_coactivations=metrics.coactivations if metrics else None,
         )
 
         # Add cluster-level activations to global storage
@@ -167,46 +165,47 @@ class DashboardData:
             self._text_hashes_list.append(text_hash)
             self._current_idx += 1
 
+        # TODO: add component level activations via hashes
         # Add component-level activations to global storage
-        if cluster_data.component_activations:
-            # Track hashes and indices for each component
-            component_hashes_map: dict[str, list[ActivationSampleHash]] = {}
-            component_indices_map: dict[str, list[int]] = {}
+        # if cluster_data.component_activations:
+        #     # Track hashes and indices for each component
+        #     component_hashes_map: dict[str, list[ActivationSampleHash]] = {}
+        #     component_indices_map: dict[str, list[int]] = {}
 
-            for comp_label in cluster_data.component_activations:
-                comp_acts_list = component_activations_storage.get(comp_label, [])
-                comp_text_hashes = component_text_hashes_storage.get(comp_label, [])
+        #     for comp_label in cluster_data.component_activations:
+        #         comp_acts_list = component_activations_storage.get(comp_label, [])
+        #         comp_text_hashes = component_text_hashes_storage.get(comp_label, [])
 
-                if not comp_acts_list:
-                    continue
+        #         if not comp_acts_list:
+        #             continue
 
-                comp_acts_stacked: Float[np.ndarray, "n_samples n_ctx"] = np.stack(comp_acts_list)
+        #         comp_acts_stacked: Float[np.ndarray, "n_samples n_ctx"] = np.stack(comp_acts_list)
 
-                # Collect hashes and indices for this component
-                comp_hashes: list[ActivationSampleHash] = []
-                comp_indices: list[int] = []
+        #         # Collect hashes and indices for this component
+        #         comp_hashes: list[ActivationSampleHash] = []
+        #         comp_indices: list[int] = []
 
-                for text_hash, comp_acts in zip(comp_text_hashes, comp_acts_stacked, strict=True):
-                    comp_act_hash = ActivationSampleHash(
-                        f"{cluster_hash}{_SEPARATOR_3}{comp_label}{_SEPARATOR_3}{text_hash}"
-                    )
-                    self._activations_map[comp_act_hash] = self._current_idx
-                    self._activations_list.append(comp_acts)
-                    self._text_hashes_list.append(text_hash)
+        #         for text_hash, comp_acts in zip(comp_text_hashes, comp_acts_stacked, strict=True):
+        #             comp_act_hash = ActivationSampleHash(
+        #                 f"{cluster_hash}{_SEPARATOR_3}{comp_label}{_SEPARATOR_3}{text_hash}"
+        #             )
+        #             self._activations_map[comp_act_hash] = self._current_idx
+        #             self._activations_list.append(comp_acts)
+        #             self._text_hashes_list.append(text_hash)
 
-                    # TODO: add hashes of subcomponent activations?
-                    comp_hashes.append(comp_act_hash)
-                    comp_indices.append(self._current_idx)
+        #             # TODO: add hashes of subcomponent activations?
+        #             comp_hashes.append(comp_act_hash)
+        #             comp_indices.append(self._current_idx)
 
-                    self._current_idx += 1
+        #             self._current_idx += 1
 
-                component_hashes_map[comp_label] = comp_hashes
-                component_indices_map[comp_label] = comp_indices
+        #         component_hashes_map[comp_label] = comp_hashes
+        #         component_indices_map[comp_label] = comp_indices
 
-            # Update cluster_data with populated component data
-            cluster_data = replace(
-                cluster_data,  # TODO: why `replace()` here?
-            )
+        #     # Update cluster_data with populated component data
+        #     cluster_data = replace(
+        #         cluster_data,  # TODO: why `replace()` here?
+        #     )
 
         # Store cluster (now with populated component activation data)
         self.clusters[cluster_hash] = cluster_data
