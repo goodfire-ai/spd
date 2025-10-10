@@ -46,7 +46,7 @@ class TestAttachVocabArr:
         """Test vocab_arr has bytes dtype."""
         attach_vocab_arr(tokenizer)
         # Should be a fixed-length bytes string (S<length>)
-        assert tokenizer.vocab_arr.dtype.kind == "S"
+        assert tokenizer.vocab_arr.dtype.kind == "U"
 
     def test_vocab_arr_matches_convert_ids_to_tokens(self, tokenizer: PreTrainedTokenizer):
         """Test that vocab_arr entries match convert_ids_to_tokens."""
@@ -55,7 +55,7 @@ class TestAttachVocabArr:
         # Test first 100 tokens
         for token_id in range(min(100, tokenizer.vocab_size)):
             expected = tokenizer.convert_ids_to_tokens(token_id)
-            actual = tokenizer.vocab_arr[token_id].decode("utf-8")
+            actual = tokenizer.vocab_arr[token_id]
             assert actual == expected, f"Mismatch at token_id={token_id}"
 
     def test_vocab_arr_all_tokens_retrievable(self, tokenizer: PreTrainedTokenizer):
@@ -69,7 +69,7 @@ class TestAttachVocabArr:
         for token_id in sample_ids:
             # Convert numpy int to Python int
             expected = tokenizer.convert_ids_to_tokens(int(token_id))
-            actual = tokenizer.vocab_arr[token_id].decode("utf-8")
+            actual = tokenizer.vocab_arr[token_id]
             assert actual == expected
 
     def test_idempotent(self, tokenizer: PreTrainedTokenizer):
@@ -103,7 +103,7 @@ class TestSimpleBatchDecode:
         assert result.shape == batch.shape
 
         # Check dtype is bytes
-        assert result.dtype.kind == "S"
+        assert result.dtype.kind == "U"
 
     def test_matches_convert_ids_to_tokens(self, tokenizer_with_vocab: PreTrainedTokenizer):
         """Test that output matches tokenizer.convert_ids_to_tokens."""
@@ -116,7 +116,7 @@ class TestSimpleBatchDecode:
             for j, token_id in enumerate(seq):
                 # Convert numpy int to Python int
                 expected = tokenizer_with_vocab.convert_ids_to_tokens(int(token_id))
-                actual = result[i, j].decode("utf-8")
+                actual = result[i, j]
                 assert actual == expected
 
     def test_with_random_batches(self, tokenizer_with_vocab: PreTrainedTokenizer):
@@ -136,7 +136,7 @@ class TestSimpleBatchDecode:
                 for j in range(min(3, seq_len)):
                     # Convert numpy int to Python int
                     expected = tokenizer_with_vocab.convert_ids_to_tokens(int(batch[i, j]))
-                    actual = result[i, j].decode("utf-8")
+                    actual = result[i, j]
                     assert actual == expected
 
     def test_with_torch_tensor(self, tokenizer_with_vocab: PreTrainedTokenizer):
@@ -173,7 +173,7 @@ class TestSimpleBatchDecode:
 
             for i, token_id in enumerate(special_ids):
                 expected = tokenizer_with_vocab.convert_ids_to_tokens(token_id)
-                actual = result[0, i].decode("utf-8")
+                actual = result[0, i]
                 assert actual == expected
 
 
@@ -194,7 +194,7 @@ class TestRoundTripping:
         expected_tokens = tokenizer_with_vocab.convert_ids_to_tokens(token_ids[0])
 
         for i, expected in enumerate(expected_tokens):
-            actual = decoded_tokens[0, i].decode("utf-8")
+            actual = decoded_tokens[0, i]
             assert actual == expected
 
     def test_batch_encode_decode(self, tokenizer_with_vocab: PreTrainedTokenizer):
@@ -219,7 +219,7 @@ class TestRoundTripping:
         for i, token_seq in enumerate(token_ids):
             expected_tokens = tokenizer_with_vocab.convert_ids_to_tokens(list(token_seq))
             for j, expected in enumerate(expected_tokens):
-                actual = decoded_tokens[i, j].decode("utf-8")
+                actual = decoded_tokens[i, j]
                 assert actual == expected
 
 
