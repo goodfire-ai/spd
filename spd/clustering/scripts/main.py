@@ -43,6 +43,11 @@ def cli() -> None:
         default=1,
         help="Maximum number of concurrent clustering processes per device (default: 1)",
     )
+    parser.add_argument(
+        "--dataset-streaming",
+        action="store_true",
+        help="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
+    )
     args: argparse.Namespace = parser.parse_args()
 
     logger.info("Starting clustering pipeline")
@@ -66,6 +71,7 @@ def cli() -> None:
     config.base_path = args.base_path
     config.devices = devices
     config.workers_per_device = args.workers_per_device
+    config.dataset_streaming = args.dataset_streaming
 
     logger.info(f"Configuration loaded: {config.config_identifier}")
     logger.info(f"Base path: {config.base_path}")
