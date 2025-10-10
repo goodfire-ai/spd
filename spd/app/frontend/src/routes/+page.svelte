@@ -10,7 +10,6 @@
     import InterventionsTab from "$lib/components/InterventionsTab.svelte";
 
     let loadingStatus: boolean = true;
-
     let trainWandbRunId: string | null = null;
     let loadingTrainRun: boolean = false;
 
@@ -22,7 +21,6 @@
     let loadingClusterRun: boolean = false;
 
     async function loadStatus() {
-        loadingStatus = true;
         console.log("getting status");
         status = await api.getStatus();
         loadingStatus = false;
@@ -32,15 +30,11 @@
             return;
         }
 
-        trainWandbRunId = status.train_run.wandb_path.split("/").pop()!;
-        availableClusterRuns = status.train_run.available_cluster_runs;
-
         if (status.cluster_run) {
             clusterWandbRunPath = status.cluster_run.wandb_path;
         }
     }
     
-    setInterval(loadStatus, 3000);
 
     async function loadRun() {
         if (!trainWandbRunId?.trim()) return;
@@ -75,6 +69,7 @@
 
     onMount(() => {
         loadStatus();
+        setInterval(loadStatus, 5000);
     });
 
     let activeTab: "ablation" | "activation-contexts" | "cluster-dashboard" | null = null;
