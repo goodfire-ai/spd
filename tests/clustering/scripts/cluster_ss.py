@@ -1,4 +1,5 @@
 # %%
+import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -33,20 +34,15 @@ TIMER_RECORDS: list[tuple[str, float]] = list()
 
 class TimerContext:
     def __init__(self, message: str):
-        self.message = message
-        self.start_time = None
-        self.end_time = None
+        self.message: str = message
+        self.start_time: float
 
     def __enter__(self):
         print(f"[TIMER START] {self.message}")
-        self.start_time = torch.cuda.Event(enable_timing=True)
-        self.end_time = torch.cuda.Event(enable_timing=True)
-        self.start_time.record()
+        self.start_time = time.perf_counter()
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.end_time.record()
-        torch.cuda.synchronize()
-        elapsed_time = self.start_time.elapsed_time(self.end_time) / 1000.0
+    def __exit__(self, exc_type, exc_value, traceback):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
+        elapsed_time: float = time.perf_counter() - self.start_time
         TIMER_RECORDS.append((self.message, elapsed_time))
         print(f"[TIMER   END] {self.message} - Elapsed time: {elapsed_time:.2f} seconds")
 
