@@ -27,9 +27,6 @@ TEMP_DIR: Path = Path(
 )  # save to an actual dir that is gitignored, so users can view plots
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-TIMER_RECORDS: list[tuple[str, float]] = list()
-
-
 # magic autoreload
 # %load_ext autoreload
 # %autoreload 2
@@ -129,7 +126,6 @@ ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=HISTORIES)
 # Compute and plot distances
 # ============================================================
 DISTANCES = ENSEMBLE.get_distances()
-
 
 plot_dists_distribution(
     distances=DISTANCES,
