@@ -87,7 +87,6 @@ def test_clustering_with_simplestories_config():
             "spd-cluster",
             "--config",
             str(config_path),
-            "--dataset-streaming",  # see https://github.com/goodfire-ai/spd/pull/199
         ],
         capture_output=True,
         text=True,

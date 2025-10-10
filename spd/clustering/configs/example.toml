@@ -1,7 +1,7 @@
 # Example MergeRunConfig in TOML format
 
 # Run configuration
-model_path = "wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh"  # WandB path to the decomposed model
+model_path = "wandb:goodfire/spd/runs/ioprgffh"  # WandB path to the decomposed model
 task_name = "lm"  # Task name (must be explicit: tms, resid_mlp, lm, ih)
 # experiment_key = "tms_5-2"  # Alternative: use experiment key from EXPERIMENT_REGISTRY
 n_batches = 10  # Ensemble size

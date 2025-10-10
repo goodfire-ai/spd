@@ -2,7 +2,6 @@
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -19,9 +18,9 @@ from spd.clustering.consts import ActivationsTensor, ClusterCoactivationShaped, 
 
 def plot_activations(
     processed_activations: ProcessedActivations,
-    save_dir: Path,
+    save_dir: Path | None,
     n_samples_max: int,
-    figure_prefix: str = "activations",
+    pdf_prefix: str = "activations",
     figsize_raw: tuple[int, int] = (12, 4),
     figsize_concat: tuple[int, int] = (12, 2),
     figsize_coact: tuple[int, int] = (8, 6),
@@ -29,7 +28,6 @@ def plot_activations(
     hist_bins: int = 100,
     do_sorted_samples: bool = False,
     wandb_run: wandb.sdk.wandb_run.Run | None = None,
-    save_fmt: Literal["pdf", "png", "svg"] = "pdf",
 ) -> None:
     """Plot activation visualizations including raw, concatenated, sorted, and coactivations.
 
@@ -38,15 +36,16 @@ def plot_activations(
         act_concat: Concatenated activations tensor
         coact: Coactivation matrix
         labels: Component labels
-        save_dir: The directory to save the plots to
-        figure_prefix: Prefix for figure filenames
+        save_dir: The directory to save the plots to (None to skip saving to disk)
+        pdf_prefix: Prefix for PDF filenames
         figsize_raw: Figure size for raw activations
         figsize_concat: Figure size for concatenated activations
         figsize_coact: Figure size for coactivations
         hist_scales: Tuple of (x_scale, y_scale) where each is "lin" or "log"
         hist_bins: Number of bins for histograms
     """
-    save_dir.mkdir(parents=True, exist_ok=True)
+    if save_dir is not None:
+        save_dir.mkdir(parents=True, exist_ok=True)
 
     act_dict: dict[str, ActivationsTensor] = processed_activations.activations_raw
     act_concat: ActivationsTensor = processed_activations.activations
@@ -79,8 +78,9 @@ def plot_activations(
         axs_act[i].set_ylabel(f"components\n{key}")
         axs_act[i].set_title(f"Raw Activations: {key} (shape: {act_raw_data.shape})")
 
-    fig1_fname = save_dir / f"{figure_prefix}_raw.{save_fmt}"
-    _fig1.savefig(fig1_fname, bbox_inches="tight", dpi=300)
+    if save_dir is not None:
+        fig1_fname = save_dir / f"{pdf_prefix}_raw.pdf"
+        _fig1.savefig(fig1_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -102,8 +102,9 @@ def plot_activations(
 
     plt.colorbar(im2)
 
-    fig2_fname: Path = save_dir / f"{figure_prefix}_concatenated.{save_fmt}"
-    fig2.savefig(fig2_fname, bbox_inches="tight", dpi=300)
+    if save_dir is not None:
+        fig2_fname: Path = save_dir / f"{pdf_prefix}_concatenated.pdf"
+        fig2.savefig(fig2_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -171,8 +172,9 @@ def plot_activations(
 
         plt.colorbar(im3)
 
-        fig3_fname: Path = save_dir / f"{figure_prefix}_concatenated_sorted.{save_fmt}"
-        fig3.savefig(fig3_fname, bbox_inches="tight", dpi=300)
+        if save_dir is not None:
+            fig3_fname: Path = save_dir / f"{pdf_prefix}_concatenated_sorted.pdf"
+            fig3.savefig(fig3_fname, bbox_inches="tight", dpi=300)
 
         # Log to WandB if available
         if wandb_run is not None:
@@ -195,8 +197,9 @@ def plot_activations(
 
     plt.colorbar(im4)
 
-    fig4_fname: Path = save_dir / f"{figure_prefix}_coactivations.{save_fmt}"
-    fig4.savefig(fig4_fname, bbox_inches="tight", dpi=300)
+    if save_dir is not None:
+        fig4_fname: Path = save_dir / f"{pdf_prefix}_coactivations.pdf"
+        fig4.savefig(fig4_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -219,8 +222,9 @@ def plot_activations(
     add_component_labeling(ax4_log, labels, axis="x")
     add_component_labeling(ax4_log, labels, axis="y")
     plt.colorbar(im4_log)
-    fig4_log_fname: Path = save_dir / f"{figure_prefix}_coactivations_log.{save_fmt}"
-    fig4_log.savefig(fig4_log_fname, bbox_inches="tight", dpi=300)
+    if save_dir is not None:
+        fig4_log_fname: Path = save_dir / f"{pdf_prefix}_coactivations_log.pdf"
+        fig4_log.savefig(fig4_log_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
     if wandb_run is not None:
@@ -314,8 +318,9 @@ def plot_activations(
 
     plt.tight_layout()
 
-    fig5_fname: Path = save_dir / f"{figure_prefix}_histograms.{save_fmt}"
-    fig5.savefig(fig5_fname, bbox_inches="tight", dpi=300)
+    if save_dir is not None:
+        fig5_fname: Path = save_dir / f"{pdf_prefix}_histograms.pdf"
+        fig5.savefig(fig5_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
     if wandb_run is not None:

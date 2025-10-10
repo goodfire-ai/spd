@@ -44,7 +44,7 @@ dev = [
 
 [project.scripts]
 spd-run = "spd.scripts.run:cli"
-spd-cluster = "spd.clustering.scripts.main:cli"
+spd-cluster = "spd.clustering.scripts.run:cli"
 
 [build-system]
 requires = ["setuptools", "wheel"]

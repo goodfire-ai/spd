@@ -3,10 +3,10 @@ from typing import Literal, Self
 from pydantic import Field, NonNegativeInt, PositiveInt, model_validator
 
 from spd.spd_types import Probability
-from spd.utils.general_utils import BaseModel
+from spd.utils.general_utils import BaseConfig
 
 
-class TMSModelConfig(BaseModel):
+class TMSModelConfig(BaseConfig):
     n_features: PositiveInt
     n_hidden: PositiveInt
     n_hidden_layers: NonNegativeInt
@@ -15,7 +15,7 @@ class TMSModelConfig(BaseModel):
     device: str
 
 
-class TMSTrainConfig(BaseModel):
+class TMSTrainConfig(BaseConfig):
     wandb_project: str | None = None  # The name of the wandb project (if None, don't log to wandb)
     tms_model_config: TMSModelConfig
     feature_probability: float
@@ -43,7 +43,7 @@ class TMSTrainConfig(BaseModel):
         return self
 
 
-class TMSTaskConfig(BaseModel):
+class TMSTaskConfig(BaseConfig):
     task_name: Literal["tms"] = Field(
         default="tms",
         description="Task identifier for TMS",
