@@ -63,17 +63,7 @@ def get_cosine_schedule_value(
     elif current_frac_of_training >= schedule.end_frac:
         return schedule.end_value
     else:
-        return schedule.start_value + (schedule.end_value - schedule.start_value) * (
-            0.5
-            * (
-                1
-                - cos(
-                    pi
-                    * (current_frac_of_training - schedule.start_frac)
-                    / (schedule.end_frac - schedule.start_frac)
-                )
-            )
-        )
+        return schedule.end_value + 0.5 * (schedule.start_value - schedule.end_value) * (1 + cos(pi * current_frac_of_training))
 
 
 def get_loss_coeff(

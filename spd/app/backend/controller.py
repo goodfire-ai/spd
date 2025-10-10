@@ -45,7 +45,7 @@ subcomponent_activations_context_service = SubcomponentActivationContextsService
     run_context_service
 )
 # component_activation_contexts_service = ComponentActivationContextsService(run_context_service)
-ablation_service = AblationService(run_context_service, component_activation_contexts_service)
+ablation_service = AblationService(run_context_service)
 geometry_service = GeometryService(run_context_service)
 
 
