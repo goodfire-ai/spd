@@ -1,3 +1,4 @@
+from math import cos, pi
 from typing import Literal
 
 import torch
@@ -8,8 +9,10 @@ from spd.configs import (
     CIMaskedReconLayerwiseLossTrainConfig,
     CIMaskedReconLossTrainConfig,
     CIMaskedReconSubsetLossTrainConfig,
+    CosineSchedule,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
+    LinearSchedule,
     PGDReconLayerwiseLossTrainConfig,
     PGDReconLossTrainConfig,
     PGDReconSubsetLossTrainConfig,
@@ -35,6 +38,55 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
 )
 from spd.models.component_model import ComponentModel
+
+
+def get_linear_schedule_value(
+    schedule: LinearSchedule,
+    current_frac_of_training: float,
+) -> float:
+    if current_frac_of_training < schedule.start_frac:
+        return schedule.start_value
+    elif current_frac_of_training >= schedule.end_frac:
+        return schedule.end_value
+    else:
+        return schedule.start_value + (schedule.end_value - schedule.start_value) * (
+            current_frac_of_training - schedule.start_frac
+        ) / (schedule.end_frac - schedule.start_frac)
+
+
+def get_cosine_schedule_value(
+    schedule: CosineSchedule,
+    current_frac_of_training: float,
+) -> float:
+    if current_frac_of_training < schedule.start_frac:
+        return schedule.start_value
+    elif current_frac_of_training >= schedule.end_frac:
+        return schedule.end_value
+    else:
+        return schedule.start_value + (schedule.end_value - schedule.start_value) * (
+            0.5
+            * (
+                1
+                + cos(
+                    pi
+                    * (current_frac_of_training - schedule.start_frac)
+                    / (schedule.end_frac - schedule.start_frac)
+                )
+            )
+        )
+
+
+def get_loss_coeff(
+    coeff: LinearSchedule | CosineSchedule | float | int,
+    current_frac_of_training: float,
+) -> float:
+    match coeff:
+        case LinearSchedule():
+            return get_linear_schedule_value(coeff, current_frac_of_training)
+        case CosineSchedule():
+            return get_cosine_schedule_value(coeff, current_frac_of_training)
+        case float() | int():
+            return coeff
 
 
 def compute_total_loss(
@@ -172,7 +224,8 @@ def compute_total_loss(
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
         terms[cfg.classname] = loss.item()
-        total = total + cfg.coeff * loss
+        coeff = get_loss_coeff(cfg.coeff, current_frac_of_training)
+        total = total + coeff * loss
 
     terms["total"] = total.item()
 

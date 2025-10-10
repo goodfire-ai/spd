@@ -24,12 +24,24 @@ from spd.utils.general_utils import BaseModel
 
 
 #### Metrics that can be used in training (or eval) ####
-class TrainMetricConfig(BaseModel):
-    coeff: float | None = Field(
-        default=None,
-        description="Loss coefficient. Used when metric is in loss_metric_configs.",
-    )
+class LinearSchedule(BaseModel):
+    start_value: float
+    end_value: float
+    start_frac: float
+    end_frac: float
 
+
+class CosineSchedule(BaseModel):
+    start_value: float
+    end_value: float
+    start_frac: float
+    end_frac: float
+
+class TrainMetricConfig(BaseModel):
+    coeff: LinearSchedule | CosineSchedule | None = Field(
+        default=None,
+        description="Loss coefficient or coefficient schedule. Used when metric is in loss_metric_configs.",
+    )
 
 class FaithfulnessLossTrainConfig(TrainMetricConfig):
     classname: Literal["FaithfulnessLoss"] = "FaithfulnessLoss"
@@ -68,6 +80,7 @@ class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
 
 
+
 PGDInitStrategy = Literal["random", "ones", "zeroes"]
 
 MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
@@ -80,20 +93,19 @@ class PGDConfig(BaseModel):
     mask_scope: MaskScope
 
 
-class PGDReconTrainConfig(TrainMetricConfig):
+class PGDReconLossTrainConfig(TrainMetricConfig):
+    classname: Literal["PGDReconLoss"] = "PGDReconLoss"
     pgd_config: PGDConfig
 
 
-class PGDReconLossTrainConfig(PGDReconTrainConfig):
-    classname: Literal["PGDReconLoss"] = "PGDReconLoss"
-
-
-class PGDReconLayerwiseLossTrainConfig(PGDReconTrainConfig):
+class PGDReconLayerwiseLossTrainConfig(TrainMetricConfig):
     classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
+    pgd_config: PGDConfig
 
 
-class PGDReconSubsetLossTrainConfig(PGDReconTrainConfig):
+class PGDReconSubsetLossTrainConfig(TrainMetricConfig):
     classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
+    pgd_config: PGDConfig
 
 
 class StochasticHiddenActsReconLossConfig(TrainMetricConfig):
