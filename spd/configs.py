@@ -25,6 +25,7 @@ from spd.utils.general_utils import BaseModel
 
 #### Metrics that can be used in training (or eval) ####
 class LinearSchedule(BaseModel):
+    type: Literal["linear"] = "linear"
     start_value: float
     end_value: float
     start_frac: float
@@ -32,14 +33,18 @@ class LinearSchedule(BaseModel):
 
 
 class CosineSchedule(BaseModel):
+    type: Literal["cosine"] = "cosine"
     start_value: float
     end_value: float
     start_frac: float
     end_frac: float
 
 
+CoeffSchedule = Annotated[LinearSchedule | CosineSchedule, Field(discriminator="type")]
+
+
 class TrainMetricConfig(BaseModel):
-    coeff: float | LinearSchedule | CosineSchedule | None = Field(
+    coeff: float | CoeffSchedule | None = Field(
         default=None,
         description="Loss coefficient or coefficient schedule. Used when metric is in loss_metric_configs.",
     )
@@ -80,7 +85,6 @@ class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
 
 class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
-
 
 
 PGDInitStrategy = Literal["random", "ones", "zeroes"]
