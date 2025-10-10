@@ -22,7 +22,8 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 
 
 def split_dataset(
-    config: ClusteringRunConfig, **kwargs: dict[str, Any]
+    config: ClusteringRunConfig,
+    **kwargs: Any,
 ) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
     """Split a dataset into n_batches of batch_size, returning iterator and config"""
     ds: Generator[BatchTensor, None, None]

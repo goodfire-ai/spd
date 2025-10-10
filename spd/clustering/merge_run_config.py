@@ -165,6 +165,15 @@ class ClusteringRunConfig(BaseModel):
 
         return self
 
+    @model_validator(mode="after")
+    def validate_streaming_compatibility(self) -> Self:
+        """Ensure dataset_streaming is only enabled for compatible tasks."""
+        if self.dataset_streaming and self.task_name != "lm":
+            raise ValueError(
+                f"Streaming dataset loading only supported for 'lm' task, got '{self.task_name}'"
+            )
+        return self
+
     @property
     def wandb_decomp_model(self) -> str:
         """Extract the WandB run ID of the source decomposition from the model_path

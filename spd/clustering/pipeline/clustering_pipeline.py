@@ -50,7 +50,9 @@ def main(config: ClusteringRunConfig) -> None:
     if config.dataset_streaming:
         logger.info("Using streaming dataset loading")
         split_dataset_kwargs["config_kwargs"] = dict(streaming=True)
-        assert config.task_name == "lm", "Streaming dataset loading only supported for 'lm' task"
+        assert config.task_name == "lm", (
+            f"Streaming dataset loading only supported for 'lm' task, got '{config.task_name = }'. Remove dataset_streaming=True from config or use a different task."
+        )
     batches: Iterator[BatchTensor]
     dataset_config: dict[str, Any]
     batches, dataset_config = split_dataset(
