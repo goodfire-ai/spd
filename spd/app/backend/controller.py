@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from spd.app.backend.api import (
     ApplyMaskRequest,
     AvailablePrompt,
-    ClusterDashboardResponse,
     CombineMasksRequest,
     CombineMasksResponse,
     ComponentAblationRequest,
