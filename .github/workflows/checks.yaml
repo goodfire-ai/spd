@@ -14,8 +14,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/${{ github.repository }}/ci-mpi:latest
+    # container:
+    #   image: ghcr.io/${{ github.repository }}/ci-mpi:latest
     timeout-minutes: 15
     steps:
       - name: Collect Workflow Telemetry
@@ -23,6 +23,12 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: install MPI
+        run: |
+          apt-get update
+          apt-get install -y -q git make openmpi-bin libopenmpi-dev
+          apt-get clean
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
