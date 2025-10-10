@@ -34,7 +34,7 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 # %%
 # Load model and dataset
 # ============================================================
-MODEL_PATH: str = "wandb:goodfire/spd/runs/ioprgffh"
+MODEL_PATH: str = "wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh"
 
 SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(MODEL_PATH)
 MODEL: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
