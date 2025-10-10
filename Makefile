@@ -1,11 +1,11 @@
 # setup
 .PHONY: install
 install: copy-templates
-	uv sync --no-dev --extra cu128
+	uv sync --no-dev
 
 .PHONY: install-dev
 install-dev: copy-templates
-	uv sync --extra cu128
+	uv sync
 	pre-commit install
 
 
@@ -111,12 +111,3 @@ clustering-dashboard-profile: bundle-dashboard
 	@echo "View with: python -m pstats dashboard.prof"
 	@echo "Or install snakeviz and run: snakeviz dashboard.prof"
 
-
-.PHONY: diskinfo
-diskinfo:
-	echo "### disk"
-	df -h
-	echo "### spd"
-	du -h -d 1
-	echo "spd depth 2"
-	du -h -d 2
