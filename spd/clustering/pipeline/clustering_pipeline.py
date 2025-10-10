@@ -46,11 +46,16 @@ def main(config: ClusteringRunConfig) -> None:
 
     # Split dataset into batches
     logger.info(f"Splitting dataset into {config.n_batches} batches...")
+    split_dataset_kwargs: dict[str, Any] = dict()
+    if config.dataset_streaming:
+        logger.info("Using streaming dataset loading")
+        split_dataset_kwargs["config_kwargs"] = dict(streaming=True)
+        assert config.task_name == "lm", "Streaming dataset loading only supported for 'lm' task"
     batches: Iterator[BatchTensor]
     dataset_config: dict[str, Any]
     batches, dataset_config = split_dataset(
         config=config,
-        config_kwargs=dict(streaming=config.dataset_streaming),
+        **split_dataset_kwargs,
     )
     storage.save_batches(batches=batches, config=dataset_config)
     batch_paths: list[Path] = storage.get_batch_paths()
