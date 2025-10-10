@@ -3,9 +3,10 @@ from unittest.mock import patch
 import torch
 from torch import Tensor
 
+from spd.configs import SamplingType
 from spd.metrics import stochastic_recon_loss
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
-from spd.utils.component_utils import RoutingType, SamplingType
+from spd.utils.component_utils import RoutingType
 from tests.metrics.fixtures import make_one_layer_component_model
 
 
