@@ -345,10 +345,11 @@ export type TokenDensity = {
 };
 
 export type ActivationContextsConfig = {
-    importance_threshold?: number;
-    max_examples_per_subcomponent?: number;
-    n_steps?: number;
-    n_tokens_either_side?: number;
+    importance_threshold: number;
+    max_examples_per_subcomponent: number;
+    n_batches: number;
+    batch_size: number;
+    n_tokens_either_side: number;
 };
 
 export async function getLayerActivationContexts(

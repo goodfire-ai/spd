@@ -8,7 +8,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from spd.app.backend.api import (
-    ActivationContext,
     ApplyMaskRequest,
     AvailablePrompt,
     ClusterDashboardResponse,
@@ -223,8 +222,8 @@ async def get_layer_subcomponent_activation_contexts(
     importance_threshold: float,
     max_examples_per_subcomponent: int,
     n_batches: int,
-    n_tokens_either_side: int,
     batch_size: int,
+    n_tokens_either_side: int,
 ) -> list[SubcomponentActivationContexts]:
     f = subcomponent_activations_context_service.get_layer_subcomponents_activation_contexts
     return await f(
