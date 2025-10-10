@@ -6,7 +6,6 @@ import torch
 from jaxtyping import Int
 from muutils.dbg import dbg_auto
 from torch import Tensor
-from muutils.spinner import SpinnerContext
 
 from spd.clustering.activations import (
     ProcessedActivations,
@@ -35,108 +34,96 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 # %%
 # Load model and dataset
 # ============================================================
-with SpinnerContext(message="Load model"):
-    MODEL_PATH: str = "wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh"
+MODEL_PATH: str = "wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh"
 
-    SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(MODEL_PATH)
-    MODEL: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
-    MODEL.to(DEVICE)
-    SPD_CONFIG = SPD_RUN.config
+SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(MODEL_PATH)
+MODEL: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
+MODEL.to(DEVICE)
+SPD_CONFIG = SPD_RUN.config
 
-    # Use split_dataset with RunConfig to get real data
-    CONFIG: ClusteringRunConfig = ClusteringRunConfig(
-        merge_config=MergeConfig(),
-        model_path=MODEL_PATH,
-        task_name="lm",
-        n_batches=1,
-        batch_size=2,
-    )
-
-with SpinnerContext(message="Load data"):
-    BATCHES, _ = split_dataset(config=CONFIG)
+# Use split_dataset with RunConfig to get real data
+CONFIG: ClusteringRunConfig = ClusteringRunConfig(
+    merge_config=MergeConfig(),
+    model_path=MODEL_PATH,
+    task_name="lm",
+    n_batches=1,
+    batch_size=2,
+)
+BATCHES, _ = split_dataset(config=CONFIG)
 
 # %%
 # Load data batch
 # ============================================================
-with SpinnerContext(message="Load data batch"):
-    DATA_BATCH: Int[Tensor, "batch_size n_ctx"] = next(BATCHES)
+DATA_BATCH: Int[Tensor, "batch_size n_ctx"] = next(BATCHES)
 
 # %%
 # Get component activations
 # ============================================================
-with SpinnerContext(message="Get component activations"):
-    COMPONENT_ACTS: dict[str, Tensor] = component_activations(
-        model=MODEL,
-        batch=DATA_BATCH,
-        device=DEVICE,
-        sigmoid_type="hard",
-    )
+COMPONENT_ACTS: dict[str, Tensor] = component_activations(
+    model=MODEL,
+    batch=DATA_BATCH,
+    device=DEVICE,
+    sigmoid_type="hard",
+)
 
-    _ = dbg_auto(COMPONENT_ACTS)
+_ = dbg_auto(COMPONENT_ACTS)
 # %%
 # Process activations
 # ============================================================
-with SpinnerContext(message="Process activations"):
-    FILTER_DEAD_THRESHOLD: float = 0.001
-    FILTER_MODULES: str = "model.layers.0"
+FILTER_DEAD_THRESHOLD: float = 0.001
+FILTER_MODULES: str = "model.layers.0"
 
-    PROCESSED_ACTIVATIONS: ProcessedActivations = process_activations(
-        activations=COMPONENT_ACTS,
-        filter_dead_threshold=FILTER_DEAD_THRESHOLD,
-        filter_modules=lambda x: x.startswith(FILTER_MODULES),
-        seq_mode="concat",
-    )
+PROCESSED_ACTIVATIONS: ProcessedActivations = process_activations(
+    activations=COMPONENT_ACTS,
+    filter_dead_threshold=FILTER_DEAD_THRESHOLD,
+    filter_modules=lambda x: x.startswith(FILTER_MODULES),
+    seq_mode="concat",
+)
 
-with SpinnerContext(message="Plot activations"):
-
-    plot_activations(
-        processed_activations=PROCESSED_ACTIVATIONS,
-        save_dir=TEMP_DIR,
-        n_samples_max=256,
-        wandb_run=None,
-    )
+plot_activations(
+    processed_activations=PROCESSED_ACTIVATIONS,
+    save_dir=TEMP_DIR,
+    n_samples_max=256,
+    wandb_run=None,
+)
 
 # %%
 # Compute ensemble merge iterations
 # ============================================================
-with SpinnerContext(message="Compute merge iterations"):
-    MERGE_CFG: MergeConfig = MergeConfig(
-        activation_threshold=0.01,
-        alpha=0.01,
-        iters=2,
-        merge_pair_sampling_method="range",
-        merge_pair_sampling_kwargs={"threshold": 0.1},
-        pop_component_prob=0,
-        module_name_filter=FILTER_MODULES,
-        filter_dead_threshold=FILTER_DEAD_THRESHOLD,
+MERGE_CFG: MergeConfig = MergeConfig(
+    activation_threshold=0.01,
+    alpha=0.01,
+    iters=2,
+    merge_pair_sampling_method="range",
+    merge_pair_sampling_kwargs={"threshold": 0.1},
+    pop_component_prob=0,
+    module_name_filter=FILTER_MODULES,
+    filter_dead_threshold=FILTER_DEAD_THRESHOLD,
+)
+
+# Modern approach: run merge_iteration multiple times to create ensemble
+ENSEMBLE_SIZE: int = 2
+HISTORIES: list[MergeHistory] = []
+for i in range(ENSEMBLE_SIZE):
+    HISTORY: MergeHistory = merge_iteration(
+        merge_config=MERGE_CFG,
+        batch_id=f"batch_{i}",
+        activations=PROCESSED_ACTIVATIONS.activations,
+        component_labels=PROCESSED_ACTIVATIONS.labels,
+        log_callback=None,
     )
+    HISTORIES.append(HISTORY)
 
-    # Modern approach: run merge_iteration multiple times to create ensemble
-    ENSEMBLE_SIZE: int = 2
-    HISTORIES: list[MergeHistory] = []
-    for i in range(ENSEMBLE_SIZE):
-        HISTORY: MergeHistory = merge_iteration(
-            merge_config=MERGE_CFG,
-            batch_id=f"batch_{i}",
-            activations=PROCESSED_ACTIVATIONS.activations,
-            component_labels=PROCESSED_ACTIVATIONS.labels,
-            log_callback=None,
-        )
-        HISTORIES.append(HISTORY)
-
-    ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=HISTORIES)
+ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=HISTORIES)
 
 
 # %%
 # Compute and plot distances
 # ============================================================
-with SpinnerContext(message="compute distances"):
-    DISTANCES = ENSEMBLE.get_distances()
+DISTANCES = ENSEMBLE.get_distances()
 
-
-with SpinnerContext(message="plot distances"):
-    plot_dists_distribution(
-        distances=DISTANCES,
-        mode="points",
-    )
-    plt.legend()
+plot_dists_distribution(
+    distances=DISTANCES,
+    mode="points",
+)
+plt.legend()
