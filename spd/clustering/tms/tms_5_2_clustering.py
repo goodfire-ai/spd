@@ -13,7 +13,6 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import torch
-from torch import Tensor
 
 from spd.clustering.activations import ProcessedActivations, process_activations
 from spd.clustering.merge import merge_iteration, merge_iteration_ensemble
@@ -130,7 +129,7 @@ with torch.no_grad():
         sampling="continuous",
     )
 
-print(f"✓ Computed component activations")
+print("✓ Computed component activations")
 
 # ============================================================
 # Process activations
@@ -198,7 +197,7 @@ MERGE_HIST: MergeHistory = merge_iteration(
     plot_callback=_plot_func,
 )
 
-print(f"✓ Clustering completed\n")
+print("✓ Clustering completed\n")
 
 # ============================================================
 # Plot merge history

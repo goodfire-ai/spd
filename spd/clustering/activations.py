@@ -36,7 +36,6 @@ def component_activations(
             sigmoid_type=sigmoid_type,
             sampling="continuous",
             detach_inputs=False,
-            sampling="continuous", 
         )
 
     return causal_importances

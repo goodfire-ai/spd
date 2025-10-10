@@ -1,9 +1,10 @@
 """Dataset for Toy Model of Superposition (TMS) experiments."""
 
+from typing import Literal
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from typing import Optional, Literal
 
 
 class TMSDataset(Dataset):
@@ -19,14 +20,14 @@ class TMSDataset(Dataset):
         feature_probability: float = 0.05,
         device: str = 'cpu',
         calc_labels: bool = False,
-        label_type: Optional[str] = None,
-        act_fn_name: Optional[str] = None,
-        label_fn_seed: Optional[int] = None,
-        label_coeffs: Optional[torch.Tensor] = None,
+        label_type: str | None = None,
+        act_fn_name: str | None = None,
+        label_fn_seed: int | None = None,
+        label_coeffs: torch.Tensor | None = None,
         data_generation_type: Literal['standard', 'clustering'] = 'standard',
         n_samples_per_feature: int = 200,
         n_total_samples: int = 10000,
-        seed: Optional[int] = None
+        seed: int | None = None
     ):
         """
         Initialize TMS dataset.

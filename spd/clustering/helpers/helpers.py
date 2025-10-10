@@ -3,6 +3,7 @@
 import re
 from collections import OrderedDict
 
+
 def locate_original_weights(model):
     """
     Return a dict with:
@@ -24,7 +25,7 @@ def locate_original_weights(model):
     # Collect per-layer original weights
     layer_pat = re.compile(r"^layers\.(\d+)\.(mlp_in|mlp_out)\.original\.weight$")
     layers = OrderedDict()
-    for k in sd.keys():
+    for k in sd:
         m = layer_pat.match(k)
         if m:
             layer_idx = int(m.group(1))
@@ -56,9 +57,9 @@ def summarize_original_weights(weights_dict):
     print(f"[summary] total layer matrices: {n_entries}")
 
 
-import math
+
 import torch
-from typing import Dict, Tuple
+
 
 def _gather_layer_modules_with_components(patched_sd_keys):
     """Return sorted list of module prefixes that have components.U/V."""
@@ -70,7 +71,7 @@ def _gather_layer_modules_with_components(patched_sd_keys):
             mods.add(m.group(1))  # e.g. 'layers.0.mlp_in'
     return sorted(mods, key=lambda s: (int(s.split('.')[1]), s.split('.')[-1]))
 
-def _fetch_uvW_for_module(sd: Dict[str, torch.Tensor], mod_prefix: str) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def _fetch_uvW_for_module(sd: dict[str, torch.Tensor], mod_prefix: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Fetch U, V, and original weight W for a module prefix like 'layers.0.mlp_in'."""
     U = sd[f"{mod_prefix}.components.U"]
     V = sd[f"{mod_prefix}.components.V"]
@@ -91,7 +92,7 @@ def _matmul_candidates(U: torch.Tensor, V: torch.Tensor):
         ("U.T@V.T",  lambda: U.T @ V.T,  U.T.shape, V.T.shape),
     ]
 
-def _choose_reconstruction(U: torch.Tensor, V: torch.Tensor, W: torch.Tensor) -> Tuple[str, torch.Tensor, float]:
+def _choose_reconstruction(U: torch.Tensor, V: torch.Tensor, W: torch.Tensor) -> tuple[str, torch.Tensor, float]:
     """
     Pick the mathematically consistent formula that reproduces W's shape.
     If multiple match, choose the one with smallest Frobenius error.
@@ -116,7 +117,7 @@ def _choose_reconstruction(U: torch.Tensor, V: torch.Tensor, W: torch.Tensor) ->
             rel = num / den
             if (best is None) or (rel < best[2]):
                 best = (name, W_hat, rel)
-        except Exception as e:
+        except Exception:
             # just skip invalid numerical combos
             continue
 

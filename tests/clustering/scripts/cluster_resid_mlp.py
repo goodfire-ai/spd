@@ -1,7 +1,7 @@
 # %%
-from pathlib import Path
 import argparse
 import sys
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt

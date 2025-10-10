@@ -5,35 +5,31 @@ Usage:
     python tms_40_10_clustering.py tms_40-10
     python tms_40_10_clustering.py tms_40-10-id
 """
-from spd.clustering.merge import merge_iteration, merge_iteration_ensemble
-from spd.clustering.merge_config import MergeConfig
-from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
-from spd.clustering.merge_sweep import sweep_multiple_parameters
-from spd.clustering.plotting.merge import (
-    plot_dists_distribution,
-    plot_merge_history_cluster_sizes,
-    plot_merge_iteration,
-)
-
-from typing import Any
 import argparse
 import sys
+from typing import Any
 
 import matplotlib.pyplot as plt
 import torch
-from torch import Tensor
 
 from spd.clustering.activations import (
     ProcessedActivations,
     process_activations,
 )
-
+from spd.clustering.merge import merge_iteration, merge_iteration_ensemble
+from spd.clustering.merge_config import MergeConfig
+from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
+from spd.clustering.merge_sweep import sweep_multiple_parameters
 from spd.clustering.plotting.activations import plot_activations
-from spd.experiments.tms.tms_dataset import TMSDataset
+from spd.clustering.plotting.merge import (
+    plot_dists_distribution,
+    plot_merge_history_cluster_sizes,
+    plot_merge_iteration,
+)
 from spd.configs import Config
+from spd.experiments.tms.tms_dataset import TMSDataset
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.registry import EXPERIMENT_REGISTRY
-
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -134,7 +130,7 @@ with torch.no_grad():
         sampling="continuous",
     )
 
-print(f"✓ Computed component activations")
+print("✓ Computed component activations")
 
 # %%
 # Process activations
@@ -202,7 +198,7 @@ MERGE_HIST: MergeHistory = merge_iteration(
     plot_callback=_plot_func,
 )
 
-print(f"✓ Clustering completed\n")
+print("✓ Clustering completed\n")
 
 # %%
 # Plot merge history
