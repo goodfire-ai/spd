@@ -444,3 +444,28 @@ def get_cosine_ramp_value(
     # progress in [0,1]; cosine factor goes 1 -> 0; map to start->end
     cosine_factor = float(np.cos(0.5 * np.pi * progress))
     return float(start_value + (end_value - start_value) * (1.0 - cosine_factor))
+
+def get_exp_ramp_value(
+    step: int,
+    steps: int,
+    start_frac: float,
+    end_frac: float,
+    start_value: float,
+    end_value: float,
+) -> float:
+    """Exponential ramp between start_value and end_value."""   
+    assert 0.0 <= start_frac <= 1.0 and 0.0 <= end_frac <= 1.0, (
+        f"start_frac ({start_frac}) and end_frac ({end_frac}) must be within [0, 1]"
+    )
+    assert end_frac >= start_frac, f"end_frac ({end_frac}) must be >= start_frac ({start_frac})"
+
+    cur_frac = step / steps
+    if cur_frac < start_frac:
+        return float(start_value)
+    if cur_frac >= end_frac:
+        return float(end_value)
+
+    progress = (cur_frac - start_frac) / (end_frac - start_frac)
+    return float(start_value * np.exp(progress * np.log(end_value / start_value)))
+
+    
