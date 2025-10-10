@@ -9,7 +9,7 @@
     "filter_dead_threshold": 0.9,
     "module_name_filter": "model.layers.0"
   },
-  "model_path": "wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh",
+  "model_path": "wandb:goodfire/spd/runs/ioprgffh",
   "task_name": "lm",
   "n_batches": 1,
   "batch_size": 1,

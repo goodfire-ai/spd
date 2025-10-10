@@ -24,7 +24,6 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
@@ -151,7 +150,7 @@ def generate_commands(
         config_path = REPO_ROOT / config_entry.config_path
 
         # Load base config
-        base_config = load_config(config_path, Config)
+        base_config = Config.load(config_path)
 
         if sweep_params_path is None:
             # Fixed configuration run - still use JSON to ensure project override works

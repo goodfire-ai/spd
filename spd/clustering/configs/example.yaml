@@ -14,11 +14,11 @@ merge_config:
   rank_cost_fn_name: const_1  # Options: const_1, const_2, log, linear
 
 # Run configuration
-model_path: wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh  # WandB path to the decomposed model
+model_path: wandb:goodfire/spd/runs/ioprgffh  # WandB path to the decomposed model
+batch_size: 64  # Batch size for processing -- number of samples for each run in the ensemble
 task_name: lm  # Task name (must be explicit: tms, resid_mlp, lm, ih)
 # experiment_key: tms_5-2  # Alternative: use experiment key from EXPERIMENT_REGISTRY
 n_batches: 10  # Ensemble size
-batch_size: 64  # Batch size for processing -- number of samples for each run in the ensemble
 
 # WandB configuration
 wandb_enabled: false  # Enable WandB logging

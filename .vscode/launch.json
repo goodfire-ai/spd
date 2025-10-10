@@ -230,6 +230,22 @@
                 "--model_path",
                 "wandb:goodfire/spd/runs/ioprgffh"
             ]
+        },
+        {
+            "name": "clustering",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/clustering/scripts/main.py",
+            "args": [
+                "--config",
+                "${workspaceFolder}/spd/clustering/configs/example.yaml",
+            ],
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
         }
     ]
 }

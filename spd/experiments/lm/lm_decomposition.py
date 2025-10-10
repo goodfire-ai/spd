@@ -20,24 +20,19 @@ from spd.utils.distributed_utils import (
     is_main_process,
     with_distributed_cleanup,
 )
-from spd.utils.general_utils import (
-    load_config,
-    resolve_class,
-    save_pre_run_info,
-    set_seed,
-)
+from spd.utils.general_utils import resolve_class, save_pre_run_info, set_seed
 from spd.utils.run_utils import get_output_dir
 from spd.utils.wandb_utils import init_wandb
 
 
 @with_distributed_cleanup
 def main(
-    config_path_or_obj: Path | str | Config,
+    config_path: Path | str,
     evals_id: str | None = None,
     sweep_id: str | None = None,
     sweep_params_json: str | None = None,
 ) -> None:
-    config = load_config(config_path_or_obj, config_model=Config)
+    config = Config.load(config_path)
 
     dist_state = init_distributed()
 

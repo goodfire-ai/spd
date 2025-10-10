@@ -9,10 +9,10 @@ from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from spd.log import logger
-from spd.utils.general_utils import BaseModel
+from spd.utils.general_utils import BaseConfig
 
 
-class DatasetConfig(BaseModel):
+class DatasetConfig(BaseConfig):
     name: str = "lennart-finke/SimpleStories"
     is_tokenized: bool = True
     hf_tokenizer_path: str | None = None
