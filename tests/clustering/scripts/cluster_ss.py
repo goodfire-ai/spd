@@ -1,7 +1,11 @@
 # %%
+import os
+
+# Suppress tokenizer parallelism warning when forking
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import torch
 from jaxtyping import Int
 from muutils.dbg import dbg_auto
@@ -131,4 +135,8 @@ plot_dists_distribution(
     distances=DISTANCES,
     mode="points",
 )
-plt.legend()
+
+# %%
+# Exit cleanly to avoid CUDA thread GIL issues during interpreter shutdown
+# ============================================================
+os._exit(0)
