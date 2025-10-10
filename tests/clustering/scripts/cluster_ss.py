@@ -138,5 +138,6 @@ plot_dists_distribution(
 
 # %%
 # Exit cleanly to avoid CUDA thread GIL issues during interpreter shutdown
+# see https://github.com/goodfire-ai/spd/issues/201#issue-3503138939
 # ============================================================
 os._exit(0)
