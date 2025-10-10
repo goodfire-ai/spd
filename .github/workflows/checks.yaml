@@ -58,3 +58,5 @@ jobs:
 
       - name: "[temp] make clustering-dashboard"
         run: make clustering-dashboard
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
