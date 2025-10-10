@@ -82,39 +82,30 @@ def optimize_adversarial_stochastic_masks(
 
     # PGD ascent
     for _ in range(int(pgd_config.n_steps)):
-        for v in component_mask.values():
-            assert v.grad is not None
-        if weight_delta_mask is not None:
-            for v in weight_delta_mask.values():
-                assert v.grad is not None
-
         adv_vars = list(component_mask.values())
         if weight_delta_mask is not None:
             adv_vars.extend(list(weight_delta_mask.values()))
 
-        obj = objective_fn(
-            component_mask=component_mask,
-            weight_delta_mask=weight_delta_mask,
-        )
+        assert all(v.requires_grad for v in adv_vars)
 
-        grads = torch.autograd.grad(
-            obj,
-            adv_vars,
-            retain_graph=False,
-            create_graph=False,
-            allow_unused=True,
-        )
+        with torch.enable_grad():
+            obj = objective_fn(
+                component_mask=component_mask,
+                weight_delta_mask=weight_delta_mask,
+            )
 
-        # REMOVEME
-        assert all(isinstance(g, Tensor) for g in grads)
-        print(f"PASSED GRAD CHECK --- REMOVE NOW {__file__}")
-        # ========
+            grads = torch.autograd.grad(
+                obj,
+                adv_vars,
+                retain_graph=False,
+                create_graph=False,
+                allow_unused=True,
+            )
 
         with torch.no_grad():
             for v, g in zip(adv_vars, grads, strict=True):
                 v.add_(pgd_config.step_size * g.sign())
                 v.clamp_(0.0, 1.0)
-                v.detach_()
 
     return component_mask, weight_delta_mask
 
@@ -164,9 +155,8 @@ def pgd_masked_recon_loss_update(
         )
 
         out = model(batch, mask_infos=mask_infos)
-        loss_type = output_loss_type
-        total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
-        n_examples = out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
+        total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+        n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
         return total_loss / n_examples
 
     adversarial_component_masks, adversarial_weight_delta_masks = (
@@ -202,3 +192,13 @@ def pgd_masked_recon_loss_update(
     loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
     n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
     return loss, n_examples
+
+
+# %%
+import torch
+
+x = torch.rand(3)
+print(x.grad)
+
+x.requires_grad_(True)
+print(x.grad)

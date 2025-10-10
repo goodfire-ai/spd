@@ -304,7 +304,7 @@ def optimize(
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
-            with torch.inference_mode():
+            with torch.no_grad():
                 slow_step: bool = (
                     config.slow_eval_on_first_step
                     if step == 0
