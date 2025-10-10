@@ -40,6 +40,11 @@ jobs:
       - name: Print dependencies
         run: uv pip list
 
+      - name: "[TEMP] run cluster_ss.py"
+        run: uv run python tests/clustering/scripts/cluster_ss.py
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}        
+        
       - name: Run basedpyright
         run: uv run basedpyright
 
@@ -49,10 +54,6 @@ jobs:
       - name: Run ruff format
         run: uv run ruff format .
 
-      - name: "[TEMP] run cluster_ss.py"
-        run: uv run python tests/clustering/scripts/cluster_ss.py
-        env:
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}        
 
       - name: Run tests
         run: uv run pytest tests/ --runslow --durations 10 --numprocesses auto

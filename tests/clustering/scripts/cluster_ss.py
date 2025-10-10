@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import torch
 from jaxtyping import Int
 from muutils.dbg import dbg_auto
-from muutils.spinner import SpinnerContext
 from torch import Tensor
 
 from spd.clustering.activations import (
@@ -28,6 +27,30 @@ TEMP_DIR: Path = Path(
 )  # save to an actual dir that is gitignored, so users can view plots
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
+
+TIMER_RECORDS: list[tuple[str, float]] = list()
+
+
+class TimerContext:
+    def __init__(self, message: str):
+        self.message = message
+        self.start_time = None
+        self.end_time = None
+
+    def __enter__(self):
+        print(f"[TIMER START] {self.message}")
+        self.start_time = torch.cuda.Event(enable_timing=True)
+        self.end_time = torch.cuda.Event(enable_timing=True)
+        self.start_time.record()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.end_time.record()
+        torch.cuda.synchronize()
+        elapsed_time = self.start_time.elapsed_time(self.end_time) / 1000.0
+        TIMER_RECORDS.append((self.message, elapsed_time))
+        print(f"[TIMER   END] {self.message} - Elapsed time: {elapsed_time:.2f} seconds")
+
+
 # magic autoreload
 # %load_ext autoreload
 # %autoreload 2
@@ -35,7 +58,7 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 # %%
 # Load model and dataset
 # ============================================================
-with SpinnerContext(message="Load model"):
+with TimerContext(message="Load model"):
     MODEL_PATH: str = "wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh"
 
     SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(MODEL_PATH)
@@ -52,19 +75,19 @@ with SpinnerContext(message="Load model"):
         batch_size=2,
     )
 
-with SpinnerContext(message="Load data"):
+with TimerContext(message="Load data"):
     BATCHES, _ = split_dataset(config=CONFIG)
 
 # %%
 # Load data batch
 # ============================================================
-with SpinnerContext(message="Load data batch"):
+with TimerContext(message="Load data batch"):
     DATA_BATCH: Int[Tensor, "batch_size n_ctx"] = next(BATCHES)
 
 # %%
 # Get component activations
 # ============================================================
-with SpinnerContext(message="Get component activations"):
+with TimerContext(message="Get component activations"):
     COMPONENT_ACTS: dict[str, Tensor] = component_activations(
         model=MODEL,
         batch=DATA_BATCH,
@@ -76,7 +99,7 @@ with SpinnerContext(message="Get component activations"):
 # %%
 # Process activations
 # ============================================================
-with SpinnerContext(message="Process activations"):
+with TimerContext(message="Process activations"):
     FILTER_DEAD_THRESHOLD: float = 0.001
     FILTER_MODULES: str = "model.layers.0"
 
@@ -87,7 +110,7 @@ with SpinnerContext(message="Process activations"):
         seq_mode="concat",
     )
 
-with SpinnerContext(message="Plot activations"):
+with TimerContext(message="Plot activations"):
     plot_activations(
         processed_activations=PROCESSED_ACTIVATIONS,
         save_dir=TEMP_DIR,
@@ -98,7 +121,7 @@ with SpinnerContext(message="Plot activations"):
 # %%
 # Compute ensemble merge iterations
 # ============================================================
-with SpinnerContext(message="Compute merge iterations"):
+with TimerContext(message="Compute merge iterations"):
     MERGE_CFG: MergeConfig = MergeConfig(
         activation_threshold=0.01,
         alpha=0.01,
@@ -129,13 +152,19 @@ with SpinnerContext(message="Compute merge iterations"):
 # %%
 # Compute and plot distances
 # ============================================================
-with SpinnerContext(message="compute distances"):
+with TimerContext(message="compute distances"):
     DISTANCES = ENSEMBLE.get_distances()
 
 
-with SpinnerContext(message="plot distances"):
+with TimerContext(message="plot distances"):
     plot_dists_distribution(
         distances=DISTANCES,
         mode="points",
     )
     plt.legend()
+
+
+# %%
+print("Timer records (s):")
+for key, value in TIMER_RECORDS:
+    print(f"{key:<30}{value:10.2f}")
