@@ -26,9 +26,9 @@ jobs:
 
       - name: install MPI
         run: |
-          apt-get update
-          apt-get install -y -q git make openmpi-bin libopenmpi-dev
-          apt-get clean
+          sudo apt-get update
+          sudo apt-get install -y -q git make openmpi-bin libopenmpi-dev
+          sudo apt-get clean
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
