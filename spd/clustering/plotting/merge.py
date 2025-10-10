@@ -17,7 +17,7 @@ DEFAULT_PLOT_CONFIG: dict[str, Any] = dict(
     figsize=(16, 10),
     tick_spacing=5,
     save_pdf=False,
-    pdf_prefix="merge_iteration",
+    figure_prefix="merge_iteration",
 )
 
 
@@ -168,7 +168,9 @@ def plot_merge_iteration(
 
     if plot_config_["save_pdf"]:
         fig.savefig(
-            f"{plot_config_['pdf_prefix']}_iter_{iteration:03d}.pdf", bbox_inches="tight", dpi=300
+            f"{plot_config_['figure_prefix']}_iter_{iteration:03d}.pdf",
+            bbox_inches="tight",
+            dpi=300,
         )
 
     if show:

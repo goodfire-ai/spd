@@ -21,7 +21,10 @@ from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 
-def split_dataset(config: ClusteringRunConfig) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
+def split_dataset(
+    config: ClusteringRunConfig,
+    **kwargs: Any,
+) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
     """Split a dataset into n_batches of batch_size, returning iterator and config"""
     ds: Generator[BatchTensor, None, None]
     ds_config_dict: dict[str, Any]
@@ -30,11 +33,13 @@ def split_dataset(config: ClusteringRunConfig) -> tuple[Iterator[BatchTensor], d
             ds, ds_config_dict = _get_dataloader_lm(
                 model_path=config.model_path,
                 batch_size=config.batch_size,
+                **kwargs,
             )
         case "resid_mlp":
             ds, ds_config_dict = _get_dataloader_resid_mlp(
                 model_path=config.model_path,
                 batch_size=config.batch_size,
+                **kwargs,
             )
         case name:
             raise ValueError(
@@ -56,6 +61,7 @@ def split_dataset(config: ClusteringRunConfig) -> tuple[Iterator[BatchTensor], d
 def _get_dataloader_lm(
     model_path: str,
     batch_size: int,
+    config_kwargs: dict[str, Any] | None = None,
 ) -> tuple[Generator[BatchTensor, None, None], dict[str, Any]]:
     """split up a SS dataset into n_batches of batch_size, returned the saved paths
 
@@ -81,15 +87,22 @@ def _get_dataloader_lm(
             f"Expected task_config to be of type LMTaskConfig since using `_get_dataloader_lm`, but got {type(cfg.task_config) = }"
         )
 
+        config_kwargs_: dict[str, Any] = {
+            **dict(
+                is_tokenized=False,
+                streaming=False,
+                seed=0,
+            ),
+            **(config_kwargs or {}),
+        }
+
         dataset_config: DatasetConfig = DatasetConfig(
             name=cfg.task_config.dataset_name,
             hf_tokenizer_path=pretrained_model_name,
             split=cfg.task_config.train_data_split,
             n_ctx=cfg.task_config.max_seq_len,
-            is_tokenized=False,
-            streaming=False,
-            seed=0,
             column_name=cfg.task_config.column_name,
+            **config_kwargs_,
         )
 
     with SpinnerContext(message="getting dataloader..."):

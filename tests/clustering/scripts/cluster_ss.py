@@ -1,7 +1,11 @@
 # %%
+import os
+
+# Suppress tokenizer parallelism warning when forking
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import torch
 from jaxtyping import Int
 from muutils.dbg import dbg_auto
@@ -49,7 +53,11 @@ CONFIG: ClusteringRunConfig = ClusteringRunConfig(
     n_batches=1,
     batch_size=2,
 )
-BATCHES, _ = split_dataset(config=CONFIG)
+
+BATCHES, _ = split_dataset(
+    config=CONFIG,
+    config_kwargs=dict(streaming=True),  # see https://github.com/goodfire-ai/spd/pull/199
+)
 
 # %%
 # Load data batch
@@ -85,6 +93,7 @@ plot_activations(
     save_dir=TEMP_DIR,
     n_samples_max=256,
     wandb_run=None,
+    save_fmt="svg",
 )
 
 # %%
@@ -126,4 +135,9 @@ plot_dists_distribution(
     distances=DISTANCES,
     mode="points",
 )
-plt.legend()
+
+# %%
+# Exit cleanly to avoid CUDA thread GIL issues during interpreter shutdown
+# see https://github.com/goodfire-ai/spd/issues/201#issue-3503138939
+# ============================================================
+os._exit(0)
