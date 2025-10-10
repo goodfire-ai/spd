@@ -67,7 +67,7 @@ def get_cosine_schedule_value(
             0.5
             * (
                 1
-                + cos(
+                - cos(
                     pi
                     * (current_frac_of_training - schedule.start_frac)
                     / (schedule.end_frac - schedule.start_frac)
