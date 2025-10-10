@@ -26,7 +26,12 @@ loss_metric_configs:
   - classname: "StochasticReconLoss"
     coeff: 0.2
   - classname: "PGDReconSubsetLoss"
-    coeff: 
+    coeff:
+      type: "cosine"
+      start_value: 0.0
+      end_value: 0.0
+      start_frac: 0.0
+      end_frac: 1.0
 output_loss_type: kl
 
 # --- Training ---
