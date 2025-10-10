@@ -50,6 +50,8 @@ def main(config: ClusteringRunConfig) -> None:
     if config.dataset_streaming:
         logger.info("Using streaming dataset loading")
         split_dataset_kwargs["config_kwargs"] = dict(streaming=True)
+        # check this here as well as the model validator because we edit `config.dataset_streaming` after init in main() after the CLI args are parsed
+        # not sure if this is actually a problem though
         assert config.task_name == "lm", (
             f"Streaming dataset loading only supported for 'lm' task, got '{config.task_name = }'. Remove dataset_streaming=True from config or use a different task."
         )

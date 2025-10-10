@@ -14,6 +14,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}/ci-mpi:latest
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -46,7 +48,6 @@ jobs:
 
       - name: Run ruff format
         run: uv run ruff format .
-
 
       - name: Run tests
         run: uv run pytest tests/ --runslow --durations 20 --numprocesses auto --dist worksteal
