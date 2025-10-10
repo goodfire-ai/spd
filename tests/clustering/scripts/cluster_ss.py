@@ -1,35 +1,5 @@
 # %%
 import time
-from pathlib import Path
-
-import matplotlib.pyplot as plt
-import torch
-from jaxtyping import Int
-from muutils.dbg import dbg_auto
-from torch import Tensor
-
-from spd.clustering.activations import (
-    ProcessedActivations,
-    component_activations,
-    process_activations,
-)
-from spd.clustering.merge import merge_iteration
-from spd.clustering.merge_config import MergeConfig
-from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
-from spd.clustering.merge_run_config import ClusteringRunConfig
-from spd.clustering.pipeline.s1_split_dataset import split_dataset
-from spd.clustering.plotting.activations import plot_activations
-from spd.clustering.plotting.merge import plot_dists_distribution
-from spd.models.component_model import ComponentModel, SPDRunInfo
-
-DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
-TEMP_DIR: Path = Path(
-    "tests/.temp"
-)  # save to an actual dir that is gitignored, so users can view plots
-TEMP_DIR.mkdir(parents=True, exist_ok=True)
-
-
-TIMER_RECORDS: list[tuple[str, float]] = list()
 
 
 class TimerContext:
@@ -45,6 +15,38 @@ class TimerContext:
         elapsed_time: float = time.perf_counter() - self.start_time
         TIMER_RECORDS.append((self.message, elapsed_time))
         print(f"[TIMER   END] {self.message} - Elapsed time: {elapsed_time:.2f} seconds")
+
+
+with TimerContext(message="Import modules"):
+    from pathlib import Path
+
+    import matplotlib.pyplot as plt
+    import torch
+    from jaxtyping import Int
+    from muutils.dbg import dbg_auto
+    from torch import Tensor
+
+    from spd.clustering.activations import (
+        ProcessedActivations,
+        component_activations,
+        process_activations,
+    )
+    from spd.clustering.merge import merge_iteration
+    from spd.clustering.merge_config import MergeConfig
+    from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
+    from spd.clustering.merge_run_config import ClusteringRunConfig
+    from spd.clustering.pipeline.s1_split_dataset import split_dataset
+    from spd.clustering.plotting.activations import plot_activations
+    from spd.clustering.plotting.merge import plot_dists_distribution
+    from spd.models.component_model import ComponentModel, SPDRunInfo
+
+    DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
+    TEMP_DIR: Path = Path(
+        "tests/.temp"
+    )  # save to an actual dir that is gitignored, so users can view plots
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+    TIMER_RECORDS: list[tuple[str, float]] = list()
 
 
 # magic autoreload
@@ -72,7 +74,10 @@ with TimerContext(message="Load model"):
     )
 
 with TimerContext(message="Load data"):
-    BATCHES, _ = split_dataset(config=CONFIG)
+    BATCHES, _ = split_dataset(
+        config=CONFIG,
+        config_kwargs=dict(streaming=True),
+    )
 
 # %%
 # Load data batch
