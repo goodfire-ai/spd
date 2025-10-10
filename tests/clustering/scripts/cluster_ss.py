@@ -112,6 +112,7 @@ with TimerContext(message="Plot activations"):
         save_dir=TEMP_DIR,
         n_samples_max=256,
         wandb_run=None,
+        save_fmt="svg",
     )
 
 # %%
