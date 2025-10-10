@@ -86,12 +86,14 @@ def _get_dataloader_lm(
             f"Expected task_config to be of type LMTaskConfig since using `_get_dataloader_lm`, but got {type(cfg.task_config) = }"
         )
 
-        config_kwargs_: dict[str, Any] = dict(
-            is_tokenized=False,
-            streaming=False,
-            seed=0,
-            **(config_kwargs or {}),  # allow overrides
-        )
+        config_kwargs_: dict[str, Any] = {
+            **dict(
+                is_tokenized=False,
+                streaming=False,
+                seed=0,
+            ),
+            **(config_kwargs or {}),
+        }
 
         dataset_config: DatasetConfig = DatasetConfig(
             name=cfg.task_config.dataset_name,
