@@ -24,23 +24,30 @@ from spd.utils.general_utils import BaseModel
 
 
 #### Metrics that can be used in training (or eval) ####
+class LinearSchedule(BaseModel):
+    type: Literal["linear"] = "linear"
+    start_value: float
+    end_value: float
+    start_frac: float
+    end_frac: float
+
+
+class CosineSchedule(BaseModel):
+    type: Literal["cosine"] = "cosine"
+    start_value: float
+    end_value: float
+    start_frac: float
+    end_frac: float
+
+
+CoeffSchedule = Annotated[LinearSchedule | CosineSchedule, Field(discriminator="type")]
+
+
 class TrainMetricConfig(BaseModel):
-    coeff: float | None = Field(
+    coeff: float | CoeffSchedule | None = Field(
         default=None,
-        description="Loss coefficient. Used when metric is in loss_metric_configs.",
+        description="Loss coefficient or coefficient schedule. Used when metric is in loss_metric_configs.",
     )
-
-
-class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
-
-
-class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
-
-
-class CIMaskedReconLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
 
 
 class FaithfulnessLossTrainConfig(TrainMetricConfig):
@@ -56,16 +63,52 @@ class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
     eps: float = 1e-12
 
 
-class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
-    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
+class CIMaskedReconLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
+
+
+class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
+
+
+class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
+    classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
 
 
 class StochasticReconLossTrainConfig(TrainMetricConfig):
     classname: Literal["StochasticReconLoss"] = "StochasticReconLoss"
 
 
+class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
+    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
+
+
 class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+
+
+PGDInitStrategy = Literal["random", "ones", "zeroes"]
+
+MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
+
+
+class PGDConfig(TrainMetricConfig):
+    init: PGDInitStrategy
+    step_size: float
+    n_steps: int
+    mask_scope: MaskScope
+
+
+class PGDReconLossTrainConfig(PGDConfig):
+    classname: Literal["PGDReconLoss"] = "PGDReconLoss"
+
+
+class PGDReconLayerwiseLossTrainConfig(PGDConfig):
+    classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
+
+
+class PGDReconSubsetLossTrainConfig(PGDConfig):
+    classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
 
 
 class StochasticHiddenActsReconLossConfig(TrainMetricConfig):
@@ -122,15 +165,18 @@ class UVPlotsConfig(BaseModel):
 
 
 TrainMetricConfigType = (
-    CIMaskedReconSubsetLossTrainConfig
-    | CIMaskedReconLayerwiseLossTrainConfig
-    | CIMaskedReconLossTrainConfig
-    | FaithfulnessLossTrainConfig
+    FaithfulnessLossTrainConfig
     | ImportanceMinimalityLossTrainConfig
-    | StochasticReconLayerwiseLossTrainConfig
+    | StochasticHiddenActsReconLossConfig
+    | CIMaskedReconLossTrainConfig
+    | CIMaskedReconSubsetLossTrainConfig
+    | CIMaskedReconLayerwiseLossTrainConfig
     | StochasticReconLossTrainConfig
     | StochasticReconSubsetLossTrainConfig
-    | StochasticHiddenActsReconLossConfig
+    | StochasticReconLayerwiseLossTrainConfig
+    | PGDReconLossTrainConfig
+    | PGDReconSubsetLossTrainConfig
+    | PGDReconLayerwiseLossTrainConfig
 )
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
@@ -146,6 +192,8 @@ EvalOnlyMetricConfigType = (
 MetricConfigType = TrainMetricConfigType | EvalOnlyMetricConfigType
 
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
+
+SamplingType = Literal["continuous"] | Literal["binomial"]
 
 
 class Config(BaseModel):
@@ -181,7 +229,7 @@ class Config(BaseModel):
         default=[8],
         description="Hidden dimensions for the causal importance function used to calculate the causal importance",
     )
-    sampling: Literal["continuous", "binomial"] = Field(
+    sampling: SamplingType = Field(
         default="continuous",
         description="Sampling mode for stochastic elements: 'continuous' (default) or 'binomial'",
     )

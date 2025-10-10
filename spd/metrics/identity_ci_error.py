@@ -1,7 +1,8 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 from torch import Tensor
 
+from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
@@ -18,13 +19,13 @@ class IdentityCIError(Metric):
     def __init__(
         self,
         model: ComponentModel,
-        sampling: Literal["continuous", "binomial"],
+        sampling: SamplingType,
         sigmoid_type: SigmoidTypes,
         identity_ci: list[dict[str, str | int]] | None = None,
         dense_ci: list[dict[str, str | int]] | None = None,
     ) -> None:
         self.model = model
-        self.sampling: Literal["continuous", "binomial"] = sampling
+        self.sampling: SamplingType = sampling
         self.sigmoid_type: SigmoidTypes = sigmoid_type
         self.identity_ci = identity_ci
         self.dense_ci = dense_ci

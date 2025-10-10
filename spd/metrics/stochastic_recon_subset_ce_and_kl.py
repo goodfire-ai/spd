@@ -1,5 +1,5 @@
 from fnmatch import fnmatch
-from typing import Any, Literal, override
+from typing import Any, override
 
 import einops
 import torch
@@ -8,6 +8,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
@@ -26,7 +27,7 @@ class StochasticReconSubsetCEAndKL(Metric):
         self,
         model: ComponentModel,
         device: str,
-        sampling: Literal["continuous", "binomial"],
+        sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
         include_patterns: dict[str, list[str]] | None = None,
@@ -34,7 +35,7 @@ class StochasticReconSubsetCEAndKL(Metric):
     ) -> None:
         self.model = model
         self.device = device
-        self.sampling: Literal["continuous", "binomial"] = sampling
+        self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples = n_mask_samples
         self.include_patterns = include_patterns or {}
@@ -88,9 +89,6 @@ class StochasticReconSubsetCEAndKL(Metric):
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
-            sampling=self.sampling,
-            use_delta_component=self.use_delta_component,
-            n_mask_samples=self.n_mask_samples,
         )
         for key, value in losses.items():
             self.metric_values[key].append(value)
@@ -122,10 +120,7 @@ class StochasticReconSubsetCEAndKL(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: dict[str, Float[Tensor, "... C"]],
-        weight_deltas: dict[str, Tensor],
-        sampling: Literal["continuous", "binomial"],
-        use_delta_component: bool,
-        n_mask_samples: int,
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     ) -> dict[str, float]:
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
 
@@ -152,12 +147,12 @@ class StochasticReconSubsetCEAndKL(Metric):
         # Generate stochastic masks
         masks_list: list[dict[str, ComponentsMaskInfo]] = [
             calc_stochastic_component_mask_info(
-                ci,
-                sampling=sampling,
+                causal_importances=ci,
+                component_mask_sampling=self.sampling,
+                weight_deltas=weight_deltas if self.use_delta_component else None,
                 routing="all",
-                weight_deltas=weight_deltas if use_delta_component else None,
             )
-            for _ in range(n_mask_samples)
+            for _ in range(self.n_mask_samples)
         ]
         results: dict[str, float] = {}
 

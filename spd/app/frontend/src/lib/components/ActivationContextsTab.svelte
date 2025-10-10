@@ -1,0 +1,384 @@
+<script lang="ts">
+    import type { ActivationContextsConfig, SubcomponentActivationContexts } from "$lib/api";
+    import * as api from "$lib/api";
+    import ActivationContext from "./ActivationContext.svelte";
+
+    export let availableComponentLayers: string[];
+
+    if (availableComponentLayers.length === 0) {
+        throw new Error(`No component layers available: ${availableComponentLayers}`);
+    }
+
+    let selectedLayer: string = availableComponentLayers[0];
+    let subcomponentsActivationContexts: SubcomponentActivationContexts[] | null = null;
+    let loading = false;
+    let currentPage = 0;
+
+    // Configuration parameters
+    let importanceThreshold = 0.01;
+    let maxExamplesPerSubcomponent = 100;
+    let nBatches = 1;
+    let batchSize = 32;
+    let nTokensEitherSide = 10;
+
+    // Track previous layers to detect when run changes
+    let previousLayers: string[] = availableComponentLayers;
+    $: {
+        const layersChanged =
+            JSON.stringify(availableComponentLayers) !== JSON.stringify(previousLayers);
+        if (layersChanged) {
+            subcomponentsActivationContexts = null;
+            selectedLayer = availableComponentLayers[0];
+            previousLayers = availableComponentLayers;
+        }
+    }
+
+    $: totalPages = subcomponentsActivationContexts?.length ?? 0;
+    $: currentItem = subcomponentsActivationContexts?.[currentPage] ?? null;
+
+    async function loadContexts() {
+        loading = true;
+        subcomponentsActivationContexts = null;
+        try {
+            console.log(`loading contexts for layer ${selectedLayer}`);
+            const config: ActivationContextsConfig = {
+                importance_threshold: importanceThreshold,
+                max_examples_per_subcomponent: maxExamplesPerSubcomponent,
+                n_batches: nBatches,
+                batch_size: batchSize,
+                n_tokens_either_side: nTokensEitherSide
+            };
+            const data = await api.getLayerActivationContexts(selectedLayer, config);
+            for (const d of data) {
+                d.examples = d.examples.slice(0, 1000);
+            }
+            subcomponentsActivationContexts = data;
+            currentPage = 0;
+        } catch (e) {
+            if ((e as any)?.name !== "AbortError") {
+                console.error(e);
+            }
+        } finally {
+            loading = false;
+        }
+    }
+
+    function previousPage() {
+        if (currentPage > 0) currentPage--;
+    }
+
+    function nextPage() {
+        if (currentPage < totalPages - 1) currentPage++;
+    }
+</script>
+
+<div class="tab-content">
+    <div class="controls">
+        <div class="control-row">
+            <label for="layer-select">Layer:</label>
+            <select id="layer-select" bind:value={selectedLayer} on:change={loadContexts}>
+                {#each availableComponentLayers as layer}
+                    <option value={layer}>{layer}</option>
+                {/each}
+            </select>
+        </div>
+
+        <div class="config-section">
+            <h4>Configuration</h4>
+            <div class="config-grid">
+                <div class="config-item">
+                    <label for="importance-threshold">Importance Threshold:</label>
+                    <input
+                        id="importance-threshold"
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        max="1"
+                        bind:value={importanceThreshold}
+                    />
+                </div>
+
+                <div class="config-item">
+                    <label for="max-examples">Max Examples per Subcomponent:</label>
+                    <input
+                        id="max-examples"
+                        type="number"
+                        step="10"
+                        min="1"
+                        bind:value={maxExamplesPerSubcomponent}
+                    />
+                </div>
+
+                <div class="config-item">
+                    <label for="n-steps">Number of Batches:</label>
+                    <input id="n-steps" type="number" step="1" min="1" bind:value={nBatches} />
+                </div>
+
+                <div class="config-item">
+                    <label for="batch-size">Batch Size:</label>
+                    <input id="batch-size" type="number" step="1" min="1" bind:value={batchSize} />
+                </div>
+
+                <div class="config-item">
+                    <label for="n-tokens">Context Tokens Either Side:</label>
+                    <input
+                        id="n-tokens"
+                        type="number"
+                        step="1"
+                        min="0"
+                        bind:value={nTokensEitherSide}
+                    />
+                </div>
+            </div>
+            <button class="load-button" on:click={loadContexts} disabled={loading}>
+                {loading ? "Loading..." : "Load Contexts"}
+            </button>
+        </div>
+    </div>
+    {#if loading}
+        <div class="loading">Loading...</div>
+    {/if}
+
+    {#if currentItem}
+        <div class="pagination-controls">
+            <button on:click={previousPage} disabled={currentPage === 0}>&lt;</button>
+            <input
+                type="number"
+                min="0"
+                max={totalPages - 1}
+                bind:value={currentPage}
+                class="page-input"
+            />
+            <span>of {totalPages - 1}</span>
+            <button on:click={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
+        </div>
+
+        <div class="subcomponent-section-header">
+            <h4>Subcomponent {currentItem.subcomponent_idx}</h4>
+            {#if currentItem.token_densities && currentItem.token_densities.length > 0}
+                <div class="token-densities">
+                    <h5>
+                        Token Activation Densities {currentItem.token_densities.length > 20
+                            ? `(top 20) of ${currentItem.token_densities.length}`
+                            : ""}
+                    </h5>
+                    <div class="densities-grid">
+                        {#each currentItem.token_densities.slice(0, 20) as { token, density }}
+                            <div class="density-item">
+                                <span class="token">{token}</span>
+                                <div class="density-bar-container">
+                                    <div class="density-bar" style="width: {density * 100}%"></div>
+                                </div>
+                                <span class="density-value">{(density * 100).toFixed(1)}%</span>
+                            </div>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
+
+            <div class="subcomponent-section">
+                {currentItem.examples.length > 200
+                    ? `Showing top 200 examples of ${currentItem.examples.length} examples`
+                    : ""}
+                {#each currentItem.examples.slice(0, 200) as example}
+                    <ActivationContext {example} />
+                {/each}
+            </div>
+        </div>
+    {/if}
+</div>
+
+<style>
+    .tab-content {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1rem;
+    }
+
+    .controls {
+        display: flex;
+        gap: 1rem;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        flex-direction: column;
+    }
+
+    .control-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .config-section {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .config-section h4 {
+        margin: 0;
+        font-size: 1rem;
+        color: #495057;
+    }
+
+    .config-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1rem;
+    }
+
+    .config-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .config-item label {
+        font-size: 0.875rem;
+        color: #495057;
+        font-weight: 500;
+    }
+
+    .config-item input {
+        padding: 0.5rem;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        background: white;
+    }
+
+    .load-button {
+        padding: 0.75rem 1.5rem;
+        border: 1px solid #0d6efd;
+        border-radius: 4px;
+        background: #0d6efd;
+        color: white;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 500;
+        transition: background 0.2s;
+        align-self: flex-start;
+    }
+
+    .load-button:hover:not(:disabled) {
+        background: #0b5ed7;
+    }
+
+    .load-button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+
+    .pagination-controls button {
+        padding: 0.5rem 1rem;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: white;
+        cursor: pointer;
+        font-size: 1rem;
+    }
+
+    .pagination-controls button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .page-input {
+        width: 60px;
+        padding: 0.5rem;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        text-align: center;
+    }
+
+    .subcomponent-section-header {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+
+    .subcomponent-section {
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    #layer-select {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 0.5rem;
+        font-size: 0.9rem;
+        background: white;
+        cursor: pointer;
+        width: 100%;
+    }
+
+    .token-densities {
+        margin: 1rem 0;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+
+    .token-densities h5 {
+        margin: 0 0 1rem 0;
+        font-size: 1rem;
+        color: #495057;
+    }
+
+    .densities-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .density-item {
+        display: grid;
+        grid-template-columns: 100px 1fr 60px;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .token {
+        font-family: monospace;
+        font-weight: 600;
+        color: #212529;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .density-bar-container {
+        height: 20px;
+        background: #e9ecef;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .density-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #4dabf7, #228be6);
+        transition: width 0.3s ease;
+    }
+
+    .density-value {
+        text-align: right;
+        color: #495057;
+        font-weight: 500;
+    }
+</style>

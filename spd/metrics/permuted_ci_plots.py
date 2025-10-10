@@ -1,8 +1,9 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 from PIL import Image
 from torch import Tensor
 
+from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
@@ -16,13 +17,13 @@ class PermutedCIPlots(Metric):
     def __init__(
         self,
         model: ComponentModel,
-        sampling: Literal["continuous", "binomial"],
+        sampling: SamplingType,
         sigmoid_type: SigmoidTypes,
         identity_patterns: list[str] | None = None,
         dense_patterns: list[str] | None = None,
     ) -> None:
         self.model = model
-        self.sampling: Literal["continuous", "binomial"] = sampling
+        self.sampling: SamplingType = sampling
         self.sigmoid_type: SigmoidTypes = sigmoid_type
         self.identity_patterns = identity_patterns
         self.dense_patterns = dense_patterns

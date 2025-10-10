@@ -1,7 +1,6 @@
 import fnmatch
 import io
 from collections.abc import Callable
-from typing import Literal
 
 import numpy as np
 import torch
@@ -10,6 +9,7 @@ from matplotlib import pyplot as plt
 from PIL import Image
 from torch import Tensor
 
+from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel
 from spd.models.components import Components
 from spd.models.sigmoids import SigmoidTypes
@@ -180,7 +180,7 @@ def get_single_feature_causal_importances(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
     input_magnitude: float,
-    sampling: Literal["continuous", "binomial"],
+    sampling: SamplingType,
     sigmoid_type: SigmoidTypes,
 ) -> tuple[dict[str, Float[Tensor, "batch C"]], dict[str, Float[Tensor, "batch C"]]]:
     """Compute causal importance arrays for single active features.
@@ -219,7 +219,7 @@ def plot_causal_importance_vals(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
     input_magnitude: float,
-    sampling: Literal["continuous", "binomial"],
+    sampling: SamplingType,
     sigmoid_type: SigmoidTypes,
     identity_patterns: list[str] | None = None,
     dense_patterns: list[str] | None = None,
