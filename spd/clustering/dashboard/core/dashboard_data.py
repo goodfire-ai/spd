@@ -12,7 +12,6 @@ from spd.clustering.dashboard.core.base import (
     ActivationSampleHash,
     ClusterId,
     ClusterIdHash,
-    ComponentActivationData,
     ComponentInfo,
     TextSample,
     TextSampleHash,
@@ -112,7 +111,6 @@ class DashboardData:
         )
 
         # Build component-level data
-        component_data_dict: dict[str, ComponentActivationData] = {}
         component_labels: list[str] = []
 
         for comp_info in components_info:
@@ -132,22 +130,14 @@ class DashboardData:
             comp_acts_array: Float[np.ndarray, "n_samples n_ctx"] = np.stack(comp_acts_list)
 
             # Compute component statistics
-            comp_stats: dict[str, Any] = {
+            # TODO: store this
+            _comp_stats: dict[str, Any] = {
                 "mean": float(np.mean(comp_acts_array)),
                 "max": float(np.max(comp_acts_array)),
                 "min": float(np.min(comp_acts_array)),
                 "median": float(np.median(comp_acts_array)),
                 "n_samples": len(comp_acts_list),
             }
-
-            # Create ComponentActivationData
-            # Note: activation_sample_hashes and activation_indices filled below
-            component_data_dict[comp_label] = ComponentActivationData(
-                component_label=comp_label,
-                activation_sample_hashes=[],  # Filled below
-                activation_indices=[],  # Filled below
-                stats=comp_stats,
-            )
 
         # Compute component metrics
         from spd.clustering.dashboard.core.compute_helpers import (
@@ -164,7 +154,6 @@ class DashboardData:
 
         cluster_data = replace(
             cluster_data,
-            component_activations=component_data_dict if component_data_dict else None,
             component_coactivations=metrics.coactivations if metrics else None,
         )
 
@@ -205,7 +194,7 @@ class DashboardData:
                     self._activations_list.append(comp_acts)
                     self._text_hashes_list.append(text_hash)
 
-                    # Track for updating ComponentActivationData
+                    # TODO: add hashes of subcomponent activations?
                     comp_hashes.append(comp_act_hash)
                     comp_indices.append(self._current_idx)
 
@@ -214,19 +203,9 @@ class DashboardData:
                 component_hashes_map[comp_label] = comp_hashes
                 component_indices_map[comp_label] = comp_indices
 
-            # Update ComponentActivationData objects with actual hashes and indices
-            updated_component_data: dict[str, ComponentActivationData] = {}
-            for comp_label, comp_data in cluster_data.component_activations.items():
-                updated_component_data[comp_label] = replace(
-                    comp_data,
-                    activation_sample_hashes=component_hashes_map.get(comp_label, []),
-                    activation_indices=component_indices_map.get(comp_label, []),
-                )
-
             # Update cluster_data with populated component data
             cluster_data = replace(
-                cluster_data,
-                component_activations=updated_component_data,
+                cluster_data,  # TODO: why `replace()` here?
             )
 
         # Store cluster (now with populated component activation data)
