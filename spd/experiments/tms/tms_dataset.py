@@ -18,16 +18,16 @@ class TMSDataset(Dataset):
         self,
         n_features: int = 5,
         feature_probability: float = 0.05,
-        device: str = 'cpu',
+        device: str = "cpu",
         calc_labels: bool = False,
         label_type: str | None = None,
         act_fn_name: str | None = None,
         label_fn_seed: int | None = None,
         label_coeffs: torch.Tensor | None = None,
-        data_generation_type: Literal['standard', 'clustering'] = 'standard',
+        data_generation_type: Literal["standard", "clustering"] = "standard",
         n_samples_per_feature: int = 200,
         n_total_samples: int = 10000,
-        seed: int | None = None
+        seed: int | None = None,
     ):
         """
         Initialize TMS dataset.
@@ -63,14 +63,14 @@ class TMSDataset(Dataset):
             torch.manual_seed(seed)
 
         # Generate the dataset based on type
-        if data_generation_type == 'standard':
+        if data_generation_type == "standard":
             self.data = self._generate_standard_tms_data()
-        elif data_generation_type == 'clustering':
+        elif data_generation_type == "clustering":
             self.data = self._generate_clustering_tms_data()
         else:
             raise ValueError(f"Unknown data_generation_type: {data_generation_type}")
 
-        # Generate labels if requested 
+        # Generate labels if requested
         if calc_labels:
             self.labels = self._generate_labels()
         else:
@@ -85,14 +85,12 @@ class TMSDataset(Dataset):
         """
         # Generate binary mask for feature activation
         feature_mask = np.random.binomial(
-            1, self.feature_probability,
-            size=(self.n_total_samples, self.n_features)
+            1, self.feature_probability, size=(self.n_total_samples, self.n_features)
         ).astype(np.float32)
 
         # Generate random scaling factors for active features
         feature_scales = np.random.uniform(
-            0.0, 1.0,
-            size=(self.n_total_samples, self.n_features)
+            0.0, 1.0, size=(self.n_total_samples, self.n_features)
         ).astype(np.float32)
 
         # Combine mask and scales to get final input
@@ -113,9 +111,7 @@ class TMSDataset(Dataset):
             end_idx = (i + 1) * self.n_samples_per_feature
 
             # Set the target feature to be high (0.8-1.0)
-            data[start_idx:end_idx, i] = np.random.uniform(
-                0.8, 1.0, self.n_samples_per_feature
-            )
+            data[start_idx:end_idx, i] = np.random.uniform(0.8, 1.0, self.n_samples_per_feature)
 
             # Set other features to be low (0.0-0.1)
             for j in range(self.n_features):
@@ -152,7 +148,7 @@ class TMSDataset(Dataset):
         if batch_size >= len(self.data):
             return self.data
 
-        if self.data_generation_type == 'clustering':
+        if self.data_generation_type == "clustering":
             # Return first batch_size samples to include samples from each group
             return self.data[:batch_size]
         else:

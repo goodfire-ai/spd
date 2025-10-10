@@ -5,6 +5,7 @@ Usage:
     python tms_40_10_clustering.py tms_40-10
     python tms_40_10_clustering.py tms_40-10-id
 """
+
 import argparse
 import sys
 from typing import Any
@@ -36,19 +37,17 @@ DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 def parse_arguments():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Run SPD clustering on TMS 40-10 models"
-    )
+    parser = argparse.ArgumentParser(description="Run SPD clustering on TMS 40-10 models")
     parser.add_argument(
         "model_key",
         nargs="?",
         default="tms_40-10",
         choices=["tms_40-10", "tms_40-10-id"],
-        help="Model to use for clustering (default: tms_40-10)"
+        help="Model to use for clustering (default: tms_40-10)",
     )
 
     # Handle Jupyter notebook execution
-    if hasattr(__builtins__, '__IPYTHON__'):
+    if hasattr(__builtins__, "__IPYTHON__"):
         return parser.parse_args(["tms_40-10"])
     else:
         return parser.parse_args()
@@ -105,7 +104,7 @@ DATASET: TMSDataset = TMSDataset(
     feature_probability=0.05,
     device=DEVICE,
     calc_labels=False,
-    data_generation_type='clustering',
+    data_generation_type="clustering",
     n_samples_per_feature=200,
 )
 
@@ -118,9 +117,7 @@ batch = DATASET.data[:N_SAMPLES].to(DEVICE)
 
 with torch.no_grad():
     _, pre_weight_acts = MODEL(
-        batch,
-        mode="input_cache",
-        module_names=list(MODEL.components.keys())
+        batch, mode="input_cache", module_names=list(MODEL.components.keys())
     )
 
     COMPONENT_ACTS, _ = MODEL.calc_causal_importances(
@@ -183,13 +180,18 @@ def _plot_func(
                 iteration=i,
                 component_labels=component_labels,
                 show=True,
-                plot_config={"save_pdf": True, "pdf_prefix": f"./{MODEL_KEY.replace('-', '_')}_iter"}
+                plot_config={
+                    "save_pdf": True,
+                    "pdf_prefix": f"./{MODEL_KEY.replace('-', '_')}_iter",
+                },
             )
         except Exception as e:
             print(f"Plotting error at iteration {i}: {e}")
 
 
-print(f"\nRunning {n_merge_iters} merge iterations on {PROCESSED_ACTIVATIONS.n_components_alive} components")
+print(
+    f"\nRunning {n_merge_iters} merge iterations on {PROCESSED_ACTIVATIONS.n_components_alive} components"
+)
 
 MERGE_HIST: MergeHistory = merge_iteration(
     activations=PROCESSED_ACTIVATIONS.activations,

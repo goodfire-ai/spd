@@ -39,40 +39,39 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 # pyright: reportUnusedParameter=false
 
+
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run SPD clustering on ResidMLP models")
     parser.add_argument(
-        "model_key", 
+        "model_key",
         nargs="?",  # Optional positional argument
         default="resid_mlp2",
         choices=["resid_mlp1", "resid_mlp2", "resid_mlp3"],
-        help="Model to use for clustering (default: resid_mlp2)"
+        help="Model to use for clustering (default: resid_mlp2)",
     )
-    parser.add_argument(
-        "--list-models", 
-        action="store_true",
-        help="List available models and exit"
-    )
-    
+    parser.add_argument("--list-models", action="store_true", help="List available models and exit")
+
     # Handle Jupyter notebook execution
-    if hasattr(__builtins__, '__IPYTHON__'):
+    if hasattr(__builtins__, "__IPYTHON__"):
         # Running in Jupyter - use default or override with custom args
         return parser.parse_args(["resid_mlp2"])  # Default for notebooks
     else:
         return parser.parse_args()
 
+
 def list_available_models():
     """List all available models in the experiment registry."""
     print("Available models:")
     print("-" * 50)
-    for key in EXPERIMENT_REGISTRY.keys():
+    for key in EXPERIMENT_REGISTRY:
         run_path = EXPERIMENT_REGISTRY[key].canonical_run
         if run_path:
             print(f"  {key:15} -> {run_path}")
         else:
             print(f"  {key:15} -> None (not available)")
     print("-" * 50)
+
 
 # Parse arguments
 args = parse_arguments()
@@ -222,17 +221,22 @@ def _plot_func(
                 current_coact=current_coact,
                 costs=costs,
                 # FIXED: Commented out problematic pair_cost parameter
-                #pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType],
+                # pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType],
                 iteration=iter_idx,
                 component_labels=component_labels,
                 show=True,  # Show the plot interactively
-                plot_config={"save_pdf": True, "pdf_prefix": f"/content/clustering_{model_key}_iter"}
+                plot_config={
+                    "save_pdf": True,
+                    "pdf_prefix": f"/content/clustering_{model_key}_iter",
+                },
             )
         except Exception as e:
             print(f"Plotting error at iteration {iter_idx}: {e}")
 
 
-print(f"Starting clustering for {model_key} with {PROCESSED_ACTIVATIONS.n_components_alive} components...")
+print(
+    f"Starting clustering for {model_key} with {PROCESSED_ACTIVATIONS.n_components_alive} components..."
+)
 
 MERGE_HIST: MergeHistory = merge_iteration(
     merge_config=MERGE_CFG,
@@ -284,6 +288,3 @@ plot_dists_distribution(
     # label="v1"
 )
 plt.legend()
-
-
-
