@@ -71,7 +71,7 @@ class ClusteringRunConfig(BaseModel):
     """Configuration for a complete merge clustering run.
 
     Extends MergeConfig with parameters for model, dataset, and batch configuration.
-    CLI parameters (base_path, devices, workers_per_device) have defaults but will always be overridden
+    CLI parameters (base_path, devices, workers_per_device, dataset_streaming) have defaults but will always be overridden
     """
 
     merge_config: MergeConfig = Field(
@@ -99,6 +99,10 @@ class ClusteringRunConfig(BaseModel):
     distances_method: DistancesMethod = Field(
         default="perm_invariant_hamming",
         description="Method to use for computing distances between clusterings",
+    )
+    dataset_streaming: bool = Field(
+        default=False,
+        description="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
     )
 
     # Implementation details

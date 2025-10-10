@@ -48,7 +48,10 @@ def main(config: ClusteringRunConfig) -> None:
     logger.info(f"Splitting dataset into {config.n_batches} batches...")
     batches: Iterator[BatchTensor]
     dataset_config: dict[str, Any]
-    batches, dataset_config = split_dataset(config=config)
+    batches, dataset_config = split_dataset(
+        config=config,
+        config_kwargs=dict(streaming=config.dataset_streaming),
+    )
     storage.save_batches(batches=batches, config=dataset_config)
     batch_paths: list[Path] = storage.get_batch_paths()
     n_batch_paths: int = len(batch_paths)

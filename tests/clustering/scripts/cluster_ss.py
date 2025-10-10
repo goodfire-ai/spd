@@ -52,7 +52,7 @@ CONFIG: ClusteringRunConfig = ClusteringRunConfig(
 
 BATCHES, _ = split_dataset(
     config=CONFIG,
-    config_kwargs=dict(streaming=True),
+    config_kwargs=dict(streaming=True),  # see https://github.com/goodfire-ai/spd/pull/199
 )
 
 # %%
