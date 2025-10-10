@@ -17,7 +17,8 @@
     // Configuration parameters
     let importanceThreshold = 0.01;
     let maxExamplesPerSubcomponent = 100;
-    let nSteps = 1;
+    let nBatches = 1;
+    let batchSize = 32;
     let nTokensEitherSide = 10;
 
     // Track previous layers to detect when run changes
@@ -43,7 +44,8 @@
             const config: ActivationContextsConfig = {
                 importance_threshold: importanceThreshold,
                 max_examples_per_subcomponent: maxExamplesPerSubcomponent,
-                n_steps: nSteps,
+                n_batches: nBatches,
+                batch_size: batchSize,
                 n_tokens_either_side: nTokensEitherSide
             };
             const data = await api.getLayerActivationContexts(selectedLayer, config);
@@ -108,8 +110,13 @@
                 </div>
 
                 <div class="config-item">
-                    <label for="n-steps">Number of Sequences:</label>
-                    <input id="n-steps" type="number" step="1" min="1" bind:value={nSteps} />
+                    <label for="n-steps">Number of Batches:</label>
+                    <input id="n-steps" type="number" step="1" min="1" bind:value={nBatches} />
+                </div>
+
+                <div class="config-item">
+                    <label for="batch-size">Batch Size:</label>
+                    <input id="batch-size" type="number" step="1" min="1" bind:value={batchSize} />
                 </div>
 
                 <div class="config-item">

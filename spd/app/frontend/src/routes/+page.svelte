@@ -38,13 +38,9 @@
         if (status.cluster_run) {
             clusterWandbRunPath = status.cluster_run.wandb_path;
         }
-
-        if (status.cluster_run?.clustering_shape) {
-            const cGroups = status.cluster_run?.clustering_shape.module_component_groups;
-            const numComponents = Object.values(cGroups).reduce((acc, val) => acc + val.length, 0);
-            console.log(`got ${numComponents} components`);
-        }
     }
+    
+    setInterval(loadStatus, 3000);
 
     async function loadRun() {
         if (!trainWandbRunId?.trim()) return;
