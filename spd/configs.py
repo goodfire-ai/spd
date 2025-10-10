@@ -37,11 +37,13 @@ class CosineSchedule(BaseModel):
     start_frac: float
     end_frac: float
 
+
 class TrainMetricConfig(BaseModel):
-    coeff: LinearSchedule | CosineSchedule | None = Field(
+    coeff: float | LinearSchedule | CosineSchedule | None = Field(
         default=None,
         description="Loss coefficient or coefficient schedule. Used when metric is in loss_metric_configs.",
     )
+
 
 class FaithfulnessLossTrainConfig(TrainMetricConfig):
     classname: Literal["FaithfulnessLoss"] = "FaithfulnessLoss"
