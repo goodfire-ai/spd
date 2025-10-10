@@ -178,7 +178,7 @@ def init_metric(
                 device=device,
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
-                pgd_config=cfg.pgd_config,
+                pgd_config=cfg,
             )
         case PGDReconSubsetLossTrainConfig():
             metric = PGDReconSubsetLoss(
@@ -186,7 +186,7 @@ def init_metric(
                 device=device,
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
-                pgd_config=cfg.pgd_config,
+                pgd_config=cfg,
             )
         case PGDReconLayerwiseLossTrainConfig():
             metric = PGDReconLayerwiseLoss(
@@ -194,7 +194,7 @@ def init_metric(
                 device=device,
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
-                pgd_config=cfg.pgd_config,
+                pgd_config=cfg,
             )
         case CEandKLLossesConfig():
             metric = CEandKLLosses(

@@ -31,6 +31,7 @@ from spd.app.backend.services.ablation_service import AblationService
 from spd.app.backend.services.activation_contexts_service import (
     SubcomponentActivationContextsService,
 )
+
 # from spd.app.backend.services.cluster_dashboard_service import ComponentActivationContextsService
 from spd.app.backend.services.geometry_service import GeometryService
 from spd.app.backend.services.run_context_service import (
@@ -236,22 +237,22 @@ async def get_layer_subcomponent_activation_contexts(
     )
 
 
-@app.get("/cluster-dashboard/data")
-@handle_errors
-async def get_cluster_dashboard_data(
-    iteration: int,
-    n_samples: int,
-    n_batches: int,
-    batch_size: int,
-    context_length: int,
-) -> ClusterDashboardResponse:
-    return await component_activation_contexts_service.get_dashboard_data(
-        iteration=iteration,
-        n_samples=n_samples,
-        n_batches=n_batches,
-        batch_size=batch_size,
-        context_length=context_length,
-    )
+# @app.get("/cluster-dashboard/data")
+# @handle_errors
+# async def get_cluster_dashboard_data(
+#     iteration: int,
+#     n_samples: int,
+#     n_batches: int,
+#     batch_size: int,
+#     context_length: int,
+# ) -> ClusterDashboardResponse:
+#     return await component_activation_contexts_service.get_dashboard_data(
+#         iteration=iteration,
+#         n_samples=n_samples,
+#         n_batches=n_batches,
+#         batch_size=batch_size,
+#         context_length=context_length,
+#     )
 
 
 if __name__ == "__main__":

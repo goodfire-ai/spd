@@ -8,18 +8,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from spd.app.backend.api import (
-    ActivationBatchDTO,
-    ClusterComponentDTO,
-    ClusterDashboardResponse,
-    ClusterDataDTO,
-    ClusterIdDTO,
-    ClusterStatsDTO,
-    HistogramDTO,
-    TextSampleDTO,
-    TokenActivationsDTO,
-)
-from spd.app.backend.services.run_context_service import RunContextService
 from spd.clustering.dashboard.compute_max_act import compute_max_activations
 from spd.clustering.dashboard.core import (
     ActivationSampleBatch,
@@ -33,6 +21,19 @@ from spd.clustering.dashboard.dashboard_io import (
     load_wandb_artifacts,
     setup_model_and_data,
 )
+
+from spd.app.backend.api import (
+    ActivationBatchDTO,
+    ClusterComponentDTO,
+    ClusterDashboardResponse,
+    ClusterDataDTO,
+    ClusterIdDTO,
+    ClusterStatsDTO,
+    HistogramDTO,
+    TextSampleDTO,
+    TokenActivationsDTO,
+)
+from spd.app.backend.services.run_context_service import RunContextService
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
 from spd.utils.general_utils import runtime_cast

@@ -192,13 +192,3 @@ def pgd_masked_recon_loss_update(
     loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
     n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
     return loss, n_examples
-
-
-# %%
-import torch
-
-x = torch.rand(3)
-print(x.grad)
-
-x.requires_grad_(True)
-print(x.grad)

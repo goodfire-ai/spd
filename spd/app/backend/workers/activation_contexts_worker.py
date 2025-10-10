@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gc
 import heapq
 import sys
 from collections import defaultdict

@@ -1,5 +1,6 @@
 from math import cos, pi
-from spd.configs import LinearSchedule, CosineSchedule
+
+from spd.configs import CosineSchedule, LinearSchedule
 
 
 def get_linear_schedule_value(

@@ -92,26 +92,23 @@ PGDInitStrategy = Literal["random", "ones", "zeroes"]
 MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
 
 
-class PGDConfig(BaseModel):
+class PGDConfig(TrainMetricConfig):
     init: PGDInitStrategy
     step_size: float
     n_steps: int
     mask_scope: MaskScope
 
 
-class PGDReconLossTrainConfig(TrainMetricConfig):
+class PGDReconLossTrainConfig(PGDConfig):
     classname: Literal["PGDReconLoss"] = "PGDReconLoss"
-    pgd_config: PGDConfig
 
 
-class PGDReconLayerwiseLossTrainConfig(TrainMetricConfig):
+class PGDReconLayerwiseLossTrainConfig(PGDConfig):
     classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
-    pgd_config: PGDConfig
 
 
-class PGDReconSubsetLossTrainConfig(TrainMetricConfig):
+class PGDReconSubsetLossTrainConfig(PGDConfig):
     classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
-    pgd_config: PGDConfig
 
 
 class StochasticHiddenActsReconLossConfig(TrainMetricConfig):

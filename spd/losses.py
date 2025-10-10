@@ -1,4 +1,3 @@
-from math import cos, pi
 from typing import Literal
 
 import torch
@@ -156,7 +155,7 @@ def compute_total_loss(
                     target_out=target_out,
                     ci=ci,
                     weight_deltas=weight_deltas if use_delta_component else None,
-                    pgd_config=cfg.pgd_config,
+                    pgd_config=cfg,
                 )
             case PGDReconSubsetLossTrainConfig():
                 loss = pgd_recon_subset_loss(
@@ -166,7 +165,7 @@ def compute_total_loss(
                     target_out=target_out,
                     ci=ci,
                     weight_deltas=weight_deltas if use_delta_component else None,
-                    pgd_config=cfg.pgd_config,
+                    pgd_config=cfg,
                 )
             case PGDReconLayerwiseLossTrainConfig():
                 loss = pgd_recon_layerwise_loss(
@@ -176,7 +175,7 @@ def compute_total_loss(
                     target_out=target_out,
                     ci=ci,
                     weight_deltas=weight_deltas if use_delta_component else None,
-                    pgd_config=cfg.pgd_config,
+                    pgd_config=cfg,
                 )
             case StochasticHiddenActsReconLossConfig():
                 loss = stochastic_hidden_acts_recon_loss(

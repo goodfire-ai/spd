@@ -15,16 +15,20 @@ identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
+
   - classname: "ImportanceMinimalityLoss"
     coeff: 0.0003
     pnorm: 2.0
     p_anneal_start_frac: 0.0
     p_anneal_final_p: 0.7
     p_anneal_end_frac: 1.0
+
   - classname: "StochasticReconLayerwiseLoss"
     coeff: 2.0
+
   - classname: "StochasticReconLoss"
     coeff: 0.2
+
   - classname: "PGDReconSubsetLoss"
     pgd_config:
       init: "random"
@@ -37,6 +41,7 @@ loss_metric_configs:
       end_value: 0.0
       start_frac: 0.0
       end_frac: 1.0
+
 output_loss_type: kl
 
 # --- Training ---
