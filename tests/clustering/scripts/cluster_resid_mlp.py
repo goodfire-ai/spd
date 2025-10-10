@@ -1,5 +1,7 @@
 # %%
 from pathlib import Path
+import argparse
+import sys
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -19,6 +21,7 @@ from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import (
     plot_dists_distribution,
+    plot_merge_history_cluster_sizes,
     plot_merge_iteration,
 )
 from spd.configs import Config
@@ -36,19 +39,79 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 # pyright: reportUnusedParameter=false
 
-# magic autoreload
-# %load_ext autoreload
-# %autoreload 2
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Run SPD clustering on ResidMLP models")
+    parser.add_argument(
+        "model_key", 
+        nargs="?",  # Optional positional argument
+        default="resid_mlp2",
+        choices=["resid_mlp1", "resid_mlp2", "resid_mlp3"],
+        help="Model to use for clustering (default: resid_mlp2)"
+    )
+    parser.add_argument(
+        "--list-models", 
+        action="store_true",
+        help="List available models and exit"
+    )
+    
+    # Handle Jupyter notebook execution
+    if hasattr(__builtins__, '__IPYTHON__'):
+        # Running in Jupyter - use default or override with custom args
+        return parser.parse_args(["resid_mlp2"])  # Default for notebooks
+    else:
+        return parser.parse_args()
+
+def list_available_models():
+    """List all available models in the experiment registry."""
+    print("Available models:")
+    print("-" * 50)
+    for key in EXPERIMENT_REGISTRY.keys():
+        run_path = EXPERIMENT_REGISTRY[key].canonical_run
+        if run_path:
+            print(f"  {key:15} -> {run_path}")
+        else:
+            print(f"  {key:15} -> None (not available)")
+    print("-" * 50)
+
+# Parse arguments
+args = parse_arguments()
+
+# List models if requested
+if args.list_models:
+    list_available_models()
+    sys.exit(0)
+
+# Validate model availability
+model_key = args.model_key
+if model_key not in EXPERIMENT_REGISTRY:
+    print(f"Error: Model '{model_key}' not found in experiment registry")
+    list_available_models()
+    sys.exit(1)
+
+canonical_run = EXPERIMENT_REGISTRY[model_key].canonical_run
+if canonical_run is None:
+    print(f"Error: Model '{model_key}' is not available (canonical_run is None)")
+    list_available_models()
+    sys.exit(1)
+
+print(f"Using model: {model_key}")
+print(f"Model path: {canonical_run}")
+print("-" * 80)
 
 # %%
 # Load model
 # ============================================================
-_CANONICAL_RUN: str | None = EXPERIMENT_REGISTRY["resid_mlp2"].canonical_run
-assert _CANONICAL_RUN is not None, "No canonical run found for resid_mlp2 experiment"
+_CANONICAL_RUN: str | None = EXPERIMENT_REGISTRY[model_key].canonical_run
+assert _CANONICAL_RUN is not None, f"No canonical run found for {model_key} experiment"
 SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(_CANONICAL_RUN)
 MODEL: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 MODEL.to(DEVICE)
 SPD_CONFIG: Config = SPD_RUN.config
+
+print(f"✅ Loaded {model_key} model successfully")
+print(f"   Checkpoint: {SPD_RUN.checkpoint_path}")
+print(f"   Device: {DEVICE}")
 
 # %%
 # Setup dataset and dataloader
@@ -69,6 +132,7 @@ DATASET: ResidMLPDataset = ResidMLPDataset(
 
 dbg_auto(
     dict(
+        model_key=model_key,
         n_features=DATASET.n_features,
         feature_probability=DATASET.feature_probability,
         data_generation_type=DATASET.data_generation_type,
@@ -111,6 +175,8 @@ plot_activations(
     wandb_run=None,
 )
 
+print(f"📊 Processed {PROCESSED_ACTIVATIONS.n_components_alive} alive components from {model_key}")
+
 # %%
 # run the merge iteration
 # ============================================================
@@ -139,16 +205,34 @@ def _plot_func(
     mdl_loss_norm: float,
     diag_acts: torch.Tensor,
 ) -> None:
+    # if (iter_idx % 50 == 0 and iter_idx > 0) or iter_idx == 1:
+    #     plot_merge_iteration(
+    #         current_merge=current_merge,
+    #         current_coact=current_coact,
+    #         costs=costs,
+    #         iteration=iter_idx,
+    #         component_labels=component_labels,
+    #         show=True,  # Show the plot interactively
+    #     )
+    # assert kwargs
     if (iter_idx % 50 == 0 and iter_idx > 0) or iter_idx == 1:
-        plot_merge_iteration(
-            current_merge=current_merge,
-            current_coact=current_coact,
-            costs=costs,
-            iteration=iter_idx,
-            component_labels=component_labels,
-            show=True,  # Show the plot interactively
-        )
+        try:
+            plot_merge_iteration(
+                current_merge=current_merge,
+                current_coact=current_coact,
+                costs=costs,
+                # FIXED: Commented out problematic pair_cost parameter
+                #pair_cost=merge_history.latest()["costs_stats"]["chosen_pair"],  # pyright: ignore[reportIndexIssue, reportCallIssue, reportArgumentType],
+                iteration=iter_idx,
+                component_labels=component_labels,
+                show=True,  # Show the plot interactively
+                plot_config={"save_pdf": True, "pdf_prefix": f"/content/clustering_{model_key}_iter"}
+            )
+        except Exception as e:
+            print(f"Plotting error at iteration {iter_idx}: {e}")
 
+
+print(f"Starting clustering for {model_key} with {PROCESSED_ACTIVATIONS.n_components_alive} components...")
 
 MERGE_HIST: MergeHistory = merge_iteration(
     merge_config=MERGE_CFG,
@@ -158,6 +242,8 @@ MERGE_HIST: MergeHistory = merge_iteration(
     log_callback=_plot_func,
 )
 
+print(f"Clustering completed for {model_key}")
+
 # %%
 # Plot merge history
 # ============================================================
@@ -165,6 +251,10 @@ MERGE_HIST: MergeHistory = merge_iteration(
 # plt.hist(mh[270]["merges"].components_per_group, bins=np.linspace(0, 56, 57))
 # plt.yscale("log")
 # plt.xscale("log")
+# FIXED: Commented out broken plotting functions
+# plot_merge_history_costs(MERGE_HIST)  # Raises NotImplementedError
+# plot_merge_history_costs(MERGE_HIST, ylim=(-1, 1))  # Raises NotImplementedError
+plot_merge_history_cluster_sizes(MERGE_HIST)
 
 
 # %%
@@ -194,3 +284,6 @@ plot_dists_distribution(
     # label="v1"
 )
 plt.legend()
+
+
+
