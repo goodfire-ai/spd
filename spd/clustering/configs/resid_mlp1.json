@@ -1,0 +1,24 @@
+{
+  "merge_config": {
+    "activation_threshold": 0.01,
+    "alpha": 1,
+    "iters": null,
+    "merge_pair_sampling_method": "range",
+    "merge_pair_sampling_kwargs": {"threshold": 0.05},
+    "pop_component_prob": 0,
+    "filter_dead_threshold": 0,
+    "module_name_filter": null
+  },
+  "experiment_key": "resid_mlp1",
+  "distances_method": "perm_invariant_hamming",
+  "n_batches": 8,
+  "batch_size": 1024,
+  "wandb_enabled": true,
+  "wandb_project": "spd-cluster",
+  "intervals": {
+    "stat": 1,
+    "tensor": 5,
+    "plot": 5,
+    "artifact": 5
+  }
+}

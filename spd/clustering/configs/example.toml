@@ -1,0 +1,37 @@
+# Example MergeRunConfig in TOML format
+
+# Run configuration
+model_path = "wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh"  # WandB path to the decomposed model
+task_name = "lm"  # Task name (must be explicit: tms, resid_mlp, lm, ih)
+# experiment_key = "tms_5-2"  # Alternative: use experiment key from EXPERIMENT_REGISTRY
+n_batches = 10  # Ensemble size
+batch_size = 64  # Batch size for processing -- number of samples for each run in the ensemble
+
+# WandB configuration
+wandb_enabled = false  # Enable WandB logging
+wandb_project = "spd-cluster"  # WandB project name
+
+[intervals]
+stat = 1       # for k_groups, merge_pair_cost, mdl_loss
+tensor = 100   # for wandb_log_tensor and fraction_* calculations
+plot = 100     # for calling the plotting callback
+artifact = 100 # for calling the artifact callback
+
+# Optional: Override defaults (typically set via CLI args)
+# base_path = ".data/clustering/"  # defaults to .data/clustering/
+# workers_per_device = 1  # defaults to 1
+# devices = ["cpu"]  # defaults to ["cpu"], CLI will override with ["cuda"] if available
+
+# Merge algorithm parameters (wrapped in merge_config)
+[merge_config]
+activation_threshold = 0.01  # set to null to use scalar activations for cost calculation
+alpha = 1.0  # rank penalty term
+iters = 100  # iterations to run. setting this to exactly the number of components can be buggy when doing ensembles, so set it to a bit less?
+pop_component_prob = 0  # Probability of popping a component. i recommend 0 if you're doing an ensemble anyway
+filter_dead_threshold = 0.001  # Threshold for filtering dead components
+module_name_filter = "__NULL__"  # Can be a string prefix like "model.layers.0." if you want to do only some modules
+rank_cost_fn_name = "const_1"  # Options: const_1, const_2, log, linear
+merge_pair_sampling_method = "range"  # Method for sampling merge pairs: 'range' or 'mcmc'
+
+[merge_config.merge_pair_sampling_kwargs]
+threshold = 0.05  # For range sampler: fraction of the range of costs to sample from
