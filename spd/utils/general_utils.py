@@ -46,7 +46,7 @@ class BaseConfig(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
     @classmethod
-    def load(cls, path_or_obj: Path | str | dict[str, Any]) -> "Self":
+    def load(cls, path_or_obj: Path | str | dict[str, Any]) -> Self:
         """Load config from path to a JSON or YAML file, or a raw dictionary or json string.
 
         Json strings are passed in with a "json:" prefix. This is to prevent Fire from
