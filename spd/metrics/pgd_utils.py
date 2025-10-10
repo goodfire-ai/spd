@@ -83,10 +83,10 @@ def optimize_adversarial_stochastic_masks(
     # PGD ascent
     for _ in range(int(pgd_config.n_steps)):
         for v in component_mask.values():
-            assert v.grad is not None
+            assert v.grad is None or torch.all(v.grad == 0.0)
         if weight_delta_mask is not None:
             for v in weight_delta_mask.values():
-                assert v.grad is not None
+                assert v.grad is None or torch.all(v.grad == 0.0)
 
         adv_vars = list(component_mask.values())
         if weight_delta_mask is not None:
@@ -114,7 +114,8 @@ def optimize_adversarial_stochastic_masks(
             for v, g in zip(adv_vars, grads, strict=True):
                 v.add_(pgd_config.step_size * g.sign())
                 v.clamp_(0.0, 1.0)
-                v.detach_()
+                assert v.grad is not None
+                v.grad.zero_()
 
     return component_mask, weight_delta_mask
 
@@ -202,3 +203,12 @@ def pgd_masked_recon_loss_update(
     loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
     n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
     return loss, n_examples
+
+# %%
+import torch
+
+x = torch.rand(3)
+print(x.grad)
+
+x.requires_grad_(True)
+print(x.grad)
