@@ -97,6 +97,9 @@ if canonical_run is None:
 print(f"Using model: {model_key}")
 print(f"Model path: {canonical_run}")
 print("-" * 80)
+# magic autoreload
+# %load_ext autoreload
+# %autoreload 2
 
 # %%
 # Load model
