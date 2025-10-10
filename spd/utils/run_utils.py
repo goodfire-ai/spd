@@ -371,14 +371,17 @@ def generate_grid_combinations(parameters: dict[str, Any]) -> list[dict[str, Any
 
 METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     # Train metrics
-    "CIMaskedReconSubsetLoss": "CIMaskReconSub",
-    "CIMaskedReconLayerwiseLoss": "CIMaskReconLayer",
-    "CIMaskedReconLoss": "CIMaskRecon",
     "FaithfulnessLoss": "Faith",
     "ImportanceMinimalityLoss": "ImpMin",
-    "StochasticReconLayerwiseLoss": "StochReconLayer",
     "StochasticReconLoss": "StochRecon",
     "StochasticReconSubsetLoss": "StochReconSub",
+    "StochasticReconLayerwiseLoss": "StochReconLayer",
+    "CIMaskedReconLoss": "CIMaskRecon",
+    "CIMaskedReconSubsetLoss": "CIMaskReconSub",
+    "CIMaskedReconLayerwiseLoss": "CIMaskReconLayer",
+    "PGDReconLoss": "PGDRecon",
+    "PGDReconSubsetLoss": "PGDReconSub",
+    "PGDReconLayerwiseLoss": "PGDReconLayer",
     # Eval metrics
     "CEandKLLosses": "CEandKL",
     "CIHistograms": "CIHist",
