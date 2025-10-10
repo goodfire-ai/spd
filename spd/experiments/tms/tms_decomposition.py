@@ -17,17 +17,13 @@ from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import (
-    load_config,
-    save_pre_run_info,
-    set_seed,
-)
+from spd.utils.general_utils import save_pre_run_info, set_seed
 from spd.utils.run_utils import get_output_dir
 from spd.utils.wandb_utils import init_wandb
 
 
 def main(
-    config_path_or_obj: Path | str | Config,
+    config_path: Path | str,
     evals_id: str | None = None,
     sweep_id: str | None = None,
     sweep_params_json: str | None = None,
@@ -39,7 +35,7 @@ def main(
     device = get_device()
     logger.info(f"Using device: {device}")
 
-    config = load_config(config_path_or_obj, config_model=Config)
+    config = Config.load(config_path)
 
     if config.wandb_project:
         tags = ["tms"]

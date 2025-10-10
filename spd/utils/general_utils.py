@@ -4,7 +4,7 @@ import random
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Protocol
+from typing import Any, ClassVar, Literal, Protocol, Self
 
 import einops
 import numpy as np
@@ -14,8 +14,7 @@ import torch.nn.functional as F
 import wandb
 import yaml
 from jaxtyping import Float
-from pydantic import BaseModel as _BaseModel
-from pydantic import ConfigDict, PositiveFloat
+from pydantic import BaseModel, ConfigDict, PositiveFloat
 from pydantic.v1.utils import deep_update
 from torch import Tensor
 
@@ -37,10 +36,58 @@ COLOR_PALETTE = [
 ]
 
 
-class BaseModel(_BaseModel):
-    """Regular pydantic BaseModel but enforcing extra="forbid" and frozen=True."""
+class BaseConfig(BaseModel):
+    """Pydantic BaseModel suited for configs.
+
+    Enforces extra="forbid" and frozen=True and adds loading and saving from/to YAML, JSON, and
+    JSON string (these are prefixed with "json:").
+    """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+
+    @classmethod
+    def load(cls, path_or_obj: Path | str | dict[str, Any]) -> "Self":
+        """Load config from path to a JSON or YAML file, or a raw dictionary or json string.
+
+        Json strings are passed in with a "json:" prefix. This is to prevent Fire from
+        inconveniently parsing the string as a dictionary and e.g. converting "null" to None.
+
+        Args:
+            path_or_obj: Path to config file, or JSON string prefixed with "json:", or dictionary
+
+        Returns:
+            The config object
+        """
+        if isinstance(path_or_obj, str) and path_or_obj.startswith("json:"):
+            json_str = path_or_obj[5:]  # Remove "json:" prefix
+            assert json_str[0] == "{", f"Json string starts with {json_str[0]} instead of {{"
+            return cls.model_validate(json.loads(json_str))
+
+        if isinstance(path_or_obj, str):
+            path_or_obj = Path(path_or_obj)
+
+        match path_or_obj:
+            case Path() if path_or_obj.suffix == ".json":
+                data = json.loads(path_or_obj.read_text())
+            case Path() if path_or_obj.suffix in [".yaml", ".yml"]:
+                data = yaml.safe_load(path_or_obj.read_text())
+            case dict():
+                data = path_or_obj
+            case _:
+                raise ValueError(f"Unsupported path_or_obj type: {type(path_or_obj)}")
+
+        return cls.model_validate(data)
+
+    def save(self, path: Path) -> None:
+        """Save config to file (format inferred from extension)."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        match path.suffix:
+            case ".json":
+                path.write_text(self.model_dump_json(indent=2))
+            case ".yaml" | ".yml":
+                path.write_text(yaml.dump(self.model_dump(mode="json")))
+            case _:
+                raise ValueError(f"Unsupported file extension: {path.suffix}")
 
 
 def set_seed(seed: int | None) -> None:
@@ -54,47 +101,6 @@ def set_seed(seed: int | None) -> None:
 def generate_sweep_id() -> str:
     """Generate a unique sweep ID based on timestamp."""
     return f"sweep_id-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-
-def load_config[T: BaseModel](
-    config_path_or_obj: Path | str | dict[str, Any] | T, config_model: type[T]
-) -> T:
-    """Load the config of class `config_model`, from various sources.
-
-    Args:
-        config_path_or_obj (Union[Path, str, dict, `config_model`]): Can be:
-            - config object: must be instance of `config_model`
-            - dict: config dictionary
-            - str starting with 'json:': JSON string with prefix
-            - other str: treated as path to a .yaml file
-            - Path: path to a .yaml file
-        config_model: the class of the config that we are loading
-    """
-    if isinstance(config_path_or_obj, config_model):
-        return config_path_or_obj
-
-    if isinstance(config_path_or_obj, dict):
-        return config_model(**config_path_or_obj)
-
-    if isinstance(config_path_or_obj, str):
-        # Check if it's a prefixed JSON string
-        if config_path_or_obj.startswith("json:"):
-            config_dict = json.loads(config_path_or_obj[5:])
-            return config_model(**config_dict)
-        else:
-            # Treat as file path
-            config_path_or_obj = Path(config_path_or_obj)
-
-    assert isinstance(config_path_or_obj, Path), (
-        f"passed config is of invalid type {type(config_path_or_obj)}"
-    )
-    assert config_path_or_obj.suffix == ".yaml", (
-        f"Config file {config_path_or_obj} must be a YAML file."
-    )
-    assert Path(config_path_or_obj).exists(), f"Config file {config_path_or_obj} does not exist."
-    with open(config_path_or_obj) as f:
-        config_dict = yaml.safe_load(f)
-    return config_model(**config_dict)
 
 
 def replace_pydantic_model[BaseModelType: BaseModel](

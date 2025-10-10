@@ -2,10 +2,10 @@ from typing import Literal
 
 from pydantic import Field, PositiveInt
 
-from spd.utils.general_utils import BaseModel
+from spd.utils.general_utils import BaseConfig
 
 
-class LMTaskConfig(BaseModel):
+class LMTaskConfig(BaseConfig):
     task_name: Literal["lm"] = Field(
         default="lm",
         description="Identifier for the language-model decomposition task",
