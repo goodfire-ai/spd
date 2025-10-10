@@ -178,6 +178,8 @@ MetricConfigType = TrainMetricConfigType | EvalOnlyMetricConfigType
 
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
+SamplingType = Literal["continuous"] | Literal["binomial"]
+
 
 class Config(BaseModel):
     # --- WandB
@@ -212,7 +214,7 @@ class Config(BaseModel):
         default=[8],
         description="Hidden dimensions for the causal importance function used to calculate the causal importance",
     )
-    sampling: Literal["continuous", "binomial"] = Field(
+    sampling: SamplingType = Field(
         default="continuous",
         description="Sampling mode for stochastic elements: 'continuous' (default) or 'binomial'",
     )

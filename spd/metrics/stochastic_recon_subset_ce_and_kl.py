@@ -1,5 +1,5 @@
 from fnmatch import fnmatch
-from typing import Any, Literal, override
+from typing import Any, override
 
 import einops
 import torch
@@ -8,6 +8,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
@@ -26,7 +27,7 @@ class StochasticReconSubsetCEAndKL(Metric):
         self,
         model: ComponentModel,
         device: str,
-        sampling: Literal["continuous", "binomial"],
+        sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
         include_patterns: dict[str, list[str]] | None = None,
@@ -34,7 +35,7 @@ class StochasticReconSubsetCEAndKL(Metric):
     ) -> None:
         self.model = model
         self.device = device
-        self.sampling: Literal["continuous", "binomial"] = sampling
+        self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples = n_mask_samples
         self.include_patterns = include_patterns or {}

@@ -1,10 +1,11 @@
-from typing import Any, Literal, override
+from typing import Any, override
 
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
@@ -14,7 +15,7 @@ from spd.utils.general_utils import get_obj_device
 
 def _stochastic_hidden_acts_recon_loss_update(
     model: ComponentModel,
-    sampling: Literal["continuous", "binomial"],
+    sampling: SamplingType,
     n_mask_samples: int,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
@@ -59,7 +60,7 @@ def _stochastic_hidden_acts_recon_loss_compute(
 
 def stochastic_hidden_acts_recon_loss(
     model: ComponentModel,
-    sampling: Literal["continuous", "binomial"],
+    sampling: SamplingType,
     n_mask_samples: int,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
@@ -85,12 +86,12 @@ class StochasticHiddenActsReconLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        sampling: Literal["continuous", "binomial"],
+        sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
     ) -> None:
         self.model = model
-        self.sampling: Literal["continuous", "binomial"] = sampling
+        self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
         self.sum_mse = torch.tensor(0.0, device=device)

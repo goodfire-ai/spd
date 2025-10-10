@@ -1,9 +1,9 @@
-from typing import Literal
 from unittest.mock import patch
 
 import torch
 from torch import Tensor
 
+from spd.configs import SamplingType
 from spd.metrics import stochastic_recon_layerwise_loss, stochastic_recon_loss
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import RoutingType
@@ -57,7 +57,7 @@ class TestStochasticReconLayerwiseLoss:
 
         def mock_calc_stochastic_component_mask_info(
             causal_importances: dict[str, Tensor],  # pyright: ignore[reportUnusedParameter]
-            sampling: Literal["continuous", "binomial"],  # pyright: ignore[reportUnusedParameter]
+            component_mask_sampling: SamplingType,  # pyright: ignore[reportUnusedParameter]
             routing: RoutingType,  # pyright: ignore[reportUnusedParameter]
             weight_deltas: dict[str, Tensor] | None,  # pyright: ignore[reportUnusedParameter]
         ) -> dict[str, ComponentsMaskInfo]:

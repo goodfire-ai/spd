@@ -14,7 +14,7 @@ from torch.utils.hooks import RemovableHandle
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
-from spd.configs import Config
+from spd.configs import Config, SamplingType
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
@@ -521,7 +521,7 @@ class ComponentModel(LoadableModule):
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
         sigmoid_type: SigmoidTypes,
-        sampling: Literal["continuous", "binomial"],
+        sampling: SamplingType,
         detach_inputs: bool = False,
     ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
         """Calculate causal importances.

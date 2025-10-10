@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, override
 
 import einops
 import torch
@@ -7,6 +7,7 @@ from jaxtyping import Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
@@ -45,11 +46,11 @@ class CEandKLLosses(Metric):
         self,
         model: ComponentModel,
         device: str,
-        sampling: Literal["continuous", "binomial"],
+        sampling: SamplingType,
         rounding_threshold: float,
     ) -> None:
         self.model = model
-        self.sampling: Literal["continuous", "binomial"] = sampling
+        self.sampling: SamplingType = sampling
         self.rounding_threshold = rounding_threshold
 
         self.loss_sums: dict[str, Tensor] = {

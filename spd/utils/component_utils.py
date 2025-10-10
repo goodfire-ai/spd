@@ -4,6 +4,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+from spd.configs import SamplingType
 from spd.models.components import (
     ComponentsMaskInfo,
     RoutingMasks,
@@ -75,17 +76,7 @@ def sample_uniform_k_subset_routing_masks(
     return {mod: perms[i] < k_modules_to_route for i, mod in enumerate(module_names)}
 
 
-SamplingData = (
-    Literal["continuous"]
-    | Literal["binomial"]
-    | tuple[Literal["given"], dict[str, Float[Tensor, "... C"]]]
-)
-
-RoutingType = (
-    Literal[
-        "uniform_k-stochastic", "all"
-    ]  #  | tuple[Literal["given"], dict[str, Bool[Tensor, "..."]]]
-)
+RoutingType = Literal["uniform_k-stochastic", "all"]
 """How to choose which (batch,) or (batch, seq_len) positions to route to components or target.
 
 uniform_k-stochastic:
@@ -113,7 +104,7 @@ def calc_routing_masks(
 
 def calc_stochastic_component_mask_info(
     causal_importances: dict[str, Float[Tensor, "... C"]],
-    component_mask_sampling: SamplingData,
+    component_mask_sampling: SamplingType,
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
     routing: RoutingType,
 ) -> dict[str, ComponentsMaskInfo]:
@@ -129,8 +120,6 @@ def calc_stochastic_component_mask_info(
                 rand_tensor = torch.randint(0, 2, ci.shape, device=device).float()
             case "continuous":
                 rand_tensor = torch.rand_like(ci)
-            case ("given", adversarial_ci):
-                rand_tensor = adversarial_ci[layer]
         component_masks[layer] = ci + (1 - ci) * rand_tensor
 
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None
