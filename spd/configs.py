@@ -185,7 +185,7 @@ class Config(BaseModel):
         default="continuous",
         description="Sampling mode for stochastic elements: 'continuous' (default) or 'binomial'",
     )
-    sigmoid_type: Literal["normal", "hard", "leaky_hard", "upper_leaky_hard", "swish_hard"] = Field(
+    sigmoid_type: Literal["leaky_hard"] = Field(
         default="leaky_hard",
         description="Type of sigmoid to use for causal importance calculation",
     )
