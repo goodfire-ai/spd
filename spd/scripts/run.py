@@ -146,8 +146,8 @@ def generate_commands(
 
     for experiment in experiments_list:
         config_entry = EXPERIMENT_REGISTRY[experiment]
-        decomp_script = REPO_ROOT / config_entry.decomp_script
-        config_path = REPO_ROOT / config_entry.config_path
+        decomp_script = config_entry.decomp_script
+        config_path = config_entry.config_path
 
         # Load base config
         base_config = Config.load(config_path)
