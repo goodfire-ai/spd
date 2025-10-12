@@ -18,8 +18,11 @@ from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
 
 
-class ClusteringSubmitConfig(BaseConfig):
-    """Configuration for submitting an ensemble of clustering runs to SLURM."""
+class ClusteringPipelineConfig(BaseConfig):
+    """Configuration for submitting an ensemble of clustering runs to SLURM.
+
+    FUTURE: Also handle caculating the distances within an ensemble after the runs are complete.
+    """
 
     run_config_path: Path = Field(
         description="Path to ClusteringRunConfig file (contains algorithm parameters and WandB settings)"
@@ -36,7 +39,7 @@ class ClusteringSubmitConfig(BaseConfig):
     create_git_snapshot: bool = Field(description="Create a git snapshot for the run")
 
 
-def generate_run_id_for_ensemble(_config: ClusteringSubmitConfig) -> str:
+def generate_run_id_for_ensemble(_config: ClusteringPipelineConfig) -> str:
     """Generate a unique ensemble identifier based on config.
 
     This is used as the ensemble_hash component in individual run IDs.
@@ -46,7 +49,7 @@ def generate_run_id_for_ensemble(_config: ClusteringSubmitConfig) -> str:
 
 
 def generate_clustering_commands(
-    submit_config: ClusteringSubmitConfig,
+    submit_config: ClusteringPipelineConfig,
     ensemble_hash: str,
 ) -> list[str]:
     """Generate commands for each clustering run.
@@ -85,7 +88,7 @@ def main(submit_config_path: Path, n_runs: int | None = None) -> None:
     """
     logger.set_format("console", "default")
 
-    submit_config = ClusteringSubmitConfig.load(submit_config_path)
+    submit_config = ClusteringPipelineConfig.load(submit_config_path)
 
     if n_runs is not None:
         submit_config.n_runs = n_runs

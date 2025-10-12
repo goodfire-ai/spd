@@ -8,7 +8,7 @@
 # import torch
 # from jaxtyping import Int
 # from muutils.dbg import dbg_auto
-# from spd.clustering.merge_run_config import ClusteringRunConfig
+# from spd.clustering.run_clustering import ClusteringRunConfig
 # from spd.clustering.pipeline.s1_split_dataset import split_dataset
 # from torch import Tensor
 

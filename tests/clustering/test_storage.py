@@ -10,7 +10,7 @@
 # import numpy as np
 # import pytest
 # import torch
-# from spd.clustering.merge_run_config import ClusteringRunConfig
+# from spd.clustering.run_clustering import ClusteringRunConfig
 # from spd.clustering.pipeline.storage import ClusteringStorage, NormalizedEnsemble
 
 # from spd.clustering.consts import ComponentLabels, DistancesMethod

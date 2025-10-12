@@ -232,10 +232,10 @@
             ]
         },
         {
-            "name": "clustering",
+            "name": "run_clustering example",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/spd/clustering/scripts/main.py",
+            "program": "${workspaceFolder}/spd/clustering/run_clustering.py",
             "args": [
                 "--config",
                 "${workspaceFolder}/spd/clustering/configs/example.yaml",
