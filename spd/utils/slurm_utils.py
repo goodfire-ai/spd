@@ -87,7 +87,7 @@ def create_slurm_array_script(
 
         # Ensure that dependencies are using the snapshot branch. SLURM might inherit the
         # parent environment, so we need to deactivate and unset the virtual environment.
-        deactivate
+        deactivate 2>/dev/null || true
         unset VIRTUAL_ENV
         uv sync --no-dev
 
@@ -172,7 +172,7 @@ def create_analysis_slurm_script(
 
         # Ensure that dependencies are using the snapshot branch. SLURM might inherit the
         # parent environment, so we need to deactivate and unset the virtual environment.
-        deactivate
+        deactivate 2>/dev/null || true
         unset VIRTUAL_ENV
         uv sync --no-dev
 
