@@ -32,6 +32,7 @@ def main(
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
     )
 
+    # exit(0)
     device = get_device()
     logger.info(f"Using device: {device}")
 

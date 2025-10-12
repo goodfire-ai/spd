@@ -70,6 +70,8 @@ def create_slurm_array_script(
         #SBATCH --array={array_range}
         #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
 
+        sleep 15
+
         # Create job-specific working directory
         WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
 
@@ -84,6 +86,11 @@ def create_slurm_array_script(
 
         # Checkout the snapshot branch to ensure consistent code
         git checkout {snapshot_branch}
+
+        # Ensure that dependencies are using the snapshot branch
+        deactivate
+        source .venv/bin/activate
+        uv sync
 
         # Execute the appropriate command based on array task ID
         case $SLURM_ARRAY_TASK_ID in
