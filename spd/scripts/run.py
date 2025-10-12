@@ -145,12 +145,9 @@ def generate_commands(
     cmd_idx: int = 0
 
     for experiment in experiments_list:
-        config_entry = EXPERIMENT_REGISTRY[experiment]
-        decomp_script = REPO_ROOT / config_entry.decomp_script
-        config_path = REPO_ROOT / config_entry.config_path
+        exp_config = EXPERIMENT_REGISTRY[experiment]
 
-        # Load base config
-        base_config = Config.load(config_path)
+        base_config = Config.load(exp_config.config_path)
 
         if sweep_params_path is None:
             # Fixed configuration run - still use JSON to ensure project override works
@@ -163,7 +160,7 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
-                f"{mpi_prefix}python {decomp_script} '{config_json}' "
+                f"{mpi_prefix}python {exp_config.decomp_script} '{config_json}' "
                 f"--sweep_id {run_id} --evals_id {experiment}"
             )
 
@@ -190,7 +187,7 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
-                    f"{mpi_prefix}python {decomp_script} '{config_json}' "
+                    f"{mpi_prefix}python {exp_config.decomp_script} '{config_json}' "
                     f"--sweep_id {run_id} "
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
