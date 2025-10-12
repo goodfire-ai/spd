@@ -246,6 +246,22 @@
             "env": {
                 "PYDEVD_DISABLE_FILE_VALIDATION": "1"
             }
+        },
+        {
+            "name": "submit clustering",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/clustering/scripts/run.py",
+            "args": [
+                "--config",
+                "${workspaceFolder}/spd/clustering/scripts/clustering_submit_config.yaml",
+            ],
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
         }
     ]
 }

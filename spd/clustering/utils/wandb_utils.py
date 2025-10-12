@@ -11,15 +11,11 @@ CLUSTERING_WORKSPACE_TEMPLATE = (
 )
 
 
-def create_clustering_workspace_view(
-    ensemble_hash: str,
-    project: str = "spd-cluster",
-    entity: str = "goodfire",
-) -> str:
+def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str) -> str:
     """Create WandB workspace view for clustering runs.
 
     Args:
-        ensemble_hash: Unique identifier for this ensemble
+        ensemble_id: Unique identifier for this ensemble
         project: WandB project name
         entity: WandB entity (team/user) name
 
@@ -32,13 +28,13 @@ def create_clustering_workspace_view(
 
     # Create a basic workspace
     workspace = ws.Workspace(entity=entity, project=project)
-    workspace.name = f"Clustering - {ensemble_hash}"
+    workspace.name = f"Clustering - {ensemble_id}"
 
     # Filter for runs with this ensemble_hash
-    # Runs will be tagged with wandb_group=f"ensemble-{ensemble_hash}"
+    # Runs will be tagged with wandb_group=f"ensemble-{ensemble_id}"
     try:
         workspace.runset_settings.filters = [
-            ws.Tags("group").isin([f"ensemble-{ensemble_hash}"]),
+            ws.Tags("group").isin([f"ensemble-{ensemble_id}"]),
         ]
     except Exception as e:
         logger.warning(f"Could not set workspace filters: {e}")

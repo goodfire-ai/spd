@@ -426,7 +426,6 @@ def main(
                 script_path=array_script,
                 job_name=job_name,
                 commands=commands,
-                # again -- local is false, so snapshot_branch will exist
                 snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
                 max_concurrent_tasks=n_agents,
                 n_gpus_per_job=n_gpus_per_job,
