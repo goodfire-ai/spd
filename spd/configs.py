@@ -106,6 +106,13 @@ class PermutedCIPlotsConfig(BaseModel):
     identity_patterns: list[str] | None
     dense_patterns: list[str] | None
 
+    @model_validator(mode="before")
+    def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
+        """Remove deprecated config keys and change names of any keys that have been renamed."""
+        if "simgoid_type" in config_dict:
+            del config_dict["sigmoid_type"]
+        return config_dict
+
 
 class StochasticReconSubsetCEAndKLConfig(BaseModel):
     classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
