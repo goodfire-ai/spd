@@ -24,8 +24,8 @@ class CIMeanPerComponent(Metric):
         }
 
     @override
-    def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
-        for module_name, ci_vals in ci.items():
+    def update(self, *, ci: ComponentModel.CIOutputs, **_: Any) -> None:
+        for module_name, ci_vals in ci.lower_leaky.items():
             n_leading_dims = ci_vals.ndim - 1
             n_examples = ci_vals.shape[:n_leading_dims].numel()
 

@@ -38,9 +38,9 @@ class CI_L0(Metric):
         self.l0_values = defaultdict[str, list[float]](list)
 
     @override
-    def update(self, *, ci: dict[str, Float[Tensor, "... C"]], **_: Any) -> None:
+    def update(self, *, ci: ComponentModel.CIOutputs, **_: Any) -> None:
         group_sums = defaultdict(float) if self.groups else {}
-        for layer_name, layer_ci in ci.items():
+        for layer_name, layer_ci in ci.lower_leaky.items():
             l0_val = calc_ci_l_zero(layer_ci, self.l0_threshold)
             self.l0_values[layer_name].append(l0_val)
 

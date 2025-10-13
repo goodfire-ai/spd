@@ -63,10 +63,10 @@ class CEandKLLosses(Metric):
         *,
         batch: Tensor,
         target_out: Tensor,
-        ci: dict[str, Tensor],
+        ci: ComponentModel.CIOutputs,
         **_: Any,
     ) -> None:
-        ce_losses = self._calc_ce_and_kl_losses(batch=batch, target_out=target_out, ci=ci)
+        ce_losses = self._calc_ce_and_kl_losses(batch=batch, target_out=target_out, ci=ci.lower_leaky)
 
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
         n_positions_in_batch = batch.shape[0] * batch.shape[1]

@@ -28,9 +28,9 @@ from spd.models.components import (
     VectorMLPCiFn,
     VectorSharedMLPCiFn,
 )
-from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
+from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class
+from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class, runtime_cast
 from spd.utils.module_utils import get_target_module_paths
 from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
@@ -101,6 +101,7 @@ class ComponentModel(LoadableModule):
         C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
+        sigmoid_type: SigmoidType,
         pretrained_model_output_attr: str | None,
     ):
         super().__init__()
@@ -135,6 +136,7 @@ class ComponentModel(LoadableModule):
         self._ci_fns = nn.ModuleDict(
             {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
         )
+        self.sigmoid_type: SigmoidType = sigmoid_type
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
@@ -499,6 +501,7 @@ class ComponentModel(LoadableModule):
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
+            sigmoid_type=config.sigmoid_type,
         )
 
         comp_model_weights = torch.load(
@@ -517,18 +520,21 @@ class ComponentModel(LoadableModule):
         run_info = SPDRunInfo.from_path(path)
         return cls.from_run_info(run_info)
 
+    class CIOutputs(NamedTuple):
+        lower_leaky: dict[str, Float[Tensor, "... C"]]
+        upper_leaky: dict[str, Float[Tensor, "... C"]]
+        pre_sigmoid: dict[str, Tensor]
+
     def calc_causal_importances(
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
-        sigmoid_type: SigmoidTypes,
         sampling: Literal["continuous", "binomial"],
         detach_inputs: bool = False,
-    ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
+    ) -> CIOutputs:
         """Calculate causal importances.
 
         Args:
             pre_weight_acts: The activations before each layer in the target model.
-            sigmoid_type: Type of sigmoid to use.
             detach_inputs: Whether to detach the inputs to the causal importance function.
 
         Returns:
@@ -536,6 +542,7 @@ class ComponentModel(LoadableModule):
         """
         causal_importances = {}
         causal_importances_upper_leaky = {}
+        pre_sigmoid = {}
 
         for param_name in pre_weight_acts:
             acts = pre_weight_acts[param_name]
@@ -552,15 +559,15 @@ class ComponentModel(LoadableModule):
             if detach_inputs:
                 ci_fn_input = ci_fn_input.detach()
 
-            ci_fn_output = ci_fns(ci_fn_input)
+            ci_fn_output = runtime_cast(Tensor, ci_fns(ci_fn_input))
 
-            if sigmoid_type == "leaky_hard":
+            if self.sigmoid_type == "leaky_hard":
                 lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
                 upper_leaky_fn = SIGMOID_TYPES["upper_leaky_hard"]
             else:
                 # For other sigmoid types, use the same function for both
-                lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
-                upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+                lower_leaky_fn = SIGMOID_TYPES[self.sigmoid_type]
+                upper_leaky_fn = SIGMOID_TYPES[self.sigmoid_type]
 
             ci_fn_output_for_lower_leaky = ci_fn_output
             if sampling == "binomial":
@@ -570,8 +577,13 @@ class ComponentModel(LoadableModule):
 
             causal_importances[param_name] = lower_leaky_fn(ci_fn_output_for_lower_leaky)
             causal_importances_upper_leaky[param_name] = upper_leaky_fn(ci_fn_output).abs()
+            pre_sigmoid[param_name] = ci_fn_output
 
-        return causal_importances, causal_importances_upper_leaky
+        return self.CIOutputs(
+            lower_leaky=causal_importances,
+            upper_leaky=causal_importances_upper_leaky,
+            pre_sigmoid=pre_sigmoid,
+        )
 
     def calc_weight_deltas(self) -> dict[str, Float[Tensor, " d_out d_in"]]:
         """Calculate the weight differences between the target and component weights (V@U) for each layer."""

@@ -5,7 +5,6 @@ from torch import Tensor
 
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
-from spd.models.sigmoids import SigmoidTypes
 from spd.plotting import plot_causal_importance_vals
 
 
@@ -17,13 +16,11 @@ class PermutedCIPlots(Metric):
         self,
         model: ComponentModel,
         sampling: Literal["continuous", "binomial"],
-        sigmoid_type: SigmoidTypes,
         identity_patterns: list[str] | None = None,
         dense_patterns: list[str] | None = None,
     ) -> None:
         self.model = model
         self.sampling: Literal["continuous", "binomial"] = sampling
-        self.sigmoid_type: SigmoidTypes = sigmoid_type
         self.identity_patterns = identity_patterns
         self.dense_patterns = dense_patterns
 
@@ -42,7 +39,6 @@ class PermutedCIPlots(Metric):
             model=self.model,
             batch_shape=self.batch_shape,
             input_magnitude=self.input_magnitude,
-            sigmoid_type=self.sigmoid_type,
             identity_patterns=self.identity_patterns,
             dense_patterns=self.dense_patterns,
             sampling=self.sampling,

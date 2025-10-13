@@ -28,11 +28,11 @@ class ComponentActivationDensity(Metric):
         }
 
     @override
-    def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
-        n_examples_this_batch = next(iter(ci.values())).shape[:-1].numel()
+    def update(self, *, ci: ComponentModel.CIOutputs, **_: Any) -> None:
+        n_examples_this_batch = next(iter(ci.lower_leaky.values())).shape[:-1].numel()
         self.n_examples += n_examples_this_batch
 
-        for module_name, ci_vals in ci.items():
+        for module_name, ci_vals in ci.lower_leaky.items():
             active_components = ci_vals > self.ci_alive_threshold
             n_activations_per_component = reduce(active_components, "... C -> C", "sum")
             self.component_activation_counts[module_name] += (

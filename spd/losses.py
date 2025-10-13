@@ -34,8 +34,7 @@ def compute_total_loss(
     loss_metric_configs: list[TrainMetricConfigType],
     model: ComponentModel,
     batch: Int[Tensor, "..."],
-    ci: dict[str, Float[Tensor, "batch C"]],
-    ci_upper_leaky: dict[str, Float[Tensor, "batch C"]],
+    ci: ComponentModel.CIOutputs,
     target_out: Tensor,
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
@@ -57,7 +56,7 @@ def compute_total_loss(
         match cfg:
             case ImportanceMinimalityLossTrainConfig():
                 loss = importance_minimality_loss(
-                    ci_upper_leaky=ci_upper_leaky,
+                    ci_upper_leaky=ci.upper_leaky,
                     current_frac_of_training=current_frac_of_training,
                     pnorm=cfg.pnorm,
                     eps=cfg.eps,
@@ -71,7 +70,7 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                 )
             case CIMaskedReconLayerwiseLossTrainConfig():
                 loss = ci_masked_recon_layerwise_loss(
@@ -79,7 +78,7 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                 )
             case CIMaskedReconLossTrainConfig():
                 loss = ci_masked_recon_loss(
@@ -87,7 +86,7 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                 )
             case FaithfulnessLossTrainConfig():
                 loss = faithfulness_loss(weight_deltas=weight_deltas)
@@ -100,7 +99,7 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                     weight_deltas=weight_deltas,
                 )
             case StochasticReconLossTrainConfig():
@@ -112,7 +111,7 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                     weight_deltas=weight_deltas,
                 )
             case StochasticReconSubsetLossTrainConfig():
@@ -124,7 +123,7 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                     weight_deltas=weight_deltas,
                 )
             case StochasticHiddenActsReconLossConfig():
@@ -135,7 +134,7 @@ def compute_total_loss(
                     n_mask_samples=n_mask_samples,
                     batch=batch,
                     pre_weight_acts=pre_weight_acts,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                     weight_deltas=weight_deltas,
                 )
         terms[cfg.classname] = loss.item()

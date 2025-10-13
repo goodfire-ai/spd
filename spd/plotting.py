@@ -12,7 +12,6 @@ from torch import Tensor
 
 from spd.models.component_model import ComponentModel
 from spd.models.components import Components
-from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import get_obj_device
 from spd.utils.target_ci_solutions import permute_to_dense, permute_to_identity
 
@@ -181,15 +180,13 @@ def get_single_feature_causal_importances(
     batch_shape: tuple[int, ...],
     input_magnitude: float,
     sampling: Literal["continuous", "binomial"],
-    sigmoid_type: SigmoidTypes,
-) -> tuple[dict[str, Float[Tensor, "batch C"]], dict[str, Float[Tensor, "batch C"]]]:
+) -> ComponentModel.CIOutputs:
     """Compute causal importance arrays for single active features.
 
     Args:
         model: The ComponentModel
         batch_shape: Shape of the batch
         input_magnitude: Magnitude of input features
-        sigmoid_type: Type of sigmoid to use for causal importance calculation
 
     Returns:
         Tuple of (ci_raw, ci_upper_leaky_raw) dictionaries of causal importance arrays (2D tensors)
@@ -205,14 +202,11 @@ def get_single_feature_causal_importances(
 
     pre_weight_acts = model(batch, cache_type="input").cache
 
-    ci_raw, ci_upper_leaky_raw = model.calc_causal_importances(
+    return model.calc_causal_importances(
         pre_weight_acts=pre_weight_acts,
-        sigmoid_type=sigmoid_type,
         detach_inputs=False,
         sampling=sampling,
     )
-
-    return ci_raw, ci_upper_leaky_raw
 
 
 def plot_causal_importance_vals(
@@ -220,7 +214,6 @@ def plot_causal_importance_vals(
     batch_shape: tuple[int, ...],
     input_magnitude: float,
     sampling: Literal["continuous", "binomial"],
-    sigmoid_type: SigmoidTypes,
     identity_patterns: list[str] | None = None,
     dense_patterns: list[str] | None = None,
     plot_raw_cis: bool = True,
@@ -233,7 +226,6 @@ def plot_causal_importance_vals(
         batch_shape: Shape of the batch
         input_magnitude: Magnitude of input features
         sampling: Sampling method to use
-        sigmoid_type: Type of sigmoid to use for causal importance calculation
         plot_raw_cis: Whether to plot the raw causal importances (blue plots)
         title_formatter: Optional callable to format subplot titles. Takes mask_name as input.
         identity_patterns: List of patterns to match for identity permutation
@@ -247,33 +239,28 @@ def plot_causal_importance_vals(
             - Dictionary of permutation indices for causal importances
     """
     # Get the causal importance arrays
-    ci_raw, ci_upper_leaky_raw = get_single_feature_causal_importances(
+    ci_output = get_single_feature_causal_importances(
         model=model,
         batch_shape=batch_shape,
         input_magnitude=input_magnitude,
-        sigmoid_type=sigmoid_type,
         sampling=sampling,
     )
 
     ci: dict[str, Float[Tensor, "... C"]] = {}
     ci_upper_leaky: dict[str, Float[Tensor, "... C"]] = {}
     all_perm_indices: dict[str, Float[Tensor, " C"]] = {}
-    for k in ci_raw:
+    for k in ci_output.lower_leaky:
         # Determine permutation strategy based on patterns
         if identity_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in identity_patterns):
-            ci[k], _ = permute_to_identity(ci_vals=ci_raw[k])
-            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(
-                ci_vals=ci_upper_leaky_raw[k]
-            )
+            ci[k], _ = permute_to_identity(ci_vals=ci_output.lower_leaky[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(ci_vals=ci_output.upper_leaky[k])
         elif dense_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in dense_patterns):
-            ci[k], _ = permute_to_dense(ci_vals=ci_raw[k])
-            ci_upper_leaky[k], all_perm_indices[k] = permute_to_dense(ci_vals=ci_upper_leaky_raw[k])
+            ci[k], _ = permute_to_dense(ci_vals=ci_output.lower_leaky[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_dense(ci_vals=ci_output.upper_leaky[k])
         else:
             # Default: identity permutation
-            ci[k], _ = permute_to_identity(ci_vals=ci_raw[k])
-            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(
-                ci_vals=ci_upper_leaky_raw[k]
-            )
+            ci[k], _ = permute_to_identity(ci_vals=ci_output.lower_leaky[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(ci_vals=ci_output.upper_leaky[k])
 
     # Create figures dictionary
     figures: dict[str, Image.Image] = {}

@@ -70,7 +70,7 @@ class CIMaskedReconLayerwiseLoss(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
+        ci: ComponentModel.CIOutputs,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _ci_masked_recon_layerwise_loss_update(
@@ -78,7 +78,7 @@ class CIMaskedReconLayerwiseLoss(Metric):
             output_loss_type=self.output_loss_type,
             batch=batch,
             target_out=target_out,
-            ci=ci,
+            ci=ci.lower_leaky,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

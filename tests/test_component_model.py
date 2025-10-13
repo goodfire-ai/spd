@@ -81,6 +81,7 @@ def test_correct_parameters_require_grad():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     for module_path, components in component_model.components.items():
@@ -158,6 +159,7 @@ def test_from_run_info():
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
+            sigmoid_type=config.sigmoid_type,
         )
 
         save_file(cm.state_dict(), comp_model_dir / "model.pth")
@@ -265,6 +267,7 @@ def test_full_weight_delta_matches_target_behaviour():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     token_ids = torch.randint(
@@ -297,6 +300,7 @@ def test_input_cache_captures_pre_weight_input():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     # WHEN we forward the component model with input caching
@@ -332,6 +336,7 @@ def test_weight_deltas():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     # THEN the weight deltas match the target weight
@@ -367,6 +372,7 @@ def test_replacement_effects_fwd_pass():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     # WHEN we set the target model weights to be UV
@@ -420,6 +426,7 @@ def test_replacing_identity():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     # and a random input
@@ -470,6 +477,7 @@ def test_routing():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     # and a random input

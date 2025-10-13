@@ -104,7 +104,7 @@ class StochasticReconLoss(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
+        ci: ComponentModel.CIOutputs,
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
         **_: Any,
     ) -> None:
@@ -116,7 +116,7 @@ class StochasticReconLoss(Metric):
             output_loss_type=self.output_loss_type,
             batch=batch,
             target_out=target_out,
-            ci=ci,
+            ci=ci.lower_leaky,
             weight_deltas=weight_deltas,
         )
         self.sum_loss += sum_loss

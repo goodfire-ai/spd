@@ -18,7 +18,6 @@ from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
 from spd.models.components import CiFnType
-from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
 from spd.utils.general_utils import BaseModel
 
@@ -104,7 +103,6 @@ class IdentityCIErrorConfig(BaseModel):
 
 class PermutedCIPlotsConfig(BaseModel):
     classname: Literal["PermutedCIPlots"] = "PermutedCIPlots"
-    sigmoid_type: SigmoidTypes
     identity_patterns: list[str] | None
     dense_patterns: list[str] | None
 
@@ -312,6 +310,13 @@ class Config(BaseModel):
             default=[],
             description="List of configs for metrics to use for evaluation",
         )
+    )
+
+    # --- Logging Options ---
+    defensive_logging: bool = Field(
+        default=True,
+        description="Enable defensive logging metrics (CI distributions, parameter norms, etc.) "
+        "to help catch training instabilities early. Adds minimal overhead.",
     )
 
     # --- Component Tracking ---

@@ -148,12 +148,12 @@ class ImportanceMinimalityLoss(Metric):
     def update(
         self,
         *,
-        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
+        ci: ComponentModel.CIOutputs,
         current_frac_of_training: float,
         **_: Any,
     ) -> None:
         sum_loss, total_params = _importance_minimality_loss_update(
-            ci_upper_leaky=ci_upper_leaky,
+            ci_upper_leaky=ci.upper_leaky,
             pnorm=self.pnorm,
             eps=self.eps,
             current_frac_of_training=current_frac_of_training,

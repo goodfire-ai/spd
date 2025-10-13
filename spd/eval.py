@@ -156,7 +156,6 @@ def init_metric(
             metric = IdentityCIError(
                 model=model,
                 sampling=run_config.sampling,
-                sigmoid_type=run_config.sigmoid_type,
                 identity_ci=cfg.identity_ci,
                 dense_ci=cfg.dense_ci,
             )
@@ -164,7 +163,6 @@ def init_metric(
             metric = PermutedCIPlots(
                 model=model,
                 sampling=run_config.sampling,
-                sigmoid_type=cfg.sigmoid_type,
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
             )
@@ -217,7 +215,6 @@ def init_metric(
             metric = UVPlots(
                 model=model,
                 sampling=run_config.sampling,
-                sigmoid_type=run_config.sigmoid_type,
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
             )
@@ -251,9 +248,8 @@ def evaluate(
         batch = extract_batch_data(batch_raw).to(device)
 
         target_output: OutputWithCache = model(batch, cache_type="input")
-        ci, ci_upper_leaky = model.calc_causal_importances(
+        ci = model.calc_causal_importances(
             pre_weight_acts=target_output.cache,
-            sigmoid_type=run_config.sigmoid_type,
             detach_inputs=False,
             sampling=run_config.sampling,
         )
@@ -265,7 +261,6 @@ def evaluate(
                 pre_weight_acts=target_output.cache,
                 ci=ci,
                 current_frac_of_training=current_frac_of_training,
-                ci_upper_leaky=ci_upper_leaky,
                 weight_deltas=weight_deltas,
             )
 

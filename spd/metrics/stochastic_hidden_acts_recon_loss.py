@@ -106,7 +106,7 @@ class StochasticHiddenActsReconLoss(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         pre_weight_acts: dict[str, Float[Tensor, "..."]],
-        ci: dict[str, Float[Tensor, "... C"]],
+        ci: ComponentModel.CIOutputs,
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
         **_: Any,
     ) -> None:
@@ -117,7 +117,7 @@ class StochasticHiddenActsReconLoss(Metric):
             n_mask_samples=self.n_mask_samples,
             batch=batch,
             pre_weight_acts=pre_weight_acts,
-            ci=ci,
+            ci=ci.lower_leaky,
             weight_deltas=weight_deltas,
         )
         self.sum_mse += sum_mse

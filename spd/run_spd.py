@@ -145,6 +145,7 @@ def optimize(
         ci_fn_type=config.ci_fn_type,
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
+        sigmoid_type=config.sigmoid_type,
     )
 
     if ln_stds is not None:
@@ -235,23 +236,19 @@ def optimize(
             # sync regardless of whether the parameters are used in this call to wrapped_model.
             target_model_output: OutputWithCache = wrapped_model(batch, cache_type="input")
 
-            causal_importances, causal_importances_upper_leaky = (
-                component_model.calc_causal_importances(
-                    pre_weight_acts=target_model_output.cache,
-                    sigmoid_type=config.sigmoid_type,
-                    detach_inputs=False,
-                    sampling=config.sampling,
-                )
+            ci = component_model.calc_causal_importances(
+                pre_weight_acts=target_model_output.cache,
+                detach_inputs=False,
+                sampling=config.sampling,
             )
 
-            alive_tracker.update(ci=causal_importances)
+            alive_tracker.update(ci=ci.lower_leaky)
 
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
                 loss_metric_configs=config.loss_metric_configs,
                 model=component_model,
                 batch=batch,
-                ci=causal_importances,
-                ci_upper_leaky=causal_importances_upper_leaky,
+                ci=ci,
                 target_out=target_model_output.output,
                 weight_deltas=weight_deltas,
                 pre_weight_acts=target_model_output.cache,
@@ -268,7 +265,7 @@ def optimize(
                     loss_value / config.gradient_accumulation_steps
                 )
 
-            for layer_name, layer_ci in causal_importances.items():
+            for layer_name, layer_ci in ci.lower_leaky.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
                 microbatch_log_data[f"train/{layer_name}/l0"] += (
                     l0_val / config.gradient_accumulation_steps
@@ -291,6 +288,13 @@ def optimize(
                     grad_norm += param.grad.data.flatten().pow(2).sum()
             microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
             microbatch_log_data["train/misc/lr"] = step_lr
+
+            for layer_name, component in component_model.components.items():
+                assert component.U.grad is not None and component.V.grad is not None
+                U_grad_norm = component.U.grad.data.norm()
+                V_grad_norm = component.V.grad.data.norm()
+                layer_grad_norm = (U_grad_norm.square() + V_grad_norm.square()).sqrt()
+                microbatch_log_data[f"train/{layer_name}/grad_norm"] = layer_grad_norm.item()
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")
