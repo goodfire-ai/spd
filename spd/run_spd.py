@@ -230,11 +230,11 @@ def optimize(
             weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
+            # NOTE: we need to call the wrapped_model at least once each step in order to setup
+            # the DDP gradient syncing for all parameters in the component model. Gradients will
+            # sync regardless of whether the parameters are used in this call to wrapped_model.
             target_model_output: OutputWithCache = wrapped_model(batch, cache_type="input")
-            # NOTE: target_model_output is now part of the DDP computation graph, so when it
-            # passes through the parameters in calc_causal_importances and compute_total_loss below,
-            # the DDP hook will get called and gradients will be properly synced across ranks on the
-            # next backward pass.
+
             causal_importances, causal_importances_upper_leaky = (
                 component_model.calc_causal_importances(
                     pre_weight_acts=target_model_output.cache,
@@ -254,6 +254,7 @@ def optimize(
                 ci_upper_leaky=causal_importances_upper_leaky,
                 target_out=target_model_output.output,
                 weight_deltas=weight_deltas,
+                pre_weight_acts=target_model_output.cache,
                 current_frac_of_training=step / config.steps,
                 sampling=config.sampling,
                 use_delta_component=config.use_delta_component,
