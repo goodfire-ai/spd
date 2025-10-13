@@ -7,11 +7,92 @@ from torch import Tensor
 from spd.configs import PGDConfig, PGDInitStrategy
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
-from spd.utils.component_utils import (
-    RoutingType,
-    calc_routing_masks,
-)
+from spd.utils.component_utils import RoutingType, calc_routing_masks
 from spd.utils.general_utils import calc_sum_recon_loss_lm, zip_dicts
+
+
+def pgd_masked_recon_loss_update(
+    *,
+    model: ComponentModel,
+    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+    ci: dict[str, Float[Tensor, "... C"]],
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    target_out: Float[Tensor, "... vocab"],
+    output_loss_type: Literal["mse", "kl"],
+    routing: RoutingType,
+    pgd_config: PGDConfig,
+) -> tuple[Float[Tensor, ""], int]:
+    """Central implementation of PGD masked reconstruction loss.
+
+    Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
+    """
+
+    # Shared routing mask within the whole function
+    routing_masks = calc_routing_masks(
+        routing,
+        leading_dims=next(iter(ci.values())).shape[:-1],
+        module_names=list(ci.keys()),
+        device=batch.device,
+    )
+
+    def objective_fn(
+        component_sample_points: dict[str, Float[Tensor, "... C"]],
+        weight_delta_masks: dict[str, Float[Tensor, "..."]] | None,
+    ) -> Tensor:
+        match weight_deltas, weight_delta_masks:
+            case None, None:
+                weight_deltas_and_masks = None
+            case dict(), dict():
+                weight_deltas_and_masks = zip_dicts(weight_deltas, weight_delta_masks)
+            case _:
+                raise ValueError(
+                    "weight_deltas and weight_delta_mask must exist or not exist together"
+                )
+
+        mask_infos = make_mask_infos(
+            component_masks=_interpolate_component_mask(ci, component_sample_points),
+            weight_deltas_and_masks=weight_deltas_and_masks,  # we don't interpolate for the weight delta
+            routing_masks=routing_masks,
+        )
+
+        out = model(batch, mask_infos=mask_infos)
+        total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+        n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
+        return total_loss / n_examples
+
+    adversarial_component_sample_points, adversarial_weight_delta_masks = (
+        _optimize_adversarial_stochastic_masks(
+            pgd_config=pgd_config,
+            objective_fn=objective_fn,
+            layers=list(ci.keys()),
+            example_shape=next(iter(ci.values())).shape,
+            device=batch.device,
+            use_delta_component=weight_deltas is not None,
+        )
+    )
+
+    match weight_deltas, adversarial_weight_delta_masks:
+        case None, None:
+            adversarial_weight_deltas_and_masks = None
+        case dict(), dict():
+            adversarial_weight_deltas_and_masks = zip_dicts(
+                weight_deltas, adversarial_weight_delta_masks
+            )
+        case _:
+            raise ValueError(
+                "weight_deltas and adversarial_weight_delta_masks must exist or not exist together"
+            )
+
+    sampled_mask_infos = make_mask_infos(
+        component_masks=_interpolate_component_mask(ci, adversarial_component_sample_points),
+        weight_deltas_and_masks=adversarial_weight_deltas_and_masks,
+        routing_masks=routing_masks,
+    )
+
+    out = model(batch, mask_infos=sampled_mask_infos)
+    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+    n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
+    return loss, n_examples
 
 
 class PGDObjective(Protocol):
@@ -21,7 +102,6 @@ class PGDObjective(Protocol):
         component_sample_points: dict[str, Float[Tensor, "... C"]],
         weight_delta_masks: dict[str, Float[Tensor, "..."]] | None,
     ) -> Tensor: ...
-
 
 
 def _optimize_adversarial_stochastic_masks(
@@ -134,6 +214,7 @@ def _optimize_adversarial_stochastic_masks(
 
     return maybe_repeat_to_batch_shape(component_sample_points, weight_delta_masks)
 
+
 def _get_pgd_init_tensor(
     init: PGDInitStrategy,
     shape: tuple[int, ...],
@@ -158,87 +239,3 @@ def _interpolate_component_mask(
             ci[module_name] + (1 - ci[module_name]) * component_sample_points[module_name]
         )
     return component_mask
-
-
-def pgd_masked_recon_loss_update(
-    *,
-    model: ComponentModel,
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
-    target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
-    routing: RoutingType,
-    pgd_config: PGDConfig,
-) -> tuple[Float[Tensor, ""], int]:
-    """Central implementation of PGD masked reconstruction loss.
-
-    Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
-    """
-
-    # Shared routing mask within the whole function
-    routing_masks = calc_routing_masks(
-        routing,
-        leading_dims=next(iter(ci.values())).shape[:-1],
-        module_names=list(ci.keys()),
-        device=batch.device,
-    )
-
-    def objective_fn(
-        component_sample_points: dict[str, Float[Tensor, "... C"]],
-        weight_delta_masks: dict[str, Float[Tensor, "..."]] | None,
-    ) -> Tensor:
-        match weight_deltas, weight_delta_masks:
-            case None, None:
-                weight_deltas_and_masks = None
-            case dict(), dict():
-                weight_deltas_and_masks = zip_dicts(weight_deltas, weight_delta_masks)
-            case _:
-                raise ValueError(
-                    "weight_deltas and weight_delta_mask must exist or not exist together"
-                )
-
-        mask_infos = make_mask_infos(
-            component_masks=_interpolate_component_mask(ci, component_sample_points),
-            weight_deltas_and_masks=weight_deltas_and_masks,  # we don't interpolate for the weight delta
-            routing_masks=routing_masks,
-        )
-
-        out = model(batch, mask_infos=mask_infos)
-        total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-        n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
-        return total_loss / n_examples
-
-    adversarial_component_sample_points, adversarial_weight_delta_masks = (
-        _optimize_adversarial_stochastic_masks(
-            pgd_config=pgd_config,
-            objective_fn=objective_fn,
-            layers=list(ci.keys()),
-            example_shape=next(iter(ci.values())).shape,
-            device=batch.device,
-            use_delta_component=weight_deltas is not None,
-        )
-    )
-
-    match weight_deltas, adversarial_weight_delta_masks:
-        case None, None:
-            adversarial_weight_deltas_and_masks = None
-        case dict(), dict():
-            adversarial_weight_deltas_and_masks = zip_dicts(
-                weight_deltas, adversarial_weight_delta_masks
-            )
-        case _:
-            raise ValueError(
-                "weight_deltas and adversarial_weight_delta_masks must exist or not exist together"
-            )
-
-    sampled_mask_infos = make_mask_infos(
-        component_masks=_interpolate_component_mask(ci, adversarial_component_sample_points),
-        weight_deltas_and_masks=adversarial_weight_deltas_and_masks,
-        routing_masks=routing_masks,
-    )
-
-    out = model(batch, mask_infos=sampled_mask_infos)
-    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-    n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
-    return loss, n_examples
