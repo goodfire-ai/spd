@@ -518,7 +518,8 @@ class ComponentModel(LoadableModule):
         run_info = SPDRunInfo.from_path(path)
         return cls.from_run_info(run_info)
 
-    class CIOutputs(NamedTuple):
+    @dataclass
+    class CIOutputs:
         lower_leaky: dict[str, Float[Tensor, "... C"]]
         upper_leaky: dict[str, Float[Tensor, "... C"]]
         pre_sigmoid: dict[str, Tensor]
