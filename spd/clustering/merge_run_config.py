@@ -145,24 +145,27 @@ class ClusteringRunConfig(BaseConfig):
         )
         return self
 
-    @model_validator(mode="after")
-    def validate_intervals(self) -> Self:
+    @model_validator(mode="before")
+    @classmethod
+    def validate_intervals(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Ensure all required interval keys are present."""
+
+        data_intervals: dict[IntervalKey, Any] = data.get("intervals", {})
         # warning if any keys are missing
-        missing_keys: set[IntervalKey] = set(_DEFAULT_INTERVALS.keys()) - set(self.intervals.keys())
+        missing_keys: set[IntervalKey] = set(_DEFAULT_INTERVALS.keys()) - set(data_intervals.keys())
         if missing_keys:
             warnings.warn(
-                f"Missing interval keys in {self.intervals = }: {missing_keys}. Using defaults for those.",
+                f"Missing interval keys in {data_intervals = }: {missing_keys}. Using defaults for those.",
                 UserWarning,
                 stacklevel=1,
             )
 
-        self.intervals = {
+        data["intervals"] = {
             **_DEFAULT_INTERVALS,
-            **self.intervals,
+            **data_intervals,
         }
 
-        return self
+        return data
 
     @model_validator(mode="after")
     def validate_streaming_compatibility(self) -> Self:
@@ -174,7 +177,8 @@ class ClusteringRunConfig(BaseConfig):
         return self
 
     @model_validator(mode="before")
-    def handle_experiment_key(data: dict[str, Any]) -> dict[str, Any]:
+    @classmethod
+    def handle_experiment_key(cls, data: dict[str, Any]) -> dict[str, Any]:
         """handle passing experiment key instead of model_path and task_name.
 
         if we provide an experiment_key, then:
