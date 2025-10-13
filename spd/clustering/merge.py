@@ -211,7 +211,7 @@ def merge_iteration(
             log_callback(
                 iter_idx=iter_idx,
                 current_coact=current_coact,
-                component_labels=subcomponents,
+                subcomponents=subcomponents,
                 current_merge=current_merge,
                 costs=costs,
                 merge_history=merge_history,

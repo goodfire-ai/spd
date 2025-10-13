@@ -49,10 +49,12 @@ def test_filter_dead_components_thresholds(
         labels = [SubComponentInfo(module="comp", index=i) for i in range(n_components)]
 
     result: FilteredActivations = filter_dead_components(
-        activations=activations, labels=labels, filter_dead_threshold=threshold
+        activations=activations, subcomponents=labels, filter_dead_threshold=threshold
     )
 
-    assert [comp.label for comp in result.labels] == [f"comp:{i}" for i in expected_alive_indices]
+    assert [comp.label for comp in result.subcomponents] == [
+        f"comp:{i}" for i in expected_alive_indices
+    ]
     assert result.n_alive == len(expected_alive_indices)
     assert result.n_dead == n_components - len(expected_alive_indices)
     assert result.activations.shape == (n_steps, len(expected_alive_indices))
@@ -60,7 +62,7 @@ def test_filter_dead_components_thresholds(
     # Check dead components labels
     if threshold <= 0 or all(v >= threshold for v in max_values):
         # No filtering occurred
-        assert result.dead_components_labels is None or result.dead_components_labels == []
+        assert result.dead_subcomponents is None or result.dead_subcomponents == []
     else:
         dead_indices: list[int] = [
             i for i in range(n_components) if i not in expected_alive_indices
@@ -68,8 +70,8 @@ def test_filter_dead_components_thresholds(
         expected_dead: list[SubComponentLabel] = [
             SubComponentInfo(module="comp", index=i).label for i in dead_indices
         ]
-        assert result.dead_components_labels is not None
-        assert set(result.dead_components_labels) == set(expected_dead)
+        assert result.dead_subcomponents is not None
+        assert set(result.dead_subcomponents) == set(expected_dead)
 
 
 @pytest.mark.parametrize(
@@ -102,13 +104,13 @@ def test_max_across_steps(step_locations: list[int], threshold: float) -> None:
     ]
 
     result: FilteredActivations = filter_dead_components(
-        activations=activations, labels=labels, filter_dead_threshold=threshold
+        activations=activations, subcomponents=labels, filter_dead_threshold=threshold
     )
 
     # All components should be alive since their max is above threshold
     assert result.n_alive == n_components
     assert result.n_dead == 0
-    assert result.labels == labels
+    assert result.subcomponents == labels
 
 
 @pytest.mark.parametrize("threshold", [0.001, 0.01, 0.1, 0.5])
@@ -127,7 +129,7 @@ def test_linear_gradient_thresholds(threshold: float) -> None:
     ]
 
     result: FilteredActivations = filter_dead_components(
-        activations=activations, labels=labels, filter_dead_threshold=threshold
+        activations=activations, subcomponents=labels, filter_dead_threshold=threshold
     )
 
     # Count how many components should be alive

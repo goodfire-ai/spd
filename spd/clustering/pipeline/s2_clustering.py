@@ -155,7 +155,7 @@ def run_clustering(
 
     logger_call("cleaning up memory")
     activations: ActivationsTensor = processed_activations.activations
-    component_labels: list[SubComponentInfo] = processed_activations.subcomponents.copy()
+    subcomponents: list[SubComponentInfo] = processed_activations.subcomponents.copy()
     del processed_activations  # we copied what we needed
     del activations_dict  # processed already
     del model  # already did the forward pass
@@ -171,7 +171,7 @@ def run_clustering(
     history: MergeHistory = merge_iteration(
         merge_config=config.merge_config,
         activations=activations,
-        subcomponents=component_labels,
+        subcomponents=subcomponents,
         log_callback=log_callback,
         batch_id=batch_id,
     )

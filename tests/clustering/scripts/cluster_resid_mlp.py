@@ -12,7 +12,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.consts import SubComponentLabel
+from spd.clustering.consts import SubComponentInfo
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
@@ -128,7 +128,7 @@ MERGE_CFG: MergeConfig = MergeConfig(
 
 def _plot_func(
     current_coact: torch.Tensor,
-    subcomponents: list[SubComponentLabel],
+    subcomponents: list[SubComponentInfo],
     current_merge: Any,
     costs: torch.Tensor,
     merge_history: MergeHistory,

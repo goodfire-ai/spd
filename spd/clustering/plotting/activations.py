@@ -326,24 +326,24 @@ def plot_activations(
 
 
 def add_component_labeling(
-    ax: plt.Axes, component_labels: list[SubComponentInfo], axis: str = "x"
+    ax: plt.Axes, subcomponents: list[SubComponentInfo], axis: str = "x"
 ) -> None:
     """Add component labeling using major/minor ticks to show module boundaries.
 
     Args:
             ax: Matplotlib axis to modify
-            component_labels: List of SubComponentInfo objects
+            subcomponents: List of SubComponentInfo objects
             axis: Which axis to label ('x' or 'y')
     """
-    if not component_labels:
+    if not subcomponents:
         return
 
     # Extract module information
     module_changes: list[int] = []
-    current_module: str = component_labels[0].module
+    current_module: str = subcomponents[0].module
     module_labels: list[str] = []
 
-    for i, comp in enumerate(component_labels):
+    for i, comp in enumerate(subcomponents):
         module: str = comp.module
         if module != current_module:
             module_changes.append(i)
@@ -353,7 +353,7 @@ def add_component_labeling(
 
     # Set up major and minor ticks
     # Minor ticks: every 10 components
-    minor_ticks: list[int] = list(range(0, len(component_labels), 10))
+    minor_ticks: list[int] = list(range(0, len(subcomponents), 10))
 
     # Major ticks: module boundaries (start of each module)
     major_ticks: list[int] = [0] + module_changes
@@ -363,7 +363,7 @@ def add_component_labeling(
         ax.set_xticks(minor_ticks, minor=True)
         ax.set_xticks(major_ticks)
         ax.set_xticklabels(major_labels)
-        ax.set_xlim(-0.5, len(component_labels) - 0.5)
+        ax.set_xlim(-0.5, len(subcomponents) - 0.5)
         # Style the ticks
         ax.tick_params(axis="x", which="minor", length=2, width=0.5)
         ax.tick_params(axis="x", which="major", length=6, width=1.5)
@@ -373,7 +373,7 @@ def add_component_labeling(
         ax.set_yticks(minor_ticks, minor=True)
         ax.set_yticks(major_ticks)
         ax.set_yticklabels(major_labels)
-        ax.set_ylim(-0.5, len(component_labels) - 0.5)
+        ax.set_ylim(-0.5, len(subcomponents) - 0.5)
         # Style the ticks
         ax.tick_params(axis="y", which="minor", length=2, width=0.5)
         ax.tick_params(axis="y", which="major", length=6, width=1.5)

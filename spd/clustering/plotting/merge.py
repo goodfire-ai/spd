@@ -97,7 +97,7 @@ def plot_merge_iteration(
             costs: Current cost matrix
             pair_cost: Cost of selected merge pair
             iteration: Current iteration number
-            component_labels: Component labels for axis labeling
+            subcomponents: Component labels for axis labeling
             plot_config: Plot configuration settings
             nan_diag: Whether to set diagonal to NaN for visualization
             show: Whether to display the plot (default: False)
