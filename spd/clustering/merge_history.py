@@ -23,6 +23,7 @@ from spd.clustering.consts import (
 from spd.clustering.math.merge_distances import compute_distances
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
 from spd.clustering.merge_config import MergeConfig
+from spd.utils.data_utils import _zip_save_arr_dict
 
 
 @dataclass(frozen=True)
@@ -32,21 +33,6 @@ class IterationInfo:
     idx: int
     selected_pair: list[int]
     merges: GroupMerge
-
-
-def _zip_save_arr(zf: zipfile.ZipFile, name: str, arr: np.ndarray) -> None:
-    """Save a numpy array to a zip file."""
-    buf: io.BytesIO = io.BytesIO()
-    np.save(buf, arr)
-    zf.writestr(name, buf.getvalue())
-
-
-def _zip_save_arr_dict(zf: zipfile.ZipFile, data: dict[str, np.ndarray]) -> None:
-    """Save a dictionary of numpy arrays to a zip file, {key}.npy used as path"""
-    key: str
-    arr: np.ndarray
-    for key, arr in data.items():
-        _zip_save_arr(zf, f"{key}.npy", arr)
 
 
 @dataclass(kw_only=True)

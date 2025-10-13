@@ -1,6 +1,9 @@
+import io
+import zipfile
 from collections.abc import Iterator
 from typing import Literal, override
 
+import numpy as np
 import torch
 from jaxtyping import Float
 from torch import Tensor
@@ -281,3 +284,18 @@ class SparseFeatureDataset(
                 n_samples_needed = batch_size - len(batch)
                 buffer_size = int(n_samples_needed * buffer_ratio)
         return batch
+
+
+def _zip_save_arr(zf: zipfile.ZipFile, name: str, arr: np.ndarray) -> None:
+    """Save a numpy array to a zip file."""
+    buf: io.BytesIO = io.BytesIO()
+    np.save(buf, arr)
+    zf.writestr(name, buf.getvalue())
+
+
+def _zip_save_arr_dict(zf: zipfile.ZipFile, data: dict[str, np.ndarray]) -> None:
+    """Save a dictionary of numpy arrays to a zip file, {key}.npy used as path"""
+    key: str
+    arr: np.ndarray
+    for key, arr in data.items():
+        _zip_save_arr(zf, f"{key}.npy", arr)
