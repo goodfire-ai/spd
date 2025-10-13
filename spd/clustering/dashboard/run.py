@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import wandb
 from muutils.spinner import SpinnerContext
+from pydantic import BaseModel, Field
 from wandb.apis.public import Run
 
 from spd.clustering.dashboard.core.compute_max_act import compute_max_activations
@@ -43,28 +44,68 @@ def write_html_files(output_dir: Path) -> None:
     logger.info(f"HTML files written to: {output_dir}")
 
 
-def main(
-    wandb_run: str,
-    output_dir: Path | None,
-    iteration: int,
-    n_samples: int,
-    n_batches: int,
-    batch_size: int,
-    context_length: int,
-) -> None:
+# TODO: BaseModel -> BaseConfig once #200 is merged
+class DashboardConfig(BaseModel):
+    wandb_run: str = Field(description="WandB clustering run path (e.g., entity/project/run_id)")
+    output_dir: Path | None = Field(
+        default=None,
+        description="Base output directory (default: REPO_ROOT/spd/clustering/dashboard/data/)",
+    )
+    iteration: int = Field(
+        default=-1,
+        description="Merge iteration to analyze (negative indexes from end, default: -1 for latest)",
+    )
+    n_samples: int = Field(
+        default=16,
+        description="Number of top-activating samples to collect per cluster",
+    )
+    n_batches: int = Field(
+        default=4,
+        description="Number of data batches to process",
+    )
+    batch_size: int = Field(
+        default=64,
+        description="Batch size for data loading",
+    )
+    context_length: int = Field(
+        default=64,
+        description="Context length for tokenization",
+    )
+    write_html: bool = Field(
+        default=False,
+        description="Write bundled HTML files to output directory",
+    )
+
+    @classmethod
+    def read(cls, config_path: Path) -> "DashboardConfig":
+        """Load dashboard config from JSON or YAML file.
+
+        Args:
+            config_path: Path to config file (.json or .yaml)
+
+        Returns:
+            Loaded DashboardConfig
+        """
+        import yaml
+
+        if config_path.suffix == ".json":
+            config_dict = json.loads(config_path.read_text())
+        elif config_path.suffix in [".yaml", ".yml"]:
+            config_dict = yaml.safe_load(config_path.read_text())
+        else:
+            raise ValueError(f"Unsupported config file format: {config_path.suffix}")
+
+        return cls.model_validate(config_dict)
+
+
+def main(config: DashboardConfig) -> None:
     """Compute max-activating text samples for language model component clusters.
 
     Args:
-        wandb_run: WandB clustering run path (e.g., entity/project/run_id)
-        output_dir: Base output directory (default: REPO_ROOT/spd/clustering/dashboard/data/)
-        iteration: Merge iteration to analyze (negative indexes from end)
-        n_samples: Number of top-activating samples to collect per cluster
-        n_batches: Number of data batches to process
-        batch_size: Batch size for data loading
-        context_length: Context length for tokenization
+        config: Dashboard configuration
     """
     # Parse wandb run path
-    wandb_clustering_run: str = wandb_run.removeprefix("wandb:")
+    wandb_clustering_run: str = config.wandb_run.removeprefix("wandb:")
     logger.info(f"Loading WandB run: {wandb_clustering_run}")
 
     # Load artifacts from WandB
@@ -80,11 +121,13 @@ def main(
 
     # Get actual iteration number (handle negative indexing)
     actual_iteration: int = (
-        iteration if iteration >= 0 else merge_history.n_iters_current + iteration
+        config.iteration
+        if config.iteration >= 0
+        else merge_history.n_iters_current + config.iteration
     )
 
     # Set up output directory with iteration count
-    base_output_dir: Path = output_dir or (REPO_ROOT / "spd/clustering/dashboard/data")
+    base_output_dir: Path = config.output_dir or (REPO_ROOT / "spd/clustering/dashboard/data")
     dir_name: str = f"{run_id}-i{actual_iteration}"
     final_output_dir: Path = base_output_dir / dir_name
     final_output_dir.mkdir(parents=True, exist_ok=True)
@@ -92,21 +135,21 @@ def main(
 
     # Setup model and data
     with SpinnerContext(message="Setting up model and data"):
-        model, tokenizer, dataloader, config = setup_model_and_data(
-            run_config, context_length, batch_size
+        model, tokenizer, dataloader, spd_config = setup_model_and_data(
+            run_config, config.context_length, config.batch_size
         )
 
     # Compute max activations
     logger.info("computing max activations")
     dashboard_data, coactivations, cluster_indices = compute_max_activations(
         model=model,
-        sigmoid_type=config.sigmoid_type,
+        sigmoid_type=spd_config.sigmoid_type,
         tokenizer=tokenizer,
         dataloader=dataloader,
         merge_history=merge_history,
-        iteration=iteration,
-        n_samples=n_samples,
-        n_batches=n_batches,
+        iteration=config.iteration,
+        n_samples=config.n_samples,
+        n_batches=config.n_batches,
         clustering_run=run_id,
     )
     logger.info(f"computed max activations: {len(dashboard_data.clusters) = }")
@@ -122,8 +165,8 @@ def main(
             merge=merge,
             iteration=actual_iteration,
             model_path=run_config["model_path"],
-            tokenizer_name=config.tokenizer_name,  # pyright: ignore[reportArgumentType]
-            config_dict=config.model_dump(mode="json"),
+            tokenizer_name=spd_config.tokenizer_name,  # pyright: ignore[reportArgumentType]
+            config_dict=spd_config.model_dump(mode="json"),
             wandb_clustering_run=wandb_clustering_run,
         )
 
@@ -154,75 +197,23 @@ def cli() -> None:
         description="Compute max-activating text samples for language model component clusters."
     )
     parser.add_argument(
-        "--wandb-run",
-        "-w",
-        type=str,
-        help="WandB clustering run path (e.g., entity/project/run_id or wandb:entity/project/run_id)",
-        required=True,
-    )
-    parser.add_argument(
-        "--output-dir",
-        "-o",
+        "config",
         type=Path,
-        help="Base output directory (default: REPO_ROOT/spd/clustering/dashboard/data/)",
-        default=(REPO_ROOT / "spd/clustering/dashboard/data"),
-    )
-    parser.add_argument(
-        "--iteration",
-        "-i",
-        type=int,
-        default=-1,
-        help="Merge iteration to analyze (negative indexes from end, default: -1 for latest)",
-    )
-    parser.add_argument(
-        "--n-samples",
-        "-n",
-        type=int,
-        default=16,
-        help="Number of top-activating samples to collect per cluster",
-    )
-    parser.add_argument(
-        "--n-batches",
-        "-s",
-        type=int,
-        default=4,
-        help="Number of data batches to process",
-    )
-    parser.add_argument(
-        "--batch-size",
-        "-b",
-        type=int,
-        default=64,
-        help="Batch size for data loading",
-    )
-    parser.add_argument(
-        "--context-length",
-        "-c",
-        type=int,
-        default=64,
-        help="Context length for tokenization (default: 64)",
-    )
-    parser.add_argument(
-        "--write-html",
-        action="store_true",
-        default=False,
-        help="Write bundled HTML files to output directory (default: False)",
+        help="Path to dashboard config file (JSON or YAML)",
     )
     args: argparse.Namespace = parser.parse_args()
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    if args.write_html:
-        write_html_files(args.output_dir)
+    # Load config
+    config: DashboardConfig = DashboardConfig.read(args.config)
+    logger.info(f"Loaded config from: {args.config}")
 
-    main(
-        wandb_run=args.wandb_run,
-        output_dir=args.output_dir,
-        iteration=args.iteration,
-        n_samples=args.n_samples,
-        n_batches=args.n_batches,
-        batch_size=args.batch_size,
-        context_length=args.context_length,
-    )
+    # Setup output directory and write HTML if requested
+    output_dir: Path = config.output_dir or (REPO_ROOT / "spd/clustering/dashboard/data")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if config.write_html:
+        write_html_files(output_dir)
+
+    main(config)
 
 
 if __name__ == "__main__":
