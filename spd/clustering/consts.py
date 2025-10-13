@@ -40,6 +40,12 @@ class SubComponentKey:
         module, index_str = label.rsplit(":", 1)
         return cls(module=module, index=int(index_str))
 
+    def __str__(self) -> str:
+        return self.label
+
+    def __hash__(self) -> int:
+        return hash(self.label)
+
 
 BatchId = NewType("BatchId", str)
 

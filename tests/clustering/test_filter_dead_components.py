@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 
 from spd.clustering.activations import FilteredActivations, filter_dead_components
-from spd.clustering.consts import SubComponentKey, SubComponentLabel
+from spd.clustering.consts import SubComponentKey
 
 
 @pytest.mark.parametrize(
@@ -67,8 +67,8 @@ def test_filter_dead_components_thresholds(
         dead_indices: list[int] = [
             i for i in range(n_components) if i not in expected_alive_indices
         ]
-        expected_dead: list[SubComponentLabel] = [
-            SubComponentKey(module="comp", index=i).label for i in dead_indices
+        expected_dead: list[SubComponentKey] = [
+            SubComponentKey(module="comp", index=i) for i in dead_indices
         ]
         assert result.dead_subcomponent_keys is not None
         assert set(result.dead_subcomponent_keys) == set(expected_dead)
