@@ -68,10 +68,15 @@ def cli() -> None:
     # but we must have those defaults to avoid type issues
     logger.info(f"Loading config from {args.config}")
     config: ClusteringRunConfig = ClusteringRunConfig.from_file(args.config)
-    config.base_path = args.base_path
-    config.devices = devices
-    config.workers_per_device = args.workers_per_device
-    config.dataset_streaming = args.dataset_streaming
+    # Use model_copy to update frozen fields
+    config = config.model_copy(
+        update={
+            "base_path": args.base_path,
+            "devices": devices,
+            "workers_per_device": args.workers_per_device,
+            "dataset_streaming": args.dataset_streaming,
+        }
+    )
 
     logger.info(f"Configuration loaded: {config.config_identifier}")
     logger.info(f"Base path: {config.base_path}")
