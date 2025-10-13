@@ -2,9 +2,7 @@
 
 from typing import Any
 
-import numpy as np
 import torch
-from jaxtyping import Float
 from muutils.spinner import SpinnerContext
 from torch.utils.data import DataLoader
 from tqdm import tqdm

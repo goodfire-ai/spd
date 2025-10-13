@@ -7,8 +7,13 @@ from typing import Any
 
 import wandb
 from muutils.spinner import SpinnerContext
+from torch.utils.data import DataLoader
+from transformers import PreTrainedTokenizer
 from wandb.apis.public import Run
 
+from spd.clustering.dashboard.core import (
+    DashboardData,
+)
 from spd.clustering.dashboard.core.compute_max_act import compute_max_activations
 from spd.clustering.dashboard.core.dashboard_config import DashboardConfig
 from spd.clustering.dashboard.core.dashboard_io import (
@@ -19,8 +24,9 @@ from spd.clustering.dashboard.core.dashboard_io import (
 from spd.clustering.dashboard.core.util import write_html_files
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
+from spd.configs import Config
 from spd.log import logger
-from spd.settings import REPO_ROOT
+from spd.models.component_model import ComponentModel
 
 
 def main(config: DashboardConfig) -> None:
@@ -59,13 +65,17 @@ def main(config: DashboardConfig) -> None:
 
     # Setup model and data
     with SpinnerContext(message="Setting up model and data"):
+        model: ComponentModel
+        tokenizer: PreTrainedTokenizer
+        dataloader: DataLoader[Any]
+        spd_config: Config
         model, tokenizer, dataloader, spd_config = setup_model_and_data(
             run_config, config.context_length, config.batch_size
         )
 
     # Compute max activations
     logger.info("computing max activations")
-    dashboard_data = compute_max_activations(
+    dashboard_data: DashboardData = compute_max_activations(
         model=model,
         sigmoid_type=spd_config.sigmoid_type,
         tokenizer=tokenizer,
@@ -108,6 +118,7 @@ def main(config: DashboardConfig) -> None:
 
 def cli() -> None:
     """CLI entry point with argument parsing."""
+    # cli
     logger.info("parsing args")
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Compute max-activating text samples for language model component clusters."
@@ -124,11 +135,11 @@ def cli() -> None:
     logger.info(f"Loaded config from: {args.config}")
 
     # Setup output directory and write HTML if requested
-    output_dir: Path = config.output_dir or (REPO_ROOT / "spd/clustering/dashboard/data")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
     if config.write_html:
-        write_html_files(output_dir)
+        write_html_files(config.output_dir)
 
+    # run main logic
     main(config)
 
 
