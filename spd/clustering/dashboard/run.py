@@ -29,14 +29,14 @@ from spd.log import logger
 from spd.models.component_model import ComponentModel
 
 
-def main(config: DashboardConfig) -> None:
+def main(dashboard_config: DashboardConfig) -> None:
     """Compute max-activating text samples for language model component clusters.
 
     Args:
         config: Dashboard configuration
     """
     # Parse wandb run path
-    wandb_clustering_run: str = config.wandb_run.removeprefix("wandb:")
+    wandb_clustering_run: str = dashboard_config.wandb_run.removeprefix("wandb:")
     logger.info(f"Loading WandB run: {wandb_clustering_run}")
 
     # Load artifacts from WandB
@@ -52,14 +52,15 @@ def main(config: DashboardConfig) -> None:
 
     # Get actual iteration number (handle negative indexing)
     actual_iteration: int = (
-        config.iteration
-        if config.iteration >= 0
-        else merge_history.n_iters_current + config.iteration
+        dashboard_config.iteration
+        if dashboard_config.iteration >= 0
+        else merge_history.n_iters_current + dashboard_config.iteration
     )
+    merge: GroupMerge = merge_history.merges[actual_iteration]
 
     # Set up output directory with iteration count
     dir_name: str = f"{run_id}-i{actual_iteration}"
-    final_output_dir: Path = config.output_dir / dir_name
+    final_output_dir: Path = dashboard_config.output_dir / dir_name
     final_output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Output directory: {final_output_dir}")
 
@@ -70,8 +71,23 @@ def main(config: DashboardConfig) -> None:
         dataloader: DataLoader[Any]
         spd_config: Config
         model, tokenizer, dataloader, spd_config = setup_model_and_data(
-            run_config, config.context_length, config.batch_size
+            run_config=run_config,
+            context_length=dashboard_config.context_length,
+            batch_size=dashboard_config.batch_size,
         )
+
+    
+    logger.info("Generating model information")
+    model_info: dict[str, Any] = generate_model_info(
+        model=model,
+        merge_history=merge_history,
+        merge=merge,
+        iteration=actual_iteration,
+        model_path=run_config["model_path"],
+        tokenizer_name=spd_config.tokenizer_name,  # pyright: ignore[reportArgumentType]
+        config_dict=spd_config.model_dump(mode="json"),
+        wandb_clustering_run=wandb_clustering_run,
+    )
 
     # Compute max activations
     logger.info("computing max activations")
@@ -81,39 +97,24 @@ def main(config: DashboardConfig) -> None:
         tokenizer=tokenizer,
         dataloader=dataloader,
         merge_history=merge_history,
-        iteration=config.iteration,
-        n_samples=config.n_samples,
-        n_batches=config.n_batches,
+        iteration=dashboard_config.iteration,
+        n_samples=dashboard_config.n_samples,
+        n_batches=dashboard_config.n_batches,
         clustering_run=run_id,
     )
     logger.info(f"computed max activations: {len(dashboard_data.clusters) = }")
     if dashboard_data.coactivations is not None:
         logger.info(f"computed coactivations: shape={dashboard_data.coactivations.shape}")
-    merge: GroupMerge = merge_history.merges[actual_iteration]
 
-    # Generate model information and save
-    with SpinnerContext(message="Generating and saving dashboard data"):
-        logger.info("Generating model information")
-        model_info: dict[str, Any] = generate_model_info(
-            model=model,
-            merge_history=merge_history,
-            merge=merge,
-            iteration=actual_iteration,
-            model_path=run_config["model_path"],
-            tokenizer_name=spd_config.tokenizer_name,  # pyright: ignore[reportArgumentType]
-            config_dict=spd_config.model_dump(mode="json"),
-            wandb_clustering_run=wandb_clustering_run,
-        )
+    # Save model info
+    model_info_path: Path = final_output_dir / "model_info.json"
+    model_info_path.write_text(json.dumps(model_info, indent=2))
+    logger.info(f"Model info saved to: {model_info_path}")
 
-        # Save model info
-        model_info_path: Path = final_output_dir / "model_info.json"
-        model_info_path.write_text(json.dumps(model_info, indent=2))
-        logger.info(f"Model info saved to: {model_info_path}")
-
-        # Save dashboard data (includes coactivations)
-        logger.info("Saving dashboard data")
-        dashboard_data.save(str(final_output_dir))
-        logger.info(f"Dashboard data saved to: {final_output_dir}")
+    # Save dashboard data
+    logger.info("Saving dashboard data...")
+    dashboard_data.save(str(final_output_dir))
+    logger.info(f"Dashboard data saved to: {final_output_dir}")
 
 
 def cli() -> None:
