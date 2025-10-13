@@ -89,7 +89,7 @@ def create_slurm_array_script(
         # parent environment, so we need to deactivate and unset the virtual environment.
         deactivate 2>/dev/null || true
         unset VIRTUAL_ENV
-        uv sync --no-dev --link-mode copy
+        uv sync --no-dev --link-mode copy -q
 
         # Execute the appropriate command based on array task ID
         case $SLURM_ARRAY_TASK_ID in
