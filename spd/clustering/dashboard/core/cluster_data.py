@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 from jaxtyping import Float
 
+from spd.clustering.consts import SubComponentInfo
 from spd.clustering.dashboard.core.base import (
     _SEPARATOR_1,
     _SEPARATOR_3,
@@ -15,7 +16,6 @@ from spd.clustering.dashboard.core.base import (
     ClusterId,
     ClusterIdHash,
     Direction,
-    SubComponentInfo,
     TextSampleHash,
     TrackingCriterionHash,
 )

@@ -6,12 +6,12 @@ from typing import Any
 import numpy as np
 from jaxtyping import Float
 
+from spd.clustering.consts import SubComponentInfo
 from spd.clustering.dashboard.core.base import (
     ActivationSampleBatch,
     ActivationSampleHash,
     ClusterId,
     ClusterIdHash,
-    SubComponentInfo,
     TextSample,
     TextSampleHash,
 )
