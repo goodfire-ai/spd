@@ -124,10 +124,10 @@ class ProcessedActivations:
     activations: ActivationsTensor
     "activations after filtering and concatenation"
 
-    labels: list[SubComponentInfo]
+    subcomponents: list[SubComponentInfo]
     "list of length c with SubComponentInfo for each preserved component"
 
-    dead_components_lst: list[SubComponentInfo] | None
+    dead_subcomponents: list[SubComponentInfo] | None
     "list of SubComponentInfo for dead components, or None if no filtering was applied"
 
     def validate(self) -> None:
@@ -143,7 +143,7 @@ class ProcessedActivations:
     @property
     def n_components_alive(self) -> int:
         """Number of alive components after filtering. equal to the length of `labels`"""
-        n_alive: int = len(self.labels)
+        n_alive: int = len(self.subcomponents)
         assert n_alive + self.n_components_dead == self.n_components_original, (
             f"({n_alive = }) + ({self.n_components_dead = }) != ({self.n_components_original = })"
         )
@@ -156,16 +156,16 @@ class ProcessedActivations:
     @property
     def n_components_dead(self) -> int:
         """Number of dead components after filtering. equal to the length of `dead_components_lst` if it is not None, or 0 otherwise"""
-        return len(self.dead_components_lst) if self.dead_components_lst else 0
+        return len(self.dead_subcomponents) if self.dead_subcomponents else 0
 
     @cached_property
     def label_index(self) -> dict[str, int | None]:
         """Create a mapping from label string to alive index (`None` if dead)"""
         return {
-            **{comp.label: i for i, comp in enumerate(self.labels)},
+            **{comp.label: i for i, comp in enumerate(self.subcomponents)},
             **(
-                {comp.label: None for comp in self.dead_components_lst}
-                if self.dead_components_lst
+                {comp.label: None for comp in self.dead_subcomponents}
+                if self.dead_subcomponents
                 else {}
             ),
         }
@@ -262,6 +262,6 @@ def process_activations(
     return ProcessedActivations(
         activations_raw=activations_,
         activations=filtered_components.activations,
-        labels=filtered_components.labels,
-        dead_components_lst=filtered_components.dead_components_labels,
+        subcomponents=filtered_components.labels,
+        dead_subcomponents=filtered_components.dead_components_labels,
     )

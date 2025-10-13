@@ -34,7 +34,7 @@ class TestMergeIntegration:
             activations=activations,
             batch_id="test_merge_with_range_sampler",
             merge_config=config,
-            component_labels=component_labels,
+            subcomponents=component_labels,
         )
 
         # Check results
@@ -71,7 +71,7 @@ class TestMergeIntegration:
             activations=activations,
             batch_id="test_merge_with_mcmc_sampler",
             merge_config=config,
-            component_labels=component_labels,
+            subcomponents=component_labels,
         )
 
         # Check results
@@ -107,7 +107,7 @@ class TestMergeIntegration:
             activations=activations,
             batch_id="test_merge_with_popping",
             merge_config=config,
-            component_labels=component_labels,
+            subcomponents=component_labels,
         )
 
         # Check results
@@ -145,7 +145,7 @@ class TestMergeIntegration:
             activations=activations.clone(),
             batch_id="test_merge_comparison_samplers_range",
             merge_config=config_range,
-            component_labels=component_info.copy(),
+            subcomponents=component_info.copy(),
         )
 
         # Run with MCMC sampler (low temperature for near-deterministic)
@@ -162,7 +162,7 @@ class TestMergeIntegration:
             activations=activations.clone(),
             batch_id="test_merge_comparison_samplers_mcmc",
             merge_config=config_mcmc,
-            component_labels=component_info.copy(),
+            subcomponents=component_info.copy(),
         )
 
         # Both should reduce groups from initial count
@@ -192,7 +192,7 @@ class TestMergeIntegration:
             activations=activations,
             batch_id="test_merge_with_small_components",
             merge_config=config,
-            component_labels=component_labels,
+            subcomponents=component_labels,
         )
 
         # First entry is after first merge, so should be 3 - 1 = 2

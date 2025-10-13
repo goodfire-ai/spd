@@ -51,7 +51,7 @@ def plot_activations(
     act_dict: dict[str, ActivationsTensor] = processed_activations.activations_raw
     act_concat: ActivationsTensor = processed_activations.activations
     coact: ClusterCoactivationShaped = compute_coactivatons(act_concat)
-    labels: list[SubComponentInfo] = processed_activations.labels
+    labels: list[SubComponentInfo] = processed_activations.subcomponents
     n_samples: int = act_concat.shape[0]
 
     # trim the activations if n_samples_max is specified

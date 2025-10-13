@@ -27,7 +27,7 @@ def plot_merge_matrix(
     figsize: tuple[int, int] = (10, 3),
     show_row_sums: bool | None = None,
     ax: "plt.Axes | None" = None,
-    component_labels: list[SubComponentInfo] | None = None,
+    subcomponents: list[SubComponentInfo] | None = None,
 ) -> None:
     import matplotlib.pyplot as plt
 
@@ -57,11 +57,11 @@ def plot_merge_matrix(
     ax_mat.set_title("Merge Matrix")
 
     # Add component labeling if component labels are provided
-    if component_labels is not None:
+    if subcomponents is not None:
         # Import the function here to avoid circular imports
         from spd.clustering.plotting.activations import add_component_labeling
 
-        add_component_labeling(ax_mat, component_labels, axis="x")
+        add_component_labeling(ax_mat, subcomponents, axis="x")
 
     if show_row_sums:
         assert ax_lbl is not None
@@ -84,7 +84,7 @@ def plot_merge_iteration(
     costs: ClusterCoactivationShaped,
     # pair_cost: float,
     iteration: int,
-    component_labels: list[SubComponentInfo] | None = None,
+    subcomponents: list[SubComponentInfo] | None = None,
     plot_config: dict[str, Any] | None = None,
     nan_diag: bool = True,
     show: bool = False,
@@ -123,7 +123,7 @@ def plot_merge_iteration(
         current_merge.to_matrix(),
         ax=axs[0],
         show=False,
-        component_labels=component_labels,
+        subcomponents=subcomponents,
     )
 
     axs[0].set_title("Merge")

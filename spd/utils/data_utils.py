@@ -293,7 +293,8 @@ def _zip_save_arr(zf: zipfile.ZipFile, name: str, arr: np.ndarray) -> None:
     zf.writestr(name, buf.getvalue())
 
 
-def _zip_save_arr_dict(zf: zipfile.ZipFile, data: dict[str, np.ndarray]) -> None:
+# NOTE: this is used in merge_history.py, no idea why pyright thinks it's unused
+def _zip_save_arr_dict(zf: zipfile.ZipFile, data: dict[str, np.ndarray]) -> None:  # pyright: ignore[reportUnusedFunction]
     """Save a dictionary of numpy arrays to a zip file, {key}.npy used as path"""
     key: str
     arr: np.ndarray

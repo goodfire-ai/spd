@@ -37,7 +37,7 @@ class LogCallback(Protocol):
     def __call__(
         self,
         current_coact: ClusterCoactivationShaped,
-        component_labels: list[SubComponentInfo],
+        subcomponents: list[SubComponentInfo],
         current_merge: GroupMerge,
         costs: ClusterCoactivationShaped,
         merge_history: MergeHistory,
@@ -53,7 +53,7 @@ class LogCallback(Protocol):
 def merge_iteration(
     merge_config: MergeConfig,
     activations: ActivationsTensor,
-    component_labels: list[SubComponentInfo],
+    subcomponents: list[SubComponentInfo],
     log_callback: LogCallback | None = None,
     batch_id: str = "unk",
 ) -> MergeHistory:
@@ -114,7 +114,7 @@ def merge_iteration(
 
     # variables we keep track of
     # Convert SubComponentInfo list to SubComponentLabel list for MergeHistory (serialization)
-    labels_for_storage: list[SubComponentLabel] = [comp.label for comp in component_labels]
+    labels_for_storage: list[SubComponentLabel] = [comp.label for comp in subcomponents]
     merge_history: MergeHistory = MergeHistory.from_config(
         merge_config=merge_config,
         labels=labels_for_storage,
@@ -211,7 +211,7 @@ def merge_iteration(
             log_callback(
                 iter_idx=iter_idx,
                 current_coact=current_coact,
-                component_labels=component_labels,
+                component_labels=subcomponents,
                 current_merge=current_merge,
                 costs=costs,
                 merge_history=merge_history,

@@ -118,7 +118,7 @@ for i in range(ENSEMBLE_SIZE):
         merge_config=MERGE_CFG,
         batch_id=f"batch_{i}",
         activations=PROCESSED_ACTIVATIONS.activations,
-        component_labels=PROCESSED_ACTIVATIONS.labels,
+        subcomponents=PROCESSED_ACTIVATIONS.subcomponents,
         log_callback=None,
     )
     HISTORIES.append(HISTORY)
