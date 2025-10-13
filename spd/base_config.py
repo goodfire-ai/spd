@@ -9,14 +9,14 @@ from pydantic import BaseModel, ConfigDict
 class BaseConfig(BaseModel):
     """Pydantic BaseModel suited for configs.
 
-    Enforces extra="forbid" and frozen=True and adds loading and saving from/to YAML, JSON, and
-    JSON string (these are prefixed with "json:").
+    Uses the pydantic `model_config` to enforce `extra="forbid"` and `frozen=True` and add loading
+    and saving from/to YAML, JSON.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
     @classmethod
-    def from_path(cls, path: Path | str) -> Self:
+    def from_file(cls, path: Path | str) -> Self:
         """Load config from path to a JSON or YAML file."""
         if isinstance(path, str):
             path = Path(path)

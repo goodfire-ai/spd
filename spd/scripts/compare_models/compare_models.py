@@ -383,7 +383,7 @@ def main(config_path: Path | str) -> None:
     Args:
         config_path: Path to YAML config
     """
-    config = CompareModelsConfig.from_path(config_path)
+    config = CompareModelsConfig.from_file(config_path)
 
     if config.output_dir is None:
         output_dir = Path(__file__).parent / "out"

@@ -33,9 +33,11 @@ def main(
     sweep_id: str | None = None,
     sweep_params_json: str | None = None,
 ) -> None:
-    assert config_path is not None or config_json is not None, "Must set config_path or config_json"
+    assert len(set([config_path is not None, config_json is not None])) == 1, (
+        "Must set exactly one of config_path or config_json"
+    )
     if config_path is not None:
-        config = Config.from_path(config_path)
+        config = Config.from_file(config_path)
     else:
         assert config_json is not None
         config = Config(**json.loads(config_json.removeprefix("json:")))

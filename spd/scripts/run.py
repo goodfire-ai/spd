@@ -148,7 +148,7 @@ def generate_commands(
         exp_config = EXPERIMENT_REGISTRY[experiment]
 
         # Load base config
-        base_config = Config.from_path(exp_config.config_path)
+        base_config = Config.from_file(exp_config.config_path)
 
         if sweep_params_path is None:
             # Fixed configuration run - still use JSON to ensure project override works
