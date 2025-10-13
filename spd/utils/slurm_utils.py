@@ -90,6 +90,7 @@ def create_slurm_array_script(
         deactivate 2>/dev/null || true
         unset VIRTUAL_ENV
         uv sync --no-dev --link-mode copy -q
+        source .venv/bin/activate
 
         # Execute the appropriate command based on array task ID
         case $SLURM_ARRAY_TASK_ID in
