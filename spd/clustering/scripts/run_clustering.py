@@ -18,6 +18,7 @@ from pydantic import Field, PositiveInt, model_validator
 from torch import Tensor
 from wandb.sdk.wandb_run import Run
 
+from spd.base_config import BaseConfig
 from spd.clustering.activations import (
     ProcessedActivations,
     component_activations,
@@ -43,7 +44,7 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.settings import SPD_CACHE_DIR
 from spd.spd_types import TaskName
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import BaseConfig, replace_pydantic_model
+from spd.utils.general_utils import replace_pydantic_model
 
 LogCallback = Callable[
     [
@@ -405,7 +406,7 @@ def cli() -> None:
 
     args = parser.parse_args()
 
-    run_config = ClusteringRunConfig.load(args.config)
+    run_config = ClusteringRunConfig.from_file(args.config)
 
     # Replace values in the run_config from those passed in via CLI (which may come from the
     # pipeline submitter in spd/clustering/scripts/run.py)

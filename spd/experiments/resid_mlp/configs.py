@@ -2,8 +2,8 @@ from typing import Literal, Self
 
 from pydantic import Field, PositiveFloat, PositiveInt, model_validator
 
+from spd.base_config import BaseConfig
 from spd.spd_types import Probability
-from spd.utils.general_utils import BaseConfig
 
 
 class ResidMLPModelConfig(BaseConfig):

@@ -11,9 +11,10 @@ from pathlib import Path
 
 from pydantic import Field, PositiveInt
 
+from spd.base_config import BaseConfig
 from spd.clustering.utils.wandb_utils import create_clustering_workspace_view
 from spd.log import logger
-from spd.utils.general_utils import BaseConfig, replace_pydantic_model
+from spd.utils.general_utils import replace_pydantic_model
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
 
@@ -84,7 +85,7 @@ def main(submit_config_path: Path, n_runs: int | None = None) -> None:
     """
     logger.set_format("console", "default")
 
-    submit_config = ClusteringPipelineConfig.load(submit_config_path)
+    submit_config = ClusteringPipelineConfig.from_file(submit_config_path)
 
     if n_runs is not None:
         submit_config = replace_pydantic_model(submit_config, {"n_runs": n_runs})
@@ -112,7 +113,7 @@ def main(submit_config_path: Path, n_runs: int | None = None) -> None:
     output_dir = submit_config.base_output_dir / ensemble_id
     output_dir.mkdir(parents=True, exist_ok=True)
     config_save_path = output_dir / "pipeline_config.json"
-    submit_config.save(config_save_path)
+    submit_config.to_file(config_save_path)
     logger.info(f"Submit config saved to: {config_save_path}")
 
     # Generate commands

@@ -20,11 +20,12 @@ from jaxtyping import Float
 from pydantic import Field
 from torch import Tensor
 
+from spd.base_config import BaseConfig
 from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import BaseConfig, extract_batch_data, get_obj_device
+from spd.utils.general_utils import extract_batch_data, get_obj_device
 from spd.utils.run_utils import save_file
 
 
@@ -382,7 +383,7 @@ def main(config_path: Path | str) -> None:
     Args:
         config_path: Path to YAML config
     """
-    config = CompareModelsConfig.load(config_path)
+    config = CompareModelsConfig.from_file(config_path)
 
     if config.output_dir is None:
         output_dir = Path(__file__).parent / "out"

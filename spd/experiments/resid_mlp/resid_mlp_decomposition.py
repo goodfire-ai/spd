@@ -23,16 +23,24 @@ from spd.utils.wandb_utils import init_wandb
 
 
 def main(
-    config_path: Path | str,
+    config_path: Path | str | None = None,
+    config_json: str | None = None,
     evals_id: str | None = None,
     sweep_id: str | None = None,
     sweep_params_json: str | None = None,
 ) -> None:
+    assert (config_path is not None) != (config_json is not None), (
+        "Need exactly one of config_path and config_json"
+    )
+    if config_path is not None:
+        config = Config.from_file(config_path)
+    else:
+        assert config_json is not None
+        config = Config(**json.loads(config_json.removeprefix("json:")))
+
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
     )
-    config = Config.load(config_path)
-
     if config.wandb_project:
         tags = ["resid_mlp"]
         if evals_id:
