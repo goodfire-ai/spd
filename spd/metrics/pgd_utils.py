@@ -23,21 +23,8 @@ class PGDObjective(Protocol):
     ) -> Tensor: ...
 
 
-def get_pgd_init_tensor(
-    init: PGDInitStrategy,
-    shape: tuple[int, ...],
-    device: torch.device | str,
-) -> Float[Tensor, "... shape"]:
-    match init:
-        case "random":
-            return torch.rand(shape, device=device)
-        case "ones":
-            return torch.ones(shape, device=device)
-        case "zeroes":
-            return torch.zeros(shape, device=device)
 
-
-def optimize_adversarial_stochastic_masks(
+def _optimize_adversarial_stochastic_masks(
     *,
     pgd_config: PGDConfig,
     objective_fn: PGDObjective,
@@ -95,7 +82,7 @@ def optimize_adversarial_stochastic_masks(
 
     component_sample_points: dict[str, Float[Tensor, "... C"]] = {}
     for layer in layers:
-        sample_point = get_pgd_init_tensor(pgd_config.init, ci_mask_shape, device)
+        sample_point = _get_pgd_init_tensor(pgd_config.init, ci_mask_shape, device)
         sample_point.requires_grad_(True)
         component_sample_points[layer] = sample_point
 
@@ -103,7 +90,7 @@ def optimize_adversarial_stochastic_masks(
     if use_delta_component:
         weight_delta_masks = {}
         for layer in layers:
-            wd_init = get_pgd_init_tensor(pgd_config.init, weight_delta_mask_shape, device)
+            wd_init = _get_pgd_init_tensor(pgd_config.init, weight_delta_mask_shape, device)
             wd_init.requires_grad_(True)
             weight_delta_masks[layer] = wd_init
 
@@ -147,8 +134,21 @@ def optimize_adversarial_stochastic_masks(
 
     return maybe_repeat_to_batch_shape(component_sample_points, weight_delta_masks)
 
+def _get_pgd_init_tensor(
+    init: PGDInitStrategy,
+    shape: tuple[int, ...],
+    device: torch.device | str,
+) -> Float[Tensor, "... shape"]:
+    match init:
+        case "random":
+            return torch.rand(shape, device=device)
+        case "ones":
+            return torch.ones(shape, device=device)
+        case "zeroes":
+            return torch.zeros(shape, device=device)
 
-def interpolate_component_mask(
+
+def _interpolate_component_mask(
     ci: dict[str, Float[Tensor, "... C"]],
     component_sample_points: dict[str, Float[Tensor, "... C"]],
 ) -> dict[str, Float[Tensor, "... C"]]:
@@ -199,7 +199,7 @@ def pgd_masked_recon_loss_update(
                 )
 
         mask_infos = make_mask_infos(
-            component_masks=interpolate_component_mask(ci, component_sample_points),
+            component_masks=_interpolate_component_mask(ci, component_sample_points),
             weight_deltas_and_masks=weight_deltas_and_masks,  # we don't interpolate for the weight delta
             routing_masks=routing_masks,
         )
@@ -210,7 +210,7 @@ def pgd_masked_recon_loss_update(
         return total_loss / n_examples
 
     adversarial_component_sample_points, adversarial_weight_delta_masks = (
-        optimize_adversarial_stochastic_masks(
+        _optimize_adversarial_stochastic_masks(
             pgd_config=pgd_config,
             objective_fn=objective_fn,
             layers=list(ci.keys()),
@@ -233,7 +233,7 @@ def pgd_masked_recon_loss_update(
             )
 
     sampled_mask_infos = make_mask_infos(
-        component_masks=interpolate_component_mask(ci, adversarial_component_sample_points),
+        component_masks=_interpolate_component_mask(ci, adversarial_component_sample_points),
         weight_deltas_and_masks=adversarial_weight_deltas_and_masks,
         routing_masks=routing_masks,
     )
