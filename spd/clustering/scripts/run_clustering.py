@@ -292,6 +292,7 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
                 "clustering",
                 f"task:{task_name}",
                 f"model:{run_config.wandb_decomp_model}",
+                f"ensemble_id:{run_config.ensemble_id}",
                 f"idx:{run_config.idx_in_ensemble}",
             ],
         )

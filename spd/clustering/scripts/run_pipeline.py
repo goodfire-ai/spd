@@ -141,7 +141,7 @@ def main(submit_config_path: Path, n_runs: int | None = None) -> None:
             {
                 "Array Job ID": array_job_id,
                 "Total runs": len(commands),
-                "Ensemble hash": ensemble_id,
+                "Ensemble id": ensemble_id,
                 "Logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
             }
         )
