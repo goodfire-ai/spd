@@ -9,19 +9,19 @@
     import NewClusterDashboard from "$lib/components/ClusterDashboardTab.svelte";
     import InterventionsTab from "$lib/components/InterventionsTab.svelte";
     import { getClusterWandbRunId } from "$lib";
-    
-    // let loadingStatus: boolean = true;
 
     let loadingTrainRun: boolean = false;
 
     /** can be a wandb run path, or id. we should sanitse this */
     let trainWandbRunEntry: string | null = null;
 
-    let status: Status | null = null;
-    $: availableClusterRuns = status?.train_run?.available_cluster_runs;
+    let status: Status = { train_run: null, cluster_run: null };
+
+    $: availableClusterRuns = status.train_run?.available_cluster_runs;
 
     /** can be a wandb run path, or id. we should sanitse this */
     let clusterWandbRunEntry: string | null = null;
+
     let clusterIteration: number | null = null;
     let loadingClusterRun: boolean = false;
 
@@ -51,12 +51,10 @@
 
         try {
             loadingTrainRun = true;
-            status = null;
+            status = { train_run: null, cluster_run: null };
             trainWandbRunEntry = getClusterWandbRunId(input);
             console.log("loading run", trainWandbRunEntry);
             await api.loadRun(trainWandbRunEntry);
-            // this is kindof a bug. We'll fetch a stale status while loading the new run. We should
-            // fix this by 
             await loadStatus();
         } catch (error) {
             console.error("error loading run", error);
@@ -103,114 +101,110 @@
 </script>
 
 <div class="app-layout">
-    <!-- Left Sidebar -->
-    <!-- {#if !status} <div class="loading">Loading...</div>
-    {:else} -->
-        <aside class="sidebar">
-            <div class="run-selector">
-                <label for="wandb-run-id">W&B Run ID</label>
-                <form on:submit|preventDefault={loadRun} class="input-group">
-                    <input
-                        type="text"
-                        id="wandb-run-id"
-                        list="run-options"
-                        bind:value={trainWandbRunEntry}
-                        disabled={loadingTrainRun}
-                        placeholder="Select or enter run ID"
-                    />
-                    <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
-                        {loadingTrainRun ? "Loading..." : "Load Run"}
-                    </button>
-                </form>
-            </div>
-            <div class="tab-navigation">
-                {#if status?.train_run}
-                    <button
-                        class="tab-button"
-                        class:active={activeTab === "activation-contexts"}
-                        on:click={() => (activeTab = "activation-contexts")}
-                    >
-                        Activation Contexts
-                    </button>
-                    <div class="cluster-settings">
-                        <h4>Cluster Settings</h4>
-                        <!-- svelte-ignore a11y_consider_explicit_label -->
-                        <form on:submit|preventDefault={loadClusterRun}>
+    <aside class="sidebar">
+        <div class="run-selector">
+            <label for="wandb-run-id">W&B Run ID</label>
+            <form on:submit|preventDefault={loadRun} class="input-group">
+                <input
+                    type="text"
+                    id="wandb-run-id"
+                    list="run-options"
+                    bind:value={trainWandbRunEntry}
+                    disabled={loadingTrainRun}
+                    placeholder="Select or enter run ID"
+                />
+                <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
+                    {loadingTrainRun ? "Loading..." : "Load Run"}
+                </button>
+            </form>
+        </div>
+        <div class="tab-navigation">
+            {#if status.train_run}
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "activation-contexts"}
+                    on:click={() => (activeTab = "activation-contexts")}
+                >
+                    Activation Contexts
+                </button>
+                <div class="cluster-settings">
+                    <h4>Cluster Settings</h4>
+                    <!-- svelte-ignore a11y_consider_explicit_label -->
+                    <form on:submit|preventDefault={loadClusterRun}>
+                        <label>
+                            Clustering Run
+                            <select bind:value={clusterWandbRunEntry}>
+                                {#if availableClusterRuns != null}
+                                    {#each availableClusterRuns as run}
+                                        <option value={run}>{run}</option>
+                                    {/each}
+                                {/if}
+                            </select>
+                        </label>
+                        <div class="settings-grid">
                             <label>
-                                Clustering Run
-                                <select bind:value={clusterWandbRunEntry}>
-                                    {#if availableClusterRuns != null}
-                                        {#each availableClusterRuns as run}
-                                            <option value={run}>{run}</option>
-                                        {/each}
-                                    {/if}
-                                </select>
+                                Iteration
+                                <input type="number" bind:value={clusterIteration} />
                             </label>
-                            <div class="settings-grid">
-                                <label>
-                                    Iteration
-                                    <input type="number" bind:value={clusterIteration} />
-                                </label>
-                            </div>
-                            <button class="cluster-load" type="submit" disabled={loadingClusterRun}
-                                >Load Cluster Run</button
-                            >
-                        </form>
-                    </div>
-                    <button
-                        class="tab-button"
-                        class:active={activeTab === "ablation"}
-                        disabled={status?.cluster_run == null}
-                        on:click={() => (activeTab = "ablation")}
-                    >
-                        Component Ablation
-                        <div class="spinner" class:hidden={!loadingClusterRun}></div>
-                    </button>
-                    <button
-                        class="tab-button"
-                        class:active={activeTab === "cluster-dashboard"}
-                        disabled={status?.cluster_run == null}
-                        on:click={() => (activeTab = "cluster-dashboard")}
-                    >
-                        Cluster Dashboard
-                        <div class="spinner" class:hidden={!loadingClusterRun}></div>
-                    </button>
-                {/if}
-            </div>
-            {#if status?.train_run}
-                <div class="config">
-                    <h4>Config</h4>
-                    <pre>{JSON.stringify(status?.train_run?.config, null, 2)}</pre>
+                        </div>
+                        <button class="cluster-load" type="submit" disabled={loadingClusterRun}
+                            >Load Cluster Run</button
+                        >
+                    </form>
                 </div>
-            {/if}
-        </aside>
-
-        <!-- Main Content -->
-        <div class="main-content">
-            {#if status?.train_run}
-                <div class:hidden={activeTab !== "activation-contexts"}>
-                    <ActivationContextsTab />
-                </div>
-                <div class:hidden={activeTab !== "ablation"}>
-                    {#if status?.cluster_run && clusterIteration !== null}
-                        <InterventionsTab
-                            cluster_run={status.cluster_run}
-                            iteration={clusterIteration}
-                        />
-                    {:else}
-                        <div class="status">No cluster run selected.</div>
-                    {/if}
-                </div>
-                <div class:hidden={activeTab !== "cluster-dashboard"}>
-                    {#if status?.cluster_run && clusterIteration !== null}
-                        <NewClusterDashboard iteration={clusterIteration} />
-                    {:else}
-                        <div class="status">No cluster run selected.</div>
-                    {/if}
-                </div>
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "ablation"}
+                    disabled={status.cluster_run == null}
+                    on:click={() => (activeTab = "ablation")}
+                >
+                    Component Ablation
+                    <div class="spinner" class:hidden={!loadingClusterRun}></div>
+                </button>
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "cluster-dashboard"}
+                    disabled={status.cluster_run == null}
+                    on:click={() => (activeTab = "cluster-dashboard")}
+                >
+                    Cluster Dashboard
+                    <div class="spinner" class:hidden={!loadingClusterRun}></div>
+                </button>
             {/if}
         </div>
-    <!-- {/if} -->
+        {#if status.train_run}
+            <div class="config">
+                <h4>Config</h4>
+                <pre>{JSON.stringify(status.train_run?.config, null, 2)}</pre>
+            </div>
+        {/if}
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        {#if status.train_run}
+            <div class:hidden={activeTab !== "activation-contexts"}>
+                <ActivationContextsTab />
+            </div>
+            <div class:hidden={activeTab !== "ablation"}>
+                {#if status.cluster_run && clusterIteration !== null}
+                    <InterventionsTab
+                        cluster_run={status.cluster_run}
+                        iteration={clusterIteration}
+                    />
+                {:else}
+                    <div class="status">No cluster run selected.</div>
+                {/if}
+            </div>
+            <div class:hidden={activeTab !== "cluster-dashboard"}>
+                {#if status.cluster_run && clusterIteration !== null}
+                    <NewClusterDashboard iteration={clusterIteration} />
+                {:else}
+                    <div class="status">No cluster run selected.</div>
+                {/if}
+            </div>
+        {/if}
+    </div>
 </div>
 
 <style>
