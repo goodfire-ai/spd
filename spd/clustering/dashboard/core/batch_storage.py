@@ -24,7 +24,7 @@ from spd.clustering.dashboard.core.compute_helpers import (
     ClusterActivations,
     compute_all_cluster_activations,
 )
-from spd.clustering.dashboard.core.text_processing import tokenize_and_create_text_samples
+from spd.clustering.dashboard.core.tokenization import tokenize_and_create_text_samples
 from spd.models.component_model import ComponentModel
 from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
