@@ -106,7 +106,7 @@ def worker_main(args: WorkerArgs) -> ModelActivationContexts:
 def roll_batch_size_1_into_x(
     singleton_batches: Iterable[torch.Tensor],
     batch_size: int,
-) -> Generator[torch.Tensor, None, None]:
+) -> Generator[torch.Tensor]:
     logger.info(f"worker: rolling batch size 1 into {batch_size}")
     examples = []
     for batch in singleton_batches:

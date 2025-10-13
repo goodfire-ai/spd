@@ -23,7 +23,6 @@ from spd.app.backend.api import (
     Status,
     SubcomponentAblationRequest,
     SubcomponentAblationResponse,
-    SubcomponentActivationContexts,
     TokenLayerCosineSimilarityData,
 )
 from spd.app.backend.services.ablation_service import AblationService
@@ -194,6 +193,7 @@ def simulate_merge(request: SimulateMergeRequest) -> SimulateMergeResponse:
 @handle_errors
 def healthcheck() -> str:
     return "OK"
+
 
 @app.get("/mask_overrides")
 @handle_errors
