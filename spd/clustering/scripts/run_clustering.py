@@ -368,7 +368,7 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
         / f"{run_config.ensemble_id}_{run_config.idx_in_ensemble}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
-    history_path = run_dir / f"history_{run_config.idx_in_ensemble}.npz"
+    history_path = run_dir / "history.npz"
     history.save(history_path, wandb_url=run.url if run else None)
     logger.info(f"✓ History saved to {history_path}")
 
