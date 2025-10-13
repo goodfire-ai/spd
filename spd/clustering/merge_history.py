@@ -16,6 +16,8 @@ from spd.clustering.consts import (
     MergePair,
     MergesArray,
     SaveableObject,
+    SubComponentInfo,
+    SubComponentLabel,
     SubComponentLabels,
 )
 from spd.clustering.math.merge_distances import compute_distances
@@ -187,10 +189,8 @@ class MergeHistory(SaveableObject):
         component_labels: list[str] = self.get_cluster_component_labels(iteration, cluster_id)
         result: list[dict[str, Any]] = []
         for label in component_labels:
-            module: str
-            idx_str: str
-            module, idx_str = label.rsplit(":", 1)
-            result.append({"module": module, "index": int(idx_str), "label": label})
+            comp: SubComponentInfo = SubComponentInfo.from_label(SubComponentLabel(label))
+            result.append({"module": comp.module, "index": comp.index, "label": label})
         return result
 
     # Convenience properties for sweep analysis

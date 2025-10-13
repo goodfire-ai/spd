@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, PreTrainedTokenizer
 from wandb.apis.public import Run
 
+from spd.clustering.consts import SubComponentInfo, SubComponentLabel
 from spd.clustering.dashboard.core.tokenization import attach_vocab_arr
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
@@ -139,8 +140,8 @@ def generate_model_info(
     total_components: int = len(merge_history.labels)
 
     for label in merge_history.labels:
-        module, _ = label.rsplit(":", 1)
-        unique_modules.add(module)
+        comp: SubComponentInfo = SubComponentInfo.from_label(SubComponentLabel(label))
+        unique_modules.add(comp.module)
 
     # Count parameters in the model
     total_params: int = sum(p.numel() for p in model.parameters())
