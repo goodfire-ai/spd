@@ -431,9 +431,7 @@ class ComponentModel(LoadableModule):
         return None
 
     @contextmanager
-    def _attach_forward_hooks(
-        self, hooks: dict[str, Callable[..., Any]]
-    ) -> Generator[None, None, None]:
+    def _attach_forward_hooks(self, hooks: dict[str, Callable[..., Any]]) -> Generator[None]:
         """Context manager to temporarily attach forward hooks to the target model."""
         handles: list[RemovableHandle] = []
         for module_name, hook in hooks.items():
