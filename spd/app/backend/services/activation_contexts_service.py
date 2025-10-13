@@ -24,9 +24,8 @@ class SubcomponentActivationContextsService:
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir / "data.json"
 
-    async def get_layer_subcomponents_activation_contexts(
+    async def get_subcomponents_activation_contexts(
         self,
-        layer: str,
         importance_threshold: float,
         max_examples_per_subcomponent: int,
         n_batches: int,
@@ -67,4 +66,4 @@ class SubcomponentActivationContextsService:
             f"topk_by_subcomponent not found, batch size: {batch_size}"
         )
 
-        return map_to_model_ctxs(run_context, topk_by_subcomponent).layers[layer]
+        return map_to_model_ctxs(run_context, topk_by_subcomponent)

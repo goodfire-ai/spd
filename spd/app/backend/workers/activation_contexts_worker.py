@@ -251,7 +251,7 @@ def _get_importances_by_module(
     with torch.no_grad():
         _, pre_weight_acts = cm(
             batch,
-            mode="input_cache",
+            cache_type="input",
             module_names=list(cm.components.keys()),
         )
         importances_by_module, _ = cm.calc_causal_importances(

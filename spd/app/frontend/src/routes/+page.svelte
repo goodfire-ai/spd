@@ -8,60 +8,107 @@
     import ActivationContextsTab from "$lib/components/ActivationContextsTab.svelte";
     import NewClusterDashboard from "$lib/components/ClusterDashboardTab.svelte";
     import InterventionsTab from "$lib/components/InterventionsTab.svelte";
+    import { getClusterWandbRunId } from "$lib";
 
     let loadingStatus: boolean = true;
-    let trainWandbRunId: string | null = null;
+    /** can be a wandb run path, or id. we should sanitse this */
+    let trainWandbRunEntry: string | null = null;
     let loadingTrainRun: boolean = false;
 
     let status: Status | null = null;
     $: availableClusterRuns = status?.train_run?.available_cluster_runs;
 
-    let clusterWandbRunPath: string | null = null; // "goodfire/spd-cluster/wj3xq8ds"; // defaults for dev
-    let clusterIteration: number | null = null; // 7000;
+    /** can be a wandb run path, or id. we should sanitse this */
+    let clusterWandbRunEntry: string | null = null;
+    let clusterIteration: number | null = null;
     let loadingClusterRun: boolean = false;
 
     async function loadStatus() {
         console.log("getting status");
-        status = await api.getStatus();
-        loadingStatus = false;
+        try {
+            status = await api.getStatus();
+            loadingStatus = false;
 
-        console.log("status:", status);
-        if (!status.train_run) {
-            return;
-        }
+            console.log("status:", status);
+            if (!status.train_run) {
+                return;
+            }
+            trainWandbRunEntry = status.train_run.wandb_path;
 
-        if (status.cluster_run) {
-            clusterWandbRunPath = status.cluster_run.wandb_path;
+            if (!status.cluster_run) {
+                return;
+            }
+            clusterWandbRunEntry = status.cluster_run.wandb_path;
+        } catch (error) {
+            console.error("error loading status", error);
+            loadingStatus = false;
         }
     }
-    
 
     async function loadRun() {
-        if (!trainWandbRunId?.trim()) return;
+        const input = trainWandbRunEntry?.trim()
+        if (!input) return;
 
-        loadingTrainRun = true;
-
-        status = null;
-        await api.loadRun(trainWandbRunId);
-
-        loadingTrainRun = false;
-
-        await loadStatus();
+        try {
+            loadingTrainRun = true;
+            status = null;
+            trainWandbRunEntry = getClusterWandbRunId(input);
+            console.log("loading run", trainWandbRunEntry);
+            await api.loadRun(trainWandbRunEntry);
+            loadingTrainRun = false;
+            await loadStatus();
+        } catch (error) {
+            console.error("error loading run", error);
+            loadingTrainRun = false;
+        }
     }
 
+    // function getClusterWandbRunId(wandbString: string) {
+    //     let id: string;
+    //     if (wandbString.includes("https://wandb.ai/")) {
+    //         console.log("wandbString is a wandb run id", wandbString);
+    //         const urlNoParams = wandbString.split("?")[0];
+    //         const maybeId = urlNoParams.split("/").pop()!;
+    //         if (maybeId.length != 8) {
+    //             throw new Error("Invalid wandb run id");
+    //         }
+    //         id = maybeId;
+    //     } else if (wandbString.includes("wandb:")) {
+    //         console.log("wandbString is a wandb: tagged run id", wandbString);
+    //         const maybeId = wandbString.split("/").pop()!;
+    //         if (maybeId.length != 8) {
+    //             throw new Error("Invalid wandb run id");
+    //         }
+    //         id = maybeId;
+    //     } else {
+    //         console.log("wandbString is a wandb run id", wandbString);
+    //         if (wandbString.length != 8) {
+    //             throw new Error("Invalid wandb run id");
+    //         }
+    //         id = wandbString;
+    //     }
+
+    //     return id;
+    // }
+
     async function loadClusterRun() {
-        console.log("loading cluster run", clusterWandbRunPath, clusterIteration);
-        const canLoadCluster = clusterWandbRunPath !== null && clusterIteration !== null;
+        console.log("loading cluster run", clusterWandbRunEntry, clusterIteration);
+        const canLoadCluster = clusterWandbRunEntry !== null && clusterIteration !== null;
         if (!canLoadCluster) {
             console.log("cannot submit cluster settings", {
-                clusterWandbRunPath,
+                clusterWandbRunEntry,
                 clusterIteration
             });
             return;
         }
 
         loadingClusterRun = true;
-        await api.loadClusterRun(clusterWandbRunPath!.split("/").pop()!, clusterIteration!);
+
+        if (!clusterWandbRunEntry) {
+            throw new Error("Inconsistent state: clusterWandbRunEntry is null");
+        }
+        clusterWandbRunEntry = getClusterWandbRunId(clusterWandbRunEntry);
+        await api.loadClusterRun(clusterWandbRunEntry, clusterIteration!);
         loadingClusterRun = false;
 
         await loadStatus();
@@ -88,11 +135,14 @@
                         type="text"
                         id="wandb-run-id"
                         list="run-options"
-                        bind:value={trainWandbRunId}
+                        bind:value={trainWandbRunEntry}
                         disabled={loadingTrainRun}
                         placeholder="Select or enter run ID"
                     />
-                    <button on:click={loadRun} disabled={loadingTrainRun || !trainWandbRunId?.trim()}>
+                    <button
+                        on:click={loadRun}
+                        disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}
+                    >
                         {loadingTrainRun ? "Loading..." : "Load Run"}
                     </button>
                 </div>
@@ -112,7 +162,7 @@
                         <form on:submit|preventDefault={loadClusterRun}>
                             <label>
                                 Clustering Run
-                                <select bind:value={clusterWandbRunPath}>
+                                <select bind:value={clusterWandbRunEntry}>
                                     {#if availableClusterRuns != null}
                                         {#each availableClusterRuns as run}
                                             <option value={run}>{run}</option>
@@ -163,9 +213,7 @@
         <div class="main-content">
             {#if status?.train_run}
                 <div class:hidden={activeTab !== "activation-contexts"}>
-                    <ActivationContextsTab
-                        availableComponentLayers={status.train_run.component_layers}
-                    />
+                    <ActivationContextsTab />
                 </div>
                 <div class:hidden={activeTab !== "ablation"}>
                     {#if status?.cluster_run && clusterIteration !== null}

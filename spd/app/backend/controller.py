@@ -1,6 +1,5 @@
 import asyncio
 import traceback
-from contextlib import asynccontextmanager
 from functools import wraps
 
 import uvicorn
@@ -15,6 +14,7 @@ from spd.app.backend.api import (
     ComponentAblationRequest,
     InterventionResponse,
     MaskOverrideDTO,
+    ModelActivationContexts,
     Run,
     RunRequest,
     RunResponse,
@@ -30,15 +30,8 @@ from spd.app.backend.services.ablation_service import AblationService
 from spd.app.backend.services.activation_contexts_service import (
     SubcomponentActivationContextsService,
 )
-
-# from spd.app.backend.services.cluster_dashboard_service import ComponentActivationContextsService
 from spd.app.backend.services.geometry_service import GeometryService
-from spd.app.backend.services.run_context_service import (
-    CLUSTER_PROJECT,
-    ENTITY,
-    TRAIN_PROJECT,
-    RunContextService,
-)
+from spd.app.backend.services.run_context_service import ENTITY, TRAIN_PROJECT, RunContextService
 
 run_context_service = RunContextService()
 subcomponent_activations_context_service = SubcomponentActivationContextsService(
@@ -78,20 +71,7 @@ def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMi
     return sync_wrapper
 
 
-DEFAULT_RUN_ID = "cztuy3va"
-
-
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    global run_context_service
-    # run_context_service.load_run(f"{ENTITY}/{TRAIN_PROJECT}/{DEFAULT_RUN_ID}")
-    try:
-        yield
-    finally:
-        pass
-
-
-app = FastAPI(lifespan=lifespan, debug=True)
+app = FastAPI(debug=True)
 
 # Add CORS middleware
 app.add_middleware(
@@ -162,8 +142,9 @@ def load_run(wandb_run_id: str):
 @app.post("/cluster-runs/load/{wandb_run_id}/{iteration}")
 @handle_errors
 def load_cluster_run(wandb_run_id: str, iteration: int):
-    global ablation_service
-    run_context_service.load_cluster_run(f"{ENTITY}/{CLUSTER_PROJECT}/{wandb_run_id}", iteration)
+    raise NotImplementedError("Cluster runs are not supported yet")
+    # global ablation_service
+    # run_context_service.load_cluster_run(f"{ENTITY}/{CLUSTER_PROJECT}/{wandb_run_id}", iteration)
 
 
 @app.get("/runs")
@@ -209,25 +190,28 @@ def simulate_merge(request: SimulateMergeRequest) -> SimulateMergeResponse:
     )
 
 
+@app.get("/healthcheck")
+@handle_errors
+def healthcheck() -> str:
+    return "OK"
+
 @app.get("/mask_overrides")
 @handle_errors
 def get_mask_overrides() -> list[MaskOverrideDTO]:
     return [mo.to_dto() for mo in ablation_service.mask_overrides.values()]
 
 
-@app.get("/activation_contexts/{layer}/subcomponents")
+@app.get("/activation_contexts/subcomponents")
 @handle_errors
-async def get_layer_subcomponent_activation_contexts(
-    layer: str,
+async def get_subcomponent_activation_contexts(
     importance_threshold: float,
     max_examples_per_subcomponent: int,
     n_batches: int,
     batch_size: int,
     n_tokens_either_side: int,
-) -> list[SubcomponentActivationContexts]:
-    f = subcomponent_activations_context_service.get_layer_subcomponents_activation_contexts
+) -> ModelActivationContexts:
+    f = subcomponent_activations_context_service.get_subcomponents_activation_contexts
     return await f(
-        layer=layer,
         importance_threshold=importance_threshold,
         max_examples_per_subcomponent=max_examples_per_subcomponent,
         n_batches=n_batches,
@@ -236,7 +220,7 @@ async def get_layer_subcomponent_activation_contexts(
     )
 
 
-# @app.get("/cluster-dashboard/data")
+# @app.get("/cluster-dashboard/data"
 # @handle_errors
 # async def get_cluster_dashboard_data(
 #     iteration: int,

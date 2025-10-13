@@ -339,6 +339,10 @@ export type SubcomponentActivationContexts = {
     token_densities: TokenDensity[];
 };
 
+export type ModelActivationContexts = {
+    layers: Record<string, SubcomponentActivationContexts[]>;
+};
+
 export type TokenDensity = {
     token: string;
     density: number;
@@ -352,23 +356,14 @@ export type ActivationContextsConfig = {
     n_tokens_either_side: number;
 };
 
-export async function getLayerActivationContexts(
-    layer: string,
-    config?: ActivationContextsConfig
-    // signal?: AbortSignal
-): Promise<SubcomponentActivationContexts[]> {
-    const url = new URL(`${apiUrl}/activation_contexts/${layer}/subcomponents`);
-    if (config) {
-        for (const [key, value] of Object.entries(config)) {
-            if (value !== undefined) {
-                url.searchParams.set(key, String(value));
-            }
-        }
+export async function getSubcomponentActivationContexts(
+    config: ActivationContextsConfig
+): Promise<ModelActivationContexts> {
+    const url = new URL(`${apiUrl}/activation_contexts/subcomponents`);
+    for (const [key, value] of Object.entries(config)) {
+        url.searchParams.set(key, String(value));
     }
-    const response = await fetch(url.toString(), {
-        method: "GET"
-        // signal
-    });
+    const response = await fetch(url.toString(), { method: "GET" });
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || "Failed to get layer activation contexts");
