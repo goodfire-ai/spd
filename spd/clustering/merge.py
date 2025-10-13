@@ -24,7 +24,7 @@ from spd.clustering.consts import (
     ClusterCoactivationShaped,
     MergePair,
     SubComponentInfo,
-    SubComponentLabels,
+    SubComponentLabel,
 )
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_config import MergeConfig
@@ -113,10 +113,8 @@ def merge_iteration(
     current_act_mask: Bool[Tensor, "samples k_groups"] = activation_mask_orig.clone()
 
     # variables we keep track of
-    # Convert SubComponentInfo list to SubComponentLabels for MergeHistory (serialization)
-    labels_for_storage: SubComponentLabels = SubComponentLabels(
-        [comp.label for comp in component_labels]
-    )
+    # Convert SubComponentInfo list to SubComponentLabel list for MergeHistory (serialization)
+    labels_for_storage: list[SubComponentLabel] = [comp.label for comp in component_labels]
     merge_history: MergeHistory = MergeHistory.from_config(
         merge_config=merge_config,
         labels=labels_for_storage,

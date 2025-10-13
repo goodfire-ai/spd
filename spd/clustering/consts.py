@@ -17,7 +17,6 @@ DistancesArray = Float[np.ndarray, "n_iters n_ens n_ens"]
 
 # Component and label types (NewType for stronger type safety)
 SubComponentLabel = NewType("SubComponentLabel", str)  # Format: "module_name:component_index"
-SubComponentLabels = NewType("SubComponentLabels", list[str])
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

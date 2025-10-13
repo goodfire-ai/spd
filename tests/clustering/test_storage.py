@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import torch
 
-from spd.clustering.consts import DistancesMethod, SubComponentLabels
+from spd.clustering.consts import DistancesMethod, SubComponentLabel
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import ClusteringRunConfig
@@ -159,7 +159,11 @@ class TestHistoryStorage:
         # Create history
         history = MergeHistory.from_config(
             merge_config=sample_config,
-            labels=SubComponentLabels(["comp0", "comp1", "comp2"]),
+            labels=[
+                SubComponentLabel("comp:0"),
+                SubComponentLabel("comp:1"),
+                SubComponentLabel("comp:2"),
+            ],
         )
 
         batch_id = "batch_00"
@@ -182,7 +186,7 @@ class TestHistoryStorage:
         for i in range(3):
             history = MergeHistory.from_config(
                 merge_config=sample_config,
-                labels=SubComponentLabels([f"comp{j}" for j in range(4)]),
+                labels=[SubComponentLabel(f"comp:{j}") for j in range(4)],
             )
             temp_storage.save_history(history, batch_id=f"batch_{i:02d}")
 
@@ -196,7 +200,7 @@ class TestHistoryStorage:
         for i in range(2):
             history = MergeHistory.from_config(
                 merge_config=sample_config,
-                labels=SubComponentLabels(["comp0", "comp1"]),
+                labels=[SubComponentLabel(f"comp:{j}") for j in range(2)],
             )
             temp_storage.save_history(history, batch_id=f"batch_{i:02d}")
 
@@ -298,7 +302,7 @@ class TestStorageIntegration:
         for i in range(2):
             history = MergeHistory.from_config(
                 merge_config=sample_config,
-                labels=SubComponentLabels(["comp0", "comp1", "comp2"]),
+                labels=[SubComponentLabel(f"comp:{j}") for j in range(3)],
             )
             temp_storage.save_history(history, batch_id=f"batch_{i:02d}")
 

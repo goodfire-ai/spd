@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 
 from spd.clustering.activations import FilteredActivations, filter_dead_components
-from spd.clustering.consts import SubComponentLabels
+from spd.clustering.consts import SubComponentInfo
 
 
 @pytest.mark.parametrize(
@@ -37,22 +37,22 @@ def test_filter_dead_components_thresholds(
     n_components: int = len(max_values)
 
     activations: Tensor
-    labels: SubComponentLabels
+    labels: list[SubComponentInfo]
     if n_components == 0:
         activations = torch.zeros(n_steps, 0)
-        labels = SubComponentLabels([])
+        labels = []
     else:
         activations = torch.zeros(n_steps, n_components)
         # Set max values in first row
         for i, val in enumerate(max_values):
             activations[0, i] = val
-        labels = SubComponentLabels([f"comp_{i}" for i in range(n_components)])
+        labels = [SubComponentInfo(module="comp", index=i) for i in range(n_components)]
 
     result: FilteredActivations = filter_dead_components(
         activations=activations, labels=labels, filter_dead_threshold=threshold
     )
 
-    assert result.labels == [f"comp_{i}" for i in expected_alive_indices]
+    assert [comp.label for comp in result.labels] == [f"comp:{i}" for i in expected_alive_indices]
     assert result.n_alive == len(expected_alive_indices)
     assert result.n_dead == n_components - len(expected_alive_indices)
     assert result.activations.shape == (n_steps, len(expected_alive_indices))
@@ -65,7 +65,9 @@ def test_filter_dead_components_thresholds(
         dead_indices: list[int] = [
             i for i in range(n_components) if i not in expected_alive_indices
         ]
-        expected_dead: list[str] = [f"comp_{i}" for i in dead_indices]
+        expected_dead: list[SubComponentInfo] = [
+            SubComponentInfo(module="comp", index=i) for i in dead_indices
+        ]
         assert result.dead_components_labels is not None
         assert set(result.dead_components_labels) == set(expected_dead)
 
@@ -95,7 +97,9 @@ def test_max_across_steps(step_locations: list[int], threshold: float) -> None:
     for i, step in enumerate(step_locations):
         activations[step, i] = threshold + 0.01
 
-    labels: SubComponentLabels = SubComponentLabels([f"comp_{i}" for i in range(n_components)])
+    labels: list[SubComponentInfo] = [
+        SubComponentInfo(module="comp", index=i) for i in range(n_components)
+    ]
 
     result: FilteredActivations = filter_dead_components(
         activations=activations, labels=labels, filter_dead_threshold=threshold
@@ -118,10 +122,12 @@ def test_linear_gradient_thresholds(threshold: float) -> None:
     for i in range(n_components):
         activations[0, i] = i * 0.1
 
-    labels: list[str] = [f"comp_{i}" for i in range(n_components)]
+    labels: list[SubComponentInfo] = [
+        SubComponentInfo(module="comp", index=i) for i in range(n_components)
+    ]
 
     result: FilteredActivations = filter_dead_components(
-        activations=activations, labels=SubComponentLabels(labels), filter_dead_threshold=threshold
+        activations=activations, labels=labels, filter_dead_threshold=threshold
     )
 
     # Count how many components should be alive
