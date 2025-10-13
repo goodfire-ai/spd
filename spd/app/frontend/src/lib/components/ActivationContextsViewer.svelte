@@ -5,10 +5,20 @@
     export let allLayersData: Record<string, SubcomponentActivationContexts[]>;
 
     let currentPage = 0;
+    let selectedLayer: string;
+
+    // Derive available layers from the data
     $: availableComponentLayers = Object.keys(allLayersData);
-    $: selectedLayer = availableComponentLayers[0];
-    $: totalPages = allLayersData[selectedLayer]?.length ?? 0;
-    $: currentItem = allLayersData[selectedLayer]?.[currentPage] ?? null;
+
+    // Initialize selectedLayer when availableComponentLayers changes
+    $: if (availableComponentLayers.length > 0 && !selectedLayer) {
+        selectedLayer = availableComponentLayers[0];
+    }
+
+    // Derive current data from selections
+    $: currentLayerData = selectedLayer ? allLayersData[selectedLayer] : undefined;
+    $: totalPages = currentLayerData?.length ?? 0;
+    $: currentItem = currentLayerData?.[currentPage];
 
     function previousPage() {
         if (currentPage > 0) currentPage--;
@@ -33,20 +43,20 @@
     </select>
 </div>
 
-{#if currentItem}
-    <div class="pagination-controls">
-        <button on:click={previousPage} disabled={currentPage === 0}>&lt;</button>
-        <input
-            type="number"
-            min="0"
-            max={totalPages - 1}
-            bind:value={currentPage}
-            class="page-input"
-        />
-        <span>of {totalPages - 1}</span>
-        <button on:click={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
-    </div>
+<div class="pagination-controls">
+    <button on:click={previousPage} disabled={currentPage === 0}>&lt;</button>
+    <input
+        type="number"
+        min="0"
+        max={totalPages - 1}
+        bind:value={currentPage}
+        class="page-input"
+    />
+    <span>of {totalPages - 1}</span>
+    <button on:click={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
+</div>
 
+{#if currentItem}
     <div class="subcomponent-section-header">
         <h4>Subcomponent {currentItem.subcomponent_idx}</h4>
         {#if currentItem.token_densities && currentItem.token_densities.length > 0}

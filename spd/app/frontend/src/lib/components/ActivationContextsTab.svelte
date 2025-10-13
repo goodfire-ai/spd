@@ -10,8 +10,8 @@
     let importanceThreshold = 0.01;
     let maxExamplesPerSubcomponent = 100;
     let nBatches = 1;
-    let batchSize = 32;
-    let nTokensEitherSide = 10;
+    let batchSize = 1;
+    let nTokensEitherSide = 1;
 
     async function loadContexts() {
         loading = true;
@@ -24,12 +24,13 @@
                 batch_size: batchSize,
                 n_tokens_either_side: nTokensEitherSide
             };
+            console.log("loading contexts with config", config);
+            const startTime = performance.now();
             const data = await api.getSubcomponentActivationContexts(config);
+            console.log("data", data);
             allLayersData = data.layers;
-        } catch (e) {
-            if ((e as any)?.name !== "AbortError") {
-                console.error(e);
-            }
+            const endTime = performance.now();
+            console.log(`Loading contexts took ${endTime - startTime}ms`);
         } finally {
             loading = false;
         }

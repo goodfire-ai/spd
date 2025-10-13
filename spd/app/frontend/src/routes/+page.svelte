@@ -30,14 +30,10 @@
             loadingStatus = false;
 
             console.log("status:", status);
-            if (!status.train_run) {
-                return;
-            }
+            if (!status.train_run) return;
             trainWandbRunEntry = status.train_run.wandb_path.split("/").pop()!;
 
-            if (!status.cluster_run) {
-                return;
-            }
+            if (!status.cluster_run) return;
             clusterWandbRunEntry = status.cluster_run.wandb_path;
         } catch (error) {
             console.error("error loading status", error);
@@ -46,7 +42,7 @@
     }
 
     async function loadRun() {
-        const input = trainWandbRunEntry?.trim()
+        const input = trainWandbRunEntry?.trim();
         if (!input) return;
 
         try {
@@ -111,10 +107,7 @@
                         disabled={loadingTrainRun}
                         placeholder="Select or enter run ID"
                     />
-                    <button
-                        type="submit"
-                        disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}
-                    >
+                    <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
                         {loadingTrainRun ? "Loading..." : "Load Run"}
                     </button>
                 </form>
