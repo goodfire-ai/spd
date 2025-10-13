@@ -148,7 +148,7 @@ class BatchProcessingStorage:
         )
 
         batch_text_samples: list[TextSample] = tokenize_and_create_text_samples(
-            batch=batch,
+            batch=batch.cpu().numpy(),
             tokenizer=tokenizer,
             text_samples=self.text_samples,
         )
