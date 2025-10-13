@@ -4,8 +4,6 @@ from typing import Any, override
 
 import torch
 import wandb
-from jaxtyping import Float
-from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric

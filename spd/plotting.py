@@ -253,14 +253,20 @@ def plot_causal_importance_vals(
         # Determine permutation strategy based on patterns
         if identity_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in identity_patterns):
             ci[k], _ = permute_to_identity(ci_vals=ci_output.lower_leaky[k])
-            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(ci_vals=ci_output.upper_leaky[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(
+                ci_vals=ci_output.upper_leaky[k]
+            )
         elif dense_patterns and any(fnmatch.fnmatch(k, pattern) for pattern in dense_patterns):
             ci[k], _ = permute_to_dense(ci_vals=ci_output.lower_leaky[k])
-            ci_upper_leaky[k], all_perm_indices[k] = permute_to_dense(ci_vals=ci_output.upper_leaky[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_dense(
+                ci_vals=ci_output.upper_leaky[k]
+            )
         else:
             # Default: identity permutation
             ci[k], _ = permute_to_identity(ci_vals=ci_output.lower_leaky[k])
-            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(ci_vals=ci_output.upper_leaky[k])
+            ci_upper_leaky[k], all_perm_indices[k] = permute_to_identity(
+                ci_vals=ci_output.upper_leaky[k]
+            )
 
     # Create figures dictionary
     figures: dict[str, Image.Image] = {}
