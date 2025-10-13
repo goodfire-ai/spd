@@ -70,12 +70,14 @@ def optimize_adversarial_stochastic_masks(
             case "shared_across_batch":
                 cm = {}
                 for module_name in ci:
+                    assert ci[module_name].shape == torch.Size(1 for _ in batch_dims) + (C,)
                     cm[module_name] = ci[module_name].repeat(*batch_dims, 1)
 
                 wdm = None
                 if weight_delta_mask is not None:
                     wdm = {}
                     for module_name in weight_delta_mask:
+                        assert weight_delta_mask[module_name].shape == torch.Size(1 for _ in batch_dims)
                         wdm[module_name] = weight_delta_mask[module_name].repeat(*batch_dims)
                 return cm, wdm
 
