@@ -1,4 +1,4 @@
-"""Run clustering on a single dataset (standalone script)."""
+"""Run clustering on a single dataset."""
 
 import argparse
 import gc

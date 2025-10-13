@@ -254,7 +254,7 @@
             "program": "${workspaceFolder}/spd/clustering/scripts/run_pipeline.py",
             "args": [
                 "--config",
-                "${workspaceFolder}/spd/clustering/scripts/pipeline_config.yaml",
+                "${workspaceFolder}/spd/clustering/configs/pipeline_config.yaml",
             ],
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",

@@ -156,7 +156,7 @@ def cli():
 
     parser.add_argument(
         "--config",
-        default="spd/clustering/scripts/pipeline_config.yaml",
+        default="spd/clustering/configs/pipeline_config.yaml",
         type=Path,
         help="Path to pipeline config file",
     )
