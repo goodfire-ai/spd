@@ -8,7 +8,6 @@ import json
 from spd.configs import Config, ImportanceMinimalityLossTrainConfig
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
-from spd.utils.general_utils import load_config
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations
 
 
@@ -500,7 +499,7 @@ class TestConfigIntegration:
 
             # Verify JSON serialization round-trip
             json_str = f"json:{json.dumps(config.model_dump(mode='json'))}"
-            reloaded_config = load_config(json_str, Config)
+            reloaded_config = Config(**json.loads(json_str.removeprefix("json:")))
             assert reloaded_config.seed == config.seed
             assert (
                 reloaded_config.loss_metric_configs[0].coeff == config.loss_metric_configs[0].coeff

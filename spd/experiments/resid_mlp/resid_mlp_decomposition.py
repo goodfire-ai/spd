@@ -17,26 +17,30 @@ from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import (
-    load_config,
-    save_pre_run_info,
-    set_seed,
-)
+from spd.utils.general_utils import save_pre_run_info, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
 
 
 def main(
-    config_path_or_obj: Path | str | Config,
+    config_path: Path | str | None = None,
+    config_json: str | None = None,
     evals_id: str | None = None,
     sweep_id: str | None = None,
     sweep_params_json: str | None = None,
 ) -> None:
+    assert (config_path is not None) != (config_json is not None), (
+        "Need exactly one of config_path and config_json"
+    )
+    if config_path is not None:
+        config = Config.from_file(config_path)
+    else:
+        assert config_json is not None
+        config = Config(**json.loads(config_json.removeprefix("json:")))
+
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
     )
-    config = load_config(config_path_or_obj, config_model=Config)
-
     if config.wandb_project:
         tags = ["resid_mlp"]
         if evals_id:
