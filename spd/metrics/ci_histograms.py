@@ -41,6 +41,9 @@ class CIHistograms(Metric):
 
     @override
     def compute(self) -> dict[str, Image.Image]:
+        if self.batches_seen == 0:
+            raise RuntimeError("No batches seen yet")
+
         lower_leaky_cis: dict[str, Float[Tensor, "... C"]] = {}
         for module_name, ci_list in self.lower_leaky_causal_importances.items():
             lower_leaky_cis[module_name] = torch.cat(

@@ -61,7 +61,7 @@ class TestCIHistograms:
         # Watch more batches than n_batches_accum
         for _ in range(n_batches_accum + 2):
             ci_hist.update(
-                batch=batch, target_out=target_out, ci=sample_ci, ci_upper_leaky=sample_ci
+                batch=batch, target_out=target_out, ci=sample_ci,
             )
 
         # Check that only n_batches_accum were accumulated
@@ -82,7 +82,7 @@ class TestCIHistograms:
         num_batches = 10
         for _ in range(num_batches):
             ci_hist.update(
-                batch=batch, target_out=target_out, ci=sample_ci, ci_upper_leaky=sample_ci
+                batch=batch, target_out=target_out, ci=sample_ci,
             )
 
         # All batches should be accumulated
@@ -98,5 +98,5 @@ class TestCIHistograms:
         ci_hist = CIHistograms(mock_model)
 
         # When no batches watched, compute will raise a RuntimeError
-        with pytest.raises(RuntimeError, match="expected a non-empty list of Tensors"):
+        with pytest.raises(RuntimeError, match="No batches seen yet"):
             ci_hist.compute()
