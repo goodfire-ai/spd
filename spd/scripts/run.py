@@ -1,6 +1,6 @@
 """Unified SPD runner for experiments with optional parameter sweeps.
 
-This script provides a single entry point for running SPD experiments, supporting both
+This  script provides a single entry point for running SPD experiments, supporting both
 fixed configurations and parameter sweeps. All runs are tracked in W&B with workspace
 views created for each experiment.
 
