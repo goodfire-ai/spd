@@ -107,6 +107,11 @@ def main(pipeline_config_path: Path, n_runs: int | None = None) -> None:
         )
         logger.info(f"WandB workspace: {workspace_url}")
 
+    # Save the pipeline config to the output directory
+    ensemble_dir = pipeline_config.base_output_dir / "ensembles" / ensemble_id
+    pipeline_config.to_file(ensemble_dir / "pipeline_config.yaml")
+    logger.info(f"Pipeline config saved to {ensemble_dir / 'pipeline_config.yaml'}")
+
     commands = generate_clustering_commands(
         pipeline_config=pipeline_config, ensemble_id=ensemble_id
     )
