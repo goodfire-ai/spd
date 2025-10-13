@@ -30,7 +30,6 @@ def sample_config() -> MergeConfig:
         iters=5,
         alpha=1.0,
         activation_threshold=None,
-        pop_component_prob=0.0,
     )
 
 
@@ -74,7 +73,6 @@ class TestRunConfigStorage:
                 iters=10,
                 alpha=1.0,
                 activation_threshold=None,
-                pop_component_prob=0.0,
             ),
             model_path="wandb:entity/project/run_id",
             task_name="lm",
@@ -331,7 +329,6 @@ class TestStorageIntegration:
                     iters=1,
                     alpha=1.0,
                     activation_threshold=None,
-                    pop_component_prob=0.0,
                 ),
                 model_path="wandb:e/p/r",
                 task_name="lm",

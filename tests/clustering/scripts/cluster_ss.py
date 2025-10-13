@@ -105,7 +105,6 @@ MERGE_CFG: MergeConfig = MergeConfig(
     iters=2,
     merge_pair_sampling_method="range",
     merge_pair_sampling_kwargs={"threshold": 0.1},
-    pop_component_prob=0,
     module_name_filter=FILTER_MODULES,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
 )

@@ -5,7 +5,6 @@
     "iters": null,
     "merge_pair_sampling_method": "range",
     "merge_pair_sampling_kwargs": {"threshold": 0.05},
-    "pop_component_prob": 0,
     "filter_dead_threshold": 0,
     "module_name_filter": null
   },

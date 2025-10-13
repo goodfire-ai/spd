@@ -74,7 +74,6 @@ class TestMergeConfigSampling:
             iters=200,
             merge_pair_sampling_method="mcmc",
             merge_pair_sampling_kwargs={"temperature": 0.5},
-            pop_component_prob=0.1,
             filter_dead_threshold=0.001,
             module_name_filter="model.layers",
         )
@@ -84,7 +83,6 @@ class TestMergeConfigSampling:
         assert config.iters == 200
         assert config.merge_pair_sampling_method == "mcmc"
         assert config.merge_pair_sampling_kwargs == {"temperature": 0.5}
-        assert config.pop_component_prob == 0.1
         assert config.filter_dead_threshold == 0.001
         assert config.module_name_filter == "model.layers"
 

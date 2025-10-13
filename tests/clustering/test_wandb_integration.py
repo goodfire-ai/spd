@@ -27,7 +27,6 @@ def test_wandb_url_parsing_short_format():
             iters=5,
             alpha=1.0,
             activation_threshold=None,
-            pop_component_prob=0.0,
         )
 
         # Save histories using storage
@@ -59,7 +58,6 @@ def test_merge_history_ensemble():
         iters=3,
         alpha=1.0,
         activation_threshold=None,
-        pop_component_prob=0.0,
     )
 
     histories = []
@@ -88,7 +86,6 @@ def test_save_merge_history_to_wandb():
         iters=5,
         alpha=1.0,
         activation_threshold=None,
-        pop_component_prob=0.0,
     )
 
     history = MergeHistory.from_config(
@@ -135,7 +132,6 @@ def test_wandb_url_field_in_merge_history():
         iters=10,
         alpha=1.0,
         activation_threshold=None,
-        pop_component_prob=0.0,
     )
 
     # Create MergeHistory with wandb_url

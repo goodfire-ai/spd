@@ -121,7 +121,6 @@ MERGE_CFG: MergeConfig = MergeConfig(
     iters=int(PROCESSED_ACTIVATIONS.n_components_alive * 0.9),
     merge_pair_sampling_method="range",
     merge_pair_sampling_kwargs={"threshold": 0.0},
-    pop_component_prob=0,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
 )
 
