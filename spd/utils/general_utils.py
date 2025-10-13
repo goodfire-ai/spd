@@ -16,6 +16,7 @@ from pydantic import BaseModel, PositiveFloat
 from pydantic.v1.utils import deep_update
 from torch import Tensor
 
+from spd.base_config import BaseConfig
 from spd.log import logger
 from spd.utils.run_utils import save_file
 
@@ -277,10 +278,10 @@ def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None = None) -> P
 def save_pre_run_info(
     save_to_wandb: bool,
     out_dir: Path,
-    spd_config: BaseModel,
+    spd_config: BaseConfig,
     sweep_params: dict[str, Any] | None,
     target_model: nn.Module | None,
-    train_config: BaseModel | None,
+    train_config: BaseConfig | None,
     task_name: str | None,
 ) -> None:
     """Save run information locally and optionally to wandb."""
