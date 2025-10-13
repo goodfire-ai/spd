@@ -5,18 +5,18 @@
     export let allLayersData: Record<string, SubcomponentActivationContexts[]>;
 
     let currentPage = 0;
-    let selectedLayer: string;
+    let selectedLayer: string | null = null;
 
     // Derive available layers from the data
     $: availableComponentLayers = Object.keys(allLayersData);
 
-    // Initialize selectedLayer when availableComponentLayers changes
-    $: if (availableComponentLayers.length > 0 && !selectedLayer) {
+    // Reset to first layer whenever data changes
+    $: if (availableComponentLayers.length > 0) {
         selectedLayer = availableComponentLayers[0];
     }
 
     // Derive current data from selections
-    $: currentLayerData = selectedLayer ? allLayersData[selectedLayer] : undefined;
+    $: currentLayerData = selectedLayer ? allLayersData[selectedLayer] : null;
     $: totalPages = currentLayerData?.length ?? 0;
     $: currentItem = currentLayerData?.[currentPage];
 

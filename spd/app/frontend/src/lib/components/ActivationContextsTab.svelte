@@ -10,8 +10,8 @@
     let importanceThreshold = 0.01;
     let maxExamplesPerSubcomponent = 100;
     let nBatches = 1;
-    let batchSize = 1;
-    let nTokensEitherSide = 1;
+    let batchSize = 128;
+    let nTokensEitherSide = 10;
 
     async function loadContexts() {
         loading = true;
