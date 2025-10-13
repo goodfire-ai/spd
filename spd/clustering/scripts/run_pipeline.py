@@ -64,7 +64,7 @@ def generate_clustering_commands(
 
     for idx in range(submit_config.n_runs):
         command = (
-            f"python spd/clustering/run_clustering.py "
+            f"python spd/clustering/scripts/run_clustering.py "
             f"--config {submit_config.run_clustering_config_path} "
             f"--idx-in-ensemble {idx} "
             f"--output-dir {output_dir} "
@@ -156,6 +156,7 @@ def cli():
 
     parser.add_argument(
         "--config",
+        default="spd/clustering/scripts/pipeline_config.yaml",
         type=Path,
         help="Path to ClusteringSubmitConfig file",
     )
