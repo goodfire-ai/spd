@@ -114,9 +114,6 @@ def compute_max_activations(
             cluster_activations=storage.cluster_activations[cluster_hash],
             cluster_text_hashes=storage.cluster_text_hashes[cluster_hash],
             cluster_tokens=storage.cluster_tokens[cluster_hash],
-            # TODO
-            # component_activations_storage=storage.component_activations[cluster_hash],
-            # component_text_hashes_storage=storage.component_text_hashes[cluster_hash],
         )
 
     # Compute coactivations

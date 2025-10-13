@@ -66,9 +66,6 @@ class DashboardData:
         cluster_activations: list[Float[np.ndarray, " n_ctx"]],
         cluster_text_hashes: list[TextSampleHash],
         cluster_tokens: list[list[str]],
-        # TODO: check this
-        # component_activations_storage: dict[str, list[Float[np.ndarray, " n_ctx"]]],
-        # _component_text_hashes_storage: dict[str, list[TextSampleHash]],
     ) -> None:
         """Build and add a cluster to the dashboard.
 

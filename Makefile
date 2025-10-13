@@ -93,20 +93,12 @@ bundle-dashboard:
 .PHONY: clustering-dashboard
 clustering-dashboard: bundle-dashboard
 	uv run python spd/clustering/dashboard/run.py \
-		--wandb-run goodfire/spd-cluster/runs/j8dgvemf \
-		--iteration 7000 \
-		--n-samples 32 \
-		--n-batches 4 \
-		--batch-size 128
+		spd/clustering/dashboard/dashboard_config.yaml
 
 .PHONY: clustering-dashboard-profile
 clustering-dashboard-profile: bundle-dashboard
 	uv run python -m cProfile -o dashboard.prof spd/clustering/dashboard/run.py \
-		--wandb-run goodfire/spd-cluster/runs/j8dgvemf \
-		--iteration 7000 \
-		--n-samples 32 \
-		--n-batches 4 \
-		--batch-size 128
+		spd/clustering/dashboard/dashboard_config.yaml
 	@echo "\nProfile saved to dashboard.prof"
 	@echo "View with: python -m pstats dashboard.prof"
 	@echo "Or install snakeviz and run: snakeviz dashboard.prof"
