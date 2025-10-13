@@ -11,7 +11,6 @@ merge_config:
   pop_component_prob: 0  # Probability of popping a component. i recommend 0 if you're doing an ensemble anyway
   filter_dead_threshold: 0.001  # Threshold for filtering dead components
   module_name_filter: null  # Can be a string prefix like "model.layers.0." if you want to do only some modules
-  rank_cost_fn_name: const_1  # Options: const_1, const_2, log, linear
 
 # Run configuration
 model_path: wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh  # WandB path to the decomposed model
