@@ -1,6 +1,6 @@
 run_clustering_config_path: "spd/clustering/configs/example.yaml"
 n_runs: 2
-base_output_dir: "/mnt/polished-lake/spd/clustering/"
+base_output_dir: "/mnt/polished-lake/spd/clustering"
 slurm_job_name_prefix: "spd"
 slurm_partition: "h100-reserved"
 wandb_project: "spd-cluster"

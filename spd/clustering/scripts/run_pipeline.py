@@ -39,36 +39,34 @@ class ClusteringPipelineConfig(BaseConfig):
 
 
 def generate_run_id_for_ensemble(_config: ClusteringPipelineConfig) -> str:
-    """Generate a unique ensemble identifier based on config.
+    """Generate a unique ensemble identifier based on timestamp.
 
     This is used as the ensemble_id component in individual run IDs.
-    Format: clustering_{timestamp}
+    Format: timestamp
     """
-    return f"clustering_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
+    return datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
 
 
 def generate_clustering_commands(
-    submit_config: ClusteringPipelineConfig, ensemble_id: str
+    pipeline_config: ClusteringPipelineConfig, ensemble_id: str
 ) -> list[str]:
     """Generate commands for each clustering run.
 
     Args:
-        submit_config: Submission configuration
-        ensemble_id: Shared hash for this ensemble
+        pipeline_config: Pipeline configuration
+        ensemble_id: Ensemble identifier
 
     Returns:
         List of commands, one per run
     """
     commands = []
 
-    output_dir = submit_config.base_output_dir / "clustering_runs"
-
-    for idx in range(submit_config.n_runs):
+    for idx in range(pipeline_config.n_runs):
         command = (
             f"python spd/clustering/scripts/run_clustering.py "
-            f"--config {submit_config.run_clustering_config_path} "
+            f"--config {pipeline_config.run_clustering_config_path} "
             f"--idx-in-ensemble {idx} "
-            f"--output-dir {output_dir} "
+            f"--base-output-dir {pipeline_config.base_output_dir} "
             f"--ensemble-id {ensemble_id}"
         )
         commands.append(command)
@@ -76,24 +74,24 @@ def generate_clustering_commands(
     return commands
 
 
-def main(submit_config_path: Path, n_runs: int | None = None) -> None:
+def main(pipeline_config_path: Path, n_runs: int | None = None) -> None:
     """Submit clustering runs to SLURM.
 
     Args:
-        submit_config_path: Path to ClusteringSubmitConfig file
+        pipeline_config_path: Path to ClusteringPipelineConfig file
         n_runs: Number of clustering runs in the ensemble. Will override value in the config file.
     """
     logger.set_format("console", "default")
 
-    submit_config = ClusteringPipelineConfig.from_file(submit_config_path)
+    pipeline_config = ClusteringPipelineConfig.from_file(pipeline_config_path)
 
     if n_runs is not None:
-        submit_config = replace_pydantic_model(submit_config, {"n_runs": n_runs})
+        pipeline_config = replace_pydantic_model(pipeline_config, {"n_runs": n_runs})
 
-    ensemble_id = generate_run_id_for_ensemble(submit_config)
+    ensemble_id = generate_run_id_for_ensemble(pipeline_config)
     logger.info(f"Ensemble id: {ensemble_id}")
 
-    if submit_config.create_git_snapshot:
+    if pipeline_config.create_git_snapshot:
         snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="cluster")
         logger.info(f"Git snapshot: {snapshot_branch} ({commit_hash[:8]})")
     else:
@@ -101,23 +99,17 @@ def main(submit_config_path: Path, n_runs: int | None = None) -> None:
         commit_hash = "none"
         logger.info(f"Using current branch: {snapshot_branch}")
 
-    if submit_config.wandb_project is not None:
+    if pipeline_config.wandb_project is not None:
         workspace_url = create_clustering_workspace_view(
             ensemble_id=ensemble_id,
-            project=submit_config.wandb_project,
-            entity=submit_config.wandb_entity,
+            project=pipeline_config.wandb_project,
+            entity=pipeline_config.wandb_entity,
         )
         logger.info(f"WandB workspace: {workspace_url}")
 
-    # Save the submit config for reference
-    output_dir = submit_config.base_output_dir / ensemble_id
-    output_dir.mkdir(parents=True, exist_ok=True)
-    config_save_path = output_dir / "pipeline_config.json"
-    submit_config.to_file(config_save_path)
-    logger.info(f"Submit config saved to: {config_save_path}")
-
-    # Generate commands
-    commands = generate_clustering_commands(submit_config=submit_config, ensemble_id=ensemble_id)
+    commands = generate_clustering_commands(
+        pipeline_config=pipeline_config, ensemble_id=ensemble_id
+    )
     logger.info(f"Generated {len(commands)} commands")
 
     # Submit to SLURM
@@ -126,12 +118,12 @@ def main(submit_config_path: Path, n_runs: int | None = None) -> None:
 
         create_slurm_array_script(
             script_path=script_path,
-            job_name=submit_config.slurm_job_name_prefix,
+            job_name=pipeline_config.slurm_job_name_prefix,
             commands=commands,
             snapshot_branch=snapshot_branch,
-            max_concurrent_tasks=submit_config.n_runs,  # Run all concurrently
+            max_concurrent_tasks=pipeline_config.n_runs,  # Run all concurrently
             n_gpus_per_job=1,  # Always 1 GPU per run
-            partition=submit_config.slurm_partition,
+            partition=pipeline_config.slurm_partition,
         )
 
         array_job_id = submit_slurm_array(script_path)
@@ -141,7 +133,7 @@ def main(submit_config_path: Path, n_runs: int | None = None) -> None:
             {
                 "Array Job ID": array_job_id,
                 "Total runs": len(commands),
-                "Ensemble hash": ensemble_id,
+                "Ensemble id": ensemble_id,
                 "Logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
             }
         )
@@ -169,7 +161,7 @@ def cli():
     )
 
     args = parser.parse_args()
-    main(submit_config_path=args.config, n_runs=args.n_runs)
+    main(pipeline_config_path=args.config, n_runs=args.n_runs)
 
 
 if __name__ == "__main__":
