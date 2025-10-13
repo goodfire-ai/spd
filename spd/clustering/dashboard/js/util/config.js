@@ -21,7 +21,7 @@
 
 // Configuration constants
 const SEPARATOR = "."; // For nested paths in URL params
-const CONFIG_FILE_PATH = "config.json"; // Path to external config file
+const CONFIG_FILE_PATH = "frontend_config.json"; // Path to external config file
 const URL_UPDATE_DEBOUNCE_DELAY = 500; // ms
 const FLOAT_COMPARISON_EPSILON = 0.0001; // For float comparisons
 
@@ -117,10 +117,12 @@ function getDefaultConfig() {
   return default_cfg;
 }
 
+
+// TODO: move changes here back to github.com/mivanit/js-dev-toolkit
 /**
- * Load config.json (if present) and merge into CONFIG.
+ * Load config file (if present) and merge into CONFIG.
  * Also parse URL parameters and apply them to CONFIG.
- * Priority: URL params > config.json > inline config > defaults
+ * Priority: URL params > config file > inline config > defaults
  * @returns {Promise<object>} resolved CONFIG object
  */
 async function getConfig() {
@@ -128,7 +130,7 @@ async function getConfig() {
   CONFIG = getDefaultConfig();
 
   try {
-    // First, try to load config.json
+    // First, try to load config file
     const r = await fetch(CONFIG_FILE_PATH);
     if (r.ok) {
       const loaded = await r.json();
@@ -136,19 +138,19 @@ async function getConfig() {
       deepMerge(CONFIG, loaded);
       // Store a deep copy of the loaded config for URL comparison
       LOADED_CONFIG = JSON.parse(JSON.stringify(CONFIG));
-      console.log("Loaded config.json");
+      console.log(`Loaded configuration from ${CONFIG_FILE_PATH}`);
     } else {
-      console.warn("config.json not found, using defaults");
-      // If no config.json, use defaults for comparison
+      console.warn(`No config file found at ${CONFIG_FILE_PATH}, using defaults`);
+      // If no config file, use defaults for comparison
       LOADED_CONFIG = JSON.parse(JSON.stringify(CONFIG));
     }
   } catch (e) {
-    // if the inline config is null, then failing to find config.json is fine
+    // if the inline config is null, then failing to find config file is fine
     if (!INLINE_CONFIG) {
       console.error("Config load error:", e);
     } else {
       console.warn(
-        "Failed to load config.json, but it's fine because an inline config was provided",
+      `Failed to load ${CONFIG_FILE_PATH}, but it's fine because an inline config was provided`,
       );
     }
     // On error, use defaults for comparison
@@ -440,7 +442,7 @@ function exportConfigToNewTab() {
 }
 
 /**
- * Reset CONFIG to the loaded config.json state and clear URL parameters
+ * Reset CONFIG to the loaded config file state and clear URL parameters
  * Useful for reverting all changes back to the original loaded state
  */
 function resetConfigToLoaded() {
@@ -466,7 +468,7 @@ function resetConfigToLoaded() {
 }
 
 /**
- * Reset CONFIG to the loaded config.json state but preserve specific key(s)
+ * Reset CONFIG to the loaded config file state but preserve specific key(s)
  * Useful for resetting configuration while keeping certain values
  *
  * TODO: Customize this function for your specific use case
