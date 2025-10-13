@@ -20,7 +20,7 @@ SubComponentLabel = NewType("SubComponentLabel", str)  # Format: "module_name:co
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class SubComponentInfo:
+class SubComponentKey:
     """unique identifier of a subcomponent. indices can refer to dead components"""
 
     module: str
@@ -32,7 +32,7 @@ class SubComponentInfo:
         return SubComponentLabel(f"{self.module}:{self.index}")
 
     @classmethod
-    def from_label(cls, label: SubComponentLabel) -> "SubComponentInfo":
+    def from_label(cls, label: SubComponentLabel) -> "SubComponentKey":
         """Create SubComponentInfo from a component label."""
         assert label.count(":") == 1, (
             "Invalid component label format, expected '{{module}}:{{index}}'"

@@ -10,7 +10,7 @@ from spd.clustering.consts import (
     ActivationsTensor,
     BoolActivationsTensor,
     ClusterCoactivationShaped,
-    SubComponentInfo,
+    SubComponentKey,
 )
 from spd.clustering.util import ModuleFilterFunc
 from spd.models.component_model import ComponentModel, OutputWithCache
@@ -56,16 +56,16 @@ class FilteredActivations(NamedTuple):
     activations: ActivationsTensor
     "activations after filtering dead components"
 
-    subcomponents: list[SubComponentInfo]
+    subcomponent_keys: list[SubComponentKey]
     "list of length c with SubComponentInfo for each preserved component"
 
-    dead_subcomponents: list[SubComponentInfo] | None
+    dead_subcomponent_keys: list[SubComponentKey] | None
     "list of SubComponentInfo for dead components, or None if no filtering was applied"
 
     @property
     def n_alive(self) -> int:
         """Number of alive components after filtering."""
-        n_alive: int = len(self.subcomponents)
+        n_alive: int = len(self.subcomponent_keys)
         assert n_alive == self.activations.shape[1], (
             f"{n_alive = } != {self.activations.shape[1] = }"
         )
@@ -74,12 +74,12 @@ class FilteredActivations(NamedTuple):
     @property
     def n_dead(self) -> int:
         """Number of dead components after filtering."""
-        return len(self.dead_subcomponents) if self.dead_subcomponents else 0
+        return len(self.dead_subcomponent_keys) if self.dead_subcomponent_keys else 0
 
 
 def filter_dead_components(
     activations: ActivationsTensor,
-    subcomponents: list[SubComponentInfo],
+    subcomponent_keys: list[SubComponentKey],
     filter_dead_threshold: float = 0.01,
 ) -> FilteredActivations:
     """Filter out dead components based on a threshold
@@ -91,7 +91,7 @@ def filter_dead_components(
     are considered dead and filtered out. The SubComponentInfo of these components are returned in `dead_components_labels`.
     `dead_components_labels` will also be `None` if no components were below the threshold.
     """
-    dead_components_lst: list[SubComponentInfo] | None = None
+    dead_components_lst: list[SubComponentKey] | None = None
     if filter_dead_threshold > 0:
         dead_components_lst = []
         max_act: Float[Tensor, " c"] = activations.max(dim=0).values
@@ -99,18 +99,18 @@ def filter_dead_components(
 
         if dead_components_mask.any():
             activations = activations[:, ~dead_components_mask]
-            alive_labels: list[tuple[SubComponentInfo, bool]] = [
+            alive_labels: list[tuple[SubComponentKey, bool]] = [
                 (comp, bool(keep.item()))
-                for comp, keep in zip(subcomponents, ~dead_components_mask, strict=False)
+                for comp, keep in zip(subcomponent_keys, ~dead_components_mask, strict=False)
             ]
             # re-assign labels only if we are filtering
-            subcomponents = [comp for comp, keep in alive_labels if keep]
+            subcomponent_keys = [comp for comp, keep in alive_labels if keep]
             dead_components_lst = [comp for comp, keep in alive_labels if not keep]
 
     return FilteredActivations(
         activations=activations,
-        subcomponents=subcomponents,
-        dead_subcomponents=dead_components_lst if dead_components_lst else None,
+        subcomponent_keys=subcomponent_keys,
+        dead_subcomponent_keys=dead_components_lst if dead_components_lst else None,
     )
 
 
@@ -124,10 +124,10 @@ class ProcessedActivations:
     activations: ActivationsTensor
     "activations after filtering and concatenation"
 
-    subcomponents: list[SubComponentInfo]
+    subcomponent_keys: list[SubComponentKey]
     "list of length c with SubComponentInfo for each preserved component"
 
-    dead_subcomponents: list[SubComponentInfo] | None
+    dead_subcomponent_keys: list[SubComponentKey] | None
     "list of SubComponentInfo for dead components, or None if no filtering was applied"
 
     def validate(self) -> None:
@@ -143,7 +143,7 @@ class ProcessedActivations:
     @property
     def n_components_alive(self) -> int:
         """Number of alive components after filtering. equal to the length of `labels`"""
-        n_alive: int = len(self.subcomponents)
+        n_alive: int = len(self.subcomponent_keys)
         assert n_alive + self.n_components_dead == self.n_components_original, (
             f"({n_alive = }) + ({self.n_components_dead = }) != ({self.n_components_original = })"
         )
@@ -156,16 +156,16 @@ class ProcessedActivations:
     @property
     def n_components_dead(self) -> int:
         """Number of dead components after filtering. equal to the length of `dead_components_lst` if it is not None, or 0 otherwise"""
-        return len(self.dead_subcomponents) if self.dead_subcomponents else 0
+        return len(self.dead_subcomponent_keys) if self.dead_subcomponent_keys else 0
 
     @cached_property
     def label_index(self) -> dict[str, int | None]:
         """Create a mapping from label string to alive index (`None` if dead)"""
         return {
-            **{comp.label: i for i, comp in enumerate(self.subcomponents)},
+            **{comp.label: i for i, comp in enumerate(self.subcomponent_keys)},
             **(
-                {comp.label: None for comp in self.dead_subcomponents}
-                if self.dead_subcomponents
+                {comp.label: None for comp in self.dead_subcomponent_keys}
+                if self.dead_subcomponent_keys
                 else {}
             ),
         }
@@ -239,10 +239,10 @@ def process_activations(
 
     # compute the labels and total component count
     total_c: int = 0
-    labels: list[SubComponentInfo] = []
+    labels: list[SubComponentKey] = []
     for key, act in activations_.items():
         c: int = act.shape[-1]
-        labels.extend([SubComponentInfo(module=key, index=i) for i in range(c)])
+        labels.extend([SubComponentKey(module=key, index=i) for i in range(c)])
         total_c += c
 
     # concat the activations
@@ -251,7 +251,7 @@ def process_activations(
     # filter dead components
     filtered_components: FilteredActivations = filter_dead_components(
         activations=act_concat,
-        subcomponents=labels,
+        subcomponent_keys=labels,
         filter_dead_threshold=filter_dead_threshold,
     )
 
@@ -262,6 +262,6 @@ def process_activations(
     return ProcessedActivations(
         activations_raw=activations_,
         activations=filtered_components.activations,
-        subcomponents=filtered_components.subcomponents,
-        dead_subcomponents=filtered_components.dead_subcomponents,
+        subcomponent_keys=filtered_components.subcomponent_keys,
+        dead_subcomponent_keys=filtered_components.dead_subcomponent_keys,
     )

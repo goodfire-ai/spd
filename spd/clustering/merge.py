@@ -23,7 +23,7 @@ from spd.clustering.consts import (
     BoolActivationsTensor,
     ClusterCoactivationShaped,
     MergePair,
-    SubComponentInfo,
+    SubComponentKey,
     SubComponentLabel,
 )
 from spd.clustering.math.merge_matrix import GroupMerge
@@ -37,7 +37,7 @@ class LogCallback(Protocol):
     def __call__(
         self,
         current_coact: ClusterCoactivationShaped,
-        subcomponents: list[SubComponentInfo],
+        subcomponent_keys: list[SubComponentKey],
         current_merge: GroupMerge,
         costs: ClusterCoactivationShaped,
         merge_history: MergeHistory,
@@ -53,7 +53,7 @@ class LogCallback(Protocol):
 def merge_iteration(
     merge_config: MergeConfig,
     activations: ActivationsTensor,
-    subcomponents: list[SubComponentInfo],
+    subcomponent_keys: list[SubComponentKey],
     log_callback: LogCallback | None = None,
     batch_id: str = "unk",
 ) -> MergeHistory:
@@ -114,7 +114,7 @@ def merge_iteration(
 
     # variables we keep track of
     # Convert SubComponentInfo list to SubComponentLabel list for MergeHistory (serialization)
-    labels_for_storage: list[SubComponentLabel] = [comp.label for comp in subcomponents]
+    labels_for_storage: list[SubComponentLabel] = [comp.label for comp in subcomponent_keys]
     merge_history: MergeHistory = MergeHistory.from_config(
         merge_config=merge_config,
         labels=labels_for_storage,
@@ -211,7 +211,7 @@ def merge_iteration(
             log_callback(
                 iter_idx=iter_idx,
                 current_coact=current_coact,
-                subcomponents=subcomponents,
+                subcomponent_keys=subcomponent_keys,
                 current_merge=current_merge,
                 costs=costs,
                 merge_history=merge_history,

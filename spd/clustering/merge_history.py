@@ -16,7 +16,7 @@ from spd.clustering.consts import (
     MergePair,
     MergesArray,
     SaveableObject,
-    SubComponentInfo,
+    SubComponentKey,
     SubComponentLabel,
 )
 from spd.clustering.math.merge_distances import compute_distances
@@ -178,7 +178,7 @@ class MergeHistory(SaveableObject):
         )
         result: list[dict[str, Any]] = []
         for label in component_labels:
-            comp: SubComponentInfo = SubComponentInfo.from_label(label)
+            comp: SubComponentKey = SubComponentKey.from_label(label)
             result.append({"module": comp.module, "index": comp.index, "label": label})
         return result
 

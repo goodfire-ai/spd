@@ -4,7 +4,7 @@ This package provides all data structures for the clustering dashboard.
 All symbols are re-exported from this __init__ for backward compatibility.
 """
 
-from spd.clustering.consts import SubComponentInfo
+from spd.clustering.consts import SubComponentKey
 from spd.clustering.dashboard.core.base import (
     ACTIVATION_SAMPLE_BATCH_STATS,
     ActivationSampleBatch,
@@ -43,7 +43,7 @@ __all__ = [
     "ClusterLabel",
     "Direction",
     # Classes from base
-    "SubComponentInfo",
+    "SubComponentKey",
     "ClusterId",
     "TextSample",
     "ActivationSampleBatch",

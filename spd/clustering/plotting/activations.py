@@ -14,7 +14,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.clustering.activations import ProcessedActivations, compute_coactivatons
-from spd.clustering.consts import ActivationsTensor, ClusterCoactivationShaped, SubComponentInfo
+from spd.clustering.consts import ActivationsTensor, ClusterCoactivationShaped, SubComponentKey
 
 
 def plot_activations(
@@ -51,7 +51,7 @@ def plot_activations(
     act_dict: dict[str, ActivationsTensor] = processed_activations.activations_raw
     act_concat: ActivationsTensor = processed_activations.activations
     coact: ClusterCoactivationShaped = compute_coactivatons(act_concat)
-    labels: list[SubComponentInfo] = processed_activations.subcomponents
+    labels: list[SubComponentKey] = processed_activations.subcomponent_keys
     n_samples: int = act_concat.shape[0]
 
     # trim the activations if n_samples_max is specified
@@ -326,24 +326,24 @@ def plot_activations(
 
 
 def add_component_labeling(
-    ax: plt.Axes, subcomponents: list[SubComponentInfo], axis: str = "x"
+    ax: plt.Axes, subcomponent_keys: list[SubComponentKey], axis: str = "x"
 ) -> None:
     """Add component labeling using major/minor ticks to show module boundaries.
 
     Args:
             ax: Matplotlib axis to modify
-            subcomponents: List of SubComponentInfo objects
+            subcomponent_keys: List of SubComponentInfo objects
             axis: Which axis to label ('x' or 'y')
     """
-    if not subcomponents:
+    if not subcomponent_keys:
         return
 
     # Extract module information
     module_changes: list[int] = []
-    current_module: str = subcomponents[0].module
+    current_module: str = subcomponent_keys[0].module
     module_labels: list[str] = []
 
-    for i, comp in enumerate(subcomponents):
+    for i, comp in enumerate(subcomponent_keys):
         module: str = comp.module
         if module != current_module:
             module_changes.append(i)
@@ -353,7 +353,7 @@ def add_component_labeling(
 
     # Set up major and minor ticks
     # Minor ticks: every 10 components
-    minor_ticks: list[int] = list(range(0, len(subcomponents), 10))
+    minor_ticks: list[int] = list(range(0, len(subcomponent_keys), 10))
 
     # Major ticks: module boundaries (start of each module)
     major_ticks: list[int] = [0] + module_changes
@@ -363,7 +363,7 @@ def add_component_labeling(
         ax.set_xticks(minor_ticks, minor=True)
         ax.set_xticks(major_ticks)
         ax.set_xticklabels(major_labels)
-        ax.set_xlim(-0.5, len(subcomponents) - 0.5)
+        ax.set_xlim(-0.5, len(subcomponent_keys) - 0.5)
         # Style the ticks
         ax.tick_params(axis="x", which="minor", length=2, width=0.5)
         ax.tick_params(axis="x", which="major", length=6, width=1.5)
@@ -373,7 +373,7 @@ def add_component_labeling(
         ax.set_yticks(minor_ticks, minor=True)
         ax.set_yticks(major_ticks)
         ax.set_yticklabels(major_labels)
-        ax.set_ylim(-0.5, len(subcomponents) - 0.5)
+        ax.set_ylim(-0.5, len(subcomponent_keys) - 0.5)
         # Style the ticks
         ax.tick_params(axis="y", which="minor", length=2, width=0.5)
         ax.tick_params(axis="y", which="major", length=6, width=1.5)

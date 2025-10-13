@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 from jaxtyping import Float
 
-from spd.clustering.consts import SubComponentInfo
+from spd.clustering.consts import SubComponentKey
 from spd.clustering.dashboard.core.base import (
     ActivationSampleBatch,
     ActivationSampleHash,
@@ -102,8 +102,8 @@ class DashboardData:
         )
 
         # Convert component info to ComponentInfo objects
-        components_info: list[SubComponentInfo] = [
-            SubComponentInfo(module=comp["module"], index=comp["index"])
+        components_info: list[SubComponentKey] = [
+            SubComponentKey(module=comp["module"], index=comp["index"])
             for comp in cluster_components
         ]
 
