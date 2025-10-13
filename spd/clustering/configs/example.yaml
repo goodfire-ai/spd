@@ -1,5 +1,9 @@
 model_path: wandb:goodfire/spd/runs/zxbu57pt  # WandB path to the decomposed model
 batch_size: 64  # Batch size for processing -- number of samples for each run in the ensemble
+dataset_seed: 0  # Note, overridden if run in the pipeline (spd/clustering/scripts/run_pipeline.py)
+# idx_in_ensemble: 0  # Note, overridden if run in the pipeline (spd/clustering/scripts/run_pipeline.py)
+# output_dir: .data/clustering/clustering_runs  # Note, overridden if run in the pipeline (spd/clustering/scripts/run_pipeline.py)
+# ensemble_id: 1234567890  # Note, overridden if run in the pipeline (spd/clustering/scripts/run_pipeline.py)
 
 merge_config:
   activation_threshold: 0.01  # set to null to use scalar activations for cost calculation
@@ -14,6 +18,7 @@ merge_config:
   rank_cost_fn_name: const_1  # Options: const_1, const_2, log, linear
 
 wandb_project: spd-cluster
+wandb_entity: goodfire
 logging_intervals:
   stat: 1       # for k_groups, merge_pair_cost, mdl_loss
   tensor: 100   # for wandb_log_tensor and fraction_* calculations
