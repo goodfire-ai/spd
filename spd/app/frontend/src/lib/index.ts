@@ -14,6 +14,9 @@ const WAND_URL_RE =
 // wandb:<entity>/<project>/<runId>
 const WAND_TAG_RE = /^wandb:[^/]+\/[^/]+\/([a-z0-9]{8})$/;
 
+// "entity/project/runId" form:
+const WAND_PATH_RE = /^[^/]+\/[^/]+\/([a-z0-9]{8})$/;
+
 export function getClusterWandbRunId(wandbString: string): string {
   // 1) Full URL
   const urlMatch = WAND_URL_RE.exec(wandbString);
@@ -22,6 +25,10 @@ export function getClusterWandbRunId(wandbString: string): string {
   // 2) "wandb:" tagged reference
   const tagMatch = WAND_TAG_RE.exec(wandbString);
   if (tagMatch) return tagMatch[1];
+
+  // 3) "entity/project/runId" form
+  const pathMatch = WAND_PATH_RE.exec(wandbString);
+  if (pathMatch) return pathMatch[1];
 
   // 3) Bare run id
   if (RUN_ID_RE.test(wandbString)) return wandbString;

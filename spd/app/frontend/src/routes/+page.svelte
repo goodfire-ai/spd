@@ -33,7 +33,7 @@
             if (!status.train_run) {
                 return;
             }
-            trainWandbRunEntry = status.train_run.wandb_path;
+            trainWandbRunEntry = status.train_run.wandb_path.split("/").pop()!;
 
             if (!status.cluster_run) {
                 return;
@@ -62,34 +62,6 @@
             loadingTrainRun = false;
         }
     }
-
-    // function getClusterWandbRunId(wandbString: string) {
-    //     let id: string;
-    //     if (wandbString.includes("https://wandb.ai/")) {
-    //         console.log("wandbString is a wandb run id", wandbString);
-    //         const urlNoParams = wandbString.split("?")[0];
-    //         const maybeId = urlNoParams.split("/").pop()!;
-    //         if (maybeId.length != 8) {
-    //             throw new Error("Invalid wandb run id");
-    //         }
-    //         id = maybeId;
-    //     } else if (wandbString.includes("wandb:")) {
-    //         console.log("wandbString is a wandb: tagged run id", wandbString);
-    //         const maybeId = wandbString.split("/").pop()!;
-    //         if (maybeId.length != 8) {
-    //             throw new Error("Invalid wandb run id");
-    //         }
-    //         id = maybeId;
-    //     } else {
-    //         console.log("wandbString is a wandb run id", wandbString);
-    //         if (wandbString.length != 8) {
-    //             throw new Error("Invalid wandb run id");
-    //         }
-    //         id = wandbString;
-    //     }
-
-    //     return id;
-    // }
 
     async function loadClusterRun() {
         console.log("loading cluster run", clusterWandbRunEntry, clusterIteration);
@@ -130,7 +102,7 @@
         <aside class="sidebar">
             <div class="run-selector">
                 <label for="wandb-run-id">W&B Run ID</label>
-                <div class="input-group">
+                <form on:submit|preventDefault={loadRun} class="input-group">
                     <input
                         type="text"
                         id="wandb-run-id"
@@ -140,12 +112,12 @@
                         placeholder="Select or enter run ID"
                     />
                     <button
-                        on:click={loadRun}
+                        type="submit"
                         disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}
                     >
                         {loadingTrainRun ? "Loading..." : "Load Run"}
                     </button>
-                </div>
+                </form>
             </div>
             <div class="tab-navigation">
                 {#if status?.train_run}
