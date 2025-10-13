@@ -236,7 +236,7 @@ if __name__ == "__main__":
         n_batches_final_losses=10,
     )
     # # 2 layers
-    # config = ResidualMLPTrainConfig(
+    # config = ResidMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
     #     resid_mlp_model_config=ResidMLPModelConfig(
@@ -266,7 +266,7 @@ if __name__ == "__main__":
     #     n_batches_final_losses=10,
     # )
     # # 3 layers
-    # config = ResidualMLPTrainConfig(
+    # config = ResidMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
     #     resid_mlp_model_config=ResidMLPModelConfig(
