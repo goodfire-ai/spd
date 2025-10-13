@@ -25,7 +25,7 @@ from spd.clustering.consts import (
     ActivationsTensor,
     BatchTensor,
     ClusterCoactivationShaped,
-    ComponentLabels,
+    SubComponentLabels,
 )
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
@@ -45,7 +45,7 @@ os.environ["WANDB_QUIET"] = "True"
 LogCallback = Callable[
     [
         ClusterCoactivationShaped,
-        ComponentLabels,
+        SubComponentLabels,
         GroupMerge,
         ClusterCoactivationShaped,
         MergeHistory,
@@ -155,7 +155,7 @@ def run_clustering(
 
     logger_call("cleaning up memory")
     activations: ActivationsTensor = processed_activations.activations
-    component_labels: ComponentLabels = ComponentLabels(processed_activations.labels.copy())
+    component_labels: SubComponentLabels = SubComponentLabels(processed_activations.labels.copy())
     del processed_activations  # we copied what we needed
     del activations_dict  # processed already
     del model  # already did the forward pass
@@ -252,7 +252,7 @@ def _log_callback(
     run: Run,
     batch_id: str,
     current_coact: ClusterCoactivationShaped,
-    component_labels: ComponentLabels,
+    component_labels: SubComponentLabels,
     current_merge: GroupMerge,
     config: ClusteringRunConfig,
     costs: ClusterCoactivationShaped,

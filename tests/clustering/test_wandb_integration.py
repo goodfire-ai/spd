@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from spd.clustering.consts import ComponentLabels
+from spd.clustering.consts import SubComponentLabels
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.pipeline.s2_clustering import _save_merge_history_to_wandb
@@ -34,7 +34,7 @@ def test_wandb_url_parsing_short_format():
         for idx in range(2):
             history = MergeHistory.from_config(
                 merge_config=config,
-                labels=ComponentLabels([f"comp{j}" for j in range(5)]),
+                labels=SubComponentLabels([f"comp{j}" for j in range(5)]),
             )
             storage.save_history(history, batch_id=f"batch_{idx:02d}")
 
@@ -66,7 +66,7 @@ def test_merge_history_ensemble():
     for _idx in range(2):
         history = MergeHistory.from_config(
             merge_config=config,
-            labels=ComponentLabels([f"comp{j}" for j in range(4)]),
+            labels=SubComponentLabels([f"comp{j}" for j in range(4)]),
         )
         histories.append(history)
 
@@ -93,7 +93,7 @@ def test_save_merge_history_to_wandb():
 
     history = MergeHistory.from_config(
         merge_config=config,
-        labels=ComponentLabels(["comp0", "comp1", "comp2"]),
+        labels=SubComponentLabels(["comp0", "comp1", "comp2"]),
     )
 
     # Mock wandb run and artifact
@@ -141,7 +141,7 @@ def test_wandb_url_field_in_merge_history():
     # Create MergeHistory with wandb_url
     history = MergeHistory.from_config(
         merge_config=config,
-        labels=ComponentLabels(["comp0", "comp1", "comp2", "comp3", "comp4"]),
+        labels=SubComponentLabels(["comp0", "comp1", "comp2", "comp3", "comp4"]),
     )
     # Check that it can be serialized and deserialized
     with tempfile.TemporaryDirectory() as tmp_dir:

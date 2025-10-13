@@ -14,8 +14,8 @@ from spd.clustering.dashboard.core.base import (
     ActivationSampleHash,
     ClusterId,
     ClusterIdHash,
-    ComponentInfo,
     Direction,
+    SubComponentInfo,
     TextSampleHash,
     TrackingCriterionHash,
 )
@@ -73,7 +73,7 @@ class BinnedData:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ClusterData:
     cluster_hash: ClusterIdHash
-    components: list[ComponentInfo]  # Component info: module, index, label
+    components: list[SubComponentInfo]  # Component info: module, index, label
     criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]]
     stats: dict[str, Any]
     # Component-level metrics
@@ -86,7 +86,7 @@ class ClusterData:
         cluster_id: ClusterId,
         activation_samples: ActivationSampleBatch,
         criteria: list[TrackingCriterion],
-        components: list[ComponentInfo],
+        components: list[SubComponentInfo],
         hist_bins: int = 10,
         activation_threshold: float = 0.5,
         top_n_tokens: int = 50,

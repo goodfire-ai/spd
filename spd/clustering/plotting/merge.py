@@ -8,7 +8,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from spd.clustering.consts import ClusterCoactivationShaped, ComponentLabels, DistancesArray
+from spd.clustering.consts import ClusterCoactivationShaped, DistancesArray, SubComponentLabels
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.util import format_scientific_latex
@@ -27,7 +27,7 @@ def plot_merge_matrix(
     figsize: tuple[int, int] = (10, 3),
     show_row_sums: bool | None = None,
     ax: "plt.Axes | None" = None,
-    component_labels: ComponentLabels | None = None,
+    component_labels: SubComponentLabels | None = None,
 ) -> None:
     import matplotlib.pyplot as plt
 
@@ -84,7 +84,7 @@ def plot_merge_iteration(
     costs: ClusterCoactivationShaped,
     # pair_cost: float,
     iteration: int,
-    component_labels: ComponentLabels | None = None,
+    component_labels: SubComponentLabels | None = None,
     plot_config: dict[str, Any] | None = None,
     nan_diag: bool = True,
     show: bool = False,

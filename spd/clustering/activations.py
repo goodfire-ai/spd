@@ -10,7 +10,7 @@ from spd.clustering.consts import (
     ActivationsTensor,
     BoolActivationsTensor,
     ClusterCoactivationShaped,
-    ComponentLabels,
+    SubComponentLabels,
 )
 from spd.clustering.util import ModuleFilterFunc
 from spd.models.component_model import ComponentModel, OutputWithCache
@@ -56,10 +56,10 @@ class FilteredActivations(NamedTuple):
     activations: ActivationsTensor
     "activations after filtering dead components"
 
-    labels: ComponentLabels
+    labels: SubComponentLabels
     "list of length c with labels for each preserved component"
 
-    dead_components_labels: ComponentLabels | None
+    dead_components_labels: SubComponentLabels | None
     "list of labels for dead components, or None if no filtering was applied"
 
     @property
@@ -79,7 +79,7 @@ class FilteredActivations(NamedTuple):
 
 def filter_dead_components(
     activations: ActivationsTensor,
-    labels: ComponentLabels,
+    labels: SubComponentLabels,
     filter_dead_threshold: float = 0.01,
 ) -> FilteredActivations:
     """Filter out dead components based on a threshold
@@ -91,9 +91,9 @@ def filter_dead_components(
     are considered dead and filtered out. The labels of these components are returned in `dead_components_labels`.
     `dead_components_labels` will also be `None` if no components were below the threshold.
     """
-    dead_components_lst: ComponentLabels | None = None
+    dead_components_lst: SubComponentLabels | None = None
     if filter_dead_threshold > 0:
-        dead_components_lst = ComponentLabels(list())
+        dead_components_lst = SubComponentLabels(list())
         max_act: Float[Tensor, " c"] = activations.max(dim=0).values
         dead_components: Bool[Tensor, " c"] = max_act < filter_dead_threshold
 
@@ -104,8 +104,8 @@ def filter_dead_components(
                 for lbl, keep in zip(labels, ~dead_components, strict=False)
             ]
             # re-assign labels only if we are filtering
-            labels = ComponentLabels([label for label, keep in alive_labels if keep])
-            dead_components_lst = ComponentLabels(
+            labels = SubComponentLabels([label for label, keep in alive_labels if keep])
+            dead_components_lst = SubComponentLabels(
                 [label for label, keep in alive_labels if not keep]
             )
 
@@ -126,10 +126,10 @@ class ProcessedActivations:
     activations: ActivationsTensor
     "activations after filtering and concatenation"
 
-    labels: ComponentLabels
+    labels: SubComponentLabels
     "list of length c with labels for each preserved component, format `{module_name}:{component_index}`"
 
-    dead_components_lst: ComponentLabels | None
+    dead_components_lst: SubComponentLabels | None
     "list of labels for dead components, or None if no filtering was applied"
 
     def validate(self) -> None:
@@ -241,7 +241,7 @@ def process_activations(
 
     # compute the labels and total component count
     total_c: int = 0
-    labels: ComponentLabels = ComponentLabels(list())
+    labels: SubComponentLabels = SubComponentLabels(list())
     for key, act in activations_.items():
         c: int = act.shape[-1]
         labels.extend([f"{key}:{i}" for i in range(c)])

@@ -22,8 +22,8 @@ from spd.clustering.consts import (
     ActivationsTensor,
     BoolActivationsTensor,
     ClusterCoactivationShaped,
-    ComponentLabels,
     MergePair,
+    SubComponentLabels,
 )
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_config import MergeConfig
@@ -36,7 +36,7 @@ class LogCallback(Protocol):
     def __call__(
         self,
         current_coact: ClusterCoactivationShaped,
-        component_labels: ComponentLabels,
+        component_labels: SubComponentLabels,
         current_merge: GroupMerge,
         costs: ClusterCoactivationShaped,
         merge_history: MergeHistory,
@@ -52,7 +52,7 @@ class LogCallback(Protocol):
 def merge_iteration(
     merge_config: MergeConfig,
     activations: ActivationsTensor,
-    component_labels: ComponentLabels,
+    component_labels: SubComponentLabels,
     log_callback: LogCallback | None = None,
     batch_id: str = "unk",
 ) -> MergeHistory:

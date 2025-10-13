@@ -11,8 +11,8 @@ from spd.clustering.dashboard.core.base import (
     ClusterId,
     ClusterIdHash,
     ClusterLabel,
-    ComponentInfo,
     Direction,
+    SubComponentInfo,
     TextSample,
     TextSampleHash,
     TrackingCriterionHash,
@@ -43,7 +43,7 @@ __all__ = [
     "ClusterLabel",
     "Direction",
     # Classes from base
-    "ComponentInfo",
+    "SubComponentInfo",
     "ClusterId",
     "TextSample",
     "ActivationSampleBatch",

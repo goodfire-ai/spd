@@ -76,7 +76,6 @@ def main(dashboard_config: DashboardConfig) -> None:
             batch_size=dashboard_config.batch_size,
         )
 
-    
     logger.info("Generating model information")
     model_info: dict[str, Any] = generate_model_info(
         model=model,

@@ -23,19 +23,6 @@ _SEPARATOR_3: str = "|"  # For ALL activation hashes (cluster|text or cluster|co
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ComponentInfo:
-    """Component information from merge history."""
-
-    module: str
-    index: int
-
-    @property
-    def label(self) -> str:
-        """Component label as 'module:index'."""
-        return f"{self.module}:{self.index}"
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
 class ClusterId:
     """Unique identifier for a cluster. This should uniquely identify a cluster *globally*"""
 

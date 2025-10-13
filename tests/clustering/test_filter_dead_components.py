@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 
 from spd.clustering.activations import FilteredActivations, filter_dead_components
-from spd.clustering.consts import ComponentLabels
+from spd.clustering.consts import SubComponentLabels
 
 
 @pytest.mark.parametrize(
@@ -37,16 +37,16 @@ def test_filter_dead_components_thresholds(
     n_components: int = len(max_values)
 
     activations: Tensor
-    labels: ComponentLabels
+    labels: SubComponentLabels
     if n_components == 0:
         activations = torch.zeros(n_steps, 0)
-        labels = ComponentLabels([])
+        labels = SubComponentLabels([])
     else:
         activations = torch.zeros(n_steps, n_components)
         # Set max values in first row
         for i, val in enumerate(max_values):
             activations[0, i] = val
-        labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        labels = SubComponentLabels([f"comp_{i}" for i in range(n_components)])
 
     result: FilteredActivations = filter_dead_components(
         activations=activations, labels=labels, filter_dead_threshold=threshold
@@ -95,7 +95,7 @@ def test_max_across_steps(step_locations: list[int], threshold: float) -> None:
     for i, step in enumerate(step_locations):
         activations[step, i] = threshold + 0.01
 
-    labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+    labels: SubComponentLabels = SubComponentLabels([f"comp_{i}" for i in range(n_components)])
 
     result: FilteredActivations = filter_dead_components(
         activations=activations, labels=labels, filter_dead_threshold=threshold
@@ -121,7 +121,7 @@ def test_linear_gradient_thresholds(threshold: float) -> None:
     labels: list[str] = [f"comp_{i}" for i in range(n_components)]
 
     result: FilteredActivations = filter_dead_components(
-        activations=activations, labels=ComponentLabels(labels), filter_dead_threshold=threshold
+        activations=activations, labels=SubComponentLabels(labels), filter_dead_threshold=threshold
     )
 
     # Count how many components should be alive

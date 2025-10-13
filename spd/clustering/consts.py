@@ -1,6 +1,7 @@
 """Constants and shared abstractions for clustering pipeline."""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NewType
 
@@ -15,8 +16,32 @@ DistancesMethod = Literal["perm_invariant_hamming", "jaccard"]
 DistancesArray = Float[np.ndarray, "n_iters n_ens n_ens"]
 
 # Component and label types (NewType for stronger type safety)
-ComponentLabel = NewType("ComponentLabel", str)  # Format: "module_name:component_index"
-ComponentLabels = NewType("ComponentLabels", list[str])
+SubComponentLabel = NewType("SubComponentLabel", str)  # Format: "module_name:component_index"
+SubComponentLabels = NewType("SubComponentLabels", list[str])
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SubComponentInfo:
+    """unique identifier of a subcomponent. indices can refer to dead components"""
+
+    module: str
+    index: int
+
+    @property
+    def label(self) -> SubComponentLabel:
+        """Component label as 'module:index'."""
+        return SubComponentLabel(f"{self.module}:{self.index}")
+
+    @classmethod
+    def from_label(cls, label: SubComponentLabel) -> "SubComponentInfo":
+        """Create SubComponentInfo from a component label."""
+        assert label.count(":") == 1, (
+            "Invalid component label format, expected '{{module}}:{{index}}'"
+        )
+        module, index_str = label.rsplit(":", 1)
+        return cls(module=module, index=int(index_str))
+
+
 BatchId = NewType("BatchId", str)
 
 # Path types

@@ -11,7 +11,7 @@ from spd.clustering.dashboard.core.base import (
     ActivationSampleHash,
     ClusterId,
     ClusterIdHash,
-    ComponentInfo,
+    SubComponentInfo,
     TextSample,
     TextSampleHash,
 )
@@ -102,8 +102,9 @@ class DashboardData:
         )
 
         # Convert component info to ComponentInfo objects
-        components_info: list[ComponentInfo] = [
-            ComponentInfo(module=comp["module"], index=comp["index"]) for comp in cluster_components
+        components_info: list[SubComponentInfo] = [
+            SubComponentInfo(module=comp["module"], index=comp["index"])
+            for comp in cluster_components
         ]
 
         # Generate ClusterData with stats and top-k samples

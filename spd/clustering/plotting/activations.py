@@ -14,7 +14,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.clustering.activations import ProcessedActivations, compute_coactivatons
-from spd.clustering.consts import ActivationsTensor, ClusterCoactivationShaped, ComponentLabels
+from spd.clustering.consts import ActivationsTensor, ClusterCoactivationShaped, SubComponentLabels
 
 
 def plot_activations(
@@ -51,7 +51,7 @@ def plot_activations(
     act_dict: dict[str, ActivationsTensor] = processed_activations.activations_raw
     act_concat: ActivationsTensor = processed_activations.activations
     coact: ClusterCoactivationShaped = compute_coactivatons(act_concat)
-    labels: ComponentLabels = ComponentLabels(processed_activations.labels)
+    labels: SubComponentLabels = SubComponentLabels(processed_activations.labels)
     n_samples: int = act_concat.shape[0]
 
     # trim the activations if n_samples_max is specified
@@ -326,7 +326,7 @@ def plot_activations(
 
 
 def add_component_labeling(
-    ax: plt.Axes, component_labels: ComponentLabels, axis: str = "x"
+    ax: plt.Axes, component_labels: SubComponentLabels, axis: str = "x"
 ) -> None:
     """Add component labeling using major/minor ticks to show module boundaries.
 

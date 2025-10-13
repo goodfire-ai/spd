@@ -11,12 +11,12 @@ from jaxtyping import Float, Int
 from muutils.dbg import dbg_tensor
 
 from spd.clustering.consts import (
-    ComponentLabels,
     DistancesArray,
     DistancesMethod,
     MergePair,
     MergesArray,
     SaveableObject,
+    SubComponentLabels,
 )
 from spd.clustering.math.merge_distances import compute_distances
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
@@ -53,7 +53,7 @@ class MergeHistory(SaveableObject):
 
     merges: BatchedGroupMerge
     selected_pairs: Int[np.ndarray, " n_iters 2"]
-    labels: ComponentLabels
+    labels: SubComponentLabels
     merge_config: MergeConfig
     n_iters_current: int
 
@@ -67,7 +67,7 @@ class MergeHistory(SaveableObject):
     def from_config(
         cls,
         merge_config: MergeConfig,
-        labels: ComponentLabels,
+        labels: SubComponentLabels,
     ) -> "MergeHistory":
         n_components: int = len(labels)
         n_iters_target: int = merge_config.get_num_iters(n_components)
@@ -155,7 +155,7 @@ class MergeHistory(SaveableObject):
         merge: GroupMerge = self.merges[iteration]
         return torch.unique(merge.group_idxs).tolist()
 
-    def get_cluster_component_labels(self, iteration: int, cluster_id: int) -> ComponentLabels:
+    def get_cluster_component_labels(self, iteration: int, cluster_id: int) -> SubComponentLabels:
         """Get component labels for a specific cluster at a given iteration.
 
         Args:
@@ -172,7 +172,7 @@ class MergeHistory(SaveableObject):
         )
         merge: GroupMerge = self.merges[iteration]
         component_indices: list[int] = merge.components_in_group(cluster_id)
-        return ComponentLabels([self.labels[idx] for idx in component_indices])
+        return SubComponentLabels([self.labels[idx] for idx in component_indices])
 
     def get_cluster_components_info(self, iteration: int, cluster_id: int) -> list[dict[str, Any]]:
         """Get detailed component information for a cluster.
@@ -255,7 +255,7 @@ class MergeHistory(SaveableObject):
                 k_groups=torch.from_numpy(k_groups),
             )
             labels_raw: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
-            labels: ComponentLabels = ComponentLabels(labels_raw)
+            labels: SubComponentLabels = SubComponentLabels(labels_raw)
             metadata: dict[str, Any] = json.loads(zf.read("metadata.json").decode("utf-8"))
             merge_config: MergeConfig = MergeConfig.model_validate(metadata["merge_config"])
 
@@ -364,7 +364,7 @@ class MergeHistoryEnsemble:
             unique_labels_set.update(history.labels)
 
         unique_labels_list: list[str] = sorted(unique_labels_set)
-        unique_labels: ComponentLabels = ComponentLabels(unique_labels_list)
+        unique_labels: SubComponentLabels = SubComponentLabels(unique_labels_list)
         c_components: int = len(unique_labels)
         component_label_idxs: dict[str, int] = {
             label: idx for idx, label in enumerate(unique_labels)

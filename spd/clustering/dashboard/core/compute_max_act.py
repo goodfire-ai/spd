@@ -52,14 +52,14 @@ def compute_max_activations(
     device: torch.device = get_obj_device(model)
 
     # Setup: Get cluster info and create ClusterId objects
-    unique_cluster_indices: list[int] = merge_history.get_unique_clusters(iteration)
+    unique_MH_cluster_indices: list[int] = merge_history.get_unique_clusters(iteration)
     cluster_components: dict[int, list[dict[str, Any]]] = {
         cid: merge_history.get_cluster_components_info(iteration, cid)
-        for cid in unique_cluster_indices
+        for cid in unique_MH_cluster_indices
     }
 
     cluster_id_map: dict[int, ClusterId] = {}
-    for idx in unique_cluster_indices:
+    for idx in unique_MH_cluster_indices:
         components: list[dict[str, Any]] = cluster_components[idx]
         assert components, f"Cluster {idx} has no components"
         cluster_id_map[idx] = ClusterId(
@@ -103,7 +103,7 @@ def compute_max_activations(
     # Create DashboardData and add clusters incrementally
     dashboard: DashboardData = DashboardData.create(text_samples=storage.text_samples)
 
-    for cluster_idx in tqdm(unique_cluster_indices, desc="Building cluster data"):
+    for cluster_idx in tqdm(unique_MH_cluster_indices, desc="Building cluster data"):
         cluster_id: ClusterId = cluster_id_map[cluster_idx]
         cluster_hash = cluster_id.to_string()
 
