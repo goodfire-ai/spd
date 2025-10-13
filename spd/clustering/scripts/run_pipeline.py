@@ -41,9 +41,9 @@ def generate_run_id_for_ensemble(_config: ClusteringPipelineConfig) -> str:
     """Generate a unique ensemble identifier based on config.
 
     This is used as the ensemble_id component in individual run IDs.
-    Format: cluster_{timestamp}
+    Format: clustering_{timestamp}
     """
-    return f"cluster_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
+    return f"clustering_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
 
 
 def generate_clustering_commands(
@@ -64,7 +64,7 @@ def generate_clustering_commands(
 
     for idx in range(submit_config.n_runs):
         command = (
-            f"python spd/clustering/run_clustering.py "
+            f"python spd/clustering/scripts/run_clustering.py "
             f"--config {submit_config.run_clustering_config_path} "
             f"--idx-in-ensemble {idx} "
             f"--output-dir {output_dir} "
@@ -111,7 +111,7 @@ def main(submit_config_path: Path, n_runs: int | None = None) -> None:
     # Save the submit config for reference
     output_dir = submit_config.base_output_dir / ensemble_id
     output_dir.mkdir(parents=True, exist_ok=True)
-    config_save_path = output_dir / "clustering_submit_config.json"
+    config_save_path = output_dir / "pipeline_config.json"
     submit_config.save(config_save_path)
     logger.info(f"Submit config saved to: {config_save_path}")
 
@@ -121,11 +121,11 @@ def main(submit_config_path: Path, n_runs: int | None = None) -> None:
 
     # Submit to SLURM
     with tempfile.TemporaryDirectory() as temp_dir:
-        script_path = Path(temp_dir) / f"cluster_{ensemble_id}.sh"
+        script_path = Path(temp_dir) / f"clustering_{ensemble_id}.sh"
 
         create_slurm_array_script(
             script_path=script_path,
-            job_name=f"{submit_config.slurm_job_name_prefix}-{ensemble_id}",
+            job_name=submit_config.slurm_job_name_prefix,
             commands=commands,
             snapshot_branch=snapshot_branch,
             max_concurrent_tasks=submit_config.n_runs,  # Run all concurrently
@@ -156,8 +156,9 @@ def cli():
 
     parser.add_argument(
         "--config",
+        default="spd/clustering/scripts/pipeline_config.yaml",
         type=Path,
-        help="Path to ClusteringSubmitConfig file",
+        help="Path to pipeline config file",
     )
 
     parser.add_argument(
