@@ -93,8 +93,8 @@ class ClusteringRunConfig(BaseConfig):
     batch_size: PositiveInt = Field(..., description="Batch size for processing")
     dataset_seed: int = Field(0, description="Seed for dataset generation/loading")
     idx_in_ensemble: int = Field(0, description="Index of this run in the ensemble")
-    output_dir: Path = Field(
-        default=SPD_CACHE_DIR / "clustering" / "clustering_runs",
+    base_output_dir: Path = Field(
+        default=SPD_CACHE_DIR / "clustering" / "runs",
         description="Directory to save merge history",
     )
     ensemble_id: str = Field(
@@ -292,6 +292,7 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
                 "clustering",
                 f"task:{task_name}",
                 f"model:{run_config.wandb_decomp_model}",
+                f"ensemble_id:{run_config.ensemble_id}",
                 f"idx:{run_config.idx_in_ensemble}",
             ],
         )
@@ -361,8 +362,13 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
     )
 
     # 8. Save merge history
-    run_config.output_dir.mkdir(parents=True, exist_ok=True)
-    history_path = run_config.output_dir / f"history_{run_config.idx_in_ensemble}.npz"
+    run_dir = (
+        run_config.base_output_dir
+        / "runs"
+        / f"{run_config.ensemble_id}_{run_config.idx_in_ensemble}"
+    )
+    run_dir.mkdir(parents=True, exist_ok=True)
+    history_path = run_dir / f"history_{run_config.idx_in_ensemble}.npz"
     history.save(history_path, wandb_url=run.url if run else None)
     logger.info(f"✓ History saved to {history_path}")
 
@@ -392,7 +398,7 @@ def cli() -> None:
         help="Index of this run in the ensemble",
     )
     parser.add_argument(
-        "--output-dir",
+        "--base-output-dir",
         type=Path,
         default=None,
         help="Directory to save merge history",
@@ -409,13 +415,13 @@ def cli() -> None:
     run_config = ClusteringRunConfig.from_file(args.config)
 
     # Replace values in the run_config from those passed in via CLI (which may come from the
-    # pipeline submitter in spd/clustering/scripts/run.py)
+    # pipeline submitter in spd/clustering/scripts/run_pipeline.py)
     overrides: dict[str, Any] = {
         "dataset_seed": run_config.dataset_seed + args.idx_in_ensemble,
         "idx_in_ensemble": args.idx_in_ensemble,
     }
-    if args.output_dir is not None:
-        overrides["output_dir"] = args.output_dir
+    if args.base_output_dir is not None:
+        overrides["base_output_dir"] = args.base_output_dir
     if args.ensemble_id is not None:
         overrides["ensemble_id"] = args.ensemble_id
     run_config = replace_pydantic_model(run_config, overrides)
