@@ -58,6 +58,27 @@ def optimize_adversarial_stochastic_masks(
 
     # batch dims is either (B,) or (B, S)
     *batch_dims, C = example_shape
+
+    def repeat_masks(
+        ci: dict[str, Float[Tensor, "... C"]],
+        weight_delta_mask: dict[str, Float[Tensor, "..."]] | None,
+    ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "..."]] | None]:
+        match pgd_config.mask_scope:
+            case "unique_per_datapoint":
+                # no-op
+                return ci, weight_delta_mask
+            case "shared_across_batch":
+                cm = {}
+                for module_name in ci:
+                    cm[module_name] = ci[module_name].repeat(*batch_dims, 1)
+
+                wdm = None
+                if weight_delta_mask is not None:
+                    wdm = {}
+                    for module_name in weight_delta_mask:
+                        wdm[module_name] = weight_delta_mask[module_name].repeat(*batch_dims)
+                return cm, wdm
+
     match pgd_config.mask_scope:
         case "unique_per_datapoint":
             ci_mask_shape = torch.Size(batch_dims) + (C,)
@@ -90,9 +111,10 @@ def optimize_adversarial_stochastic_masks(
         assert all(v.requires_grad for v in adv_vars)
 
         with torch.enable_grad():
+            component_mask_, weight_delta_mask_ = repeat_masks(component_mask, weight_delta_mask)
             obj = objective_fn(
-                component_mask=component_mask,
-                weight_delta_mask=weight_delta_mask,
+                component_mask=component_mask_,
+                weight_delta_mask=weight_delta_mask_,
             )
 
             grads = torch.autograd.grad(
@@ -108,7 +130,13 @@ def optimize_adversarial_stochastic_masks(
                 v.add_(pgd_config.step_size * g.sign())
                 v.clamp_(0.0, 1.0)
 
-    return component_mask, weight_delta_mask
+    for module_name in component_mask:
+        component_mask[module_name].detach_()
+    if weight_delta_mask is not None:
+        for module_name in weight_delta_mask:
+            weight_delta_mask[module_name].detach_()
+
+    return repeat_masks(component_mask, weight_delta_mask)
 
 
 def pgd_masked_recon_loss_update(

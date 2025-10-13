@@ -77,9 +77,8 @@ def run_faithfulness_warmup(
             faithfulness_warmup_step % 100 == 0
             or faithfulness_warmup_step == config.faithfulness_warmup_steps - 1
         ):
-            warmup_step = (faithfulness_warmup_step + 1) / config.faithfulness_warmup_steps
             logger.info(
-                f"Faithfulness warmup step {warmup_step}; Faithfulness loss: {loss.item():.9f}"
+                f"Faithfulness warmup step {faithfulness_warmup_step + 1} / {config.faithfulness_warmup_steps}; Faithfulness loss: {loss.item():.9f}"
             )
     del faithfulness_warmup_optimizer
     torch.cuda.empty_cache()
