@@ -2,10 +2,10 @@ from typing import Literal
 
 from pydantic import Field, PositiveInt
 
-from spd.utils.general_utils import BaseModel
+from spd.base_config import BaseConfig
 
 
-class InductionModelConfig(BaseModel):
+class InductionModelConfig(BaseConfig):
     vocab_size: PositiveInt
     seq_len: PositiveInt
     d_model: PositiveInt
@@ -18,7 +18,7 @@ class InductionModelConfig(BaseModel):
     device: str = "cpu"
 
 
-class InductionHeadsTrainConfig(BaseModel):
+class InductionHeadsTrainConfig(BaseConfig):
     wandb_project: str | None = None
     ih_model_config: InductionModelConfig
     steps: PositiveInt
@@ -32,7 +32,7 @@ class InductionHeadsTrainConfig(BaseModel):
     prefix_window: PositiveInt
 
 
-class IHTaskConfig(BaseModel):
+class IHTaskConfig(BaseConfig):
     task_name: Literal["induction_head"]
     prefix_window: PositiveInt | None = Field(
         default=None,
