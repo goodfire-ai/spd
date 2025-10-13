@@ -16,11 +16,11 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
+from spd.clustering.dataset import get_clustering_dataloader
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.merge_run_config import ClusteringRunConfig
-from spd.clustering.pipeline.s1_split_dataset import split_dataset
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -51,10 +51,9 @@ CONFIG: ClusteringRunConfig = ClusteringRunConfig(
     model_path=MODEL_PATH,
     task_name="lm",
     n_batches=1,
-    batch_size=2,
 )
 
-BATCHES, _ = split_dataset(
+BATCHES, _ = get_clustering_dataloader(
     config=CONFIG,
     config_kwargs=dict(streaming=True),  # see https://github.com/goodfire-ai/spd/pull/199
 )

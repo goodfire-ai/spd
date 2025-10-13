@@ -21,8 +21,10 @@ from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 
-def split_dataset(
+def get_clustering_dataloader(
     config: ClusteringRunConfig,
+    ddp_rank: int = 0,
+    ddp_world_size: int = 1,
     **kwargs: Any,
 ) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
     """Split a dataset into n_batches of batch_size, returning iterator and config"""
@@ -32,13 +34,17 @@ def split_dataset(
         case "lm":
             ds, ds_config_dict = _get_dataloader_lm(
                 model_path=config.model_path,
-                batch_size=config.batch_size,
+                batch_size=config.merge_config.batch_size,
+                ddp_rank=ddp_rank,
+                ddp_world_size=ddp_world_size,
                 **kwargs,
             )
         case "resid_mlp":
             ds, ds_config_dict = _get_dataloader_resid_mlp(
                 model_path=config.model_path,
-                batch_size=config.batch_size,
+                batch_size=config.merge_config.batch_size,
+                ddp_rank=ddp_rank,
+                ddp_world_size=ddp_world_size,
                 **kwargs,
             )
         case name:
@@ -61,7 +67,9 @@ def split_dataset(
 def _get_dataloader_lm(
     model_path: str,
     batch_size: int,
-    config_kwargs: dict[str, Any] | None = None,
+    dataset_config_kwargs: dict[str, Any] | None = None,
+    ddp_rank: int = 0,
+    ddp_world_size: int = 1,
 ) -> tuple[Generator[BatchTensor, None, None], dict[str, Any]]:
     """split up a SS dataset into n_batches of batch_size, returned the saved paths
 
@@ -87,13 +95,13 @@ def _get_dataloader_lm(
             f"Expected task_config to be of type LMTaskConfig since using `_get_dataloader_lm`, but got {type(cfg.task_config) = }"
         )
 
-        config_kwargs_: dict[str, Any] = {
+        dataset_config_kwargs_: dict[str, Any] = {
             **dict(
                 is_tokenized=False,
                 streaming=False,
                 seed=0,
             ),
-            **(config_kwargs or {}),
+            **(dataset_config_kwargs or {}),
         }
 
         dataset_config: DatasetConfig = DatasetConfig(
@@ -102,7 +110,7 @@ def _get_dataloader_lm(
             split=cfg.task_config.train_data_split,
             n_ctx=cfg.task_config.max_seq_len,
             column_name=cfg.task_config.column_name,
-            **config_kwargs_,
+            **dataset_config_kwargs_,
         )
 
     with SpinnerContext(message="getting dataloader..."):
@@ -112,8 +120,8 @@ def _get_dataloader_lm(
             batch_size=batch_size,
             buffer_size=cfg.task_config.buffer_size,
             global_seed=cfg.seed,
-            ddp_rank=0,
-            ddp_world_size=1,
+            ddp_rank=ddp_rank,
+            ddp_world_size=ddp_world_size,
         )
 
     return (batch["input_ids"] for batch in dataloader), dataset_config.model_dump(mode="json")
@@ -122,10 +130,15 @@ def _get_dataloader_lm(
 def _get_dataloader_resid_mlp(
     model_path: str,
     batch_size: int,
+    ddp_rank: int = 0,
+    ddp_world_size: int = 1,
 ) -> tuple[Generator[torch.Tensor, None, None], dict[str, Any]]:
     """Split a ResidMLP dataset into n_batches of batch_size and save the batches."""
     from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
     from spd.utils.data_utils import DatasetGeneratedDataLoader
+
+    # TODO: this is a hack. idk what the best way to handle this is
+    shuffle_data: bool = ddp_world_size <= 1
 
     with SpinnerContext(message=f"Loading SPD Run Config for '{model_path}'"):
         spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
@@ -158,7 +171,7 @@ def _get_dataloader_resid_mlp(
         dataset: ResidMLPDataset = ResidMLPDataset(**resid_mlp_dataset_kwargs)
 
         dataloader: DatasetGeneratedDataLoader[tuple[Tensor, Tensor]] = DatasetGeneratedDataLoader(
-            dataset, batch_size=batch_size, shuffle=False
+            dataset, batch_size=batch_size, shuffle=shuffle_data
         )
 
     return (batch[0] for batch in dataloader), resid_mlp_dataset_kwargs

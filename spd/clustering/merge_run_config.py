@@ -92,10 +92,6 @@ class ClusteringRunConfig(BaseModel):
         default=10,
         description="Number of batches to split the dataset into (ensemble size)",
     )
-    batch_size: PositiveInt = Field(
-        default=64,
-        description="Size of each batch for processing",
-    )
     distances_method: DistancesMethod = Field(
         default="perm_invariant_hamming",
         description="Method to use for computing distances between clusterings",

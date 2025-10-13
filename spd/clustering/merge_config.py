@@ -72,6 +72,15 @@ class MergeConfig(BaseModel):
         default=None,
         description="Filter for module names. Can be a string prefix, a set of names, or a callable that returns True for modules to include.",
     )
+    # TODO: unsure of this var name
+    recompute_costs_every: PositiveInt = Field(
+        default=10,
+        description="How often to recompute the full cost matrix, replacing NaN values of merged components with their true value. Higher values mean less accurate merges but faster computation.",
+    )
+    batch_size: PositiveInt = Field(
+        default=64,
+        description="Size of each batch for processing",
+    )
 
     @property
     def merge_pair_sample_func(self) -> MergePairSampler:
