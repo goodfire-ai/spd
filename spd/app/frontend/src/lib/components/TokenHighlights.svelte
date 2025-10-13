@@ -94,6 +94,7 @@
         pointer-events: none;
         transition: opacity 0s;
         margin-bottom: 4px;
+        z-index: 1000;
     }
 
     .token-highlight:hover::after {

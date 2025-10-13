@@ -35,6 +35,12 @@
             loading = false;
         }
     }
+
+    function handleKeydown(event: KeyboardEvent) {
+        if (event.key === 'Enter' && !loading) {
+            loadContexts();
+        }
+    }
 </script>
 
 <div class="tab-content">
@@ -51,6 +57,7 @@
                         min="0"
                         max="1"
                         bind:value={importanceThreshold}
+                        on:keydown={handleKeydown}
                     />
                 </div>
 
@@ -62,17 +69,18 @@
                         step="10"
                         min="1"
                         bind:value={maxExamplesPerSubcomponent}
+                        on:keydown={handleKeydown}
                     />
                 </div>
 
                 <div class="config-item">
                     <label for="n-steps">Number of Batches:</label>
-                    <input id="n-steps" type="number" step="1" min="1" bind:value={nBatches} />
+                    <input id="n-steps" type="number" step="1" min="1" bind:value={nBatches} on:keydown={handleKeydown} />
                 </div>
 
                 <div class="config-item">
                     <label for="batch-size">Batch Size:</label>
-                    <input id="batch-size" type="number" step="1" min="1" bind:value={batchSize} />
+                    <input id="batch-size" type="number" step="1" min="1" bind:value={batchSize} on:keydown={handleKeydown} />
                 </div>
 
                 <div class="config-item">
@@ -83,6 +91,7 @@
                         step="1"
                         min="0"
                         bind:value={nTokensEitherSide}
+                        on:keydown={handleKeydown}
                     />
                 </div>
             </div>

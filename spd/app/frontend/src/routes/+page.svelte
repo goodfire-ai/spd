@@ -9,11 +9,13 @@
     import NewClusterDashboard from "$lib/components/ClusterDashboardTab.svelte";
     import InterventionsTab from "$lib/components/InterventionsTab.svelte";
     import { getClusterWandbRunId } from "$lib";
+    
+    // let loadingStatus: boolean = true;
 
-    let loadingStatus: boolean = true;
+    let loadingTrainRun: boolean = false;
+
     /** can be a wandb run path, or id. we should sanitse this */
     let trainWandbRunEntry: string | null = null;
-    let loadingTrainRun: boolean = false;
 
     let status: Status | null = null;
     $: availableClusterRuns = status?.train_run?.available_cluster_runs;
@@ -24,10 +26,13 @@
     let loadingClusterRun: boolean = false;
 
     async function loadStatus() {
+        if (loadingTrainRun || loadingClusterRun) return;
+
         console.log("getting status");
+
         try {
             status = await api.getStatus();
-            loadingStatus = false;
+            loadingTrainRun = false;
 
             console.log("status:", status);
             if (!status.train_run) return;
@@ -37,7 +42,6 @@
             clusterWandbRunEntry = status.cluster_run.wandb_path;
         } catch (error) {
             console.error("error loading status", error);
-            loadingStatus = false;
         }
     }
 
@@ -51,10 +55,12 @@
             trainWandbRunEntry = getClusterWandbRunId(input);
             console.log("loading run", trainWandbRunEntry);
             await api.loadRun(trainWandbRunEntry);
-            loadingTrainRun = false;
+            // this is kindof a bug. We'll fetch a stale status while loading the new run. We should
+            // fix this by 
             await loadStatus();
         } catch (error) {
             console.error("error loading run", error);
+        } finally {
             loadingTrainRun = false;
         }
     }
@@ -70,16 +76,22 @@
             return;
         }
 
-        loadingClusterRun = true;
+        try {
+            loadingClusterRun = true;
 
-        if (!clusterWandbRunEntry) {
-            throw new Error("Inconsistent state: clusterWandbRunEntry is null");
+            if (!clusterWandbRunEntry) {
+                throw new Error("Inconsistent state: clusterWandbRunEntry is null");
+            }
+            clusterWandbRunEntry = getClusterWandbRunId(clusterWandbRunEntry);
+            await api.loadClusterRun(clusterWandbRunEntry, clusterIteration!);
+            loadingClusterRun = false;
+
+            await loadStatus();
+        } catch (error) {
+            console.error("error loading cluster run", error);
+        } finally {
+            loadingClusterRun = false;
         }
-        clusterWandbRunEntry = getClusterWandbRunId(clusterWandbRunEntry);
-        await api.loadClusterRun(clusterWandbRunEntry, clusterIteration!);
-        loadingClusterRun = false;
-
-        await loadStatus();
     }
 
     onMount(() => {
@@ -92,9 +104,8 @@
 
 <div class="app-layout">
     <!-- Left Sidebar -->
-    {#if loadingStatus}
-        <div class="loading">Loading...</div>
-    {:else}
+    <!-- {#if !status} <div class="loading">Loading...</div>
+    {:else} -->
         <aside class="sidebar">
             <div class="run-selector">
                 <label for="wandb-run-id">W&B Run ID</label>
@@ -199,7 +210,7 @@
                 </div>
             {/if}
         </div>
-    {/if}
+    <!-- {/if} -->
 </div>
 
 <style>

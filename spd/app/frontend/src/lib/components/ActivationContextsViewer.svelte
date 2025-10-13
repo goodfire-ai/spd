@@ -3,17 +3,20 @@
     import ActivationContext from "./ActivationContext.svelte";
 
     export let allLayersData: Record<string, SubcomponentActivationContexts[]>;
+    if (Object.keys(allLayersData).length === 0) {
+        throw new Error("No layers data");
+    }
 
     let currentPage = 0;
-    let selectedLayer: string | null = null;
+    let selectedLayer: string = Object.keys(allLayersData)[0];
+
+    // reset selectedLayer to first layer when allLayersData changes
+    $: {
+        selectedLayer = Object.keys(allLayersData)[0];
+    }
 
     // Derive available layers from the data
     $: availableComponentLayers = Object.keys(allLayersData);
-
-    // Reset to first layer whenever data changes
-    $: if (availableComponentLayers.length > 0) {
-        selectedLayer = availableComponentLayers[0];
-    }
 
     // Derive current data from selections
     $: currentLayerData = selectedLayer ? allLayersData[selectedLayer] : null;
@@ -29,9 +32,7 @@
     }
 
     // Reset page when layer changes
-    $: if (selectedLayer) {
-        currentPage = 0;
-    }
+    $: if (selectedLayer) currentPage = 0;
 </script>
 
 <div class="layer-select-section">
@@ -45,13 +46,7 @@
 
 <div class="pagination-controls">
     <button on:click={previousPage} disabled={currentPage === 0}>&lt;</button>
-    <input
-        type="number"
-        min="0"
-        max={totalPages - 1}
-        bind:value={currentPage}
-        class="page-input"
-    />
+    <input type="number" min="0" max={totalPages - 1} bind:value={currentPage} class="page-input" />
     <span>of {totalPages - 1}</span>
     <button on:click={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
 </div>
@@ -158,7 +153,7 @@
 
     .subcomponent-section {
         border-radius: 8px;
-        overflow: hidden;
+        overflow: visible;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
