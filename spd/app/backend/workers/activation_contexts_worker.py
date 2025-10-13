@@ -107,7 +107,6 @@ def roll_batch_size_1_into_x(
     singleton_batches: Iterable[torch.Tensor],
     batch_size: int,
 ) -> Generator[torch.Tensor]:
-    logger.info(f"worker: rolling batch size 1 into {batch_size}")
     examples = []
     for batch in singleton_batches:
         assert batch.shape[0] == 1, "Batch size must be 1"
@@ -142,14 +141,12 @@ def get_topk_by_subcomponent(
         batch_size=batch_size,
     )
 
-    for i in tqdm(range(n_batches), desc="Processing data", file=sys.stderr):
+    for _ in tqdm(range(n_batches), desc="Harvesting activation contexts", file=sys.stderr):
         batch = next(batches)
 
         assert isinstance(batch, torch.Tensor)
         assert batch.ndim == 2, "Expected batch tensor of shape (B, S)"
         B, S = batch.shape
-        if i == 0:
-            print(f"Batch shape: {B}, {S}, batch_size: {batch_size}")
 
         # IMPORTANT: separation should be enforced only *within this batch's sequences*.
         # Reset cache each batch so slots (b = 0..B-1) from previous batches don't suppress new sequences.

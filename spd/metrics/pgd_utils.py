@@ -18,8 +18,8 @@ class PGDObjective(Protocol):
     def __call__(
         self,
         *,
-        component_mask: dict[str, Float[Tensor, "... C"]],
-        weight_delta_mask: dict[str, Float[Tensor, "..."]] | None,
+        component_sample_points: dict[str, Float[Tensor, "... C"]],
+        weight_delta_masks: dict[str, Float[Tensor, "..."]] | None,
     ) -> Tensor: ...
 
 
@@ -59,27 +59,30 @@ def optimize_adversarial_stochastic_masks(
     # batch dims is either (B,) or (B, S)
     *batch_dims, C = example_shape
 
-    def repeat_masks(
-        ci: dict[str, Float[Tensor, "... C"]],
+    def maybe_repeat_to_batch_shape(
+        component_sample_points: dict[str, Float[Tensor, "... C"]],
         weight_delta_mask: dict[str, Float[Tensor, "..."]] | None,
     ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "..."]] | None]:
         match pgd_config.mask_scope:
             case "unique_per_datapoint":
                 # no-op
-                return ci, weight_delta_mask
+                return component_sample_points, weight_delta_mask
             case "shared_across_batch":
-                cm = {}
-                for module_name in ci:
-                    assert ci[module_name].shape == torch.Size(1 for _ in batch_dims) + (C,)
-                    cm[module_name] = ci[module_name].repeat(*batch_dims, 1)
+                csp_out = {}
+                correct_sample_points_shape = torch.Size(1 for _ in batch_dims) + (C,)
+                for module in component_sample_points:
+                    assert component_sample_points[module].shape == correct_sample_points_shape
+                    csp_out[module] = component_sample_points[module].repeat(*batch_dims, 1)
 
-                wdm = None
+                wdm_out = None
                 if weight_delta_mask is not None:
-                    wdm = {}
-                    for module_name in weight_delta_mask:
-                        assert weight_delta_mask[module_name].shape == torch.Size(1 for _ in batch_dims)
-                        wdm[module_name] = weight_delta_mask[module_name].repeat(*batch_dims)
-                return cm, wdm
+                    wdm_out = {}
+                    correct_wdm_shape = torch.Size(1 for _ in batch_dims)
+                    for module in weight_delta_mask:
+                        assert weight_delta_mask[module].shape == correct_wdm_shape
+                        wdm_out[module] = weight_delta_mask[module].repeat(*batch_dims)
+
+                return csp_out, wdm_out
 
     match pgd_config.mask_scope:
         case "unique_per_datapoint":
@@ -90,33 +93,36 @@ def optimize_adversarial_stochastic_masks(
             ci_mask_shape = torch.Size(1 for _ in batch_dims) + (C,)
             weight_delta_mask_shape = torch.Size(1 for _ in batch_dims)
 
-    component_mask: dict[str, Float[Tensor, "... C"]] = {}
+    component_sample_points: dict[str, Float[Tensor, "... C"]] = {}
     for layer in layers:
-        mask = get_pgd_init_tensor(pgd_config.init, ci_mask_shape, device)
-        mask.requires_grad_(True)
-        component_mask[layer] = mask
+        sample_point = get_pgd_init_tensor(pgd_config.init, ci_mask_shape, device)
+        sample_point.requires_grad_(True)
+        component_sample_points[layer] = sample_point
 
-    weight_delta_mask: dict[str, Float[Tensor, " ..."]] | None = None
+    weight_delta_masks: dict[str, Float[Tensor, " ..."]] | None = None
     if use_delta_component:
-        weight_delta_mask = {}
+        weight_delta_masks = {}
         for layer in layers:
             wd_init = get_pgd_init_tensor(pgd_config.init, weight_delta_mask_shape, device)
             wd_init.requires_grad_(True)
-            weight_delta_mask[layer] = wd_init
+            weight_delta_masks[layer] = wd_init
 
     # PGD ascent
-    for _ in range(int(pgd_config.n_steps)):
-        adv_vars = list(component_mask.values())
-        if weight_delta_mask is not None:
-            adv_vars.extend(list(weight_delta_mask.values()))
+    adv_vars = list(component_sample_points.values())
+    if weight_delta_masks is not None:
+        adv_vars.extend(list(weight_delta_masks.values()))
 
+    for _ in range(int(pgd_config.n_steps)):
         assert all(v.requires_grad for v in adv_vars)
+        assert all(v.grad is None for v in adv_vars)
 
         with torch.enable_grad():
-            component_mask_, weight_delta_mask_ = repeat_masks(component_mask, weight_delta_mask)
+            component_sample_points_, weight_delta_masks_ = maybe_repeat_to_batch_shape(
+                component_sample_points, weight_delta_masks
+            )
             obj = objective_fn(
-                component_mask=component_mask_,
-                weight_delta_mask=weight_delta_mask_,
+                component_sample_points=component_sample_points_,
+                weight_delta_masks=weight_delta_masks_,
             )
 
             grads = torch.autograd.grad(
@@ -131,14 +137,27 @@ def optimize_adversarial_stochastic_masks(
             for v, g in zip(adv_vars, grads, strict=True):
                 v.add_(pgd_config.step_size * g.sign())
                 v.clamp_(0.0, 1.0)
+                g.zero_()
 
-    for module_name in component_mask:
-        component_mask[module_name].detach_()
-    if weight_delta_mask is not None:
-        for module_name in weight_delta_mask:
-            weight_delta_mask[module_name].detach_()
+    for module_name in component_sample_points:
+        component_sample_points[module_name].detach_()
+    if weight_delta_masks is not None:
+        for module_name in weight_delta_masks:
+            weight_delta_masks[module_name].detach_()
 
-    return repeat_masks(component_mask, weight_delta_mask)
+    return maybe_repeat_to_batch_shape(component_sample_points, weight_delta_masks)
+
+
+def interpolate_component_mask(
+    ci: dict[str, Float[Tensor, "... C"]],
+    component_sample_points: dict[str, Float[Tensor, "... C"]],
+) -> dict[str, Float[Tensor, "... C"]]:
+    component_mask = {}
+    for module_name in ci:
+        component_mask[module_name] = (
+            ci[module_name] + (1 - ci[module_name]) * component_sample_points[module_name]
+        )
+    return component_mask
 
 
 def pgd_masked_recon_loss_update(
@@ -166,22 +185,22 @@ def pgd_masked_recon_loss_update(
     )
 
     def objective_fn(
-        component_mask: dict[str, Float[Tensor, "... C"]],
-        weight_delta_mask: dict[str, Float[Tensor, "..."]] | None,
+        component_sample_points: dict[str, Float[Tensor, "... C"]],
+        weight_delta_masks: dict[str, Float[Tensor, "..."]] | None,
     ) -> Tensor:
-        match weight_deltas, weight_delta_mask:
+        match weight_deltas, weight_delta_masks:
             case None, None:
                 weight_deltas_and_masks = None
             case dict(), dict():
-                weight_deltas_and_masks = zip_dicts(weight_deltas, weight_delta_mask)
+                weight_deltas_and_masks = zip_dicts(weight_deltas, weight_delta_masks)
             case _:
                 raise ValueError(
                     "weight_deltas and weight_delta_mask must exist or not exist together"
                 )
 
         mask_infos = make_mask_infos(
-            component_masks=component_mask,
-            weight_deltas_and_masks=weight_deltas_and_masks,
+            component_masks=interpolate_component_mask(ci, component_sample_points),
+            weight_deltas_and_masks=weight_deltas_and_masks,  # we don't interpolate for the weight delta
             routing_masks=routing_masks,
         )
 
@@ -190,7 +209,7 @@ def pgd_masked_recon_loss_update(
         n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
         return total_loss / n_examples
 
-    adversarial_component_masks, adversarial_weight_delta_masks = (
+    adversarial_component_sample_points, adversarial_weight_delta_masks = (
         optimize_adversarial_stochastic_masks(
             pgd_config=pgd_config,
             objective_fn=objective_fn,
@@ -214,7 +233,7 @@ def pgd_masked_recon_loss_update(
             )
 
     sampled_mask_infos = make_mask_infos(
-        component_masks=adversarial_component_masks,
+        component_masks=interpolate_component_mask(ci, adversarial_component_sample_points),
         weight_deltas_and_masks=adversarial_weight_deltas_and_masks,
         routing_masks=routing_masks,
     )
