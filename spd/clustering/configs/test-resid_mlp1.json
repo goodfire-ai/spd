@@ -8,7 +8,6 @@
     "pop_component_prob": 0,
     "filter_dead_threshold": 0.1,
     "module_name_filter": null,
-    "rank_cost_fn_name": "const_1"
   },
   "experiment_key": "resid_mlp1",
   "n_batches": 2,
