@@ -8,6 +8,7 @@ from torch.distributed import ReduceOp
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.utils.distributed_utils import all_reduce
+from spd.utils.general_utils import get_obj_device
 
 
 def _get_linear_annealed_p(
@@ -72,7 +73,7 @@ def _importance_minimality_loss_update(
         p_anneal_final_p=p_anneal_final_p,
         p_anneal_end_frac=p_anneal_end_frac,
     )
-    device = next(iter(ci_upper_leaky.values())).device
+    device = get_obj_device(ci_upper_leaky)
     sum_loss = torch.tensor(0.0, device=device)
     for layer_ci_upper_leaky in ci_upper_leaky.values():
         # Note: layer_ci_upper_leaky already >= 0
