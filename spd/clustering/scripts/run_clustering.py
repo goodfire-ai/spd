@@ -94,7 +94,7 @@ class ClusteringRunConfig(BaseConfig):
     dataset_seed: int = Field(0, description="Seed for dataset generation/loading")
     idx_in_ensemble: int = Field(0, description="Index of this run in the ensemble")
     output_dir: Path = Field(
-        default=SPD_CACHE_DIR / "clustering" / "clustering_runs",
+        default=SPD_CACHE_DIR / "clustering" / "runs",
         description="Directory to save merge history",
     )
     ensemble_id: str = Field(
@@ -292,6 +292,7 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
                 "clustering",
                 f"task:{task_name}",
                 f"model:{run_config.wandb_decomp_model}",
+                f"ensemble_id:{run_config.ensemble_id}",
                 f"idx:{run_config.idx_in_ensemble}",
             ],
         )
@@ -361,8 +362,9 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
     )
 
     # 8. Save merge history
-    run_config.output_dir.mkdir(parents=True, exist_ok=True)
-    history_path = run_config.output_dir / f"history_{run_config.idx_in_ensemble}.npz"
+    out_dir = run_config.output_dir / run_config.ensemble_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    history_path = out_dir / f"history_{run_config.idx_in_ensemble}.npz"
     history.save(history_path, wandb_url=run.url if run else None)
     logger.info(f"✓ History saved to {history_path}")
 

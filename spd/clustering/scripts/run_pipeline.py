@@ -39,12 +39,12 @@ class ClusteringPipelineConfig(BaseConfig):
 
 
 def generate_run_id_for_ensemble(_config: ClusteringPipelineConfig) -> str:
-    """Generate a unique ensemble identifier based on config.
+    """Generate a unique ensemble identifier based on timestamp.
 
     This is used as the ensemble_id component in individual run IDs.
-    Format: clustering_{timestamp}
+    Format: timestamp
     """
-    return f"clustering_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
+    return datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
 
 
 def generate_clustering_commands(
@@ -141,7 +141,7 @@ def main(submit_config_path: Path, n_runs: int | None = None) -> None:
             {
                 "Array Job ID": array_job_id,
                 "Total runs": len(commands),
-                "Ensemble hash": ensemble_id,
+                "Ensemble id": ensemble_id,
                 "Logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
             }
         )
