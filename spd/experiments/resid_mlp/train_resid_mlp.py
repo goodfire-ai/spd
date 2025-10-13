@@ -205,45 +205,15 @@ def run_train(config: ResidMLPTrainConfig, device: str) -> Float[Tensor, ""]:
 
 if __name__ == "__main__":
     device = get_device()
-    # 1 layer
-    config = ResidMLPTrainConfig(
-        wandb_project="spd",
-        seed=0,
-        resid_mlp_model_config=ResidMLPModelConfig(
-            n_features=100,  # 1 layer
-            d_embed=1000,
-            d_mlp=50,  # 1 layer
-            n_layers=1,  # 1 layer
-            act_fn_name="relu",
-            in_bias=False,
-            out_bias=False,
-        ),
-        label_fn_seed=0,
-        label_type="act_plus_resid",
-        loss_type="readoff",
-        use_trivial_label_coeffs=True,
-        feature_probability=0.01,
-        # synced_inputs=[[0, 1], [2, 3]], # synced inputs
-        importance_val=1,
-        data_generation_type="at_least_zero_active",
-        batch_size=2048,
-        steps=1000,  # 1 layer
-        print_freq=100,
-        lr=3e-3,
-        lr_schedule="cosine",
-        fixed_random_embedding=True,
-        fixed_identity_embedding=False,
-        n_batches_final_losses=10,
-    )
-    # # 2 layers
-    # config = ResidualMLPTrainConfig(
+    # # 1 layer
+    # config = ResidMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
     #     resid_mlp_model_config=ResidMLPModelConfig(
-    #         n_features=100, # 2 layers
+    #         n_features=100,  # 1 layer
     #         d_embed=1000,
-    #         d_mlp=25, # 2 layers
-    #         n_layers=2, # 2 layers
+    #         d_mlp=50,  # 1 layer
+    #         n_layers=1,  # 1 layer
     #         act_fn_name="relu",
     #         in_bias=False,
     #         out_bias=False,
@@ -257,7 +227,7 @@ if __name__ == "__main__":
     #     importance_val=1,
     #     data_generation_type="at_least_zero_active",
     #     batch_size=2048,
-    #     steps=1000, # 2 layers
+    #     steps=1000,  # 1 layer
     #     print_freq=100,
     #     lr=3e-3,
     #     lr_schedule="cosine",
@@ -265,8 +235,38 @@ if __name__ == "__main__":
     #     fixed_identity_embedding=False,
     #     n_batches_final_losses=10,
     # )
+    # # 2 layers
+    config = ResidMLPTrainConfig(
+        wandb_project="spd",
+        seed=0,
+        resid_mlp_model_config=ResidMLPModelConfig(
+            n_features=100, # 2 layers
+            d_embed=1000,
+            d_mlp=25, # 2 layers
+            n_layers=2, # 2 layers
+            act_fn_name="relu",
+            in_bias=False,
+            out_bias=False,
+        ),
+        label_fn_seed=0,
+        label_type="act_plus_resid",
+        loss_type="readoff",
+        use_trivial_label_coeffs=True,
+        feature_probability=0.01,
+        # synced_inputs=[[0, 1], [2, 3]], # synced inputs
+        importance_val=1,
+        data_generation_type="at_least_zero_active",
+        batch_size=2048,
+        steps=100000, # 2 layers
+        print_freq=100,
+        lr=3e-3,
+        lr_schedule="cosine",
+        fixed_random_embedding=True,
+        fixed_identity_embedding=False,
+        n_batches_final_losses=10,
+    )
     # # 3 layers
-    # config = ResidualMLPTrainConfig(
+    # config = ResidMLPTrainConfig(
     #     wandb_project="spd",
     #     seed=0,
     #     resid_mlp_model_config=ResidMLPModelConfig(

@@ -230,6 +230,32 @@
                 "--model_path",
                 "wandb:goodfire/spd/runs/ioprgffh"
             ]
+        },
+        {
+            "name": "plotting_template",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/scripts/plotting_template/plotting_template.py",
+            "args": ["${workspaceFolder}/spd/scripts/plotting_template/plotting_template_config.yaml"],
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "forward_plot",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/scripts/forward_plot/forward_plot.py",
+            "args": ["${workspaceFolder}/spd/scripts/forward_plot/forward_plot_config.yaml"],
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
         }
     ]
 }
