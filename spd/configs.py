@@ -12,6 +12,7 @@ from pydantic import (
     model_validator,
 )
 
+from spd.base_config import BaseConfig
 from spd.experiments.ih.configs import IHTaskConfig
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
@@ -20,7 +21,6 @@ from spd.log import logger
 from spd.models.components import CiFnType
 from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
-from spd.utils.general_utils import BaseConfig
 
 
 #### Metrics that can be used in training (or eval) ####

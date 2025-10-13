@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import Field, PositiveInt
 
-from spd.utils.general_utils import BaseConfig
+from spd.base_config import BaseConfig
 
 
 class LMTaskConfig(BaseConfig):
