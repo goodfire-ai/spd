@@ -499,7 +499,7 @@ class TestConfigIntegration:
 
             # Verify JSON serialization round-trip
             json_str = f"json:{json.dumps(config.model_dump(mode='json'))}"
-            reloaded_config = Config.load(json_str)
+            reloaded_config = Config(**json.loads(json_str.removeprefix("json:")))
             assert reloaded_config.seed == config.seed
             assert (
                 reloaded_config.loss_metric_configs[0].coeff == config.loss_metric_configs[0].coeff
