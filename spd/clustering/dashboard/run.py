@@ -56,7 +56,14 @@ def main(dashboard_config: DashboardConfig) -> None:
         if dashboard_config.iteration >= 0
         else merge_history.n_iters_current + dashboard_config.iteration
     )
-    merge: GroupMerge = merge_history.merges[actual_iteration]
+    try:
+        merge: GroupMerge = merge_history.merges[actual_iteration]
+    except Exception as e:
+        raise ValueError(
+            f"Invalid iteration {dashboard_config.iteration} (resolved to {actual_iteration})"
+            f"for merge history with {merge_history.n_iters_current} iterations"
+            f"{merge_history.merges.group_idxs.shape = }"
+        ) from e
 
     # Set up output directory with iteration count
     dir_name: str = f"{run_id}-i{actual_iteration}"
