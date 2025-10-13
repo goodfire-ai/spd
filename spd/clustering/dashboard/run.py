@@ -131,7 +131,7 @@ def cli() -> None:
     args: argparse.Namespace = parser.parse_args()
 
     # Load config
-    config: DashboardConfig = DashboardConfig.read(args.config)
+    config: DashboardConfig = DashboardConfig.from_file(args.config)
     logger.info(f"Loaded config from: {args.config}")
 
     # Setup output directory and write HTML if requested
