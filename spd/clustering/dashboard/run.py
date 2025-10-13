@@ -10,8 +10,8 @@ import wandb
 from muutils.spinner import SpinnerContext
 from wandb.apis.public import Run
 
-from spd.clustering.dashboard.compute_max_act import compute_max_activations
-from spd.clustering.dashboard.dashboard_io import (
+from spd.clustering.dashboard.core.compute_max_act import compute_max_activations
+from spd.clustering.dashboard.core.dashboard_io import (
     generate_model_info,
     load_wandb_artifacts,
     setup_model_and_data,
