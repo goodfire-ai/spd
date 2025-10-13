@@ -9,10 +9,10 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+import wandb_workspaces.workspaces as ws
 from pydantic import Field, PositiveInt
 
 from spd.base_config import BaseConfig
-from spd.clustering.utils.wandb_utils import create_clustering_workspace_view
 from spd.log import logger
 from spd.utils.general_utils import replace_pydantic_model
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
@@ -36,6 +36,30 @@ class ClusteringPipelineConfig(BaseConfig):
     )
     wandb_entity: str = Field(description="WandB entity (team/user) name")
     create_git_snapshot: bool = Field(description="Create a git snapshot for the run")
+
+
+def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str) -> str:
+    """Create WandB workspace view for clustering runs.
+
+    TODO: Use a template workspace which actually shows some panels
+
+    Args:
+        ensemble_id: Unique identifier for this ensemble
+        project: WandB project name
+        entity: WandB entity (team/user) name
+
+    Returns:
+        URL to workspace view
+    """
+    workspace = ws.Workspace(entity=entity, project=project)
+    workspace.name = f"Clustering - {ensemble_id}"
+
+    workspace.runset_settings.filters = [
+        ws.Tags("tags").isin([f"ensemble_id:{ensemble_id}"]),
+    ]
+
+    workspace.save_as_new_view()
+    return workspace.url
 
 
 def generate_run_id_for_ensemble(_config: ClusteringPipelineConfig) -> str:
