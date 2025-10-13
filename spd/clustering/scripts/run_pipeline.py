@@ -162,7 +162,7 @@ def cli():
     )
 
     parser.add_argument(
-        "--n_runs",
+        "--n-runs",
         type=int,
         help="Number of clustering runs in the ensemble",
     )
