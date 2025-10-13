@@ -32,9 +32,9 @@ def get_pgd_init_tensor(
         case "random":
             return torch.rand(shape, device=device)
         case "ones":
-            return torch.full(shape, 1.0, device=device)
+            return torch.ones(shape, device=device)
         case "zeroes":
-            return torch.full(shape, 0.0, device=device)
+            return torch.zeros(shape, device=device)
 
 
 def optimize_adversarial_stochastic_masks(
@@ -56,15 +56,16 @@ def optimize_adversarial_stochastic_masks(
     - weight_delta_rand_masks: per-layer tensors with leading dims matching inputs (or None)
     """
 
+    # batch dims is either (B,) or (B, S)
+    *batch_dims, C = example_shape
     match pgd_config.mask_scope:
-        case "shared_across_batch":
-            ci_mask_shape = example_shape
-            weight_delta_mask_shape = example_shape[:-1]
         case "unique_per_datapoint":
-            # ones for leading dims apart from the C dim - use the same C mask for all datapoints
-            ci_mask_shape = torch.Size(1 for _ in example_shape[:-1]) + example_shape[-1:]
-            # ones for all dims - use the same weight delta mask for all datapoints
-            weight_delta_mask_shape = torch.Size(1 for _ in example_shape[:-1])
+            ci_mask_shape = torch.Size(batch_dims) + (C,)
+            weight_delta_mask_shape = torch.Size(batch_dims)
+        case "shared_across_batch":
+            # replace all batch dims with 1 so we broadcast the same mask across all datapoints
+            ci_mask_shape = torch.Size(1 for _ in batch_dims) + (C,)
+            weight_delta_mask_shape = torch.Size(1 for _ in batch_dims)
 
     component_mask: dict[str, Float[Tensor, "... C"]] = {}
     for layer in layers:
