@@ -40,6 +40,10 @@ class DashboardData:
     _finalized: bool = False
     _combined_activations: ActivationSampleBatch | None = None
 
+    # Cluster coactivation data
+    coactivations: Float[np.ndarray, "n_clusters n_clusters"] | None = None
+    cluster_indices: list[int] | None = None
+
     # activations_map maps ActivationSampleHash to index in combined activations
 
     @classmethod
@@ -261,6 +265,8 @@ class DashboardData:
         - text_samples.json - All text samples by hash
         - activations.npz - Numpy array with all activations (float16, compressed)
         - activations_map.json - Maps activation hashes to indices in activations array
+        - coactivations.npz - Cluster coactivation matrix and indices
+        - model_info.json - Model and clustering information
         """
         # Accessing activations_map will trigger finalization if needed
         _ = self.activations_map
@@ -319,3 +325,11 @@ class DashboardData:
         # Save compact activations map
         with open(output_path / "activations_map.json", "w") as f:
             json.dump(compact_map, f, indent=2)
+
+        # Save coactivation matrix if present
+        if self.coactivations is not None and self.cluster_indices is not None:
+            np.savez(
+                output_path / "coactivations.npz",
+                coactivations=self.coactivations,
+                cluster_indices=np.array(self.cluster_indices),
+            )

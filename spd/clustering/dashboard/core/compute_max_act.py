@@ -34,7 +34,7 @@ def compute_max_activations(
     n_samples: int,
     n_batches: int,
     clustering_run: str,
-) -> tuple[DashboardData, Float[np.ndarray, "n_clusters n_clusters"], list[int]]:
+) -> DashboardData:
     """Compute max-activating text samples for each cluster and coactivation matrix.
 
     Args:
@@ -49,9 +49,7 @@ def compute_max_activations(
         clustering_run: Clustering run identifier
 
     Returns:
-        Tuple of (DashboardData, coactivation_matrix, cluster_indices) where coactivation_matrix[i,j]
-        is the number of samples where both cluster i and j activate, and cluster_indices maps
-        matrix positions to cluster IDs
+        DashboardData with all cluster data, text samples, and coactivation information
     """
     device: torch.device = get_obj_device(model)
 
@@ -129,4 +127,8 @@ def compute_max_activations(
             storage.all_cluster_activations
         )
 
-    return dashboard, coactivations, cluster_indices
+    # Attach coactivation data to dashboard
+    dashboard.coactivations = coactivations
+    dashboard.cluster_indices = cluster_indices
+
+    return dashboard

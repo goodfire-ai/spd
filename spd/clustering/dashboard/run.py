@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import wandb
 from muutils.spinner import SpinnerContext
 from wandb.apis.public import Run
@@ -66,7 +65,7 @@ def main(config: DashboardConfig) -> None:
 
     # Compute max activations
     logger.info("computing max activations")
-    dashboard_data, coactivations, cluster_indices = compute_max_activations(
+    dashboard_data = compute_max_activations(
         model=model,
         sigmoid_type=spd_config.sigmoid_type,
         tokenizer=tokenizer,
@@ -78,7 +77,8 @@ def main(config: DashboardConfig) -> None:
         clustering_run=run_id,
     )
     logger.info(f"computed max activations: {len(dashboard_data.clusters) = }")
-    logger.info(f"computed coactivations: shape={coactivations.shape}")
+    if dashboard_data.coactivations is not None:
+        logger.info(f"computed coactivations: shape={dashboard_data.coactivations.shape}")
     merge: GroupMerge = merge_history.merges[actual_iteration]
 
     # Generate model information and save
@@ -95,24 +95,15 @@ def main(config: DashboardConfig) -> None:
             wandb_clustering_run=wandb_clustering_run,
         )
 
-        # Save dashboard data using new structure
-        logger.info("Saving dashboard data")
-        dashboard_data.save(str(final_output_dir))
-        logger.info(f"Dashboard data saved to: {final_output_dir}")
-
         # Save model info
         model_info_path: Path = final_output_dir / "model_info.json"
         model_info_path.write_text(json.dumps(model_info, indent=2))
         logger.info(f"Model info saved to: {model_info_path}")
 
-        # Save coactivation matrix
-        coactivations_path: Path = final_output_dir / "coactivations.npz"
-        np.savez(
-            coactivations_path,
-            coactivations=coactivations,
-            cluster_indices=np.array(cluster_indices),
-        )
-        logger.info(f"Coactivations saved to: {coactivations_path}")
+        # Save dashboard data (includes coactivations)
+        logger.info("Saving dashboard data")
+        dashboard_data.save(str(final_output_dir))
+        logger.info(f"Dashboard data saved to: {final_output_dir}")
 
 
 def cli() -> None:
