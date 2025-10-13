@@ -1,16 +1,15 @@
 """Configuration for merge clustering runs that combines merge config with run parameters."""
 
 import hashlib
-import json
 import tomllib
 import warnings
 from pathlib import Path
 from typing import Any, Literal, Self
 
-import yaml
 from muutils.misc.numerical import shorten_numerical_to_str
-from pydantic import BaseModel, Field, PositiveInt, model_validator
+from pydantic import Field, PositiveInt, model_validator
 
+from spd.base_config import BaseConfig
 from spd.clustering.consts import DistancesMethod
 from spd.clustering.merge_config import MergeConfig
 from spd.registry import EXPERIMENT_REGISTRY, ExperimentConfig
@@ -67,7 +66,7 @@ def toml_read_file_with_none(path: Path, null_sentinel: str = "__NULL__") -> dic
     return replace_sentinel_recursive(data)
 
 
-class ClusteringRunConfig(BaseModel):
+class ClusteringRunConfig(BaseConfig):
     """Configuration for a complete merge clustering run.
 
     Extends MergeConfig with parameters for model, dataset, and batch configuration.
@@ -174,6 +173,37 @@ class ClusteringRunConfig(BaseModel):
             )
         return self
 
+    @model_validator(mode="before")
+    def handle_experiment_key(data: dict[str, Any]) -> dict[str, Any]:
+        """handle passing experiment key instead of model_path and task_name.
+
+        if we provide an experiment_key, then:
+        1. use the `EXPERIMENT_REGISTRY` to fill in model_path and task_name
+        2. check it's consistent with model_path and task_name from the file if those are provided
+
+        """
+        experiment_key: str | None = data.get("experiment_key")
+        model_path: str | None = data.get("model_path")
+        task_name: str | None = data.get("task_name")
+        if experiment_key is not None:
+            exp_config: ExperimentConfig = EXPERIMENT_REGISTRY[experiment_key]
+
+            # Enforce consistency if explicit fields present
+            if model_path is not None:
+                assert model_path == exp_config.canonical_run, (
+                    f"Inconsistent model_path for {experiment_key}, version from file ({model_path}) does not match registry ({exp_config.canonical_run})"
+                )
+            if task_name is not None:
+                assert task_name == exp_config.task_name, (
+                    f"Inconsistent task_name for {experiment_key}, version from file ({task_name}) does not match registry ({exp_config.task_name})"
+                )
+
+            # overwrite in data dict
+            data["model_path"] = exp_config.canonical_run
+            data["task_name"] = exp_config.task_name
+
+        return data
+
     @property
     def wandb_decomp_model(self) -> str:
         """Extract the WandB run ID of the source decomposition from the model_path
@@ -212,70 +242,6 @@ class ClusteringRunConfig(BaseModel):
     def stable_hash(self) -> str:
         """Generate a stable hash including all config parameters."""
         return hashlib.md5(self.model_dump_json().encode()).hexdigest()[:6]
-
-    @classmethod
-    def read(cls, path: Path) -> "ClusteringRunConfig":
-        """Load config from JSON, YAML, or TOML file.
-
-        Handles legacy spd_exp: model_path format and enforces consistency.
-        For TOML files, the sentinel value "__NULL__" is converted to None.
-        """
-        # read the file contents, load them according to extension
-        data: dict[str, Any]
-        content: str
-        if path.suffix == ".json":
-            content = path.read_text()
-            data = json.loads(content)
-        elif path.suffix in [".yaml", ".yml"]:
-            content = path.read_text()
-            data = yaml.safe_load(content)
-        elif path.suffix == ".toml":
-            data = toml_read_file_with_none(path)
-        else:
-            raise ValueError(
-                f"Unsupported file extension '{path.suffix}' on file '{path}' -- must be .json, .yaml, .yml, or .toml"
-            )
-
-        # if we provide an experiment_key, then:
-        # 1. use the `EXPERIMENT_REGISTRY` to fill in model_path and task_name
-        # 2. check it's consistent with model_path and task_name from the file if those are provided
-        experiment_key: str | None = data.get("experiment_key")
-        model_path: str | None = data.get("model_path")
-        task_name: str | None = data.get("task_name")
-        if experiment_key is not None:
-            exp_config: ExperimentConfig = EXPERIMENT_REGISTRY[experiment_key]
-
-            # Enforce consistency if explicit fields present
-            if model_path is not None:
-                assert model_path == exp_config.canonical_run, (
-                    f"Inconsistent model_path for {experiment_key}, version from file ({model_path}) does not match registry ({exp_config.canonical_run})"
-                )
-            if task_name is not None:
-                assert task_name == exp_config.task_name, (
-                    f"Inconsistent task_name for {experiment_key}, version from file ({task_name}) does not match registry ({exp_config.task_name})"
-                )
-
-            # overwrite in data dict
-            data["model_path"] = exp_config.canonical_run
-            data["task_name"] = exp_config.task_name
-
-        return cls.model_validate(data)
-
-    def save(self, path: Path) -> None:
-        """Save config to file (format inferred from extension)."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.suffix == ".json":
-            path.write_text(self.model_dump_json(indent=2))
-        elif path.suffix in [".yaml", ".yml"]:
-            path.write_text(
-                yaml.dump(
-                    self.model_dump(mode="json"),
-                    default_flow_style=False,
-                    sort_keys=False,
-                )
-            )
-        else:
-            raise ValueError(f"Unsupported file extension: {path.suffix}")
 
     def model_dump_with_properties(self) -> dict[str, Any]:
         """Serialize config including computed properties for WandB logging."""

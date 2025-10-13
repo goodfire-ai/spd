@@ -67,7 +67,7 @@ def cli() -> None:
     # Note that the defaults for args here always override the default values in `RunConfig` itself,
     # but we must have those defaults to avoid type issues
     logger.info(f"Loading config from {args.config}")
-    config: ClusteringRunConfig = ClusteringRunConfig.read(args.config)
+    config: ClusteringRunConfig = ClusteringRunConfig.from_file(args.config)
     config.base_path = args.base_path
     config.devices = devices
     config.workers_per_device = args.workers_per_device

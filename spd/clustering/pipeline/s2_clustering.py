@@ -384,7 +384,7 @@ def cli() -> None:
     args: argparse.Namespace = parser.parse_args()
 
     # Load config
-    config: ClusteringRunConfig = ClusteringRunConfig.read(args.config)
+    config: ClusteringRunConfig = ClusteringRunConfig.from_file(args.config)
 
     # Run clustering
     result: ClusteringResult = run_clustering(
