@@ -9,7 +9,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
@@ -79,7 +79,7 @@ class StochasticReconSubsetCEAndKL(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
-        ci: ComponentModel.CIOutputs,
+        ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
         **_: Any,
     ) -> None:

@@ -27,14 +27,14 @@ from spd.metrics import (
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
 )
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 
 
 def compute_total_loss(
     loss_metric_configs: list[TrainMetricConfigType],
     model: ComponentModel,
     batch: Int[Tensor, "..."],
-    ci: ComponentModel.CIOutputs,
+    ci: CIOutputs,
     target_out: Tensor,
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],

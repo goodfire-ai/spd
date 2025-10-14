@@ -76,6 +76,13 @@ class OutputWithCache(NamedTuple):
     cache: dict[str, Tensor]
 
 
+@dataclass
+class CIOutputs:
+    lower_leaky: dict[str, Float[Tensor, "... C"]]
+    upper_leaky: dict[str, Float[Tensor, "... C"]]
+    pre_sigmoid: dict[str, Tensor]
+
+
 class ComponentModel(LoadableModule):
     """Wrapper around an arbitrary pytorch model for running SPD.
 
@@ -144,7 +151,6 @@ class ComponentModel(LoadableModule):
             # For other sigmoid types, use the same function for both
             self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
             self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
-
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
@@ -526,12 +532,6 @@ class ComponentModel(LoadableModule):
         run_info = SPDRunInfo.from_path(path)
         return cls.from_run_info(run_info)
 
-    @dataclass
-    class CIOutputs:
-        lower_leaky: dict[str, Float[Tensor, "... C"]]
-        upper_leaky: dict[str, Float[Tensor, "... C"]]
-        pre_sigmoid: dict[str, Tensor]
-
     def calc_causal_importances(
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
@@ -579,7 +579,7 @@ class ComponentModel(LoadableModule):
             causal_importances_upper_leaky[param_name] = self.upper_leaky_fn(ci_fn_output).abs()
             pre_sigmoid[param_name] = ci_fn_output
 
-        return self.CIOutputs(
+        return CIOutputs(
             lower_leaky=causal_importances,
             upper_leaky=causal_importances_upper_leaky,
             pre_sigmoid=pre_sigmoid,

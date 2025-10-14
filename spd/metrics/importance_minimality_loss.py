@@ -6,7 +6,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
@@ -148,7 +148,7 @@ class ImportanceMinimalityLoss(Metric):
     def update(
         self,
         *,
-        ci: ComponentModel.CIOutputs,
+        ci: CIOutputs,
         current_frac_of_training: float,
         **_: Any,
     ) -> None:

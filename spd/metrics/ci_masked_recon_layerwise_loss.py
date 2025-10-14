@@ -6,7 +6,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
@@ -70,7 +70,7 @@ class CIMaskedReconLayerwiseLoss(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
-        ci: ComponentModel.CIOutputs,
+        ci: CIOutputs,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _ci_masked_recon_layerwise_loss_update(

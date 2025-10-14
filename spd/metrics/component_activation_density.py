@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.plotting import plot_component_activation_density
 from spd.utils.distributed_utils import all_reduce
 
@@ -28,7 +28,7 @@ class ComponentActivationDensity(Metric):
         }
 
     @override
-    def update(self, *, ci: ComponentModel.CIOutputs, **_: Any) -> None:
+    def update(self, *, ci: CIOutputs, **_: Any) -> None:
         n_examples_this_batch = next(iter(ci.lower_leaky.values())).shape[:-1].numel()
         self.n_examples += n_examples_this_batch
 

@@ -9,7 +9,7 @@ from typing import Any, ClassVar, Protocol
 from jaxtyping import Float, Int
 from torch import Tensor
 
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs
 
 
 class Metric(Protocol):
@@ -23,7 +23,7 @@ class Metric(Protocol):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         pre_weight_acts: dict[str, Float[Tensor, "..."]],
-        ci: ComponentModel.CIOutputs,
+        ci: CIOutputs,
         current_frac_of_training: float,
         weight_deltas: dict[str, Float[Tensor, "... C"]],
     ) -> None:

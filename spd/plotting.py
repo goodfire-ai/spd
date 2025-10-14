@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from PIL import Image
 from torch import Tensor
 
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import Components
 from spd.utils.general_utils import get_obj_device
 from spd.utils.target_ci_solutions import permute_to_dense, permute_to_identity
@@ -180,7 +180,7 @@ def get_single_feature_causal_importances(
     batch_shape: tuple[int, ...],
     input_magnitude: float,
     sampling: Literal["continuous", "binomial"],
-) -> ComponentModel.CIOutputs:
+) -> CIOutputs:
     """Compute causal importance arrays for single active features.
 
     Args:

@@ -7,7 +7,7 @@ from PIL import Image
 from torch import Tensor
 
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.plotting import plot_ci_values_histograms
 from spd.utils.distributed_utils import gather_all_tensors
 
@@ -27,7 +27,7 @@ class CIHistograms(Metric):
         self.pre_sigmoid_causal_importances = defaultdict[str, list[Float[Tensor, "... C"]]](list)
 
     @override
-    def update(self, *, ci: ComponentModel.CIOutputs, **_: Any) -> None:
+    def update(self, *, ci: CIOutputs, **_: Any) -> None:
         if self.n_batches_accum is not None and self.batches_seen >= self.n_batches_accum:
             return
 

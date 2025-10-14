@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
@@ -63,7 +63,7 @@ class CEandKLLosses(Metric):
         *,
         batch: Tensor,
         target_out: Tensor,
-        ci: ComponentModel.CIOutputs,
+        ci: CIOutputs,
         **_: Any,
     ) -> None:
         ce_losses = self._calc_ce_and_kl_losses(
