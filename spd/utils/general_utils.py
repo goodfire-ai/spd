@@ -452,3 +452,7 @@ def zip_dicts(*dicts: dict[str, Any]) -> dict[str, tuple[Any, ...]]:
         assert set(d.keys()) == all_keys
         all_keys.update(d.keys())
     return {k: tuple(d[k] for d in dicts) for k in all_keys}
+
+
+def map_dict_vals[T](d: dict[str, T], f: Callable[[T], T]) -> dict[str, T]:
+    return {k: f(v) for k, v in d.items()}
