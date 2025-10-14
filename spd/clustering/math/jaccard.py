@@ -32,13 +32,14 @@ def show_matrix(
         cmap: str = "viridis",
         vlims: tuple[float, float] | float | None = None,
         ax: plt.Axes | None = None,
+        num_fmt: str = ".2f",
     ) -> None:
     """Display a matrix with values annotated on each cell."""
     mat_np: np.ndarray
     mat_np = mat.cpu().numpy() if isinstance(mat, torch.Tensor) else mat
 
     if ax is None:
-        _fig, ax = plt.subplots()
+        _fig, ax = plt.subplots(figsize=(10, 10))
         show_colorbar = True
         show_plot = True
     else:
@@ -60,7 +61,7 @@ def show_matrix(
             ax.text(
                 j,
                 i,
-                f"{mat_np[i, j]:.2f}",
+                f"{mat_np[i, j]:{num_fmt}}",
                 ha="center",
                 va="center",
                 color="white" if mat_np[i, j] < mat_np.max() / 2 else "black",
@@ -106,36 +107,39 @@ def jaccard_index(
     # Row 0: onehot expanded
     # Row 1: matches
     # Rows 2 to s+1: dist_mat for each pair
-    fig, axes = plt.subplots(s_ensemble + 2, s_ensemble, figsize=(s_ensemble * 3, (s_ensemble + 2) * 3))
+    fig, axes = plt.subplots(s_ensemble + 2, s_ensemble, figsize=(s_ensemble, (s_ensemble + 2)))
 
     # Top row: onehot expanded
     for i in range(s_ensemble):
         onehot = expand_to_onehot(X[i], k_groups=int(X[i].max())).cpu().numpy()
         axes[0, i].matshow(onehot, cmap="Blues")
-        axes[0, i].set_title(f"onehot {i}")
+        axes[0, i].set_title(f"{i}")
         axes[0, i].axis("off")
 
     # Second row: matches
     for i in range(s_ensemble):
         axes[1, i].matshow(matches[i].cpu().numpy())
-        axes[1, i].set_title(f"matches {i}")
+        # axes[1, i].set_title(f"matches {i}")
         axes[1, i].axis("off")
 
     # Lower s rows: dist_mat for each pair
     for i in range(s_ensemble):
         for j in range(s_ensemble):
             dist_mat = (matches[i].float() - matches[j].float())
-            dbg_auto(dist_mat)
+            # dbg_auto(dist_mat)
 
             # Plot dist_mat on axes[i + 2, j]
             im = axes[i + 2, j].matshow(dist_mat.cpu().numpy(), cmap="RdBu", vmin=-1, vmax=1)
-            axes[i + 2, j].set_title(f"diff {i}-{j}", fontsize=8)
+            # axes[i + 2, j].set_title(f"diff {i}-{j}", fontsize=8)
             axes[i + 2, j].axis("off")
 
             # Compute distance
-            dist: float = torch.tril(dist_mat, diagonal=-1).abs().max(dim=-1).values.sum().item()
+            dist: float = (
+                torch.tril(dist_mat, diagonal=-1).abs().sum()
+                # > (_n_components / 2)   
+            ).item()
             _jaccard[i, j] = dist
-            dbg_auto((i, j, dist))
+            # dbg_auto((i, j, dist))
 
     plt.tight_layout()
     plt.show()
@@ -162,14 +166,14 @@ X_test = torch.tensor(
         # [1, 2, 3, 3],
         # [0, 1, 2, 3],
         # 
-        # [0, 1, 1, 2, 3, 3],
-        # [3, 0, 0, 1, 2, 2],
-        # [0, 3, 1, 1, 2, 2],
-        # [0, 3, 0, 0, 1, 1],
-        # [0, 0, 1, 0, 0, 1],
-        # [0, 0, 0, 0, 0, 1],
-        # [2, 3, 0, 0, 1, 1],
-        # [2, 3, 0, 0, 1, 2],
+        [0, 1, 1, 2, 3, 3],
+        [3, 0, 0, 1, 2, 2],
+        [0, 3, 1, 1, 2, 2],
+        [0, 3, 0, 0, 1, 1],
+        [0, 0, 1, 0, 0, 1],
+        [0, 0, 0, 0, 0, 1],
+        [2, 3, 0, 0, 1, 1],
+        [2, 3, 0, 0, 1, 2],
         # 
         [0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 1],
@@ -201,13 +205,13 @@ jcrd = jaccard_index(X_test)
 # plt.title("perm-invariant Hamming distance")
 # plt.colorbar()
 # plt.show()
-show_matrix(pih, title="perm-invariant Hamming distance", cmap="viridis")
+show_matrix(pih, title="perm-invariant Hamming distance", cmap="viridis", num_fmt=".0f")
 
 # plt.matshow(jcrd.numpy())
 # plt.title("jaccard index")
 # plt.colorbar()
 # plt.show()
-show_matrix(jcrd, title="jaccard index", cmap="viridis")
+show_matrix(jcrd, title="jaccard index", cmap="viridis", num_fmt=".0f")
 
 diff = jcrd.numpy() - pih
 dbg_auto(diff)
@@ -223,11 +227,11 @@ dbg_auto(vlim)
 # plt.colorbar()
 # plt.show()
 
-show_matrix(diff, title="difference", cmap="RdBu", vlims=vlim)
+show_matrix(diff, title="difference", cmap="RdBu", vlims=vlim, num_fmt=".0f")
 
 
 ratio = jcrd.numpy() / pih
 
-show_matrix(ratio, title="ratio", cmap="RdBu", vlims=(-3, 5))
+show_matrix(ratio, title="ratio", cmap="RdBu", vlims=(-5, 7))
 
 # dbg(X - z[0])
