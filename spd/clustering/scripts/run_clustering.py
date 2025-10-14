@@ -1,9 +1,29 @@
-"""Run clustering on a single dataset."""
+"""Perform a single clustering run.
+
+This can be run as a standalone script, or called via `spd-cluster` (i.e. clustering/scripts/run_pipeline.py).
+If the latter, then the following values of ClusteringRunConfig will be overridden by the values
+obtained from the submitter:
+- dataset_seed
+- idx_in_ensemble
+- base_output_dir
+- ensemble_id
+
+Output structure:
+    <base_output_dir>/ (e.g. SPD_CACHE_DIR / "clustering")
+    └── <runs>/
+        └── <ensemble_id>_<idx_in_ensemble>/  # ensemble_id is randomly generated if not passed in via CLI
+            ├── clustering_run_config.json
+            ├── history.npz
+            ├── merge_history_cluster_sizes.png
+            ├── merge_hist_iter.iter_<iter_idx>.zip
+
+"""
 
 import argparse
 import gc
+import random
+import string
 import tempfile
-import uuid
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -45,6 +65,23 @@ from spd.settings import SPD_CACHE_DIR
 from spd.spd_types import TaskName
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import replace_pydantic_model
+
+# Filenames saved to in this script
+CONFIG_FILENAME = "clustering_run_config.json"
+HISTORY_FILENAME = "history.npz"
+
+
+def generate_short_id() -> str:
+    """Generate a short ID similar to wandb style: 'local_' + 8 random lowercase alphanumeric chars.
+
+    TODO: I think we should push our own generated ids to use as wandb ids if we're using wandb.
+    That way, all of our SPD code and call the same function to generate an id for the run, and then
+    we use that we saving outputs.
+    """
+    chars = string.ascii_lowercase + string.digits
+    random_id = "".join(random.choices(chars, k=8))
+    return f"local_{random_id}"
+
 
 LogCallback = Callable[
     [
@@ -94,11 +131,11 @@ class ClusteringRunConfig(BaseConfig):
     dataset_seed: int = Field(0, description="Seed for dataset generation/loading")
     idx_in_ensemble: int = Field(0, description="Index of this run in the ensemble")
     base_output_dir: Path = Field(
-        default=SPD_CACHE_DIR / "clustering" / "runs",
-        description="Directory to save merge history",
+        default=SPD_CACHE_DIR / "clustering",
+        description="Base directory to save clustering runs",
     )
     ensemble_id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()),
+        default_factory=generate_short_id,
         description="Ensemble identifier for WandB grouping",
     )
 
@@ -281,9 +318,9 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
     batch = batch.to(device)
 
     # 2. Setup WandB for this run
-    run: Run | None = None
+    wandb_run: Run | None = None
     if run_config.wandb_project is not None:
-        run = wandb.init(
+        wandb_run = wandb.init(
             entity=run_config.wandb_entity,
             project=run_config.wandb_project,
             group=run_config.ensemble_id,
@@ -296,7 +333,7 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
                 f"idx:{run_config.idx_in_ensemble}",
             ],
         )
-        logger.info(f"WandB run: {run.url}")
+        logger.info(f"WandB run: {wandb_run.url}")
 
     # 3. Load model
     logger.info("Loading model")
@@ -323,16 +360,16 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
     )
 
     # 6. Log activations (if WandB enabled)
-    if run is not None:
+    if wandb_run is not None:
         logger.info("Plotting activations")
         plot_activations(
             processed_activations=processed_activations,
             save_dir=None,  # Don't save to disk, only WandB
             n_samples_max=256,
-            wandb_run=run,
+            wandb_run=wandb_run,
         )
         wandb_log_tensor(
-            run,
+            wandb_run,
             processed_activations.activations,
             "activations",
             0,
@@ -351,7 +388,9 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
     # 7. Run merge iteration
     logger.info("Starting merging")
     log_callback: LogCallback | None = (
-        partial(_log_callback, run=run, run_config=run_config) if run is not None else None
+        partial(_log_callback, run=wandb_run, run_config=run_config)
+        if wandb_run is not None
+        else None
     )
 
     history: MergeHistory = merge_iteration(
@@ -361,22 +400,23 @@ def run_clustering(run_config: ClusteringRunConfig) -> Path:
         log_callback=log_callback,
     )
 
-    # 8. Save merge history
+    # 8. Save merge history and config
     run_dir = (
         run_config.base_output_dir
         / "runs"
         / f"{run_config.ensemble_id}_{run_config.idx_in_ensemble}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
-    history_path = run_dir / "history.npz"
-    history.save(history_path, wandb_url=run.url if run else None)
+    run_config.to_file(run_dir / CONFIG_FILENAME)
+    history_path = run_dir / HISTORY_FILENAME
+    history.save(history_path, wandb_url=wandb_run.url if wandb_run else None)
     logger.info(f"✓ History saved to {history_path}")
 
     # 9. Log to WandB
-    if run is not None:
-        _log_merge_history_plots(run, history)
-        _save_merge_history_artifact(run, history_path, history)
-        run.finish()
+    if wandb_run is not None:
+        _log_merge_history_plots(wandb_run, history)
+        _save_merge_history_artifact(wandb_run, history_path, history)
+        wandb_run.finish()
         logger.info("WandB run finished")
 
     return history_path

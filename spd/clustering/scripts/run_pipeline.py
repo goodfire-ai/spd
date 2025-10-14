@@ -1,7 +1,21 @@
-"""Submit clustering runs to SLURM.
+"""Submit clustering runs to SLURM as separate jobs in a SLURM array.
 
 This script submits independent clustering runs as a SLURM job array,
 where each run gets its own dataset (seeded), WandB run, and merge history output.
+
+Output structure (only pipeline_config.json is saved to directly in this script. The files under
+<runs> are saved by run_clustering.py which is called in SLURM jobs deployed by this script.):
+    <base_output_dir>/ (e.g. SPD_CACHE_DIR / "clustering")
+    ├── ensembles/
+    │   └── <ensemble_id>/
+    │       └── pipeline_config.yaml          # Saved in this script
+    └── runs/                                 # Outputs saved inside SLURM jobs deployed by this script
+        └── <ensemble_id>_<idx_in_ensemble>/  # One of these directories for each of the n_runs
+        |   ├── clustering_run_config.json
+        |   └── history.npz
+        └── ...
+
+
 """
 
 import argparse
@@ -20,10 +34,7 @@ from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
 
 
 class ClusteringPipelineConfig(BaseConfig):
-    """Configuration for submitting an ensemble of clustering runs to SLURM.
-
-    FUTURE: Also handle caculating the distances within an ensemble after the runs are complete.
-    """
+    """Configuration for submitting an ensemble of clustering runs to SLURM."""
 
     run_clustering_config_path: Path = Field(description="Path to ClusteringRunConfig file.")
     n_runs: PositiveInt = Field(description="Number of clustering runs in the ensemble")
