@@ -20,7 +20,7 @@ def plot_activations(
     processed_activations: ProcessedActivations,
     save_dir: Path | None,
     n_samples_max: int,
-    pdf_prefix: str = "activations",
+    figure_prefix: str = "activations",
     figsize_raw: tuple[int, int] = (12, 4),
     figsize_concat: tuple[int, int] = (12, 2),
     figsize_coact: tuple[int, int] = (8, 6),
@@ -37,7 +37,7 @@ def plot_activations(
         coact: Coactivation matrix
         labels: Component labels
         save_dir: The directory to save the plots to (None to skip saving to disk)
-        pdf_prefix: Prefix for PDF filenames
+        figure_prefix: Prefix for PDF filenames
         figsize_raw: Figure size for raw activations
         figsize_concat: Figure size for concatenated activations
         figsize_coact: Figure size for coactivations
@@ -79,7 +79,7 @@ def plot_activations(
         axs_act[i].set_title(f"Raw Activations: {key} (shape: {act_raw_data.shape})")
 
     if save_dir is not None:
-        fig1_fname = save_dir / f"{pdf_prefix}_raw.pdf"
+        fig1_fname = save_dir / f"{figure_prefix}_raw.pdf"
         _fig1.savefig(fig1_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
@@ -103,7 +103,7 @@ def plot_activations(
     plt.colorbar(im2)
 
     if save_dir is not None:
-        fig2_fname: Path = save_dir / f"{pdf_prefix}_concatenated.pdf"
+        fig2_fname: Path = save_dir / f"{figure_prefix}_concatenated.pdf"
         fig2.savefig(fig2_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
@@ -173,7 +173,7 @@ def plot_activations(
         plt.colorbar(im3)
 
         if save_dir is not None:
-            fig3_fname: Path = save_dir / f"{pdf_prefix}_concatenated_sorted.pdf"
+            fig3_fname: Path = save_dir / f"{figure_prefix}_concatenated_sorted.pdf"
             fig3.savefig(fig3_fname, bbox_inches="tight", dpi=300)
 
         # Log to WandB if available
@@ -198,7 +198,7 @@ def plot_activations(
     plt.colorbar(im4)
 
     if save_dir is not None:
-        fig4_fname: Path = save_dir / f"{pdf_prefix}_coactivations.pdf"
+        fig4_fname: Path = save_dir / f"{figure_prefix}_coactivations.pdf"
         fig4.savefig(fig4_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
@@ -223,7 +223,7 @@ def plot_activations(
     add_component_labeling(ax4_log, labels, axis="y")
     plt.colorbar(im4_log)
     if save_dir is not None:
-        fig4_log_fname: Path = save_dir / f"{pdf_prefix}_coactivations_log.pdf"
+        fig4_log_fname: Path = save_dir / f"{figure_prefix}_coactivations_log.pdf"
         fig4_log.savefig(fig4_log_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
@@ -319,7 +319,7 @@ def plot_activations(
     plt.tight_layout()
 
     if save_dir is not None:
-        fig5_fname: Path = save_dir / f"{pdf_prefix}_histograms.pdf"
+        fig5_fname: Path = save_dir / f"{figure_prefix}_histograms.pdf"
         fig5.savefig(fig5_fname, bbox_inches="tight", dpi=300)
 
     # Log to WandB if available
