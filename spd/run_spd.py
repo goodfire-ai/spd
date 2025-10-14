@@ -192,7 +192,7 @@ def optimize(
     for name, component in component_model.components.items():
         component_params.extend(component.parameters())
         ci_fn_params.extend(component_model.ci_fns[name].parameters())
-    
+
     # all_named_params.extend()
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
@@ -288,7 +288,10 @@ def optimize(
 
             grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
             for module_path, param in component_model.named_parameters():
-                assert param.grad is not None
+                if param.grad is None:
+                    assert "target_model" in module_path
+                    continue
+
                 param_grad_sum_sq = param.grad.data.flatten().pow(2).sum()
                 grad_norm_sq_sum += param_grad_sum_sq
                 # frobenius norm as sqrt(sum(square(param.grad)))
