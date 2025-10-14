@@ -14,8 +14,7 @@ Output structure:
         └── <ensemble_id>_<idx_in_ensemble>/  # ensemble_id is randomly generated if not passed in via CLI
             ├── clustering_run_config.json
             ├── history.npz
-            ├── merge_history_cluster_sizes.png
-            ├── merge_hist_iter.iter_<iter_idx>.zip
+
 
 """
 
