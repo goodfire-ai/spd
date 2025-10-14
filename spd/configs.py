@@ -109,8 +109,7 @@ class PermutedCIPlotsConfig(BaseConfig):
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
         """Remove deprecated config keys and change names of any keys that have been renamed."""
-        if "sigmoid_type" in config_dict:
-            del config_dict["sigmoid_type"]
+        config_dict.pop("sigmoid_type", None)
         return config_dict
 
 

@@ -136,7 +136,15 @@ class ComponentModel(LoadableModule):
         self._ci_fns = nn.ModuleDict(
             {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
         )
-        self.sigmoid_type: SigmoidType = sigmoid_type
+
+        if sigmoid_type == "leaky_hard":
+            self.lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
+            self.upper_leaky_fn = SIGMOID_TYPES["upper_leaky_hard"]
+        else:
+            # For other sigmoid types, use the same function for both
+            self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+            self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
@@ -560,22 +568,15 @@ class ComponentModel(LoadableModule):
 
             ci_fn_output = runtime_cast(Tensor, ci_fns(ci_fn_input))
 
-            if self.sigmoid_type == "leaky_hard":
-                lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
-                upper_leaky_fn = SIGMOID_TYPES["upper_leaky_hard"]
-            else:
-                # For other sigmoid types, use the same function for both
-                lower_leaky_fn = SIGMOID_TYPES[self.sigmoid_type]
-                upper_leaky_fn = SIGMOID_TYPES[self.sigmoid_type]
-
-            ci_fn_output_for_lower_leaky = ci_fn_output
             if sampling == "binomial":
                 ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
                     ci_fn_output
                 )
+            else:
+                ci_fn_output_for_lower_leaky = ci_fn_output
 
-            causal_importances[param_name] = lower_leaky_fn(ci_fn_output_for_lower_leaky)
-            causal_importances_upper_leaky[param_name] = upper_leaky_fn(ci_fn_output).abs()
+            causal_importances[param_name] = self.lower_leaky_fn(ci_fn_output_for_lower_leaky)
+            causal_importances_upper_leaky[param_name] = self.upper_leaky_fn(ci_fn_output).abs()
             pre_sigmoid[param_name] = ci_fn_output
 
         return self.CIOutputs(
