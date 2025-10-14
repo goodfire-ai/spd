@@ -169,39 +169,38 @@ def run_all_tests():
     """Run all distributed tests when called directly with mpirun."""
     # Initialize distributed once for all tests
     init_distributed(backend="gloo")
-    rank = get_rank()
-    world_size = get_world_size()
+    try:
+        rank = get_rank()
+        world_size = get_world_size()
 
-    if world_size != 2:
+        assert world_size == 2, f"Tests require exactly 2 ranks, got {world_size}"
+
+        tests = [
+            ("Gather identical shapes", _test_gather_identical_shapes),
+            ("Gather scalar tensors", _test_gather_scalar_tensors),
+            ("Gather multidimensional tensors", _test_gather_multidimensional_tensors),
+            ("Gather empty tensor", _test_gather_empty_tensor),
+            ("Gather float tensor", _test_gather_float_tensor),
+            ("Gather preserves autograd", _test_gather_preserves_autograd),
+        ]
+
         if rank == 0:
-            print(f"✗ Tests require exactly 2 ranks, got {world_size}")
+            print(f"\nRunning {len(tests)} gather_all_tensors tests...\n")
+
+        for test_name, test_func in tests:
+            try:
+                test_func()
+            except Exception as e:
+                if rank == 0:
+                    print(f"✗ {test_name} failed: {e}")
+                raise
+            # Small barrier to ensure clean test separation
+            sync_across_processes()
+
+        if rank == 0:
+            print(f"\n✓ All {len(tests)} distributed tests passed!\n")
+    finally:
         cleanup_distributed()
-        sys.exit(1)
-
-    tests = [
-        ("Gather identical shapes", _test_gather_identical_shapes),
-        ("Gather scalar tensors", _test_gather_scalar_tensors),
-        ("Gather multidimensional tensors", _test_gather_multidimensional_tensors),
-        ("Gather empty tensor", _test_gather_empty_tensor),
-        ("Gather float tensor", _test_gather_float_tensor),
-        ("Gather preserves autograd", _test_gather_preserves_autograd),
-    ]
-
-    if rank == 0:
-        print(f"\nRunning {len(tests)} gather_all_tensors tests...\n")
-
-    for test_name, test_func in tests:
-        try:
-            test_func()
-        except Exception as e:
-            if rank == 0:
-                print(f"✗ {test_name} failed: {e}")
-            raise
-        # Small barrier to ensure clean test separation
-        sync_across_processes()
-
-    if rank == 0:
-        print(f"\n✓ All {len(tests)} distributed tests passed!\n")
 
 
 # ===== Pytest wrapper =====
