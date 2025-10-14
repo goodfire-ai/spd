@@ -111,9 +111,10 @@ def jaccard_index(
 
     # Top row: onehot expanded
     for i in range(s_ensemble):
+        largest_grp_size_i: int = int(matches[i].sum(dim=1).max().item())
         onehot = expand_to_onehot(X[i], k_groups=int(X[i].max())).cpu().numpy()
         axes[0, i].matshow(onehot, cmap="Blues")
-        axes[0, i].set_title(f"{i}")
+        axes[0, i].set_title(f"{i}\nLGS={largest_grp_size_i}")
         axes[0, i].axis("off")
 
     # Second row: matches
@@ -124,14 +125,12 @@ def jaccard_index(
 
     # Lower s rows: dist_mat for each pair
     for i in range(s_ensemble):
+        largest_grp_size_i: int = int(matches[i].sum(dim=1).max().item())
         for j in range(s_ensemble):
+            largest_grp_size_j: int = int(matches[j].sum(dim=1).max().item())
             dist_mat = (matches[i].float() - matches[j].float())
             # dbg_auto(dist_mat)
 
-            # Plot dist_mat on axes[i + 2, j]
-            im = axes[i + 2, j].matshow(dist_mat.cpu().numpy(), cmap="RdBu", vmin=-1, vmax=1)
-            # axes[i + 2, j].set_title(f"diff {i}-{j}", fontsize=8)
-            axes[i + 2, j].axis("off")
 
             # Compute distance
             dist: float = (
@@ -139,6 +138,10 @@ def jaccard_index(
                 # > (_n_components / 2)   
             ).item()
             _jaccard[i, j] = dist
+            # Plot dist_mat on axes[i + 2, j]
+            im = axes[i + 2, j].matshow(dist_mat.cpu().numpy(), cmap="RdBu", vmin=-1, vmax=1)
+            axes[i + 2, j].set_title(f"diff {i},{j}\n{dist=}", fontsize=8)
+            axes[i + 2, j].axis("off")
             # dbg_auto((i, j, dist))
 
     plt.tight_layout()
