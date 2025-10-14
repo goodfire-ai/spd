@@ -155,6 +155,8 @@ def jaccard_index(
     return _jaccard
 
 
+
+# TODO: doesnt work when large groups??????
 X_test = torch.tensor(
     [
         # [1, 2, 3, 3],
