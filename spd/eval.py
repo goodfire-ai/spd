@@ -1,7 +1,6 @@
 """Evaluation utilities using the new Metric classes."""
 
 from collections.abc import Iterator
-from typing import Any
 
 from jaxtyping import Float, Int
 from PIL import Image
@@ -34,7 +33,7 @@ from spd.configs import (
     StochasticReconSubsetLossTrainConfig,
     UVPlotsConfig,
 )
-from spd.metrics.base import Metric
+from spd.metrics.base import Metric, RawMetricOutType
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
 from spd.metrics.ci_l0 import CI_L0
@@ -61,10 +60,9 @@ from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import extract_batch_data
 
 MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
-DistMetricOutType = dict[str, str | float | Image.Image | CustomChart]
 
 
-def clean_metric_output(metric_name: str, computed_raw: Any) -> MetricOutType:
+def clean_metric_output(metric_name: str, computed_raw: RawMetricOutType) -> MetricOutType:
     """Clean metric output by converting tensors to floats/ints and ensuring the correct types.
 
     Expects outputs to be either a scalar tensor or a mapping of strings to scalars/images/tensors.
@@ -88,6 +86,9 @@ def clean_metric_output(metric_name: str, computed_raw: Any) -> MetricOutType:
 
             computed[k] = v
     return computed
+
+
+DistMetricOutType = dict[str, str | float | Image.Image | CustomChart]
 
 
 def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMetricOutType:
@@ -318,8 +319,9 @@ def evaluate(
 
     outputs: MetricOutType = {}
     for metric in metrics:
-        computed_raw: Any = metric.compute()
-        computed = clean_metric_output(metric_name=type(metric).__name__, computed_raw=computed_raw)
+        computed_raw = metric.compute()
+        name = type(metric).__name__
+        computed = clean_metric_output(name, computed_raw)
         outputs.update(computed)
 
     return outputs

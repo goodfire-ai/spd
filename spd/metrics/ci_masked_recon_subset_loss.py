@@ -10,7 +10,7 @@ from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import sample_uniform_k_subset_routing_masks
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm
+from spd.utils.general_utils import calc_sum_recon_loss
 
 
 def _ci_masked_recon_subset_loss_update(
@@ -31,9 +31,7 @@ def _ci_masked_recon_subset_loss_update(
         weight_deltas_and_masks=None,
     )
     out = model(batch, mask_infos=mask_infos)
-    loss_type = output_loss_type
-    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
-    return loss, out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
+    return calc_sum_recon_loss(pred=out, target=target_out, loss_type=output_loss_type)
 
 
 def _ci_masked_recon_subset_loss_compute(
