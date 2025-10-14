@@ -10,7 +10,7 @@ from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm, get_obj_device
+from spd.utils.general_utils import calc_sum_recon_loss, get_obj_device
 
 
 def _stochastic_recon_loss_update(
@@ -39,9 +39,10 @@ def _stochastic_recon_loss_update(
     ]
     for stoch_mask_infos in stoch_mask_infos_list:
         out = model(batch, mask_infos=stoch_mask_infos)
-        loss_type = output_loss_type
-        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
-        n_examples += out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
+        loss, num_examples = calc_sum_recon_loss(
+            pred=out, target=target_out, loss_type=output_loss_type
+        )
+        n_examples += num_examples
         sum_loss += loss
     return sum_loss, n_examples
 

@@ -9,7 +9,7 @@ from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm
+from spd.utils.general_utils import calc_sum_recon_loss
 
 
 def _ci_masked_recon_layerwise_loss_update(
@@ -24,8 +24,8 @@ def _ci_masked_recon_layerwise_loss_update(
     mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
     for module_name, mask_info in mask_infos.items():
         out = model(batch, mask_infos={module_name: mask_info})
-        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-        n_examples += out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
+        loss, num_examples = calc_sum_recon_loss(pred=out, target=target_out, loss_type=output_loss_type)
+        n_examples += num_examples
         sum_loss += loss
     return sum_loss, n_examples
 
