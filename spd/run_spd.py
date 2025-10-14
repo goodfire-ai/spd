@@ -292,7 +292,9 @@ def optimize(
                 param_grad_sum_sq = param.grad.data.flatten().pow(2).sum()
                 grad_norm_sq_sum += param_grad_sum_sq
                 # frobenius norm as sqrt(sum(square(param.grad)))
-                microbatch_log_data[f"train/misc/{layer_name}/grad_norm"] = param_grad_sum_sq.sqrt().item()
+                microbatch_log_data[f"train/misc/{layer_name}/grad_norm"] = (
+                    param_grad_sum_sq.sqrt().item()
+                )
 
             microbatch_log_data["train/misc/grad_norm"] = grad_norm_sq_sum.sqrt().item()
             microbatch_log_data["train/misc/lr"] = step_lr

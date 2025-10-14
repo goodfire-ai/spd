@@ -8,6 +8,7 @@ import torch
 from spd.configs import Config
 from spd.metrics import CIHistograms
 from spd.models.component_model import CIOutputs, ComponentModel
+from spd.models.sigmoids import lower_leaky_hard_sigmoid, upper_leaky_hard_sigmoid
 
 
 class TestCIHistograms:
@@ -32,24 +33,25 @@ class TestCIHistograms:
     @pytest.fixture
     def sample_ci(self):
         """Create sample causal importance tensors."""
+
+        pre_sigmoid = {
+            "layer1": torch.randn(4, 8),
+            "layer2": torch.randn(4, 8),
+        }
+
         return CIOutputs(
             lower_leaky={
-                "layer1": torch.randn(4, 8, 10),  # batch_size=4, seq_len=8, C=10
-                "layer2": torch.randn(4, 8, 10),
+                "layer1": lower_leaky_hard_sigmoid(pre_sigmoid["layer1"]),
+                "layer2": lower_leaky_hard_sigmoid(pre_sigmoid["layer2"]),
             },
             upper_leaky={
-                "layer1": torch.randn(4, 8, 10),
-                "layer2": torch.randn(4, 8, 10),
+                "layer1": upper_leaky_hard_sigmoid(pre_sigmoid["layer1"]),
+                "layer2": upper_leaky_hard_sigmoid(pre_sigmoid["layer2"]),
             },
-            pre_sigmoid={
-                "layer1": torch.randn(4, 8),
-                "layer2": torch.randn(4, 8),
-            },
+            pre_sigmoid=pre_sigmoid,
         )
 
-    def test_n_batches_accum_enforcement(
-        self, mock_model: Mock, sample_ci: CIOutputs
-    ):
+    def test_n_batches_accum_enforcement(self, mock_model: Mock, sample_ci: CIOutputs):
         """Test that CIHistograms stops accumulating after n_batches_accum."""
         n_batches_accum = 3
         ci_hist = CIHistograms(mock_model, n_batches_accum=n_batches_accum)
