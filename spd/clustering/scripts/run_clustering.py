@@ -278,7 +278,7 @@ def _log_callback(
         plt.close(fig)
 
 
-def run_clustering(run_config: ClusteringRunConfig) -> Path:
+def main(run_config: ClusteringRunConfig) -> Path:
     """A single clustering run.
 
     Args:
@@ -452,7 +452,7 @@ def cli() -> None:
         overrides["ensemble_id"] = args.ensemble_id
     run_config = replace_pydantic_model(run_config, overrides)
 
-    run_clustering(run_config)
+    main(run_config)
 
 
 if __name__ == "__main__":
