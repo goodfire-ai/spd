@@ -244,6 +244,7 @@ def _log_callback(
         run.log(
             {
                 "fraction_singleton_groups": float(fraction_singleton_groups),
+                "num_nonsingleton_groups": int((group_sizes > 1).sum().item()),
                 "fraction_zero_coacts": float(fraction_zero_coacts),
             },
             step=iter_idx,
