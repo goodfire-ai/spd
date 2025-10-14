@@ -14,15 +14,12 @@ Output structure:
         └── <ensemble_id>_<idx_in_ensemble>/  # ensemble_id is randomly generated if not passed in via CLI
             ├── clustering_run_config.json
             ├── history.npz
-            ├── merge_history_cluster_sizes.png
-            ├── merge_hist_iter.iter_<iter_idx>.zip
+
 
 """
 
 import argparse
 import gc
-import random
-import string
 import tempfile
 from collections.abc import Callable
 from functools import partial
@@ -65,22 +62,11 @@ from spd.settings import SPD_CACHE_DIR
 from spd.spd_types import TaskName
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import replace_pydantic_model
+from spd.utils.run_utils import get_local_run_id
 
 # Filenames saved to in this script
 CONFIG_FILENAME = "clustering_run_config.json"
 HISTORY_FILENAME = "history.npz"
-
-
-def generate_short_id() -> str:
-    """Generate a short ID similar to wandb style: 'local_' + 8 random lowercase alphanumeric chars.
-
-    TODO: I think we should push our own generated ids to use as wandb ids if we're using wandb.
-    That way, all of our SPD code and call the same function to generate an id for the run, and then
-    we use that we saving outputs.
-    """
-    chars = string.ascii_lowercase + string.digits
-    random_id = "".join(random.choices(chars, k=8))
-    return f"local_{random_id}"
 
 
 LogCallback = Callable[
@@ -135,7 +121,7 @@ class ClusteringRunConfig(BaseConfig):
         description="Base directory to save clustering runs",
     )
     ensemble_id: str = Field(
-        default_factory=generate_short_id,
+        default_factory=get_local_run_id,
         description="Ensemble identifier for WandB grouping",
     )
 
