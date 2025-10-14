@@ -2,14 +2,14 @@
 name = "spd"
 version = "0.0.1"
 description = "Sparse Parameter Decomposition"
-requires-python = ">=3.12,<3.14"
+requires-python = "==3.13.*"
 urls = { "Homepage" = "https://github.com/goodfire-ai/spd" }
 license = { text = "MIT" }
 readme = "README.md"
 dependencies = [
     "torch>=2.6",
     "torchvision",
-    "pydantic",
+    "pydantic>=2",
     "wandb>=0.20.1", # Avoid wandb.sdk.wandb_manager.ManagerConnectionRefusedError
     "fire",
     "tqdm",
@@ -17,7 +17,7 @@ dependencies = [
     "transformers",
     "jaxtyping",
     "einops",
-    "matplotlib==3.9.1", # Avoid frequent pyright errors with new matplotlib versions
+    "matplotlib",
     "numpy",
     "python-dotenv",
     "wandb-workspaces==0.1.12", # See https://github.com/wandb/wandb-workspaces/issues/65
