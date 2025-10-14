@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from spd.clustering.clustering_run_config import ClusteringRunConfig, LoggingIntervals
+from spd.clustering.merge_run_config import ClusteringRunConfig, LoggingIntervals
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.scripts.run_clustering import main
 

@@ -39,7 +39,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.clustering_run_config import ClusteringRunConfig
+from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.consts import (
     ActivationsTensor,
     BatchTensor,
