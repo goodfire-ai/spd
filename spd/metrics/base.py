@@ -4,10 +4,16 @@ All metrics implement Metric and typically handle distributed synchronization di
 compute() methods.
 """
 
-from typing import Any, ClassVar, Protocol
+from collections.abc import Mapping
+from typing import ClassVar, Protocol
 
 from jaxtyping import Float, Int
+from PIL import Image
 from torch import Tensor
+from torch.types import Number
+from wandb.plot.custom_chart import CustomChart
+
+RawMetricOutType = Mapping[str, str | Number | Tensor | Image.Image | CustomChart] | Tensor
 
 
 class Metric(Protocol):
@@ -29,6 +35,6 @@ class Metric(Protocol):
         """Update metric state with a batch of data."""
         ...
 
-    def compute(self) -> Any:
+    def compute(self) -> RawMetricOutType:
         """Compute the final metric value(s)."""
         ...
