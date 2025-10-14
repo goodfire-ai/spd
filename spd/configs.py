@@ -318,13 +318,6 @@ class Config(BaseConfig):
         )
     )
 
-    # --- Logging Options ---
-    defensive_logging: bool = Field(
-        default=True,
-        description="Enable defensive logging metrics (CI distributions, parameter norms, etc.) "
-        "to help catch training instabilities early. Adds minimal overhead.",
-    )
-
     # --- Component Tracking ---
     ci_alive_threshold: Probability = Field(
         default=0.0,

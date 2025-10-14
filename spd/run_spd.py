@@ -187,9 +187,13 @@ def optimize(
 
     component_params: list[torch.nn.Parameter] = []
     ci_fn_params: list[torch.nn.Parameter] = []
+    all_named_params: list[tuple[str, torch.nn.Parameter]] = []
+
     for name, component in component_model.components.items():
-        component_params.extend(list(component.parameters()))
-        ci_fn_params.extend(list(component_model.ci_fns[name].parameters()))
+        component_params.extend(component.parameters())
+        ci_fn_params.extend(component_model.ci_fns[name].parameters())
+        all_named_params.extend(component.named_parameters())
+        all_named_params.extend(component_model.ci_fns[name].named_parameters())
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
@@ -282,11 +286,15 @@ def optimize(
                 n_alive_key = f"train/{metric_name}_{alive_tracker.ci_alive_threshold}"
                 microbatch_log_data[n_alive_key] = n_alive_count
 
-            grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
-            for param in component_params + ci_fn_params:
-                if param.grad is not None:
-                    grad_norm += param.grad.data.flatten().pow(2).sum()
-            microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
+            grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
+            for layer_name, param in all_named_params:
+                assert param.grad is not None
+                param_grad_sum_sq = param.grad.data.flatten().pow(2).sum()
+                grad_norm_sq_sum += param_grad_sum_sq
+                # frobenius norm as sqrt(sum(square(param.grad)))
+                microbatch_log_data[f"train/misc/{layer_name}/grad_norm"] = param_grad_sum_sq.sqrt().item()
+
+            microbatch_log_data["train/misc/grad_norm"] = grad_norm_sq_sum.sqrt().item()
             microbatch_log_data["train/misc/lr"] = step_lr
 
             for layer_name, component in component_model.components.items():

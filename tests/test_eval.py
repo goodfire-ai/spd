@@ -7,7 +7,7 @@ import torch
 
 from spd.configs import Config
 from spd.metrics import CIHistograms
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 
 
 class TestCIHistograms:
@@ -32,7 +32,7 @@ class TestCIHistograms:
     @pytest.fixture
     def sample_ci(self):
         """Create sample causal importance tensors."""
-        return ComponentModel.CIOutputs(
+        return CIOutputs(
             lower_leaky={
                 "layer1": torch.randn(4, 8, 10),  # batch_size=4, seq_len=8, C=10
                 "layer2": torch.randn(4, 8, 10),
@@ -48,7 +48,7 @@ class TestCIHistograms:
         )
 
     def test_n_batches_accum_enforcement(
-        self, mock_model: Mock, sample_ci: ComponentModel.CIOutputs
+        self, mock_model: Mock, sample_ci: CIOutputs
     ):
         """Test that CIHistograms stops accumulating after n_batches_accum."""
         n_batches_accum = 3
@@ -73,7 +73,7 @@ class TestCIHistograms:
         assert len(ci_hist.pre_sigmoid_causal_importances["layer1"]) == n_batches_accum
         assert len(ci_hist.pre_sigmoid_causal_importances["layer2"]) == n_batches_accum
 
-    def test_none_n_batches_accum(self, mock_model: Mock, sample_ci: ComponentModel.CIOutputs):
+    def test_none_n_batches_accum(self, mock_model: Mock, sample_ci: CIOutputs):
         """Test unlimited batch accumulation when n_batches_accum is None."""
         ci_hist = CIHistograms(mock_model, n_batches_accum=None)
 
