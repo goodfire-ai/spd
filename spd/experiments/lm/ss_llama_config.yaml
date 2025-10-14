@@ -1,3 +1,5 @@
+# This config expects to be run on 8 H100s
+
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null
@@ -10,7 +12,16 @@ n_mask_samples: 1
 gate_type: "shared_mlp"
 gate_hidden_dims: [400]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["model.layers.*.mlp.gate_proj", "model.layers.*.mlp.down_proj", "model.layers.*.mlp.up_proj", "model.layers.*.self_attn.q_proj", "model.layers.*.self_attn.k_proj", "model.layers.*.self_attn.v_proj", "model.layers.*.self_attn.o_proj"]
+target_module_patterns:
+  [
+    "model.layers.*.mlp.gate_proj",
+    "model.layers.*.mlp.down_proj",
+    "model.layers.*.mlp.up_proj",
+    "model.layers.*.self_attn.q_proj",
+    "model.layers.*.self_attn.k_proj",
+    "model.layers.*.self_attn.v_proj",
+    "model.layers.*.self_attn.o_proj",
+  ]
 identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
@@ -57,7 +68,7 @@ eval_metric_configs:
   - classname: "ComponentActivationDensity"
   - classname: "CI_L0"
     groups:
-      total: ["*"]  # Sum of all L0 values
+      total: ["*"] # Sum of all L0 values
       layer_0: ["model.layers.0.*"]
       layer_1: ["model.layers.1.*"]
       layer_2: ["model.layers.2.*"]
@@ -89,7 +100,7 @@ tokenizer_name: SimpleStories/SimpleStories-1.25M
 
 # --- Task Specific ---
 task_config:
-  task_name: lm 
+  task_name: lm
   max_seq_len: 512
   buffer_size: 1000
   dataset_name: "SimpleStories/SimpleStories"
@@ -99,18 +110,16 @@ task_config:
   shuffle_each_epoch: true
   is_tokenized: false
   streaming: false
-
-
 # Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
-  # "1.25M": LlamaConfig(
-  #     block_size=512,
-  #     vocab_size=4096,
-  #     n_layer=4,
-  #     n_head=4,
-  #     n_embd=128,
-  #     n_intermediate=128 * 4 * 2 // 3 = 341,
-  #     rotary_dim=128 // 4 = 32,
-  #     n_ctx=512,
-  #     n_key_value_heads=2,
-  #     flash_attention=True,
-  # ),
+# "1.25M": LlamaConfig(
+#     block_size=512,
+#     vocab_size=4096,
+#     n_layer=4,
+#     n_head=4,
+#     n_embd=128,
+#     n_intermediate=128 * 4 * 2 // 3 = 341,
+#     rotary_dim=128 // 4 = 32,
+#     n_ctx=512,
+#     n_key_value_heads=2,
+#     flash_attention=True,
+# ),
