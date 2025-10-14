@@ -122,11 +122,11 @@ class ComponentModel(LoadableModule):
         self.target_model = target_model
         self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
-        self.module_paths = get_target_module_paths(target_model, target_module_patterns)
+        self.target_module_paths = get_target_module_paths(target_model, target_module_patterns)
 
         self.components = ComponentModel._create_components(
             target_model=target_model,
-            module_paths=self.module_paths,
+            target_module_paths=self.target_module_paths,
             C=C,
         )
         self._components = nn.ModuleDict(
@@ -135,7 +135,7 @@ class ComponentModel(LoadableModule):
 
         self.ci_fns = ComponentModel._create_ci_fns(
             target_model=target_model,
-            module_paths=self.module_paths,
+            target_module_paths=self.target_module_paths,
             C=C,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
@@ -209,13 +209,13 @@ class ComponentModel(LoadableModule):
     @staticmethod
     def _create_components(
         target_model: nn.Module,
-        module_paths: list[str],
+        target_module_paths: list[str],
         C: int,
     ) -> dict[str, Components]:
         components: dict[str, Components] = {}
-        for module_path in module_paths:
-            target_module = target_model.get_submodule(module_path)
-            components[module_path] = ComponentModel._create_component(target_module, C)
+        for target_module_path in target_module_paths:
+            target_module = target_model.get_submodule(target_module_path)
+            components[target_module_path] = ComponentModel._create_component(target_module, C)
         return components
 
     @staticmethod
@@ -255,15 +255,15 @@ class ComponentModel(LoadableModule):
     @staticmethod
     def _create_ci_fns(
         target_model: nn.Module,
-        module_paths: list[str],
+        target_module_paths: list[str],
         C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> dict[str, nn.Module]:
         ci_fns: dict[str, nn.Module] = {}
-        for module_path in module_paths:
-            target_module = target_model.get_submodule(module_path)
-            ci_fns[module_path] = ComponentModel._create_ci_fn(
+        for target_module_path in target_module_paths:
+            target_module = target_model.get_submodule(target_module_path)
+            ci_fns[target_module_path] = ComponentModel._create_ci_fn(
                 target_module,
                 C,
                 ci_fn_type,
@@ -337,7 +337,7 @@ class ComponentModel(LoadableModule):
         This method handles the following 4 cases:
         1. mask_infos is None and cache_type is "none": Regular forward pass.
         2. mask_infos is None and cache_type is "input": Forward pass with input caching on
-            all modules in self.module_paths.
+            all modules in self.target_module_paths.
         3. mask_infos is not None and cache_type is "input": Forward pass with component replacement
             and input caching on the modules provided in mask_infos.
         4. mask_infos is not None and cache_type is "none": Forward pass with component replacement
@@ -350,7 +350,7 @@ class ComponentModel(LoadableModule):
             mask_infos: Dictionary mapping module names to ComponentsMaskInfo.
                 If provided, those modules will be replaced with their components.
             cache_type: If "input", cache the inputs to the modules provided in mask_infos. If
-                mask_infos is None, cache the inputs to all modules in self.module_paths.
+                mask_infos is None, cache the inputs to all modules in self.target_module_paths.
 
         Returns:
             OutputWithCache object if cache_type is "input", otherwise the model output tensor.
@@ -362,7 +362,7 @@ class ComponentModel(LoadableModule):
         cache: dict[str, Tensor] = {}
         hooks: dict[str, Callable[..., Any]] = {}
 
-        hook_module_names = list(mask_infos.keys()) if mask_infos else self.module_paths
+        hook_module_names = list(mask_infos.keys()) if mask_infos else self.target_module_paths
 
         for module_name in hook_module_names:
             mask_info = mask_infos[module_name] if mask_infos else None
@@ -608,13 +608,13 @@ def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
             new_key = new_key.removesuffix(".original.weight") + ".weight"
         # We used to have "*.components.{U,V}", now we have "_components.*.{U,V}"
         if new_key.endswith(".components.U") or new_key.endswith(".components.V"):
-            module_path: str = (
+            target_module_path: str = (
                 new_key.removeprefix("target_model.")
                 .removesuffix(".components.U")
                 .removesuffix(".components.V")
             )
             # module path has "." replaced with "-"
-            new_key = f"_components.{module_path.replace('.', '-')}.{new_key.split('.')[-1]}"
+            new_key = f"_components.{target_module_path.replace('.', '-')}.{new_key.split('.')[-1]}"
         # replace if modified
         if new_key != key:
             state_dict[new_key] = state_dict.pop(key)

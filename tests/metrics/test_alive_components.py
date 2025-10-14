@@ -8,7 +8,7 @@ from spd.metrics.alive_components import AliveComponentsTracker
 def test_initialization():
     """Test that AliveComponentsTracker initializes correctly."""
     metric = AliveComponentsTracker(
-        module_paths=["layer1", "layer2"],
+        target_module_paths=["layer1", "layer2"],
         C=5,
         device="cpu",
         n_examples_until_dead=100,
@@ -28,7 +28,7 @@ def test_initialization():
 def test_update_counter_mechanics():
     """Test that firing resets counter to 0 and non-firing increments by 1."""
     metric = AliveComponentsTracker(
-        module_paths=["layer1"],
+        target_module_paths=["layer1"],
         C=3,
         device="cpu",
         n_examples_until_dead=50,
@@ -64,7 +64,7 @@ def test_update_counter_mechanics():
 def test_update_with_multidimensional_input():
     """Test that firing detection works with batch dimensions."""
     metric = AliveComponentsTracker(
-        module_paths=["layer1"],
+        target_module_paths=["layer1"],
         C=3,
         device="cpu",
         n_examples_until_dead=50,
@@ -95,7 +95,7 @@ def test_update_with_multidimensional_input():
 def test_compute_alive_counts():
     """Test that compute() correctly counts alive components."""
     metric = AliveComponentsTracker(
-        module_paths=["layer1", "layer2"],
+        target_module_paths=["layer1", "layer2"],
         C=4,
         device="cpu",
         n_examples_until_dead=50,
@@ -119,7 +119,7 @@ def test_compute_alive_counts():
 def test_multiple_modules():
     """Test tracking across multiple modules."""
     metric = AliveComponentsTracker(
-        module_paths=["layer1", "layer2"],
+        target_module_paths=["layer1", "layer2"],
         C=3,
         device="cpu",
         n_examples_until_dead=50,
@@ -146,7 +146,7 @@ def test_multiple_modules():
 def test_boundary_conditions():
     """Test boundary conditions for alive/dead determination."""
     metric = AliveComponentsTracker(
-        module_paths=["layer1"],
+        target_module_paths=["layer1"],
         C=3,
         device="cpu",
         n_examples_until_dead=50,
@@ -164,7 +164,7 @@ def test_boundary_conditions():
 def test_threshold_boundary():
     """Test that the CI threshold is applied correctly."""
     metric = AliveComponentsTracker(
-        module_paths=["layer1"],
+        target_module_paths=["layer1"],
         C=3,
         device="cpu",
         n_examples_until_dead=50,

@@ -187,13 +187,13 @@ def optimize(
 
     component_params: list[torch.nn.Parameter] = []
     ci_fn_params: list[torch.nn.Parameter] = []
-    all_named_params: list[tuple[str, torch.nn.Parameter]] = []
+    # all_named_params: list[tuple[str, torch.nn.Parameter]] = []
 
     for name, component in component_model.components.items():
         component_params.extend(component.parameters())
         ci_fn_params.extend(component_model.ci_fns[name].parameters())
-        all_named_params.extend(component.named_parameters())
-        all_named_params.extend(component_model.ci_fns[name].named_parameters())
+    
+    # all_named_params.extend()
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
@@ -207,7 +207,7 @@ def optimize(
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
-        module_paths=model.module_paths,
+        target_module_paths=model.target_module_paths,
         C=config.C,
         device=device,
         n_examples_until_dead=config.n_examples_until_dead,
@@ -287,24 +287,17 @@ def optimize(
                 microbatch_log_data[n_alive_key] = n_alive_count
 
             grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
-            for layer_name, param in all_named_params:
+            for module_path, param in component_model.named_parameters():
                 assert param.grad is not None
                 param_grad_sum_sq = param.grad.data.flatten().pow(2).sum()
                 grad_norm_sq_sum += param_grad_sum_sq
                 # frobenius norm as sqrt(sum(square(param.grad)))
-                microbatch_log_data[f"train/misc/{layer_name}/grad_norm"] = (
+                microbatch_log_data[f"train/misc/{module_path}/grad_norm"] = (
                     param_grad_sum_sq.sqrt().item()
                 )
 
             microbatch_log_data["train/misc/grad_norm"] = grad_norm_sq_sum.sqrt().item()
             microbatch_log_data["train/misc/lr"] = step_lr
-
-            for layer_name, component in component_model.components.items():
-                assert component.U.grad is not None and component.V.grad is not None
-                U_grad_norm = component.U.grad.data.norm()
-                V_grad_norm = component.V.grad.data.norm()
-                layer_grad_norm = (U_grad_norm.square() + V_grad_norm.square()).sqrt()
-                microbatch_log_data[f"train/{layer_name}/grad_norm"] = layer_grad_norm.item()
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")

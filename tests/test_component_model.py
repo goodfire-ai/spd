@@ -211,7 +211,7 @@ def test_patch_modules_unsupported_component_type_raises() -> None:
     with pytest.raises(AttributeError):
         ComponentModel._create_components(
             target_model=model,
-            module_paths=[wrong_module_path],
+            target_module_paths=[wrong_module_path],
             C=2,
         )
 

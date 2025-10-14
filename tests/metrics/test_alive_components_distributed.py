@@ -28,7 +28,7 @@ def _test_min_reduction():
     rank = get_rank()
 
     metric = AliveComponentsTracker(
-        module_paths=["layer1"],
+        target_module_paths=["layer1"],
         C=3,
         device="cpu",
         n_examples_until_dead=100,
@@ -62,7 +62,7 @@ def _test_different_firing_patterns():
     rank = get_rank()
 
     metric = AliveComponentsTracker(
-        module_paths=["layer1"],
+        target_module_paths=["layer1"],
         C=3,
         device="cpu",
         n_examples_until_dead=50,
@@ -108,7 +108,7 @@ def _test_dead_components():
     rank = get_rank()
 
     metric = AliveComponentsTracker(
-        module_paths=["layer1"],
+        target_module_paths=["layer1"],
         C=3,
         device="cpu",
         n_examples_until_dead=5,
@@ -146,7 +146,7 @@ def _test_multiple_modules():
     rank = get_rank()
 
     metric = AliveComponentsTracker(
-        module_paths=["layer1", "layer2"],
+        target_module_paths=["layer1", "layer2"],
         C=2,
         device="cpu",
         n_examples_until_dead=50,
