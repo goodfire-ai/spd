@@ -12,7 +12,7 @@ def test_run_clustering_happy_path():
     """Test that run_clustering.py runs without errors."""
     with tempfile.TemporaryDirectory() as temp_dir:
         config = ClusteringRunConfig(
-            model_path="wandb:goodfire/spd/runs/zxbu57pt",
+            model_path="wandb:goodfire/spd/runs/zxbu57pt",  # An ss_llama run
             batch_size=4,
             dataset_seed=0,
             idx_in_ensemble=0,
