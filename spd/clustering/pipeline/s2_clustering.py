@@ -302,6 +302,7 @@ def _log_callback(
         run.log(
             {
                 "fraction_singleton_groups": float(fraction_singleton_groups),
+                "num_nonsingleton_groups": int((group_sizes > 1).sum().item()),
                 "fraction_zero_coacts": float(fraction_zero_coacts),
             },
             step=iter_idx,
@@ -383,7 +384,7 @@ def cli() -> None:
     args: argparse.Namespace = parser.parse_args()
 
     # Load config
-    config: ClusteringRunConfig = ClusteringRunConfig.read(args.config)
+    config: ClusteringRunConfig = ClusteringRunConfig.from_file(args.config)
 
     # Run clustering
     result: ClusteringResult = run_clustering(

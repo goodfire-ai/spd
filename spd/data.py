@@ -8,11 +8,11 @@ from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
+from spd.base_config import BaseConfig
 from spd.log import logger
-from spd.utils.general_utils import BaseModel
 
 
-class DatasetConfig(BaseModel):
+class DatasetConfig(BaseConfig):
     name: str = "lennart-finke/SimpleStories"
     is_tokenized: bool = True
     hf_tokenizer_path: str | None = None

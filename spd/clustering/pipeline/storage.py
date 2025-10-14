@@ -270,7 +270,7 @@ class ClusteringStorage:
         )
 
     def load_run_config(self) -> ClusteringRunConfig:
-        return ClusteringRunConfig.read(self.run_config_file)
+        return ClusteringRunConfig.from_file(self.run_config_file)
 
     # Dashboard storage methods
 
