@@ -323,7 +323,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
 
     # 3. Load model
     logger.info("Loading model")
-    model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path).to(device)
+    model = ComponentModel.from_run_info(spd_run).to(device)
 
     # 4. Compute activations
     logger.info("Computing activations")
