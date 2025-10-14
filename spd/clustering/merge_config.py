@@ -3,11 +3,11 @@ import hashlib
 from typing import Any, Literal
 
 from pydantic import (
-    BaseModel,
     Field,
     PositiveInt,
 )
 
+from spd.base_config import BaseConfig
 from spd.clustering.consts import ClusterCoactivationShaped, MergePair
 from spd.clustering.math.merge_pair_samplers import (
     MERGE_PAIR_SAMPLERS,
@@ -44,7 +44,7 @@ def _to_module_filter(
         raise TypeError(f"filter_modules must be str, set, or callable, got {type(filter_modules)}")  # pyright: ignore[reportUnreachable]
 
 
-class MergeConfig(BaseModel):
+class MergeConfig(BaseConfig):
     activation_threshold: Probability | None = Field(
         default=0.01,
         description="Threshold for considering a component active in a group. If None, use raw scalar causal importances",
