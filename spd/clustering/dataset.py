@@ -3,6 +3,8 @@
 Each clustering run loads its own dataset batch, seeded by the run index.
 """
 
+from typing import Any
+
 from spd.clustering.consts import BatchTensor
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -17,6 +19,7 @@ def load_dataset(
     task_name: TaskName,
     batch_size: int,
     seed: int,
+    **kwargs: Any,
 ) -> BatchTensor:
     """Load a single batch for clustering.
 
@@ -33,14 +36,26 @@ def load_dataset(
     """
     match task_name:
         case "lm":
-            return _load_lm_batch(model_path, batch_size, seed)
+            return _load_lm_batch(
+                model_path=model_path,
+                batch_size=batch_size,
+                seed=seed,
+                **kwargs,
+            )
         case "resid_mlp":
-            return _load_resid_mlp_batch(model_path, batch_size, seed)
+            return _load_resid_mlp_batch(
+                model_path=model_path,
+                batch_size=batch_size,
+                seed=seed,
+                **kwargs,
+            )
         case _:
             raise ValueError(f"Unsupported task: {task_name}")
 
 
-def _load_lm_batch(model_path: str, batch_size: int, seed: int) -> BatchTensor:
+def _load_lm_batch(
+    model_path: str, batch_size: int, seed: int, config_kwargs: dict[str, Any] | None = None
+) -> BatchTensor:
     """Load a batch for language model task."""
     spd_run = SPDRunInfo.from_path(model_path)
     cfg = spd_run.config
@@ -55,15 +70,22 @@ def _load_lm_batch(model_path: str, batch_size: int, seed: int) -> BatchTensor:
     except Exception as e:
         raise AttributeError("Could not find 'pretrained_model_name' in the SPD Run config") from e
 
+    config_kwargs_: dict[str, Any] = {
+        **dict(
+            is_tokenized=False,
+            streaming=False,
+        ),
+        **(config_kwargs or {}),
+    }
+
     dataset_config = DatasetConfig(
         name=cfg.task_config.dataset_name,
         hf_tokenizer_path=pretrained_model_name,
         split=cfg.task_config.train_data_split,
         n_ctx=cfg.task_config.max_seq_len,
         seed=seed,  # Use run-specific seed
-        streaming=False,
-        is_tokenized=False,
         column_name=cfg.task_config.column_name,
+        **config_kwargs_,
     )
 
     dataloader, _ = create_data_loader(

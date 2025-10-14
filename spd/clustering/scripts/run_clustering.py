@@ -39,7 +39,6 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.consts import (
     ActivationsTensor,
     BatchTensor,
@@ -51,6 +50,7 @@ from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
+from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_iteration
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
@@ -215,11 +215,19 @@ def main(run_config: ClusteringRunConfig) -> Path:
 
     # 1. Load dataset
     logger.info(f"Loading dataset (seed={run_config.dataset_seed})")
+    load_dataset_kwargs: dict[str, Any] = dict()
+    if run_config.dataset_streaming:
+        logger.info("Using streaming dataset loading")
+        load_dataset_kwargs["config_kwargs"] = dict(streaming=True)
+        assert task_name == "lm", (
+            f"Streaming dataset loading only supported for 'lm' task, got '{task_name = }'. Remove dataset_streaming=True from config or use a different task."
+        )
     batch: BatchTensor = load_dataset(
         model_path=run_config.model_path,
         task_name=task_name,
         batch_size=run_config.batch_size,
         seed=run_config.dataset_seed,
+        **load_dataset_kwargs,
     )
     batch = batch.to(device)
 
@@ -355,6 +363,11 @@ def cli() -> None:
         default=None,
         help="Ensemble identifier for WandB grouping",
     )
+    parser.add_argument(
+        "--dataset-streaming",
+        action="store_true",
+        help="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
+    )
 
     args = parser.parse_args()
 
@@ -365,6 +378,7 @@ def cli() -> None:
     overrides: dict[str, Any] = {
         "dataset_seed": run_config.dataset_seed + args.idx_in_ensemble,
         "idx_in_ensemble": args.idx_in_ensemble,
+        "dataset_streaming": args.dataset_streaming,
     }
     if args.base_output_dir is not None:
         overrides["base_output_dir"] = args.base_output_dir

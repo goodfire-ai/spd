@@ -58,6 +58,20 @@ class ClusteringRunConfig(BaseConfig):
     wandb_entity: str = Field(default="goodfire", description="WandB entity (team/user) name")
 
     logging_intervals: LoggingIntervals = Field(..., description="Logging intervals")
+    dataset_streaming: bool = Field(
+        default=False,
+        description="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
+    )
+
+    # TODO: no way to check this without knowing task
+    # @model_validator(mode="after")
+    # def validate_streaming_compatibility(self) -> Self:
+    #     """Ensure dataset_streaming is only enabled for compatible tasks."""
+    #     if self.dataset_streaming and self.task_name != "lm":
+    #         raise ValueError(
+    #             f"Streaming dataset loading only supported for 'lm' task, got '{self.task_name}'"
+    #         )
+    #     return self
 
     @model_validator(mode="after")
     def validate_model_path(self) -> Self:

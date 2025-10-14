@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from spd.clustering.merge_run_config import ClusteringRunConfig, LoggingIntervals
 from spd.clustering.merge_config import MergeConfig
+from spd.clustering.merge_run_config import ClusteringRunConfig, LoggingIntervals
 from spd.clustering.scripts.run_clustering import main
 
 
@@ -35,5 +35,6 @@ def test_run_clustering_happy_path():
                 plot=100,
                 artifact=100,
             ),
+            dataset_streaming=True,  # tests in CI very slow without this, see https://github.com/goodfire-ai/spd/pull/199
         )
         main(config)
