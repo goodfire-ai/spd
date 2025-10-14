@@ -31,11 +31,20 @@ def show_matrix(
         title: str = "",
         cmap: str = "viridis",
         vlims: tuple[float, float] | float | None = None,
+        ax: plt.Axes | None = None,
     ) -> None:
     """Display a matrix with values annotated on each cell."""
     mat_np: np.ndarray
     mat_np = mat.cpu().numpy() if isinstance(mat, torch.Tensor) else mat
-    _fig, ax = plt.subplots()
+
+    if ax is None:
+        _fig, ax = plt.subplots()
+        show_colorbar = True
+        show_plot = True
+    else:
+        show_colorbar = False
+        show_plot = False
+
     im = ax.matshow(
         mat_np,
         cmap=cmap,
@@ -58,9 +67,11 @@ def show_matrix(
             )
 
     if title:
-        plt.title(title)
-    plt.colorbar(im, ax=ax)
-    plt.show()
+        ax.set_title(title)
+    if show_colorbar:
+        plt.colorbar(im, ax=ax)
+    if show_plot:
+        plt.show()
 
 
 def expand_to_onehot(
@@ -91,26 +102,43 @@ def jaccard_index(
 
     _jaccard: Float[Tensor, "s s"] = torch.full((s_ensemble, s_ensemble), torch.nan)
 
-    for i in range(s_ensemble):
-        plt.matshow(matches[i].cpu().numpy())
-        plt.title(f"matches for row {i}")
-        plt.show()
+    # Create single large plot: (s + 2) rows × s cols
+    # Row 0: onehot expanded
+    # Row 1: matches
+    # Rows 2 to s+1: dist_mat for each pair
+    fig, axes = plt.subplots(s_ensemble + 2, s_ensemble, figsize=(s_ensemble * 3, (s_ensemble + 2) * 3))
 
-        plt.matshow(
-            expand_to_onehot(X[i], k_groups=int(X[i].max())).cpu().numpy(),
-            cmap="Blues",
-        )
-        plt.title(f"onehot for row {i}")
-        plt.show()
-        for j in range(i, s_ensemble):
+    # Top row: onehot expanded
+    for i in range(s_ensemble):
+        onehot = expand_to_onehot(X[i], k_groups=int(X[i].max())).cpu().numpy()
+        axes[0, i].matshow(onehot, cmap="Blues")
+        axes[0, i].set_title(f"onehot {i}")
+        axes[0, i].axis("off")
+
+    # Second row: matches
+    for i in range(s_ensemble):
+        axes[1, i].matshow(matches[i].cpu().numpy())
+        axes[1, i].set_title(f"matches {i}")
+        axes[1, i].axis("off")
+
+    # Lower s rows: dist_mat for each pair
+    for i in range(s_ensemble):
+        for j in range(s_ensemble):
             dist_mat = (matches[i].float() - matches[j].float())
             dbg_auto(dist_mat)
-            show_matrix(dist_mat, title=f"diff matches {i} - {j}", cmap="RdBu", vlims=1)
+
+            # Plot dist_mat on axes[i + 2, j]
+            im = axes[i + 2, j].matshow(dist_mat.cpu().numpy(), cmap="RdBu", vmin=-1, vmax=1)
+            axes[i + 2, j].set_title(f"diff {i}-{j}", fontsize=8)
+            axes[i + 2, j].axis("off")
+
+            # Compute distance
             dist: float = torch.tril(dist_mat, diagonal=-1).abs().max(dim=-1).values.sum().item()
             _jaccard[i, j] = dist
-            _jaccard[j, i] = dist
             dbg_auto((i, j, dist))
 
+    plt.tight_layout()
+    plt.show()
 
     # for i in range(s_ensemble):
     #     for j in range(i, s_ensemble):
