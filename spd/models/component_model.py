@@ -575,8 +575,14 @@ class ComponentModel(LoadableModule):
             else:
                 ci_fn_output_for_lower_leaky = ci_fn_output
 
-            causal_importances[param_name] = self.lower_leaky_fn(ci_fn_output_for_lower_leaky)
-            causal_importances_upper_leaky[param_name] = self.upper_leaky_fn(ci_fn_output).abs()
+            lower_leaky_output = self.lower_leaky_fn(ci_fn_output_for_lower_leaky)
+            assert lower_leaky_output.all() <= 1.0
+            causal_importances[param_name] = lower_leaky_output
+
+            upper_leaky_output = self.upper_leaky_fn(ci_fn_output)
+            assert upper_leaky_output.all() >= 0
+            causal_importances_upper_leaky[param_name] = upper_leaky_output
+
             pre_sigmoid[param_name] = ci_fn_output
 
         return CIOutputs(
