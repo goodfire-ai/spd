@@ -36,7 +36,7 @@ class TestSPDRun:
             ("tms_5-2", True, 4, None),  # Command count depends on sweep params
         ],
     )
-    @patch("spd.scripts.run.submit_slurm_array")
+    @patch("spd.scripts.run.submit_slurm_script")
     @patch("spd.scripts.run.create_slurm_array_script")
     @patch("spd.scripts.run.load_sweep_params")
     def test_spd_run_not_local_no_sweep(

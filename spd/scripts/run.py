@@ -26,7 +26,7 @@ from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
-from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
+from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_script
 from spd.utils.wandb_utils import wandb_setup
 
 
@@ -432,7 +432,7 @@ def main(
                 partition=partition,
             )
 
-            array_job_id = submit_slurm_array(array_script)
+            array_job_id = submit_slurm_script(array_script)
 
             logger.section("Job submitted successfully!")
             logger.values(

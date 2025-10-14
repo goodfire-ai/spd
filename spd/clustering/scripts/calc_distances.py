@@ -89,7 +89,7 @@ if __name__ == "__main__":
         choices=["perm_invariant_hamming", "jaccard"],
         default="perm_invariant_hamming",
     )
-    parser.add_argument("--base_output_dir", type=Path, default=SPD_CACHE_DIR / "clustering")
+    parser.add_argument("--base-output-dir", type=Path, default=SPD_CACHE_DIR / "clustering")
     args = parser.parse_args()
     main(
         ensemble_id=args.ensemble_id,
