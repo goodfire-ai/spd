@@ -277,18 +277,21 @@ def calc_kl_divergence_lm(
         return kl
 
 
-def calc_sum_recon_loss_lm(
-    pred: Float[Tensor, "... vocab"],
-    target: Float[Tensor, "... vocab"],
+def calc_sum_recon_loss(
+    pred: Float[Tensor, "... vec_or_vocab"],
+    target: Float[Tensor, "... vec_or_vocab"],
     loss_type: Literal["mse", "kl"],
-) -> Float[Tensor, ""]:
+) -> tuple[Float[Tensor, ""], int]:
     """Calculate the reconstruction loss for a language model without reduction."""
     match loss_type:
         case "mse":
             loss = ((pred - target) ** 2).sum()
+            num_examples = pred.shape.numel()
         case "kl":
             loss = calc_kl_divergence_lm(pred=pred, target=target, reduce=False).sum()
-    return loss
+            num_examples = pred.shape[:-1].numel()
+    return loss, num_examples
+
 
 
 def runtime_cast[T](type_: type[T], obj: Any) -> T:
@@ -452,3 +455,7 @@ def zip_dicts(*dicts: dict[str, Any]) -> dict[str, tuple[Any, ...]]:
         assert set(d.keys()) == all_keys
         all_keys.update(d.keys())
     return {k: tuple(d[k] for d in dicts) for k in all_keys}
+
+
+def map_dict_vals[T](d: dict[str, T], f: Callable[[T], T]) -> dict[str, T]:
+    return {k: f(v) for k, v in d.items()}
