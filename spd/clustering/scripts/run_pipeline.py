@@ -214,6 +214,7 @@ def main(pipeline_config_path: Path, n_runs: int | None = None) -> None:
         calc_distances_job_id = submit_slurm_script(calc_distances_script_path)
 
         logger.section("Jobs submitted successfully!")
+        distances_plot_path = ensemble_dir / f"distances_{pipeline_config.distances_method}.png"
         logger.values(
             {
                 "Clustering Array Job ID": array_job_id,
@@ -222,7 +223,7 @@ def main(pipeline_config_path: Path, n_runs: int | None = None) -> None:
                 "Ensemble id": ensemble_id,
                 "Clustering logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
                 "Calc Distances log": f"~/slurm_logs/slurm-{calc_distances_job_id}.out",
-                "Ensemble output dir": str(ensemble_dir),
+                "Distances plot will be saved to": str(distances_plot_path),
             }
         )
 
