@@ -45,7 +45,7 @@ def plot_merge_matrix(
         assert not show_row_sums
     else:
         if show_row_sums:
-            _fig, (ax_mat, ax_lbl) = plt.subplots(  # pyright: ignore[reportGeneralTypeIssues]
+            _fig, (ax_mat, ax_lbl) = plt.subplots(
                 1, 2, figsize=figsize, gridspec_kw={"width_ratios": [10, 1]}
             )
         else:
@@ -114,7 +114,7 @@ def plot_merge_iteration(
         **(plot_config or {}),
     }
     axs: list[plt.Axes]
-    fig, axs = plt.subplots(  # pyright: ignore[reportAssignmentType]
+    fig, axs = plt.subplots(
         1, 3, figsize=plot_config_["figsize"], sharey=True, gridspec_kw={"width_ratios": [2, 1, 1]}
     )
 
