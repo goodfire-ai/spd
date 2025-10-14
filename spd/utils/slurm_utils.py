@@ -22,56 +22,41 @@ def format_runtime_str(runtime_minutes: int) -> str:
     return f"{hours}h{minutes}m" if hours > 0 else f"{minutes}m"
 
 
-def create_slurm_array_script(
+def _create_slurm_script_base(
     script_path: Path,
     job_name: str,
-    commands: list[str],
     snapshot_branch: str,
-    n_gpus_per_job: int,
+    n_gpus: int,
     partition: str,
-    time_limit: str = "72:00:00",
-    max_concurrent_tasks: int | None = None,
+    time_limit: str,
+    sbatch_directives: str,
+    work_dir_suffix: str,
+    command_block: str,
 ) -> None:
-    """Create a SLURM job array script with git snapshot for consistent code.
+    """Create a SLURM script with git snapshot for consistent code.
 
     Args:
         script_path: Path where the script should be written
-        job_name: Name for the SLURM job array
-        commands: List of commands to execute in each array job
-        snapshot_branch: Git branch to checkout.
-        n_gpus_per_job: Number of GPUs per job. If 0, use CPU jobs.
-        time_limit: Time limit for each job (default: 72:00:00)
-        max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
+        job_name: Name for the SLURM job
+        snapshot_branch: Git branch to checkout
+        n_gpus: Number of GPUs. If 0, use CPU jobs.
+        partition: SLURM partition to use
+        time_limit: Time limit for the job
+        sbatch_directives: Additional SBATCH directives (e.g. --array, --dependency, --output)
+        work_dir_suffix: Suffix for the working directory (e.g. "${SLURM_JOB_ID}" or "${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}")
+        command_block: The command(s) to execute
     """
-
-    slurm_logs_dir = Path.home() / "slurm_logs"
-    slurm_logs_dir.mkdir(exist_ok=True)
-
-    # Create array range (SLURM arrays are 1-indexed)
-    if max_concurrent_tasks is not None:
-        array_range = f"1-{len(commands)}%{max_concurrent_tasks}"
-    else:
-        array_range = f"1-{len(commands)}"
-
-    # Create case statement for commands
-    case_statements = []
-    for i, command in enumerate(commands, 1):
-        case_statements.append(f"{i}) {command} ;;")
-
-    case_block = "\n        ".join(case_statements)
-
     script_content = textwrap.dedent(f"""
         #!/bin/bash
         #SBATCH --nodes=1
-        #SBATCH --gres=gpu:{n_gpus_per_job}
+        #SBATCH --gres=gpu:{n_gpus}
         #SBATCH --partition={partition}
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
-        #SBATCH --array={array_range}
-        #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
+        {sbatch_directives}
 
         # Create job-specific working directory
-        WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
+        WORK_DIR="/tmp/spd-gf-copy-{work_dir_suffix}"
 
         # Clone the repository to the job-specific directory
         git clone {REPO_ROOT} $WORK_DIR
@@ -92,38 +77,123 @@ def create_slurm_array_script(
         uv sync --no-dev --link-mode copy -q
         source .venv/bin/activate
 
-        # Execute the appropriate command based on array task ID
-        case $SLURM_ARRAY_TASK_ID in
-        {case_block}
-        esac
+        {command_block}
     """).strip()
 
     with open(script_path, "w") as f:
         f.write(script_content)
 
-    # Make script executable
     script_path.chmod(0o755)
 
 
-def submit_slurm_array(script_path: Path) -> str:
-    """Submit a SLURM job array and return the array job ID.
+def create_slurm_array_script(
+    script_path: Path,
+    job_name: str,
+    commands: list[str],
+    snapshot_branch: str,
+    n_gpus_per_job: int,
+    partition: str,
+    time_limit: str = "72:00:00",
+    max_concurrent_tasks: int | None = None,
+) -> None:
+    """Create a SLURM job array script with git snapshot for consistent code.
 
     Args:
-        script_path: Path to SLURM batch script
-
-    Returns:
-        Array job ID from submitted job array
+        script_path: Path where the script should be written
+        job_name: Name for the SLURM job array
+        commands: List of commands to execute in each array job
+        snapshot_branch: Git branch to checkout.
+        n_gpus_per_job: Number of GPUs per job. If 0, use CPU jobs.
+        partition: SLURM partition to use
+        time_limit: Time limit for each job (default: 72:00:00)
+        max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
+    slurm_logs_dir = Path.home() / "slurm_logs"
+    slurm_logs_dir.mkdir(exist_ok=True)
+
+    # Create array range (SLURM arrays are 1-indexed)
+    if max_concurrent_tasks is not None:
+        array_range = f"1-{len(commands)}%{max_concurrent_tasks}"
+    else:
+        array_range = f"1-{len(commands)}"
+
+    # Create case statement for commands
+    case_statements = []
+    for i, command in enumerate(commands, 1):
+        case_statements.append(f"{i}) {command} ;;")
+
+    case_block = "\n        ".join(case_statements)
+
+    sbatch_directives = f"""#SBATCH --array={array_range}
+        #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out"""
+
+    command_block = f"""# Execute the appropriate command based on array task ID
+        case $SLURM_ARRAY_TASK_ID in
+        {case_block}
+        esac"""
+
+    _create_slurm_script_base(
+        script_path=script_path,
+        job_name=job_name,
+        snapshot_branch=snapshot_branch,
+        n_gpus=n_gpus_per_job,
+        partition=partition,
+        time_limit=time_limit,
+        sbatch_directives=sbatch_directives,
+        work_dir_suffix="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}",
+        command_block=command_block,
     )
-    # Extract job ID from sbatch output (format: "Submitted batch job 12345")
-    job_id = result.stdout.strip().split()[-1]
-    return job_id
 
 
-def submit_slurm_job(script_path: Path) -> str:
-    """Submit a SLURM job and return the job ID.
+def create_slurm_script(
+    script_path: Path,
+    job_name: str,
+    command: str,
+    snapshot_branch: str,
+    n_gpus: int,
+    partition: str,
+    time_limit: str = "72:00:00",
+    dependency_job_id: str | None = None,
+) -> None:
+    """Create a SLURM job script with git snapshot for consistent code.
+
+    Args:
+        script_path: Path where the script should be written
+        job_name: Name for the SLURM job
+        command: Command to execute
+        snapshot_branch: Git branch to checkout
+        n_gpus: Number of GPUs. If 0, use CPU job.
+        partition: SLURM partition to use
+        time_limit: Time limit for the job (default: 72:00:00)
+        dependency_job_id: Optional job ID to depend on (uses afterok)
+    """
+    slurm_logs_dir = Path.home() / "slurm_logs"
+    slurm_logs_dir.mkdir(exist_ok=True)
+
+    # Build SBATCH directives
+    directives = [f"#SBATCH --output={slurm_logs_dir}/slurm-%j.out"]
+    if dependency_job_id is not None:
+        directives.append(f"#SBATCH --dependency=afterok:{dependency_job_id}")
+
+    sbatch_directives = "\n        ".join(directives)
+
+    command_block = f"# Execute the command\n        {command}"
+
+    _create_slurm_script_base(
+        script_path=script_path,
+        job_name=job_name,
+        snapshot_branch=snapshot_branch,
+        n_gpus=n_gpus,
+        partition=partition,
+        time_limit=time_limit,
+        sbatch_directives=sbatch_directives,
+        work_dir_suffix="${SLURM_JOB_ID}",
+        command_block=command_block,
+    )
+
+
+def submit_slurm_script(script_path: Path) -> str:
+    """Submit a SLURM job (array or single) and return the job ID.
 
     Args:
         script_path: Path to SLURM batch script

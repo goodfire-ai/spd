@@ -27,10 +27,15 @@ import wandb_workspaces.workspaces as ws
 from pydantic import Field, PositiveInt
 
 from spd.base_config import BaseConfig
+from spd.clustering.consts import DistancesMethod
 from spd.log import logger
 from spd.utils.general_utils import replace_pydantic_model
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
-from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
+from spd.utils.slurm_utils import (
+    create_slurm_array_script,
+    create_slurm_script,
+    submit_slurm_script,
+)
 
 
 class ClusteringPipelineConfig(BaseConfig):
@@ -38,6 +43,7 @@ class ClusteringPipelineConfig(BaseConfig):
 
     run_clustering_config_path: Path = Field(description="Path to ClusteringRunConfig file.")
     n_runs: PositiveInt = Field(description="Number of clustering runs in the ensemble")
+    distances_method: DistancesMethod = Field(description="Method to use for calculating distances")
     base_output_dir: Path = Field(description="Base directory for outputs of clustering runs.")
     slurm_job_name_prefix: str = Field(description="Prefix for SLURM job names")
     slurm_partition: str = Field(description="SLURM partition to use")
@@ -109,6 +115,18 @@ def generate_clustering_commands(
     return commands
 
 
+def generate_calc_distances_command(
+    ensemble_id: str, distances_method: DistancesMethod, base_output_dir: Path
+) -> str:
+    """Generate command for calculating distances."""
+    return (
+        f"python spd/clustering/scripts/calc_distances.py "
+        f"--ensemble-id {ensemble_id} "
+        f"--distances-method {distances_method} "
+        f"--base-output-dir {base_output_dir}"
+    )
+
+
 def main(pipeline_config_path: Path, n_runs: int | None = None) -> None:
     """Submit clustering runs to SLURM.
 
@@ -147,34 +165,56 @@ def main(pipeline_config_path: Path, n_runs: int | None = None) -> None:
     pipeline_config.to_file(ensemble_dir / "pipeline_config.yaml")
     logger.info(f"Pipeline config saved to {ensemble_dir / 'pipeline_config.yaml'}")
 
-    commands = generate_clustering_commands(
+    clustering_commands = generate_clustering_commands(
         pipeline_config=pipeline_config, ensemble_id=ensemble_id
     )
-    logger.info(f"Generated {len(commands)} commands")
+    logger.info(f"Generated {len(clustering_commands)} commands")
+
+    calc_distances_command = generate_calc_distances_command(
+        ensemble_id=ensemble_id,
+        distances_method=pipeline_config.distances_method,
+        base_output_dir=pipeline_config.base_output_dir,
+    )
 
     # Submit to SLURM
     with tempfile.TemporaryDirectory() as temp_dir:
-        script_path = Path(temp_dir) / f"clustering_{ensemble_id}.sh"
+        # Submit clustering array job
+        clustering_script_path = Path(temp_dir) / f"clustering_{ensemble_id}.sh"
 
         create_slurm_array_script(
-            script_path=script_path,
-            job_name=pipeline_config.slurm_job_name_prefix,
-            commands=commands,
+            script_path=clustering_script_path,
+            job_name=f"{pipeline_config.slurm_job_name_prefix}_clustering",
+            commands=clustering_commands,
             snapshot_branch=snapshot_branch,
             max_concurrent_tasks=pipeline_config.n_runs,  # Run all concurrently
             n_gpus_per_job=1,  # Always 1 GPU per run
             partition=pipeline_config.slurm_partition,
         )
+        array_job_id = submit_slurm_script(clustering_script_path)
 
-        array_job_id = submit_slurm_array(script_path)
+        # Submit calc_distances job with dependency on array job
+        calc_distances_script_path = Path(temp_dir) / f"calc_distances_{ensemble_id}.sh"
 
-        logger.section("Job submitted successfully!")
+        create_slurm_script(
+            script_path=calc_distances_script_path,
+            job_name=f"{pipeline_config.slurm_job_name_prefix}_calc_distances",
+            command=calc_distances_command,
+            snapshot_branch=snapshot_branch,
+            n_gpus=1,  # Always 1 GPU for distances calculation
+            partition=pipeline_config.slurm_partition,
+            dependency_job_id=array_job_id,
+        )
+        calc_distances_job_id = submit_slurm_script(calc_distances_script_path)
+
+        logger.section("Jobs submitted successfully!")
         logger.values(
             {
-                "Array Job ID": array_job_id,
-                "Total runs": len(commands),
+                "Clustering Array Job ID": array_job_id,
+                "Calc Distances Job ID": calc_distances_job_id,
+                "Total clustering runs": len(clustering_commands),
                 "Ensemble id": ensemble_id,
-                "Logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
+                "Clustering logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
+                "Calc Distances log": f"~/slurm_logs/slurm-{calc_distances_job_id}.out",
             }
         )
 
