@@ -36,9 +36,9 @@ from spd.utils.distributed_utils import (
 )
 from spd.utils.general_utils import (
     extract_batch_data,
-    get_grad_norms_log,
     get_lr_schedule_fn,
     get_lr_with_warmup,
+    runtime_cast,
 )
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
@@ -111,6 +111,55 @@ def local_log(data: dict[str, Any], step: int, out_dir: Path) -> None:
 
     with open(metrics_file, "a") as f:
         f.write(json.dumps({"step": step, **metrics_without_images}) + "\n")
+
+
+def get_grad_norms_log(
+    component_model: ComponentModel, device: torch.device | str
+) -> dict[str, float]:
+    """Get the gradient norms of the opimized parameters for a component model. Also,
+    include sensible groups.
+
+    Assumes that gradients are already averaged across processes, which they
+    should be when using DDP, because gradients existing implies having called
+    .backward().
+    """
+
+    out: dict[str, float] = {}
+
+    comp_grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
+    comp_n_params = 0
+    for target_module_path, component in component_model.components.items():
+        for local_param_name, local_param in component.named_parameters():
+            param_grad = runtime_cast(Tensor, local_param.grad)
+            param_grad_sum_sq = param_grad.pow(2).sum()
+            key = f"train/grad_norm/components/{target_module_path}.{local_param_name}"
+            out[key] = param_grad_sum_sq.sqrt().item()
+            comp_grad_norm_sq_sum += param_grad_sum_sq
+            comp_n_params += param_grad.numel()
+
+    gate_grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
+    gate_n_params = 0
+    for target_module_path, gate in component_model.ci_fns.items():
+        for local_param_name, local_param in gate.named_parameters():
+            gate_grad = runtime_cast(Tensor, local_param.grad)
+            gate_grad_sum_sq = gate_grad.pow(2).sum()
+            key = f"train/grad_norm/gates/{target_module_path}.{local_param_name}"
+            assert key not in out, f"Key {key} already exists in grad norms log"
+            out[key] = gate_grad_sum_sq.sqrt().item()
+            gate_grad_norm_sq_sum += gate_grad_sum_sq
+            gate_n_params += gate_grad.numel()
+
+    # Compute RMS (root mean square) gradient norms
+    out["train/grad_norm/summary/components"] = (
+        (comp_grad_norm_sq_sum / comp_n_params).sqrt().item()
+    )
+    out["train/grad_norm/summary/gates"] = (gate_grad_norm_sq_sum / gate_n_params).sqrt().item()
+
+    total_grad_norm_sq_sum = comp_grad_norm_sq_sum + gate_grad_norm_sq_sum
+    total_n_params = comp_n_params + gate_n_params
+    out["train/grad_norm/summary/total"] = (total_grad_norm_sq_sum / total_n_params).sqrt().item()
+
+    return out
 
 
 def optimize(
