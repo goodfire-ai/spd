@@ -62,6 +62,8 @@ def ci_masked_recon_subset_loss(
 class CIMaskedReconSubsetLoss(Metric):
     """Recon loss when masking with raw CI values and routing to subsets of component layers."""
 
+    metric_section = "loss"
+
     def __init__(
         self, model: ComponentModel, device: str, output_loss_type: Literal["mse", "kl"]
     ) -> None:

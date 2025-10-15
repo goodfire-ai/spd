@@ -17,6 +17,7 @@ class ComponentActivationDensity(Metric):
     """Activation density for each component."""
 
     slow: ClassVar[bool] = True
+    metric_section = "figures"
 
     def __init__(self, model: ComponentModel, device: str, ci_alive_threshold: float) -> None:
         self.model = model
@@ -50,4 +51,4 @@ class ComponentActivationDensity(Metric):
             activation_densities[module_name] = counts_reduced / n_examples_reduced
 
         fig = plot_component_activation_density(activation_densities)
-        return {"figures/component_activation_density": fig}
+        return {"component_activation_density": fig}

@@ -1,5 +1,6 @@
 """Run SPD on a model."""
 
+from contextlib import nullcontext
 import gc
 import json
 from collections import defaultdict
@@ -277,7 +278,7 @@ def optimize(
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
 
-        for _ in range(config.gradient_accumulation_steps):
+        for grad_accum_step in range(config.gradient_accumulation_steps):
             weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
@@ -308,10 +309,18 @@ def optimize(
                 n_mask_samples=config.n_mask_samples,
                 output_loss_type=config.output_loss_type,
             )
-            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
+            is_last_grad_accum_step = grad_accum_step == config.gradient_accumulation_steps - 1
+            ctx = (
+                wrapped_model.no_sync()
+                if isinstance(wrapped_model, torch.nn.parallel.DistributedDataParallel)
+                and not is_last_grad_accum_step
+                else nullcontext()
+            )
+            with ctx:
+                microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
-                microbatch_log_data[f"train/loss/{loss_name}"] += (
+                microbatch_log_data[f"train/{loss_name}"] += (
                     loss_value / config.gradient_accumulation_steps
                 )
 
@@ -330,13 +339,13 @@ def optimize(
             alive_counts = alive_tracker.compute()
             for target_module_path, n_alive_count in alive_counts.items():
                 n_alive_key = (
-                    f"train/alive_t{alive_tracker.ci_alive_threshold}/{target_module_path}"
+                    f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
                 )
                 microbatch_log_data[n_alive_key] = n_alive_count
 
             microbatch_log_data.update(get_grad_norms_log(component_model, device))
 
-            microbatch_log_data["train/lr"] = step_lr
+            microbatch_log_data["train/schedules/lr"] = step_lr
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")

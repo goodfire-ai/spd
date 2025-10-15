@@ -30,23 +30,23 @@ class TrainMetricConfig(BaseConfig):
     )
 
 
-class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconSubsetLossConfig(TrainMetricConfig):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
 
 
-class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconLayerwiseLossConfig(TrainMetricConfig):
     classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
 
 
-class CIMaskedReconLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconLossConfig(TrainMetricConfig):
     classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
 
 
-class FaithfulnessLossTrainConfig(TrainMetricConfig):
+class FaithfulnessLossConfig(TrainMetricConfig):
     classname: Literal["FaithfulnessLoss"] = "FaithfulnessLoss"
 
 
-class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
+class ImportanceMinimalityLossConfig(TrainMetricConfig):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
     pnorm: float
     p_anneal_start_frac: float = 1.0
@@ -55,15 +55,15 @@ class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
     eps: float = 1e-12
 
 
-class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
+class StochasticReconLayerwiseLossConfig(TrainMetricConfig):
     classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
 
 
-class StochasticReconLossTrainConfig(TrainMetricConfig):
+class StochasticReconLossConfig(TrainMetricConfig):
     classname: Literal["StochasticReconLoss"] = "StochasticReconLoss"
 
 
-class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
+class StochasticReconSubsetLossConfig(TrainMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
 
 
@@ -126,14 +126,14 @@ class UVPlotsConfig(BaseConfig):
 
 
 TrainMetricConfigType = (
-    CIMaskedReconSubsetLossTrainConfig
-    | CIMaskedReconLayerwiseLossTrainConfig
-    | CIMaskedReconLossTrainConfig
-    | FaithfulnessLossTrainConfig
-    | ImportanceMinimalityLossTrainConfig
-    | StochasticReconLayerwiseLossTrainConfig
-    | StochasticReconLossTrainConfig
-    | StochasticReconSubsetLossTrainConfig
+    CIMaskedReconSubsetLossConfig
+    | CIMaskedReconLayerwiseLossConfig
+    | CIMaskedReconLossConfig
+    | FaithfulnessLossConfig
+    | ImportanceMinimalityLossConfig
+    | StochasticReconLayerwiseLossConfig
+    | StochasticReconLossConfig
+    | StochasticReconSubsetLossConfig
     | StochasticHiddenActsReconLossConfig
 )
 EvalOnlyMetricConfigType = (

@@ -82,6 +82,8 @@ def stochastic_recon_subset_loss(
 class StochasticReconSubsetLoss(Metric):
     """Recon loss when sampling with stochastic masks and routing to subsets of component layers."""
 
+    metric_section = "loss"
+
     def __init__(
         self,
         model: ComponentModel,

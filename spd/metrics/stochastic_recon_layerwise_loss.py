@@ -83,6 +83,8 @@ def stochastic_recon_layerwise_loss(
 class StochasticReconLayerwiseLoss(Metric):
     """Recon loss when sampling with stochastic masks one layer at a time."""
 
+    metric_section = "loss"
+
     def __init__(
         self,
         model: ComponentModel,

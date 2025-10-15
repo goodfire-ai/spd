@@ -126,6 +126,8 @@ class ImportanceMinimalityLoss(Metric):
         eps: The epsilon value for numerical stability.
     """
 
+    metric_section = "loss"
+
     def __init__(
         self,
         model: ComponentModel,

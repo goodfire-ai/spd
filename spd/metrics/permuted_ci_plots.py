@@ -12,6 +12,8 @@ class PermutedCIPlots(Metric):
     slow: ClassVar[bool] = True
     input_magnitude: ClassVar[float] = 0.75
 
+    metric_section = "figures"
+
     def __init__(
         self,
         model: ComponentModel,
@@ -44,4 +46,4 @@ class PermutedCIPlots(Metric):
             sampling=self.sampling,
         )[0]
 
-        return {f"figures/{k}": v for k, v in figures.items()}
+        return {k: v for k, v in figures.items()}

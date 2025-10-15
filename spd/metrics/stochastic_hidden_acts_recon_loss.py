@@ -85,6 +85,8 @@ def stochastic_hidden_acts_recon_loss(
 class StochasticHiddenActsReconLoss(Metric):
     """Reconstruction loss between target and stochastic hidden activations when sampling with stochastic masks."""
 
+    metric_section = "loss"
+
     def __init__(
         self,
         model: ComponentModel,

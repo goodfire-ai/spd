@@ -38,6 +38,8 @@ def faithfulness_loss(weight_deltas: dict[str, Float[Tensor, "d_out d_in"]]) -> 
 class FaithfulnessLoss(Metric):
     """MSE between the target weights and the sum of the components."""
 
+    metric_section = "loss"
+
     def __init__(self, model: ComponentModel, device: str) -> None:
         self.model = model
         self.sum_loss = torch.tensor(0.0, device=device)

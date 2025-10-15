@@ -16,6 +16,7 @@ class Metric(Protocol):
     """Interface for metrics that can be used in training and/or evaluation."""
 
     slow: ClassVar[bool] = False
+    metric_section: ClassVar[str]
 
     def update(
         self,

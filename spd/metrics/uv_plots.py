@@ -9,6 +9,8 @@ from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
 
 
 class UVPlots(Metric):
+    metric_section = "figures"
+
     slow: ClassVar[bool] = True
     input_magnitude: ClassVar[float] = 0.75
 
@@ -48,4 +50,4 @@ class UVPlots(Metric):
             components=self.model.components, all_perm_indices=all_perm_indices
         )
 
-        return {"figures/uv_matrices": uv_matrices}
+        return {"uv_matrices": uv_matrices}

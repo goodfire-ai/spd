@@ -21,24 +21,26 @@ class CEandKLLosses(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
+    metric_section = "ce_kl"
+
     # NOTE: Gross that we have to hardcode these here. Open to other ideas.
     loss_keys: list[str] = [
-        "kl/ci_masked",
-        "kl/unmasked",
-        "kl/stoch_masked",
-        "kl/random_masked",
-        "kl/rounded_masked",
-        "kl/zero_masked",
-        "ce_difference/ci_masked",
-        "ce_difference/unmasked",
-        "ce_difference/stoch_masked",
-        "ce_difference/random_masked",
-        "ce_difference/rounded_masked",
-        "ce_unrecovered/ci_masked",
-        "ce_unrecovered/unmasked",
-        "ce_unrecovered/stoch_masked",
-        "ce_unrecovered/random_masked",
-        "ce_unrecovered/rounded_masked",
+        "kl_ci_masked",
+        "kl_unmasked",
+        "kl_stoch_masked",
+        "kl_random_masked",
+        "kl_rounded_masked",
+        "kl_zero_masked",
+        "ce_difference_ci_masked",
+        "ce_difference_unmasked",
+        "ce_difference_stoch_masked",
+        "ce_difference_random_masked",
+        "ce_difference_rounded_masked",
+        "ce_unrecovered_ci_masked",
+        "ce_unrecovered_unmasked",
+        "ce_unrecovered_stoch_masked",
+        "ce_unrecovered_random_masked",
+        "ce_unrecovered_rounded_masked",
     ]
 
     def __init__(
@@ -153,22 +155,22 @@ class CEandKLLosses(Metric):
             return ce - target_model_ce_loss
 
         out: dict[str, float] = {
-            "kl/ci_masked": ci_masked_kl_loss,
-            "kl/unmasked": unmasked_kl_loss,
-            "kl/stoch_masked": stoch_masked_kl_loss,
-            "kl/random_masked": random_masked_kl_loss,
-            "kl/rounded_masked": rounded_masked_kl_loss,
-            "kl/zero_masked": zero_masked_kl_loss,
-            "ce_difference/ci_masked": ce_difference(ci_masked_ce_loss),
-            "ce_difference/unmasked": ce_difference(unmasked_ce_loss),
-            "ce_difference/stoch_masked": ce_difference(stoch_masked_ce_loss),
-            "ce_difference/random_masked": ce_difference(random_masked_ce_loss),
-            "ce_difference/rounded_masked": ce_difference(rounded_masked_ce_loss),
-            "ce_unrecovered/ci_masked": pct_ce_unrecovered(ci_masked_ce_loss),
-            "ce_unrecovered/unmasked": pct_ce_unrecovered(unmasked_ce_loss),
-            "ce_unrecovered/stoch_masked": pct_ce_unrecovered(stoch_masked_ce_loss),
-            "ce_unrecovered/random_masked": pct_ce_unrecovered(random_masked_ce_loss),
-            "ce_unrecovered/rounded_masked": pct_ce_unrecovered(rounded_masked_ce_loss),
+            "kl_ci_masked": ci_masked_kl_loss,
+            "kl_unmasked": unmasked_kl_loss,
+            "kl_stoch_masked": stoch_masked_kl_loss,
+            "kl_random_masked": random_masked_kl_loss,
+            "kl_rounded_masked": rounded_masked_kl_loss,
+            "kl_zero_masked": zero_masked_kl_loss,
+            "ce_difference_ci_masked": ce_difference(ci_masked_ce_loss),
+            "ce_difference_unmasked": ce_difference(unmasked_ce_loss),
+            "ce_difference_stoch_masked": ce_difference(stoch_masked_ce_loss),
+            "ce_difference_random_masked": ce_difference(random_masked_ce_loss),
+            "ce_difference_rounded_masked": ce_difference(rounded_masked_ce_loss),
+            "ce_unrecovered_ci_masked": pct_ce_unrecovered(ci_masked_ce_loss),
+            "ce_unrecovered_unmasked": pct_ce_unrecovered(unmasked_ce_loss),
+            "ce_unrecovered_stoch_masked": pct_ce_unrecovered(stoch_masked_ce_loss),
+            "ce_unrecovered_random_masked": pct_ce_unrecovered(random_masked_ce_loss),
+            "ce_unrecovered_rounded_masked": pct_ce_unrecovered(rounded_masked_ce_loss),
         }
         assert list(out.keys()) == self.loss_keys
         return out

@@ -18,6 +18,8 @@ class CI_L0(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
+    metric_section = "l0"
+
     def __init__(
         self,
         model: ComponentModel,
@@ -55,11 +57,12 @@ class CI_L0(Metric):
     def compute(self) -> dict[str, float | wandb.plot.CustomChart]:
         out = {}
         table_data = []
+
         for key, l0s in self.l0_values.items():
             global_sum = all_reduce(torch.tensor(l0s, device=self.device).sum(), op=ReduceOp.SUM)
             global_count = all_reduce(torch.tensor(len(l0s), device=self.device), op=ReduceOp.SUM)
             avg_l0 = (global_sum / global_count).item()
-            out[f"l0_{self.l0_threshold}/{key}"] = avg_l0
+            out[f"{self.l0_threshold}_{key}"] = avg_l0
             table_data.append((key, avg_l0))
         bar_chart = wandb.plot.bar(
             table=wandb.Table(columns=["layer", "l0"], data=table_data),
@@ -67,5 +70,5 @@ class CI_L0(Metric):
             value="l0",
             title=f"L0_{self.l0_threshold}",
         )
-        out["l0_bar_chart"] = bar_chart
+        out["bar_chart"] = bar_chart
         return out

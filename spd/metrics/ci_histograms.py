@@ -14,6 +14,7 @@ from spd.utils.distributed_utils import gather_all_tensors
 
 class CIHistograms(Metric):
     slow: ClassVar[bool] = True
+    metric_section = "figures"
 
     def __init__(
         self,
@@ -60,6 +61,6 @@ class CIHistograms(Metric):
         pre_sigmoid_fig = plot_ci_values_histograms(causal_importances=pre_sigmoid_cis)
 
         return {
-            "figures/causal_importance_values": lower_leaky_fig,
-            "figures/causal_importance_values_pre_sigmoid": pre_sigmoid_fig,
+            "causal_importance_values": lower_leaky_fig,
+            "causal_importance_values_pre_sigmoid": pre_sigmoid_fig,
         }

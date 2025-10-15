@@ -56,6 +56,8 @@ def ci_masked_recon_layerwise_loss(
 class CIMaskedReconLayerwiseLoss(Metric):
     """Recon loss when masking with CI values directly one layer at a time."""
 
+    metric_section = "loss"
+
     def __init__(
         self, model: ComponentModel, device: str, output_loss_type: Literal["mse", "kl"]
     ) -> None:

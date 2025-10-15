@@ -13,6 +13,7 @@ from spd.utils.distributed_utils import all_reduce
 
 class CIMeanPerComponent(Metric):
     slow: ClassVar[bool] = True
+    metric_section = "figures"
 
     def __init__(self, model: ComponentModel, device: str) -> None:
         self.components = model.components
@@ -45,6 +46,6 @@ class CIMeanPerComponent(Metric):
         img_linear, img_log = plot_mean_component_cis_both_scales(mean_component_cis)
 
         return {
-            "figures/ci_mean_per_component": img_linear,
-            "figures/ci_mean_per_component_log": img_log,
+            "ci_mean_per_component": img_linear,
+            "ci_mean_per_component_log": img_log,
         }

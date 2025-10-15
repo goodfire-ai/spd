@@ -1,3 +1,4 @@
+from collections import defaultdict
 from fnmatch import fnmatch
 from typing import Any, Literal, override
 
@@ -21,6 +22,8 @@ class StochasticReconSubsetCEAndKL(Metric):
 
     NOTE: Assumes all batches and sequences are the same size.
     """
+
+    metric_section = "subset_worst"
 
     def __init__(
         self,
@@ -67,11 +70,7 @@ class StochasticReconSubsetCEAndKL(Metric):
                 )
             self.subset_modules[subset_name] = remaining
 
-        self.metric_values: dict[str, list[float]] = {}
-        for subset_name in self.subset_modules:
-            for suffix in ["_kl", "_ce", "_ce_unrec"]:
-                metric_key = f"{subset_name}{suffix}"
-                self.metric_values[metric_key] = []
+        self.metric_values = defaultdict[str, list[float]](list)
 
     @override
     def update(
@@ -112,8 +111,8 @@ class StochasticReconSubsetCEAndKL(Metric):
             results_by_type = {k: v for k, v in results.items() if k.endswith(metric_type)}
             worst_subset = max(results_by_type, key=lambda k: results_by_type[k])
             worst_value = results_by_type[worst_subset]
-            results[f"subset_worst/{metric_type}"] = worst_value
-            results[f"subset_worst/{metric_type}_subset"] = worst_subset
+            results[f"{metric_type}"] = worst_value
+            results[f"{metric_type}_subset"] = worst_subset
 
         return results
 

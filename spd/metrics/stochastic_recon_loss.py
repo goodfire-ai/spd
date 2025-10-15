@@ -81,6 +81,8 @@ def stochastic_recon_loss(
 class StochasticReconLoss(Metric):
     """Recon loss when sampling with stochastic masks on all component layers."""
 
+    metric_section = "loss"
+
     def __init__(
         self,
         model: ComponentModel,
