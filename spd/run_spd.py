@@ -17,7 +17,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from spd.configs import Config
+from spd.configs import Config, FaithfulnessWarmupConfig
 from spd.data import loop_dataloader
 from spd.eval import avg_eval_metrics_across_ranks, evaluate
 from spd.identity_insertion import insert_identity_operations_
@@ -46,7 +46,7 @@ from spd.utils.run_utils import save_file
 def run_faithfulness_warmup(
     component_model: ComponentModel,
     component_params: list[torch.nn.Parameter],
-    config: Config,
+    config: FaithfulnessWarmupConfig,
 ) -> None:
     """Run faithfulness warmup phase to improve initialization.
 
@@ -62,27 +62,25 @@ def run_faithfulness_warmup(
 
     faithfulness_warmup_optimizer = optim.AdamW(
         component_params,
-        lr=config.faithfulness_warmup_lr,
-        weight_decay=config.faithfulness_warmup_weight_decay,
+        lr=config.lr,
+        weight_decay=config.weight_decay,
     )
 
-    for faithfulness_warmup_step in range(config.faithfulness_warmup_steps):
+    for step in range(config.steps):
         faithfulness_warmup_optimizer.zero_grad()
         weight_deltas = component_model.calc_weight_deltas()
         loss = faithfulness_loss(weight_deltas)
         loss.backward()
         faithfulness_warmup_optimizer.step()
 
-        if (
-            faithfulness_warmup_step % 100 == 0
-            or faithfulness_warmup_step == config.faithfulness_warmup_steps - 1
-        ):
+        if step % 100 == 0 or step == config.steps - 1:
             logger.info(
-                f"Faithfulness warmup step {faithfulness_warmup_step + 1} / {config.faithfulness_warmup_steps}; Faithfulness loss: {loss.item():.9f}"
+                f"Faithfulness warmup step {step + 1} / {config.steps}; Faithfulness loss: {loss.item():.9f}"
             )
+
     del faithfulness_warmup_optimizer
-    torch.cuda.empty_cache()
     gc.collect()
+    torch.cuda.empty_cache()
 
 
 def local_log(data: dict[str, Any], step: int, out_dir: Path) -> None:
@@ -196,8 +194,8 @@ def optimize(
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
-    if config.faithfulness_warmup_steps > 0:
-        run_faithfulness_warmup(component_model, component_params, config)
+    if config.faithfulness_warmup:
+        run_faithfulness_warmup(component_model, component_params, config.faithfulness_warmup)
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
@@ -337,8 +335,8 @@ def optimize(
                         wandb.log(wandb_logs, step=step)
 
                 del metrics
-                torch.cuda.empty_cache()
                 gc.collect()
+                torch.cuda.empty_cache()
 
         # --- Saving Checkpoint --- #
         if (
