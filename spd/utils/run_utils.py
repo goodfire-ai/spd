@@ -5,14 +5,22 @@ import itertools
 import json
 import secrets
 import string
+import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Final, Literal, NamedTuple
 
 import torch
 import wandb
 import yaml
 
+from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
+from spd.utils.git_utils import (
+    create_git_snapshot,
+    repo_current_branch,
+    repo_current_commit_hash,
+    repo_is_clean,
+)
 
 # Fields that use discriminated union merging: field_name -> discriminator_field
 _DISCRIMINATED_LIST_FIELDS: dict[str, str] = {
@@ -462,3 +470,192 @@ def generate_run_name(params: dict[str, Any]) -> str:
             parts.append(f"{param}-{value}")
 
     return "-".join(parts)
+
+
+RunType = Literal["spd", "cluster", "ensemble"]
+
+RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {
+    "spd": "s",
+    "cluster": "c",
+    "ensemble": "e",
+}
+
+
+# TODO: This doesnt work in pytest but would in general be nice to enforce. hmm.
+# _CREATED_RUN_ID: bool = False
+
+
+def _generate_run_id(run_type: RunType) -> str:
+    """Generate a unique run identifier,
+
+    Format: `{type_abbr}-{random_hex}`
+    """
+    # global _CREATED_RUN_ID
+    # if _CREATED_RUN_ID:
+    #     raise RuntimeError(
+    #         "Run ID has already been generated for this process! You can only call this once."
+    #     )
+    type_abbr: str = RUN_TYPE_ABBREVIATIONS[run_type]
+    random_hex: str = secrets.token_hex(4)
+    # _CREATED_RUN_ID = True  # pyright: ignore[reportConstantRedefinition]
+    return f"{type_abbr}-{random_hex}"
+
+
+class ExecutionStamp(NamedTuple):
+    run_id: str
+    snapshot_branch: str
+    commit_hash: str
+
+    @classmethod
+    def create(
+        cls,
+        run_type: RunType,
+        create_snapshot: bool = True,
+    ) -> "ExecutionStamp":
+        """create an execution stamp, possibly including a git snapshot branch"""
+
+        run_id: str = _generate_run_id(run_type)
+        snapshot_branch: str
+        commit_hash: str
+
+        if create_snapshot:
+            snapshot_branch, commit_hash = create_git_snapshot(run_id=run_id)
+            logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
+        else:
+            snapshot_branch = repo_current_branch()
+            if repo_is_clean():  # repo_is_clean() should return True if working dir is clean
+                commit_hash = repo_current_commit_hash()
+                logger.info(f"Using current branch: {snapshot_branch} ({commit_hash[:8]})")
+            else:
+                commit_hash = "none"
+                logger.info(
+                    f"Using current branch: {snapshot_branch} (unpushed changes, no commit hash)"
+                )
+
+        return ExecutionStamp(
+            run_id=run_id, snapshot_branch=snapshot_branch, commit_hash=commit_hash
+        )
+
+
+def run_script_array_local(commands: list[list[str]], parallel: bool = False) -> None:
+    """alternative to `create_slurm_array_script` for local execution of multiple commands
+
+    if `parallel` is True, runs all commands in parallel using subprocess.Popen
+    otherwise runs them sequentially using subprocess.run
+    """
+    n_commands: int = len(commands)
+    if not parallel:
+        logger.section(f"LOCAL EXECUTION: Running {n_commands} tasks serially")
+        for i, cmd in enumerate(commands):
+            logger.info(f"[{i + 1}/{n_commands}] Running command: `{' '.join(cmd)}`")
+            subprocess.run(cmd, check=True)
+        logger.section("LOCAL EXECUTION COMPLETE")
+    else:
+        # procs: list[subprocess.Popen[bytes]] = [subprocess.Popen(cmd) for cmd in commands]
+        procs: list[subprocess.Popen[bytes]] = []
+        for i, cmd in enumerate(commands):
+            logger.info(f"[{i + 1}/{n_commands}] Starting command: `{' '.join(cmd)}`")
+            p = subprocess.Popen(cmd)
+            procs.append(p)
+        logger.section("STARTED ALL COMMANDS")
+        for p in procs:
+            p.wait()
+            logger.info(f"Process {p.pid} finished with exit code {p.returncode}")
+        logger.section("LOCAL EXECUTION COMPLETE")
+
+
+import os
+import shlex
+import subprocess
+
+from pydantic import BaseModel, field_validator, model_validator
+
+
+
+
+
+class Command(BaseModel):
+    """Simple typed command with shell flag and subprocess helpers."""
+    cmd: list[str] | str
+    shell: bool = False
+    env: dict[str, str] | None = None
+    inherit_env: bool = True
+
+    @model_validator(mode="after")
+    def _enforce_types(self) -> "Command":
+        """Enforce cmd type when shell is False."""
+        if self.shell is False and isinstance(self.cmd, str):
+            raise ValueError("cmd must be list[str] when shell is False")
+        return self
+    
+    def _quote_env(self) -> str:
+        """Return KEY=VAL tokens for env values. ignores `inherit_env`."""
+        if not self.env:
+            return ""
+
+        parts: list[str] = []
+        for k, v in self.env.items():
+            token: str = f"{k}={v}"
+            parts.append(token)
+        prefix: str = " ".join(parts)
+        return prefix
+    
+    @property
+    def cmd_joined(self) -> str:
+        """Return cmd as a single string, joining with spaces if it's a list. no env included."""
+        if isinstance(self.cmd, str):
+            return self.cmd
+        else:
+            return " ".join(self.cmd)
+        
+
+    @property
+    def cmd_for_subprocess(self) -> list[str] | str:
+        """Return cmd, splitting if shell is True and cmd is a string."""
+        if self.shell:
+            if isinstance(self.cmd, str):
+                return self.cmd
+            else:
+                return " ".join(self.cmd)
+        else:
+            assert isinstance(self.cmd, list)
+            return self.cmd
+
+    def script_line(self) -> str:
+        """Return a single shell string, prefixing KEY=VAL for env if provided."""
+        return f"{self._quote_env()} {self.cmd_joined}".strip()
+    
+    @property
+    def env_final(self) -> dict[str, str]:
+        """Return final env dict, merging with os.environ if inherit_env is True."""
+        return {
+            **(os.environ if self.inherit_env else {}),
+            **(self.env or {}),
+        }
+
+    def run(
+        self,
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[Any]:
+        """Call subprocess.run with this command."""
+        return subprocess.run(
+            self.cmd_for_subprocess,
+            shell=self.shell,
+            env=self.env_final,
+            **kwargs,
+        )
+
+    def Popen(
+        self,
+        **kwargs: Any,
+    ) -> subprocess.Popen[Any]:
+        """Call subprocess.Popen with this command."""
+        return subprocess.Popen(
+            self.cmd_for_subprocess,
+            shell=self.shell,
+            env=self.env_final,
+            **kwargs,
+        )
+
+    def __str__(self) -> str:
+        return self.script_line()

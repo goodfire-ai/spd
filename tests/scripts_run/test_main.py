@@ -109,7 +109,7 @@ class TestSPDRun:
             ("tms_5-2", True),
         ],
     )
-    @patch("spd.scripts.run.subprocess.run")
+    @patch("spd.utils.run_utils.run_script_array_local")
     @patch("spd.scripts.run.load_sweep_params")
     def test_spd_run_local_no_sweep(
         self,
@@ -178,7 +178,7 @@ class TestSPDRun:
                 **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
             )
 
-    @patch("spd.scripts.run.subprocess.run")
+    @patch("spd.utils.run_utils.run_script_array_local")
     def test_sweep_params_integration(self, mock_subprocess):
         """Test that sweep parameters are correctly integrated into commands.
 

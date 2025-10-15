@@ -10,10 +10,7 @@ For full CLI usage and examples, see the bottom of this file (or run `spd-run --
 import argparse
 import copy
 import json
-import shlex
-import subprocess
 import tempfile
-from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Final
@@ -24,15 +21,15 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
-from spd.utils.git_utils import create_git_snapshot, repo_current_branch
-from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
-from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_script
+from spd.utils.run_utils import (
+    ExecutionStamp,
+    apply_nested_updates,
+    generate_grid_combinations,
+    generate_run_name,
+    run_script_array_local,
+)
+from spd.utils.slurm_utils import create_slurm_array_script, join_commands, submit_slurm_script
 from spd.utils.wandb_utils import wandb_setup
-
-
-def generate_run_id() -> str:
-    """Generate a unique run ID based on timestamp."""
-    return f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
 def resolve_sweep_params_path(sweep_params_file: str) -> Path:
@@ -126,14 +123,14 @@ def generate_commands(
     sweep_params_file: str | None = None,
     project: str = "spd",
     dp: int = 1,
-) -> list[str]:
+) -> list[list[str]]:
     """Generate commands for all experiment runs and print task counts.
 
     NOTE: When we convert parameter settings into JSON strings to pass to our decomposition scripts,
     we add a prefix to prevent Fire parsing with ast.literal_eval
     (https://github.com/google/python-fire/issues/332)
     """
-    commands: list[str] = []
+    commands: list[list[str]] = []
 
     logger.info("Task breakdown by experiment:")
     task_breakdown: dict[str, str] = {}
@@ -164,7 +161,8 @@ def generate_commands(
                 f"--sweep_id {run_id} --evals_id {experiment}"
             )
 
-            commands.append(command)
+            # TODO: this and the other append are a hack and i dont like it. makes me think that a special `Command` class is maybe worth it
+            commands.append([command])
             task_breakdown[experiment] = "1 task"
             cmd_idx += 1
 
@@ -193,7 +191,7 @@ def generate_commands(
                     f"--sweep_params_json '{sweep_params_json}'"
                 )
 
-                commands.append(command)
+                commands.append([command])
                 cmd_idx += 1
 
                 # Print first combination as example
@@ -205,35 +203,6 @@ def generate_commands(
         logger.values(task_breakdown)
 
     return commands
-
-
-def run_commands_locally(commands: list[str]) -> None:
-    """Execute commands locally in sequence.
-
-    Args:
-        commands: List of shell commands to execute
-    """
-
-    logger.section(f"LOCAL EXECUTION: Running {len(commands)} tasks")
-
-    for i, command in enumerate(commands, 1):
-        # Parse command into arguments
-        args = shlex.split(command)
-
-        # Extract experiment name from script path for cleaner output
-        script_name = args[1].split("/")[-1]
-        logger.section(f"[{i}/{len(commands)}] Executing: {script_name}...")
-
-        result = subprocess.run(args)
-
-        if result.returncode != 0:
-            logger.warning(
-                f"[{i}/{len(commands)}] ⚠️  Warning: Command failed with exit code {result.returncode}"
-            )
-        else:
-            logger.info(f"[{i}/{len(commands)}] ✓ Completed successfully")
-
-    logger.section("LOCAL EXECUTION COMPLETE")
 
 
 def get_experiments(
@@ -337,7 +306,11 @@ def main(
     logger.set_format("console", log_format)
 
     # Determine run id
-    run_id: str = generate_run_id()
+    execution_stamp: ExecutionStamp = ExecutionStamp.create(
+        run_type="spd",
+        create_snapshot=create_snapshot,
+    )
+    run_id: str = execution_stamp.run_id
     logger.info(f"Run ID: {run_id}")
 
     # Determine the sweep parameters file
@@ -364,18 +337,6 @@ def main(
     # ==========================================================================================
 
     if not local or use_wandb:
-        # set up snapshot branch and commit hash
-        snapshot_branch: str
-        commit_hash: str
-
-        if create_snapshot:
-            snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="run")
-            logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
-        else:
-            snapshot_branch = repo_current_branch()
-            commit_hash = "none"
-            logger.info(f"Using current branch: {snapshot_branch}")
-
         # set up wandb
         if use_wandb:
             wandb_setup(
@@ -385,8 +346,8 @@ def main(
                 create_report=create_report,
                 # if `create_report == False`, the rest of the arguments don't matter
                 report_title=report_title,
-                snapshot_branch=snapshot_branch,
-                commit_hash=commit_hash,
+                snapshot_branch=execution_stamp.snapshot_branch,
+                commit_hash=execution_stamp.commit_hash,
                 include_run_comparer=sweep_params_file is not None,
             )
         else:
@@ -400,7 +361,7 @@ def main(
 
     # generate and run commands
     # ==========================================================================================
-    commands: list[str] = generate_commands(
+    commands: list[list[str]] = generate_commands(
         experiments_list=experiments_list,
         run_id=run_id,
         sweep_params_file=sweep_params_file,
@@ -409,7 +370,7 @@ def main(
     )
 
     if local:
-        run_commands_locally(commands)
+        run_script_array_local(commands)
     else:
         # Submit to SLURM
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -425,8 +386,8 @@ def main(
             create_slurm_array_script(
                 script_path=array_script,
                 job_name=job_name,
-                commands=commands,
-                snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
+                commands=join_commands(commands),
+                snapshot_branch=execution_stamp.snapshot_branch,
                 max_concurrent_tasks=n_agents,
                 n_gpus_per_job=n_gpus_per_job,
                 partition=partition,

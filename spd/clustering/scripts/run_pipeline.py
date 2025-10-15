@@ -26,8 +26,8 @@ Output structure (only pipeline_config.json is saved to directly in this script.
 """
 
 import argparse
+import subprocess
 import tempfile
-from datetime import datetime
 from pathlib import Path
 
 import wandb_workspaces.workspaces as ws
@@ -37,10 +37,12 @@ from spd.base_config import BaseConfig
 from spd.clustering.consts import DistancesMethod
 from spd.log import logger
 from spd.utils.general_utils import replace_pydantic_model
-from spd.utils.git_utils import create_git_snapshot, repo_current_branch
+from spd.utils.run_utils import ExecutionStamp, run_script_array_local
 from spd.utils.slurm_utils import (
     create_slurm_array_script,
     create_slurm_script,
+    join_command,
+    join_commands,
     submit_slurm_script,
 )
 
@@ -66,6 +68,7 @@ def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str
     """Create WandB workspace view for clustering runs.
 
     TODO: Use a template workspace which actually shows some panels
+    TODO: since the run_id here is the same as the wandb id, can we take advantage of that?
 
     Args:
         ensemble_id: Unique identifier for this ensemble
@@ -86,18 +89,9 @@ def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str
     return workspace.url
 
 
-def generate_run_id_for_ensemble(_config: ClusteringPipelineConfig) -> str:
-    """Generate a unique ensemble identifier based on timestamp.
-
-    This is used as the ensemble_id component in individual run IDs.
-    Format: timestamp
-    """
-    return datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-
-
 def generate_clustering_commands(
     pipeline_config: ClusteringPipelineConfig, ensemble_id: str
-) -> list[str]:
+) -> list[list[str]]:
     """Generate commands for each clustering run.
 
     Args:
@@ -107,16 +101,20 @@ def generate_clustering_commands(
     Returns:
         List of commands, one per run
     """
-    commands = []
+    commands: list[list[str]] = []
 
     for idx in range(pipeline_config.n_runs):
-        command = (
-            f"python spd/clustering/scripts/run_clustering.py "
-            f"--config {pipeline_config.run_clustering_config_path} "
-            f"--idx-in-ensemble {idx} "
-            f"--base-output-dir {pipeline_config.base_output_dir} "
-            f"--ensemble-id {ensemble_id}"
-        )
+        command = [
+            "python",
+            "spd/clustering/scripts/run_clustering.py--config",
+            pipeline_config.run_clustering_config_path.as_posix(),
+            "--idx-in-ensemble",
+            str(idx),
+            "--base-output-dir",
+            pipeline_config.base_output_dir.as_posix(),
+            "--ensemble-id",
+            ensemble_id,
+        ]
         commands.append(command)
 
     return commands
@@ -124,17 +122,25 @@ def generate_clustering_commands(
 
 def generate_calc_distances_command(
     ensemble_id: str, distances_method: DistancesMethod, base_output_dir: Path
-) -> str:
+) -> list[str]:
     """Generate command for calculating distances."""
-    return (
-        f"python spd/clustering/scripts/calc_distances.py "
-        f"--ensemble-id {ensemble_id} "
-        f"--distances-method {distances_method} "
-        f"--base-output-dir {base_output_dir}"
-    )
+    return [
+        "python",
+        "spd/clustering/scripts/calc_distances.py",
+        "--ensemble-id",
+        ensemble_id,
+        "--distances-method",
+        distances_method,
+        "--base-output-dir",
+        base_output_dir.as_posix(),
+    ]
 
 
-def main(pipeline_config_path: Path, n_runs: int | None = None) -> None:
+def main(
+    pipeline_config_path: Path,
+    n_runs: int | None = None,
+    local: bool = False,
+) -> None:
     """Submit clustering runs to SLURM.
 
     Args:
@@ -150,20 +156,15 @@ def main(pipeline_config_path: Path, n_runs: int | None = None) -> None:
 
     if n_runs is not None:
         pipeline_config = replace_pydantic_model(pipeline_config, {"n_runs": n_runs})
-    
 
     # TODO: encapsulate: get run id, branch/snapshot, wandb init? share this with run.py
     # same run_id for wandb, local storage, git snapshot. format `s{hash}` or `c{hash}`
-    ensemble_id = generate_run_id_for_ensemble(pipeline_config)
+    execution_stamp: ExecutionStamp = ExecutionStamp.create(
+        run_type="ensemble",
+        create_snapshot=pipeline_config.create_git_snapshot,
+    )
+    ensemble_id: str = execution_stamp.run_id
     logger.info(f"Ensemble id: {ensemble_id}")
-
-    if pipeline_config.create_git_snapshot:
-        snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="cluster")
-        logger.info(f"Git snapshot: {snapshot_branch} ({commit_hash[:8]})")
-    else:
-        snapshot_branch = repo_current_branch()
-        commit_hash = "none"
-        logger.info(f"Using current branch: {snapshot_branch}")
 
     if pipeline_config.wandb_project is not None:
         workspace_url = create_clustering_workspace_view(
@@ -190,48 +191,70 @@ def main(pipeline_config_path: Path, n_runs: int | None = None) -> None:
     )
 
     # Submit to SLURM
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Submit clustering array job
-        clustering_script_path = Path(temp_dir) / f"clustering_{ensemble_id}.sh"
-
-        create_slurm_array_script(
-            script_path=clustering_script_path,
-            job_name=f"{pipeline_config.slurm_job_name_prefix}_cluster",
+    if local:
+        # submit clustering array job
+        run_script_array_local(
             commands=clustering_commands,
-            snapshot_branch=snapshot_branch,
-            max_concurrent_tasks=pipeline_config.n_runs,  # Run all concurrently
-            n_gpus_per_job=1,  # Always 1 GPU per run
-            partition=pipeline_config.slurm_partition,
         )
-        array_job_id = submit_slurm_script(clustering_script_path)
 
-        # Submit calc_distances job with dependency on array job
-        calc_distances_script_path = Path(temp_dir) / f"calc_distances_{ensemble_id}.sh"
+        # submit calc_distances job
+        logger.info("Calculating distances...")
+        logger.info(f"Command: {calc_distances_command}")
+        subprocess.run(calc_distances_command, check=True)
 
-        create_slurm_script(
-            script_path=calc_distances_script_path,
-            job_name=f"{pipeline_config.slurm_job_name_prefix}_distances",
-            command=calc_distances_command,
-            snapshot_branch=snapshot_branch,
-            n_gpus=1,  # Always 1 GPU for distances calculation
-            partition=pipeline_config.slurm_partition,
-            dependency_job_id=array_job_id,
-        )
-        calc_distances_job_id = submit_slurm_script(calc_distances_script_path)
-
-        logger.section("Jobs submitted successfully!")
+        logger.section("complete!")
         distances_plot_path = ensemble_dir / f"distances_{pipeline_config.distances_method}.png"
         logger.values(
             {
-                "Clustering Array Job ID": array_job_id,
-                "Calc Distances Job ID": calc_distances_job_id,
                 "Total clustering runs": len(clustering_commands),
                 "Ensemble id": ensemble_id,
-                "Clustering logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
-                "Calc Distances log": f"~/slurm_logs/slurm-{calc_distances_job_id}.out",
-                "Distances plot will be saved to": str(distances_plot_path),
+                "Distances plot": str(distances_plot_path),
             }
         )
+
+    else:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Submit clustering array job
+            clustering_script_path = Path(temp_dir) / f"clustering_{ensemble_id}.sh"
+
+            create_slurm_array_script(
+                script_path=clustering_script_path,
+                job_name=f"{pipeline_config.slurm_job_name_prefix}_cluster",
+                commands=join_commands(clustering_commands),
+                snapshot_branch=execution_stamp.snapshot_branch,
+                max_concurrent_tasks=pipeline_config.n_runs,  # Run all concurrently
+                n_gpus_per_job=1,  # Always 1 GPU per run
+                partition=pipeline_config.slurm_partition,
+            )
+            array_job_id = submit_slurm_script(clustering_script_path)
+
+            # Submit calc_distances job with dependency on array job
+            calc_distances_script_path = Path(temp_dir) / f"calc_distances_{ensemble_id}.sh"
+
+            create_slurm_script(
+                script_path=calc_distances_script_path,
+                job_name=f"{pipeline_config.slurm_job_name_prefix}_distances",
+                command=join_command(calc_distances_command),
+                snapshot_branch=execution_stamp.snapshot_branch,
+                n_gpus=1,  # Always 1 GPU for distances calculation
+                partition=pipeline_config.slurm_partition,
+                dependency_job_id=array_job_id,
+            )
+            calc_distances_job_id = submit_slurm_script(calc_distances_script_path)
+
+            logger.section("Jobs submitted successfully!")
+            distances_plot_path = ensemble_dir / f"distances_{pipeline_config.distances_method}.png"
+            logger.values(
+                {
+                    "Clustering Array Job ID": array_job_id,
+                    "Calc Distances Job ID": calc_distances_job_id,
+                    "Total clustering runs": len(clustering_commands),
+                    "Ensemble id": ensemble_id,
+                    "Clustering logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
+                    "Calc Distances log": f"~/slurm_logs/slurm-{calc_distances_job_id}.out",
+                    "Distances plot will be saved to": str(distances_plot_path),
+                }
+            )
 
 
 def cli():
@@ -254,6 +277,14 @@ def cli():
         type=int,
         help="Number of clustering runs in the ensemble",
     )
+
+    parser.add_argument(
+        "--local",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Run locally instead of submitting to SLURM",
+    )
+
     args = parser.parse_args()
     main(pipeline_config_path=args.config, n_runs=args.n_runs)
 

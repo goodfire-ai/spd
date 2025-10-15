@@ -232,3 +232,13 @@ def print_job_summary(job_info_list: list[str]) -> None:
     )
 
     logger.info("View logs in: ~/slurm_logs/slurm-<job_id>.out")
+
+
+def join_command(command: list[str]) -> str:
+    """Join a command into a single string for shell/slurm execution"""
+    return " ".join(command)
+
+
+def join_commands(commands: list[list[str]]) -> list[str]:
+    """Join multiple commands into a single string for shell/slurm execution"""
+    return [join_command(cmd) for cmd in commands]
