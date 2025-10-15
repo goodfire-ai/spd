@@ -3,6 +3,7 @@
 import gc
 import json
 from collections import defaultdict
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
 
@@ -226,53 +227,64 @@ def optimize(
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
 
-        for _ in range(config.gradient_accumulation_steps):
-            weight_deltas = component_model.calc_weight_deltas()
-            batch = extract_batch_data(next(train_iterator)).to(device)
+        for grad_accum_step in range(config.gradient_accumulation_steps):
+            is_last_grad_accum_step = grad_accum_step == config.gradient_accumulation_steps - 1
+            
+            # Use DDP.no_sync to prevent gradient synchronization except on the last accumulation step
+            ctx = (
+                wrapped_model.no_sync()
+                if isinstance(wrapped_model, torch.nn.parallel.DistributedDataParallel)
+                and not is_last_grad_accum_step
+                else nullcontext()
+            )
+            
+            with ctx:
+                weight_deltas = component_model.calc_weight_deltas()
+                batch = extract_batch_data(next(train_iterator)).to(device)
 
-            # NOTE: we need to call the wrapped_model at least once each step in order to setup
-            # the DDP gradient syncing for all parameters in the component model. Gradients will
-            # sync regardless of whether the parameters are used in this call to wrapped_model.
-            target_model_output: OutputWithCache = wrapped_model(batch, cache_type="input")
+                # NOTE: we need to call the wrapped_model at least once each step in order to setup
+                # the DDP gradient syncing for all parameters in the component model. Gradients will
+                # sync regardless of whether the parameters are used in this call to wrapped_model.
+                target_model_output: OutputWithCache = wrapped_model(batch, cache_type="input")
 
-            causal_importances, causal_importances_upper_leaky = (
-                component_model.calc_causal_importances(
+                causal_importances, causal_importances_upper_leaky = (
+                    component_model.calc_causal_importances(
+                        pre_weight_acts=target_model_output.cache,
+                        sigmoid_type=config.sigmoid_type,
+                        detach_inputs=False,
+                        sampling=config.sampling,
+                    )
+                )
+
+                alive_tracker.update(ci=causal_importances)
+
+                microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
+                    loss_metric_configs=config.loss_metric_configs,
+                    model=component_model,
+                    batch=batch,
+                    ci=causal_importances,
+                    ci_upper_leaky=causal_importances_upper_leaky,
+                    target_out=target_model_output.output,
+                    weight_deltas=weight_deltas,
                     pre_weight_acts=target_model_output.cache,
-                    sigmoid_type=config.sigmoid_type,
-                    detach_inputs=False,
+                    current_frac_of_training=step / config.steps,
                     sampling=config.sampling,
+                    use_delta_component=config.use_delta_component,
+                    n_mask_samples=config.n_mask_samples,
+                    output_loss_type=config.output_loss_type,
                 )
-            )
+                microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
-            alive_tracker.update(ci=causal_importances)
+                for loss_name, loss_value in microbatch_loss_terms.items():
+                    microbatch_log_data[f"train/loss/{loss_name}"] += (
+                        loss_value / config.gradient_accumulation_steps
+                    )
 
-            microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metric_configs=config.loss_metric_configs,
-                model=component_model,
-                batch=batch,
-                ci=causal_importances,
-                ci_upper_leaky=causal_importances_upper_leaky,
-                target_out=target_model_output.output,
-                weight_deltas=weight_deltas,
-                pre_weight_acts=target_model_output.cache,
-                current_frac_of_training=step / config.steps,
-                sampling=config.sampling,
-                use_delta_component=config.use_delta_component,
-                n_mask_samples=config.n_mask_samples,
-                output_loss_type=config.output_loss_type,
-            )
-            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
-
-            for loss_name, loss_value in microbatch_loss_terms.items():
-                microbatch_log_data[f"train/loss/{loss_name}"] += (
-                    loss_value / config.gradient_accumulation_steps
-                )
-
-            for layer_name, layer_ci in causal_importances.items():
-                l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                microbatch_log_data[f"train/{layer_name}/l0"] += (
-                    l0_val / config.gradient_accumulation_steps
-                )
+                for layer_name, layer_ci in causal_importances.items():
+                    l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
+                    microbatch_log_data[f"train/{layer_name}/l0"] += (
+                        l0_val / config.gradient_accumulation_steps
+                    )
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:

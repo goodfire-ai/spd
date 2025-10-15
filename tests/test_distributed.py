@@ -140,6 +140,54 @@ class TestDistributedDeterminicity:
             # Load and compare saved models
             self._compare_saved_models(dp1_out_dir, dp2_out_dir)
 
+    def test_distributed_with_gradient_accumulation(self):
+        """Test DDP with gradient accumulation > 1 to verify no_sync optimization.
+        
+        Ensures that DDP.no_sync is properly used during gradient accumulation steps
+        and results remain deterministic.
+        """
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+
+            # Create separate output directories for each run
+            dp1_out_dir = tmpdir / "dp1_output_gradaccum"
+            dp2_out_dir = tmpdir / "dp2_output_gradaccum"
+
+            # Run with dp=1 and gradient_accumulation_steps=4
+            config_dp1 = TEST_CONFIG.copy()
+            config_dp1["out_dir"] = str(dp1_out_dir)
+            config_dp1["gradient_accumulation_steps"] = 4
+            config_dp1["steps"] = 10  # Reduce steps for faster test
+
+            config_path_dp1 = tmpdir / "test_config_gradaccum_dp1.yaml"
+            with open(config_path_dp1, "w") as f:
+                yaml.dump(config_dp1, f)
+
+            self._run_experiment(config_path_dp1, n_processes=1, port=29503)
+
+            # Run with dp=2 and gradient_accumulation_steps=4
+            config_dp2 = TEST_CONFIG.copy()
+            config_dp2["out_dir"] = str(dp2_out_dir)
+            config_dp2["gradient_accumulation_steps"] = 4
+            config_dp2["steps"] = 10  # Reduce steps for faster test
+
+            config_path_dp2 = tmpdir / "test_config_gradaccum_dp2.yaml"
+            with open(config_path_dp2, "w") as f:
+                yaml.dump(config_dp2, f)
+
+            self._run_experiment(config_path_dp2, n_processes=2, port=29504)
+
+            # Load and compare metrics
+            dp1_metrics = self._load_metrics(dp1_out_dir / "metrics.jsonl")
+            dp2_metrics = self._load_metrics(dp2_out_dir / "metrics.jsonl")
+
+            # Compare final eval metrics
+            self._validate_metrics(dp1_metrics, dp2_metrics)
+
+            # Load and compare saved models
+            self._compare_saved_models(dp1_out_dir, dp2_out_dir)
+
     def _run_experiment(
         self,
         config_path: Path,
