@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -83,7 +83,7 @@ def stochastic_recon_layerwise_loss(
 class StochasticReconLayerwiseLoss(Metric):
     """Recon loss when sampling with stochastic masks one layer at a time."""
 
-    metric_section = "loss"
+    metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,

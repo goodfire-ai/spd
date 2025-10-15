@@ -13,7 +13,7 @@ from spd.utils.distributed_utils import all_reduce
 
 class CIMeanPerComponent(Metric):
     slow: ClassVar[bool] = True
-    metric_section = "figures"
+    metric_section: ClassVar[str] = "figures"
 
     def __init__(self, model: ComponentModel, device: str) -> None:
         self.components = model.components

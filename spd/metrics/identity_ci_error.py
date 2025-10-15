@@ -14,7 +14,7 @@ class IdentityCIError(Metric):
     slow: ClassVar[bool] = True
     input_magnitude: ClassVar[float] = 0.75
 
-    metric_section = "target_solution_error"
+    metric_section: ClassVar[str] = "target_solution_error"
 
     def __init__(
         self,

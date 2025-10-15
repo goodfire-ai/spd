@@ -1,10 +1,9 @@
 """Run SPD on a model."""
 
 import gc
-import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import torch
 import torch.nn as nn
@@ -38,8 +37,8 @@ from spd.utils.general_utils import (
     extract_batch_data,
     get_lr_schedule_fn,
     get_lr_with_warmup,
-    runtime_cast,
 )
+from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
@@ -85,81 +84,6 @@ def run_faithfulness_warmup(
     del faithfulness_warmup_optimizer
     torch.cuda.empty_cache()
     gc.collect()
-
-
-def local_log(data: dict[str, Any], step: int, out_dir: Path) -> None:
-    metrics_file = out_dir / "metrics.jsonl"
-    metrics_file.touch(exist_ok=True)
-
-    fig_dir = out_dir / "figures"
-    fig_dir.mkdir(exist_ok=True)
-
-    metrics_without_images = {}
-    for k, v in data.items():
-        if isinstance(v, Image.Image):
-            filename = f"{k.replace('/', '_')}_{step}.png"
-            v.save(fig_dir / filename)
-            tqdm.write(f"Saved figure {k} to {fig_dir / filename}")
-        elif isinstance(v, wandb.plot.CustomChart):
-            json_path = fig_dir / f"{k.replace('/', '_')}_{step}.json"
-            payload = {"columns": list(v.table.columns), "data": list(v.table.data), "step": step}
-            with open(json_path, "w") as f:
-                json.dump(payload, f, default=str)
-            tqdm.write(f"Saved custom chart data {k} to {json_path}")
-        else:
-            metrics_without_images[k] = v
-
-    with open(metrics_file, "a") as f:
-        f.write(json.dumps({"step": step, **metrics_without_images}) + "\n")
-
-
-def get_grad_norms_log(
-    component_model: ComponentModel, device: torch.device | str
-) -> dict[str, float]:
-    """Get the gradient norms of the opimized parameters for a component model. Also,
-    include sensible groups.
-
-    Assumes that gradients are already averaged across processes, which they
-    should be when using DDP, because gradients existing implies having called
-    .backward().
-    """
-
-    out: dict[str, float] = {}
-
-    comp_grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
-    comp_n_params = 0
-    for target_module_path, component in component_model.components.items():
-        for local_param_name, local_param in component.named_parameters():
-            param_grad = runtime_cast(Tensor, local_param.grad)
-            param_grad_sum_sq = param_grad.pow(2).sum()
-            key = f"train/grad_norm/components/{target_module_path}.{local_param_name}"
-            out[key] = param_grad_sum_sq.sqrt().item()
-            comp_grad_norm_sq_sum += param_grad_sum_sq
-            comp_n_params += param_grad.numel()
-
-    gate_grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
-    gate_n_params = 0
-    for target_module_path, gate in component_model.ci_fns.items():
-        for local_param_name, local_param in gate.named_parameters():
-            gate_grad = runtime_cast(Tensor, local_param.grad)
-            gate_grad_sum_sq = gate_grad.pow(2).sum()
-            key = f"train/grad_norm/gates/{target_module_path}.{local_param_name}"
-            assert key not in out, f"Key {key} already exists in grad norms log"
-            out[key] = gate_grad_sum_sq.sqrt().item()
-            gate_grad_norm_sq_sum += gate_grad_sum_sq
-            gate_n_params += gate_grad.numel()
-
-    # Compute RMS (root mean square) gradient norms
-    out["train/grad_norm/summary/components"] = (
-        (comp_grad_norm_sq_sum / comp_n_params).sqrt().item()
-    )
-    out["train/grad_norm/summary/gates"] = (gate_grad_norm_sq_sum / gate_n_params).sqrt().item()
-
-    total_grad_norm_sq_sum = comp_grad_norm_sq_sum + gate_grad_norm_sq_sum
-    total_n_params = comp_n_params + gate_n_params
-    out["train/grad_norm/summary/total"] = (total_grad_norm_sq_sum / total_n_params).sqrt().item()
-
-    return out
 
 
 def optimize(
@@ -334,7 +258,8 @@ def optimize(
                 )
                 microbatch_log_data[n_alive_key] = n_alive_count
 
-            microbatch_log_data.update(get_grad_norms_log(component_model, device))
+            grad_norms = get_grad_norms_dict(component_model, device)
+            microbatch_log_data.update({f"train/grad_norms/{k}": v for k, v in grad_norms.items()})
 
             microbatch_log_data["train/schedules/lr"] = step_lr
 

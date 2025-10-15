@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 import einops
 import torch
@@ -21,7 +21,7 @@ class CEandKLLosses(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
-    metric_section = "ce_kl"
+    metric_section: ClassVar[str] = "ce_kl"
 
     # NOTE: Gross that we have to hardcode these here. Open to other ideas.
     loss_keys: list[str] = [

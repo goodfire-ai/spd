@@ -1,4 +1,4 @@
-from typing import Any, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
@@ -38,7 +38,7 @@ def faithfulness_loss(weight_deltas: dict[str, Float[Tensor, "d_out d_in"]]) -> 
 class FaithfulnessLoss(Metric):
     """MSE between the target weights and the sum of the components."""
 
-    metric_section = "loss"
+    metric_section: ClassVar[str] = "loss"
 
     def __init__(self, model: ComponentModel, device: str) -> None:
         self.model = model

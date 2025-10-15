@@ -1,6 +1,6 @@
 from collections import defaultdict
 from fnmatch import fnmatch
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 import einops
 import torch
@@ -23,7 +23,7 @@ class StochasticReconSubsetCEAndKL(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
-    metric_section = "subset_worst"
+    metric_section: ClassVar[str] = "subset_worst"
 
     def __init__(
         self,

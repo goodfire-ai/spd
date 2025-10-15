@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -62,7 +62,7 @@ def ci_masked_recon_subset_loss(
 class CIMaskedReconSubsetLoss(Metric):
     """Recon loss when masking with raw CI values and routing to subsets of component layers."""
 
-    metric_section = "loss"
+    metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self, model: ComponentModel, device: str, output_loss_type: Literal["mse", "kl"]

@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -85,7 +85,7 @@ def stochastic_hidden_acts_recon_loss(
 class StochasticHiddenActsReconLoss(Metric):
     """Reconstruction loss between target and stochastic hidden activations when sampling with stochastic masks."""
 
-    metric_section = "loss"
+    metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,

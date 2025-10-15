@@ -1,6 +1,6 @@
 import re
 from collections import defaultdict
-from typing import Any, override
+from typing import Any, ClassVar, override
 
 import torch
 import wandb
@@ -18,7 +18,7 @@ class CI_L0(Metric):
     NOTE: Assumes all batches and sequences are the same size.
     """
 
-    metric_section = "l0"
+    metric_section: ClassVar[str] = "l0"
 
     def __init__(
         self,

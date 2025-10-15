@@ -1,4 +1,4 @@
-from typing import Any, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
@@ -126,7 +126,7 @@ class ImportanceMinimalityLoss(Metric):
         eps: The epsilon value for numerical stability.
     """
 
-    metric_section = "loss"
+    metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,

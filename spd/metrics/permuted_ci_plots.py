@@ -12,7 +12,7 @@ class PermutedCIPlots(Metric):
     slow: ClassVar[bool] = True
     input_magnitude: ClassVar[float] = 0.75
 
-    metric_section = "figures"
+    metric_section: ClassVar[str] = "figures"
 
     def __init__(
         self,

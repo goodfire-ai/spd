@@ -17,7 +17,7 @@ class ComponentActivationDensity(Metric):
     """Activation density for each component."""
 
     slow: ClassVar[bool] = True
-    metric_section = "figures"
+    metric_section: ClassVar[str] = "figures"
 
     def __init__(self, model: ComponentModel, device: str, ci_alive_threshold: float) -> None:
         self.model = model

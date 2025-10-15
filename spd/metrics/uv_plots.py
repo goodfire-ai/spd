@@ -9,7 +9,7 @@ from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
 
 
 class UVPlots(Metric):
-    metric_section = "figures"
+    metric_section: ClassVar[str] = "figures"
 
     slow: ClassVar[bool] = True
     input_magnitude: ClassVar[float] = 0.75
