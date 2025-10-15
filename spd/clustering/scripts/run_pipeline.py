@@ -248,7 +248,6 @@ def cli():
         type=int,
         help="Number of clustering runs in the ensemble",
     )
-
     args = parser.parse_args()
     main(pipeline_config_path=args.config, n_runs=args.n_runs)
 
