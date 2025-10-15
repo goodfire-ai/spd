@@ -271,7 +271,7 @@ def optimize(
 
             for layer_name, layer_ci in ci.lower_leaky.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                microbatch_log_data[f"train/{layer_name}/l0"] += (
+                microbatch_log_data[f"train/l0/{layer_name}"] += (
                     l0_val / config.gradient_accumulation_steps
                 )
 
@@ -282,8 +282,10 @@ def optimize(
                 microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
             alive_counts = alive_tracker.compute()
-            for metric_name, n_alive_count in alive_counts.items():
-                n_alive_key = f"train/{metric_name}_{alive_tracker.ci_alive_threshold}"
+            for target_module_path, n_alive_count in alive_counts.items():
+                n_alive_key = (
+                    f"train/alive_t{alive_tracker.ci_alive_threshold}/{target_module_path}"
+                )
                 microbatch_log_data[n_alive_key] = n_alive_count
 
             grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
@@ -295,12 +297,12 @@ def optimize(
                 param_grad_sum_sq = param.grad.data.flatten().pow(2).sum()
                 grad_norm_sq_sum += param_grad_sum_sq
                 # frobenius norm as sqrt(sum(square(param.grad)))
-                microbatch_log_data[f"train/misc/{module_path}/grad_norm"] = (
+                microbatch_log_data[f"train/grad_norm/{module_path}"] = (
                     param_grad_sum_sq.sqrt().item()
                 )
 
-            microbatch_log_data["train/misc/grad_norm"] = grad_norm_sq_sum.sqrt().item()
-            microbatch_log_data["train/misc/lr"] = step_lr
+            microbatch_log_data["train/grad_norm/total"] = grad_norm_sq_sum.sqrt().item()
+            microbatch_log_data["train/lr"] = step_lr
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")

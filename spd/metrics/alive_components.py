@@ -67,16 +67,12 @@ class AliveComponentsTracker:
         """Compute the number of alive components per module.
 
         Returns:
-            Dict mapping module names to number of alive components,
-            with keys formatted as "n_alive/{module_name}"
+            Dict mapping module names to number of alive components
         """
         out: dict[str, int] = {}
-        for module_name in self.n_batches_since_fired:
+        for module_name, n_batches_since_fired in self.n_batches_since_fired.items():
             # Use MIN reduction so that a component is alive if it fired on ANY rank
-            batches_since_fired_reduced = all_reduce(
-                self.n_batches_since_fired[module_name], op=ReduceOp.MIN
-            )
-            out[f"n_alive/{module_name}"] = int(
-                (batches_since_fired_reduced < self.n_batches_until_dead).sum().item()
-            )
+            batches_since_fired_reduced = all_reduce(n_batches_since_fired, op=ReduceOp.MIN)
+            n_alive = int((batches_since_fired_reduced < self.n_batches_until_dead).sum().item())
+            out[module_name] = n_alive
         return out
