@@ -141,13 +141,19 @@ def main(pipeline_config_path: Path, n_runs: int | None = None) -> None:
         pipeline_config_path: Path to ClusteringPipelineConfig file
         n_runs: Number of clustering runs in the ensemble. Will override value in the config file.
     """
+    # setup
+    # ==========================================================================================
+
     logger.set_format("console", "default")
 
     pipeline_config = ClusteringPipelineConfig.from_file(pipeline_config_path)
 
     if n_runs is not None:
         pipeline_config = replace_pydantic_model(pipeline_config, {"n_runs": n_runs})
+    
 
+    # TODO: encapsulate: get run id, branch/snapshot, wandb init? share this with run.py
+    # same run_id for wandb, local storage, git snapshot. format `s{hash}` or `c{hash}`
     ensemble_id = generate_run_id_for_ensemble(pipeline_config)
     logger.info(f"Ensemble id: {ensemble_id}")
 
@@ -248,7 +254,6 @@ def cli():
         type=int,
         help="Number of clustering runs in the ensemble",
     )
-
     args = parser.parse_args()
     main(pipeline_config_path=args.config, n_runs=args.n_runs)
 

@@ -15,13 +15,17 @@ class LoggingIntervals(BaseConfig):
     """Intervals in which to log each type of output."""
 
     stat: PositiveInt = Field(
-        1, description="Logging statistics (e.g., k_groups, merge_pair_cost, mdl_loss)"
+        default=1, description="Logging statistics (e.g., k_groups, merge_pair_cost, mdl_loss)"
     )
     tensor: PositiveInt = Field(
-        100, description="Logging tensors (e.g., wandb_log_tensor, fraction calculations)"
+        default=100, description="Logging tensors (e.g., wandb_log_tensor, fraction calculations)"
     )
-    plot: PositiveInt = Field(100, description="Generating plots (e.g., plot_merge_iteration)")
-    artifact: PositiveInt = Field(100, description="Creating artifacts (e.g., merge_history)")
+    plot: PositiveInt = Field(
+        default=100, description="Generating plots (e.g., plot_merge_iteration)"
+    )
+    artifact: PositiveInt = Field(
+        default=100, description="Creating artifacts (e.g., merge_history)"
+    )
 
 
 class ClusteringRunConfig(BaseConfig):
@@ -57,7 +61,10 @@ class ClusteringRunConfig(BaseConfig):
     )
     wandb_entity: str = Field(default="goodfire", description="WandB entity (team/user) name")
 
-    logging_intervals: LoggingIntervals = Field(..., description="Logging intervals")
+    logging_intervals: LoggingIntervals = Field(
+        default_factory=LoggingIntervals,
+        description="Logging intervals",
+    )
     dataset_streaming: bool = Field(
         default=False,
         description="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
