@@ -296,6 +296,7 @@ def evaluate(
     for _ in range(n_eval_steps):
         batch_raw = next(eval_iterator)
         batch = extract_batch_data(batch_raw).to(device)
+        print(f"Batch sample: {batch_raw}")
 
         target_output: OutputWithCache = model(batch, cache_type="input")
         ci, ci_upper_leaky = model.calc_causal_importances(
