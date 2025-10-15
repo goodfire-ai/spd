@@ -1,9 +1,9 @@
 """Run SPD on a model."""
 
-from contextlib import nullcontext
 import gc
 import json
 from collections import defaultdict
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
 
