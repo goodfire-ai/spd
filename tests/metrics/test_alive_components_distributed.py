@@ -51,7 +51,7 @@ def _test_min_reduction():
     # After min reduction: min(5,3)=3 < 50, min(2,4)=2 < 50, min(8,1)=1 < 50
     # All components should be alive
     result = metric.compute()
-    assert result["n_alive/layer1"] == 3
+    assert result["layer1"] == 3
 
     if rank == 0:
         print("✓ Min reduction test passed")
@@ -97,10 +97,10 @@ def _test_different_firing_patterns():
     # n_batches_until_dead = 50 // (1 * 2) = 25
     # All < 25, so all alive
     result = metric.compute()
-    assert result["n_alive/layer1"] == 3  # all components alive
+    assert result["layer1"] == 3  # all components alive
 
     if rank == 0:
-        print(f"✓ Different firing patterns test passed (n_alive={result['n_alive/layer1']})")
+        print(f"✓ Different firing patterns test passed (n_alive={result['layer1']})")
 
 
 def _test_dead_components():
@@ -133,12 +133,12 @@ def _test_dead_components():
     print(f"Rank {rank} n_batches_since_fired: {metric.n_batches_since_fired['layer1']}")
     result = metric.compute()
     # only components 0 and 1 alive
-    assert result["n_alive/layer1"] == 2, (
-        f"Expected 2 alive components, got {result['n_alive/layer1']}"
+    assert result["layer1"] == 2, (
+        f"Expected 2 alive components, got {result['layer1']}"
     )
 
     if rank == 0:
-        print(f"✓ Dead components test passed (n_alive={result['n_alive/layer1']})")
+        print(f"✓ Dead components test passed (n_alive={result['layer1']})")
 
 
 def _test_multiple_modules():
@@ -174,13 +174,13 @@ def _test_multiple_modules():
     # n_batches_until_dead = 50 // (1 * 2) = 25
     # All < 25, so all alive
     result = metric.compute()
-    assert result["n_alive/layer1"] == 2
-    assert result["n_alive/layer2"] == 2
+    assert result["layer1"] == 2
+    assert result["layer2"] == 2
 
     if rank == 0:
         print(
             f"✓ Multiple modules test passed "
-            f"(layer1={result['n_alive/layer1']}, layer2={result['n_alive/layer2']})"
+            f"(layer1={result['layer1']}, layer2={result['layer2']})"
         )
 
 
