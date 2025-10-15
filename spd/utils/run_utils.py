@@ -3,6 +3,7 @@
 import copy
 import itertools
 import json
+import os
 import secrets
 import string
 import subprocess
@@ -12,6 +13,7 @@ from typing import Any, Final, Literal, NamedTuple
 import torch
 import wandb
 import yaml
+from pydantic import BaseModel, model_validator
 
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
@@ -564,18 +566,9 @@ def run_script_array_local(commands: list[list[str]], parallel: bool = False) ->
         logger.section("LOCAL EXECUTION COMPLETE")
 
 
-import os
-import shlex
-import subprocess
-
-from pydantic import BaseModel, field_validator, model_validator
-
-
-
-
-
 class Command(BaseModel):
     """Simple typed command with shell flag and subprocess helpers."""
+
     cmd: list[str] | str
     shell: bool = False
     env: dict[str, str] | None = None
@@ -587,7 +580,7 @@ class Command(BaseModel):
         if self.shell is False and isinstance(self.cmd, str):
             raise ValueError("cmd must be list[str] when shell is False")
         return self
-    
+
     def _quote_env(self) -> str:
         """Return KEY=VAL tokens for env values. ignores `inherit_env`."""
         if not self.env:
@@ -599,7 +592,7 @@ class Command(BaseModel):
             parts.append(token)
         prefix: str = " ".join(parts)
         return prefix
-    
+
     @property
     def cmd_joined(self) -> str:
         """Return cmd as a single string, joining with spaces if it's a list. no env included."""
@@ -607,7 +600,6 @@ class Command(BaseModel):
             return self.cmd
         else:
             return " ".join(self.cmd)
-        
 
     @property
     def cmd_for_subprocess(self) -> list[str] | str:
@@ -624,7 +616,7 @@ class Command(BaseModel):
     def script_line(self) -> str:
         """Return a single shell string, prefixing KEY=VAL for env if provided."""
         return f"{self._quote_env()} {self.cmd_joined}".strip()
-    
+
     @property
     def env_final(self) -> dict[str, str]:
         """Return final env dict, merging with os.environ if inherit_env is True."""
