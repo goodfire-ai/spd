@@ -5,58 +5,18 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import CoeffSchedule
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
+from spd.scheduling import get_value
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
 
-def _get_linear_annealed_p(
-    current_frac_of_training: float,
-    initial_p: float,
-    p_anneal_start_frac: float,
-    p_anneal_final_p: float | None,
-    p_anneal_end_frac: float,
-) -> float:
-    """Calculate the linearly annealed p value for L_p sparsity loss.
-
-    Args:
-        current_frac_of_training: Current fraction of training
-        initial_p: Starting p value
-        p_anneal_start_frac: Fraction of training after which to start annealing
-        p_anneal_final_p: Final p value to anneal to
-        p_anneal_end_frac: Fraction of training when annealing ends. We stay at the final p value from this point onward
-
-    Returns:
-        Current p value based on linear annealing schedule
-    """
-    if p_anneal_final_p is None or p_anneal_start_frac >= 1.0:
-        return initial_p
-
-    assert p_anneal_end_frac >= p_anneal_start_frac, (
-        f"p_anneal_end_frac ({p_anneal_end_frac}) must be >= "
-        f"p_anneal_start_frac ({p_anneal_start_frac})"
-    )
-
-    if current_frac_of_training < p_anneal_start_frac:
-        return initial_p
-    elif current_frac_of_training >= p_anneal_end_frac:
-        return p_anneal_final_p
-    else:
-        # Linear interpolation between start and end fractions
-        progress = (current_frac_of_training - p_anneal_start_frac) / (
-            p_anneal_end_frac - p_anneal_start_frac
-        )
-        return initial_p + (p_anneal_final_p - initial_p) * progress
-
-
 def _importance_minimality_loss_update(
     ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-    pnorm: float,
+    pnorm: float | CoeffSchedule,
     eps: float,
-    p_anneal_start_frac: float,
-    p_anneal_final_p: float | None,
-    p_anneal_end_frac: float,
     current_frac_of_training: float,
 ) -> tuple[Float[Tensor, " C"], int]:
     """Calculate the sum of the importance minimality loss over all layers.
@@ -66,13 +26,7 @@ def _importance_minimality_loss_update(
     have. That said, we're unsure about this, perhaps we do want to normalize over n_layers.
     """
     assert ci_upper_leaky, "Empty ci_upper_leaky"
-    pnorm = _get_linear_annealed_p(
-        current_frac_of_training=current_frac_of_training,
-        initial_p=pnorm,
-        p_anneal_start_frac=p_anneal_start_frac,
-        p_anneal_final_p=p_anneal_final_p,
-        p_anneal_end_frac=p_anneal_end_frac,
-    )
+    pnorm = get_value(value=pnorm, current_frac_of_training=current_frac_of_training)
     device = get_obj_device(ci_upper_leaky)
     sum_loss = torch.tensor(0.0, device=device)
     for layer_ci_upper_leaky in ci_upper_leaky.values():
@@ -92,18 +46,12 @@ def importance_minimality_loss(
     ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     current_frac_of_training: float,
     eps: float,
-    pnorm: float,
-    p_anneal_start_frac: float,
-    p_anneal_final_p: float | None,
-    p_anneal_end_frac: float,
+    pnorm: float | CoeffSchedule,
 ) -> Float[Tensor, ""]:
     sum_loss, total_params = _importance_minimality_loss_update(
         ci_upper_leaky=ci_upper_leaky,
         pnorm=pnorm,
         eps=eps,
-        p_anneal_start_frac=p_anneal_start_frac,
-        p_anneal_final_p=p_anneal_final_p,
-        p_anneal_end_frac=p_anneal_end_frac,
         current_frac_of_training=current_frac_of_training,
     )
     return _importance_minimality_loss_compute(sum_loss, total_params)
@@ -117,12 +65,7 @@ class ImportanceMinimalityLoss(Metric):
     have. That said, we're unsure about this, perhaps we do want to normalize over n_layers.
 
     Args:
-        pnorm: The p value for the L_p norm
-        p_anneal_start_frac: The fraction of training after which to start annealing p
-            (1.0 = no annealing)
-        p_anneal_final_p: The final p value to anneal to (None = no annealing)
-        p_anneal_end_frac: The fraction of training when annealing ends. We stay at the final p
-            value from this point onward (default 1.0 = anneal until end)
+        pnorm: The p value for the L_p norm or a schedule for it
         eps: The epsilon value for numerical stability.
     """
 
@@ -130,17 +73,11 @@ class ImportanceMinimalityLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        pnorm: float,
-        p_anneal_start_frac: float = 1.0,
-        p_anneal_final_p: float | None = None,
-        p_anneal_end_frac: float = 1.0,
+        pnorm: float | CoeffSchedule,
         eps: float = 1e-12,
     ) -> None:
         self.pnorm = pnorm
         self.eps = eps
-        self.p_anneal_start_frac = p_anneal_start_frac
-        self.p_anneal_final_p = p_anneal_final_p if p_anneal_final_p is not None else None
-        self.p_anneal_end_frac = p_anneal_end_frac
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -157,9 +94,6 @@ class ImportanceMinimalityLoss(Metric):
             pnorm=self.pnorm,
             eps=self.eps,
             current_frac_of_training=current_frac_of_training,
-            p_anneal_start_frac=self.p_anneal_start_frac,
-            p_anneal_final_p=self.p_anneal_final_p,
-            p_anneal_end_frac=self.p_anneal_end_frac,
         )
         self.sum_loss += sum_loss
         self.n_examples += total_params

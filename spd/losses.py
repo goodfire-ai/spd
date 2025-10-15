@@ -8,10 +8,8 @@ from spd.configs import (
     CIMaskedReconLayerwiseLossTrainConfig,
     CIMaskedReconLossTrainConfig,
     CIMaskedReconSubsetLossTrainConfig,
-    CosineSchedule,
     FaithfulnessLossTrainConfig,
     ImportanceMinimalityLossTrainConfig,
-    LinearSchedule,
     PGDReconLayerwiseLossTrainConfig,
     PGDReconLossTrainConfig,
     PGDReconSubsetLossTrainConfig,
@@ -37,20 +35,7 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
 )
 from spd.models.component_model import ComponentModel
-from spd.scheduling import get_cosine_schedule_value, get_linear_schedule_value
-
-
-def get_loss_coeff(
-    coeff: LinearSchedule | CosineSchedule | float | int,
-    current_frac_of_training: float,
-) -> float:
-    match coeff:
-        case LinearSchedule():
-            return get_linear_schedule_value(coeff, current_frac_of_training)
-        case CosineSchedule():
-            return get_cosine_schedule_value(coeff, current_frac_of_training)
-        case float() | int():
-            return coeff
+from spd.scheduling import get_value
 
 
 def compute_total_loss(
@@ -84,9 +69,6 @@ def compute_total_loss(
                     current_frac_of_training=current_frac_of_training,
                     pnorm=cfg.pnorm,
                     eps=cfg.eps,
-                    p_anneal_start_frac=cfg.p_anneal_start_frac,
-                    p_anneal_final_p=cfg.p_anneal_final_p,
-                    p_anneal_end_frac=cfg.p_anneal_end_frac,
                 )
             case CIMaskedReconSubsetLossTrainConfig():
                 loss = ci_masked_recon_subset_loss(
@@ -188,7 +170,7 @@ def compute_total_loss(
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
         terms[cfg.classname] = loss.item()
-        coeff = get_loss_coeff(cfg.coeff, current_frac_of_training)
+        coeff = get_value(value=cfg.coeff, current_frac_of_training=current_frac_of_training)
         total = total + coeff * loss
 
     terms["total"] = total.item()
