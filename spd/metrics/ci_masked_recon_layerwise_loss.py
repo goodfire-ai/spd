@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -6,7 +6,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
@@ -56,6 +56,8 @@ def ci_masked_recon_layerwise_loss(
 class CIMaskedReconLayerwiseLoss(Metric):
     """Recon loss when masking with CI values directly one layer at a time."""
 
+    metric_section: ClassVar[str] = "loss"
+
     def __init__(
         self, model: ComponentModel, device: str, output_loss_type: Literal["mse", "kl"]
     ) -> None:
@@ -70,7 +72,7 @@ class CIMaskedReconLayerwiseLoss(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
+        ci: CIOutputs,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _ci_masked_recon_layerwise_loss_update(
@@ -78,7 +80,7 @@ class CIMaskedReconLayerwiseLoss(Metric):
             output_loss_type=self.output_loss_type,
             batch=batch,
             target_out=target_out,
-            ci=ci,
+            ci=ci.lower_leaky,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

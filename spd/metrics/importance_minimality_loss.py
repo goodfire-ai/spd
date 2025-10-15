@@ -1,4 +1,4 @@
-from typing import Any, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
@@ -6,7 +6,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
@@ -126,6 +126,8 @@ class ImportanceMinimalityLoss(Metric):
         eps: The epsilon value for numerical stability.
     """
 
+    metric_section: ClassVar[str] = "loss"
+
     def __init__(
         self,
         model: ComponentModel,
@@ -148,12 +150,12 @@ class ImportanceMinimalityLoss(Metric):
     def update(
         self,
         *,
-        ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
+        ci: CIOutputs,
         current_frac_of_training: float,
         **_: Any,
     ) -> None:
         sum_loss, total_params = _importance_minimality_loss_update(
-            ci_upper_leaky=ci_upper_leaky,
+            ci_upper_leaky=ci.upper_leaky,
             pnorm=self.pnorm,
             eps=self.eps,
             current_frac_of_training=current_frac_of_training,

@@ -21,7 +21,7 @@ class AliveComponentsTracker:
 
     def __init__(
         self,
-        module_paths: list[str],
+        target_module_paths: list[str],
         C: int,
         device: str,
         n_examples_until_dead: int,
@@ -31,7 +31,7 @@ class AliveComponentsTracker:
         """Initialize the tracker.
 
         Args:
-            module_paths: List of module names to track
+            target_module_paths: List of module names to track
             C: Number of components per module
             device: Device to store tensors on
             n_examples_until_dead: Number of examples without firing before component is considered dead
@@ -44,7 +44,7 @@ class AliveComponentsTracker:
         self.n_batches_until_dead = self.n_examples_until_dead // global_n_examples_per_batch
 
         self.n_batches_since_fired: dict[str, Int[Tensor, " C"]] = {
-            m: torch.zeros(C, dtype=torch.int64, device=device) for m in module_paths
+            m: torch.zeros(C, dtype=torch.int64, device=device) for m in target_module_paths
         }
 
     def update(self, ci: dict[str, Float[Tensor, "... C"]]) -> None:
@@ -67,16 +67,12 @@ class AliveComponentsTracker:
         """Compute the number of alive components per module.
 
         Returns:
-            Dict mapping module names to number of alive components,
-            with keys formatted as "n_alive/{module_name}"
+            Dict mapping module names to number of alive components
         """
         out: dict[str, int] = {}
-        for module_name in self.n_batches_since_fired:
+        for module_name, n_batches_since_fired in self.n_batches_since_fired.items():
             # Use MIN reduction so that a component is alive if it fired on ANY rank
-            batches_since_fired_reduced = all_reduce(
-                self.n_batches_since_fired[module_name], op=ReduceOp.MIN
-            )
-            out[f"n_alive/{module_name}"] = int(
-                (batches_since_fired_reduced < self.n_batches_until_dead).sum().item()
-            )
+            batches_since_fired_reduced = all_reduce(n_batches_since_fired, op=ReduceOp.MIN)
+            n_alive = int((batches_since_fired_reduced < self.n_batches_until_dead).sum().item())
+            out[module_name] = n_alive
         return out
