@@ -560,11 +560,11 @@ class ComponentModel(LoadableModule):
                 lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
                 upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
 
-            ci_fn_output_for_lower_leaky = ci_fn_output
-            if sampling == "binomial":
-                ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
-                    ci_fn_output
-                )
+            # ci_fn_output_for_lower_leaky = ci_fn_output
+            # if sampling == "binomial":
+            ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
+                ci_fn_output
+            )
 
             causal_importances[param_name] = lower_leaky_fn(ci_fn_output_for_lower_leaky)
             causal_importances_upper_leaky[param_name] = upper_leaky_fn(ci_fn_output).abs()
