@@ -111,9 +111,9 @@ def test_compute_alive_counts():
     result = metric.compute()
 
     # layer1: components 0, 1 are alive (< 5)
-    assert result["n_alive/layer1"] == 2
+    assert result["layer1"] == 2
     # layer2: components 0, 1, 3 are alive (< 5)
-    assert result["n_alive/layer2"] == 3
+    assert result["layer2"] == 3
 
 
 def test_multiple_modules():
@@ -158,7 +158,7 @@ def test_boundary_conditions():
     metric.n_batches_since_fired["layer1"] = torch.tensor([4, 5, 6])
 
     result = metric.compute()
-    assert result["n_alive/layer1"] == 1  # only component 0
+    assert result["layer1"] == 1  # only component 0
 
 
 def test_threshold_boundary():

@@ -3,7 +3,6 @@
 import gc
 import json
 from collections import defaultdict
-from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
 
@@ -278,7 +277,7 @@ def optimize(
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
 
-        for grad_accum_step in range(config.gradient_accumulation_steps):
+        for _ in range(config.gradient_accumulation_steps):
             weight_deltas = component_model.calc_weight_deltas()
             batch = extract_batch_data(next(train_iterator)).to(device)
 
@@ -309,15 +308,7 @@ def optimize(
                 n_mask_samples=config.n_mask_samples,
                 output_loss_type=config.output_loss_type,
             )
-            is_last_grad_accum_step = grad_accum_step == config.gradient_accumulation_steps - 1
-            ctx = (
-                wrapped_model.no_sync()
-                if isinstance(wrapped_model, torch.nn.parallel.DistributedDataParallel)
-                and not is_last_grad_accum_step
-                else nullcontext()
-            )
-            with ctx:
-                microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
+            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
                 microbatch_log_data[f"train/{loss_name}"] += (
