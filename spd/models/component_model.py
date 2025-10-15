@@ -547,26 +547,28 @@ class ComponentModel(LoadableModule):
         Returns:
             Tuple of (causal_importances, causal_importances_upper_leaky) dictionaries for each layer.
         """
-        causal_importances = {}
+        causal_importances_lower_leaky = {}
         causal_importances_upper_leaky = {}
         pre_sigmoid = {}
 
-        for param_name in pre_weight_acts:
-            acts = pre_weight_acts[param_name]
-            ci_fns = self.ci_fns[param_name]
+        for target_module_name in pre_weight_acts:
+            input_activations = pre_weight_acts[target_module_name]
+            ci_fn = self.ci_fns[target_module_name]
 
-            match ci_fns:
+            match ci_fn:
                 case MLPCiFn():
-                    ci_fn_input = self.components[param_name].get_inner_acts(acts)
+                    ci_fn_input = self.components[target_module_name].get_inner_acts(
+                        input_activations
+                    )
                 case VectorMLPCiFn() | VectorSharedMLPCiFn():
-                    ci_fn_input = acts
+                    ci_fn_input = input_activations
                 case _:
-                    raise ValueError(f"Unknown ci_fn type: {type(ci_fns)}")
+                    raise ValueError(f"Unknown ci_fn type: {type(ci_fn)}")
 
             if detach_inputs:
                 ci_fn_input = ci_fn_input.detach()
 
-            ci_fn_output = runtime_cast(Tensor, ci_fns(ci_fn_input))
+            ci_fn_output = runtime_cast(Tensor, ci_fn(ci_fn_input))
 
             if sampling == "binomial":
                 ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
@@ -577,16 +579,16 @@ class ComponentModel(LoadableModule):
 
             lower_leaky_output = self.lower_leaky_fn(ci_fn_output_for_lower_leaky)
             assert lower_leaky_output.all() <= 1.0
-            causal_importances[param_name] = lower_leaky_output
+            causal_importances_lower_leaky[target_module_name] = lower_leaky_output
 
             upper_leaky_output = self.upper_leaky_fn(ci_fn_output)
             assert upper_leaky_output.all() >= 0
-            causal_importances_upper_leaky[param_name] = upper_leaky_output
+            causal_importances_upper_leaky[target_module_name] = upper_leaky_output
 
-            pre_sigmoid[param_name] = ci_fn_output
+            pre_sigmoid[target_module_name] = ci_fn_output
 
         return CIOutputs(
-            lower_leaky=causal_importances,
+            lower_leaky=causal_importances_lower_leaky,
             upper_leaky=causal_importances_upper_leaky,
             pre_sigmoid=pre_sigmoid,
         )

@@ -18,6 +18,7 @@ from torch import Tensor
 
 from spd.base_config import BaseConfig
 from spd.log import logger
+from spd.models.component_model import ComponentModel
 from spd.utils.run_utils import save_file
 
 # Avoid seaborn package installation (sns.color_palette("colorblind").as_hex())
@@ -385,3 +386,36 @@ def get_obj_device(d: CanGetDevice) -> torch.device:
     devices: set[torch.device] = get_obj_devices(d)
     assert len(devices) == 1, f"Object parameters are on multiple devices: {devices}"
     return devices.pop()
+
+
+def get_grad_norms_log(
+    component_model: ComponentModel, device: torch.device | str
+) -> dict[str, float]:
+    out: dict[str, float] = {}
+    components_grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
+    for target_module_path, component in component_model.components.items():
+        U_grad = runtime_cast(Tensor, component.U.grad)
+        V_grad = runtime_cast(Tensor, component.V.grad)
+        U_grad_sum_sq = U_grad.pow(2).sum()
+        V_grad_sum_sq = V_grad.pow(2).sum()
+        out[f"train/grad_norm/{target_module_path}.component.U"] = U_grad_sum_sq.sqrt().item()
+        out[f"train/grad_norm/{target_module_path}.component.V"] = V_grad_sum_sq.sqrt().item()
+        components_grad_norm_sq_sum += U_grad_sum_sq
+        components_grad_norm_sq_sum += V_grad_sum_sq
+
+    gate_grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
+    for target_module_path, gate in component_model.ci_fns.items():
+        for local_param_name, local_param in gate.named_parameters():
+            gate_grad = runtime_cast(Tensor, local_param.grad)
+            gate_grad_sum_sq = gate_grad.pow(2).sum()
+            out[f"train/grad_norm/{target_module_path}.gate.{local_param_name}"] = (
+                gate_grad_sum_sq.sqrt().item()
+            )
+            gate_grad_norm_sq_sum += gate_grad_sum_sq
+
+    out["train/grad_norm/components"] = components_grad_norm_sq_sum.sqrt().item()
+    out["train/grad_norm/gate"] = gate_grad_norm_sq_sum.sqrt().item()
+    out["train/grad_norm/total"] = (
+        (components_grad_norm_sq_sum + gate_grad_norm_sq_sum).sqrt().item()
+    )
+    return out

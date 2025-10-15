@@ -36,6 +36,7 @@ from spd.utils.distributed_utils import (
 )
 from spd.utils.general_utils import (
     extract_batch_data,
+    get_grad_norms_log,
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
@@ -187,13 +188,9 @@ def optimize(
 
     component_params: list[torch.nn.Parameter] = []
     ci_fn_params: list[torch.nn.Parameter] = []
-    # all_named_params: list[tuple[str, torch.nn.Parameter]] = []
-
-    for name, component in component_model.components.items():
-        component_params.extend(component.parameters())
+    for name in component_model.target_module_paths:
+        component_params.extend(component_model.components[name].parameters())
         ci_fn_params.extend(component_model.ci_fns[name].parameters())
-
-    # all_named_params.extend()
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
@@ -288,20 +285,8 @@ def optimize(
                 )
                 microbatch_log_data[n_alive_key] = n_alive_count
 
-            grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
-            for module_path, param in component_model.named_parameters():
-                if param.grad is None:
-                    assert "target_model" in module_path
-                    continue
+            microbatch_log_data.update(get_grad_norms_log(component_model, device))
 
-                param_grad_sum_sq = param.grad.data.flatten().pow(2).sum()
-                grad_norm_sq_sum += param_grad_sum_sq
-                # frobenius norm as sqrt(sum(square(param.grad)))
-                microbatch_log_data[f"train/grad_norm/{module_path}"] = (
-                    param_grad_sum_sq.sqrt().item()
-                )
-
-            microbatch_log_data["train/grad_norm/total"] = grad_norm_sq_sum.sqrt().item()
             microbatch_log_data["train/lr"] = step_lr
 
             if is_main_process():
