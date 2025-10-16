@@ -6,13 +6,14 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.plotting import plot_mean_component_cis_both_scales
 from spd.utils.distributed_utils import all_reduce
 
 
 class CIMeanPerComponent(Metric):
     slow: ClassVar[bool] = True
+    metric_section: ClassVar[str] = "figures"
 
     def __init__(self, model: ComponentModel, device: str) -> None:
         self.components = model.components
@@ -24,8 +25,8 @@ class CIMeanPerComponent(Metric):
         }
 
     @override
-    def update(self, *, ci: dict[str, Tensor], **_: Any) -> None:
-        for module_name, ci_vals in ci.items():
+    def update(self, *, ci: CIOutputs, **_: Any) -> None:
+        for module_name, ci_vals in ci.lower_leaky.items():
             n_leading_dims = ci_vals.ndim - 1
             n_examples = ci_vals.shape[:n_leading_dims].numel()
 
@@ -45,6 +46,6 @@ class CIMeanPerComponent(Metric):
         img_linear, img_log = plot_mean_component_cis_both_scales(mean_component_cis)
 
         return {
-            "figures/ci_mean_per_component": img_linear,
-            "figures/ci_mean_per_component_log": img_log,
+            "ci_mean_per_component": img_linear,
+            "ci_mean_per_component_log": img_log,
         }

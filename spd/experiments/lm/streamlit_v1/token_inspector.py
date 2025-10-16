@@ -103,12 +103,11 @@ def compute_causal_importances(
     """Compute causal importances for all layers."""
     with torch.no_grad():
         pre_weight_acts = _model_data.model(_input_ids, cache_type="input").cache
-        cis, _ = _model_data.model.calc_causal_importances(
+        cis = _model_data.model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
             detach_inputs=True,
-            sigmoid_type=_model_data.config.sigmoid_type,
             sampling=_model_data.config.sampling,
-        )
+        ).lower_leaky
     return cis
 
 
