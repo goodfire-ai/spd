@@ -1,16 +1,17 @@
 # --- WandB ---
 wandb_project: spd
-wandb_run_name: null
+wandb_run_name: perfect_init
 wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
 C: 5000
 n_mask_samples: 1
-gate_type: "mlp"
-gate_hidden_dims: [16]
+ci_fn_type: "identity"
+ci_fn_hidden_dims: []
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.embed_tokens"]
+perfect_init: true
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
@@ -18,12 +19,12 @@ loss_metric_configs:
     coeff: 0.05
     pnorm: 1.0
 
-  - classname: "StochasticReconSubsetLoss"
+  - classname: "StochasticReconLoss"
     coeff: 1.0
 
-  - classname: "PGDReconSubsetLoss"
+  - classname: "PGDReconLoss"
     init: "random"
-    mask_scope: "unique_per_datapoint"
+    mask_scope: "shared_across_batch"
     n_steps: 2
     step_size: 0.5
     coeff: 0.2
@@ -41,7 +42,7 @@ lr_exponential_halflife: null
 gradient_accumulation_steps: 1
 
 # --- Logging & Saving ---
-train_log_freq: 200
+train_log_freq: 25
 eval_freq: 1000
 slow_eval_freq: 2000
 slow_eval_on_first_step: true

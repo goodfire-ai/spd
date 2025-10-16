@@ -254,6 +254,10 @@ class Config(BaseModel):
         ...,
         description="List of fnmatch-style patterns that select modules to decompose",
     )
+    perfect_init: bool = Field(
+        default=False,
+        description="If True, use a perfect initialisation for the components. Only supported for embedding",
+    )
     identity_module_patterns: list[str] | None = Field(
         default=None,
         description="List of fnmatch-style patterns that select modules in which an identity "
