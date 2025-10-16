@@ -23,7 +23,7 @@ loss_metric_configs:
 
   - classname: "PGDReconSubsetLoss"
     init: "random"
-    mask_scope: "unique_per_datapoint"
+    mask_scope: "shared_across_batch"
     n_steps: 2
     step_size: 0.5
     coeff: 0.2
