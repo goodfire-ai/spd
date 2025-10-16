@@ -91,10 +91,15 @@ def get_unique_metric_configs(
 ) -> list[MetricConfigType]:
     """If a metric appears in both train and eval, only include the eval version."""
     eval_config_names = [type(cfg).__name__ for cfg in eval_configs]
-    unique_train_configs = [
-        cfg for cfg in loss_configs if type(cfg).__name__ not in eval_config_names
-    ]
-    return unique_train_configs + eval_configs
+    metrics = eval_configs[:]
+    for cfg in loss_configs:
+        if type(cfg).__name__ not in eval_config_names:
+            metrics.append(cfg)
+        else:
+            logger.warning(
+                f"{type(cfg).__name__} is in both loss and eval configs, only including eval config"
+            )
+    return metrics
 
 
 def optimize(
@@ -185,6 +190,10 @@ def optimize(
 
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
+
+    metric_configs = get_unique_metric_configs(
+        loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
+    )
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
@@ -293,10 +302,6 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
-                metric_configs = get_unique_metric_configs(
-                    loss_configs=config.loss_metric_configs,
-                    eval_configs=config.eval_metric_configs,
-                )
                 metrics = evaluate(
                     metric_configs=metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
