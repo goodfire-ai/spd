@@ -17,7 +17,7 @@ SigmoidTypes = Literal[
 class LowerLeakyHardSigmoidFunction(Function):
     @override
     @staticmethod
-    def forward(ctx: Any, x: Tensor, alpha: float = 0.01) -> Tensor:
+    def forward(ctx: Any, x: Tensor, alpha: float = 0.1) -> Tensor:
         ctx.save_for_backward(x)
         ctx.alpha = alpha
         return torch.clamp(x, min=0, max=1)
@@ -29,10 +29,14 @@ class LowerLeakyHardSigmoidFunction(Function):
         (x,) = ctx.saved_tensors
         alpha = ctx.alpha
 
-        # Gradient as if forward pass was alpha * x for x<=0
+        # Gradient logic:
+        # - x > 1: gradient is 0
+        # - 0 <= x <= 1: gradient is grad_output
+        # - x < 0 and grad_output > 0: gradient is alpha * grad_output
+        # - x < 0 and grad_output <= 0: gradient is 0
         grad_input = torch.where(
             x <= 0,
-            alpha * grad_output,
+            torch.where(grad_output < 0, alpha * grad_output, torch.zeros_like(grad_output)),
             torch.where(x <= 1, grad_output, torch.zeros_like(grad_output)),
         )
 
@@ -55,7 +59,7 @@ def upper_leaky_hard_sigmoid(x: Tensor, alpha: float = 0.01) -> Tensor:
     return torch.where(x > 1, 1 + alpha * (x - 1), torch.clamp(x, min=0, max=1))
 
 
-def lower_leaky_hard_sigmoid(x: Tensor, alpha: float = 0.01) -> Tensor:
+def lower_leaky_hard_sigmoid(x: Tensor, alpha: float = 0.1) -> Tensor:
     return LowerLeakyHardSigmoidFunction.apply(x, alpha)  # pyright: ignore[reportReturnType]
 
 
