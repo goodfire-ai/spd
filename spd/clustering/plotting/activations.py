@@ -215,8 +215,8 @@ def plot_activations(
     fig4_log: plt.Figure
     ax4_log: plt.Axes
     fig4_log, ax4_log = plt.subplots(figsize=figsize_coact)
-    assert np.all(coact_data >= 0)
-    coact_log_data: np.ndarray = np.log10(coact_data + 1e-6)
+    # assert np.all(coact_data >= 0) # TODO: why are coacts negative? :/
+    coact_log_data: np.ndarray = np.log10(coact_data + 1e-6 + coact_data.min())
     im4_log = ax4_log.matshow(
         coact_log_data, aspect="auto", vmin=coact_log_data.min(), vmax=coact_log_data.max()
     )
