@@ -1,17 +1,14 @@
 # --- WandB ---
 wandb_project: spd
-wandb_run_name: shared_across_batch_256
+wandb_run_name: unique_per_datapoint
 wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
 C: 5000
 n_mask_samples: 1
-
 ci_fn_type: "mlp"
 ci_fn_hidden_dims: [16]
-perfect_init: true
-
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.embed_tokens"]
 sampling: "continuous"
@@ -24,7 +21,7 @@ loss_metric_configs:
     coeff: 1.0
   - classname: "PGDReconLoss"
     init: "random"
-    mask_scope: "shared_across_batch"
+    mask_scope: "unique_per_datapoint"
     n_steps: 2
     step_size: 0.5
     coeff: 0.2
@@ -32,14 +29,14 @@ loss_metric_configs:
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 256
-eval_batch_size: 256
-steps: 200000
+batch_size: 512
+eval_batch_size: 512
+steps: 500000
 lr: 0.0005
 lr_schedule: cosine
 lr_warmup_pct: 0.0
 lr_exponential_halflife: null
-gradient_accumulation_steps: 2
+gradient_accumulation_steps: 1
 
 # --- Logging & Saving ---
 train_log_freq: 25
