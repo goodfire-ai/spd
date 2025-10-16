@@ -128,7 +128,7 @@ def calc_stochastic_component_mask_info(
         for layer in causal_importances:
             weight_deltas_and_masks[layer] = (
                 weight_deltas[layer],
-                torch.rand(leading_dims, device=device, dtype=dtype),
+                torch.randint(0, 2, leading_dims, device=device, dtype=dtype),
             )
 
     return make_mask_infos(
