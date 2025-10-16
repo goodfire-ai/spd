@@ -82,7 +82,12 @@ def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str
         ws.Tags("tags").isin([f"ensemble_id:{ensemble_id}"]),
     ]
 
-    workspace.save_as_new_view()
+    try:
+        workspace.save_as_new_view()
+    except Exception as e:
+        logger.warning(
+            f"Failed to create WandB workspace view: {workspace=}, {workspace.name=}, {ensemble_id=}, {project=}, {entity=}, {e}"
+        )
     return workspace.url
 
 
