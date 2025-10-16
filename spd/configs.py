@@ -19,7 +19,6 @@ from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
 from spd.models.components import CiFnType
-from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
 
 
@@ -31,23 +30,23 @@ class TrainMetricConfig(BaseConfig):
     )
 
 
-class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconSubsetLossConfig(TrainMetricConfig):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
 
 
-class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconLayerwiseLossConfig(TrainMetricConfig):
     classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
 
 
-class CIMaskedReconLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconLossConfig(TrainMetricConfig):
     classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
 
 
-class FaithfulnessLossTrainConfig(TrainMetricConfig):
+class FaithfulnessLossConfig(TrainMetricConfig):
     classname: Literal["FaithfulnessLoss"] = "FaithfulnessLoss"
 
 
-class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
+class ImportanceMinimalityLossConfig(TrainMetricConfig):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
     pnorm: float
     p_anneal_start_frac: float = 1.0
@@ -56,15 +55,15 @@ class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
     eps: float = 1e-12
 
 
-class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
+class StochasticReconLayerwiseLossConfig(TrainMetricConfig):
     classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
 
 
-class StochasticReconLossTrainConfig(TrainMetricConfig):
+class StochasticReconLossConfig(TrainMetricConfig):
     classname: Literal["StochasticReconLoss"] = "StochasticReconLoss"
 
 
-class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
+class StochasticReconSubsetLossConfig(TrainMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
 
 
@@ -104,9 +103,14 @@ class IdentityCIErrorConfig(BaseConfig):
 
 class PermutedCIPlotsConfig(BaseConfig):
     classname: Literal["PermutedCIPlots"] = "PermutedCIPlots"
-    sigmoid_type: SigmoidTypes
     identity_patterns: list[str] | None
     dense_patterns: list[str] | None
+
+    @model_validator(mode="before")
+    def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
+        """Remove deprecated config keys and change names of any keys that have been renamed."""
+        config_dict.pop("sigmoid_type", None)
+        return config_dict
 
 
 class StochasticReconSubsetCEAndKLConfig(BaseConfig):
@@ -122,14 +126,14 @@ class UVPlotsConfig(BaseConfig):
 
 
 TrainMetricConfigType = (
-    CIMaskedReconSubsetLossTrainConfig
-    | CIMaskedReconLayerwiseLossTrainConfig
-    | CIMaskedReconLossTrainConfig
-    | FaithfulnessLossTrainConfig
-    | ImportanceMinimalityLossTrainConfig
-    | StochasticReconLayerwiseLossTrainConfig
-    | StochasticReconLossTrainConfig
-    | StochasticReconSubsetLossTrainConfig
+    CIMaskedReconSubsetLossConfig
+    | CIMaskedReconLayerwiseLossConfig
+    | CIMaskedReconLossConfig
+    | FaithfulnessLossConfig
+    | ImportanceMinimalityLossConfig
+    | StochasticReconLayerwiseLossConfig
+    | StochasticReconLossConfig
+    | StochasticReconSubsetLossConfig
     | StochasticHiddenActsReconLossConfig
 )
 EvalOnlyMetricConfigType = (

@@ -13,22 +13,22 @@ from spd.configs import (
     CEandKLLossesConfig,
     CI_L0Config,
     CIHistogramsConfig,
-    CIMaskedReconLayerwiseLossTrainConfig,
-    CIMaskedReconLossTrainConfig,
-    CIMaskedReconSubsetLossTrainConfig,
+    CIMaskedReconLayerwiseLossConfig,
+    CIMaskedReconLossConfig,
+    CIMaskedReconSubsetLossConfig,
     CIMeanPerComponentConfig,
     ComponentActivationDensityConfig,
     Config,
-    FaithfulnessLossTrainConfig,
+    FaithfulnessLossConfig,
     IdentityCIErrorConfig,
-    ImportanceMinimalityLossTrainConfig,
+    ImportanceMinimalityLossConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
     StochasticHiddenActsReconLossConfig,
-    StochasticReconLayerwiseLossTrainConfig,
-    StochasticReconLossTrainConfig,
+    StochasticReconLayerwiseLossConfig,
+    StochasticReconLossConfig,
     StochasticReconSubsetCEAndKLConfig,
-    StochasticReconSubsetLossTrainConfig,
+    StochasticReconSubsetLossConfig,
     UVPlotsConfig,
 )
 from spd.metrics.base import Metric
@@ -58,7 +58,11 @@ MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
 DistMetricOutType = dict[str, str | float | Image.Image | CustomChart]
 
 
-def clean_metric_output(metric_name: str, computed_raw: Any) -> MetricOutType:
+def clean_metric_output(
+    section: str,
+    metric_name: str,
+    computed_raw: Any,
+) -> MetricOutType:
     """Clean metric output by converting tensors to floats/ints and ensuring the correct types.
 
     Expects outputs to be either a scalar tensor or a mapping of strings to scalars/images/tensors.
@@ -70,7 +74,7 @@ def clean_metric_output(metric_name: str, computed_raw: Any) -> MetricOutType:
             f"Only scalar tensors supported, got shape {computed_raw.shape}"
         )
         item = computed_raw.item()
-        computed[metric_name] = item
+        computed[f"{section}/{metric_name}"] = item
     else:
         for k, v in computed_raw.items():
             assert isinstance(k, str), f"Only supports string keys, got {type(k)}"
@@ -80,7 +84,7 @@ def clean_metric_output(metric_name: str, computed_raw: Any) -> MetricOutType:
             if isinstance(v, Tensor):
                 v = v.item()
 
-            computed[k] = v
+            computed[f"{section}/{k}"] = v
     return computed
 
 
@@ -107,7 +111,7 @@ def init_metric(
     device: str,
 ) -> Metric:
     match cfg:
-        case ImportanceMinimalityLossTrainConfig():
+        case ImportanceMinimalityLossConfig():
             metric = ImportanceMinimalityLoss(
                 model=model,
                 device=device,
@@ -132,15 +136,15 @@ def init_metric(
                 ci_alive_threshold=run_config.ci_alive_threshold,
                 groups=cfg.groups,
             )
-        case CIMaskedReconSubsetLossTrainConfig():
+        case CIMaskedReconSubsetLossConfig():
             metric = CIMaskedReconSubsetLoss(
                 model=model, device=device, output_loss_type=run_config.output_loss_type
             )
-        case CIMaskedReconLayerwiseLossTrainConfig():
+        case CIMaskedReconLayerwiseLossConfig():
             metric = CIMaskedReconLayerwiseLoss(
                 model=model, device=device, output_loss_type=run_config.output_loss_type
             )
-        case CIMaskedReconLossTrainConfig():
+        case CIMaskedReconLossConfig():
             metric = CIMaskedReconLoss(
                 model=model, device=device, output_loss_type=run_config.output_loss_type
             )
@@ -150,13 +154,12 @@ def init_metric(
             metric = ComponentActivationDensity(
                 model=model, device=device, ci_alive_threshold=run_config.ci_alive_threshold
             )
-        case FaithfulnessLossTrainConfig():
+        case FaithfulnessLossConfig():
             metric = FaithfulnessLoss(model=model, device=device)
         case IdentityCIErrorConfig():
             metric = IdentityCIError(
                 model=model,
                 sampling=run_config.sampling,
-                sigmoid_type=run_config.sigmoid_type,
                 identity_ci=cfg.identity_ci,
                 dense_ci=cfg.dense_ci,
             )
@@ -164,11 +167,10 @@ def init_metric(
             metric = PermutedCIPlots(
                 model=model,
                 sampling=run_config.sampling,
-                sigmoid_type=cfg.sigmoid_type,
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
             )
-        case StochasticReconLayerwiseLossTrainConfig():
+        case StochasticReconLayerwiseLossConfig():
             metric = StochasticReconLayerwiseLoss(
                 model=model,
                 device=device,
@@ -177,7 +179,7 @@ def init_metric(
                 n_mask_samples=run_config.n_mask_samples,
                 output_loss_type=run_config.output_loss_type,
             )
-        case StochasticReconLossTrainConfig():
+        case StochasticReconLossConfig():
             metric = StochasticReconLoss(
                 model=model,
                 device=device,
@@ -186,7 +188,7 @@ def init_metric(
                 n_mask_samples=run_config.n_mask_samples,
                 output_loss_type=run_config.output_loss_type,
             )
-        case StochasticReconSubsetLossTrainConfig():
+        case StochasticReconSubsetLossConfig():
             metric = StochasticReconSubsetLoss(
                 model=model,
                 device=device,
@@ -217,7 +219,6 @@ def init_metric(
             metric = UVPlots(
                 model=model,
                 sampling=run_config.sampling,
-                sigmoid_type=run_config.sigmoid_type,
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
             )
@@ -251,9 +252,8 @@ def evaluate(
         batch = extract_batch_data(batch_raw).to(device)
 
         target_output: OutputWithCache = model(batch, cache_type="input")
-        ci, ci_upper_leaky = model.calc_causal_importances(
+        ci = model.calc_causal_importances(
             pre_weight_acts=target_output.cache,
-            sigmoid_type=run_config.sigmoid_type,
             detach_inputs=False,
             sampling=run_config.sampling,
         )
@@ -265,14 +265,17 @@ def evaluate(
                 pre_weight_acts=target_output.cache,
                 ci=ci,
                 current_frac_of_training=current_frac_of_training,
-                ci_upper_leaky=ci_upper_leaky,
                 weight_deltas=weight_deltas,
             )
 
     outputs: MetricOutType = {}
     for metric in metrics:
         computed_raw: Any = metric.compute()
-        computed = clean_metric_output(metric_name=type(metric).__name__, computed_raw=computed_raw)
+        computed = clean_metric_output(
+            section=metric.metric_section,
+            metric_name=type(metric).__name__,
+            computed_raw=computed_raw,
+        )
         outputs.update(computed)
 
     return outputs

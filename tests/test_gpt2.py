@@ -4,10 +4,10 @@ from transformers import PreTrainedModel
 from spd.configs import (
     CI_L0Config,
     Config,
-    FaithfulnessLossTrainConfig,
-    ImportanceMinimalityLossTrainConfig,
-    StochasticReconLayerwiseLossTrainConfig,
-    StochasticReconLossTrainConfig,
+    FaithfulnessLossConfig,
+    ImportanceMinimalityLossConfig,
+    StochasticReconLayerwiseLossConfig,
+    StochasticReconLossConfig,
 )
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -37,14 +37,14 @@ def test_gpt_2_decomposition_happy_path() -> None:
         target_module_patterns=["transformer.h.2.attn.c_attn", "transformer.h.3.mlp.c_fc"],
         identity_module_patterns=["transformer.h.1.attn.c_attn"],
         loss_metric_configs=[
-            ImportanceMinimalityLossTrainConfig(
+            ImportanceMinimalityLossConfig(
                 coeff=1e-2,
                 pnorm=0.9,
                 eps=1e-12,
             ),
-            StochasticReconLayerwiseLossTrainConfig(coeff=1.0),
-            StochasticReconLossTrainConfig(coeff=1.0),
-            FaithfulnessLossTrainConfig(coeff=200),
+            StochasticReconLayerwiseLossConfig(coeff=1.0),
+            StochasticReconLossConfig(coeff=1.0),
+            FaithfulnessLossConfig(coeff=200),
         ],
         output_loss_type="kl",
         # Training
