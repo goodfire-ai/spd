@@ -29,12 +29,12 @@ def component_activations(
             cache_type="input",
         )
 
-        # TODO: !!!IMPORTANT!!! figure out if we want pre_sigmoid or lower/upper leaky
+        # TODO: !!!IMPORTANT!!! unclear what the right thing from CIOutputs is
         causal_importances = model.calc_causal_importances(
             pre_weight_acts=model_output.cache,
             sampling="continuous",
             detach_inputs=False,
-        ).pre_sigmoid
+        ).upper_leaky
 
     return causal_importances
 

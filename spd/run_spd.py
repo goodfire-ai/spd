@@ -16,7 +16,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from spd.configs import Config
+from spd.configs import Config, LossMetricConfigType, MetricConfigType
 from spd.data import loop_dataloader
 from spd.eval import avg_eval_metrics_across_ranks, evaluate
 from spd.identity_insertion import insert_identity_operations_
@@ -84,6 +84,22 @@ def run_faithfulness_warmup(
     del faithfulness_warmup_optimizer
     torch.cuda.empty_cache()
     gc.collect()
+
+
+def get_unique_metric_configs(
+    loss_configs: list[LossMetricConfigType], eval_configs: list[MetricConfigType]
+) -> list[MetricConfigType]:
+    """If a metric appears in both loss and eval configs, only include the eval version."""
+    eval_config_names = [type(cfg).__name__ for cfg in eval_configs]
+    metrics = eval_configs[:]
+    for cfg in loss_configs:
+        if type(cfg).__name__ not in eval_config_names:
+            metrics.append(cfg)
+        else:
+            logger.warning(
+                f"{type(cfg).__name__} is in both loss and eval configs, only including eval config"
+            )
+    return metrics
 
 
 def optimize(
@@ -174,6 +190,10 @@ def optimize(
 
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
+
+    eval_metric_configs = get_unique_metric_configs(
+        loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
+    )
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
@@ -283,7 +303,7 @@ def optimize(
                 )
 
                 metrics = evaluate(
-                    metric_configs=config.eval_metric_configs + config.loss_metric_configs,
+                    eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
                     device=device,

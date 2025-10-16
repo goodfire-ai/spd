@@ -52,6 +52,7 @@ CONFIG: ClusteringRunConfig = ClusteringRunConfig(
     batch_size=2,
     dataset_seed=42,
     idx_in_ensemble=0,
+    dataset_streaming=True,  # no effect since we do this manually
 )
 
 DATA_BATCH: Int[Tensor, "batch_size n_ctx"] = load_dataset(
@@ -132,9 +133,3 @@ plot_dists_distribution(
     distances=DISTANCES,
     mode="points",
 )
-
-# %%
-# Exit cleanly to avoid CUDA thread GIL issues during interpreter shutdown
-# see https://github.com/goodfire-ai/spd/issues/201#issue-3503138939
-# ============================================================
-os._exit(0)
