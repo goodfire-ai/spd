@@ -16,7 +16,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from spd.configs import Config
+from spd.configs import Config, MetricConfigType, TrainMetricConfigType
 from spd.data import loop_dataloader
 from spd.eval import avg_eval_metrics_across_ranks, evaluate
 from spd.identity_insertion import insert_identity_operations_
@@ -84,6 +84,17 @@ def run_faithfulness_warmup(
     del faithfulness_warmup_optimizer
     torch.cuda.empty_cache()
     gc.collect()
+
+
+def get_unique_metric_configs(
+    loss_configs: list[TrainMetricConfigType], eval_configs: list[MetricConfigType]
+) -> list[MetricConfigType]:
+    """If a metric appears in both train and eval, only include the eval version."""
+    eval_config_names = [type(cfg).__name__ for cfg in eval_configs]
+    unique_train_configs = [
+        cfg for cfg in loss_configs if type(cfg).__name__ not in eval_config_names
+    ]
+    return unique_train_configs + eval_configs
 
 
 def optimize(
@@ -282,8 +293,12 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
+                metric_configs = get_unique_metric_configs(
+                    loss_configs=config.loss_metric_configs,
+                    eval_configs=config.eval_metric_configs,
+                )
                 metrics = evaluate(
-                    metric_configs=config.eval_metric_configs + config.loss_metric_configs,
+                    metric_configs=metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
                     device=device,
