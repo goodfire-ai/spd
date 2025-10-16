@@ -118,7 +118,6 @@ def run_clustering(
         model=model,
         batch=batch,
         device=device,
-        sigmoid_type=spd_run.config.sigmoid_type,
     )
     logger_call("computed activations")
 

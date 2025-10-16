@@ -71,7 +71,6 @@ COMPONENT_ACTS: dict[str, Tensor] = component_activations(
     model=MODEL,
     batch=DATA_BATCH,
     device=DEVICE,
-    sigmoid_type="hard",
 )
 
 _ = dbg_auto(COMPONENT_ACTS)

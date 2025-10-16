@@ -67,7 +67,7 @@ def plot_activations(
     # Raw activations
     axs_act: Sequence[plt.Axes]
     _fig1: plt.Figure
-    _fig1, axs_act = plt.subplots(len(act_dict), 1, figsize=figsize_raw)  # pyright: ignore[reportAssignmentType]
+    _fig1, axs_act = plt.subplots(len(act_dict), 1, figsize=figsize_raw)
     if len(act_dict) == 1:
         assert isinstance(axs_act, plt.Axes)
         axs_act = [axs_act]
@@ -234,7 +234,7 @@ def plot_activations(
     ax5a: plt.Axes
     ax5b: plt.Axes
     ax5c: plt.Axes
-    fig5, (ax5a, ax5b, ax5c) = plt.subplots(1, 3, figsize=(15, 4))  # pyright: ignore[reportGeneralTypeIssues]
+    fig5, (ax5a, ax5b, ax5c) = plt.subplots(1, 3, figsize=(15, 4))
 
     x_scale: str
     y_scale: str

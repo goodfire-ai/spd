@@ -57,7 +57,7 @@ def create_clustering_report(
             plt.legend()
 
         # Get the figure from the axes
-        fig: plt.Figure | None = ax.get_figure()
+        fig = ax.get_figure(root=True)
         assert fig is not None
 
         # Log the plot

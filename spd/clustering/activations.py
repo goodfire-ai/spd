@@ -14,14 +14,12 @@ from spd.clustering.consts import (
 )
 from spd.clustering.util import ModuleFilterFunc
 from spd.models.component_model import ComponentModel, OutputWithCache
-from spd.models.sigmoids import SigmoidTypes
 
 
 def component_activations(
     model: ComponentModel,
     device: torch.device | str,
     batch: Int[Tensor, "batch_size n_ctx"],
-    sigmoid_type: SigmoidTypes,
 ) -> dict[str, ActivationsTensor]:
     """Get the component activations over a **single** batch."""
     causal_importances: dict[str, ActivationsTensor]
@@ -31,12 +29,12 @@ def component_activations(
             cache_type="input",
         )
 
-        causal_importances, _ = model.calc_causal_importances(
+        # TODO: !!!IMPORTANT!!! unclear whether pre_sigmoid is the right thing to use here
+        causal_importances = model.calc_causal_importances(
             pre_weight_acts=model_output.cache,
-            sigmoid_type=sigmoid_type,
             sampling="continuous",
             detach_inputs=False,
-        )
+        ).pre_sigmoid
 
     return causal_importances
 
