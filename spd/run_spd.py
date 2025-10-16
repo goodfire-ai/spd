@@ -16,7 +16,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from spd.configs import Config, MetricConfigType, TrainMetricConfigType
+from spd.configs import Config, LossMetricConfigType, MetricConfigType
 from spd.data import loop_dataloader
 from spd.eval import avg_eval_metrics_across_ranks, evaluate
 from spd.identity_insertion import insert_identity_operations_
@@ -87,7 +87,7 @@ def run_faithfulness_warmup(
 
 
 def get_unique_metric_configs(
-    loss_configs: list[TrainMetricConfigType], eval_configs: list[MetricConfigType]
+    loss_configs: list[LossMetricConfigType], eval_configs: list[MetricConfigType]
 ) -> list[MetricConfigType]:
     """If a metric appears in both loss and eval configs, only include the eval version."""
     eval_config_names = [type(cfg).__name__ for cfg in eval_configs]
