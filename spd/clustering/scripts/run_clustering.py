@@ -261,7 +261,6 @@ def main(run_config: ClusteringRunConfig) -> Path:
         model=model,
         batch=batch,
         device=device,
-        sigmoid_type=spd_run.config.sigmoid_type,
     )
 
     # 5. Process activations

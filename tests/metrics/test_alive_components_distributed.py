@@ -133,9 +133,7 @@ def _test_dead_components():
     print(f"Rank {rank} n_batches_since_fired: {metric.n_batches_since_fired['layer1']}")
     result = metric.compute()
     # only components 0 and 1 alive
-    assert result["layer1"] == 2, (
-        f"Expected 2 alive components, got {result['layer1']}"
-    )
+    assert result["layer1"] == 2, f"Expected 2 alive components, got {result['layer1']}"
 
     if rank == 0:
         print(f"✓ Dead components test passed (n_alive={result['layer1']})")
@@ -179,8 +177,7 @@ def _test_multiple_modules():
 
     if rank == 0:
         print(
-            f"✓ Multiple modules test passed "
-            f"(layer1={result['layer1']}, layer2={result['layer2']})"
+            f"✓ Multiple modules test passed (layer1={result['layer1']}, layer2={result['layer2']})"
         )
 
 
