@@ -7,8 +7,8 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 5000
 n_mask_samples: 1
-gate_type: "mlp"
-gate_hidden_dims: [16]
+ci_fn_type: "identity"
+ci_fn_hidden_dims: []
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.embed_tokens"]
 sampling: "continuous"
