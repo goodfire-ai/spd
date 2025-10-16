@@ -26,7 +26,7 @@ def split_dataset(
     **kwargs: Any,
 ) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
     """Split a dataset into n_batches of batch_size, returning iterator and config"""
-    ds: Generator[BatchTensor, None, None]
+    ds: Generator[BatchTensor]
     ds_config_dict: dict[str, Any]
     match config.task_name:
         case "lm":
@@ -62,7 +62,7 @@ def _get_dataloader_lm(
     model_path: str,
     batch_size: int,
     config_kwargs: dict[str, Any] | None = None,
-) -> tuple[Generator[BatchTensor, None, None], dict[str, Any]]:
+) -> tuple[Generator[BatchTensor], dict[str, Any]]:
     """split up a SS dataset into n_batches of batch_size, returned the saved paths
 
     1. load the config for a SimpleStories SPD Run given by model_path
@@ -122,7 +122,7 @@ def _get_dataloader_lm(
 def _get_dataloader_resid_mlp(
     model_path: str,
     batch_size: int,
-) -> tuple[Generator[torch.Tensor, None, None], dict[str, Any]]:
+) -> tuple[Generator[torch.Tensor], dict[str, Any]]:
     """Split a ResidMLP dataset into n_batches of batch_size and save the batches."""
     from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
     from spd.utils.data_utils import DatasetGeneratedDataLoader
