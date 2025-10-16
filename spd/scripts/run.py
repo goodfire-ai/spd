@@ -22,13 +22,14 @@ from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
 from spd.utils.run_utils import (
+    Command,
     ExecutionStamp,
     apply_nested_updates,
     generate_grid_combinations,
     generate_run_name,
     run_script_array_local,
 )
-from spd.utils.slurm_utils import create_slurm_array_script, join_commands, submit_slurm_script
+from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_script
 from spd.utils.wandb_utils import wandb_setup
 
 
@@ -111,26 +112,20 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
     return base + (h % span)
 
 
-def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
-    """Build an MPI prefix for a command."""
-    port: int = _choose_master_port(run_id, idx)
-    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} "
-
-
 def generate_commands(
     experiments_list: list[str],
     run_id: str,
     sweep_params_file: str | None = None,
     project: str = "spd",
     dp: int = 1,
-) -> list[list[str]]:
+) -> list[Command]:
     """Generate commands for all experiment runs and print task counts.
 
     NOTE: When we convert parameter settings into JSON strings to pass to our decomposition scripts,
     we add a prefix to prevent Fire parsing with ast.literal_eval
     (https://github.com/google/python-fire/issues/332)
     """
-    commands: list[list[str]] = []
+    commands: list[Command] = []
 
     logger.info("Task breakdown by experiment:")
     task_breakdown: dict[str, str] = {}
@@ -154,15 +149,27 @@ def generate_commands(
 
             config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
 
-            mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
+            cmd_parts = [
+                "python",
+                str(exp_config.decomp_script),
+                "--config_json",
+                config_json,
+                "--sweep_id",
+                run_id,
+                "--evals_id",
+                experiment,
+            ]
 
-            command = (
-                f"{mpi_prefix}python {exp_config.decomp_script} --config_json '{config_json}' "
-                f"--sweep_id {run_id} --evals_id {experiment}"
-            )
+            if dp > 1:
+                port = _choose_master_port(run_id, cmd_idx)
+                cmd = Command(
+                    cmd=["mpirun", "-x", "MASTER_PORT", "-np", str(dp)] + cmd_parts,
+                    env={"MASTER_PORT": str(port)},
+                )
+            else:
+                cmd = Command(cmd=cmd_parts)
 
-            # TODO: this and the other append are a hack and i dont like it. makes me think that a special `Command` class is maybe worth it
-            commands.append([command])
+            commands.append(cmd)
             task_breakdown[experiment] = "1 task"
             cmd_idx += 1
 
@@ -183,15 +190,29 @@ def generate_commands(
                 config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
                 sweep_params_json = f"json:{json.dumps(sweep_params)}"
 
-                mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
-                command = (
-                    f"{mpi_prefix}python {exp_config.decomp_script} --config_json '{config_json}' "
-                    f"--sweep_id {run_id} "
-                    f"--evals_id {experiment} "
-                    f"--sweep_params_json '{sweep_params_json}'"
-                )
+                cmd_parts = [
+                    "python",
+                    str(exp_config.decomp_script),
+                    "--config_json",
+                    config_json,
+                    "--sweep_id",
+                    run_id,
+                    "--evals_id",
+                    experiment,
+                    "--sweep_params_json",
+                    sweep_params_json,
+                ]
 
-                commands.append([command])
+                if dp > 1:
+                    port = _choose_master_port(run_id, cmd_idx)
+                    cmd = Command(
+                        cmd=["mpirun", "-x", "MASTER_PORT", "-np", str(dp)] + cmd_parts,
+                        env={"MASTER_PORT": str(port)},
+                    )
+                else:
+                    cmd = Command(cmd=cmd_parts)
+
+                commands.append(cmd)
                 cmd_idx += 1
 
                 # Print first combination as example
@@ -361,7 +382,7 @@ def main(
 
     # generate and run commands
     # ==========================================================================================
-    commands: list[list[str]] = generate_commands(
+    commands: list[Command] = generate_commands(
         experiments_list=experiments_list,
         run_id=run_id,
         sweep_params_file=sweep_params_file,
@@ -386,7 +407,7 @@ def main(
             create_slurm_array_script(
                 script_path=array_script,
                 job_name=job_name,
-                commands=join_commands(commands),
+                commands=commands,
                 snapshot_branch=execution_stamp.snapshot_branch,
                 max_concurrent_tasks=n_agents,
                 n_gpus_per_job=n_gpus_per_job,

@@ -26,7 +26,6 @@ Output structure (only pipeline_config.json is saved to directly in this script.
 """
 
 import argparse
-import subprocess
 import tempfile
 from pathlib import Path
 
@@ -37,12 +36,10 @@ from spd.base_config import BaseConfig
 from spd.clustering.consts import DistancesMethod
 from spd.log import logger
 from spd.utils.general_utils import replace_pydantic_model
-from spd.utils.run_utils import ExecutionStamp, run_script_array_local
+from spd.utils.run_utils import Command, ExecutionStamp, run_script_array_local
 from spd.utils.slurm_utils import (
     create_slurm_array_script,
     create_slurm_script,
-    join_command,
-    join_commands,
     submit_slurm_script,
 )
 
@@ -91,7 +88,7 @@ def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str
 
 def generate_clustering_commands(
     pipeline_config: ClusteringPipelineConfig, ensemble_id: str
-) -> list[list[str]]:
+) -> list[Command]:
     """Generate commands for each clustering run.
 
     Args:
@@ -99,41 +96,46 @@ def generate_clustering_commands(
         ensemble_id: Ensemble identifier
 
     Returns:
-        List of commands, one per run
+        List of Command objects, one per run
     """
-    commands: list[list[str]] = []
+    commands: list[Command] = []
 
     for idx in range(pipeline_config.n_runs):
-        command = [
-            "python",
-            "spd/clustering/scripts/run_clustering.py--config",
-            pipeline_config.run_clustering_config_path.as_posix(),
-            "--idx-in-ensemble",
-            str(idx),
-            "--base-output-dir",
-            pipeline_config.base_output_dir.as_posix(),
-            "--ensemble-id",
-            ensemble_id,
-        ]
-        commands.append(command)
+        cmd = Command(
+            cmd=[
+                "python",
+                "spd/clustering/scripts/run_clustering.py",
+                "--config",
+                pipeline_config.run_clustering_config_path.as_posix(),
+                "--idx-in-ensemble",
+                str(idx),
+                "--base-output-dir",
+                pipeline_config.base_output_dir.as_posix(),
+                "--ensemble-id",
+                ensemble_id,
+            ]
+        )
+        commands.append(cmd)
 
     return commands
 
 
 def generate_calc_distances_command(
     ensemble_id: str, distances_method: DistancesMethod, base_output_dir: Path
-) -> list[str]:
+) -> Command:
     """Generate command for calculating distances."""
-    return [
-        "python",
-        "spd/clustering/scripts/calc_distances.py",
-        "--ensemble-id",
-        ensemble_id,
-        "--distances-method",
-        distances_method,
-        "--base-output-dir",
-        base_output_dir.as_posix(),
-    ]
+    return Command(
+        cmd=[
+            "python",
+            "spd/clustering/scripts/calc_distances.py",
+            "--ensemble-id",
+            ensemble_id,
+            "--distances-method",
+            distances_method,
+            "--base-output-dir",
+            base_output_dir.as_posix(),
+        ]
+    )
 
 
 def main(
@@ -199,8 +201,8 @@ def main(
 
         # submit calc_distances job
         logger.info("Calculating distances...")
-        logger.info(f"Command: {calc_distances_command}")
-        subprocess.run(calc_distances_command, check=True)
+        logger.info(f"Command: {calc_distances_command.cmd_joined}")
+        calc_distances_command.run(check=True)
 
         logger.section("complete!")
         distances_plot_path = ensemble_dir / f"distances_{pipeline_config.distances_method}.png"
@@ -220,7 +222,7 @@ def main(
             create_slurm_array_script(
                 script_path=clustering_script_path,
                 job_name=f"{pipeline_config.slurm_job_name_prefix}_cluster",
-                commands=join_commands(clustering_commands),
+                commands=clustering_commands,
                 snapshot_branch=execution_stamp.snapshot_branch,
                 max_concurrent_tasks=pipeline_config.n_runs,  # Run all concurrently
                 n_gpus_per_job=1,  # Always 1 GPU per run
@@ -234,7 +236,7 @@ def main(
             create_slurm_script(
                 script_path=calc_distances_script_path,
                 job_name=f"{pipeline_config.slurm_job_name_prefix}_distances",
-                command=join_command(calc_distances_command),
+                command=calc_distances_command,
                 snapshot_branch=execution_stamp.snapshot_branch,
                 n_gpus=1,  # Always 1 GPU for distances calculation
                 partition=pipeline_config.slurm_partition,

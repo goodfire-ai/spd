@@ -8,7 +8,7 @@ import secrets
 import string
 import subprocess
 from pathlib import Path
-from typing import Any, Final, Literal, NamedTuple
+from typing import Any, Final, Literal, NamedTuple, override
 
 import torch
 import wandb
@@ -499,7 +499,7 @@ def _generate_run_id(run_type: RunType) -> str:
     #     )
     type_abbr: str = RUN_TYPE_ABBREVIATIONS[run_type]
     random_hex: str = secrets.token_hex(4)
-    # _CREATED_RUN_ID = True  # pyright: ignore[reportConstantRedefinition]
+    # _CREATED_RUN_ID = True
     return f"{type_abbr}-{random_hex}"
 
 
@@ -537,33 +537,6 @@ class ExecutionStamp(NamedTuple):
         return ExecutionStamp(
             run_id=run_id, snapshot_branch=snapshot_branch, commit_hash=commit_hash
         )
-
-
-def run_script_array_local(commands: list[list[str]], parallel: bool = False) -> None:
-    """alternative to `create_slurm_array_script` for local execution of multiple commands
-
-    if `parallel` is True, runs all commands in parallel using subprocess.Popen
-    otherwise runs them sequentially using subprocess.run
-    """
-    n_commands: int = len(commands)
-    if not parallel:
-        logger.section(f"LOCAL EXECUTION: Running {n_commands} tasks serially")
-        for i, cmd in enumerate(commands):
-            logger.info(f"[{i + 1}/{n_commands}] Running command: `{' '.join(cmd)}`")
-            subprocess.run(cmd, check=True)
-        logger.section("LOCAL EXECUTION COMPLETE")
-    else:
-        # procs: list[subprocess.Popen[bytes]] = [subprocess.Popen(cmd) for cmd in commands]
-        procs: list[subprocess.Popen[bytes]] = []
-        for i, cmd in enumerate(commands):
-            logger.info(f"[{i + 1}/{n_commands}] Starting command: `{' '.join(cmd)}`")
-            p = subprocess.Popen(cmd)
-            procs.append(p)
-        logger.section("STARTED ALL COMMANDS")
-        for p in procs:
-            p.wait()
-            logger.info(f"Process {p.pid} finished with exit code {p.returncode}")
-        logger.section("LOCAL EXECUTION COMPLETE")
 
 
 class Command(BaseModel):
@@ -649,5 +622,32 @@ class Command(BaseModel):
             **kwargs,
         )
 
+    @override
     def __str__(self) -> str:
         return self.script_line()
+
+
+def run_script_array_local(commands: list[Command], parallel: bool = False) -> None:
+    """alternative to `create_slurm_array_script` for local execution of multiple commands
+
+    if `parallel` is True, runs all commands in parallel using subprocess.Popen
+    otherwise runs them sequentially using subprocess.run
+    """
+    n_commands: int = len(commands)
+    if not parallel:
+        logger.section(f"LOCAL EXECUTION: Running {n_commands} tasks serially")
+        for i, cmd in enumerate(commands):
+            logger.info(f"[{i + 1}/{n_commands}] Running command: `{cmd.cmd_joined}`")
+            cmd.run(check=True)
+        logger.section("LOCAL EXECUTION COMPLETE")
+    else:
+        procs: list[subprocess.Popen[bytes]] = []
+        for i, cmd in enumerate(commands):
+            logger.info(f"[{i + 1}/{n_commands}] Starting command: `{cmd.cmd_joined}`")
+            p = cmd.Popen()
+            procs.append(p)
+        logger.section("STARTED ALL COMMANDS")
+        for p in procs:
+            p.wait()
+            logger.info(f"Process {p.pid} finished with exit code {p.returncode}")
+        logger.section("LOCAL EXECUTION COMPLETE")
