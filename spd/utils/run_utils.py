@@ -527,7 +527,7 @@ class ExecutionStamp(NamedTuple):
             logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
         else:
             snapshot_branch = repo_current_branch()
-            if repo_is_clean():
+            if repo_is_clean(catch_except_as_false=True):
                 commit_hash = repo_current_commit_hash()
                 logger.info(f"Using current branch: {snapshot_branch} ({commit_hash[:8]})")
             else:
