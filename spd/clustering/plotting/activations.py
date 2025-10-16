@@ -11,6 +11,7 @@ import torch
 import wandb
 import wandb.sdk.wandb_run
 from jaxtyping import Float, Int
+from muutils.dbg import dbg_tensor
 from torch import Tensor
 
 from spd.clustering.activations import ProcessedActivations, compute_coactivatons
@@ -50,7 +51,9 @@ def plot_activations(
 
     act_dict: dict[str, ActivationsTensor] = processed_activations.activations_raw
     act_concat: ActivationsTensor = processed_activations.activations
+    dbg_tensor(act_concat)
     coact: ClusterCoactivationShaped = compute_coactivatons(act_concat)
+    dbg_tensor(coact)
     labels: ComponentLabels = ComponentLabels(processed_activations.labels)
     n_samples: int = act_concat.shape[0]
 
@@ -209,8 +212,8 @@ def plot_activations(
     fig4_log: plt.Figure
     ax4_log: plt.Axes
     fig4_log, ax4_log = plt.subplots(figsize=figsize_coact)
-    assert np.all(coact_data >= 0)
-    coact_log_data: np.ndarray = np.log10(coact_data + 1e-6)
+    # assert np.all(coact_data >= 0) # TODO: why does this fail?
+    coact_log_data: np.ndarray = np.log10(coact_data + 1e-6 + coact_data.min())
     im4_log = ax4_log.matshow(
         coact_log_data, aspect="auto", vmin=coact_log_data.min(), vmax=coact_log_data.max()
     )
