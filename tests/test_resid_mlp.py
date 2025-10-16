@@ -1,8 +1,8 @@
 from spd.configs import (
     Config,
-    FaithfulnessLossTrainConfig,
-    ImportanceMinimalityLossTrainConfig,
-    StochasticReconLossTrainConfig,
+    FaithfulnessLossConfig,
+    ImportanceMinimalityLossConfig,
+    StochasticReconLossConfig,
 )
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
@@ -42,13 +42,13 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[8],
         loss_metric_configs=[
-            ImportanceMinimalityLossTrainConfig(
+            ImportanceMinimalityLossConfig(
                 coeff=3e-3,
                 pnorm=0.9,
                 eps=1e-12,
             ),
-            StochasticReconLossTrainConfig(coeff=1.0),
-            FaithfulnessLossTrainConfig(coeff=1.0),
+            StochasticReconLossConfig(coeff=1.0),
+            FaithfulnessLossConfig(coeff=1.0),
         ],
         target_module_patterns=["layers.*.mlp_in", "layers.*.mlp_out"],
         identity_module_patterns=["layers.*.mlp_in"],

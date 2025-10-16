@@ -3,11 +3,11 @@ import pytest
 from spd.configs import (
     CI_L0Config,
     Config,
-    FaithfulnessLossTrainConfig,
-    ImportanceMinimalityLossTrainConfig,
+    FaithfulnessLossConfig,
+    ImportanceMinimalityLossConfig,
     StochasticHiddenActsReconLossConfig,
-    StochasticReconLayerwiseLossTrainConfig,
-    StochasticReconLossTrainConfig,
+    StochasticReconLayerwiseLossConfig,
+    StochasticReconLossConfig,
 )
 from spd.experiments.ih.configs import IHTaskConfig, InductionModelConfig
 from spd.experiments.ih.model import InductionTransformer
@@ -52,14 +52,14 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         identity_module_patterns=["blocks.*.attn.q_proj"],
         # Loss Coefficients
         loss_metric_configs=[
-            ImportanceMinimalityLossTrainConfig(
+            ImportanceMinimalityLossConfig(
                 coeff=1e-2,
                 pnorm=0.9,
                 eps=1e-12,
             ),
-            StochasticReconLayerwiseLossTrainConfig(coeff=1.0),
-            StochasticReconLossTrainConfig(coeff=1.0),
-            FaithfulnessLossTrainConfig(coeff=200),
+            StochasticReconLayerwiseLossConfig(coeff=1.0),
+            StochasticReconLossConfig(coeff=1.0),
+            FaithfulnessLossConfig(coeff=200),
         ],
         output_loss_type="kl",
         # Training

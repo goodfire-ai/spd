@@ -210,9 +210,9 @@ class TestTargetCISolution:
         metrics = compute_target_metrics(ci_arrays, solution, tolerance=0.1)
 
         # Check total errors
-        assert metrics["target_solution_error/total"] == 3
+        assert metrics["total"] == 3
         # Check per-module errors
-        assert metrics["target_solution_error/layers.0.mlp_in"] == 2
-        assert metrics["target_solution_error/layers.0.mlp_out"] == 1
-        assert metrics["target_solution_error/layers.1.mlp_in"] == 0
-        assert metrics["target_solution_error/layers.1.mlp_out"] == 0
+        assert metrics["layers.0.mlp_in"] == 2
+        assert metrics["layers.0.mlp_out"] == 1
+        assert metrics["layers.1.mlp_in"] == 0
+        assert metrics["layers.1.mlp_out"] == 0

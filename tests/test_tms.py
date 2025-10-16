@@ -5,10 +5,10 @@ from torch import nn
 
 from spd.configs import (
     Config,
-    FaithfulnessLossTrainConfig,
-    ImportanceMinimalityLossTrainConfig,
-    StochasticReconLayerwiseLossTrainConfig,
-    StochasticReconLossTrainConfig,
+    FaithfulnessLossConfig,
+    ImportanceMinimalityLossConfig,
+    StochasticReconLayerwiseLossConfig,
+    StochasticReconLossConfig,
 )
 from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
@@ -49,14 +49,14 @@ def test_tms_decomposition_happy_path() -> None:
         target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
         identity_module_patterns=["linear1"],
         loss_metric_configs=[
-            ImportanceMinimalityLossTrainConfig(
+            ImportanceMinimalityLossConfig(
                 coeff=3e-3,
                 pnorm=2.0,
                 eps=1e-12,
             ),
-            StochasticReconLayerwiseLossTrainConfig(coeff=1.0),
-            StochasticReconLossTrainConfig(coeff=1.0),
-            FaithfulnessLossTrainConfig(coeff=1.0),
+            StochasticReconLayerwiseLossConfig(coeff=1.0),
+            StochasticReconLossConfig(coeff=1.0),
+            FaithfulnessLossConfig(coeff=1.0),
         ],
         output_loss_type="mse",
         # Training
