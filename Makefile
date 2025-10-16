@@ -22,7 +22,7 @@ install-dev: copy-templates
 .PHONY: install-ci
 install-ci:
 	rm -f uv.lock
-	uv venv --python 3.12 --clear
+	uv venv --python 3.13 --clear
 	uv sync \
 		--link-mode copy \
 		--extra-index-url https://download.pytorch.org/whl/cpu \
