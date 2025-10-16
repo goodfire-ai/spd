@@ -36,7 +36,7 @@ run_context_service = RunContextService()
 subcomponent_activations_context_service = SubcomponentActivationContextsService(
     run_context_service
 )
-component_activation_contexts_service = ComponentActivationContextsService(run_context_service)
+# component_activation_contexts_service = ComponentActivationContextsService(run_context_service)
 ablation_service = AblationService(run_context_service)
 geometry_service = GeometryService(run_context_service)
 
@@ -138,12 +138,12 @@ def load_run(wandb_run_id: str):
     run_context_service.load_run(f"{ENTITY}/{TRAIN_PROJECT}/{wandb_run_id}")
 
 
-@app.post("/cluster-runs/load/{wandb_run_id}/{iteration}")
-@handle_errors
-def load_cluster_run(wandb_run_id: str, iteration: int):
-    raise NotImplementedError("Cluster runs are not supported yet")
-    # global ablation_service
-    # run_context_service.load_cluster_run(f"{ENTITY}/{CLUSTER_PROJECT}/{wandb_run_id}", iteration)
+# @app.post("/cluster-runs/load/{wandb_run_id}/{iteration}")
+# @handle_errors
+# def load_cluster_run(wandb_run_id: str, iteration: int):
+#     raise NotImplementedError("Cluster runs are not supported yet")
+#     # global ablation_service
+#     # run_context_service.load_cluster_run(f"{ENTITY}/{CLUSTER_PROJECT}/{wandb_run_id}", iteration)
 
 
 @app.get("/runs")

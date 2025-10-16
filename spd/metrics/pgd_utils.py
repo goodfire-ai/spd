@@ -1,4 +1,3 @@
-from functools import partial
 from typing import Literal
 
 import torch
@@ -7,7 +6,7 @@ from torch import Tensor
 
 from spd.configs import PGDConfig, PGDInitStrategy
 from spd.models.component_model import ComponentModel
-from spd.models.components import RoutingMasks, make_mask_infos
+from spd.models.components import make_mask_infos
 from spd.utils.component_utils import RoutingType, calc_routing_masks
 from spd.utils.general_utils import calc_sum_recon_loss_lm, zip_dicts
 
@@ -187,5 +186,3 @@ def _interpolate_component_mask(
         assert torch.all(component_mask[module_name] >= ci[module_name])
         assert torch.all(component_mask[module_name] <= 1.0)
     return component_mask
-
-

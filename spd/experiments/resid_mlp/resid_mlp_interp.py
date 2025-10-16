@@ -307,7 +307,7 @@ def plot_spd_feature_contributions_truncated(
 
     n_rows = 2
     fig1, axes1 = plt.subplots(n_rows, 1, figsize=(10, 7), constrained_layout=True)
-    axes1 = np.atleast_1d(axes1)  # pyright: ignore[reportCallIssue, reportArgumentType]
+    axes1 = np.atleast_1d(axes1)
 
     labelled_neurons = feature_contribution_plot(
         ax=axes1[0],

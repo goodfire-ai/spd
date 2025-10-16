@@ -326,7 +326,7 @@ def _compute_token_densities(
             start, end = context.offset_mapping[active_tok_idx]
             token_text = context.raw_text[start:end]
             try:
-                token_id = run_context.tokenizer.encode(token_text, add_special_tokens=False)[0]  # pyright: ignore[reportAttributeAccessIssue]
+                token_id = run_context.tokenizer.encode(token_text, add_special_tokens=False)[0]
                 token_counts[token_id] += 1
                 total += 1
             except (IndexError, KeyError):
