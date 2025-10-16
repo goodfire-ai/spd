@@ -23,6 +23,7 @@ from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
     Identity,
+    IdentityCiFn,
     LinearComponents,
     MLPCiFn,
     VectorMLPCiFn,
@@ -215,6 +216,9 @@ class ComponentModel(LoadableModule):
 
         if ci_fn_type == "mlp":
             return MLPCiFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
+        if ci_fn_type == "identity":
+            return IdentityCiFn()
+
 
         match target_module:
             case nn.Linear():
