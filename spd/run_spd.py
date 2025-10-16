@@ -191,7 +191,7 @@ def optimize(
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
 
-    metric_configs = get_unique_metric_configs(
+    eval_metric_configs = get_unique_metric_configs(
         loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
     )
 
@@ -303,7 +303,7 @@ def optimize(
                 )
 
                 metrics = evaluate(
-                    metric_configs=metric_configs,
+                    eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
                     device=device,
