@@ -1,10 +1,9 @@
 """Run SPD on a model."""
 
 import gc
-import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import torch
 import torch.nn as nn
@@ -39,6 +38,7 @@ from spd.utils.general_utils import (
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
+from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
@@ -86,32 +86,6 @@ def run_faithfulness_warmup(
     gc.collect()
 
 
-def local_log(data: dict[str, Any], step: int, out_dir: Path) -> None:
-    metrics_file = out_dir / "metrics.jsonl"
-    metrics_file.touch(exist_ok=True)
-
-    fig_dir = out_dir / "figures"
-    fig_dir.mkdir(exist_ok=True)
-
-    metrics_without_images = {}
-    for k, v in data.items():
-        if isinstance(v, Image.Image):
-            filename = f"{k.replace('/', '_')}_{step}.png"
-            v.save(fig_dir / filename)
-            tqdm.write(f"Saved figure {k} to {fig_dir / filename}")
-        elif isinstance(v, wandb.plot.CustomChart):
-            json_path = fig_dir / f"{k.replace('/', '_')}_{step}.json"
-            payload = {"columns": list(v.table.columns), "data": list(v.table.data), "step": step}
-            with open(json_path, "w") as f:
-                json.dump(payload, f, default=str)
-            tqdm.write(f"Saved custom chart data {k} to {json_path}")
-        else:
-            metrics_without_images[k] = v
-
-    with open(metrics_file, "a") as f:
-        f.write(json.dumps({"step": step, **metrics_without_images}) + "\n")
-
-
 def optimize(
     target_model: nn.Module,
     config: Config,
@@ -145,6 +119,7 @@ def optimize(
         ci_fn_type=config.ci_fn_type,
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
+        sigmoid_type=config.sigmoid_type,
     )
 
     if ln_stds is not None:
@@ -186,9 +161,9 @@ def optimize(
 
     component_params: list[torch.nn.Parameter] = []
     ci_fn_params: list[torch.nn.Parameter] = []
-    for name, component in component_model.components.items():
-        component_params.extend(list(component.parameters()))
-        ci_fn_params.extend(list(component_model.ci_fns[name].parameters()))
+    for name in component_model.target_module_paths:
+        component_params.extend(component_model.components[name].parameters())
+        ci_fn_params.extend(component_model.ci_fns[name].parameters())
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
@@ -202,7 +177,7 @@ def optimize(
 
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
-        module_paths=model.module_paths,
+        target_module_paths=model.target_module_paths,
         C=config.C,
         device=device,
         n_examples_until_dead=config.n_examples_until_dead,
@@ -235,23 +210,19 @@ def optimize(
             # sync regardless of whether the parameters are used in this call to wrapped_model.
             target_model_output: OutputWithCache = wrapped_model(batch, cache_type="input")
 
-            causal_importances, causal_importances_upper_leaky = (
-                component_model.calc_causal_importances(
-                    pre_weight_acts=target_model_output.cache,
-                    sigmoid_type=config.sigmoid_type,
-                    detach_inputs=False,
-                    sampling=config.sampling,
-                )
+            ci = component_model.calc_causal_importances(
+                pre_weight_acts=target_model_output.cache,
+                detach_inputs=False,
+                sampling=config.sampling,
             )
 
-            alive_tracker.update(ci=causal_importances)
+            alive_tracker.update(ci=ci.lower_leaky)
 
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
                 loss_metric_configs=config.loss_metric_configs,
                 model=component_model,
                 batch=batch,
-                ci=causal_importances,
-                ci_upper_leaky=causal_importances_upper_leaky,
+                ci=ci,
                 target_out=target_model_output.output,
                 weight_deltas=weight_deltas,
                 pre_weight_acts=target_model_output.cache,
@@ -264,13 +235,13 @@ def optimize(
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
-                microbatch_log_data[f"train/loss/{loss_name}"] += (
+                microbatch_log_data[f"train/{loss_name}"] += (
                     loss_value / config.gradient_accumulation_steps
                 )
 
-            for layer_name, layer_ci in causal_importances.items():
+            for layer_name, layer_ci in ci.lower_leaky.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                microbatch_log_data[f"train/{layer_name}/l0"] += (
+                microbatch_log_data[f"train/l0/{layer_name}"] += (
                     l0_val / config.gradient_accumulation_steps
                 )
 
@@ -281,16 +252,16 @@ def optimize(
                 microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
             alive_counts = alive_tracker.compute()
-            for metric_name, n_alive_count in alive_counts.items():
-                n_alive_key = f"train/{metric_name}_{alive_tracker.ci_alive_threshold}"
+            for target_module_path, n_alive_count in alive_counts.items():
+                n_alive_key = (
+                    f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
+                )
                 microbatch_log_data[n_alive_key] = n_alive_count
 
-            grad_norm: Float[Tensor, ""] = torch.zeros((), device=device)
-            for param in component_params + ci_fn_params:
-                if param.grad is not None:
-                    grad_norm += param.grad.data.flatten().pow(2).sum()
-            microbatch_log_data["train/misc/grad_norm"] = grad_norm.sqrt().item()
-            microbatch_log_data["train/misc/lr"] = step_lr
+            grad_norms = get_grad_norms_dict(component_model, device)
+            microbatch_log_data.update({f"train/grad_norms/{k}": v for k, v in grad_norms.items()})
+
+            microbatch_log_data["train/schedules/lr"] = step_lr
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")

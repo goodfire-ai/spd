@@ -53,7 +53,6 @@ def extract_ci_val_figures(
         batch_shape=batch_shape,
         input_magnitude=input_magnitude,
         plot_raw_cis=False,
-        sigmoid_type=config.sigmoid_type,
         sampling=config.sampling,
     )
 
@@ -532,7 +531,6 @@ def main(out_dir: Path, device: str):
             sampling=config.sampling,
             plot_raw_cis=False,
             title_formatter=format_resid_mlp_title,
-            sigmoid_type=config.sigmoid_type,
         )[0]
 
         fname_importances = (

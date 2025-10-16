@@ -8,7 +8,7 @@ from jaxtyping import Float, Int
 from torch import Tensor, nn
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
-from spd.configs import Config, ImportanceMinimalityLossTrainConfig
+from spd.configs import Config, ImportanceMinimalityLossConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
@@ -81,6 +81,7 @@ def test_correct_parameters_require_grad():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     for module_path, components in component_model.components.items():
@@ -134,7 +135,7 @@ def test_from_run_info():
             eval_batch_size=1,
             eval_freq=1,
             slow_eval_freq=1,
-            loss_metric_configs=[ImportanceMinimalityLossTrainConfig(coeff=1.0, pnorm=1.0)],
+            loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0)],
             n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
@@ -158,6 +159,7 @@ def test_from_run_info():
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
+            sigmoid_type=config.sigmoid_type,
         )
 
         save_file(cm.state_dict(), comp_model_dir / "model.pth")
@@ -209,7 +211,7 @@ def test_patch_modules_unsupported_component_type_raises() -> None:
     with pytest.raises(AttributeError):
         ComponentModel._create_components(
             target_model=model,
-            module_paths=[wrong_module_path],
+            target_module_paths=[wrong_module_path],
             C=2,
         )
 
@@ -265,6 +267,7 @@ def test_full_weight_delta_matches_target_behaviour():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     token_ids = torch.randint(
@@ -297,6 +300,7 @@ def test_input_cache_captures_pre_weight_input():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     # WHEN we forward the component model with input caching
@@ -332,6 +336,7 @@ def test_weight_deltas():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     # THEN the weight deltas match the target weight
@@ -367,6 +372,7 @@ def test_replacement_effects_fwd_pass():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     # WHEN we set the target model weights to be UV
@@ -420,6 +426,7 @@ def test_replacing_identity():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     # and a random input
@@ -470,6 +477,7 @@ def test_routing():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     # and a random input

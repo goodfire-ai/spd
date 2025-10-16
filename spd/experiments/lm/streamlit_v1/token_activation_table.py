@@ -323,12 +323,11 @@ def _process_batch_for_tokens(
     with torch.no_grad():
         pre_weight_acts = model_data.model(batch, cache_type="input").cache
 
-        causal_importances, _ = model_data.model.calc_causal_importances(
+        causal_importances = model_data.model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
-            sigmoid_type=model_data.config.sigmoid_type,
             detach_inputs=True,
             sampling=model_data.config.sampling,
-        )
+        ).lower_leaky
 
     # Calculate L0 scores for this batch
     ci_l_zero_vals: dict[str, float] = {}

@@ -5,15 +5,15 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.configs import (
-    CIMaskedReconLayerwiseLossTrainConfig,
-    CIMaskedReconLossTrainConfig,
-    CIMaskedReconSubsetLossTrainConfig,
-    FaithfulnessLossTrainConfig,
-    ImportanceMinimalityLossTrainConfig,
+    CIMaskedReconLayerwiseLossConfig,
+    CIMaskedReconLossConfig,
+    CIMaskedReconSubsetLossConfig,
+    FaithfulnessLossConfig,
+    ImportanceMinimalityLossConfig,
     StochasticHiddenActsReconLossConfig,
-    StochasticReconLayerwiseLossTrainConfig,
-    StochasticReconLossTrainConfig,
-    StochasticReconSubsetLossTrainConfig,
+    StochasticReconLayerwiseLossConfig,
+    StochasticReconLossConfig,
+    StochasticReconSubsetLossConfig,
     TrainMetricConfigType,
 )
 from spd.metrics import (
@@ -27,15 +27,14 @@ from spd.metrics import (
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
 )
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 
 
 def compute_total_loss(
     loss_metric_configs: list[TrainMetricConfigType],
     model: ComponentModel,
     batch: Int[Tensor, "..."],
-    ci: dict[str, Float[Tensor, "batch C"]],
-    ci_upper_leaky: dict[str, Float[Tensor, "batch C"]],
+    ci: CIOutputs,
     target_out: Tensor,
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
@@ -55,9 +54,9 @@ def compute_total_loss(
     for cfg in loss_metric_configs:
         assert cfg.coeff is not None, "All loss metric configs must have a coeff"
         match cfg:
-            case ImportanceMinimalityLossTrainConfig():
+            case ImportanceMinimalityLossConfig():
                 loss = importance_minimality_loss(
-                    ci_upper_leaky=ci_upper_leaky,
+                    ci_upper_leaky=ci.upper_leaky,
                     current_frac_of_training=current_frac_of_training,
                     pnorm=cfg.pnorm,
                     eps=cfg.eps,
@@ -65,33 +64,33 @@ def compute_total_loss(
                     p_anneal_final_p=cfg.p_anneal_final_p,
                     p_anneal_end_frac=cfg.p_anneal_end_frac,
                 )
-            case CIMaskedReconSubsetLossTrainConfig():
+            case CIMaskedReconSubsetLossConfig():
                 loss = ci_masked_recon_subset_loss(
                     model=model,
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                 )
-            case CIMaskedReconLayerwiseLossTrainConfig():
+            case CIMaskedReconLayerwiseLossConfig():
                 loss = ci_masked_recon_layerwise_loss(
                     model=model,
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                 )
-            case CIMaskedReconLossTrainConfig():
+            case CIMaskedReconLossConfig():
                 loss = ci_masked_recon_loss(
                     model=model,
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                 )
-            case FaithfulnessLossTrainConfig():
+            case FaithfulnessLossConfig():
                 loss = faithfulness_loss(weight_deltas=weight_deltas)
-            case StochasticReconLayerwiseLossTrainConfig():
+            case StochasticReconLayerwiseLossConfig():
                 loss = stochastic_recon_layerwise_loss(
                     model=model,
                     sampling=sampling,
@@ -100,10 +99,10 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                     weight_deltas=weight_deltas,
                 )
-            case StochasticReconLossTrainConfig():
+            case StochasticReconLossConfig():
                 loss = stochastic_recon_loss(
                     model=model,
                     sampling=sampling,
@@ -112,10 +111,10 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                     weight_deltas=weight_deltas,
                 )
-            case StochasticReconSubsetLossTrainConfig():
+            case StochasticReconSubsetLossConfig():
                 loss = stochastic_recon_subset_loss(
                     model=model,
                     sampling=sampling,
@@ -124,7 +123,7 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                     weight_deltas=weight_deltas,
                 )
             case StochasticHiddenActsReconLossConfig():
@@ -135,12 +134,12 @@ def compute_total_loss(
                     n_mask_samples=n_mask_samples,
                     batch=batch,
                     pre_weight_acts=pre_weight_acts,
-                    ci=ci,
+                    ci=ci.lower_leaky,
                     weight_deltas=weight_deltas,
                 )
-        terms[cfg.classname] = loss.item()
+        terms[f"loss/{cfg.classname}"] = loss.item()
         total = total + cfg.coeff * loss
 
-    terms["total"] = total.item()
+    terms["loss/total"] = total.item()
 
     return total, terms

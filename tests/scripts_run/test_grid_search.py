@@ -5,7 +5,7 @@ All tests use realistic sweep parameters with discriminated lists (loss_metric_c
 
 import json
 
-from spd.configs import Config, ImportanceMinimalityLossTrainConfig
+from spd.configs import Config, ImportanceMinimalityLossConfig
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations
@@ -369,7 +369,7 @@ class TestConfigIntegration:
         assert isinstance(config.task_config, TMSTaskConfig)
         assert config.task_config.feature_probability == 0.1
         assert config.loss_metric_configs[0].coeff == 0.01
-        assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossTrainConfig)
+        assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossConfig)
         assert config.loss_metric_configs[0].eps == 1e-12  # Preserved
         assert config.loss_metric_configs[1].coeff == 1.0  # Preserved
 
@@ -422,7 +422,7 @@ class TestConfigIntegration:
         assert isinstance(config.task_config, LMTaskConfig)
         assert config.task_config.max_seq_len == 256
         assert config.loss_metric_configs[0].coeff == 0.01
-        assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossTrainConfig)
+        assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossConfig)
         assert config.loss_metric_configs[0].pnorm == 2.0
         assert config.loss_metric_configs[0].eps == 1e-12  # Preserved
 
@@ -493,7 +493,7 @@ class TestConfigIntegration:
 
             # Check preserved values
             assert config.task_config.data_generation_type == "at_least_zero_active"
-            assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossTrainConfig)
+            assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossConfig)
             assert config.loss_metric_configs[0].pnorm == 1.0
             assert config.loss_metric_configs[0].eps == 1e-12
 

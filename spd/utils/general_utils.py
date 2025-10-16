@@ -307,47 +307,6 @@ def save_pre_run_info(
             wandb.save(str(filepath), base_path=out_dir, policy="now")
 
 
-def get_linear_annealed_p(
-    step: int,
-    steps: int,
-    initial_p: float,
-    p_anneal_start_frac: float,
-    p_anneal_final_p: float | None,
-    p_anneal_end_frac: float = 1.0,
-) -> float:
-    """Calculate the linearly annealed p value for L_p sparsity loss.
-
-    Args:
-        step: Current training step
-        steps: Total number of training steps
-        initial_p: Starting p value
-        p_anneal_start_frac: Fraction of training after which to start annealing
-        p_anneal_final_p: Final p value to anneal to
-        p_anneal_end_frac: Fraction of training when annealing ends. We stay at the final p value from this point onward
-
-    Returns:
-        Current p value based on linear annealing schedule
-    """
-    if p_anneal_final_p is None or p_anneal_start_frac >= 1.0:
-        return initial_p
-
-    assert p_anneal_end_frac >= p_anneal_start_frac, (
-        f"p_anneal_end_frac ({p_anneal_end_frac}) must be >= "
-        f"p_anneal_start_frac ({p_anneal_start_frac})"
-    )
-
-    cur_frac = step / steps
-
-    if cur_frac < p_anneal_start_frac:
-        return initial_p
-    elif cur_frac >= p_anneal_end_frac:
-        return p_anneal_final_p
-    else:
-        # Linear interpolation between start and end fractions
-        progress = (cur_frac - p_anneal_start_frac) / (p_anneal_end_frac - p_anneal_start_frac)
-        return initial_p + (p_anneal_final_p - initial_p) * progress
-
-
 class _HasDevice(Protocol):
     """Protocol for objects with a `.device` attribute that is a `torch.device`."""
 
