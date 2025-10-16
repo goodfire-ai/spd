@@ -89,7 +89,7 @@ def run_faithfulness_warmup(
 def get_unique_metric_configs(
     loss_configs: list[TrainMetricConfigType], eval_configs: list[MetricConfigType]
 ) -> list[MetricConfigType]:
-    """If a metric appears in both train and eval, only include the eval version."""
+    """If a metric appears in both loss and eval configs, only include the eval version."""
     eval_config_names = [type(cfg).__name__ for cfg in eval_configs]
     metrics = eval_configs[:]
     for cfg in loss_configs:
