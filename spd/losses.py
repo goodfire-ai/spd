@@ -10,11 +10,11 @@ from spd.configs import (
     CIMaskedReconSubsetLossConfig,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    LossMetricConfigType,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
     StochasticReconSubsetLossConfig,
-    TrainMetricConfigType,
 )
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
@@ -31,7 +31,7 @@ from spd.models.component_model import CIOutputs, ComponentModel
 
 
 def compute_total_loss(
-    loss_metric_configs: list[TrainMetricConfigType],
+    loss_metric_configs: list[LossMetricConfigType],
     model: ComponentModel,
     batch: Int[Tensor, "..."],
     ci: CIOutputs,

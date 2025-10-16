@@ -370,7 +370,7 @@ def generate_grid_combinations(parameters: dict[str, Any]) -> list[dict[str, Any
 
 
 METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
-    # Train metrics
+    # Loss metrics
     "CIMaskedReconSubsetLoss": "CIMaskReconSub",
     "CIMaskedReconLayerwiseLoss": "CIMaskReconLayer",
     "CIMaskedReconLoss": "CIMaskRecon",

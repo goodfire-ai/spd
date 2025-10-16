@@ -226,7 +226,7 @@ def init_metric(
 
 
 def evaluate(
-    metric_configs: list[MetricConfigType],
+    eval_metric_configs: list[MetricConfigType],
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."] | tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: str,
@@ -238,7 +238,7 @@ def evaluate(
     """Run evaluation and return a mapping of metric names to values/images."""
 
     metrics: list[Metric] = []
-    for cfg in metric_configs:
+    for cfg in eval_metric_configs:
         metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
         if metric.slow and not slow_step:
             continue
