@@ -52,6 +52,7 @@ CONFIG: ClusteringRunConfig = ClusteringRunConfig(
     task_name="lm",
     n_batches=1,
     batch_size=2,
+    dataset_streaming=True,  # no effect since we do this manually
 )
 
 BATCHES, _ = split_dataset(
@@ -139,4 +140,4 @@ plot_dists_distribution(
 # Exit cleanly to avoid CUDA thread GIL issues during interpreter shutdown
 # see https://github.com/goodfire-ai/spd/issues/201#issue-3503138939
 # ============================================================
-os._exit(0)
+# os._exit(0)
