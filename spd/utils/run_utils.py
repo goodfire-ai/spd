@@ -488,26 +488,27 @@ RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {
 # _CREATED_RUN_ID: bool = False
 
 
-def _generate_run_id(run_type: RunType) -> str:
-    """Generate a unique run identifier,
-
-    Format: `{type_abbr}-{random_hex}`
-    """
-    # global _CREATED_RUN_ID
-    # if _CREATED_RUN_ID:
-    #     raise RuntimeError(
-    #         "Run ID has already been generated for this process! You can only call this once."
-    #     )
-    type_abbr: str = RUN_TYPE_ABBREVIATIONS[run_type]
-    random_hex: str = secrets.token_hex(4)
-    # _CREATED_RUN_ID = True
-    return f"{type_abbr}-{random_hex}"
-
-
 class ExecutionStamp(NamedTuple):
     run_id: str
     snapshot_branch: str
     commit_hash: str
+    run_type: RunType
+
+    @staticmethod
+    def _generate_run_id(run_type: RunType) -> str:
+        """Generate a unique run identifier,
+
+        Format: `{type_abbr}-{random_hex}`
+        """
+        # global _CREATED_RUN_ID
+        # if _CREATED_RUN_ID:
+        #     raise RuntimeError(
+        #         "Run ID has already been generated for this process! You can only call this once."
+        #     )
+        type_abbr: str = RUN_TYPE_ABBREVIATIONS[run_type]
+        random_hex: str = secrets.token_hex(4)
+        # _CREATED_RUN_ID = True
+        return f"{type_abbr}-{random_hex}"
 
     @classmethod
     def create(
@@ -517,7 +518,7 @@ class ExecutionStamp(NamedTuple):
     ) -> "ExecutionStamp":
         """create an execution stamp, possibly including a git snapshot branch"""
 
-        run_id: str = _generate_run_id(run_type)
+        run_id: str = ExecutionStamp._generate_run_id(run_type)
         snapshot_branch: str
         commit_hash: str
 
@@ -536,8 +537,18 @@ class ExecutionStamp(NamedTuple):
                 )
 
         return ExecutionStamp(
-            run_id=run_id, snapshot_branch=snapshot_branch, commit_hash=commit_hash
+            run_id=run_id,
+            snapshot_branch=snapshot_branch,
+            commit_hash=commit_hash,
+            run_type=run_type,
         )
+
+    @property
+    def out_dir(self) -> Path:
+        """Get the output directory for this execution stamp."""
+        run_dir = SPD_CACHE_DIR / self.run_type / self.run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
 
 
 class Command(BaseModel):
