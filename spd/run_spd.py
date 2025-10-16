@@ -26,6 +26,7 @@ from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel, OutputWithCache
+from spd.models.components import EmbeddingComponents
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -143,6 +144,24 @@ def optimize(
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
+
+    if config.perfect_init:
+        assert len(model.module_paths) == 1, "Perfect init only supported for single target module"
+        embed_path = model.module_paths[0]
+        assert embed_path == "model.embed_tokens"
+        mod = model.components[embed_path]
+        assert isinstance(mod, EmbeddingComponents), "Perfect init only supported for embedding modules"
+        # init as identity matrix
+        with torch.no_grad():
+            mod.V.zero_()
+            mod.V.fill_diagonal_(1.0)
+            real_embed = model.target_model.get_submodule(embed_path)
+            assert isinstance(real_embed, nn.Embedding)
+            vocab_size = real_embed.num_embeddings
+            assert mod.U.shape[0] >= vocab_size, "Vocab size mismatch"
+            assert mod.U.shape[1] == real_embed.embedding_dim, "Embedding dimension mismatch"
+            mod.U.zero_()
+            mod.U.data[:vocab_size].copy_(real_embed.weight.data.clone())
 
     if ln_stds is not None:
         # model has ablated layernorms, patch in the fixed std values

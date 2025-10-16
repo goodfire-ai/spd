@@ -102,4 +102,12 @@ def b():
 # %%
 
 b().shape
-# # %%
+# %%
+import torch
+
+# perfect prediction
+for i in range(10):
+    toks = torch.arange(10)
+    pred_logits = torch.eye(10) * i
+    print(torch.nn.functional.cross_entropy(pred_logits, toks))
+# %%
