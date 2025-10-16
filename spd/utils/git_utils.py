@@ -29,10 +29,23 @@ def repo_current_branch() -> str:
     return result.stdout.strip()
 
 
-def repo_is_clean() -> bool:
-    """Return True if the current git repository has no uncommitted or untracked changes."""
-    status: str = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
-    return status == ""
+def repo_is_clean(catch_except_as_false: bool = False) -> bool:
+    """Return True if the current git repository has no uncommitted or untracked changes.
+
+    # TODO: this may error in CI environments: https://github.com/goodfire-ai/spd/actions/runs/18560369066/job/52907611203
+    `fatal: detected dubious ownership in repository at '/__w/spd/spd'`
+
+    for now, if `catch_except_as_false` is True, we catch any exceptions and return False.
+
+    """
+    try:
+        status: str = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+        return status == ""
+    except Exception as e:
+        if catch_except_as_false:
+            return False
+        else:
+            raise e
 
 
 def repo_current_commit_hash() -> str:
