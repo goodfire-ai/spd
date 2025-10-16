@@ -212,7 +212,7 @@ class ComponentModel(LoadableModule):
     ) -> nn.Module:
         """Helper to create a causal importance function (ci_fn) based on ci_fn_type and module type."""
         if isinstance(target_module, nn.Embedding):
-            assert ci_fn_type == "mlp", "Embedding modules only supported for ci_fn_type='mlp'"
+            assert ci_fn_type in {"mlp", "identity"}, "Embedding modules only supported for ci_fn_type='mlp' or 'identity'"
 
         if ci_fn_type == "mlp":
             return MLPCiFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
