@@ -87,7 +87,9 @@ def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str
 
 
 def generate_clustering_commands(
-    pipeline_config: ClusteringPipelineConfig, ensemble_id: str
+    pipeline_config: ClusteringPipelineConfig,
+    ensemble_id: str,
+    dataset_streaming: bool = False,
 ) -> list[Command]:
     """Generate commands for each clustering run.
 
@@ -114,6 +116,7 @@ def generate_clustering_commands(
                 "--ensemble-id",
                 ensemble_id,
             ]
+            + (["--dataset-streaming"] if dataset_streaming else []),
         )
         commands.append(cmd)
 
@@ -142,6 +145,7 @@ def main(
     pipeline_config_path: Path,
     n_runs: int | None = None,
     local: bool = False,
+    dataset_streaming: bool = False,
 ) -> None:
     """Submit clustering runs to SLURM.
 
@@ -182,7 +186,9 @@ def main(
     logger.info(f"Pipeline config saved to {ensemble_dir / 'pipeline_config.yaml'}")
 
     clustering_commands = generate_clustering_commands(
-        pipeline_config=pipeline_config, ensemble_id=ensemble_id
+        pipeline_config=pipeline_config,
+        ensemble_id=ensemble_id,
+        dataset_streaming=dataset_streaming,
     )
     logger.info(f"Generated {len(clustering_commands)} commands")
 
@@ -286,9 +292,19 @@ def cli():
         default=False,
         help="Run locally instead of submitting to SLURM",
     )
+    parser.add_argument(
+        "--dataset-streaming",
+        action="store_true",
+        help="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
+    )
 
     args = parser.parse_args()
-    main(pipeline_config_path=args.config, n_runs=args.n_runs)
+    main(
+        pipeline_config_path=args.config,
+        n_runs=args.n_runs,
+        local=args.local,
+        dataset_streaming=args.dataset_streaming,
+    )
 
 
 if __name__ == "__main__":

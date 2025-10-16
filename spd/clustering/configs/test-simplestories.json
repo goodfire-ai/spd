@@ -9,13 +9,10 @@
     "filter_dead_threshold": 0.9,
     "module_name_filter": "model.layers.0"
   },
-  "model_path": "wandb:goodfire/spd/runs/ioprgffh",
-  "task_name": "lm",
-  "n_batches": 1,
+  "model_path": "wandb:goodfire/spd/runs/lxs77xye",
   "batch_size": 1,
-  "wandb_enabled": true,
   "wandb_project": "spd-cluster",
-  "intervals": {
+  "logging_intervals": {
     "stat": 1,
     "tensor": 2,
     "plot": 3,

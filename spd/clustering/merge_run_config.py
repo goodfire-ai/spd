@@ -7,6 +7,7 @@ from pydantic import Field, PositiveInt, model_validator
 
 from spd.base_config import BaseConfig
 from spd.clustering.merge_config import MergeConfig
+from spd.registry import EXPERIMENT_REGISTRY
 from spd.settings import SPD_CACHE_DIR
 from spd.utils.run_utils import get_local_run_id
 
@@ -79,6 +80,27 @@ class ClusteringRunConfig(BaseConfig):
     #             f"Streaming dataset loading only supported for 'lm' task, got '{self.task_name}'"
     #         )
     #     return self
+
+    @model_validator(mode="before")
+    def process_experiment_key(cls, values: dict[str, Any]) -> dict[str, Any]:
+        experiment_key: str | None = values.get("experiment_key")
+        if experiment_key:
+            model_path_given: str | None = values.get("model_path")
+            model_path_from_experiment: str | None = EXPERIMENT_REGISTRY[
+                experiment_key
+            ].canonical_run
+            assert model_path_from_experiment is not None, (
+                f"Experiment '{experiment_key}' has no canonical_run defined in the EXPERIMENT_REGISTRY"
+            )
+            if model_path_given and model_path_given != model_path_from_experiment:
+                raise ValueError(
+                    f"Both experiment_key '{experiment_key}' and model_path '{model_path_given}' given in config data, but they disagree: {model_path_from_experiment=}"
+                )
+
+            values["model_path"] = model_path_from_experiment
+            del values["experiment_key"]
+
+        return values
 
     @model_validator(mode="after")
     def validate_model_path(self) -> Self:

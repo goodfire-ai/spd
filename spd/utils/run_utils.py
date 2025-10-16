@@ -7,6 +7,7 @@ import os
 import secrets
 import string
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Final, Literal, NamedTuple, override
 
@@ -603,12 +604,16 @@ class Command(BaseModel):
         **kwargs: Any,
     ) -> subprocess.CompletedProcess[Any]:
         """Call subprocess.run with this command."""
-        return subprocess.run(
-            self.cmd_for_subprocess,
-            shell=self.shell,
-            env=self.env_final,
-            **kwargs,
-        )
+        try:
+            return subprocess.run(
+                self.cmd_for_subprocess,
+                shell=self.shell,
+                env=self.env_final,
+                **kwargs,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Command failed: `{self.script_line()}`", file=sys.stderr)
+            raise e
 
     def Popen(
         self,
