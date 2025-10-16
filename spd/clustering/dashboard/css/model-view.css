@@ -1,0 +1,54 @@
+/* Model Visualization Styles */
+
+/* Default sizes - can be overridden by setting CSS variables on parent elements */
+:root {
+    --modelview-cell-size: 16px;
+    --modelview-layer-gap: 4px;
+    --modelview-module-gap: 2px;
+    --modelview-layer-margin: 4px;
+    --modelview-module-padding: 2px;
+    --modelview-border-radius: 2px;
+}
+
+/* Container for model view in standalone page */
+.modelview-container {
+    margin: 10px;
+    padding: 10px;
+}
+
+/* Container for model view in table cell (compact) */
+.modelview-cell {
+    width: 200px;
+    height: 60px;
+    --modelview-layer-gap: 1px;
+    --modelview-module-gap: 1px;
+    --modelview-layer-margin: 1px;
+    --modelview-module-padding: 1px;
+    --modelview-border-radius: 1px;
+}
+
+/* Each layer block - renders horizontally as a row */
+.modelview-layer-block {
+    margin: var(--modelview-layer-margin) 0;
+    display: flex;
+    align-items: center;
+    gap: var(--modelview-layer-gap);
+}
+
+/* Group of modules within a layer (e.g., attention or MLP) */
+.modelview-module-group {
+    display: flex;
+    gap: var(--modelview-module-gap);
+    border: 1px solid #ddd;
+    padding: var(--modelview-module-padding);
+    background: #fafafa;
+}
+
+/* Individual module cell */
+.modelview-module-cell {
+    width: var(--modelview-cell-size);
+    height: var(--modelview-cell-size);
+    background: #f0f0f0;
+    border-radius: var(--modelview-border-radius);
+    cursor: pointer;
+}

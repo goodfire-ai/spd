@@ -12,7 +12,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.consts import ComponentLabels
+from spd.clustering.consts import SubComponentKey
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
@@ -127,7 +127,7 @@ MERGE_CFG: MergeConfig = MergeConfig(
 
 def _plot_func(
     current_coact: torch.Tensor,
-    component_labels: ComponentLabels,
+    subcomponent_keys: list[SubComponentKey],
     current_merge: Any,
     costs: torch.Tensor,
     merge_history: MergeHistory,
@@ -144,7 +144,7 @@ def _plot_func(
             current_coact=current_coact,
             costs=costs,
             iteration=iter_idx,
-            component_labels=component_labels,
+            subcomponent_keys=subcomponent_keys,
             show=True,  # Show the plot interactively
         )
 
@@ -153,7 +153,7 @@ MERGE_HIST: MergeHistory = merge_iteration(
     merge_config=MERGE_CFG,
     batch_id="batch_0",
     activations=PROCESSED_ACTIVATIONS.activations,
-    component_labels=PROCESSED_ACTIVATIONS.labels,
+    subcomponent_keys=PROCESSED_ACTIVATIONS.subcomponent_keys,
     log_callback=_plot_func,
 )
 
@@ -178,7 +178,7 @@ for i in range(ENSEMBLE_SIZE):
         merge_config=MERGE_CFG,
         batch_id=f"batch_{i}",
         activations=PROCESSED_ACTIVATIONS.activations,
-        component_labels=PROCESSED_ACTIVATIONS.labels,
+        subcomponent_keys=PROCESSED_ACTIVATIONS.subcomponent_keys,
         log_callback=None,
     )
     HISTORIES.append(HISTORY)

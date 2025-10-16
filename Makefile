@@ -75,3 +75,31 @@ coverage:
 	mkdir -p $(COVERAGE_DIR)
 	uv run python -m coverage report -m > $(COVERAGE_DIR)/coverage.txt
 	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/
+
+
+.PHONY: bundle-dashboard
+bundle-dashboard:
+	@mkdir -p spd/clustering/dashboard/_bundled
+	uv run python -m muutils.web.bundle_html \
+		spd/clustering/dashboard/index.html \
+		--output spd/clustering/dashboard/_bundled/index.html \
+		--source-dir spd/clustering/dashboard
+	uv run python -m muutils.web.bundle_html \
+		spd/clustering/dashboard/cluster.html \
+		--output spd/clustering/dashboard/_bundled/cluster.html \
+		--source-dir spd/clustering/dashboard
+	@echo "Bundled HTML files to spd/clustering/dashboard/_bundled/"
+
+.PHONY: clustering-dashboard
+clustering-dashboard: bundle-dashboard
+	uv run python spd/clustering/dashboard/run.py \
+		spd/clustering/dashboard/dashboard_config.yaml
+
+.PHONY: clustering-dashboard-profile
+clustering-dashboard-profile: bundle-dashboard
+	uv run python -m cProfile -o dashboard.prof spd/clustering/dashboard/run.py \
+		spd/clustering/dashboard/dashboard_config.yaml
+	@echo "\nProfile saved to dashboard.prof"
+	@echo "View with: python -m pstats dashboard.prof"
+	@echo "Or install snakeviz and run: snakeviz dashboard.prof"
+

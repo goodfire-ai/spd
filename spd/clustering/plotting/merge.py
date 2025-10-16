@@ -8,7 +8,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from spd.clustering.consts import ClusterCoactivationShaped, ComponentLabels, DistancesArray
+from spd.clustering.consts import ClusterCoactivationShaped, DistancesArray, SubComponentKey
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
 from spd.clustering.util import format_scientific_latex
@@ -27,7 +27,7 @@ def plot_merge_matrix(
     figsize: tuple[int, int] = (10, 3),
     show_row_sums: bool | None = None,
     ax: "plt.Axes | None" = None,
-    component_labels: ComponentLabels | None = None,
+    subcomponent_keys: list[SubComponentKey] | None = None,
 ) -> None:
     import matplotlib.pyplot as plt
 
@@ -57,11 +57,11 @@ def plot_merge_matrix(
     ax_mat.set_title("Merge Matrix")
 
     # Add component labeling if component labels are provided
-    if component_labels is not None:
+    if subcomponent_keys is not None:
         # Import the function here to avoid circular imports
         from spd.clustering.plotting.activations import add_component_labeling
 
-        add_component_labeling(ax_mat, component_labels, axis="x")
+        add_component_labeling(ax_mat, subcomponent_keys, axis="x")
 
     if show_row_sums:
         assert ax_lbl is not None
@@ -84,7 +84,7 @@ def plot_merge_iteration(
     costs: ClusterCoactivationShaped,
     # pair_cost: float,
     iteration: int,
-    component_labels: ComponentLabels | None = None,
+    subcomponent_keys: list[SubComponentKey] | None = None,
     plot_config: dict[str, Any] | None = None,
     nan_diag: bool = True,
     show: bool = False,
@@ -97,7 +97,7 @@ def plot_merge_iteration(
             costs: Current cost matrix
             pair_cost: Cost of selected merge pair
             iteration: Current iteration number
-            component_labels: Component labels for axis labeling
+            subcomponent_keys: Component labels for axis labeling
             plot_config: Plot configuration settings
             nan_diag: Whether to set diagonal to NaN for visualization
             show: Whether to display the plot (default: False)
@@ -123,7 +123,7 @@ def plot_merge_iteration(
         current_merge.to_matrix(),
         ax=axs[0],
         show=False,
-        component_labels=component_labels,
+        subcomponent_keys=subcomponent_keys,
     )
 
     axs[0].set_title("Merge")
