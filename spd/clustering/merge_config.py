@@ -23,7 +23,6 @@ MergeConfigKey = Literal[
     "iters",
     "merge_pair_sampling_method",
     "merge_pair_sampling_kwargs",
-    "pop_component_prob",
     "filter_dead_threshold",
 ]
 
@@ -65,10 +64,6 @@ class MergeConfig(BaseConfig):
         default_factory=lambda: {"threshold": 0.05},
         description="Keyword arguments for the merge pair sampling method.",
     )
-    pop_component_prob: Probability = Field(
-        default=0,
-        description="Probability of popping a component in each iteration. If 0, no components are popped.",
-    )
     filter_dead_threshold: float = Field(
         default=0.001,
         description="Threshold for filtering out dead components. If a component's activation is below this threshold, it is considered dead and not included in the merge.",
@@ -76,6 +71,15 @@ class MergeConfig(BaseConfig):
     module_name_filter: ModuleFilterSource = Field(
         default=None,
         description="Filter for module names. Can be a string prefix, a set of names, or a callable that returns True for modules to include.",
+    )
+    # TODO: unsure of this var name
+    recompute_costs_every: PositiveInt = Field(
+        default=10,
+        description="How often to recompute the full cost matrix, replacing NaN values of merged components with their true value. Higher values mean less accurate merges but faster computation.",
+    )
+    batch_size: PositiveInt = Field(
+        default=64,
+        description="Size of each batch for processing",
     )
 
     @property
