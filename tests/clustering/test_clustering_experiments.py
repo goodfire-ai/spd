@@ -43,6 +43,7 @@ def test_clustering_with_resid_mlp1_config():
             "spd-cluster",
             "--config",
             str(config_path),
+            "--local",  # don't assume we have slurm in the test env
         ],
         capture_output=True,
         text=True,
@@ -88,6 +89,7 @@ def test_clustering_with_simplestories_config():
             "--config",
             str(config_path),
             "--dataset-streaming",  # see https://github.com/goodfire-ai/spd/pull/199
+            "--local",  # don't assume we have slurm in the test env
         ],
         capture_output=True,
         text=True,
