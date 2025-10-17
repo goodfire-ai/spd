@@ -56,7 +56,10 @@ class FaithfulnessLossTrainConfig(TrainMetricConfig):
 
 class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
-    pnorm: float | CoeffSchedule
+    pnorm: float
+    p_anneal_start_frac: float = 1.0
+    p_anneal_final_p: float | None = None
+    p_anneal_end_frac: float = 1.0
     eps: float = 1e-12
 
 
@@ -193,22 +196,6 @@ TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 SamplingType = Literal["continuous"] | Literal["binomial"]
 
 
-class FaithfulnessWarmupConfig(BaseModel):
-    steps: NonNegativeInt = Field(
-        default=0,
-        description="Number of warmup steps to optimize faithfulness loss before main training",
-    )
-    lr: PositiveFloat = Field(
-        default=0.001,
-        description="Learning rate for warmup phase (optimizing faithfulness loss only)",
-    )
-    weight_decay: NonNegativeFloat = Field(
-        default=0.0,
-        description="Weight decay for warmup phase optimizer",
-    )
-
-
-
 class Config(BaseModel):
     # --- WandB
     wandb_project: str | None = Field(
@@ -303,16 +290,23 @@ class Config(BaseModel):
     )
 
     # --- Faithfulness Warmup ---
-    faithfulness_warmup: FaithfulnessWarmupConfig | None = Field(
-        default=None,
-        description="Configuration for the faithfulness warmup phase (None to disable)",
+    faithfulness_warmup_steps: NonNegativeInt = Field(
+        default=0,
+        description="Number of warmup steps to optimize faithfulness loss before main training",
+    )
+    faithfulness_warmup_lr: PositiveFloat = Field(
+        default=0.001,
+        description="Learning rate for warmup phase (optimizing faithfulness loss only)",
+    )
+    faithfulness_warmup_weight_decay: NonNegativeFloat = Field(
+        default=0.0,
+        description="Weight decay for warmup phase optimizer",
     )
 
     @property
     def microbatch_size(self) -> PositiveInt:
         return self.batch_size // self.gradient_accumulation_steps
 
-    # TODO make lr a CoeffSchedule
     lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
         default="constant",
         description="Type of learning-rate schedule to apply",
