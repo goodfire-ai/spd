@@ -487,11 +487,6 @@ class ComponentModel(LoadableModule):
             "Expected cache_type to be 'input', 'none', or 'output'"
         )
 
-        if cache_type == "input":
-            cache[module_name] = x
-        elif cache_type == "output":
-            cache[module_name] = output
-
         if components is not None and mask_info is not None:
             assert isinstance(output, Tensor), (
                 f"Only supports single-tensor outputs, got {type(output)}"
@@ -503,13 +498,21 @@ class ComponentModel(LoadableModule):
                 weight_delta_and_mask=mask_info.weight_delta_and_mask,
             )
 
-            if mask_info.routing_mask == "all":
-                return components_out
+            match mask_info.routing_mask:
+                case "all":
+                    output = components_out
+                case Tensor():
+                    output = torch.where(mask_info.routing_mask[..., None], components_out, output)
 
-            return torch.where(mask_info.routing_mask[..., None], components_out, output)
+        match cache_type:
+            case "output":
+                cache[module_name] = output
+            case "input":
+                cache[module_name] = x
+            case "none":
+                ...
 
-        # No component replacement - keep original output
-        return None
+        return output
 
     @contextmanager
     def _attach_forward_hooks(self, hooks: dict[str, Callable[..., Any]]) -> Generator[None]:

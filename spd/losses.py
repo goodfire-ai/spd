@@ -201,7 +201,7 @@ def compute_total_loss(
 
         if isinstance(loss, dict):
             for key, value in loss.items():
-                terms[f"loss/{cfg.classname}_{key}"] = value.item()
+                terms[f"loss/{cfg.classname}{key}"] = value.item()
                 coeff = get_loss_coeff(cfg.coeff, current_frac_of_training)
                 total = total + coeff * value
         else:
