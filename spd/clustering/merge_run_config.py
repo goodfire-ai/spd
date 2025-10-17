@@ -54,17 +54,16 @@ class ClusteringRunConfig(BaseConfig):
     idx_in_ensemble: int = Field(0, description="Index of this run in the ensemble")
 
     merge_config: MergeConfig = Field(description="Merge algorithm configuration")
+    logging_intervals: LoggingIntervals = Field(
+        default_factory=LoggingIntervals,
+        description="Logging intervals",
+    )
 
     wandb_project: str | None = Field(
         default=None,
         description="WandB project name (None to disable WandB logging)",
     )
     wandb_entity: str = Field(default="goodfire", description="WandB entity (team/user) name")
-
-    logging_intervals: LoggingIntervals = Field(
-        default_factory=LoggingIntervals,
-        description="Logging intervals",
-    )
     dataset_streaming: bool = Field(
         default=False,
         description="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",

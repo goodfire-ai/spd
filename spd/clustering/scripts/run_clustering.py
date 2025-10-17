@@ -52,7 +52,7 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import TaskName
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import replace_pydantic_model
-from spd.utils.run_utils import ExecutionStamp
+from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, _read_noneable_str
 
 
 class ClusteringRunStorage(StorageBase):
@@ -217,9 +217,10 @@ def main(run_config: ClusteringRunConfig) -> Path:
         Path to saved merge history file
     """
     # Create ExecutionStamp and storage
+    # don't create git snapshot -- if we are part of an ensemble, the snapshot should be created by the pipeline
     execution_stamp = ExecutionStamp.create(
         run_type="cluster",
-        create_snapshot=run_config.wandb_project is not None,
+        create_snapshot=False,
     )
     storage = ClusteringRunStorage(execution_stamp)
     clustering_run_id = execution_stamp.run_id
@@ -348,10 +349,10 @@ def main(run_config: ClusteringRunConfig) -> Path:
 
     # 8. Save merge history and config
     run_config.to_file(storage.config_path)
-    logger.info(f"✓ Config saved to {storage.config_path}")
+    logger.info(f"Config saved to {storage.config_path}")
 
     history.save(storage.history_path)
-    logger.info(f"✓ History saved to {storage.history_path}")
+    logger.info(f"History saved to {storage.history_path}")
 
     # 9. Log to WandB
     if wandb_run is not None:
@@ -361,16 +362,6 @@ def main(run_config: ClusteringRunConfig) -> Path:
         logger.info("WandB run finished")
 
     return storage.history_path
-
-
-_NO_ARG_PARSSED_SENTINEL = object()
-
-
-def _read_noneable_str(value: str) -> str | None:
-    """Read a string that may be 'None' and convert to None."""
-    if value == "None":
-        return None
-    return value
 
 
 def cli() -> None:
