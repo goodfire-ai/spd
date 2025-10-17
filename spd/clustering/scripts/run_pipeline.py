@@ -51,8 +51,8 @@ class ClusteringPipelineConfig(BaseConfig):
     n_runs: PositiveInt = Field(description="Number of clustering runs in the ensemble")
     distances_method: DistancesMethod = Field(description="Method to use for calculating distances")
     base_output_dir: Path = Field(description="Base directory for outputs of clustering runs.")
-    slurm_job_name_prefix: str = Field(description="Prefix for SLURM job names")
-    slurm_partition: str = Field(description="SLURM partition to use")
+    slurm_job_name_prefix: str | None = Field(description="Prefix for SLURM job names")
+    slurm_partition: str | None = Field(description="SLURM partition to use")
     wandb_project: str | None = Field(
         default=None,
         description="Weights & Biases project name (set to None to disable WandB logging)",
@@ -121,6 +121,10 @@ def generate_clustering_commands(
                 pipeline_config.base_output_dir.as_posix(),
                 "--ensemble-id",
                 ensemble_id,
+                "--wandb-project",
+                str(pipeline_config.wandb_project),
+                "--wandb-entity",
+                pipeline_config.wandb_entity,
             ]
             + (["--dataset-streaming"] if dataset_streaming else []),
         )
@@ -227,6 +231,12 @@ def main(
         )
 
     else:
+        assert pipeline_config.slurm_job_name_prefix is not None, (
+            "must specify slurm_job_name_prefix if not running locally"
+        )
+        assert pipeline_config.slurm_partition is not None, (
+            "must specify slurm_partition if not running locally"
+        )
         with tempfile.TemporaryDirectory() as temp_dir:
             # Submit clustering array job
             clustering_script_path = Path(temp_dir) / f"clustering_{ensemble_id}.sh"
