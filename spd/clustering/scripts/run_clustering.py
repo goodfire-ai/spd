@@ -335,6 +335,16 @@ def main(run_config: ClusteringRunConfig) -> Path:
     return history_path
 
 
+_NO_ARG_PARSSED_SENTINEL = object()
+
+
+def _read_noneable_str(value: str) -> str | None:
+    """Read a string that may be 'None' and convert to None."""
+    if value == "None":
+        return None
+    return value
+
+
 def cli() -> None:
     """CLI for running a single clustering run."""
     parser = argparse.ArgumentParser(description="Run clustering on a single dataset")
@@ -363,12 +373,24 @@ def cli() -> None:
         help="Ensemble identifier for WandB grouping",
     )
     parser.add_argument(
+        "--wandb-project",
+        type=_read_noneable_str,
+        default=_NO_ARG_PARSSED_SENTINEL,
+        help="WandB project name (if not provided, WandB logging is disabled)",
+    )
+    parser.add_argument(
+        "--wandb-entity",
+        type=str,
+        default=None,
+        help="WandB entity name (user or team)",
+    )
+    parser.add_argument(
         "--dataset-streaming",
         action="store_true",
         help="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
     )
 
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
 
     run_config = ClusteringRunConfig.from_file(args.config)
 
@@ -383,6 +405,11 @@ def cli() -> None:
         overrides["base_output_dir"] = args.base_output_dir
     if args.ensemble_id is not None:
         overrides["ensemble_id"] = args.ensemble_id
+    if args.wandb_project is not _NO_ARG_PARSSED_SENTINEL:
+        overrides["wandb_project"] = args.wandb_project
+    if args.wandb_entity is not None:
+        overrides["wandb_entity"] = args.wandb_entity
+
     run_config = replace_pydantic_model(run_config, overrides)
 
     main(run_config)
