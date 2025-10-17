@@ -43,7 +43,7 @@ CoeffSchedule = Annotated[LinearSchedule | CosineSchedule, Field(discriminator="
 
 
 class LossMetricConfig(BaseConfig):
-    coeff: float | None = Field(
+    coeff: float | CoeffSchedule | None = Field(
         default=None,
         description="Loss coefficient or coefficient schedule. Used when metric is in loss_metric_configs.",
     )

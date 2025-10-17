@@ -17,6 +17,7 @@ def get_linear_schedule_value(
         ) / (schedule.end_frac - schedule.start_frac)
 
 
+# WARNING: This is probably not what we want to call "cosine schedule".
 def get_cosine_schedule_value(
     schedule: CosineSchedule,
     current_frac_of_training: float,
