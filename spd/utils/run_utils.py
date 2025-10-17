@@ -511,7 +511,7 @@ class ExecutionStamp(NamedTuple):
     def create(
         cls,
         run_type: RunType,
-        create_snapshot: bool = True,
+        create_snapshot: bool,
     ) -> "ExecutionStamp":
         """create an execution stamp, possibly including a git snapshot branch"""
 
@@ -546,3 +546,13 @@ class ExecutionStamp(NamedTuple):
         run_dir = SPD_CACHE_DIR / self.run_type / self.run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
+
+
+_NO_ARG_PARSSED_SENTINEL = object()
+
+
+def _read_noneable_str(value: str) -> str | None:
+    """Read a string that may be 'None' and convert to None."""
+    if value == "None":
+        return None
+    return value

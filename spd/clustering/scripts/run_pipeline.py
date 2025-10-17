@@ -20,6 +20,7 @@ Output structure (only pipeline_config.json is saved to directly in this script.
 import argparse
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import wandb_workspaces.workspaces as ws
 from pydantic import Field, PositiveInt
@@ -30,7 +31,7 @@ from spd.clustering.storage import StorageBase
 from spd.log import logger
 from spd.utils.command_utils import Command, run_script_array_local
 from spd.utils.general_utils import replace_pydantic_model
-from spd.utils.run_utils import ExecutionStamp
+from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, _read_noneable_str
 from spd.utils.slurm_utils import (
     create_slurm_array_script,
     create_slurm_script,
@@ -180,8 +181,7 @@ def generate_calc_distances_command(
 
 
 def main(
-    pipeline_config_path: Path,
-    n_runs: int | None = None,
+    pipeline_config: ClusteringPipelineConfig,
     local: bool = False,
     dataset_streaming: bool = False,
 ) -> None:
@@ -194,12 +194,7 @@ def main(
     # setup
     # ==========================================================================================
 
-    logger.set_format("console", "default")
-
-    pipeline_config = ClusteringPipelineConfig.from_file(pipeline_config_path)
-
-    if n_runs is not None:
-        pipeline_config = replace_pydantic_model(pipeline_config, {"n_runs": n_runs})
+    logger.set_format("console", "terse")
 
     # Create ExecutionStamp for pipeline
     execution_stamp: ExecutionStamp = ExecutionStamp.create(
@@ -329,22 +324,32 @@ def cli():
 
     parser.add_argument(
         "--config",
-        default="spd/clustering/configs/pipeline_config.yaml",
+        required=True,
         type=Path,
         help="Path to pipeline config file",
     )
-
     parser.add_argument(
         "--n-runs",
         type=int,
-        help="Number of clustering runs in the ensemble",
+        help="Number of clustering runs in the ensemble (overrides value in config file)",
     )
-
+    parser.add_argument(
+        "--wandb-project",
+        type=_read_noneable_str,
+        default=_NO_ARG_PARSSED_SENTINEL,
+        help="WandB project name (if not provided, WandB logging is disabled)",
+    )
+    parser.add_argument(
+        "--wandb-entity",
+        type=str,
+        default=None,
+        help="WandB entity name (user or team)",
+    )
     parser.add_argument(
         "--local",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Run locally instead of submitting to SLURM",
+        help="Run locally instead of submitting to SLURM (required if slurm_job_name_prefix and slurm_partition are None in config)",
     )
     parser.add_argument(
         "--dataset-streaming",
@@ -353,9 +358,21 @@ def cli():
     )
 
     args = parser.parse_args()
+
+    pipeline_config = ClusteringPipelineConfig.from_file(args.config)
+    overrides: dict[str, Any] = {}
+
+    if args.n_runs is not None:
+        overrides["n_runs"] = args.n_runs
+    if args.wandb_project is not _NO_ARG_PARSSED_SENTINEL:
+        overrides["wandb_project"] = args.wandb_project
+    if args.wandb_entity is not None:
+        overrides["wandb_entity"] = args.wandb_entity
+
+    pipeline_config = replace_pydantic_model(pipeline_config, overrides)
+
     main(
-        pipeline_config_path=args.config,
-        n_runs=args.n_runs,
+        pipeline_config=pipeline_config,
         local=args.local,
         dataset_streaming=args.dataset_streaming,
     )
