@@ -75,7 +75,7 @@ def _stochastic_arb_hidden_acts_recon_loss_update(
 def _stochastic_arb_hidden_acts_recon_loss_compute(
     results: dict[str, tuple[Float[Tensor, ""], int]],
 ) -> dict[str, Float[Tensor, ""]]:
-    return {mod: (sum / n) for mod, (sum, n) in results.items()}
+    return {f"_/{module_name}": (sum / n) for module_name, (sum, n) in results.items()}
 
 
 def stochastic_arb_hidden_acts_recon_loss(
@@ -93,7 +93,9 @@ def stochastic_arb_hidden_acts_recon_loss(
         n_mask_samples=n_mask_samples,
         batch=batch,
         ci=ci,
-        output_target_module_paths=get_target_module_paths(model.target_model, output_target_module_patterns),
+        output_target_module_paths=get_target_module_paths(
+            model.target_model, output_target_module_patterns
+        ),
         weight_deltas=weight_deltas,
     )
     return _stochastic_arb_hidden_acts_recon_loss_compute(results)
@@ -117,7 +119,9 @@ class StochasticArbHiddenActsReconLoss(Metric):
         self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
-        self.output_target_module_paths: list[str] = get_target_module_paths(model.target_model, output_target_module_patterns)
+        self.output_target_module_paths: list[str] = get_target_module_paths(
+            model.target_model, output_target_module_patterns
+        )
 
         self.sum_mse = defaultdict[str, Float[Tensor, ""]](lambda: torch.tensor(0.0, device=device))
         self.n_examples = defaultdict[str, Int[Tensor, ""]](
