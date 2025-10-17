@@ -301,16 +301,19 @@ class ComponentsMaskInfo:
     component_mask: Float[Tensor, "... C"]
     """when components are routed to, this specifies which subcomponents to use"""
 
-    routing_mask: Bool[Tensor, "..."] | None = None
+    routing_mask: Bool[Tensor, "..."] | Literal["all"] = "all"
     """Which (batch,) or (batch, seq_len) positions to route to components vs target modules.
-    If None, all positions are routed to components."""
+    If "all", all positions are routed to components."""
 
     weight_delta_and_mask: WeightDeltaAndMask | None = None
 
 
+RoutingMasks = dict[str, Bool[Tensor, "..."]] | Literal["all"]
+
+
 def make_mask_infos(
     component_masks: dict[str, Float[Tensor, "... C"]],
-    routing_masks: dict[str, Bool[Tensor, "..."]] | None = None,
+    routing_masks: RoutingMasks = "all",
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
     """Create ComponentsMaskInfo dict from dicts of component masks, and optionally routing masks,
@@ -325,7 +328,7 @@ def make_mask_infos(
     Returns:
         Dict mapping module names to ComponentsMaskInfo objects.
     """
-    if routing_masks is not None:
+    if isinstance(routing_masks, dict):
         assert set(routing_masks) == set(component_masks)
 
     if weight_deltas_and_masks is not None:
@@ -333,7 +336,7 @@ def make_mask_infos(
 
     result: dict[str, ComponentsMaskInfo] = {}
     for name in component_masks:
-        routing_mask = routing_masks[name] if routing_masks is not None else None
+        routing_mask = routing_masks[name] if isinstance(routing_masks, dict) else "all"
 
         weight_delta_and_mask = (
             weight_deltas_and_masks[name] if weight_deltas_and_masks is not None else None

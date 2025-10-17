@@ -1,9 +1,9 @@
-from typing import Literal
 from unittest.mock import patch
 
 import torch
 from torch import Tensor
 
+from spd.configs import SamplingType
 from spd.metrics import stochastic_recon_layerwise_loss, stochastic_recon_loss
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import RoutingType
@@ -57,7 +57,7 @@ class TestStochasticReconLayerwiseLoss:
 
         def mock_calc_stochastic_component_mask_info(
             causal_importances: dict[str, Tensor],  # pyright: ignore[reportUnusedParameter]
-            sampling: Literal["continuous", "binomial"],  # pyright: ignore[reportUnusedParameter]
+            component_mask_sampling: SamplingType,  # pyright: ignore[reportUnusedParameter]
             routing: RoutingType,  # pyright: ignore[reportUnusedParameter]
             weight_deltas: dict[str, Tensor] | None,  # pyright: ignore[reportUnusedParameter]
         ) -> dict[str, ComponentsMaskInfo]:
@@ -68,7 +68,7 @@ class TestStochasticReconLayerwiseLoss:
 
             return make_mask_infos(
                 component_masks=masks,
-                routing_masks=None,
+                routing_masks="all",
                 weight_deltas_and_masks=None,
             )
 
@@ -104,13 +104,12 @@ class TestStochasticReconLayerwiseLoss:
             actual_loss = stochastic_recon_layerwise_loss(
                 model=model,
                 sampling="continuous",
-                use_delta_component=False,
                 n_mask_samples=2,
                 output_loss_type="mse",
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
-                weight_deltas={k: torch.empty(0) for k in ci},
+                weight_deltas=None,
             )
 
             assert torch.allclose(actual_loss, torch.tensor(expected_loss), rtol=1e-5), (
@@ -130,24 +129,22 @@ class TestStochasticReconLayerwiseLoss:
         loss_full = stochastic_recon_loss(
             model=model,
             sampling="continuous",
-            use_delta_component=False,
             n_mask_samples=5,
             output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
-            weight_deltas={"fc": torch.empty(0)},
+            weight_deltas=None,
         )
         loss_layerwise = stochastic_recon_layerwise_loss(
             model=model,
             sampling="continuous",
-            use_delta_component=False,
             n_mask_samples=5,
             output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
-            weight_deltas={"fc": torch.empty(0)},
+            weight_deltas=None,
         )
 
         # For single layer, results should be the same
