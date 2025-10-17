@@ -8,7 +8,7 @@ from torch.distributed import ReduceOp
 from spd.configs import PGDConfig
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.utils.distributed_utils import all_reduce
 
 
@@ -62,13 +62,13 @@ class PGDReconLoss(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
+        ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = pgd_masked_recon_loss_update(
             model=self.model,
-            ci=ci,
+            ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
             output_loss_type=self.output_loss_type,
             batch=batch,
