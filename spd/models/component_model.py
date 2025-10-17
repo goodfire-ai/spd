@@ -228,7 +228,9 @@ class ComponentModel(LoadableModule):
     ) -> nn.Module:
         """Helper to create a causal importance function (ci_fn) based on ci_fn_type and module type."""
         if isinstance(target_module, nn.Embedding):
-            assert ci_fn_type == "mlp", "Embedding modules only supported for ci_fn_type='mlp'"
+            assert ci_fn_type in ["mlp", "identity"], (
+                "Embedding modules only supported for ci_fn_type='mlp' or 'identity'"
+            )
 
         if ci_fn_type == "mlp":
             return MLPCiFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
@@ -374,26 +376,39 @@ class ComponentModel(LoadableModule):
             # No hooks needed. Do a regular forward pass of the target model.
             return self._extract_output(self.target_model(*args, **kwargs))
 
-        # if cache_type == "output":
-        #     assert target_module_output_patterns is not None, "target_module_output_patterns is required when cache_type is 'output'"
-        #     assert mask_infos is
+        if cache_type == "output":
+            assert output_target_module_paths is not None, (
+                "output_target_module_paths is required when cache_type is 'output'"
+            )
+
+            hooks: dict[str, Callable[..., Any]] = {}
+            if mask_infos is not None:
+                for module_name, mask_info in mask_infos.items():
+                    components = self.components[module_name]
+                    assert module_name not in hooks
+                    hooks[module_name] = partial(
+                        self._components_and_cache_hook,
+                        module_name=module_name,
+                        components=components,
+                        mask_info=mask_info,
+                        cache_type="none",
+                        cache={},
+                    )
+
+            output_acts_cache: dict[str, Tensor] = {}
+            for module_name in output_target_module_paths:
+                assert module_name not in hooks
+                hooks[module_name] = self._make_output_cache_hook(module_name, output_acts_cache)
+            
+            with self._attach_forward_hooks(hooks):
+                raw_out = self.target_model(*args, **kwargs)
+
+            out = self._extract_output(raw_out)
+            return OutputWithCache(output=out, cache=output_acts_cache)
 
         cache: dict[str, Tensor] = {}
-        hooks: dict[str, Callable[..., Any]] = {}
-
-        match cache_type:
-            case "output":
-                assert output_target_module_paths is not None, (
-                    "output_target_module_paths is required when cache_type is 'output'"
-                )
-                hook_module_names = output_target_module_paths
-                # if mask_infos is not None:
-                #     hook_module_names.extend(list(mask_infos.keys()))
-                #     hook_module_names = list(set(hook_module_names))
-            case "input" | "none":
-                hook_module_names = (
-                    list(mask_infos.keys()) if mask_infos else self.target_module_paths
-                )
+        hooks = {}
+        hook_module_names = list(mask_infos.keys()) if mask_infos else self.target_module_paths
 
         for module_name in hook_module_names:
             mask_info = mask_infos[module_name] if mask_infos else None
@@ -412,14 +427,24 @@ class ComponentModel(LoadableModule):
             raw_out = self.target_model(*args, **kwargs)
 
         out = self._extract_output(raw_out)
+
         match cache_type:
             case "input":
                 return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
-            case "output":
-                return OutputWithCache(output=out, cache=cache)
 
+    @staticmethod
+    def _make_output_cache_hook(
+        module_name: str,
+        output_acts_cache: dict[str, Tensor],
+    ) -> Callable[[nn.Module, list[Any], dict[Any, Any], Any], Any]:
+        def hook(module: nn.Module, args: list[Any], kwargs: dict[Any, Any], output: Any) -> Any:  # pyright: ignore[reportUnusedParameter]
+            output_acts_cache[module_name] = output
+            return None
+        return hook
+
+    # TODO: make this a higher order function instead of relying on perfect partial application
     def _components_and_cache_hook(
         self,
         _module: nn.Module,
@@ -429,7 +454,7 @@ class ComponentModel(LoadableModule):
         module_name: str,
         components: Components | None,
         mask_info: ComponentsMaskInfo | None,
-        cache_type: Literal["input", "none", "output"],
+        cache_type: Literal["input", "none"],
         cache: dict[str, Tensor],
     ) -> Any | None:
         """Unified hook function that handles both component replacement and caching.
@@ -453,14 +478,12 @@ class ComponentModel(LoadableModule):
         assert len(kwargs) == 0, "Expected no keyword arguments"
         x = args[0]
         assert isinstance(x, Tensor), "Expected input tensor"
-        assert cache_type in ["input", "none", "output"], (
-            "Expected cache_type to be 'input' or 'none' or 'output'"
+        assert cache_type in ["input", "none"], (
+            "Expected cache_type to be 'input' or 'none'"
         )
 
         if cache_type == "input":
             cache[module_name] = x
-        elif cache_type == "output":
-            cache[module_name] = output
 
         if components is not None and mask_info is not None:
             assert isinstance(output, Tensor), (
@@ -593,7 +616,7 @@ class ComponentModel(LoadableModule):
             ci_fn = self.ci_fns[target_module_name]
 
             match ci_fn:
-                case MLPCiFn():
+                case MLPCiFn() | IdentityCiFn():
                     ci_fn_input = self.components[target_module_name].get_inner_acts(
                         input_activations
                     )

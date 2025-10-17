@@ -27,6 +27,7 @@ from spd.configs import (
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
+    StochasticArbHiddenActsReconLossConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -34,6 +35,7 @@ from spd.configs import (
     StochasticReconSubsetLossConfig,
     UVPlotsConfig,
 )
+from spd.metrics import StochasticArbHiddenActsReconLoss
 from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
@@ -254,6 +256,15 @@ def init_metric(
                 sampling=run_config.sampling,
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
+            )
+        case StochasticArbHiddenActsReconLossConfig():
+            metric = StochasticArbHiddenActsReconLoss(
+                model=model,
+                device=device,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+                output_target_module_patterns=cfg.output_target_module_patterns,
             )
     return metric
 

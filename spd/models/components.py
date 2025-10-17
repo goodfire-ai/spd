@@ -47,7 +47,7 @@ class Linear(nn.Module):
 class IdentityCiFn(nn.Module):
     @override
     def forward(self, x: Int[Tensor, "... C"]) -> Float[Tensor, "... C"]:
-        return x
+        return x - 0.001
 
 
 class MLPCiFn(nn.Module):
