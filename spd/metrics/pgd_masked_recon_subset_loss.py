@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -36,7 +36,10 @@ def pgd_recon_subset_loss(
 
 
 class PGDReconSubsetLoss(Metric):
-    """Recon loss when masking with adversarially-optimized values and routing to subsets of component layers."""
+    """Recon loss when masking with adversarially-optimized values and routing to subsets of
+    component layers."""
+
+    metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,

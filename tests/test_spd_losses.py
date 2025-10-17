@@ -42,6 +42,7 @@ def _make_component_model(weight: Float[Tensor, " d_out d_in"]) -> ComponentMode
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     return comp_model

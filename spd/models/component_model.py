@@ -29,9 +29,9 @@ from spd.models.components import (
     VectorMLPCiFn,
     VectorSharedMLPCiFn,
 )
-from spd.models.sigmoids import SIGMOID_TYPES, SigmoidTypes
+from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class
+from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class, runtime_cast
 from spd.utils.module_utils import get_target_module_paths
 from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
@@ -77,6 +77,13 @@ class OutputWithCache(NamedTuple):
     cache: dict[str, Tensor]
 
 
+@dataclass
+class CIOutputs:
+    lower_leaky: dict[str, Float[Tensor, "... C"]]
+    upper_leaky: dict[str, Float[Tensor, "... C"]]
+    pre_sigmoid: dict[str, Tensor]
+
+
 class ComponentModel(LoadableModule):
     """Wrapper around an arbitrary pytorch model for running SPD.
 
@@ -102,6 +109,7 @@ class ComponentModel(LoadableModule):
         C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
+        sigmoid_type: SigmoidType,
         pretrained_model_output_attr: str | None,
     ):
         super().__init__()
@@ -115,11 +123,11 @@ class ComponentModel(LoadableModule):
         self.target_model = target_model
         self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
-        self.module_paths = get_target_module_paths(target_model, target_module_patterns)
+        self.target_module_paths = get_target_module_paths(target_model, target_module_patterns)
 
         self.components = ComponentModel._create_components(
             target_model=target_model,
-            module_paths=self.module_paths,
+            target_module_paths=self.target_module_paths,
             C=C,
         )
         self._components = nn.ModuleDict(
@@ -128,7 +136,7 @@ class ComponentModel(LoadableModule):
 
         self.ci_fns = ComponentModel._create_ci_fns(
             target_model=target_model,
-            module_paths=self.module_paths,
+            target_module_paths=self.target_module_paths,
             C=C,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
@@ -136,6 +144,14 @@ class ComponentModel(LoadableModule):
         self._ci_fns = nn.ModuleDict(
             {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
         )
+
+        if sigmoid_type == "leaky_hard":
+            self.lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
+            self.upper_leaky_fn = SIGMOID_TYPES["upper_leaky_hard"]
+        else:
+            # For other sigmoid types, use the same function for both
+            self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+            self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
@@ -194,13 +210,13 @@ class ComponentModel(LoadableModule):
     @staticmethod
     def _create_components(
         target_model: nn.Module,
-        module_paths: list[str],
+        target_module_paths: list[str],
         C: int,
     ) -> dict[str, Components]:
         components: dict[str, Components] = {}
-        for module_path in module_paths:
-            target_module = target_model.get_submodule(module_path)
-            components[module_path] = ComponentModel._create_component(target_module, C)
+        for target_module_path in target_module_paths:
+            target_module = target_model.get_submodule(target_module_path)
+            components[target_module_path] = ComponentModel._create_component(target_module, C)
         return components
 
     @staticmethod
@@ -243,15 +259,15 @@ class ComponentModel(LoadableModule):
     @staticmethod
     def _create_ci_fns(
         target_model: nn.Module,
-        module_paths: list[str],
+        target_module_paths: list[str],
         C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> dict[str, nn.Module]:
         ci_fns: dict[str, nn.Module] = {}
-        for module_path in module_paths:
-            target_module = target_model.get_submodule(module_path)
-            ci_fns[module_path] = ComponentModel._create_ci_fn(
+        for target_module_path in target_module_paths:
+            target_module = target_model.get_submodule(target_module_path)
+            ci_fns[target_module_path] = ComponentModel._create_ci_fn(
                 target_module,
                 C,
                 ci_fn_type,
@@ -325,7 +341,7 @@ class ComponentModel(LoadableModule):
         This method handles the following 4 cases:
         1. mask_infos is None and cache_type is "none": Regular forward pass.
         2. mask_infos is None and cache_type is "input": Forward pass with input caching on
-            all modules in self.module_paths.
+            all modules in self.target_module_paths.
         3. mask_infos is not None and cache_type is "input": Forward pass with component replacement
             and input caching on the modules provided in mask_infos.
         4. mask_infos is not None and cache_type is "none": Forward pass with component replacement
@@ -338,7 +354,7 @@ class ComponentModel(LoadableModule):
             mask_infos: Dictionary mapping module names to ComponentsMaskInfo.
                 If provided, those modules will be replaced with their components.
             cache_type: If "input", cache the inputs to the modules provided in mask_infos. If
-                mask_infos is None, cache the inputs to all modules in self.module_paths.
+                mask_infos is None, cache the inputs to all modules in self.target_module_paths.
 
         Returns:
             OutputWithCache object if cache_type is "input", otherwise the model output tensor.
@@ -350,7 +366,7 @@ class ComponentModel(LoadableModule):
         cache: dict[str, Tensor] = {}
         hooks: dict[str, Callable[..., Any]] = {}
 
-        hook_module_names = list(mask_infos.keys()) if mask_infos else self.module_paths
+        hook_module_names = list(mask_infos.keys()) if mask_infos else self.target_module_paths
 
         for module_name in hook_module_names:
             mask_info = mask_infos[module_name] if mask_infos else None
@@ -501,6 +517,7 @@ class ComponentModel(LoadableModule):
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
+            sigmoid_type=config.sigmoid_type,
         )
 
         comp_model_weights = torch.load(
@@ -522,58 +539,63 @@ class ComponentModel(LoadableModule):
     def calc_causal_importances(
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
-        sigmoid_type: SigmoidTypes,
         sampling: SamplingType,
         detach_inputs: bool = False,
-    ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "... C"]]]:
+    ) -> CIOutputs:
         """Calculate causal importances.
 
         Args:
             pre_weight_acts: The activations before each layer in the target model.
-            sigmoid_type: Type of sigmoid to use.
             detach_inputs: Whether to detach the inputs to the causal importance function.
 
         Returns:
             Tuple of (causal_importances, causal_importances_upper_leaky) dictionaries for each layer.
         """
-        causal_importances = {}
+        causal_importances_lower_leaky = {}
         causal_importances_upper_leaky = {}
+        pre_sigmoid = {}
 
-        for param_name in pre_weight_acts:
-            acts = pre_weight_acts[param_name]
-            ci_fns = self.ci_fns[param_name]
+        for target_module_name in pre_weight_acts:
+            input_activations = pre_weight_acts[target_module_name]
+            ci_fn = self.ci_fns[target_module_name]
 
-            match ci_fns:
+            match ci_fn:
                 case MLPCiFn():
-                    ci_fn_input = self.components[param_name].get_inner_acts(acts)
+                    ci_fn_input = self.components[target_module_name].get_inner_acts(
+                        input_activations
+                    )
                 case VectorMLPCiFn() | VectorSharedMLPCiFn():
-                    ci_fn_input = acts
+                    ci_fn_input = input_activations
                 case _:
-                    raise ValueError(f"Unknown ci_fn type: {type(ci_fns)}")
+                    raise ValueError(f"Unknown ci_fn type: {type(ci_fn)}")
 
             if detach_inputs:
                 ci_fn_input = ci_fn_input.detach()
 
-            ci_fn_output = ci_fns(ci_fn_input)
+            ci_fn_output = runtime_cast(Tensor, ci_fn(ci_fn_input))
 
-            if sigmoid_type == "leaky_hard":
-                lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
-                upper_leaky_fn = SIGMOID_TYPES["upper_leaky_hard"]
-            else:
-                # For other sigmoid types, use the same function for both
-                lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
-                upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
-
-            ci_fn_output_for_lower_leaky = ci_fn_output
             if sampling == "binomial":
                 ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
                     ci_fn_output
                 )
+            else:
+                ci_fn_output_for_lower_leaky = ci_fn_output
 
-            causal_importances[param_name] = lower_leaky_fn(ci_fn_output_for_lower_leaky)
-            causal_importances_upper_leaky[param_name] = upper_leaky_fn(ci_fn_output).abs()
+            lower_leaky_output = self.lower_leaky_fn(ci_fn_output_for_lower_leaky)
+            assert lower_leaky_output.all() <= 1.0
+            causal_importances_lower_leaky[target_module_name] = lower_leaky_output
 
-        return causal_importances, causal_importances_upper_leaky
+            upper_leaky_output = self.upper_leaky_fn(ci_fn_output)
+            assert upper_leaky_output.all() >= 0
+            causal_importances_upper_leaky[target_module_name] = upper_leaky_output
+
+            pre_sigmoid[target_module_name] = ci_fn_output
+
+        return CIOutputs(
+            lower_leaky=causal_importances_lower_leaky,
+            upper_leaky=causal_importances_upper_leaky,
+            pre_sigmoid=pre_sigmoid,
+        )
 
     def calc_weight_deltas(self) -> dict[str, Float[Tensor, " d_out d_in"]]:
         """Calculate the weight differences between the target and component weights (V@U) for each layer."""
@@ -598,13 +620,13 @@ def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
             new_key = new_key.removesuffix(".original.weight") + ".weight"
         # We used to have "*.components.{U,V}", now we have "_components.*.{U,V}"
         if new_key.endswith(".components.U") or new_key.endswith(".components.V"):
-            module_path: str = (
+            target_module_path: str = (
                 new_key.removeprefix("target_model.")
                 .removesuffix(".components.U")
                 .removesuffix(".components.V")
             )
             # module path has "." replaced with "-"
-            new_key = f"_components.{module_path.replace('.', '-')}.{new_key.split('.')[-1]}"
+            new_key = f"_components.{target_module_path.replace('.', '-')}.{new_key.split('.')[-1]}"
         # replace if modified
         if new_key != key:
             state_dict[new_key] = state_dict.pop(key)

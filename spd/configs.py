@@ -19,12 +19,11 @@ from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
 from spd.models.components import CiFnType
-from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
 
 
 #### Metrics that can be used in training (or eval) ####
-class LinearSchedule(BaseModel):
+class LinearSchedule(BaseConfig):
     type: Literal["linear"] = "linear"
     start_value: float
     end_value: float
@@ -32,7 +31,7 @@ class LinearSchedule(BaseModel):
     end_frac: float
 
 
-class CosineSchedule(BaseModel):
+class CosineSchedule(BaseConfig):
     type: Literal["cosine"] = "cosine"
     start_value: float
     end_value: float
@@ -43,18 +42,18 @@ class CosineSchedule(BaseModel):
 CoeffSchedule = Annotated[LinearSchedule | CosineSchedule, Field(discriminator="type")]
 
 
-class TrainMetricConfig(BaseModel):
-    coeff: float | CoeffSchedule | None = Field(
+class LossMetricConfig(BaseConfig):
+    coeff: float | None = Field(
         default=None,
         description="Loss coefficient or coefficient schedule. Used when metric is in loss_metric_configs.",
     )
 
 
-class FaithfulnessLossTrainConfig(TrainMetricConfig):
+class FaithfulnessLossConfig(LossMetricConfig):
     classname: Literal["FaithfulnessLoss"] = "FaithfulnessLoss"
 
 
-class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
+class ImportanceMinimalityLossConfig(LossMetricConfig):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
     pnorm: float
     p_anneal_start_frac: float = 1.0
@@ -63,28 +62,28 @@ class ImportanceMinimalityLossTrainConfig(TrainMetricConfig):
     eps: float = 1e-12
 
 
-class CIMaskedReconLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
-
-
-class CIMaskedReconLayerwiseLossTrainConfig(TrainMetricConfig):
-    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
-
-
-class CIMaskedReconSubsetLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
 
 
-class StochasticReconLossTrainConfig(TrainMetricConfig):
+class CIMaskedReconLayerwiseLossConfig(LossMetricConfig):
+    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
+
+
+class CIMaskedReconLossConfig(LossMetricConfig):
+    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
+
+
+class StochasticReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconLoss"] = "StochasticReconLoss"
 
 
-class StochasticReconLayerwiseLossTrainConfig(TrainMetricConfig):
-    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
-
-
-class StochasticReconSubsetLossTrainConfig(TrainMetricConfig):
+class StochasticReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+
+
+class StochasticReconLayerwiseLossConfig(LossMetricConfig):
+    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
 
 
 PGDInitStrategy = Literal["random", "ones", "zeroes"]
@@ -92,26 +91,26 @@ PGDInitStrategy = Literal["random", "ones", "zeroes"]
 MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
 
 
-class PGDConfig(TrainMetricConfig):
+class PGDConfig(LossMetricConfig):
     init: PGDInitStrategy
     step_size: float
     n_steps: int
     mask_scope: MaskScope
 
 
-class PGDReconLossTrainConfig(PGDConfig):
+class PGDReconLossConfig(PGDConfig):
     classname: Literal["PGDReconLoss"] = "PGDReconLoss"
 
 
-class PGDReconLayerwiseLossTrainConfig(PGDConfig):
-    classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
-
-
-class PGDReconSubsetLossTrainConfig(PGDConfig):
+class PGDReconSubsetLossConfig(PGDConfig):
     classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
 
 
-class StochasticHiddenActsReconLossConfig(TrainMetricConfig):
+class PGDReconLayerwiseLossConfig(PGDConfig):
+    classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
+
+
+class StochasticHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
 
@@ -147,9 +146,14 @@ class IdentityCIErrorConfig(BaseConfig):
 
 class PermutedCIPlotsConfig(BaseConfig):
     classname: Literal["PermutedCIPlots"] = "PermutedCIPlots"
-    sigmoid_type: SigmoidTypes
     identity_patterns: list[str] | None
     dense_patterns: list[str] | None
+
+    @model_validator(mode="before")
+    def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
+        """Remove deprecated config keys and change names of any keys that have been renamed."""
+        config_dict.pop("sigmoid_type", None)
+        return config_dict
 
 
 class StochasticReconSubsetCEAndKLConfig(BaseConfig):
@@ -164,19 +168,24 @@ class UVPlotsConfig(BaseConfig):
     dense_patterns: list[str] | None
 
 
-TrainMetricConfigType = (
-    FaithfulnessLossTrainConfig
-    | ImportanceMinimalityLossTrainConfig
+LossMetricConfigType = (
+    FaithfulnessLossConfig
+    | ImportanceMinimalityLossConfig
+    # Recon losses:
+    # CI masked recon
+    | CIMaskedReconLossConfig
+    | CIMaskedReconSubsetLossConfig
+    | CIMaskedReconLayerwiseLossConfig
+    # Stochastic
+    | StochasticReconLossConfig
+    | StochasticReconSubsetLossConfig
+    | StochasticReconLayerwiseLossConfig
+    # PGD
+    | PGDReconLossConfig
+    | PGDReconSubsetLossConfig
+    | PGDReconLayerwiseLossConfig
+    # Hidden acts
     | StochasticHiddenActsReconLossConfig
-    | CIMaskedReconLossTrainConfig
-    | CIMaskedReconSubsetLossTrainConfig
-    | CIMaskedReconLayerwiseLossTrainConfig
-    | StochasticReconLossTrainConfig
-    | StochasticReconSubsetLossTrainConfig
-    | StochasticReconLayerwiseLossTrainConfig
-    | PGDReconLossTrainConfig
-    | PGDReconSubsetLossTrainConfig
-    | PGDReconLayerwiseLossTrainConfig
 )
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
@@ -189,14 +198,14 @@ EvalOnlyMetricConfigType = (
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
 )
-MetricConfigType = TrainMetricConfigType | EvalOnlyMetricConfigType
+MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 SamplingType = Literal["continuous"] | Literal["binomial"]
 
 
-class Config(BaseModel):
+class Config(BaseConfig):
     # --- WandB
     wandb_project: str | None = Field(
         default=None,
@@ -260,14 +269,14 @@ class Config(BaseModel):
         "model and component weights. This allows for removing the faithfulness loss.",
     )
 
-    loss_metric_configs: list[
-        Annotated[TrainMetricConfigType, Field(discriminator="classname")]
-    ] = Field(
-        default=[],
-        description=(
-            "List of configs for loss metrics to compute (used for both training logs and eval); "
-            "coefficients provided here are also used for weighting the training loss and eval loss/total."
-        ),
+    loss_metric_configs: list[Annotated[LossMetricConfigType, Field(discriminator="classname")]] = (
+        Field(
+            default=[],
+            description=(
+                "List of configs for loss metrics to compute (used for both training logs and eval); "
+                "coefficients provided here are also used for weighting the training loss and eval loss/total."
+            ),
+        )
     )
     output_loss_type: Literal["mse", "kl"] = Field(
         ...,

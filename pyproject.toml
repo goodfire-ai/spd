@@ -8,9 +8,8 @@ license = { text = "MIT" }
 readme = "README.md"
 dependencies = [
     "torch>=2.6",
-    "torchvision",
-    "pydantic",
-    "typing-extensions>=4.12.2",  # Required for pydantic 2.x
+    "torchvision>=0.23,<0.24",
+    "pydantic>=2",
     "wandb>=0.20.1", # Avoid wandb.sdk.wandb_manager.ManagerConnectionRefusedError
     "fire",
     "tqdm",

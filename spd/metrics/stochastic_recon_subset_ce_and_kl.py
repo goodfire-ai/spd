@@ -1,5 +1,6 @@
+from collections import defaultdict
 from fnmatch import fnmatch
-from typing import Any, override
+from typing import Any, ClassVar, override
 
 import einops
 import torch
@@ -10,7 +11,7 @@ from torch.distributed import ReduceOp
 
 from spd.configs import SamplingType
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
@@ -22,6 +23,8 @@ class StochasticReconSubsetCEAndKL(Metric):
 
     NOTE: Assumes all batches and sequences are the same size.
     """
+
+    metric_section: ClassVar[str] = "subset_worst"
 
     def __init__(
         self,
@@ -47,7 +50,7 @@ class StochasticReconSubsetCEAndKL(Metric):
             )
 
         # Precompute which modules each subset will evaluate
-        all_modules: list[str] = model.module_paths
+        all_modules: list[str] = model.target_module_paths
         self.subset_modules: dict[str, list[str]] = {}
 
         for subset_name, patterns in self.include_patterns.items():
@@ -68,11 +71,7 @@ class StochasticReconSubsetCEAndKL(Metric):
                 )
             self.subset_modules[subset_name] = remaining
 
-        self.metric_values: dict[str, list[float]] = {}
-        for subset_name in self.subset_modules:
-            for suffix in ["_kl", "_ce", "_ce_unrec"]:
-                metric_key = f"{subset_name}{suffix}"
-                self.metric_values[metric_key] = []
+        self.metric_values = defaultdict[str, list[float]](list)
 
     @override
     def update(
@@ -80,14 +79,14 @@ class StochasticReconSubsetCEAndKL(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
+        ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
         **_: Any,
     ) -> None:
         losses = self._calc_subset_losses(
             batch=batch,
             target_out=target_out,
-            ci=ci,
+            ci=ci.lower_leaky,
             weight_deltas=weight_deltas,
         )
         for key, value in losses.items():
@@ -110,8 +109,8 @@ class StochasticReconSubsetCEAndKL(Metric):
             results_by_type = {k: v for k, v in results.items() if k.endswith(metric_type)}
             worst_subset = max(results_by_type, key=lambda k: results_by_type[k])
             worst_value = results_by_type[worst_subset]
-            results[f"subset_worst/{metric_type}"] = worst_value
-            results[f"subset_worst/{metric_type}_subset"] = worst_subset
+            results[f"{metric_type}"] = worst_value
+            results[f"{metric_type}_subset"] = worst_subset
 
         return results
 
