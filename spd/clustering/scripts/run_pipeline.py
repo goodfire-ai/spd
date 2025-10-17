@@ -8,21 +8,13 @@ the clustering runs (the SLURM job depends on the previous array job).
 
 Output structure (only pipeline_config.json is saved to directly in this script. The files under
 <runs> are saved by run_clustering.py which is called in SLURM jobs deployed by this script.):
-    <base_output_dir>/ (e.g. SPD_CACHE_DIR / "clustering")
-    ├── ensembles/
-    │   └── <ensemble_id>/
-    │       |── pipeline_config.yaml              # Saved in this script
-            ├── ensemble_meta.json                # (Saved by calc_distances.py) Ensemble metadata
-            ├── ensemble_merge_array.npz          # (Saved by calc_distances.py) Normalized merge array
-            ├── distances_<distances_method>.npz  # (Saved by calc_distances.py) Distance array for each method
-            └── distances_<distances_method>.png  # (Saved by calc_distances.py) Distance distribution plot
-    └── runs/                                 # (Saved by run_clustering.py)
-        └── <ensemble_id>_<idx_in_ensemble>/  # One of these directories for each of the n_runs
-        |   ├── clustering_run_config.json
-        |   └── history.npz
-        └── ...
-
-
+    <ExecutionStamp.out_dir>/                 # from execution stamp
+        |── pipeline_config.json              # Saved in this script
+        |── clustering_run_config.json        # make copy of the file pointed to by pipeline config
+        ├── ensemble_meta.json                # (Saved by calc_distances.py) Ensemble metadata
+        ├── ensemble_merge_array.npz          # (Saved by calc_distances.py) Normalized merge array
+        ├── distances_<distances_method>.npz  # (Saved by calc_distances.py) Distance array for each method
+        └── distances_<distances_method>.png  # (Saved by calc_distances.py) Distance distribution plot
 """
 
 import argparse

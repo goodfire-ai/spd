@@ -9,11 +9,9 @@ obtained from the submitter:
 - ensemble_id
 
 Output structure:
-    <base_output_dir>/ (e.g. SPD_CACHE_DIR / "clustering")
-    └── <runs>/
-        └── <ensemble_id>_<idx_in_ensemble>/  # ensemble_id is randomly generated if not passed in via CLI
-            ├── clustering_run_config.json
-            ├── history.npz
+    <ExecutionStamp.out_dir>/  # from execution stamp
+    ├── clustering_run_config.json
+    └── history.npz
 
 
 """
