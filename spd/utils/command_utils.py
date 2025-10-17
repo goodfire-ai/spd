@@ -1,10 +1,11 @@
-from dataclasses import dataclass
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from typing import Any, override
 
 from spd.log import logger
+
 
 @dataclass
 class Command:

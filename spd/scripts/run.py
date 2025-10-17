@@ -21,13 +21,12 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
+from spd.utils.command_utils import Command, run_script_array_local
 from spd.utils.run_utils import (
-    Command,
     ExecutionStamp,
     apply_nested_updates,
     generate_grid_combinations,
     generate_run_name,
-    run_script_array_local,
 )
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_script
 from spd.utils.wandb_utils import wandb_setup

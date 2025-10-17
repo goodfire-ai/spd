@@ -6,7 +6,7 @@ from pathlib import Path
 
 from spd.log import logger
 from spd.settings import REPO_ROOT
-from spd.utils.run_utils import Command
+from spd.utils.command_utils import Command
 
 
 def format_runtime_str(runtime_minutes: int) -> str:

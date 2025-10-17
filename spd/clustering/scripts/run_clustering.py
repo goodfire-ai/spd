@@ -1,19 +1,12 @@
 """Perform a single clustering run.
 
 This can be run as a standalone script, or called via `spd-cluster` (i.e. clustering/scripts/run_pipeline.py).
-If the latter, then the following values of ClusteringRunConfig will be overridden by the values
-obtained from the submitter:
-- dataset_seed
-- idx_in_ensemble
-- base_output_dir
-- ensemble_id
+If called via spd-cluster, the ensemble-key is passed in to identify the run within the pipeline ensemble.
 
 Output structure:
-    <ExecutionStamp.out_dir>/  # from execution stamp
+    <ExecutionStamp.out_dir>/  # from execution stamp (run_type="cluster")
     ├── clustering_run_config.json
     └── history.npz
-
-
 """
 
 import argparse
@@ -44,6 +37,7 @@ from spd.clustering.consts import (
     ComponentLabels,
 )
 from spd.clustering.dataset import load_dataset
+from spd.clustering.ensemble_registry import register_clustering_run
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
 from spd.clustering.merge import merge_iteration
@@ -51,16 +45,33 @@ from spd.clustering.merge_history import MergeHistory
 from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_iteration
+from spd.clustering.storage import StorageBase
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import TaskName
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import replace_pydantic_model
+from spd.utils.run_utils import ExecutionStamp
 
-# Filenames saved to in this script
-CONFIG_FILENAME = "clustering_run_config.json"
-HISTORY_FILENAME = "history.npz"
+
+class ClusteringRunStorage(StorageBase):
+    """Storage paths for a single clustering run.
+
+    All paths are relative to ExecutionStamp.out_dir.
+    """
+
+    # Relative path constants
+    _CONFIG = "clustering_run_config.json"
+    _HISTORY = "history.npz"
+
+    @property
+    def config_path(self) -> Path:
+        return self.base_dir / self._CONFIG
+
+    @property
+    def history_path(self) -> Path:
+        return self.base_dir / self._HISTORY
 
 
 LogCallback = Callable[
@@ -205,7 +216,28 @@ def main(run_config: ClusteringRunConfig) -> Path:
     Returns:
         Path to saved merge history file
     """
+    # Create ExecutionStamp and storage
+    execution_stamp = ExecutionStamp.create(
+        run_type="cluster",
+        create_snapshot=run_config.wandb_project is not None,
+    )
+    storage = ClusteringRunStorage(execution_stamp)
+    clustering_run_id = execution_stamp.run_id
+    logger.info(f"Clustering run ID: {clustering_run_id}")
+
+    # Register with ensemble if this is part of a pipeline
+    if run_config.ensemble_id is not None and run_config.idx_in_ensemble is not None:
+        register_clustering_run(
+            run_config.ensemble_id,
+            run_config.idx_in_ensemble,
+            clustering_run_id,
+        )
+        logger.info(
+            f"Registered with pipeline {run_config.ensemble_id} at index {run_config.idx_in_ensemble}"
+        )
+
     logger.info("Starting clustering run")
+    logger.info(f"Output directory: {storage.base_dir}")
     device = get_device()
 
     spd_run = SPDRunInfo.from_path(run_config.model_path)
@@ -312,25 +344,20 @@ def main(run_config: ClusteringRunConfig) -> Path:
     )
 
     # 8. Save merge history and config
-    run_dir = (
-        run_config.base_output_dir
-        / "runs"
-        / f"{run_config.ensemble_id}_{run_config.idx_in_ensemble}"
-    )
-    run_dir.mkdir(parents=True, exist_ok=True)
-    run_config.to_file(run_dir / CONFIG_FILENAME)
-    history_path = run_dir / HISTORY_FILENAME
-    history.save(history_path, wandb_url=wandb_run.url if wandb_run else None)
-    logger.info(f"✓ History saved to {history_path}")
+    run_config.to_file(storage.config_path)
+    logger.info(f"✓ Config saved to {storage.config_path}")
+
+    history.save(storage.history_path)
+    logger.info(f"✓ History saved to {storage.history_path}")
 
     # 9. Log to WandB
     if wandb_run is not None:
         _log_merge_history_plots(wandb_run, history)
-        _save_merge_history_artifact(wandb_run, history_path, history)
+        _save_merge_history_artifact(wandb_run, storage.history_path, history)
         wandb_run.finish()
         logger.info("WandB run finished")
 
-    return history_path
+    return storage.history_path
 
 
 _NO_ARG_PARSSED_SENTINEL = object()
@@ -353,22 +380,16 @@ def cli() -> None:
         help="Path to ClusteringRunConfig file",
     )
     parser.add_argument(
-        "--idx-in-ensemble",
-        type=int,
-        default=0,
-        help="Index of this run in the ensemble",
-    )
-    parser.add_argument(
-        "--base-output-dir",
-        type=Path,
-        default=None,
-        help="Directory to save merge history",
-    )
-    parser.add_argument(
-        "--ensemble-id",
+        "--pipeline-run-id",
         type=str,
         default=None,
-        help="Ensemble identifier for WandB grouping",
+        help="Pipeline run ID (ensemble identifier). If provided with --idx-in-ensemble, registers run.",
+    )
+    parser.add_argument(
+        "--idx-in-ensemble",
+        type=int,
+        default=None,
+        help="Index of this run in the ensemble",
     )
     parser.add_argument(
         "--wandb-project",
@@ -385,24 +406,26 @@ def cli() -> None:
     parser.add_argument(
         "--dataset-streaming",
         action="store_true",
-        help="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
+        help="Whether to use streaming dataset loading (if supported by the dataset)",
     )
 
     args: argparse.Namespace = parser.parse_args()
 
+    # Load base config
     run_config = ClusteringRunConfig.from_file(args.config)
 
-    # Replace values in the run_config from those passed in via CLI (which may come from the
-    # pipeline submitter in spd/clustering/scripts/run_pipeline.py)
+    # Override config values from CLI
     overrides: dict[str, Any] = {
-        "dataset_seed": run_config.dataset_seed + args.idx_in_ensemble,
-        "idx_in_ensemble": args.idx_in_ensemble,
         "dataset_streaming": args.dataset_streaming,
     }
-    if args.base_output_dir is not None:
-        overrides["base_output_dir"] = args.base_output_dir
-    if args.ensemble_id is not None:
-        overrides["ensemble_id"] = args.ensemble_id
+
+    # Handle ensemble-related overrides
+    if args.idx_in_ensemble is not None:
+        overrides["dataset_seed"] = run_config.dataset_seed + args.idx_in_ensemble
+        overrides["idx_in_ensemble"] = args.idx_in_ensemble
+    if args.pipeline_run_id is not None:
+        overrides["ensemble_id"] = args.pipeline_run_id
+
     if args.wandb_project is not _NO_ARG_PARSSED_SENTINEL:
         overrides["wandb_project"] = args.wandb_project
     if args.wandb_entity is not None:
@@ -410,6 +433,7 @@ def cli() -> None:
 
     run_config = replace_pydantic_model(run_config, overrides)
 
+    # Run clustering
     main(run_config)
 
 

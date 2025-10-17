@@ -13,8 +13,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from spd.scripts.run import main
+from spd.utils.command_utils import Command
 from spd.utils.git_utils import repo_current_branch
-from spd.utils.run_utils import Command
 
 
 class TestSPDRun:

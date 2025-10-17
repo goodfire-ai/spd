@@ -26,14 +26,48 @@ from pydantic import Field, PositiveInt
 
 from spd.base_config import BaseConfig
 from spd.clustering.consts import DistancesMethod
+from spd.clustering.storage import StorageBase
 from spd.log import logger
+from spd.utils.command_utils import Command, run_script_array_local
 from spd.utils.general_utils import replace_pydantic_model
-from spd.utils.run_utils import Command, ExecutionStamp, run_script_array_local
+from spd.utils.run_utils import ExecutionStamp
 from spd.utils.slurm_utils import (
     create_slurm_array_script,
     create_slurm_script,
     submit_slurm_script,
 )
+
+
+class ClusteringPipelineStorage(StorageBase):
+    """Storage paths for clustering pipeline (ensemble).
+
+    All paths are relative to ExecutionStamp.out_dir.
+    """
+
+    # Relative path constants
+    _PIPELINE_CONFIG = "pipeline_config.yaml"
+    _RUN_IDS = "run_ids.json"
+    _ENSEMBLE_META = "ensemble_meta.json"
+    _ENSEMBLE_MERGE_ARRAY = "ensemble_merge_array.npz"
+
+    @property
+    def pipeline_config_path(self) -> Path:
+        return self.base_dir / self._PIPELINE_CONFIG
+
+    @property
+    def run_ids_path(self) -> Path:
+        return self.base_dir / self._RUN_IDS
+
+    @property
+    def ensemble_meta_path(self) -> Path:
+        return self.base_dir / self._ENSEMBLE_META
+
+    @property
+    def ensemble_merge_array_path(self) -> Path:
+        return self.base_dir / self._ENSEMBLE_MERGE_ARRAY
+
+    def distances_path(self, method: DistancesMethod) -> Path:
+        return self.base_dir / f"distances_{method}.npz"
 
 
 class ClusteringPipelineConfig(BaseConfig):
@@ -86,14 +120,15 @@ def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str
 
 def generate_clustering_commands(
     pipeline_config: ClusteringPipelineConfig,
-    ensemble_id: str,
+    pipeline_run_id: str,
     dataset_streaming: bool = False,
 ) -> list[Command]:
     """Generate commands for each clustering run.
 
     Args:
         pipeline_config: Pipeline configuration
-        ensemble_id: Ensemble identifier
+        pipeline_run_id: Pipeline run ID (each run will create its own ExecutionStamp)
+        dataset_streaming: Whether to use dataset streaming
 
     Returns:
         List of Command objects, one per run
@@ -107,12 +142,10 @@ def generate_clustering_commands(
                 "spd/clustering/scripts/run_clustering.py",
                 "--config",
                 pipeline_config.run_clustering_config_path.as_posix(),
+                "--pipeline-run-id",
+                pipeline_run_id,
                 "--idx-in-ensemble",
                 str(idx),
-                "--base-output-dir",
-                pipeline_config.base_output_dir.as_posix(),
-                "--ensemble-id",
-                ensemble_id,
                 "--wandb-project",
                 str(pipeline_config.wandb_project),
                 "--wandb-entity",
@@ -126,19 +159,22 @@ def generate_clustering_commands(
 
 
 def generate_calc_distances_command(
-    ensemble_id: str, distances_method: DistancesMethod, base_output_dir: Path
+    pipeline_run_id: str, distances_method: DistancesMethod
 ) -> Command:
-    """Generate command for calculating distances."""
+    """Generate command for calculating distances.
+
+    Args:
+        pipeline_run_id: Pipeline run ID (will query registry for clustering runs)
+        distances_method: Method for calculating distances
+    """
     return Command(
         cmd=[
             "python",
             "spd/clustering/scripts/calc_distances.py",
-            "--ensemble-id",
-            ensemble_id,
+            "--pipeline-run-id",
+            pipeline_run_id,
             "--distances-method",
             distances_method,
-            "--base-output-dir",
-            base_output_dir.as_posix(),
         ]
     )
 
@@ -165,39 +201,43 @@ def main(
     if n_runs is not None:
         pipeline_config = replace_pydantic_model(pipeline_config, {"n_runs": n_runs})
 
-    # TODO: encapsulate: get run id, branch/snapshot, wandb init? share this with run.py
-    # same run_id for wandb, local storage, git snapshot. format `s{hash}` or `c{hash}`
+    # Create ExecutionStamp for pipeline
     execution_stamp: ExecutionStamp = ExecutionStamp.create(
         run_type="ensemble",
         create_snapshot=pipeline_config.create_git_snapshot,
     )
-    ensemble_id: str = execution_stamp.run_id
-    logger.info(f"Ensemble id: {ensemble_id}")
+    pipeline_run_id: str = execution_stamp.run_id
+    logger.info(f"Pipeline run ID: {pipeline_run_id}")
 
+    # Initialize storage
+    storage = ClusteringPipelineStorage(execution_stamp)
+    logger.info(f"Pipeline output directory: {storage.base_dir}")
+
+    # Save pipeline config
+    pipeline_config.to_file(storage.pipeline_config_path)
+    logger.info(f"Pipeline config saved to {storage.pipeline_config_path}")
+
+    # Create WandB workspace if requested
     if pipeline_config.wandb_project is not None:
         workspace_url = create_clustering_workspace_view(
-            ensemble_id=ensemble_id,
+            ensemble_id=pipeline_run_id,
             project=pipeline_config.wandb_project,
             entity=pipeline_config.wandb_entity,
         )
         logger.info(f"WandB workspace: {workspace_url}")
 
-    # Save the pipeline config to the output directory
-    ensemble_dir = pipeline_config.base_output_dir / "ensembles" / ensemble_id
-    pipeline_config.to_file(ensemble_dir / "pipeline_config.yaml")
-    logger.info(f"Pipeline config saved to {ensemble_dir / 'pipeline_config.yaml'}")
-
+    # Generate commands for clustering runs
     clustering_commands = generate_clustering_commands(
         pipeline_config=pipeline_config,
-        ensemble_id=ensemble_id,
+        pipeline_run_id=pipeline_run_id,
         dataset_streaming=dataset_streaming,
     )
     logger.info(f"Generated {len(clustering_commands)} commands")
 
+    # Generate command for calculating distances
     calc_distances_command = generate_calc_distances_command(
-        ensemble_id=ensemble_id,
+        pipeline_run_id=pipeline_run_id,
         distances_method=pipeline_config.distances_method,
-        base_output_dir=pipeline_config.base_output_dir,
     )
 
     # Submit to SLURM
@@ -213,11 +253,14 @@ def main(
         calc_distances_command.run(check=True)
 
         logger.section("complete!")
-        distances_plot_path = ensemble_dir / f"distances_{pipeline_config.distances_method}.png"
+        distances_plot_path = (
+            storage.plots_dir / f"distances_{pipeline_config.distances_method}.png"
+        )
         logger.values(
             {
                 "Total clustering runs": len(clustering_commands),
-                "Ensemble id": ensemble_id,
+                "Pipeline run ID": pipeline_run_id,
+                "Pipeline output dir": str(storage.base_dir),
                 "Distances plot": str(distances_plot_path),
             }
         )
@@ -231,7 +274,7 @@ def main(
         )
         with tempfile.TemporaryDirectory() as temp_dir:
             # Submit clustering array job
-            clustering_script_path = Path(temp_dir) / f"clustering_{ensemble_id}.sh"
+            clustering_script_path = Path(temp_dir) / f"clustering_{pipeline_run_id}.sh"
 
             create_slurm_array_script(
                 script_path=clustering_script_path,
@@ -245,7 +288,7 @@ def main(
             array_job_id = submit_slurm_script(clustering_script_path)
 
             # Submit calc_distances job with dependency on array job
-            calc_distances_script_path = Path(temp_dir) / f"calc_distances_{ensemble_id}.sh"
+            calc_distances_script_path = Path(temp_dir) / f"calc_distances_{pipeline_run_id}.sh"
 
             create_slurm_script(
                 script_path=calc_distances_script_path,
@@ -259,13 +302,16 @@ def main(
             calc_distances_job_id = submit_slurm_script(calc_distances_script_path)
 
             logger.section("Jobs submitted successfully!")
-            distances_plot_path = ensemble_dir / f"distances_{pipeline_config.distances_method}.png"
+            distances_plot_path = (
+                storage.plots_dir / f"distances_{pipeline_config.distances_method}.png"
+            )
             logger.values(
                 {
                     "Clustering Array Job ID": array_job_id,
                     "Calc Distances Job ID": calc_distances_job_id,
                     "Total clustering runs": len(clustering_commands),
-                    "Ensemble id": ensemble_id,
+                    "Pipeline run ID": pipeline_run_id,
+                    "Pipeline output dir": str(storage.base_dir),
                     "Clustering logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
                     "Calc Distances log": f"~/slurm_logs/slurm-{calc_distances_job_id}.out",
                     "Distances plot will be saved to": str(distances_plot_path),
