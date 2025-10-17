@@ -113,6 +113,10 @@ class PGDReconLayerwiseLossConfig(PGDConfig):
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
+class StochasticArbHiddenActsReconLossConfig(LossMetricConfig):
+    classname: Literal["StochasticArbHiddenActsReconLoss"] = "StochasticArbHiddenActsReconLoss"
+    output_target_module_patterns: list[str]
+
 
 #### Metrics that can only be used in eval ####
 class CEandKLLossesConfig(BaseConfig):
@@ -186,6 +190,7 @@ LossMetricConfigType = (
     | PGDReconLayerwiseLossConfig
     # Hidden acts
     | StochasticHiddenActsReconLossConfig
+    | StochasticArbHiddenActsReconLossConfig
 )
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig

@@ -17,6 +17,7 @@ from spd.configs import (
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
     SamplingType,
+    StochasticArbHiddenActsReconLossConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -31,6 +32,7 @@ from spd.metrics import (
     pgd_recon_layerwise_loss,
     pgd_recon_loss,
     pgd_recon_subset_loss,
+    stochastic_arb_hidden_acts_recon_loss,
     stochastic_hidden_acts_recon_loss,
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
@@ -186,11 +188,26 @@ def compute_total_loss(
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
+            case StochasticArbHiddenActsReconLossConfig():
+                loss = stochastic_arb_hidden_acts_recon_loss(
+                    model=model,
+                    sampling=sampling,
+                    n_mask_samples=n_mask_samples,
+                    batch=batch,
+                    ci=ci.lower_leaky,
+                    output_target_module_patterns=cfg.output_target_module_patterns,
+                    weight_deltas=weight_deltas if use_delta_component else None,
+                )
 
-        terms[f"loss/{cfg.classname}"] = loss.item()
-
-        coeff = get_loss_coeff(cfg.coeff, current_frac_of_training)
-        total = total + coeff * loss
+        if isinstance(loss, dict):
+            for key, value in loss.items():
+                terms[f"loss/{cfg.classname}_{key}"] = value.item()
+                coeff = get_loss_coeff(cfg.coeff, current_frac_of_training)
+                total = total + coeff * value
+        else:
+            terms[f"loss/{cfg.classname}"] = loss.item()
+            coeff = get_loss_coeff(cfg.coeff, current_frac_of_training)
+            total = total + coeff * loss
 
     terms["loss/total"] = total.item()
 

@@ -306,8 +306,17 @@ class ComponentModel(LoadableModule):
     def __call__(
         self,
         *args: Any,
+        cache_type: Literal["none"] = "none",
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
+        **kwargs: Any,
+    ) -> Tensor: ...
+
+    @overload
+    def __call__(
+        self,
+        *args: Any,
         cache_type: Literal["input"],
+        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         **kwargs: Any,
     ) -> OutputWithCache: ...
 
@@ -315,10 +324,11 @@ class ComponentModel(LoadableModule):
     def __call__(
         self,
         *args: Any,
+        cache_type: Literal["output"],
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["none"] = "none",
+        output_target_module_paths: list[str],
         **kwargs: Any,
-    ) -> Tensor: ...
+    ) -> OutputWithCache: ...
 
     @override
     def __call__(self, *args: Any, **kwargs: Any) -> Tensor | OutputWithCache:
@@ -328,8 +338,9 @@ class ComponentModel(LoadableModule):
     def forward(
         self,
         *args: Any,
+        cache_type: Literal["input", "none", "output"] = "none",
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["input", "none"] = "none",
+        output_target_module_paths: list[str] | None = None,
         **kwargs: Any,
     ) -> Tensor | OutputWithCache:
         """Forward pass with optional component replacement and/or input caching.
@@ -359,10 +370,26 @@ class ComponentModel(LoadableModule):
             # No hooks needed. Do a regular forward pass of the target model.
             return self._extract_output(self.target_model(*args, **kwargs))
 
+        # if cache_type == "output":
+        #     assert target_module_output_patterns is not None, "target_module_output_patterns is required when cache_type is 'output'"
+        #     assert mask_infos is
+
         cache: dict[str, Tensor] = {}
         hooks: dict[str, Callable[..., Any]] = {}
 
-        hook_module_names = list(mask_infos.keys()) if mask_infos else self.target_module_paths
+        match cache_type:
+            case "output":
+                assert output_target_module_paths is not None, (
+                    "output_target_module_paths is required when cache_type is 'output'"
+                )
+                hook_module_names = output_target_module_paths
+                # if mask_infos is not None:
+                #     hook_module_names.extend(list(mask_infos.keys()))
+                #     hook_module_names = list(set(hook_module_names))
+            case "input" | "none":
+                hook_module_names = (
+                    list(mask_infos.keys()) if mask_infos else self.target_module_paths
+                )
 
         for module_name in hook_module_names:
             mask_info = mask_infos[module_name] if mask_infos else None
@@ -386,6 +413,8 @@ class ComponentModel(LoadableModule):
                 return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
+            case "output":
+                return OutputWithCache(output=out, cache=cache)
 
     def _components_and_cache_hook(
         self,
@@ -396,7 +425,7 @@ class ComponentModel(LoadableModule):
         module_name: str,
         components: Components | None,
         mask_info: ComponentsMaskInfo | None,
-        cache_type: Literal["input", "none"],
+        cache_type: Literal["input", "none", "output"],
         cache: dict[str, Tensor],
     ) -> Any | None:
         """Unified hook function that handles both component replacement and caching.
@@ -420,10 +449,14 @@ class ComponentModel(LoadableModule):
         assert len(kwargs) == 0, "Expected no keyword arguments"
         x = args[0]
         assert isinstance(x, Tensor), "Expected input tensor"
-        assert cache_type in ["input", "none"], "Expected cache_type to be 'input' or 'none'"
+        assert cache_type in ["input", "none", "output"], (
+            "Expected cache_type to be 'input' or 'none' or 'output'"
+        )
 
         if cache_type == "input":
             cache[module_name] = x
+        elif cache_type == "output":
+            cache[module_name] = output
 
         if components is not None and mask_info is not None:
             assert isinstance(output, Tensor), (

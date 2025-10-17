@@ -24,6 +24,12 @@ from .identity_ci_error import IdentityCIError as IdentityCIError
 from .importance_minimality_loss import ImportanceMinimalityLoss as ImportanceMinimalityLoss
 from .importance_minimality_loss import importance_minimality_loss as importance_minimality_loss
 from .permuted_ci_plots import PermutedCIPlots as PermutedCIPlots
+from .stochastic_arb_hidden_acts_recon_loss import (
+    StochasticArbHiddenActsReconLoss as StochasticArbHiddenActsReconLoss,
+)
+from .stochastic_arb_hidden_acts_recon_loss import (
+    stochastic_arb_hidden_acts_recon_loss as stochastic_arb_hidden_acts_recon_loss,
+)
 from .stochastic_hidden_acts_recon_loss import (
     StochasticHiddenActsReconLoss as StochasticHiddenActsReconLoss,
 )
