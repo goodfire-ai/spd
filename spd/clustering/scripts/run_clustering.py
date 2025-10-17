@@ -11,6 +11,7 @@ Output structure:
 
 import argparse
 import gc
+import os
 import tempfile
 from collections.abc import Callable
 from functools import partial
@@ -37,7 +38,7 @@ from spd.clustering.consts import (
     ComponentLabels,
 )
 from spd.clustering.dataset import load_dataset
-from spd.clustering.ensemble_registry import register_clustering_run
+from spd.clustering.ensemble_registry import _ENSEMBLE_REGISTRY_DB, register_clustering_run
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
 from spd.clustering.merge import merge_iteration
@@ -53,6 +54,8 @@ from spd.spd_types import TaskName
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import replace_pydantic_model
 from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, _read_noneable_str
+
+os.environ["WANDB_QUIET"] = "true"
 
 
 class ClusteringRunStorage(StorageBase):
@@ -237,7 +240,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
             clustering_run_id,
         )
         logger.info(
-            f"Registered with pipeline {run_config.ensemble_id} at index {run_config.idx_in_ensemble}"
+            f"Registered with pipeline {run_config.ensemble_id} at index {run_config.idx_in_ensemble} in {_ENSEMBLE_REGISTRY_DB}"
         )
 
     logger.info("Starting clustering run")
@@ -281,7 +284,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
                 f"idx:{run_config.idx_in_ensemble}",
             ],
         )
-        logger.info(f"WandB run: {wandb_run.url}")
+        # logger.info(f"WandB run: {wandb_run.url}")
 
     # 3. Load model
     logger.info("Loading model")

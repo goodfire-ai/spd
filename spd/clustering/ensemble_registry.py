@@ -9,14 +9,14 @@ from contextlib import contextmanager
 from spd.settings import SPD_CACHE_DIR
 
 # SQLite database path
-_REGISTRY_DB = SPD_CACHE_DIR / "clustering_ensemble_registry.db"
+_ENSEMBLE_REGISTRY_DB = SPD_CACHE_DIR / "clustering_ensemble_registry.db"
 
 
 @contextmanager
 def _get_connection():
     """Context manager for SQLite connection, ensures table exists."""
-    _REGISTRY_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(_REGISTRY_DB)
+    _ENSEMBLE_REGISTRY_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(_ENSEMBLE_REGISTRY_DB)
 
     try:
         # Create table if not exists

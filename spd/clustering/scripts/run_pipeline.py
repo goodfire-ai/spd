@@ -18,6 +18,7 @@ Output structure (only pipeline_config.json is saved to directly in this script.
 """
 
 import argparse
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,8 @@ from spd.utils.slurm_utils import (
     create_slurm_script,
     submit_slurm_script,
 )
+
+os.environ["WANDB_QUIET"] = "true"
 
 
 class ClusteringPipelineStorage(StorageBase):
@@ -227,7 +230,6 @@ def main(
         pipeline_run_id=pipeline_run_id,
         dataset_streaming=dataset_streaming,
     )
-    logger.info(f"Generated {len(clustering_commands)} commands")
 
     # Generate command for calculating distances
     calc_distances_command = generate_calc_distances_command(
