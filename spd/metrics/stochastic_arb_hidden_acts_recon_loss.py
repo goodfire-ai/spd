@@ -75,7 +75,7 @@ def _stochastic_arb_hidden_acts_recon_loss_update(
 def _stochastic_arb_hidden_acts_recon_loss_compute(
     results: dict[str, tuple[Float[Tensor, ""], int]],
 ) -> dict[str, Float[Tensor, ""]]:
-    return {f"_/{module_name}": (sum / n) for module_name, (sum, n) in results.items()}
+    return {f"output_recon_{module_name}": (sum / n) for module_name, (sum, n) in results.items()}
 
 
 def stochastic_arb_hidden_acts_recon_loss(
