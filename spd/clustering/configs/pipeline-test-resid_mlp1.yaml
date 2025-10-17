@@ -4,6 +4,6 @@ distances_method: "perm_invariant_hamming"
 base_output_dir: "tests/.temp/clustering"
 slurm_job_name_prefix: "spd"
 slurm_partition: "h100-reserved"
-wandb_project: "spd-cluster"
+wandb_project: null # wandb fails in CI
 wandb_entity: "goodfire"
 create_git_snapshot: false

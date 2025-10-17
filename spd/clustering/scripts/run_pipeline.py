@@ -89,7 +89,7 @@ def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str
         logger.warning(
             f"Failed to create WandB workspace view: {workspace=}, {workspace.name=}, {ensemble_id=}, {project=}, {entity=}, {e}"
         )
-        return "none"
+        raise e
 
 
 def generate_clustering_commands(
