@@ -23,9 +23,11 @@ loss_metric_configs:
     p_anneal_start_frac: 0.0
     p_anneal_final_p: 0.7
     p_anneal_end_frac: 1.0
-  - classname: "StochasticArbHiddenActsReconLoss"
+  # - classname: "StochasticArbHiddenActsReconLoss"
+  #   coeff: 1.0
+  #   output_target_module_patterns: ["model.embed_tokens"]
+  - classname: "StochasticReconLoss"
     coeff: 1.0
-    output_target_module_patterns: ["model.embed_tokens"]
 
 output_loss_type: kl
 
@@ -63,12 +65,20 @@ eval_metric_configs:
   - classname: "StochasticArbHiddenActsReconLoss"
     output_target_module_patterns:
       - "model.embed_tokens"
-      - "model.layers.*.mlp.down_proj"
-      - "model.layers.*.mlp.up_proj"
+      #
+      - "model.layers.*.input_layernorm"
+      #
       - "model.layers.*.self_attn.q_proj"
       - "model.layers.*.self_attn.k_proj"
       - "model.layers.*.self_attn.v_proj"
       - "model.layers.*.self_attn.o_proj"
+      #
+      - "model.layers.*.post_attention_layernorm"
+      #
+      - "model.layers.*.mlp.down_proj"
+      - "model.layers.*.mlp.up_proj"
+      #
+      - "model.norm"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM
