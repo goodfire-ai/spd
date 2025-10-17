@@ -3,7 +3,7 @@ import random
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Protocol, overload
+from typing import Any, Literal, Protocol, overload
 
 import einops
 import numpy as np
