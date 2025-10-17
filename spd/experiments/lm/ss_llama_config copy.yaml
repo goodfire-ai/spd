@@ -1,48 +1,42 @@
-# This config expects to be run on 8 H100s
-
 # --- WandB ---
 wandb_project: spd
-wandb_run_name: null
+wandb_run_name: unique_per_datapoint
 wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
 C: 5000
 n_mask_samples: 1
-ci_fn_type: "identity"
-ci_fn_hidden_dims: []
+ci_fn_type: "mlp"
+ci_fn_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.embed_tokens"]
-identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0003
-    pnorm: 2.0
-    p_anneal_start_frac: 0.0
-    p_anneal_final_p: 0.7
-    p_anneal_end_frac: 1.0
-  - classname: "StochasticArbHiddenActsReconLoss"
-    output_target_module_patterns: []
+    coeff: 0.05
+    pnorm: 1.0
+  - classname: "StochasticReconLoss"
     coeff: 1.0
+  - classname: "PGDReconLoss"
+    init: "random"
+    mask_scope: "unique_per_datapoint"
+    n_steps: 2
+    step_size: 0.5
+    coeff: 0.2
 
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 256
-eval_batch_size: 128
-gradient_accumulation_steps: 8
-steps: 50000
+batch_size: 512
+eval_batch_size: 512
+steps: 500000
 lr: 0.0005
 lr_schedule: cosine
 lr_warmup_pct: 0.0
 lr_exponential_halflife: null
-
-# --- Faithfulness Warmup ---
-faithfulness_warmup_steps: 200
-faithfulness_warmup_lr: 0.01
-faithfulness_warmup_weight_decay: 0.1
+gradient_accumulation_steps: 1
 
 # --- Logging & Saving ---
 train_log_freq: 25
@@ -60,13 +54,6 @@ eval_metric_configs:
   - classname: "CEandKLLosses"
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
-  - classname: "StochasticArbHiddenActsReconLoss"
-    output_target_module_patterns:
-      - "model.embed_tokens"
-      - "model.layers.*.input_layernorm"
-      - "model.layers.*.post_attention_layernorm"
-      - "model.norm"
-    coeff: 0.01
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM
@@ -77,7 +64,7 @@ tokenizer_name: SimpleStories/SimpleStories-1.25M
 
 # --- Task Specific ---
 task_config:
-  task_name: lm
+  task_name: lm 
   max_seq_len: 512
   buffer_size: 1000
   dataset_name: "SimpleStories/SimpleStories"
@@ -87,16 +74,18 @@ task_config:
   shuffle_each_epoch: true
   is_tokenized: false
   streaming: false
+
+
 # Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
-# "1.25M": LlamaConfig(
-#     block_size=512,
-#     vocab_size=4096,
-#     n_layer=4,
-#     n_head=4,
-#     n_embd=128,
-#     n_intermediate=128 * 4 * 2 // 3 = 341,
-#     rotary_dim=128 // 4 = 32,
-#     n_ctx=512,
-#     n_key_value_heads=2,
-#     flash_attention=True,
-# ),
+  # "1.25M": LlamaConfig(
+  #     block_size=512,
+  #     vocab_size=4096,
+  #     n_layer=4,
+  #     n_head=4,
+  #     n_embd=128,
+  #     n_intermediate=128 * 4 * 2 // 3 = 341,
+  #     rotary_dim=128 // 4 = 32,
+  #     n_ctx=512,
+  #     n_key_value_heads=2,
+  #     flash_attention=True,
+  # ),
