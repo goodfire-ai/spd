@@ -59,6 +59,7 @@ def make_one_layer_component_model(weight: Float[Tensor, " d_out d_in"]) -> Comp
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     return comp_model
@@ -93,6 +94,7 @@ def make_two_layer_component_model(
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",
         pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
     )
 
     return comp_model

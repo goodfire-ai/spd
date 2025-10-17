@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -8,7 +8,7 @@ from torch.distributed import ReduceOp
 from spd.configs import PGDConfig
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.utils.distributed_utils import all_reduce
 
 
@@ -25,7 +25,7 @@ def _pgd_recon_layerwise_loss_update(
     device = next(iter(ci.values())).device
     sum_loss = torch.tensor(0.0, device=device)
     n_examples = torch.tensor(0, device=device)
-    for layer in model.module_paths:
+    for layer in model.target_module_paths:
         layer_ci = {layer: ci[layer]}
         layer_weight_deltas = {layer: weight_deltas[layer]} if weight_deltas is not None else None
         sum_loss_layer, n_examples_layer = pgd_masked_recon_loss_update(
@@ -66,7 +66,10 @@ def pgd_recon_layerwise_loss(
 
 
 class PGDReconLayerwiseLoss(Metric):
-    """Recon loss when masking with raw CI values and routing to subsets of component layers."""
+    """Recon loss when masking with adversarially-optimized values and routing to one layer at a
+    time."""
+
+    metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,
@@ -89,7 +92,7 @@ class PGDReconLayerwiseLoss(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
+        ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
         **_: Any,
     ) -> None:
@@ -98,7 +101,7 @@ class PGDReconLayerwiseLoss(Metric):
             batch=batch,
             target_out=target_out,
             output_loss_type=self.output_loss_type,
-            ci=ci,
+            ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
             pgd_config=self.pgd_config,
         )

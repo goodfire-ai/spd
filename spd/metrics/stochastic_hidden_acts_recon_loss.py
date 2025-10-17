@@ -1,4 +1,4 @@
-from typing import Any, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
@@ -7,7 +7,7 @@ from torch.distributed import ReduceOp
 
 from spd.configs import SamplingType
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
@@ -82,6 +82,8 @@ def stochastic_hidden_acts_recon_loss(
 class StochasticHiddenActsReconLoss(Metric):
     """Reconstruction loss between target and stochastic hidden activations when sampling with stochastic masks."""
 
+    metric_section: ClassVar[str] = "loss"
+
     def __init__(
         self,
         model: ComponentModel,
@@ -103,7 +105,7 @@ class StochasticHiddenActsReconLoss(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         pre_weight_acts: dict[str, Float[Tensor, "..."]],
-        ci: dict[str, Float[Tensor, "... C"]],
+        ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
         **_: Any,
     ) -> None:
@@ -113,7 +115,7 @@ class StochasticHiddenActsReconLoss(Metric):
             n_mask_samples=self.n_mask_samples,
             batch=batch,
             pre_weight_acts=pre_weight_acts,
-            ci=ci,
+            ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
         )
         self.sum_mse += sum_mse

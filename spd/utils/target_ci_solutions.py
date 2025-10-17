@@ -300,18 +300,14 @@ def compute_target_metrics(
     metrics = {}
 
     # Total error across all modules
-    metrics["target_solution_error/total"] = target_solution.distance_from(
-        causal_importances, tolerance
-    )
-    metrics["target_solution_error/total_0p2"] = target_solution.distance_from(
-        causal_importances, 0.2
-    )
+    metrics["total"] = target_solution.distance_from(causal_importances, tolerance)
+    metrics["total_0p2"] = target_solution.distance_from(causal_importances, 0.2)
 
     # Per-module errors
     expanded_targets = target_solution.expand_module_targets(list(causal_importances.keys()))
     for module_name, pattern in expanded_targets.items():
         module_error = pattern.distance_from(causal_importances[module_name], tolerance)
-        metrics[f"target_solution_error/{module_name}"] = module_error
+        metrics[module_name] = module_error
 
     return metrics
 

@@ -5,7 +5,6 @@ from torch import Tensor
 from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
-from spd.models.sigmoids import SigmoidTypes
 from spd.plotting import get_single_feature_causal_importances
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
@@ -16,17 +15,17 @@ class IdentityCIError(Metric):
     slow: ClassVar[bool] = True
     input_magnitude: ClassVar[float] = 0.75
 
+    metric_section: ClassVar[str] = "target_solution_error"
+
     def __init__(
         self,
         model: ComponentModel,
         sampling: SamplingType,
-        sigmoid_type: SigmoidTypes,
         identity_ci: list[dict[str, str | int]] | None = None,
         dense_ci: list[dict[str, str | int]] | None = None,
     ) -> None:
         self.model = model
         self.sampling: SamplingType = sampling
-        self.sigmoid_type: SigmoidTypes = sigmoid_type
         self.identity_ci = identity_ci
         self.dense_ci = dense_ci
 
@@ -47,15 +46,14 @@ class IdentityCIError(Metric):
         if target_solution is None:
             return {}
 
-        ci_arrays, _ = get_single_feature_causal_importances(
+        ci = get_single_feature_causal_importances(
             model=self.model,
             batch_shape=self.batch_shape,
             input_magnitude=self.input_magnitude,
             sampling=self.sampling,
-            sigmoid_type=self.sigmoid_type,
         )
 
         target_metrics = compute_target_metrics(
-            causal_importances=ci_arrays, target_solution=target_solution
+            causal_importances=ci.lower_leaky, target_solution=target_solution
         )
         return target_metrics

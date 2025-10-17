@@ -1,4 +1,4 @@
-from typing import Any, Literal, override
+from typing import Any, ClassVar, Literal, override
 
 import torch
 from jaxtyping import Float, Int
@@ -7,7 +7,7 @@ from torch.distributed import ReduceOp
 
 from spd.configs import SamplingType
 from spd.metrics.base import Metric
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import CIOutputs, ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm, get_obj_device
@@ -80,6 +80,8 @@ def stochastic_recon_subset_loss(
 class StochasticReconSubsetLoss(Metric):
     """Recon loss when sampling with stochastic masks and routing to subsets of component layers."""
 
+    metric_section: ClassVar[str] = "loss"
+
     def __init__(
         self,
         model: ComponentModel,
@@ -103,7 +105,7 @@ class StochasticReconSubsetLoss(Metric):
         *,
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
-        ci: dict[str, Float[Tensor, "... C"]],
+        ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
         **_: Any,
     ) -> None:
@@ -114,7 +116,7 @@ class StochasticReconSubsetLoss(Metric):
             output_loss_type=self.output_loss_type,
             batch=batch,
             target_out=target_out,
-            ci=ci,
+            ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
         )
         self.sum_loss += sum_loss
