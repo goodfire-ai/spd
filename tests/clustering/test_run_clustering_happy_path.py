@@ -18,7 +18,7 @@ def test_run_clustering_happy_path():
             dataset_seed=0,
             idx_in_ensemble=0,
             base_output_dir=Path(temp_dir),
-            ensemble_id="test",
+            ensemble_id=None,
             merge_config=MergeConfig(
                 activation_threshold=0.01,
                 alpha=1.0,
