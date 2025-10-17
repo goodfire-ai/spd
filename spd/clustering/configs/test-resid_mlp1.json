@@ -11,7 +11,7 @@
   },
   "experiment_key": "resid_mlp1",
   "batch_size": 100,
-  "wandb_project": "spd-cluster",
+  "wandb_project": null,
   "logging_intervals": {
     "stat": 1,
     "tensor": 5,
