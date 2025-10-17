@@ -35,7 +35,7 @@ class Linear(nn.Module):
         super().__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.W = nn.Parameter(torch.empty(input_dim, output_dim))
+        self.W = nn.Parameter(torch.empty(output_dim, input_dim))
         self.b = nn.Parameter(torch.zeros(output_dim))
         init_param_(self.W, fan_val=input_dim, nonlinearity=nonlinearity)
 
