@@ -1,0 +1,9 @@
+run_clustering_config_path: "spd/clustering/configs/test-simplestories.json"
+n_runs: 2
+distances_method: "perm_invariant_hamming"
+base_output_dir: "tests/.temp/clustering"
+slurm_job_name_prefix: null
+slurm_partition: null
+wandb_project: null # wandb fails in CI
+wandb_entity: "goodfire"
+create_git_snapshot: false

@@ -151,7 +151,6 @@ def _plot_func(
 
 MERGE_HIST: MergeHistory = merge_iteration(
     merge_config=MERGE_CFG,
-    batch_id="batch_0",
     activations=PROCESSED_ACTIVATIONS.activations,
     component_labels=PROCESSED_ACTIVATIONS.labels,
     log_callback=_plot_func,
@@ -173,10 +172,9 @@ MERGE_HIST: MergeHistory = merge_iteration(
 # Modern approach: run merge_iteration multiple times to create ensemble
 ENSEMBLE_SIZE: int = 4
 HISTORIES: list[MergeHistory] = []
-for i in range(ENSEMBLE_SIZE):
+for _i in range(ENSEMBLE_SIZE):
     HISTORY: MergeHistory = merge_iteration(
         merge_config=MERGE_CFG,
-        batch_id=f"batch_{i}",
         activations=PROCESSED_ACTIVATIONS.activations,
         component_labels=PROCESSED_ACTIVATIONS.labels,
         log_callback=None,
