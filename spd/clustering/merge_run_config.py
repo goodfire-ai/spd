@@ -9,7 +9,6 @@ from spd.base_config import BaseConfig
 from spd.clustering.merge_config import MergeConfig
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.settings import SPD_CACHE_DIR
-from spd.utils.run_utils import get_local_run_id
 
 
 class LoggingIntervals(BaseConfig):
@@ -44,15 +43,15 @@ class ClusteringRunConfig(BaseConfig):
 
     batch_size: PositiveInt = Field(..., description="Batch size for processing")
     dataset_seed: int = Field(0, description="Seed for dataset generation/loading")
-    idx_in_ensemble: int = Field(0, description="Index of this run in the ensemble")
     base_output_dir: Path = Field(
         default=SPD_CACHE_DIR / "clustering",
         description="Base directory to save clustering runs",
     )
-    ensemble_id: str = Field(
-        default_factory=get_local_run_id,
+    ensemble_id: str | None = Field(
+        default=None,
         description="Ensemble identifier for WandB grouping",
     )
+    idx_in_ensemble: int = Field(0, description="Index of this run in the ensemble")
 
     merge_config: MergeConfig = Field(description="Merge algorithm configuration")
 

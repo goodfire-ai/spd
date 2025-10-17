@@ -44,6 +44,7 @@ def get_local_run_id() -> str:
     return f"local-{random_suffix}"
 
 
+# TODO: avoid using this function?
 def get_output_dir(use_wandb_id: bool = True) -> Path:
     """Get the output directory for a run.
 

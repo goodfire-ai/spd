@@ -226,7 +226,10 @@ def main(run_config: ClusteringRunConfig) -> Path:
     logger.info(f"Clustering run ID: {clustering_run_id}")
 
     # Register with ensemble if this is part of a pipeline
-    if run_config.ensemble_id is not None and run_config.idx_in_ensemble is not None:
+    if run_config.ensemble_id:
+        assert run_config.idx_in_ensemble is not None, (
+            "idx_in_ensemble must be set when ensemble_id is provided"
+        )
         register_clustering_run(
             run_config.ensemble_id,
             run_config.idx_in_ensemble,
