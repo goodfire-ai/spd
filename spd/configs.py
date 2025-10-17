@@ -12,6 +12,7 @@ from pydantic import (
     model_validator,
 )
 
+from spd.base_config import BaseConfig
 from spd.experiments.ih.configs import IHTaskConfig
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
@@ -20,7 +21,6 @@ from spd.log import logger
 from spd.models.components import CiFnType
 from spd.models.sigmoids import SigmoidTypes
 from spd.spd_types import ModelPath, Probability
-from spd.utils.general_utils import BaseModel
 
 
 #### Metrics that can be used in training (or eval) ####
@@ -113,49 +113,49 @@ class StochasticHiddenActsReconLossConfig(TrainMetricConfig):
 
 
 #### Metrics that can only be used in eval ####
-class CEandKLLossesConfig(BaseModel):
+class CEandKLLossesConfig(BaseConfig):
     classname: Literal["CEandKLLosses"] = "CEandKLLosses"
     rounding_threshold: float
 
 
-class CIHistogramsConfig(BaseModel):
+class CIHistogramsConfig(BaseConfig):
     classname: Literal["CIHistograms"] = "CIHistograms"
     n_batches_accum: int | None
 
 
-class CI_L0Config(BaseModel):
+class CI_L0Config(BaseConfig):
     classname: Literal["CI_L0"] = "CI_L0"
     groups: dict[str, list[str]] | None
 
 
-class CIMeanPerComponentConfig(BaseModel):
+class CIMeanPerComponentConfig(BaseConfig):
     classname: Literal["CIMeanPerComponent"] = "CIMeanPerComponent"
 
 
-class ComponentActivationDensityConfig(BaseModel):
+class ComponentActivationDensityConfig(BaseConfig):
     classname: Literal["ComponentActivationDensity"] = "ComponentActivationDensity"
 
 
-class IdentityCIErrorConfig(BaseModel):
+class IdentityCIErrorConfig(BaseConfig):
     classname: Literal["IdentityCIError"] = "IdentityCIError"
     identity_ci: list[dict[str, str | int]] | None
     dense_ci: list[dict[str, str | int]] | None
 
 
-class PermutedCIPlotsConfig(BaseModel):
+class PermutedCIPlotsConfig(BaseConfig):
     classname: Literal["PermutedCIPlots"] = "PermutedCIPlots"
     sigmoid_type: SigmoidTypes
     identity_patterns: list[str] | None
     dense_patterns: list[str] | None
 
 
-class StochasticReconSubsetCEAndKLConfig(BaseModel):
+class StochasticReconSubsetCEAndKLConfig(BaseConfig):
     classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
     include_patterns: dict[str, list[str]] | None
     exclude_patterns: dict[str, list[str]] | None
 
 
-class UVPlotsConfig(BaseModel):
+class UVPlotsConfig(BaseConfig):
     classname: Literal["UVPlots"] = "UVPlots"
     identity_patterns: list[str] | None
     dense_patterns: list[str] | None

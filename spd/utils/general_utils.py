@@ -1,5 +1,4 @@
 import importlib
-import json
 import random
 from collections.abc import Callable, Sequence
 from datetime import datetime
@@ -12,13 +11,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import wandb
-import yaml
 from jaxtyping import Float
-from pydantic import BaseModel as _BaseModel
-from pydantic import ConfigDict, PositiveFloat
+from pydantic import BaseModel, PositiveFloat
 from pydantic.v1.utils import deep_update
 from torch import Tensor
 
+from spd.base_config import BaseConfig
 from spd.log import logger
 from spd.utils.run_utils import save_file
 
@@ -37,12 +35,6 @@ COLOR_PALETTE = [
 ]
 
 
-class BaseModel(_BaseModel):
-    """Regular pydantic BaseModel but enforcing extra="forbid" and frozen=True."""
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-
-
 def set_seed(seed: int | None) -> None:
     """Set the random seed for random, PyTorch and NumPy"""
     if seed is not None:
@@ -54,47 +46,6 @@ def set_seed(seed: int | None) -> None:
 def generate_sweep_id() -> str:
     """Generate a unique sweep ID based on timestamp."""
     return f"sweep_id-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-
-def load_config[T: BaseModel](
-    config_path_or_obj: Path | str | dict[str, Any] | T, config_model: type[T]
-) -> T:
-    """Load the config of class `config_model`, from various sources.
-
-    Args:
-        config_path_or_obj (Union[Path, str, dict, `config_model`]): Can be:
-            - config object: must be instance of `config_model`
-            - dict: config dictionary
-            - str starting with 'json:': JSON string with prefix
-            - other str: treated as path to a .yaml file
-            - Path: path to a .yaml file
-        config_model: the class of the config that we are loading
-    """
-    if isinstance(config_path_or_obj, config_model):
-        return config_path_or_obj
-
-    if isinstance(config_path_or_obj, dict):
-        return config_model(**config_path_or_obj)
-
-    if isinstance(config_path_or_obj, str):
-        # Check if it's a prefixed JSON string
-        if config_path_or_obj.startswith("json:"):
-            config_dict = json.loads(config_path_or_obj[5:])
-            return config_model(**config_dict)
-        else:
-            # Treat as file path
-            config_path_or_obj = Path(config_path_or_obj)
-
-    assert isinstance(config_path_or_obj, Path), (
-        f"passed config is of invalid type {type(config_path_or_obj)}"
-    )
-    assert config_path_or_obj.suffix == ".yaml", (
-        f"Config file {config_path_or_obj} must be a YAML file."
-    )
-    assert Path(config_path_or_obj).exists(), f"Config file {config_path_or_obj} does not exist."
-    with open(config_path_or_obj) as f:
-        config_dict = yaml.safe_load(f)
-    return config_model(**config_dict)
 
 
 def replace_pydantic_model[BaseModelType: BaseModel](
@@ -327,10 +278,10 @@ def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None = None) -> P
 def save_pre_run_info(
     save_to_wandb: bool,
     out_dir: Path,
-    spd_config: BaseModel,
+    spd_config: BaseConfig,
     sweep_params: dict[str, Any] | None,
     target_model: nn.Module | None,
-    train_config: BaseModel | None,
+    train_config: BaseConfig | None,
     task_name: str | None,
 ) -> None:
     """Save run information locally and optionally to wandb."""
