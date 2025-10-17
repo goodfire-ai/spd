@@ -382,24 +382,28 @@ class ComponentModel(LoadableModule):
             )
 
             hooks: dict[str, Callable[..., Any]] = {}
-            if mask_infos is not None:
-                for module_name, mask_info in mask_infos.items():
-                    components = self.components[module_name]
-                    assert module_name not in hooks
-                    hooks[module_name] = partial(
-                        self._components_and_cache_hook,
-                        module_name=module_name,
-                        components=components,
-                        mask_info=mask_info,
-                        cache_type="none",
-                        cache={},
-                    )
+
+            all_modules_to_hook = set(output_target_module_paths).union(
+                set(mask_infos) if mask_infos else set()
+            )
 
             output_acts_cache: dict[str, Tensor] = {}
-            for module_name in output_target_module_paths:
-                assert module_name not in hooks
-                hooks[module_name] = self._make_output_cache_hook(module_name, output_acts_cache)
-            
+
+            for module_name in all_modules_to_hook:
+                cache_output = module_name in output_target_module_paths
+
+                mask_info = (mask_infos or {}).get(module_name, None)
+                components = self.components[module_name] if mask_info is not None else None
+
+                hooks[module_name] = partial(
+                    self._components_and_cache_hook,
+                    module_name=module_name,
+                    components=components,
+                    mask_info=mask_info,
+                    cache_type="output" if cache_output else "none",
+                    cache=output_acts_cache,
+                )
+
             with self._attach_forward_hooks(hooks):
                 raw_out = self.target_model(*args, **kwargs)
 
@@ -442,6 +446,7 @@ class ComponentModel(LoadableModule):
         def hook(module: nn.Module, args: list[Any], kwargs: dict[Any, Any], output: Any) -> Any:  # pyright: ignore[reportUnusedParameter]
             output_acts_cache[module_name] = output
             return None
+
         return hook
 
     # TODO: make this a higher order function instead of relying on perfect partial application
@@ -454,7 +459,7 @@ class ComponentModel(LoadableModule):
         module_name: str,
         components: Components | None,
         mask_info: ComponentsMaskInfo | None,
-        cache_type: Literal["input", "none"],
+        cache_type: Literal["input", "none", "output"],
         cache: dict[str, Tensor],
     ) -> Any | None:
         """Unified hook function that handles both component replacement and caching.
@@ -478,12 +483,14 @@ class ComponentModel(LoadableModule):
         assert len(kwargs) == 0, "Expected no keyword arguments"
         x = args[0]
         assert isinstance(x, Tensor), "Expected input tensor"
-        assert cache_type in ["input", "none"], (
-            "Expected cache_type to be 'input' or 'none'"
+        assert cache_type in ["input", "none", "output"], (
+            "Expected cache_type to be 'input', 'none', or 'output'"
         )
 
         if cache_type == "input":
             cache[module_name] = x
+        elif cache_type == "output":
+            cache[module_name] = output
 
         if components is not None and mask_info is not None:
             assert isinstance(output, Tensor), (
