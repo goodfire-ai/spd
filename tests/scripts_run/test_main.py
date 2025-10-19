@@ -13,7 +13,6 @@ from unittest.mock import Mock, patch
 import pytest
 
 from spd.scripts.run import main
-from spd.utils.command_utils import Command
 from spd.utils.git_utils import repo_current_branch
 
 
@@ -89,12 +88,12 @@ class TestSPDRun:
 
         # Verify command structure
         for cmd in commands:
-            cmd_str = cmd.cmd_joined
-            assert "python" in cmd_str
-            assert "_decomposition.py" in cmd_str
-            assert "json:" in cmd_str
-            assert "--sweep_id" in cmd_str
-            assert "--evals_id" in cmd_str
+            assert isinstance(cmd, str)
+            assert "python" in cmd
+            assert "_decomposition.py" in cmd
+            assert "json:" in cmd
+            assert "--sweep_id" in cmd
+            assert "--evals_id" in cmd
 
         # Check other parameters
         assert call_kwargs["snapshot_branch"] == repo_current_branch()
@@ -148,19 +147,18 @@ class TestSPDRun:
 
         # Verify each command
         for cmd in commands:
-            # Should be a Command object
-            assert isinstance(cmd, Command)
-            assert cmd.cmd[0] == "python"
-            assert "_decomposition.py" in cmd.cmd[1]
+            # Should be a string
+            assert isinstance(cmd, str)
+            assert "python" in cmd
+            assert "_decomposition.py" in cmd
 
             # Check for required arguments in the command
-            cmd_str = cmd.cmd_joined
-            assert "json:" in cmd_str
-            assert "--sweep_id" in cmd_str
-            assert "--evals_id" in cmd_str
+            assert "json:" in cmd
+            assert "--sweep_id" in cmd
+            assert "--evals_id" in cmd
 
             if sweep:
-                assert "--sweep_params_json" in cmd_str
+                assert "--sweep_params_json" in cmd
 
         # No wandb functions should be called since use_wandb=False
 
@@ -211,7 +209,6 @@ class TestSPDRun:
 
         # Check that sweep parameters are in the commands
         for cmd in commands:
-            assert isinstance(cmd, Command)
-            cmd_str = cmd.cmd_joined
-            assert "--sweep_params_json" in cmd_str
-            assert "json:" in cmd_str
+            assert isinstance(cmd, str)
+            assert "--sweep_params_json" in cmd
+            assert "json:" in cmd

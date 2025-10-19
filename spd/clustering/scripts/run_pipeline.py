@@ -19,6 +19,8 @@ Output structure (only pipeline_config.json is saved to directly in this script.
 
 import argparse
 import os
+import shlex
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -30,9 +32,9 @@ from spd.base_config import BaseConfig
 from spd.clustering.consts import DistancesMethod
 from spd.clustering.storage import StorageBase
 from spd.log import logger
-from spd.utils.command_utils import Command, run_script_array_local
+from spd.utils.command_utils import run_script_array_local
 from spd.utils.general_utils import replace_pydantic_model
-from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, _read_noneable_str
+from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, read_noneable_str
 from spd.utils.slurm_utils import (
     create_slurm_array_script,
     create_slurm_script,
@@ -126,7 +128,7 @@ def generate_clustering_commands(
     pipeline_config: ClusteringPipelineConfig,
     pipeline_run_id: str,
     dataset_streaming: bool = False,
-) -> list[Command]:
+) -> list[str]:
     """Generate commands for each clustering run.
 
     Args:
@@ -135,44 +137,42 @@ def generate_clustering_commands(
         dataset_streaming: Whether to use dataset streaming
 
     Returns:
-        List of Command objects, one per run
+        List of shell-safe command strings
     """
-    commands: list[Command] = []
+    commands: list[str] = []
 
     for idx in range(pipeline_config.n_runs):
-        cmd = Command(
-            cmd=[
-                "python",
-                "spd/clustering/scripts/run_clustering.py",
-                "--config",
-                pipeline_config.run_clustering_config_path.as_posix(),
-                "--pipeline-run-id",
-                pipeline_run_id,
-                "--idx-in-ensemble",
-                str(idx),
-                "--wandb-project",
-                str(pipeline_config.wandb_project),
-                "--wandb-entity",
-                pipeline_config.wandb_entity,
-            ]
-            + (["--dataset-streaming"] if dataset_streaming else []),
-        )
-        commands.append(cmd)
+        cmd_parts = [
+            "python",
+            "spd/clustering/scripts/run_clustering.py",
+            "--config",
+            pipeline_config.run_clustering_config_path.as_posix(),
+            "--pipeline-run-id",
+            pipeline_run_id,
+            "--idx-in-ensemble",
+            str(idx),
+            "--wandb-project",
+            str(pipeline_config.wandb_project),
+            "--wandb-entity",
+            pipeline_config.wandb_entity,
+        ]
+        if dataset_streaming:
+            cmd_parts.append("--dataset-streaming")
+
+        commands.append(shlex.join(cmd_parts))
 
     return commands
 
 
-def generate_calc_distances_command(
-    pipeline_run_id: str, distances_method: DistancesMethod
-) -> Command:
+def generate_calc_distances_command(pipeline_run_id: str, distances_method: DistancesMethod) -> str:
     """Generate command for calculating distances.
 
     Args:
         pipeline_run_id: Pipeline run ID (will query registry for clustering runs)
         distances_method: Method for calculating distances
     """
-    return Command(
-        cmd=[
+    return shlex.join(
+        [
             "python",
             "spd/clustering/scripts/calc_distances.py",
             "--pipeline-run-id",
@@ -246,8 +246,8 @@ def main(
 
         # submit calc_distances job
         logger.info("Calculating distances...")
-        logger.info(f"Command: {calc_distances_command.cmd_joined}")
-        calc_distances_command.run(check=True)
+        logger.info(f"Command: {calc_distances_command}")
+        subprocess.run(shlex.split(calc_distances_command), shell=False, check=True)
 
         logger.section("complete!")
         distances_plot_path = (
@@ -337,7 +337,7 @@ def cli():
     )
     parser.add_argument(
         "--wandb-project",
-        type=_read_noneable_str,
+        type=read_noneable_str,
         default=_NO_ARG_PARSSED_SENTINEL,
         help="WandB project name (if not provided, WandB logging is disabled)",
     )

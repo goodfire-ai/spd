@@ -551,7 +551,7 @@ class ExecutionStamp(NamedTuple):
 _NO_ARG_PARSSED_SENTINEL = object()
 
 
-def _read_noneable_str(value: str) -> str | None:
+def read_noneable_str(value: str) -> str | None:
     """Read a string that may be 'None' and convert to None."""
     if value == "None":
         return None

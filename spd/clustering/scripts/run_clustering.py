@@ -53,7 +53,7 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import TaskName
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import replace_pydantic_model
-from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, _read_noneable_str
+from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, read_noneable_str
 
 os.environ["WANDB_QUIET"] = "true"
 
@@ -390,7 +390,7 @@ def cli() -> None:
     )
     parser.add_argument(
         "--wandb-project",
-        type=_read_noneable_str,
+        type=read_noneable_str,
         default=_NO_ARG_PARSSED_SENTINEL,
         help="WandB project name (if not provided, WandB logging is disabled)",
     )

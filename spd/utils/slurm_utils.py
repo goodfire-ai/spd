@@ -6,7 +6,6 @@ from pathlib import Path
 
 from spd.log import logger
 from spd.settings import REPO_ROOT
-from spd.utils.command_utils import Command
 
 
 def format_runtime_str(runtime_minutes: int) -> str:
@@ -90,7 +89,7 @@ def _create_slurm_script_base(
 def create_slurm_array_script(
     script_path: Path,
     job_name: str,
-    commands: list[Command],
+    commands: list[str],
     snapshot_branch: str,
     n_gpus_per_job: int,
     partition: str,
@@ -102,7 +101,7 @@ def create_slurm_array_script(
     Args:
         script_path: Path where the script should be written
         job_name: Name for the SLURM job array
-        commands: List of Command objects to execute in each array job
+        commands: List of shell-safe command strings (built with shlex.join())
         snapshot_branch: Git branch to checkout.
         n_gpus_per_job: Number of GPUs per job. If 0, use CPU jobs.
         partition: SLURM partition to use
@@ -121,7 +120,7 @@ def create_slurm_array_script(
     # Create case statement for commands
     case_statements = []
     for i, cmd in enumerate(commands, 1):
-        case_statements.append(f"{i}) {cmd.script_line()} ;;")
+        case_statements.append(f"{i}) {cmd} ;;")
 
     case_block = "\n        ".join(case_statements)
 
@@ -149,7 +148,7 @@ def create_slurm_array_script(
 def create_slurm_script(
     script_path: Path,
     job_name: str,
-    command: "Command",
+    command: str,
     snapshot_branch: str,
     n_gpus: int,
     partition: str,
@@ -161,7 +160,7 @@ def create_slurm_script(
     Args:
         script_path: Path where the script should be written
         job_name: Name for the SLURM job
-        command: Command object to execute
+        command: Shell-safe command string (built with shlex.join())
         snapshot_branch: Git branch to checkout
         n_gpus: Number of GPUs. If 0, use CPU job.
         partition: SLURM partition to use
@@ -178,7 +177,7 @@ def create_slurm_script(
 
     sbatch_directives = "\n        ".join(directives)
 
-    command_block = f"# Execute the command\n        {command.script_line()}"
+    command_block = f"# Execute the command\n        {command}"
 
     _create_slurm_script_base(
         script_path=script_path,

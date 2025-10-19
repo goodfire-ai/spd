@@ -10,6 +10,7 @@ For full CLI usage and examples, see the bottom of this file (or run `spd-run --
 import argparse
 import copy
 import json
+import shlex
 import tempfile
 from hashlib import sha256
 from pathlib import Path
@@ -21,7 +22,7 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
-from spd.utils.command_utils import Command, run_script_array_local
+from spd.utils.command_utils import run_script_array_local
 from spd.utils.run_utils import (
     ExecutionStamp,
     apply_nested_updates,
@@ -117,14 +118,14 @@ def generate_commands(
     sweep_params_file: str | None = None,
     project: str = "spd",
     dp: int = 1,
-) -> list[Command]:
+) -> list[str]:
     """Generate commands for all experiment runs and print task counts.
 
     NOTE: When we convert parameter settings into JSON strings to pass to our decomposition scripts,
     we add a prefix to prevent Fire parsing with ast.literal_eval
     (https://github.com/google/python-fire/issues/332)
     """
-    commands: list[Command] = []
+    commands: list[str] = []
 
     logger.info("Task breakdown by experiment:")
     task_breakdown: dict[str, str] = {}
@@ -161,12 +162,9 @@ def generate_commands(
 
             if dp > 1:
                 port = _choose_master_port(run_id, cmd_idx)
-                cmd = Command(
-                    cmd=["mpirun", "-x", "MASTER_PORT", "-np", str(dp)] + cmd_parts,
-                    env={"MASTER_PORT": str(port)},
-                )
+                cmd = f"MASTER_PORT={port} {shlex.join(['mpirun', '-x', 'MASTER_PORT', '-np', str(dp)] + cmd_parts)}"
             else:
-                cmd = Command(cmd=cmd_parts)
+                cmd = shlex.join(cmd_parts)
 
             commands.append(cmd)
             task_breakdown[experiment] = "1 task"
@@ -204,12 +202,9 @@ def generate_commands(
 
                 if dp > 1:
                     port = _choose_master_port(run_id, cmd_idx)
-                    cmd = Command(
-                        cmd=["mpirun", "-x", "MASTER_PORT", "-np", str(dp)] + cmd_parts,
-                        env={"MASTER_PORT": str(port)},
-                    )
+                    cmd = f'MASTER_PORT={port} mpirun -x "MASTER_PORT" -np {dp} {shlex.join(cmd_parts)}'
                 else:
-                    cmd = Command(cmd=cmd_parts)
+                    cmd = shlex.join(cmd_parts)
 
                 commands.append(cmd)
                 cmd_idx += 1
@@ -381,7 +376,7 @@ def main(
 
     # generate and run commands
     # ==========================================================================================
-    commands: list[Command] = generate_commands(
+    commands: list[str] = generate_commands(
         experiments_list=experiments_list,
         run_id=run_id,
         sweep_params_file=sweep_params_file,
