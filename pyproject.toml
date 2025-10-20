@@ -41,6 +41,7 @@ dev = [
     "ruff",
     "basedpyright",
     "pre-commit",
+    "nbconvert",
 ]
 
 [project.scripts]

@@ -4,6 +4,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+from jaxtyping import Float, Int
 from sklearn.tree import plot_tree
 
 from spd.clustering.ci_dt.core import LayerModel, get_estimator_for
@@ -100,3 +101,135 @@ def plot_selected_trees(
         ax.set_title(f"{title_prefix}: layer {layer_idx}, target {target_idx}, AP={score:.3f}")
         plot_tree(est, ax=ax, filled=False)  # default styling
         fig.tight_layout()
+
+
+def extract_tree_stats(
+    models: list[LayerModel],
+    per_layer_stats: list[dict[str, Any]],
+) -> dict[str, Float[np.ndarray, "n_trees"]]:
+    """Extract depth, leaf count, and accuracy for all trees across all layers."""
+    depths: list[int] = []
+    leaf_counts: list[int] = []
+    accuracies: list[float] = []
+    balanced_accuracies: list[float] = []
+    aps: list[float] = []
+
+    for lm, stats in zip(models, per_layer_stats, strict=True):
+        for i, estimator in enumerate(lm.model.estimators_):
+            depths.append(int(estimator.tree_.max_depth))
+            leaf_counts.append(int(estimator.tree_.n_leaves))
+            accuracies.append(float(stats["acc"][i]))
+            balanced_accuracies.append(float(stats["bacc"][i]))
+            aps.append(float(stats["ap"][i]))
+
+    return {
+        "depth": np.array(depths),
+        "n_leaves": np.array(leaf_counts),
+        "accuracy": np.array(accuracies),
+        "balanced_accuracy": np.array(balanced_accuracies),
+        "ap": np.array(aps),
+    }
+
+
+def plot_tree_statistics(
+    models: list[LayerModel], per_layer_stats: list[dict[str, Any]]
+) -> None:
+    """Plot distributions of tree depth, leaf count, and their correlations with accuracy."""
+    stats = extract_tree_stats(models, per_layer_stats)
+
+    # Distribution of tree depths
+    fig1, ax1 = plt.subplots()
+    ax1.hist(stats["depth"], bins=range(int(stats["depth"].max()) + 2))
+    ax1.set_yscale("log")
+    ax1.set_xlabel("Tree depth")
+    ax1.set_ylabel("Count (log scale)")
+
+    # Distribution of leaf counts
+    fig2, ax2 = plt.subplots()
+    ax2.hist(stats["n_leaves"], bins=50)
+    ax2.set_yscale("log")
+    ax2.set_xlabel("Number of leaves")
+    ax2.set_ylabel("Count (log scale)")
+
+    # Distribution of accuracies
+    fig3, ax3 = plt.subplots()
+    ax3.hist(stats["accuracy"][~np.isnan(stats["accuracy"])], bins=30)
+    ax3.set_yscale("log")
+    ax3.set_xlabel("Accuracy")
+    ax3.set_ylabel("Count (log scale)")
+
+    # Heatmap: depth vs accuracy
+    valid_mask: np.ndarray = ~np.isnan(stats["accuracy"])
+    depth_bins: Int[np.ndarray, "n_bins"] = np.arange(
+        int(stats["depth"].min()), int(stats["depth"].max()) + 2
+    )
+    acc_bins: Float[np.ndarray, "n_bins"] = np.linspace(0, 1, 11)
+    heatmap_depth_acc: Float[np.ndarray, "depth_bins acc_bins"]
+    heatmap_depth_acc, _, _ = np.histogram2d(
+        stats["depth"][valid_mask], stats["accuracy"][valid_mask], bins=[depth_bins, acc_bins]
+    )
+
+    fig4, ax4 = plt.subplots()
+    heatmap_log: Float[np.ndarray, "depth_bins acc_bins"] = np.log10(
+        heatmap_depth_acc.T + 1
+    )  # +1 to avoid log(0)
+    im = ax4.imshow(heatmap_log, origin="lower", aspect="auto", cmap="Blues")
+    ax4.set_xticks(range(len(depth_bins) - 1))
+    ax4.set_xticklabels(depth_bins[:-1])
+    ax4.set_yticks(range(len(acc_bins) - 1))
+    ax4.set_yticklabels([f"{x:.1f}" for x in acc_bins[:-1]])
+    ax4.set_xlabel("Tree depth")
+    ax4.set_ylabel("Accuracy")
+    for i in range(len(depth_bins) - 1):
+        for j in range(len(acc_bins) - 1):
+            count: int = int(heatmap_depth_acc[i, j])
+            if count > 0:
+                ax4.text(i, j, str(count), ha="center", va="center")
+    plt.colorbar(im, ax=ax4, label="log10(count+1)")
+
+    # Heatmap: leaf count vs accuracy
+    leaf_bins: Int[np.ndarray, "n_bins"] = np.linspace(
+        int(stats["n_leaves"].min()), int(stats["n_leaves"].max()) + 1, 11, dtype=int
+    )
+    heatmap_leaf_acc: Float[np.ndarray, "leaf_bins acc_bins"]
+    heatmap_leaf_acc, _, _ = np.histogram2d(
+        stats["n_leaves"][valid_mask], stats["accuracy"][valid_mask], bins=[leaf_bins, acc_bins]
+    )
+
+    fig5, ax5 = plt.subplots()
+    heatmap_log = np.log10(heatmap_leaf_acc.T + 1)
+    im = ax5.imshow(heatmap_log, origin="lower", aspect="auto", cmap="Blues")
+    ax5.set_xticks(range(len(leaf_bins) - 1))
+    ax5.set_xticklabels(leaf_bins[:-1])
+    ax5.set_yticks(range(len(acc_bins) - 1))
+    ax5.set_yticklabels([f"{x:.1f}" for x in acc_bins[:-1]])
+    ax5.set_xlabel("Number of leaves")
+    ax5.set_ylabel("Accuracy")
+    for i in range(len(leaf_bins) - 1):
+        for j in range(len(acc_bins) - 1):
+            count: int = int(heatmap_leaf_acc[i, j])
+            if count > 0:
+                ax5.text(i, j, str(count), ha="center", va="center")
+    plt.colorbar(im, ax=ax5, label="log10(count+1)")
+
+    # Heatmap: depth vs leaf count
+    heatmap_depth_leaf: Float[np.ndarray, "depth_bins leaf_bins"]
+    heatmap_depth_leaf, _, _ = np.histogram2d(
+        stats["depth"][valid_mask], stats["n_leaves"][valid_mask], bins=[depth_bins, leaf_bins]
+    )
+
+    fig6, ax6 = plt.subplots()
+    heatmap_log = np.log10(heatmap_depth_leaf.T + 1)
+    im = ax6.imshow(heatmap_log, origin="lower", aspect="auto", cmap="Blues")
+    ax6.set_xticks(range(len(depth_bins) - 1))
+    ax6.set_xticklabels(depth_bins[:-1])
+    ax6.set_yticks(range(len(leaf_bins) - 1))
+    ax6.set_yticklabels(leaf_bins[:-1])
+    ax6.set_xlabel("Tree depth")
+    ax6.set_ylabel("Number of leaves")
+    for i in range(len(depth_bins) - 1):
+        for j in range(len(leaf_bins) - 1):
+            count: int = int(heatmap_depth_leaf[i, j])
+            if count > 0:
+                ax6.text(i, j, str(count), ha="center", va="center")
+    plt.colorbar(im, ax=ax6, label="log10(count+1)")

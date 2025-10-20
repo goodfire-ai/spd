@@ -27,6 +27,7 @@ from spd.clustering.ci_dt.plot import (
     plot_covariance,
     plot_layer_metrics,
     plot_selected_trees,
+    plot_tree_statistics,
 )
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
@@ -42,7 +43,7 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 # ----------------------- configuration -----------------------
 
 config = CIDTConfig(
-    n_samples=10,
+    n_samples=64, # batch size 64 -> 16GB vram
     activation_threshold=0.01,
     filter_dead_threshold=0.001,
     max_depth=8,
@@ -200,6 +201,13 @@ best_list = [t for t in sorted_triplets if not np.isnan(t[2])][-2:]
 
 plot_layer_metrics(per_layer_stats)
 print("Layer metrics plots generated.")
+
+# %%
+# ----------------------- plot: tree statistics -----------------------
+# Distributions of tree depth, leaf counts, and correlations with accuracy
+
+plot_tree_statistics(models, per_layer_stats)
+print("Tree statistics plots generated.")
 
 # %%
 # ----------------------- plot: activations -----------------------

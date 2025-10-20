@@ -115,7 +115,6 @@ def predict_k(
     proba = lm.model.predict_proba(X.astype(np.uint8))  # type: ignore
     # dbg_auto(proba)
     # dbg_auto(proba[0])
-    dbg(Counter(tuple(p.shape) for p in proba))
     P: np.ndarray = extract_prob_class_1(proba, lm.model)
     # dbg_auto(P)
     Y_hat: np.ndarray = (threshold <= P).astype(bool)
