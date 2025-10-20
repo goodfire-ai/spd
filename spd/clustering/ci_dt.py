@@ -27,7 +27,6 @@ from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.registry import EXPERIMENT_REGISTRY
 
 # ----------------------- config -----------------------
 
@@ -146,18 +145,14 @@ device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 # ----------------------- load model -----------------------
 
-# Load SPD run info and model
-exp_config = EXPERIMENT_REGISTRY[config.experiment_key]
-assert exp_config.canonical_run is not None, f"No canonical run found for {config.experiment_key}"
-assert exp_config.task_name == "lm", f"Only 'lm' task supported, got {exp_config.task_name}"
+wandb_run_path: str = "wandb:goodfire/spd/runs/lxs77xye"
 
-spd_run: SPDRunInfo = SPDRunInfo.from_path(exp_config.canonical_run)
+spd_run: SPDRunInfo = SPDRunInfo.from_path(wandb_run_path)
 model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
 model.to(device)
 cfg: Config = spd_run.config
 
-print(f"Loaded model from {exp_config.canonical_run}")
-print(f"Task: {exp_config.task_name}")
+print(f"Loaded model from {wandb_run_path}")
 
 # ----------------------- load dataset -----------------------
 
