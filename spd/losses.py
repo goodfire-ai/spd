@@ -196,12 +196,13 @@ def compute_total_loss(
                     batch=batch,
                     ci=ci.lower_leaky,
                     output_target_module_patterns=cfg.output_target_module_patterns,
+                    input_target_module_patterns=cfg.input_target_module_patterns,
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
 
         if isinstance(loss, dict):
             for key, value in loss.items():
-                terms[f"loss/{cfg.classname}_{key}"] = value.item()
+                terms[f"loss/{key}"] = value.item()
                 coeff = get_loss_coeff(cfg.coeff, current_frac_of_training)
                 total = total + coeff * value
         else:
