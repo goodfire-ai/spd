@@ -1,0 +1,5 @@
+{
+  "setup-worktree": [
+    "cp $ROOT_WORKTREE_PATH/.venv .venv"
+  ]
+}

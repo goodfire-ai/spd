@@ -8,10 +8,8 @@ from spd.configs import (
     CIMaskedReconLayerwiseLossConfig,
     CIMaskedReconLossConfig,
     CIMaskedReconSubsetLossConfig,
-    CosineSchedule,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
-    LinearSchedule,
     LossMetricConfigType,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
@@ -31,7 +29,7 @@ from spd.metrics import (
     importance_minimality_loss,
     pgd_recon_layerwise_loss,
     pgd_recon_loss,
-    pgd_recon_subset_loss,
+    pgd_recon_subset_loss,  # pyright: ignore[reportUnusedImport]  # noqa: F401
     stochastic_arb_hidden_acts_recon_loss,
     stochastic_hidden_acts_recon_loss,
     stochastic_recon_layerwise_loss,
@@ -39,20 +37,7 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
 )
 from spd.models.component_model import CIOutputs, ComponentModel
-from spd.scheduling import get_cosine_schedule_value, get_linear_schedule_value
-
-
-def get_loss_coeff(
-    coeff: LinearSchedule | CosineSchedule | float | int,
-    current_frac_of_training: float,
-) -> float:
-    match coeff:
-        case LinearSchedule():
-            return get_linear_schedule_value(coeff, current_frac_of_training)
-        case CosineSchedule():
-            return get_cosine_schedule_value(coeff, current_frac_of_training)
-        case float() | int():
-            return coeff
+from spd.scheduling import get_coeff_value
 
 
 def compute_total_loss(
@@ -96,6 +81,8 @@ def compute_total_loss(
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
+                    routing=cfg.subset_routing_cfg,
+                    current_frac_of_training=current_frac_of_training,
                 )
             case CIMaskedReconLayerwiseLossConfig():
                 loss = ci_masked_recon_layerwise_loss(
@@ -147,6 +134,8 @@ def compute_total_loss(
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
+                    routing=cfg.subset_routing_cfg,
+                    current_frac_of_training=current_frac_of_training,
                 )
             case PGDReconLossConfig():
                 loss = pgd_recon_loss(
@@ -167,6 +156,8 @@ def compute_total_loss(
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
+                    routing=cfg.subset_routing_cfg,
+                    current_frac_of_training=current_frac_of_training,
                 )
             case PGDReconLayerwiseLossConfig():
                 loss = pgd_recon_layerwise_loss(
@@ -195,18 +186,19 @@ def compute_total_loss(
                     n_mask_samples=n_mask_samples,
                     batch=batch,
                     ci=ci.lower_leaky,
-                    output_target_module_patterns=cfg.output_target_module_patterns,
+                    pre_target_module_patterns=cfg.pre_target_module_patterns,
+                    post_target_module_patterns=cfg.post_target_module_patterns,
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
 
         if isinstance(loss, dict):
             for key, value in loss.items():
-                terms[f"loss/{cfg.classname}_{key}"] = value.item()
-                coeff = get_loss_coeff(cfg.coeff, current_frac_of_training)
+                terms[f"loss/{key}"] = value.item()
+                coeff = get_coeff_value(cfg.coeff, current_frac_of_training)
                 total = total + coeff * value
         else:
             terms[f"loss/{cfg.classname}"] = loss.item()
-            coeff = get_loss_coeff(cfg.coeff, current_frac_of_training)
+            coeff = get_coeff_value(cfg.coeff, current_frac_of_training)
             total = total + coeff * loss
 
     terms["loss/total"] = total.item()
