@@ -4,6 +4,8 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
 
+_DEVICE: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 def matching_dist(
     X: Int[Tensor, "s n"],
 ) -> Float[Tensor, "s s"]:
@@ -31,11 +33,17 @@ def matching_dist_vec(
     return dists
 
 
-def matching_dist_np(X: Int[np.ndarray, "s n"]) -> Float[np.ndarray, "s s"]:
+def matching_dist_np(
+        X: Int[np.ndarray, "s n"],
+        device: torch.device = _DEVICE,
+    ) -> Float[np.ndarray, "s s"]:
 
-    return matching_dist(torch.from_numpy(X)).numpy()
+    return matching_dist(torch.tensor(X, device=device)).cpu().numpy()
 
 
-def matching_dist_vec_np(X: Int[np.ndarray, "s n"]) -> Float[np.ndarray, "s s"]:
+def matching_dist_vec_np(
+        X: Int[np.ndarray, "s n"],
+        device: torch.device = _DEVICE,
+    ) -> Float[np.ndarray, "s s"]:
 
-    return matching_dist_vec(torch.from_numpy(X)).numpy()
+    return matching_dist_vec(torch.tensor(X, device=device)).cpu().numpy()
