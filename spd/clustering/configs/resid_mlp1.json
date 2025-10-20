@@ -10,7 +10,7 @@
     "module_name_filter": null
   },
   "experiment_key": "resid_mlp1",
-  "distances_method": "perm_invariant_hamming",
+  "distances_methods": ["perm_invariant_hamming"],
   "n_batches": 8,
   "batch_size": 1024,
   "wandb_enabled": true,

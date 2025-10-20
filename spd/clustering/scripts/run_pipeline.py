@@ -88,15 +88,10 @@ class ClusteringPipelineConfig(BaseConfig):
     @classmethod
     def validate_distances_methods(cls, v: list[DistancesMethod]) -> list[DistancesMethod]:
         """Validate that distances_methods is non-empty and contains valid methods."""
-        if not v:
-            raise ValueError("distances_methods must contain at least one method")
-
-        valid_methods = {"perm_invariant_hamming", "matching_dist"}
-        for method in v:
-            if method not in valid_methods:
-                raise ValueError(
-                    f"Invalid distance method: {method}. Must be one of {valid_methods}"
-                )
+        assert all(
+            method in DistancesMethod.__args__
+            for method in v
+        ), f"Invalid distances_methods: {v}"
 
         return v
 

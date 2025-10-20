@@ -10,7 +10,7 @@ from spd.clustering.consts import (
     MergesArray,
     MergesAtIterArray,
 )
-from spd.clustering.math.matching_dist import matching_dist_np
+from spd.clustering.math.matching_dist import matching_dist_np, matching_dist_vec_np
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming_matrix
 
 DISTANCES_METHODS: dict[DistancesMethod, Callable[[MergesAtIterArray], DistancesArray]] = {
@@ -43,6 +43,14 @@ def compute_distances(
             merges_array_list = [normalized_merge_array[:, i, :] for i in range(n_iters)]
             distances_list = run_maybe_parallel(
                 func=matching_dist_np,
+                iterable=merges_array_list,
+                parallel=True,
+            )
+            return np.stack(distances_list, axis=0)
+        case "matching_dist_vec":
+            merges_array_list = [normalized_merge_array[:, i, :] for i in range(n_iters)]
+            distances_list = run_maybe_parallel(
+                func=matching_dist_vec_np,
                 iterable=merges_array_list,
                 parallel=True,
             )

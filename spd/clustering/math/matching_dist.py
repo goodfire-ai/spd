@@ -7,7 +7,6 @@ from torch import Tensor
 def matching_dist(
     X: Int[Tensor, "s n"],
 ) -> Float[Tensor, "s s"]:
-    """Compute the pairwise jaccard index between rows of X"""
 
     s_ensemble, _n_components = X.shape
     matches: Bool[Tensor, "s n n"] = X[:, :, None] == X[:, None, :]
@@ -16,14 +15,27 @@ def matching_dist(
 
     for i in range(s_ensemble):
         for j in range(i + 1, s_ensemble):
-            _largest_grp_size_j: int = int(matches[j].sum(dim=1).max().item())
             dist_mat = matches[i].float() - matches[j].float()
             dists[i, j] = torch.tril(dist_mat, diagonal=-1).abs().sum()
 
     return dists
 
+def matching_dist_vec(
+    X: Int[Tensor, "s n"],
+) -> Float[Tensor, "s s"]:
+    matches: Bool[Tensor, "s n n"] = (X[:, :, None] == X[:, None, :])
+    diffs: Bool[Tensor, "s s n n"] = matches[:, None, :, :] ^ matches[None, :, :, :]
+
+    dists_int: torch.Tensor = diffs.sum(dim=(-1, -2))
+    dists: Float[Tensor, "s s"] = dists_int.to(torch.float32)
+    return dists
+
 
 def matching_dist_np(X: Int[np.ndarray, "s n"]) -> Float[np.ndarray, "s s"]:
-    """Compute the pairwise jaccard index between rows of X"""
 
     return matching_dist(torch.from_numpy(X)).numpy()
+
+
+def matching_dist_vec_np(X: Int[np.ndarray, "s n"]) -> Float[np.ndarray, "s s"]:
+
+    return matching_dist_vec(torch.from_numpy(X)).numpy()
