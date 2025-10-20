@@ -5,10 +5,12 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import DensityBasedRouting, SubsetRoutingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
-from spd.utils.component_utils import sample_uniform_k_subset_routing_masks
+from spd.scheduling import get_coeff_value
+from spd.utils.component_utils import calc_routing_masks
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
@@ -19,12 +21,22 @@ def _ci_masked_recon_subset_loss_update(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
+    routing: SubsetRoutingType,
+    current_frac_of_training: float,
 ) -> tuple[Float[Tensor, ""], int]:
-    subset_routing_masks = sample_uniform_k_subset_routing_masks(
-        mask_shape=next(iter(ci.values())).shape[:-1],
+    materialized_routing = (
+        get_coeff_value(routing.k, current_frac_of_training)
+        if isinstance(routing, DensityBasedRouting)
+        else routing
+    )
+
+    subset_routing_masks = calc_routing_masks(
+        routing=materialized_routing,
+        leading_dims=next(iter(ci.values())).shape[:-1],
         module_names=list(ci.keys()),
         device=batch.device,
     )
+
     mask_infos = make_mask_infos(
         component_masks=ci,
         routing_masks=subset_routing_masks,
@@ -48,6 +60,8 @@ def ci_masked_recon_subset_loss(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
+    routing: SubsetRoutingType,
+    current_frac_of_training: float,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _ci_masked_recon_subset_loss_update(
         model=model,
@@ -55,6 +69,8 @@ def ci_masked_recon_subset_loss(
         batch=batch,
         target_out=target_out,
         ci=ci,
+        routing=routing,
+        current_frac_of_training=current_frac_of_training,
     )
     return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)
 
@@ -65,10 +81,16 @@ class CIMaskedReconSubsetLoss(Metric):
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
-        self, model: ComponentModel, device: str, output_loss_type: Literal["mse", "kl"]
+        self,
+        model: ComponentModel,
+        device: str,
+        output_loss_type: Literal["mse", "kl"],
+        routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.routing: SubsetRoutingType = routing
+
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -79,6 +101,7 @@ class CIMaskedReconSubsetLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
+        current_frac_of_training: float,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _ci_masked_recon_subset_loss_update(
@@ -87,6 +110,8 @@ class CIMaskedReconSubsetLoss(Metric):
             batch=batch,
             target_out=target_out,
             ci=ci.lower_leaky,
+            routing=self.routing,
+            current_frac_of_training=current_frac_of_training,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples
