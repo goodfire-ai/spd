@@ -16,7 +16,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.dataset import get_clustering_dataloader
+from spd.clustering.dataset import load_dataset
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
@@ -45,24 +45,25 @@ MODEL: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 MODEL.to(DEVICE)
 SPD_CONFIG = SPD_RUN.config
 
-# Use split_dataset with RunConfig to get real data
+# Use load_dataset with RunConfig to get real data
 CONFIG: ClusteringRunConfig = ClusteringRunConfig(
     merge_config=MergeConfig(batch_size=2),
     model_path=MODEL_PATH,
-    task_name="lm",
-    n_batches=1,
+    batch_size=2,
+    dataset_seed=42,
+    idx_in_ensemble=0,
     dataset_streaming=True,  # no effect since we do this manually
 )
 
-BATCHES, _ = get_clustering_dataloader(
-    config=CONFIG,
+DATA_BATCH: Int[Tensor, "batch_size n_ctx"] = load_dataset(
+    model_path=MODEL_PATH,
+    task_name="lm",
+    batch_size=CONFIG.batch_size,
+    seed=CONFIG.dataset_seed,
+    # config=CONFIG,
     config_kwargs=dict(streaming=True),  # see https://github.com/goodfire-ai/spd/pull/199
 )
 
-# %%
-# Load data batch
-# ============================================================
-DATA_BATCH: Int[Tensor, "batch_size n_ctx"] = next(BATCHES)
 
 # %%
 # Get component activations
@@ -92,7 +93,6 @@ plot_activations(
     save_dir=TEMP_DIR,
     n_samples_max=256,
     wandb_run=None,
-    save_fmt="svg",
 )
 
 # %%
@@ -111,10 +111,9 @@ MERGE_CFG: MergeConfig = MergeConfig(
 # Modern approach: run merge_iteration multiple times to create ensemble
 ENSEMBLE_SIZE: int = 2
 HISTORIES: list[MergeHistory] = []
-for i in range(ENSEMBLE_SIZE):
+for _i in range(ENSEMBLE_SIZE):
     HISTORY: MergeHistory = merge_iteration(
         merge_config=MERGE_CFG,
-        batch_id=f"batch_{i}",
         activations=PROCESSED_ACTIVATIONS.activations,
         component_labels=PROCESSED_ACTIVATIONS.labels,
         log_callback=None,

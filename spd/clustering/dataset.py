@@ -1,177 +1,137 @@
-"""
-Loads and splits dataset into batches, returning them as an iterator.
+"""Dataset loading utilities for clustering runs.
+
+Each clustering run loads its own dataset batch, seeded by the run index.
 """
 
-from collections.abc import Generator, Iterator
 from typing import Any
 
-import torch
-from muutils.spinner import SpinnerContext
-from torch import Tensor
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-
 from spd.clustering.consts import BatchTensor
-from spd.clustering.merge_run_config import ClusteringRunConfig
-from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
-from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
+from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.spd_types import TaskName
 
 
-def get_clustering_dataloader(
-    config: ClusteringRunConfig,
-    ddp_rank: int = 0,
-    ddp_world_size: int = 1,
+def load_dataset(
+    model_path: str,
+    task_name: TaskName,
+    batch_size: int,
+    seed: int,
     **kwargs: Any,
-) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
-    """Split a dataset into n_batches of batch_size, returning iterator and config"""
-    ds: Generator[BatchTensor]
-    ds_config_dict: dict[str, Any]
-    match config.task_name:
+) -> BatchTensor:
+    """Load a single batch for clustering.
+
+    Each run gets its own dataset batch, seeded by idx_in_ensemble.
+
+    Args:
+        model_path: Path to decomposed model
+        task_name: Task type
+        batch_size: Batch size
+        seed: Random seed for dataset
+
+    Returns:
+        Single batch of data
+    """
+    match task_name:
         case "lm":
-            ds, ds_config_dict = _get_dataloader_lm(
-                model_path=config.model_path,
-                batch_size=config.merge_config.batch_size,
-                ddp_rank=ddp_rank,
-                ddp_world_size=ddp_world_size,
+            return _load_lm_batch(
+                model_path=model_path,
+                batch_size=batch_size,
+                seed=seed,
                 **kwargs,
             )
         case "resid_mlp":
-            ds, ds_config_dict = _get_dataloader_resid_mlp(
-                model_path=config.model_path,
-                batch_size=config.merge_config.batch_size,
-                ddp_rank=ddp_rank,
-                ddp_world_size=ddp_world_size,
+            return _load_resid_mlp_batch(
+                model_path=model_path,
+                batch_size=batch_size,
+                seed=seed,
                 **kwargs,
             )
-        case name:
-            raise ValueError(
-                f"Unsupported task name '{name}'. Supported tasks are 'lm' and 'resid_mlp'. {config.model_path=}, {name=}"
-            )
-
-    # Limit iterator to n_batches
-    def limited_iterator() -> Iterator[BatchTensor]:
-        batch_idx: int
-        batch: BatchTensor
-        for batch_idx, batch in tqdm(enumerate(ds), total=config.n_batches, unit="batch"):
-            if batch_idx >= config.n_batches:
-                break
-            yield batch
-
-    return limited_iterator(), ds_config_dict
+        case _:
+            raise ValueError(f"Unsupported task: {task_name}")
 
 
-def _get_dataloader_lm(
-    model_path: str,
-    batch_size: int,
-    config_kwargs: dict[str, Any] | None = None,
-    ddp_rank: int = 0,
-    ddp_world_size: int = 1,
-) -> tuple[Generator[BatchTensor], dict[str, Any]]:
-    """split up a SS dataset into n_batches of batch_size, returned the saved paths
+def _load_lm_batch(
+    model_path: str, batch_size: int, seed: int, config_kwargs: dict[str, Any] | None = None
+) -> BatchTensor:
+    """Load a batch for language model task."""
+    spd_run = SPDRunInfo.from_path(model_path)
+    cfg = spd_run.config
 
-    1. load the config for a SimpleStories SPD Run given by model_path
-    2. create a DataLoader for the dataset
-    3. iterate over the DataLoader and save each batch to a file
+    assert isinstance(cfg.task_config, LMTaskConfig), (
+        f"Expected task_config to be of type LMTaskConfig, but got {type(cfg.task_config) = }"
+    )
 
+    try:
+        pretrained_model_name: str = cfg.pretrained_model_name  # pyright: ignore[reportAssignmentType]
+        assert pretrained_model_name is not None
+    except Exception as e:
+        raise AttributeError("Could not find 'pretrained_model_name' in the SPD Run config") from e
 
-    """
-    with SpinnerContext(message=f"Loading SPD Run Config for '{model_path}'"):
-        spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
-        cfg: Config = spd_run.config
+    config_kwargs_: dict[str, Any] = {
+        **dict(
+            is_tokenized=False,
+            streaming=False,
+        ),
+        **(config_kwargs or {}),
+    }
 
-        try:
-            pretrained_model_name: str = cfg.pretrained_model_name  # pyright: ignore[reportAssignmentType]
-            assert pretrained_model_name is not None
-        except Exception as e:
-            raise AttributeError(
-                "Could not find 'pretrained_model_name' in the SPD Run config, but called `_get_dataloader_lm`"
-            ) from e
+    dataset_config = DatasetConfig(
+        name=cfg.task_config.dataset_name,
+        hf_tokenizer_path=pretrained_model_name,
+        split=cfg.task_config.train_data_split,
+        n_ctx=cfg.task_config.max_seq_len,
+        seed=seed,  # Use run-specific seed
+        column_name=cfg.task_config.column_name,
+        **config_kwargs_,
+    )
 
-        assert isinstance(cfg.task_config, LMTaskConfig), (
-            f"Expected task_config to be of type LMTaskConfig since using `_get_dataloader_lm`, but got {type(cfg.task_config) = }"
-        )
+    dataloader, _ = create_data_loader(
+        dataset_config=dataset_config,
+        batch_size=batch_size,
+        buffer_size=cfg.task_config.buffer_size,
+        global_seed=seed,  # Use run-specific seed
+        ddp_rank=0,
+        ddp_world_size=1,
+    )
 
-        config_kwargs_: dict[str, Any] = {
-            **dict(
-                is_tokenized=False,
-                streaming=False,
-                seed=0,
-            ),
-            **(config_kwargs or {}),
-        }
-
-        dataset_config: DatasetConfig = DatasetConfig(
-            name=cfg.task_config.dataset_name,
-            hf_tokenizer_path=pretrained_model_name,
-            split=cfg.task_config.train_data_split,
-            n_ctx=cfg.task_config.max_seq_len,
-            column_name=cfg.task_config.column_name,
-            **config_kwargs_,
-        )
-
-    with SpinnerContext(message="getting dataloader..."):
-        dataloader: DataLoader[dict[str, torch.Tensor]]
-        dataloader, _tokenizer = create_data_loader(
-            dataset_config=dataset_config,
-            batch_size=batch_size,
-            buffer_size=cfg.task_config.buffer_size,
-            global_seed=cfg.seed,
-            ddp_rank=ddp_rank,
-            ddp_world_size=ddp_world_size,
-        )
-
-    return (batch["input_ids"] for batch in dataloader), dataset_config.model_dump(mode="json")
+    # Get first batch
+    batch = next(iter(dataloader))
+    return batch["input_ids"]
 
 
-def _get_dataloader_resid_mlp(
-    model_path: str,
-    batch_size: int,
-    ddp_rank: int = 0,
-    ddp_world_size: int = 1,
-) -> tuple[Generator[torch.Tensor], dict[str, Any]]:
-    """Split a ResidMLP dataset into n_batches of batch_size and save the batches."""
+def _load_resid_mlp_batch(model_path: str, batch_size: int, seed: int) -> BatchTensor:
+    """Load a batch for ResidMLP task."""
     from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
     from spd.utils.data_utils import DatasetGeneratedDataLoader
 
-    # TODO: this is a hack. idk what the best way to handle this is
-    shuffle_data: bool = ddp_world_size <= 1
+    spd_run = SPDRunInfo.from_path(model_path)
+    cfg = spd_run.config
+    component_model = ComponentModel.from_pretrained(spd_run.checkpoint_path)
 
-    with SpinnerContext(message=f"Loading SPD Run Config for '{model_path}'"):
-        spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
-        # SPD_RUN = SPDRunInfo.from_path(EXPERIMENT_REGISTRY["resid_mlp3"].canonical_run)
-        component_model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
-        cfg: Config = spd_run.config
+    assert isinstance(cfg.task_config, ResidMLPTaskConfig), (
+        f"Expected task_config to be of type ResidMLPTaskConfig, but got {type(cfg.task_config) = }"
+    )
+    assert isinstance(component_model.target_model, ResidMLP), (
+        f"Expected target_model to be of type ResidMLP, but got {type(component_model.target_model) = }"
+    )
 
-    with SpinnerContext(message="Creating ResidMLPDataset..."):
-        assert isinstance(cfg.task_config, ResidMLPTaskConfig), (
-            f"Expected task_config to be of type ResidMLPTaskConfig since using `_get_dataloader_resid_mlp`, but got {type(cfg.task_config) = }"
-        )
-        assert isinstance(component_model.target_model, ResidMLP), (
-            f"Expected patched_model to be of type ResidMLP since using `_get_dataloader_resid_mlp`, but got {type(component_model.patched_model) = }"
-        )
+    # Create dataset with run-specific seed
+    dataset = ResidMLPDataset(
+        n_features=component_model.target_model.config.n_features,
+        feature_probability=cfg.task_config.feature_probability,
+        device="cpu",
+        calc_labels=False,
+        label_type=None,
+        act_fn_name=None,
+        label_fn_seed=seed,  # Use run-specific seed
+        label_coeffs=None,
+        data_generation_type=cfg.task_config.data_generation_type,
+    )
 
-        assert isinstance(component_model.target_model.config, ResidMLPModelConfig), (
-            f"Expected patched_model.config to be of type ResidMLPModelConfig since using `_get_dataloader_resid_mlp`, but got {type(component_model.target_model.config) = }"
-        )
-        resid_mlp_dataset_kwargs: dict[str, Any] = dict(
-            n_features=component_model.target_model.config.n_features,
-            feature_probability=cfg.task_config.feature_probability,
-            device="cpu",
-            calc_labels=False,
-            label_type=None,
-            act_fn_name=None,
-            label_fn_seed=None,
-            label_coeffs=None,
-            data_generation_type=cfg.task_config.data_generation_type,
-        )
-        dataset: ResidMLPDataset = ResidMLPDataset(**resid_mlp_dataset_kwargs)
-
-        dataloader: DatasetGeneratedDataLoader[tuple[Tensor, Tensor]] = DatasetGeneratedDataLoader(
-            dataset, batch_size=batch_size, shuffle=shuffle_data
-        )
-
-    return (batch[0] for batch in dataloader), resid_mlp_dataset_kwargs
+    # Generate batch
+    dataloader = DatasetGeneratedDataLoader(dataset, batch_size=batch_size, shuffle=False)
+    batch, _ = next(iter(dataloader))
+    return batch

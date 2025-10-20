@@ -1,33 +1,24 @@
-# Example MergeRunConfig in YAML format
+model_path: wandb:goodfire/spd/runs/zxbu57pt  # WandB path to the decomposed model
+batch_size: 8  # Batch size for processing -- number of samples for each run in the ensemble
+dataset_seed: 0  # Note, overridden if run in the pipeline (spd/clustering/scripts/run_pipeline.py)
+# idx_in_ensemble: 0  # Note, overridden if run in the pipeline (spd/clustering/scripts/run_pipeline.py)
+# output_dir: .data/clustering/clustering_runs  # Note, overridden if run in the pipeline (spd/clustering/scripts/run_pipeline.py)
+# ensemble_id: 1234567890  # Note, overridden if run in the pipeline (spd/clustering/scripts/run_pipeline.py)
 
-# Merge algorithm parameters (wrapped in merge_config)
 merge_config:
   activation_threshold: 0.01  # set to null to use scalar activations for cost calculation
   alpha: 1.0  # rank penalty term
-  iters: 100  # iterations to run. setting this to exactly the number of components can be buggy when doing ensembles, so set it to a bit less?
+  iters: 10  # iterations to run. setting this to exactly the number of components can be buggy when doing ensembles, so set it to a bit less?
   merge_pair_sampling_method: "range"  # Method for sampling merge pairs: 'range' or 'mcmc'
   merge_pair_sampling_kwargs:
     threshold: 0.05  # For range sampler: fraction of the range of costs to sample from
   filter_dead_threshold: 0.001  # Threshold for filtering dead components
   module_name_filter: null  # Can be a string prefix like "model.layers.0." if you want to do only some modules
 
-# Run configuration
-model_path: wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh  # WandB path to the decomposed model
-task_name: lm  # Task name (must be explicit: tms, resid_mlp, lm, ih)
-# experiment_key: tms_5-2  # Alternative: use experiment key from EXPERIMENT_REGISTRY
-n_batches: 10  # Ensemble size
-batch_size: 64  # Batch size for processing -- number of samples for each run in the ensemble
-
-# WandB configuration
-wandb_enabled: false  # Enable WandB logging
-wandb_project: spd-cluster  # WandB project name
-intervals:
+wandb_project: spd-cluster
+wandb_entity: goodfire
+logging_intervals:
   stat: 1       # for k_groups, merge_pair_cost, mdl_loss
   tensor: 100   # for wandb_log_tensor and fraction_* calculations
   plot: 100     # for calling the plotting callback
   artifact: 100 # for calling the artifact callback
-
-# Optional: Override defaults (typically set via CLI args)
-# base_path: .data/clustering/  # defaults to .data/clustering/
-# workers_per_device: 1  # defaults to 1
-# devices: ["cpu"]  # defaults to ["cpu"], CLI will override with ["cuda"] if available
