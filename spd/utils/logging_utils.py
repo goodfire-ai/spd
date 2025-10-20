@@ -10,7 +10,6 @@ from torch import Tensor
 from tqdm import tqdm
 
 from spd.models.component_model import ComponentModel
-from spd.utils.general_utils import runtime_cast
 
 
 def local_log(data: dict[str, Any], step: int, out_dir: Path) -> None:
@@ -50,7 +49,9 @@ def get_grad_norms_dict(
     comp_n_params = 0
     for target_module_path, component in component_model.components.items():
         for local_param_name, local_param in component.named_parameters():
-            param_grad = runtime_cast(Tensor, local_param.grad)
+            assert (param_grad := local_param.grad) is not None, (
+                f"Gradient is None for {target_module_path}.{local_param_name}"
+            )
             param_grad_sum_sq = param_grad.pow(2).sum()
             key = f"components/{target_module_path}.{local_param_name}"
             out[key] = param_grad_sum_sq.sqrt().item()
@@ -61,7 +62,9 @@ def get_grad_norms_dict(
     ci_fn_n_params = 0
     for target_module_path, ci_fn in component_model.ci_fns.items():
         for local_param_name, local_param in ci_fn.named_parameters():
-            ci_fn_grad = runtime_cast(Tensor, local_param.grad)
+            assert (ci_fn_grad := local_param.grad) is not None, (
+                f"Gradient is None for {target_module_path}.{local_param_name}"
+            )
             ci_fn_grad_sum_sq = ci_fn_grad.pow(2).sum()
             key = f"ci_fns/{target_module_path}.{local_param_name}"
             assert key not in out, f"Key {key} already exists in grad norms log"

@@ -38,7 +38,12 @@ def _stochastic_hidden_acts_recon_loss_update(
         for _ in range(n_mask_samples)
     ]
     for stoch_mask_infos in stoch_mask_infos_list:
-        comp_pre_weight_acts = model(batch, mask_infos=stoch_mask_infos, cache_type="input").cache
+        comp_pre_weight_acts = model(
+            batch,
+            mask_infos=stoch_mask_infos,
+            cache_type="input",
+            cache_points=list(pre_weight_acts.keys()),
+        ).cache
 
         # Calculate MSE between pre_weight_acts with and without components
         for layer_name, target_acts in pre_weight_acts.items():

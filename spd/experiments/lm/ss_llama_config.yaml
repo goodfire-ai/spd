@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=../../../config.schema.json
+
 # This config expects to be run on 8 H100s
 
 # --- WandB ---
@@ -7,39 +9,58 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 1200
+C: 1000
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
-ci_fn_hidden_dims: [400]
+ci_fn_hidden_dims: [512]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["model.embed_tokens"]
-identity_module_patterns: null
+target_module_patterns:
+  - "model.layers.*.self_attn.q_proj"
+  - "model.layers.*.self_attn.k_proj"
+  - "model.layers.*.self_attn.v_proj"
+  - "model.layers.*.self_attn.o_proj"
+  - "model.layers.*.mlp.down_proj"
+  - "model.layers.*.mlp.gate_proj"
+  - "model.layers.*.mlp.up_proj"
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0003
+    coeff: 0.003
     pnorm: 2.0
-    p_anneal_start_frac: 0.0
-    p_anneal_final_p: 0.7
-    p_anneal_end_frac: 1.0
-  # - classname: "StochasticArbHiddenActsReconLoss"
-  #   coeff: 1.0
-  #   output_target_module_patterns: ["model.embed_tokens"]
-  - classname: "StochasticReconLoss"
+  - classname: "StochasticReconSubsetLoss"
+    subset_routing_cfg:
+      k:
+        type: "linear"
+        start_value: 0
+        end_value: 1.0
+        start_frac: 0
+        end_frac: 1.0
+    coeff: 1.0
+  - classname: "PGDReconSubsetLoss"
+    init: "random"
+    step_size: 0.05
+    n_steps: 10
+    mask_scope: "shared_across_batch"
+    subset_routing_cfg:
+      k:
+        type: "linear"
+        start_value: 0.05
+        end_value: 1.0
+        start_frac: 0
+        end_frac: 1.0
     coeff: 1.0
 
 output_loss_type: kl
 
 # --- Training ---
 batch_size: 256
-eval_batch_size: 128
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 1
+eval_batch_size: 64
+n_eval_steps: 5
 steps: 50000
 lr: 0.0005
 lr_schedule: cosine
-lr_warmup_pct: 0.0
-lr_exponential_halflife: null
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
@@ -47,11 +68,10 @@ faithfulness_warmup_lr: 0.01
 faithfulness_warmup_weight_decay: 0.1
 
 # --- Logging & Saving ---
-train_log_freq: 200
-eval_freq: 1000
+train_log_freq: 25
+eval_freq: 250
 slow_eval_freq: 2000
 slow_eval_on_first_step: true
-n_eval_steps: 5
 save_freq: null
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
@@ -62,23 +82,6 @@ eval_metric_configs:
   - classname: "CEandKLLosses"
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
-  - classname: "StochasticArbHiddenActsReconLoss"
-    output_target_module_patterns:
-      - "model.embed_tokens"
-      #
-      - "model.layers.*.input_layernorm"
-      #
-      - "model.layers.*.self_attn.q_proj"
-      - "model.layers.*.self_attn.k_proj"
-      - "model.layers.*.self_attn.v_proj"
-      - "model.layers.*.self_attn.o_proj"
-      #
-      - "model.layers.*.post_attention_layernorm"
-      #
-      - "model.layers.*.mlp.down_proj"
-      - "model.layers.*.mlp.up_proj"
-      #
-      - "model.norm"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM
