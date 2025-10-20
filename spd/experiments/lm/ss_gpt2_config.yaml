@@ -40,7 +40,7 @@ faithfulness_warmup_lr: 0.01
 faithfulness_warmup_weight_decay: 0.1
 
 # --- Logging & Saving ---
-train_log_freq: 100
+train_log_freq: 20
 eval_freq: 1000
 slow_eval_freq: 5000
 slow_eval_on_first_step: true
