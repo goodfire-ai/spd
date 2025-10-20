@@ -66,7 +66,7 @@ def sample_uniform_k_subset_routing_masks(
         generator=generator,
     )
 
-    perms: Int[Tensor, "k_modules ..."] = rand_perm(
+    perms: Int[Tensor, "module ..."] = rand_perm(
         shape=(len(module_names), *mask_shape),
         dim=0,
         device=device,
@@ -76,17 +76,39 @@ def sample_uniform_k_subset_routing_masks(
     return {mod: perms[i] < k_modules_to_route for i, mod in enumerate(module_names)}
 
 
-RoutingType = Literal["uniform_k-stochastic", "all"]
+def sample_k_subset_routing_masks(
+    module_names: list[str],
+    mask_shape: tuple[int, ...],
+    device: torch.device | str,
+    n_layers_active: float,
+) -> dict[str, Bool[Tensor, "..."]]:
+    perms: Int[Tensor, "module ..."] = rand_perm(
+        shape=(len(module_names), *mask_shape),
+        dim=0,
+        device=device,
+    )
+
+    return {
+        mod: layer_perm_slice < n_layers_active
+        for mod, layer_perm_slice in zip(module_names, perms, strict=True)
+    }
+
+
+RoutingType = Literal["all"] | Literal["uniform_k-stochastic"] | float
 """How to choose which (batch,) or (batch, seq_len) positions to route to components or target.
 
+all:
+    use components for all positions
 uniform_k-stochastic:
     for each position, sample k from [1, n_modules], then route to components for k out of
     `n_modules` modules
-all:
-    use components for all positions
-given:
-    use the given routing masks
+(float): map 0 -> 1 and 1 -> n_modules
 """
+
+
+# todo check this
+def _interpolate(v1: float, v2: float, pos: float):
+    return v1 + (pos * (v2 - v1))
 
 
 def calc_routing_masks(
@@ -100,6 +122,11 @@ def calc_routing_masks(
             return "all"
         case "uniform_k-stochastic":
             return sample_uniform_k_subset_routing_masks(leading_dims, module_names, device)
+        case float() | int():
+            n_layers_active = _interpolate(1, len(module_names), routing)
+            return sample_k_subset_routing_masks(
+                module_names, leading_dims, device, n_layers_active
+            )
 
 
 def calc_stochastic_component_mask_info(
@@ -131,12 +158,17 @@ def calc_stochastic_component_mask_info(
                 torch.rand(leading_dims, device=device, dtype=dtype),
             )
 
+    routing_masks = calc_routing_masks(
+        routing=routing,
+        leading_dims=leading_dims,
+        module_names=list(causal_importances.keys()),
+        device=device,
+    )
+
     return make_mask_infos(
         component_masks=component_masks,
         weight_deltas_and_masks=weight_deltas_and_masks,
-        routing_masks=calc_routing_masks(
-            routing, leading_dims, list(causal_importances.keys()), device
-        ),
+        routing_masks=routing_masks,
     )
 
 
