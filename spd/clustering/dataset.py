@@ -132,7 +132,7 @@ def _get_dataloader_resid_mlp(
     batch_size: int,
     ddp_rank: int = 0,
     ddp_world_size: int = 1,
-) -> tuple[Generator[torch.Tensor, None, None], dict[str, Any]]:
+) -> tuple[Generator[torch.Tensor], dict[str, Any]]:
     """Split a ResidMLP dataset into n_batches of batch_size and save the batches."""
     from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
     from spd.utils.data_utils import DatasetGeneratedDataLoader
