@@ -56,21 +56,12 @@ class ClusteringPipelineStorage(StorageBase):
     _ENSEMBLE_META = "ensemble_meta.json"
     _ENSEMBLE_MERGE_ARRAY = "ensemble_merge_array.npz"
 
-    @property
-    def pipeline_config_path(self) -> Path:
-        return self.base_dir / self._PIPELINE_CONFIG
-
-    @property
-    def run_ids_path(self) -> Path:
-        return self.base_dir / self._RUN_IDS
-
-    @property
-    def ensemble_meta_path(self) -> Path:
-        return self.base_dir / self._ENSEMBLE_META
-
-    @property
-    def ensemble_merge_array_path(self) -> Path:
-        return self.base_dir / self._ENSEMBLE_MERGE_ARRAY
+    def __init__(self, execution_stamp: ExecutionStamp) -> None:
+        super().__init__(execution_stamp)
+        self.pipeline_config_path: Path = self.base_dir / self._PIPELINE_CONFIG
+        self.run_ids_path: Path = self.base_dir / self._RUN_IDS
+        self.ensemble_meta_path: Path = self.base_dir / self._ENSEMBLE_META
+        self.ensemble_merge_array_path: Path = self.base_dir / self._ENSEMBLE_MERGE_ARRAY
 
     def distances_path(self, method: DistancesMethod) -> Path:
         return self.base_dir / f"distances_{method}.npz"

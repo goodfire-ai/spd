@@ -68,13 +68,10 @@ class ClusteringRunStorage(StorageBase):
     _CONFIG = "clustering_run_config.json"
     _HISTORY = "history.npz"
 
-    @property
-    def config_path(self) -> Path:
-        return self.base_dir / self._CONFIG
-
-    @property
-    def history_path(self) -> Path:
-        return self.base_dir / self._HISTORY
+    def __init__(self, execution_stamp: ExecutionStamp) -> None:
+        super().__init__(execution_stamp)
+        self.config_path: Path = self.base_dir / self._CONFIG
+        self.history_path: Path = self.base_dir / self._HISTORY
 
 
 LogCallback = Callable[
