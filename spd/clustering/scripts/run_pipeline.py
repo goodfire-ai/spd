@@ -271,7 +271,7 @@ def main(
         run_script_array_local(
             commands=calc_distances_commands,
             parallel=local_calc_distances_parallel,
-            track_timing=True,
+            track_resources=True,
         )
 
         logger.section("complete!")

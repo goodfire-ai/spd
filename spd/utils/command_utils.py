@@ -8,31 +8,34 @@ from spd.log import logger
 
 
 def run_script_array_local(
-    commands: list[str], parallel: bool = False, track_timing: bool = False
-) -> dict[str, float] | None:
+    commands: list[str], parallel: bool = False, track_resources: bool = False
+) -> dict[str, dict[str, float]] | None:
     """Run multiple shell-safe command strings locally.
 
     Args:
         commands: List of shell-safe command strings (built with shlex.join())
         parallel: If True, run all commands in parallel. If False, run sequentially.
-        track_timing: If True, track and return timing for each command using /usr/bin/time.
+        track_resources: If True, track and return resource usage for each command using /usr/bin/time.
 
     Returns:
-        If track_timing is True, returns dict mapping commands to execution times in seconds.
+        If track_resources is True, returns dict mapping commands to resource metrics dict.
+        Resource metrics include: K (avg memory KB), M (max memory KB), P (CPU %),
+        S (system CPU sec), U (user CPU sec), e (wall time sec).
         Otherwise returns None.
     """
     n_commands = len(commands)
-    timings: dict[str, float] = {}
-    time_files: list[Path] = []
+    resources: dict[str, dict[str, float]] = {}
+    resource_files: list[Path] = []
 
-    # Wrap commands with /usr/bin/time if timing is requested
-    if track_timing:
+    # Wrap commands with /usr/bin/time if resource tracking is requested
+    if track_resources:
         wrapped_commands: list[str] = []
         for cmd in commands:
-            time_file = Path(tempfile.mktemp(suffix=".time"))  # pyright: ignore[reportDeprecated]
-            time_files.append(time_file)
-            # Use /usr/bin/time to track wall-clock time
-            wrapped_cmd = f'/usr/bin/time -f "%e" -o {time_file} {cmd}'
+            resource_file = Path(tempfile.mktemp(suffix=".resources"))  # pyright: ignore[reportDeprecated]
+            resource_files.append(resource_file)
+            # Use /usr/bin/time to track comprehensive resource usage
+            # K=avg total mem, M=max resident, P=CPU%, S=system time, U=user time, e=wall time
+            wrapped_cmd = f'/usr/bin/time -f "K:%K M:%M P:%P S:%S U:%U e:%e" -o {resource_file} {cmd}'
             wrapped_commands.append(wrapped_cmd)
         commands_to_run = wrapped_commands
     else:
@@ -61,24 +64,48 @@ def run_script_array_local(
                     logger.error(f"Process {proc.pid} failed with exit code {proc.returncode}")
             logger.section("LOCAL EXECUTION COMPLETE")
 
-        # Read timing results
-        if track_timing:
-            for cmd, time_file in zip(commands, time_files, strict=True):
-                if time_file.exists():
-                    elapsed = float(time_file.read_text().strip())
-                    timings[cmd] = elapsed
-                else:
-                    logger.warning(f"Timing file not found for: {cmd}")
+        # Read resource usage results
+        if track_resources:
+            for cmd, resource_file in zip(commands, resource_files, strict=True):
+                if resource_file.exists():
+                    # Parse format: "K:123 M:456 P:78% S:1.23 U:4.56 e:7.89"
+                    output = resource_file.read_text().strip()
+                    metrics: dict[str, float] = {}
 
-            logger.section("TIMING RESULTS")
-            for cmd, elapsed in timings.items():
-                logger.info(f"{elapsed:.2f}s - {cmd}")
+                    for part in output.split():
+                        if ":" in part:
+                            key, value = part.split(":", 1)
+                            # Remove % sign from CPU percentage
+                            value = value.rstrip("%")
+                            try:
+                                metrics[key] = float(value)
+                            except ValueError:
+                                logger.warning(f"Could not parse {key}:{value} for command: {cmd}")
+
+                    resources[cmd] = metrics
+                else:
+                    logger.warning(f"Resource file not found for: {cmd}")
+
+            # Log comprehensive resource usage table
+            logger.section("RESOURCE USAGE RESULTS")
+            for cmd, metrics in resources.items():
+                logger.info(f"Command: {cmd}")
+                logger.info(
+                    f"  Time: {metrics.get('e', 0):.2f}s wall, "
+                    f"{metrics.get('U', 0):.2f}s user, "
+                    f"{metrics.get('S', 0):.2f}s system"
+                )
+                logger.info(
+                    f"  Memory: {metrics.get('M', 0) / 1024:.1f} MB peak, "
+                    f"{metrics.get('K', 0) / 1024:.1f} MB avg"
+                )
+                logger.info(f"  CPU: {metrics.get('P', 0):.1f}%")
 
     finally:
         # Clean up temp files
-        if track_timing:
-            for time_file in time_files:
-                if time_file.exists():
-                    time_file.unlink()
+        if track_resources:
+            for resource_file in resource_files:
+                if resource_file.exists():
+                    resource_file.unlink()
 
-    return timings if track_timing else None
+    return resources if track_resources else None
