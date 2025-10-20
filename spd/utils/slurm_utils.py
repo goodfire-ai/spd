@@ -54,6 +54,7 @@ def _create_slurm_script_base(
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
         {sbatch_directives}
+        #SBATCH --distribution=pack
 
         # Create job-specific working directory
         WORK_DIR="/tmp/spd-gf-copy-{work_dir_suffix}"
