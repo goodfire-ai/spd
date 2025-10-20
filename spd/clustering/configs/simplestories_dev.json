@@ -2,7 +2,7 @@
   "merge_config": {
     "activation_threshold": 0.1,
     "alpha": 1.0,
-    "iters": 20,
+    "iters": 500,
     "merge_pair_sampling_method": "range",
     "merge_pair_sampling_kwargs": {"threshold": 0.01},
     "pop_component_prob": 0,
