@@ -7,26 +7,21 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 1200
+C: 5000
 n_mask_samples: 1
-ci_fn_type: "shared_mlp"
-ci_fn_hidden_dims: [400]
+ci_fn_type: "mlp"
+ci_fn_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
 target_module_patterns: ["model.embed_tokens"]
-identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0003
+    coeff: 0.05
     pnorm: 2.0
-    p_anneal_start_frac: 0.0
-    p_anneal_final_p: 0.7
-    p_anneal_end_frac: 1.0
-  # - classname: "StochasticArbHiddenActsReconLoss"
-  #   coeff: 1.0
-  #   output_target_module_patterns: ["model.embed_tokens"]
-  - classname: "StochasticReconLoss"
+  - classname: "StochasticArbHiddenActsReconLoss"
+    pre_target_module_patterns: ["model.norm"]
+    post_target_module_patterns: []
     coeff: 1.0
 
 output_loss_type: kl
@@ -38,16 +33,14 @@ gradient_accumulation_steps: 8
 steps: 50000
 lr: 0.0005
 lr_schedule: cosine
-lr_warmup_pct: 0.0
-lr_exponential_halflife: null
 
 # --- Faithfulness Warmup ---
-faithfulness_warmup_steps: 200
-faithfulness_warmup_lr: 0.01
-faithfulness_warmup_weight_decay: 0.1
+# faithfulness_warmup_steps: 200
+# faithfulness_warmup_lr: 0.01
+# faithfulness_warmup_weight_decay: 0.1
 
 # --- Logging & Saving ---
-train_log_freq: 200
+train_log_freq: 25
 eval_freq: 1000
 slow_eval_freq: 2000
 slow_eval_on_first_step: true
@@ -63,21 +56,12 @@ eval_metric_configs:
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
   - classname: "StochasticArbHiddenActsReconLoss"
-    output_target_module_patterns:
-      - "model.embed_tokens"
-      #
+    pre_target_module_patterns:
       - "model.layers.*.input_layernorm"
-      #
-      - "model.layers.*.self_attn.q_proj"
-      - "model.layers.*.self_attn.k_proj"
-      - "model.layers.*.self_attn.v_proj"
-      - "model.layers.*.self_attn.o_proj"
-      #
-      - "model.layers.*.post_attention_layernorm"
-      #
-      - "model.layers.*.mlp.down_proj"
-      - "model.layers.*.mlp.up_proj"
-      #
+      - "model.norm"
+    post_target_module_patterns:
+      - "model.embed_tokens"
+      - "model.layers.*.input_layernorm"
       - "model.norm"
 
 # --- Pretrained model info ---
