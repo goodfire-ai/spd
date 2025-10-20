@@ -25,7 +25,6 @@ def test_run_clustering_happy_path():
                 iters=3,
                 merge_pair_sampling_method="range",
                 merge_pair_sampling_kwargs={"threshold": 0.05},
-                pop_component_prob=0,
             ),
             wandb_project=None,
             wandb_entity="goodfire",

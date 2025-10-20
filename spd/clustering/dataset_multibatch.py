@@ -20,10 +20,13 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.spd_types import TaskName
 
 
 def get_clustering_dataloader(
     config: ClusteringRunConfig,
+    task_name: TaskName,
+    n_batches: int,
     ddp_rank: int = 0,
     ddp_world_size: int = 1,
     **kwargs: Any,
@@ -31,7 +34,7 @@ def get_clustering_dataloader(
     """Split a dataset into n_batches of batch_size, returning iterator and config"""
     ds: Generator[BatchTensor]
     ds_config_dict: dict[str, Any]
-    match config.task_name:
+    match task_name:
         case "lm":
             ds, ds_config_dict = _get_dataloader_lm(
                 model_path=config.model_path,
@@ -57,8 +60,8 @@ def get_clustering_dataloader(
     def limited_iterator() -> Iterator[BatchTensor]:
         batch_idx: int
         batch: BatchTensor
-        for batch_idx, batch in tqdm(enumerate(ds), total=config.n_batches, unit="batch"):
-            if batch_idx >= config.n_batches:
+        for batch_idx, batch in tqdm(enumerate(ds), total=n_batches, unit="batch"):
+            if batch_idx >= n_batches:
                 break
             yield batch
 
@@ -140,6 +143,8 @@ def _get_dataloader_resid_mlp(
 
     # TODO: this is a hack. idk what the best way to handle this is
     shuffle_data: bool = ddp_world_size <= 1
+
+    assert ddp_rank >= 0
 
     with SpinnerContext(message=f"Loading SPD Run Config for '{model_path}'"):
         spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
