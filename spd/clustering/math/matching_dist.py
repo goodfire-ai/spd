@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
@@ -20,3 +21,9 @@ def matching_dist(
             dists[i, j] = torch.tril(dist_mat, diagonal=-1).abs().sum()
 
     return dists
+
+
+def matching_dist_np(X: Int[np.ndarray, "s n"]) -> Float[np.ndarray, "s s"]:
+    """Compute the pairwise jaccard index between rows of X"""
+
+    return matching_dist(torch.from_numpy(X)).numpy()
