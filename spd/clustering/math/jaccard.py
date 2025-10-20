@@ -109,7 +109,7 @@ def jaccard_index(
     # Row 0: onehot expanded
     # Row 1: matches
     # Rows 2 to s+1: dist_mat for each pair
-    fig, axes = plt.subplots(s_ensemble + 2, s_ensemble, figsize=(s_ensemble, (s_ensemble + 2)))
+    _fig, axes = plt.subplots(s_ensemble + 2, s_ensemble, figsize=(s_ensemble, (s_ensemble + 2)))
 
     # Top row: onehot expanded
     for i in range(s_ensemble):
@@ -127,7 +127,6 @@ def jaccard_index(
 
     # Lower s rows: dist_mat for each pair
     for i in range(s_ensemble):
-        largest_grp_size_i: int = int(matches[i].sum(dim=1).max().item())
         for j in range(s_ensemble):
             _largest_grp_size_j: int = int(matches[j].sum(dim=1).max().item())
             dist_mat = matches[i].float() - matches[j].float()
