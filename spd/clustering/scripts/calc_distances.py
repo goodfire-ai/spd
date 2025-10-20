@@ -12,8 +12,10 @@ Output structure:
 
 import argparse
 import json
+import multiprocessing
 
 import numpy as np
+import torch
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from muutils.dbg import dbg_tensor
@@ -25,6 +27,15 @@ from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
+
+# Set spawn method for CUDA compatibility with multiprocessing
+# Must be done before any CUDA operations
+if torch.cuda.is_available():
+    try:
+        multiprocessing.set_start_method("spawn")
+    except RuntimeError:
+        # Already set, ignore
+        pass
 
 
 def main(pipeline_run_id: str, distances_method: DistancesMethod) -> None:
