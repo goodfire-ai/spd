@@ -29,7 +29,7 @@ def run_script_array_local(
     if track_timing:
         wrapped_commands: list[str] = []
         for cmd in commands:
-            time_file = Path(tempfile.mktemp(suffix=".time"))
+            time_file = Path(tempfile.mktemp(suffix=".time"))  # pyright: ignore[reportDeprecated]
             time_files.append(time_file)
             # Use /usr/bin/time to track wall-clock time
             wrapped_cmd = f'/usr/bin/time -f "%e" -o {time_file} {cmd}'
