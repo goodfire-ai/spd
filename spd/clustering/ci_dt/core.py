@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from jaxtyping import Bool, Float
-from muutils.dbg import dbg, dbg_auto, dbg_tensor
+from muutils.dbg import dbg
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -118,7 +118,7 @@ def predict_k(
     dbg(Counter(tuple(p.shape) for p in proba))
     P: np.ndarray = extract_prob_class_1(proba, lm.model)
     # dbg_auto(P)
-    Y_hat: np.ndarray = (P >= threshold).astype(bool)
+    Y_hat: np.ndarray = (threshold <= P).astype(bool)
     # dbg_auto(Y_hat)
     return Y_hat
 

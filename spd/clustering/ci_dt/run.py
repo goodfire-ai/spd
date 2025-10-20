@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from jaxtyping import Bool, Float
 from torch import Tensor
 
 from spd.clustering.activations import (
@@ -121,13 +122,36 @@ print(f"Module keys: {processed_acts.module_keys}")
 # Move to CPU and convert to numpy for sklearn
 # Group by module to create "layers" for decision trees
 print("\nConverting to boolean layers...")
-layers_true: list[np.ndarray] = []
+layers_true: list[Bool[np.ndarray, "n_samples n_components"]] = []
 for module_key in processed_acts.module_keys:
     # Get the activations for this module from activations_raw, move to CPU
-    module_acts_cpu = processed_acts.activations_raw[module_key].cpu().numpy()
-    module_acts_bool = (module_acts_cpu >= config.activation_threshold).astype(bool)
-    layers_true.append(module_acts_bool)
-    print(f"Layer {len(layers_true) - 1} ({module_key}): {module_acts_bool.shape[1]} components")
+    module_acts_cpu: Float[np.ndarray, "n_samples n_components"] = (
+        processed_acts.activations_raw[module_key].cpu().numpy()
+    )
+    module_acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
+        module_acts_cpu >= config.activation_threshold
+    ).astype(bool)
+
+    # Filter out components that are always dead or always alive
+    # (they provide no information for decision trees)
+    n_before: int = module_acts_bool.shape[1]
+    component_variance: Float[np.ndarray, "n_components"] = module_acts_bool.var(axis=0)
+    varying_mask: Bool[np.ndarray, "n_components"] = component_variance > 0
+
+    # Count always-dead and always-alive components for diagnostics
+    always_dead_mask: Bool[np.ndarray, "n_components"] = ~module_acts_bool.any(axis=0)
+    always_alive_mask: Bool[np.ndarray, "n_components"] = module_acts_bool.all(axis=0)
+    n_always_dead: int = always_dead_mask.sum()
+    n_always_alive: int = always_alive_mask.sum()
+
+    module_acts_filtered: Bool[np.ndarray, "n_samples n_varying"] = module_acts_bool[:, varying_mask]
+    n_after: int = module_acts_filtered.shape[1]
+
+    layers_true.append(module_acts_filtered)
+    print(
+        f"Layer {len(layers_true) - 1} ({module_key}): {n_after} varying components "
+        f"({n_always_dead} always dead, {n_always_alive} always alive removed)"
+    )
 
 print(f"\nCreated {len(layers_true)} layers for decision tree training")
 
@@ -171,13 +195,36 @@ worst_list = [t for t in sorted_triplets if not np.isnan(t[2])][:2]
 best_list = [t for t in sorted_triplets if not np.isnan(t[2])][-2:]
 
 # %%
-# ----------------------- plotting -----------------------
+# ----------------------- plot: layer metrics -----------------------
+# Simplest - just bar charts and scatter plot of summary statistics
 
-# Run the plots
-plot_activations(layers_true, layers_pred)
-plot_covariance(layers_true)
 plot_layer_metrics(per_layer_stats)
-plot_selected_trees(worst_list, "Worst", models)
-plot_selected_trees(best_list, "Best", models)
+print("Layer metrics plots generated.")
 
-print("Plots generated.")
+# %%
+# ----------------------- plot: activations -----------------------
+# Simple heatmaps of true vs predicted activations
+
+plot_activations(layers_true, layers_pred)
+print("Activation plots generated.")
+
+# %%
+# ----------------------- plot: covariance -----------------------
+# Covariance matrix - can be slow with many components
+
+plot_covariance(layers_true)
+print("Covariance plot generated.")
+
+# %%
+# ----------------------- plot: worst trees -----------------------
+# Decision tree visualization for worst performing trees
+
+plot_selected_trees(worst_list, "Worst", models)
+print("Worst trees plots generated.")
+
+# %%
+# ----------------------- plot: best trees -----------------------
+# Decision tree visualization for best performing trees
+
+plot_selected_trees(best_list, "Best", models)
+print("Best trees plots generated.")
