@@ -3,7 +3,7 @@ import random
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol, overload
+from typing import Any, Hashable, Literal, Protocol, overload
 
 import einops
 import numpy as np
@@ -347,16 +347,16 @@ def get_obj_device(d: CanGetDevice) -> torch.device:
 
 
 @overload
-def zip_dicts[T1, T2](d1: dict[str, T1], d2: dict[str, T2], /) -> dict[str, tuple[T1, T2]]: ...
+def zip_dicts[K, T1, T2](d1: dict[K, T1], d2: dict[K, T2], /) -> dict[K, tuple[T1, T2]]: ...
 
 
 @overload
-def zip_dicts[T1, T2, T3](
-    d1: dict[str, T1], d2: dict[str, T2], d3: dict[str, T3], /
-) -> dict[str, tuple[T1, T2, T3]]: ...
+def zip_dicts[K: Hashable, T1, T2, T3](
+    d1: dict[K, T1], d2: dict[K, T2], d3: dict[K, T3], /
+) -> dict[K, tuple[T1, T2, T3]]: ...
 
 
-def zip_dicts(*dicts: dict[str, Any]) -> dict[str, tuple[Any, ...]]:
+def zip_dicts(*dicts: dict[Any, Any]) -> dict[Any, tuple[Any, ...]]:
     all_keys = set(dicts[0])
     for d in dicts[1:]:
         assert set(d.keys()) == all_keys

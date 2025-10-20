@@ -265,6 +265,7 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
                 output_target_module_patterns=cfg.output_target_module_patterns,
+                input_target_module_patterns=cfg.input_target_module_patterns,
             )
     return metric
 

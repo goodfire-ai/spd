@@ -117,6 +117,7 @@ class StochasticHiddenActsReconLossConfig(LossMetricConfig):
 class StochasticArbHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticArbHiddenActsReconLoss"] = "StochasticArbHiddenActsReconLoss"
     output_target_module_patterns: list[str]
+    input_target_module_patterns: list[str]
 
 
 #### Metrics that can only be used in eval ####
