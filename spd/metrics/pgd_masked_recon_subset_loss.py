@@ -33,7 +33,7 @@ def pgd_recon_subset_loss(
         batch=batch,
         target_out=target_out,
         pgd_config=pgd_config,
-        routing=get_coeff_value(routing.k, current_frac_of_training)
+        routing=get_coeff_value(routing.routing_density, current_frac_of_training)
         if isinstance(routing, DensityBasedRouting)
         else routing,
     )
@@ -83,7 +83,7 @@ class PGDReconSubsetLoss(Metric):
             batch=batch,
             target_out=target_out,
             pgd_config=self.pgd_config,
-            routing=get_coeff_value(self.routing.k, current_frac_of_training)
+            routing=get_coeff_value(self.routing.routing_density, current_frac_of_training)
             if isinstance(self.routing, DensityBasedRouting)
             else self.routing,
         )

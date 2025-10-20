@@ -195,14 +195,17 @@ def optimize(
     )
 
     # Track which components are alive based on firing frequency
-    alive_tracker = AliveComponentsTracker(
-        target_module_paths=model.target_module_paths,
-        C=config.C,
-        device=device,
-        n_examples_until_dead=config.n_examples_until_dead,
-        ci_alive_threshold=config.ci_alive_threshold,
-        global_n_examples_per_batch=extract_batch_data(next(train_iterator)).shape[:-1].numel(),
-    )
+    if config.n_examples_until_dead is not None:
+        alive_tracker = AliveComponentsTracker(
+            target_module_paths=model.target_module_paths,
+            C=config.C,
+            device=device,
+            n_examples_until_dead=config.n_examples_until_dead,
+            ci_alive_threshold=config.ci_alive_threshold,
+            global_n_examples_per_batch=extract_batch_data(next(train_iterator)).shape[:-1].numel(),
+        )
+    else:
+        alive_tracker = None
 
     for step in tqdm(range(config.steps + 1), ncols=0):
         optimizer.zero_grad()
@@ -235,7 +238,8 @@ def optimize(
                 sampling=config.sampling,
             )
 
-            alive_tracker.update(ci=ci.lower_leaky)
+            if alive_tracker is not None:
+                alive_tracker.update(ci=ci.lower_leaky)
 
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
                 loss_metric_configs=config.loss_metric_configs,
@@ -270,12 +274,13 @@ def optimize(
                 avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
                 microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
-            alive_counts = alive_tracker.compute()
-            for target_module_path, n_alive_count in alive_counts.items():
-                n_alive_key = (
-                    f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
-                )
-                microbatch_log_data[n_alive_key] = n_alive_count
+            if alive_tracker is not None:
+                alive_counts = alive_tracker.compute()
+                for target_module_path, n_alive_count in alive_counts.items():
+                    n_alive_key = (
+                        f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
+                    )
+                    microbatch_log_data[n_alive_key] = n_alive_count
 
             grad_norms = get_grad_norms_dict(component_model, device)
             microbatch_log_data.update({f"train/grad_norms/{k}": v for k, v in grad_norms.items()})
