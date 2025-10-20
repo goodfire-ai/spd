@@ -66,7 +66,7 @@ def _save_json(data: Any, path: Path | str, **kwargs: Any) -> None:
 
 def _save_yaml(data: Any, path: Path | str, **kwargs: Any) -> None:
     with open(path, "w") as f:
-        yaml.dump(data, f, **kwargs)
+        yaml.dump(data, f, sort_keys=False, **kwargs)
 
 
 def _save_torch(data: Any, path: Path | str, **kwargs: Any) -> None:
