@@ -63,7 +63,7 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
 
 
 class DensityBasedRouting(BaseConfig):
-    k: int | float | CoeffSchedule
+    routing_density: int | float | CoeffSchedule
 
 
 SubsetRoutingType = Literal["uniform_k-stochastic"] | DensityBasedRouting
