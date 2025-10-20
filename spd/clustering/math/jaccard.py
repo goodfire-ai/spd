@@ -15,9 +15,8 @@ where:
 """
 
 # %%
-import numpy as np
-
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from jaxtyping import Bool, Float, Int
 from muutils.dbg import dbg_auto
@@ -27,13 +26,13 @@ from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming_ma
 
 
 def show_matrix(
-        mat: Tensor|np.ndarray,
-        title: str = "",
-        cmap: str = "viridis",
-        vlims: tuple[float, float] | float | None = None,
-        ax: plt.Axes | None = None,
-        num_fmt: str = ".2f",
-    ) -> None:
+    mat: Tensor | np.ndarray,
+    title: str = "",
+    cmap: str = "viridis",
+    vlims: tuple[float, float] | float | None = None,
+    ax: plt.Axes | None = None,
+    num_fmt: str = ".2f",
+) -> None:
     """Display a matrix with values annotated on each cell."""
     mat_np: np.ndarray
     mat_np = mat.cpu().numpy() if isinstance(mat, torch.Tensor) else mat
@@ -50,8 +49,11 @@ def show_matrix(
         mat_np,
         cmap=cmap,
         **(
-            {"vmin": vlims[0], "vmax": vlims[1]} if isinstance(vlims, tuple) else
-            {"vmin": -vlims, "vmax": vlims} if isinstance(vlims, float) else {}
+            {"vmin": vlims[0], "vmax": vlims[1]}
+            if isinstance(vlims, tuple)
+            else {"vmin": -vlims, "vmax": vlims}
+            if isinstance(vlims, float)
+            else {}
         ),
     )
 
@@ -127,19 +129,18 @@ def jaccard_index(
     for i in range(s_ensemble):
         largest_grp_size_i: int = int(matches[i].sum(dim=1).max().item())
         for j in range(s_ensemble):
-            largest_grp_size_j: int = int(matches[j].sum(dim=1).max().item())
-            dist_mat = (matches[i].float() - matches[j].float())
+            _largest_grp_size_j: int = int(matches[j].sum(dim=1).max().item())
+            dist_mat = matches[i].float() - matches[j].float()
             # dbg_auto(dist_mat)
-
 
             # Compute distance
             dist: float = (
                 torch.tril(dist_mat, diagonal=-1).abs().sum()
-                # > (_n_components / 2)   
+                # > (_n_components / 2)
             ).item()
             _jaccard[i, j] = dist
             # Plot dist_mat on axes[i + 2, j]
-            im = axes[i + 2, j].matshow(dist_mat.cpu().numpy(), cmap="RdBu", vmin=-1, vmax=1)
+            _im = axes[i + 2, j].matshow(dist_mat.cpu().numpy(), cmap="RdBu", vmin=-1, vmax=1)
             axes[i + 2, j].set_title(f"diff {i},{j}\n{dist=}", fontsize=8)
             axes[i + 2, j].axis("off")
             # dbg_auto((i, j, dist))
@@ -162,13 +163,12 @@ def jaccard_index(
     return _jaccard
 
 
-
 # TODO: doesnt work when large groups??????
 X_test = torch.tensor(
     [
         # [1, 2, 3, 3],
         # [0, 1, 2, 3],
-        # 
+        #
         [0, 1, 1, 2, 3, 3],
         [3, 0, 0, 1, 2, 2],
         [0, 3, 1, 1, 2, 2],
@@ -177,7 +177,7 @@ X_test = torch.tensor(
         [0, 0, 0, 0, 0, 1],
         [2, 3, 0, 0, 1, 1],
         [2, 3, 0, 0, 1, 2],
-        # 
+        #
         [0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 1],
         [0, 0, 0, 0, 1, 0],
@@ -187,10 +187,8 @@ X_test = torch.tensor(
         [0, 0, 0, 3, 2, 1],
         [0, 0, 4, 3, 2, 1],
         [0, 5, 4, 3, 2, 1],
-
     ]
 )
-
 
 
 dbg_auto(X_test)
