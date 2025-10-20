@@ -5,34 +5,41 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 2000
+C: 100
 n_mask_samples: 1
-ci_fn_type: "vector_mlp"
-ci_fn_hidden_dims: [12]
+ci_fn_type: "shared_mlp"
+ci_fn_hidden_dims: [100]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["h.*.mlp.c_fc", "h.*.mlp.c_proj", "h.*.attn.k_proj", "h.*.attn.v_proj", "h.*.attn.c_proj"]
-identity_module_patterns: null
-sampling: "continuous"
+# target_module_patterns: ["h.*.mlp.c_fc", "h.*.mlp.c_proj", "h.*.attn.k_proj", "h.*.attn.v_proj", "h.*.attn.c_proj"]
+# target_module_patterns: ["h.0.mlp.c_fc", "h.0.mlp.c_proj", "h.0.attn.q_proj", "h.0.attn.k_proj", "h.0.attn.v_proj", "h.0.attn.c_proj"]
+target_module_patterns: ["h.0.attn.k_proj"]
+# identity_module_patterns: ["h.0.mlp.c_fc"]
+sampling: "binomial"
 use_delta_component: true
-
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0003
+    coeff: 0.004
     pnorm: 2.0
     p_anneal_start_frac: 0.0
     p_anneal_final_p: 0.3
     p_anneal_end_frac: 1.0
-  - classname: "StochasticReconLayerwiseLoss"
-    coeff: 2.0
-  - classname: "StochasticReconLoss"
+  - classname: "PGDReconSubsetLoss"
     coeff: 0.2
+    init: random
+    mask_scope: unique_per_datapoint
+    n_steps: 1
+    step_size: 0.1
+
+  - classname: "StochasticReconSubsetLoss"
+    coeff: 1.0
+
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 48
-eval_batch_size: 48
-steps: 50000
-lr: 5e-4
+batch_size: 256
+eval_batch_size: 64
+steps: 20000
+lr: 0.0002
 lr_schedule: cosine
 lr_warmup_pct: 0.0
 lr_exponential_halflife: null
@@ -41,12 +48,12 @@ gradient_accumulation_steps: 1
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.01
-faithfulness_warmup_weight_decay: 0.1
+faithfulness_warmup_weight_decay: 0.0
 
 # --- Logging & Saving ---
 train_log_freq: 200
 eval_freq: 1000
-slow_eval_freq: 5000
+slow_eval_freq: 2000
 slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
@@ -59,27 +66,32 @@ eval_metric_configs:
   - classname: "CI_L0"
     groups:
       total: ["*"]  # Sum of all L0 values
-      layer_0: ["h.0.*"]
-      layer_1: ["h.1.*"]
-      layer_2: ["h.2.*"]
-      layer_3: ["h.3.*"]
+      # layer_0: ["h.0.*"]
+      # layer_1: ["h.1.*"]
+      # layer_2: ["h.2.*"]
+      # layer_3: ["h.3.*"]
   - classname: "CEandKLLosses"
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
-  - classname: "StochasticReconSubsetCEAndKL"
-    include_patterns:
-      layer_0_only: ["h.0.*"]
-      layer_1_only: ["h.1.*"]
-      layer_2_only: ["h.2.*"]
-      layer_3_only: ["h.3.*"]
-      mlp_only: ["*.mlp.*"]
-      attention_only: ["*.self_attn.*"]
-    exclude_patterns:
-      all_but_layer_0: ["h.0.*"]
-      all_but_layer_1: ["h.1.*"]
-      all_but_layer_2: ["h.2.*"]
-      all_but_layer_3: ["h.3.*"]
+  # - classname: "StochasticReconSubsetCEAndKL"
+    # include_patterns:
+      # layer_0_only: ["h.0.*"]
+      # layer_1_only: ["h.1.*"]
+      # layer_2_only: ["h.2.*"]
+      # layer_3_only: ["h.3.*"]
+      # mlp_only: ["*.mlp.*"]
+      # attention_only: ["*.attn.*"]
+    # exclude_patterns: null
+      # all_but_layer_0: ["h.0.*"]
+      # all_but_layer_1: ["h.1.*"]
+      # all_but_layer_2: ["h.2.*"]
+      # all_but_layer_3: ["h.3.*"]
   - classname: "StochasticHiddenActsReconLoss"
+  - classname: PGDReconLoss
+    step_size: 0.1
+    n_steps: 20
+    mask_scope: shared_across_batch
+    init: random
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
