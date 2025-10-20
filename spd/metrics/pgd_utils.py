@@ -53,7 +53,7 @@ def pgd_masked_recon_loss_update(
             routing_masks=routing_masks,
         )
         out = model(batch, mask_infos=mask_infos)
-        total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+        total_loss = calc_sum_recon_loss_lm(pred=target_out, target=out, loss_type=output_loss_type)
         n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
         return total_loss / n_examples
 
@@ -151,7 +151,7 @@ def pgd_masked_recon_loss_update(
     )
 
     out = model(batch, mask_infos=sampled_mask_infos)
-    total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+    total_loss = calc_sum_recon_loss_lm(pred=target_out, target=out, loss_type=output_loss_type)
     n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
     return total_loss, n_examples
 
