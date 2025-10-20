@@ -234,4 +234,30 @@ ratio = jcrd.numpy() / pih
 
 show_matrix(ratio, title="ratio", cmap="RdBu", vlims=(-5, 7))
 
+# Scatter plot showing correlation between the two methods
+# Extract upper triangle to avoid duplicates (excluding diagonal)
+s = pih.shape[0]
+mask = np.triu(np.ones((s, s), dtype=bool), k=1)
+pih_pairs = pih[mask]
+jcrd_pairs = jcrd.numpy()[mask]
+
+fig, ax = plt.subplots(figsize=(8, 8))
+ax.scatter(pih_pairs, jcrd_pairs, alpha=0.6, s=50)
+ax.set_xlabel("Permutation-Invariant Hamming Distance")
+ax.set_ylabel("Jaccard Distance")
+
+# Add diagonal reference line
+max_val = max(pih_pairs.max(), jcrd_pairs.max())
+min_val = min(pih_pairs.min(), jcrd_pairs.min())
+
+# Calculate and display correlation
+correlation = np.corrcoef(pih_pairs, jcrd_pairs)[0, 1]
+ax.set_title(f"Correlation between Distance Methods\nCorrelation: {correlation:.2f}")
+
+
+ax.legend()
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
 # dbg(X - z[0])
