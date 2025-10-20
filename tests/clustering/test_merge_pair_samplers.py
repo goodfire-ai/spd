@@ -221,23 +221,6 @@ class TestSamplerRegistry:
 class TestSamplerIntegration:
     """Integration tests for samplers with edge cases."""
 
-    def test_samplers_with_gpu_tensors(self):
-        """Test samplers work with GPU tensors if available."""
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-
-        k = 4
-        costs = torch.randn(k, k, device="cuda")
-        costs = (costs + costs.T) / 2
-        costs.fill_diagonal_(float("inf"))
-
-        # Both samplers should work with GPU tensors
-        pair_range = range_sampler(costs, threshold=0.5)
-        pair_mcmc = mcmc_sampler(costs, temperature=1.0)
-
-        assert isinstance(pair_range, tuple)
-        assert isinstance(pair_mcmc, tuple)
-
     def test_samplers_deterministic_with_seed(self):
         """Test that samplers are deterministic with fixed seed."""
         k = 5

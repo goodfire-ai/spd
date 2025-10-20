@@ -4,7 +4,7 @@ import torch
 from torch import Tensor
 from torch.autograd import Function
 
-SigmoidTypes = Literal[
+SigmoidType = Literal[
     "normal",
     "hard",
     "leaky_hard",

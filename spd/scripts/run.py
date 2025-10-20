@@ -24,7 +24,6 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import load_config
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
@@ -149,7 +148,7 @@ def generate_commands(
         exp_config = EXPERIMENT_REGISTRY[experiment]
 
         # Load base config
-        base_config = load_config(exp_config.config_path, Config)
+        base_config = Config.from_file(exp_config.config_path)
 
         if sweep_params_path is None:
             # Fixed configuration run - still use JSON to ensure project override works
@@ -162,7 +161,7 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
-                f"{mpi_prefix}python {exp_config.decomp_script} '{config_json}' "
+                f"{mpi_prefix}python {exp_config.decomp_script} --config_json '{config_json}' "
                 f"--sweep_id {run_id} --evals_id {experiment}"
             )
 
@@ -189,7 +188,7 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
-                    f"{mpi_prefix}python {exp_config.decomp_script} '{config_json}' "
+                    f"{mpi_prefix}python {exp_config.decomp_script} --config_json '{config_json}' "
                     f"--sweep_id {run_id} "
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"

@@ -8,7 +8,7 @@
     "filter_dead_threshold": 0.1,
     "module_name_filter": null
   },
-  "model_path": "wandb:goodfire/spd-pre-Sep-2025/runs/rn9klzfs",
+  "model_path": "wandb:goodfire/spd/runs/lxs77xye",
   "task_name": "lm",
   "distances_method": "jaccard",
   "n_batches": 1,

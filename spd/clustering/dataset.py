@@ -28,7 +28,7 @@ def get_clustering_dataloader(
     **kwargs: Any,
 ) -> tuple[Iterator[BatchTensor], dict[str, Any]]:
     """Split a dataset into n_batches of batch_size, returning iterator and config"""
-    ds: Generator[BatchTensor, None, None]
+    ds: Generator[BatchTensor]
     ds_config_dict: dict[str, Any]
     match config.task_name:
         case "lm":
@@ -67,10 +67,10 @@ def get_clustering_dataloader(
 def _get_dataloader_lm(
     model_path: str,
     batch_size: int,
-    dataset_config_kwargs: dict[str, Any] | None = None,
+    config_kwargs: dict[str, Any] | None = None,
     ddp_rank: int = 0,
     ddp_world_size: int = 1,
-) -> tuple[Generator[BatchTensor, None, None], dict[str, Any]]:
+) -> tuple[Generator[BatchTensor], dict[str, Any]]:
     """split up a SS dataset into n_batches of batch_size, returned the saved paths
 
     1. load the config for a SimpleStories SPD Run given by model_path
@@ -95,13 +95,13 @@ def _get_dataloader_lm(
             f"Expected task_config to be of type LMTaskConfig since using `_get_dataloader_lm`, but got {type(cfg.task_config) = }"
         )
 
-        dataset_config_kwargs_: dict[str, Any] = {
+        config_kwargs_: dict[str, Any] = {
             **dict(
                 is_tokenized=False,
                 streaming=False,
                 seed=0,
             ),
-            **(dataset_config_kwargs or {}),
+            **(config_kwargs or {}),
         }
 
         dataset_config: DatasetConfig = DatasetConfig(
@@ -110,7 +110,7 @@ def _get_dataloader_lm(
             split=cfg.task_config.train_data_split,
             n_ctx=cfg.task_config.max_seq_len,
             column_name=cfg.task_config.column_name,
-            **dataset_config_kwargs_,
+            **config_kwargs_,
         )
 
     with SpinnerContext(message="getting dataloader..."):

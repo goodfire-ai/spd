@@ -118,7 +118,6 @@ def run_clustering(
         model=model,
         batch=batch,
         device=device,
-        sigmoid_type=spd_run.config.sigmoid_type,
     )
     logger_call("computed activations")
 
@@ -384,7 +383,7 @@ def cli() -> None:
     args: argparse.Namespace = parser.parse_args()
 
     # Load config
-    config: ClusteringRunConfig = ClusteringRunConfig.read(args.config)
+    config: ClusteringRunConfig = ClusteringRunConfig.from_file(args.config)
 
     # Run clustering
     result: ClusteringResult = run_clustering(

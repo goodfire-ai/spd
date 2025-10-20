@@ -20,15 +20,16 @@ from jaxtyping import Float
 from pydantic import Field
 from torch import Tensor
 
+from spd.base_config import BaseConfig
 from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import BaseModel, extract_batch_data, get_obj_device, load_config
+from spd.utils.general_utils import extract_batch_data, get_obj_device
 from spd.utils.run_utils import save_file
 
 
-class CompareModelsConfig(BaseModel):
+class CompareModelsConfig(BaseConfig):
     """Configuration for model comparison script."""
 
     current_model_path: str = Field(..., description="Path to current model (wandb: or local path)")
@@ -253,11 +254,11 @@ class ModelComparator:
                 batch = extract_batch_data(next(eval_iterator))
                 batch = batch.to(self.device)
                 pre_weight_acts = model(batch, cache_type="input").cache
-                ci, _ = model.calc_causal_importances(
+
+                ci = model.calc_causal_importances(
                     pre_weight_acts,
-                    sigmoid_type=model_config.sigmoid_type,
                     sampling=model_config.sampling,
-                )
+                ).lower_leaky
 
                 n_tokens_batch = next(iter(ci.values())).shape[:-1].numel()
                 n_tokens += n_tokens_batch
@@ -376,13 +377,13 @@ class ModelComparator:
         return similarities
 
 
-def main(config_path_or_obj: Path | str | CompareModelsConfig) -> None:
+def main(config_path: Path | str) -> None:
     """Main execution function.
 
     Args:
-        config_path_or_obj: Path to YAML config file, config dict, or CompareModelsConfig instance
+        config_path: Path to YAML config
     """
-    config = load_config(config_path_or_obj, config_model=CompareModelsConfig)
+    config = CompareModelsConfig.from_file(config_path)
 
     if config.output_dir is None:
         output_dir = Path(__file__).parent / "out"

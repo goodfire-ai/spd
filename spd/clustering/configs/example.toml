@@ -29,7 +29,6 @@ alpha = 1.0  # rank penalty term
 iters = 100  # iterations to run. setting this to exactly the number of components can be buggy when doing ensembles, so set it to a bit less?
 filter_dead_threshold = 0.001  # Threshold for filtering dead components
 module_name_filter = "__NULL__"  # Can be a string prefix like "model.layers.0." if you want to do only some modules
-rank_cost_fn_name = "const_1"  # Options: const_1, const_2, log, linear
 merge_pair_sampling_method = "range"  # Method for sampling merge pairs: 'range' or 'mcmc'
 
 [merge_config.merge_pair_sampling_kwargs]

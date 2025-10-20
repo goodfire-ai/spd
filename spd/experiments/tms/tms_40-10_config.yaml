@@ -51,7 +51,6 @@ eval_metric_configs:
     n_batches_accum: 5
   - classname: "ComponentActivationDensity"
   - classname: "PermutedCIPlots"
-    sigmoid_type: "leaky_hard"
     identity_patterns: ["linear1", "linear2"]
     dense_patterns: null
   - classname: "IdentityCIError"

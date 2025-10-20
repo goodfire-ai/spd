@@ -47,10 +47,11 @@ SPD_CONFIG = SPD_RUN.config
 
 # Use split_dataset with RunConfig to get real data
 CONFIG: ClusteringRunConfig = ClusteringRunConfig(
-    merge_config=MergeConfig(),
+    merge_config=MergeConfig(batch_size=2),
     model_path=MODEL_PATH,
     task_name="lm",
     n_batches=1,
+    dataset_streaming=True,  # no effect since we do this manually
 )
 
 BATCHES, _ = get_clustering_dataloader(
@@ -70,7 +71,6 @@ COMPONENT_ACTS: dict[str, Tensor] = component_activations(
     model=MODEL,
     batch=DATA_BATCH,
     device=DEVICE,
-    sigmoid_type="hard",
 )
 
 _ = dbg_auto(COMPONENT_ACTS)
@@ -133,9 +133,3 @@ plot_dists_distribution(
     distances=DISTANCES,
     mode="points",
 )
-
-# %%
-# Exit cleanly to avoid CUDA thread GIL issues during interpreter shutdown
-# see https://github.com/goodfire-ai/spd/issues/201#issue-3503138939
-# ============================================================
-os._exit(0)
