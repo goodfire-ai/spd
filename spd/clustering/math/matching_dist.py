@@ -15,7 +15,7 @@ def matching_dist(
     dists: Float[Tensor, "s s"] = torch.full((s_ensemble, s_ensemble), torch.nan)
 
     for i in range(s_ensemble):
-        for j in range(s_ensemble):
+        for j in range(s_ensemble, i):
             _largest_grp_size_j: int = int(matches[j].sum(dim=1).max().item())
             dist_mat = matches[i].float() - matches[j].float()
             dists[i, j] = torch.tril(dist_mat, diagonal=-1).abs().sum()

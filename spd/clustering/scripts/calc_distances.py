@@ -109,7 +109,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--distances-method",
-        choices=["perm_invariant_hamming", "jaccard"],
+        choices=DistancesMethod.__args__,
         default="perm_invariant_hamming",
         help="Method for calculating distances",
     )
