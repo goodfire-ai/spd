@@ -16,7 +16,6 @@ import json
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
-
 from muutils.dbg import dbg_tensor
 
 from spd.clustering.consts import DistancesArray, DistancesMethod

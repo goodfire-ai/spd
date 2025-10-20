@@ -1,6 +1,5 @@
 """Minimal utilities for running shell-safe commands locally."""
 
-import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -43,7 +42,7 @@ def run_script_array_local(
         if not parallel:
             logger.section(f"LOCAL EXECUTION: Running {n_commands} tasks serially")
             for i, cmd in enumerate(commands_to_run, 1):
-                logger.info(f"[{i}/{n_commands}] Running: {commands[i-1]}")
+                logger.info(f"[{i}/{n_commands}] Running: {commands[i - 1]}")
                 subprocess.run(cmd, shell=True, check=True)
             logger.section("LOCAL EXECUTION COMPLETE")
         else:
@@ -51,12 +50,12 @@ def run_script_array_local(
             procs: list[subprocess.Popen[bytes]] = []
 
             for i, cmd in enumerate(commands_to_run, 1):
-                logger.info(f"[{i}/{n_commands}] Starting: {commands[i-1]}")
+                logger.info(f"[{i}/{n_commands}] Starting: {commands[i - 1]}")
                 proc = subprocess.Popen(cmd, shell=True)
                 procs.append(proc)
 
             logger.section("WAITING FOR ALL TASKS TO COMPLETE")
-            for proc, cmd in zip(procs, commands, strict=True):
+            for proc, cmd in zip(procs, commands, strict=True):  # noqa: B007
                 proc.wait()
                 if proc.returncode != 0:
                     logger.error(f"Process {proc.pid} failed with exit code {proc.returncode}")

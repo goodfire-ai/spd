@@ -22,7 +22,7 @@ import os
 import shlex
 import tempfile
 from pathlib import Path
-from typing import Any, Literal, overload
+from typing import Any
 
 import wandb_workspaces.workspaces as ws
 from pydantic import Field, PositiveInt, field_validator
@@ -199,6 +199,7 @@ def generate_calc_distances_commands(
             )
         )
     return commands
+
 
 def main(
     pipeline_config: ClusteringPipelineConfig,
