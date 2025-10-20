@@ -27,7 +27,7 @@ use_delta_component: true
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
     coeff: 0.003
-    pnorm: 2.0
+    pnorm: 1.0
   - classname: "StochasticReconSubsetLoss"
     subset_routing_cfg:
       k:
@@ -49,7 +49,12 @@ loss_metric_configs:
         end_value: 1.0
         start_frac: 0
         end_frac: 1.0
-    coeff: 1.0
+    coeff:
+      type: "linear"
+      start_value: 0.02
+      end_value: 0.2
+      start_frac: 0
+      end_frac: 1.0
 
 output_loss_type: kl
 
