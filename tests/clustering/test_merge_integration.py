@@ -31,10 +31,7 @@ class TestMergeIntegration:
 
         # Run merge iteration
         history = merge_iteration(
-            activations=activations,
-            batch_id="test_merge_with_range_sampler",
-            merge_config=config,
-            component_labels=component_labels,
+            activations=activations, merge_config=config, component_labels=component_labels
         )
 
         # Check results
@@ -68,10 +65,7 @@ class TestMergeIntegration:
 
         # Run merge iteration
         history = merge_iteration(
-            activations=activations,
-            batch_id="test_merge_with_mcmc_sampler",
-            merge_config=config,
-            component_labels=component_labels,
+            activations=activations, merge_config=config, component_labels=component_labels
         )
 
         # Check results
@@ -104,10 +98,7 @@ class TestMergeIntegration:
 
         # Run merge iteration
         history = merge_iteration(
-            activations=activations,
-            batch_id="test_merge_with_popping",
-            merge_config=config,
-            component_labels=component_labels,
+            activations=activations, merge_config=config, component_labels=component_labels
         )
 
         # Check results
@@ -142,7 +133,6 @@ class TestMergeIntegration:
 
         history_range = merge_iteration(
             activations=activations.clone(),
-            batch_id="test_merge_comparison_samplers_range",
             merge_config=config_range,
             component_labels=ComponentLabels(component_labels.copy()),
         )
@@ -159,7 +149,6 @@ class TestMergeIntegration:
 
         history_mcmc = merge_iteration(
             activations=activations.clone(),
-            batch_id="test_merge_comparison_samplers_mcmc",
             merge_config=config_mcmc,
             component_labels=ComponentLabels(component_labels.copy()),
         )
@@ -188,10 +177,7 @@ class TestMergeIntegration:
         )
 
         history = merge_iteration(
-            activations=activations,
-            batch_id="test_merge_with_small_components",
-            merge_config=config,
-            component_labels=component_labels,
+            activations=activations, merge_config=config, component_labels=component_labels
         )
 
         # First entry is after first merge, so should be 3 - 1 = 2
