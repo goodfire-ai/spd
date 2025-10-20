@@ -32,6 +32,12 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
+
+# magic autoreload
+%load_ext autoreload
+%autoreload 2
+
+# %%
 # ----------------------- configuration -----------------------
 
 config = CIDTConfig(
@@ -43,6 +49,7 @@ config = CIDTConfig(
 )
 device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
+# %%
 # ----------------------- load model -----------------------
 
 wandb_run_path: str = "wandb:goodfire/spd/runs/lxs77xye"
@@ -54,6 +61,7 @@ cfg: Config = spd_run.config
 
 print(f"Loaded model from {wandb_run_path}")
 
+# %%
 # ----------------------- load dataset -----------------------
 
 # Create LM dataset and dataloader
@@ -83,6 +91,7 @@ batch_data = next(iter(dataloader))
 batch: Tensor = batch_data["input_ids"]
 print(f"Created LM dataset with {cfg.task_config.dataset_name}, batch shape: {batch.shape}")
 
+# %%
 # ----------------------- get activations -----------------------
 
 # Get component activations (on device)
@@ -106,6 +115,7 @@ print(f"Alive components: {processed_acts.n_components_alive}")
 print(f"Dead components: {processed_acts.n_components_dead}")
 print(f"Module keys: {processed_acts.module_keys}")
 
+# %%
 # ----------------------- convert to layers -----------------------
 
 # Move to CPU and convert to numpy for sklearn
@@ -121,6 +131,7 @@ for module_key in processed_acts.module_keys:
 
 print(f"\nCreated {len(layers_true)} layers for decision tree training")
 
+# %%
 # ----------------------- fit and predict -----------------------
 
 print("\nTraining decision trees...")
@@ -129,6 +140,7 @@ models: list[LayerModel] = train_trees(
 )
 layers_pred: list[np.ndarray] = predict_all(models, [layers_true[0]])
 
+# %%
 # ----------------------- metrics -----------------------
 
 XYs_demo = build_xy(layers_true)
@@ -158,6 +170,7 @@ sorted_triplets = sorted(all_triplets, key=lambda t: (np.isnan(t[2]), t[2]))
 worst_list = [t for t in sorted_triplets if not np.isnan(t[2])][:2]
 best_list = [t for t in sorted_triplets if not np.isnan(t[2])][-2:]
 
+# %%
 # ----------------------- plotting -----------------------
 
 # Run the plots

@@ -1,5 +1,6 @@
 """Core library functions for causal importance decision trees."""
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -14,6 +15,7 @@ from sklearn.metrics import (
 )
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
+from muutils.dbg import dbg_auto, dbg, dbg_tensor
 
 
 @dataclass
@@ -84,12 +86,17 @@ def predict_k(
     """Predict layer k activations from layers[:k]."""
     lm: LayerModel = next(m for m in models if m.layer_index == k)
     X: np.ndarray = concat_cols(prefix_layers)
+    dbg_auto(X)
     proba = lm.model.predict_proba(X.astype(np.uint8))  # type: ignore
-    if isinstance(proba, list):
-        P: np.ndarray = np.stack([p[:, 1] for p in proba], axis=1)
-    else:
-        P = proba[..., 1]  # type: ignore
+    dbg_auto(proba)
+    dbg_auto(proba[0])
+
+    dbg(Counter(tuple(p.shape) for p in proba))
+
+    P: np.ndarray = np.stack(proba, axis=1)
+    dbg_auto(P)
     Y_hat: np.ndarray = (float(threshold) <= P).astype(bool)
+    dbg_auto(Y_hat)
     return Y_hat
 
 
