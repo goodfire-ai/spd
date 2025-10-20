@@ -1,9 +1,12 @@
+# %%
+
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from jaxtyping import Bool, Float
 from sklearn.base import ClassifierMixin
 from sklearn.metrics import (
@@ -13,6 +16,33 @@ from sklearn.metrics import (
 )
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier, plot_tree
+from torch import Tensor
+
+from spd.clustering.activations import (
+    ProcessedActivations,
+    component_activations,
+    process_activations,
+)
+from spd.configs import Config
+from spd.data import DatasetConfig, create_data_loader
+from spd.experiments.lm.configs import LMTaskConfig
+from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.registry import EXPERIMENT_REGISTRY
+
+# ----------------------- config -----------------------
+
+
+@dataclass
+class CIDTConfig:
+    """Configuration for causal importance decision tree training."""
+
+    experiment_key: str = "ss_emb"  # Key from EXPERIMENT_REGISTRY
+    n_samples: int = 250
+    activation_threshold: float = 0.01  # Threshold for boolean conversion
+    filter_dead_threshold: float = 0.001  # Threshold for filtering dead components
+    max_depth: int = 8  # Maximum depth for decision trees
+    random_state: int = 7  # Random state for reproducibility
+
 
 # ----------------------- library code -----------------------
 
@@ -109,22 +139,99 @@ def predict_all(
     return out
 
 
-# ----------------------- random data -----------------------
+# ----------------------- configuration -----------------------
 
-rng: np.random.Generator = np.random.default_rng(2)
-n: int = 250
-sizes: list[int] = [15, 9, 22, 6]
+config = CIDTConfig()
+device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
-# base probs per component
-base_probs: list[np.ndarray] = [rng.uniform(0.05, 0.5, size=s) for s in sizes]
+# ----------------------- load model -----------------------
 
-layers_true: list[np.ndarray] = [
-    (rng.uniform(size=(n, s)) < p).astype(bool) for s, p in zip(sizes, base_probs, strict=True)
-]
+# Load SPD run info and model
+exp_config = EXPERIMENT_REGISTRY[config.experiment_key]
+assert exp_config.canonical_run is not None, f"No canonical run found for {config.experiment_key}"
+assert exp_config.task_name == "lm", f"Only 'lm' task supported, got {exp_config.task_name}"
+
+spd_run: SPDRunInfo = SPDRunInfo.from_path(exp_config.canonical_run)
+model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
+model.to(device)
+cfg: Config = spd_run.config
+
+print(f"Loaded model from {exp_config.canonical_run}")
+print(f"Task: {exp_config.task_name}")
+
+# ----------------------- load dataset -----------------------
+
+# Create LM dataset and dataloader
+assert isinstance(cfg.task_config, LMTaskConfig)
+pretrained_model_name = cfg.pretrained_model_name
+assert pretrained_model_name is not None
+
+dataset_config = DatasetConfig(
+    name=cfg.task_config.dataset_name,
+    hf_tokenizer_path=pretrained_model_name,
+    split=cfg.task_config.train_data_split,
+    n_ctx=cfg.task_config.max_seq_len,
+    column_name=cfg.task_config.column_name,
+    is_tokenized=False,
+    streaming=False,
+    seed=0,
+)
+dataloader, _ = create_data_loader(
+    dataset_config=dataset_config,
+    batch_size=config.n_samples,
+    buffer_size=cfg.task_config.buffer_size,
+    global_seed=cfg.seed,
+    ddp_rank=0,
+    ddp_world_size=1,
+)
+batch_data = next(iter(dataloader))
+batch: Tensor = batch_data["input_ids"]
+print(f"Created LM dataset with {cfg.task_config.dataset_name}, batch shape: {batch.shape}")
+
+# ----------------------- get activations -----------------------
+
+# Get component activations (on device)
+print("Computing component activations...")
+component_acts: dict[str, Tensor] = component_activations(
+    model=model,
+    device=device,
+    batch=batch,
+)
+
+# Process activations (filter dead components, concatenate)
+print("Processing activations...")
+processed_acts: ProcessedActivations = process_activations(
+    component_acts,
+    filter_dead_threshold=config.filter_dead_threshold,
+    seq_mode="seq_mean",  # LM task needs seq_mean
+)
+
+print(f"Total components (before filtering): {processed_acts.n_components_original}")
+print(f"Alive components: {processed_acts.n_components_alive}")
+print(f"Dead components: {processed_acts.n_components_dead}")
+print(f"Module keys: {processed_acts.module_keys}")
+
+# ----------------------- convert to layers -----------------------
+
+# Move to CPU and convert to numpy for sklearn
+# Group by module to create "layers" for decision trees
+print("\nConverting to boolean layers...")
+layers_true: list[np.ndarray] = []
+for module_key in processed_acts.module_keys:
+    # Get the activations for this module from activations_raw, move to CPU
+    module_acts_cpu = processed_acts.activations_raw[module_key].cpu().numpy()
+    module_acts_bool = (module_acts_cpu >= config.activation_threshold).astype(bool)
+    layers_true.append(module_acts_bool)
+    print(f"Layer {len(layers_true) - 1} ({module_key}): {module_acts_bool.shape[1]} components")
+
+print(f"\nCreated {len(layers_true)} layers for decision tree training")
 
 # ----------------------- fit and predict -----------------------
 
-models: list[LayerModel] = train_trees(layers_true, max_depth=8, random_state=7)
+print("\nTraining decision trees...")
+models: list[LayerModel] = train_trees(
+    layers_true, max_depth=config.max_depth, random_state=config.random_state
+)
 layers_pred: list[np.ndarray] = predict_all(models, [layers_true[0]])
 
 # ----------------------- metrics -----------------------
