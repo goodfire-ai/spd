@@ -68,6 +68,7 @@ def create_slurm_array_script(
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}
+        #SBATCH --distribution=pack
         #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
 
         # Create job-specific working directory
