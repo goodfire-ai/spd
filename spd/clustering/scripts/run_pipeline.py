@@ -88,10 +88,9 @@ class ClusteringPipelineConfig(BaseConfig):
     @classmethod
     def validate_distances_methods(cls, v: list[DistancesMethod]) -> list[DistancesMethod]:
         """Validate that distances_methods is non-empty and contains valid methods."""
-        assert all(
-            method in DistancesMethod.__args__
-            for method in v
-        ), f"Invalid distances_methods: {v}"
+        assert all(method in DistancesMethod.__args__ for method in v), (
+            f"Invalid distances_methods: {v}"
+        )
 
         return v
 

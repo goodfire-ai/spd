@@ -35,7 +35,9 @@ def run_script_array_local(
             resource_files.append(resource_file)
             # Use /usr/bin/time to track comprehensive resource usage
             # K=avg total mem, M=max resident, P=CPU%, S=system time, U=user time, e=wall time
-            wrapped_cmd = f'/usr/bin/time -f "K:%K M:%M P:%P S:%S U:%U e:%e" -o {resource_file} {cmd}'
+            wrapped_cmd = (
+                f'/usr/bin/time -f "K:%K M:%M P:%P S:%S U:%U e:%e" -o {resource_file} {cmd}'
+            )
             wrapped_commands.append(wrapped_cmd)
         commands_to_run = wrapped_commands
     else:

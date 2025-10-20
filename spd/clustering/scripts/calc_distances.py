@@ -31,7 +31,7 @@ from spd.settings import SPD_CACHE_DIR
 # Set spawn method for CUDA compatibility with multiprocessing
 # Must be done before any CUDA operations
 if torch.cuda.is_available():
-    try:
+    try:  # noqa: SIM105
         multiprocessing.set_start_method("spawn")
     except RuntimeError:
         # Already set, ignore
