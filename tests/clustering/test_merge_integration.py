@@ -32,7 +32,6 @@ class TestMergeIntegration:
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
-            batch_id="test_merge_with_range_sampler",
             merge_config=config,
             subcomponent_keys=subcomponent_keys,
         )
@@ -69,7 +68,6 @@ class TestMergeIntegration:
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
-            batch_id="test_merge_with_mcmc_sampler",
             merge_config=config,
             subcomponent_keys=subcomponent_keys,
         )
@@ -105,7 +103,6 @@ class TestMergeIntegration:
         # Run merge iteration
         history = merge_iteration(
             activations=activations,
-            batch_id="test_merge_with_popping",
             merge_config=config,
             subcomponent_keys=subcomponent_keys,
         )
@@ -143,7 +140,6 @@ class TestMergeIntegration:
 
         history_range = merge_iteration(
             activations=activations.clone(),
-            batch_id="test_merge_comparison_samplers_range",
             merge_config=config_range,
             subcomponent_keys=component_info.copy(),
         )
@@ -160,7 +156,6 @@ class TestMergeIntegration:
 
         history_mcmc = merge_iteration(
             activations=activations.clone(),
-            batch_id="test_merge_comparison_samplers_mcmc",
             merge_config=config_mcmc,
             subcomponent_keys=component_info.copy(),
         )
@@ -190,7 +185,6 @@ class TestMergeIntegration:
 
         history = merge_iteration(
             activations=activations,
-            batch_id="test_merge_with_small_components",
             merge_config=config,
             subcomponent_keys=subcomponent_keys,
         )

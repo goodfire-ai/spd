@@ -203,7 +203,7 @@ class MergeHistory(SaveableObject):
         return int(self.merges.k_groups[0].item())
 
     @override
-    def save(self, path: Path, wandb_url: str | None = None) -> None:
+    def save(self, path: Path) -> None:
         zf: zipfile.ZipFile
         with zipfile.ZipFile(path, "w") as zf:
             # save arrays
@@ -223,7 +223,6 @@ class MergeHistory(SaveableObject):
                 json.dumps(
                     dict(
                         merge_config=self.merge_config.model_dump(mode="json"),
-                        wandb_url=wandb_url,
                         c_components=self.c_components,
                         n_iters_current=self.n_iters_current,
                         labels=self.labels,

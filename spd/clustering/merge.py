@@ -30,8 +30,6 @@ from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
 
-_BATCH_PREFIX_FMT: str = "\033[38;5;208m[{batch_id}]\033[0m"
-
 
 class LogCallback(Protocol):
     def __call__(
@@ -55,7 +53,6 @@ def merge_iteration(
     activations: ActivationsTensor,
     subcomponent_keys: list[SubComponentKey],
     log_callback: LogCallback | None = None,
-    batch_id: str = "unk",
 ) -> MergeHistory:
     """
     Merge iteration with optional logging/plotting callbacks.
@@ -63,10 +60,6 @@ def merge_iteration(
     This wraps the pure computation with logging capabilities while maintaining
     the same core algorithm logic.
     """
-
-    # setup
-    # ==================================================
-    pbar_prefix: str = _BATCH_PREFIX_FMT.format(batch_id=batch_id)
 
     # compute coactivations
     # --------------------------------------------------
@@ -203,9 +196,7 @@ def merge_iteration(
         merge_pair_cost: float = float(costs[merge_pair].item())
 
         # Update progress bar
-        pbar.set_description(
-            f"{pbar_prefix} k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={merge_pair_cost:.4f}"
-        )
+        pbar.set_description(f"k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={merge_pair_cost:.4f}")
 
         if log_callback is not None:
             log_callback(

@@ -103,3 +103,9 @@ clustering-dashboard-profile: bundle-dashboard
 	@echo "View with: python -m pstats dashboard.prof"
 	@echo "Or install snakeviz and run: snakeviz dashboard.prof"
 
+.PHONY: clean
+clean:
+	@echo "Cleaning Python cache and build artifacts..."
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type d -name "*.egg-info" -exec rm -rf {} +
+	rm -rf build/ dist/ .ruff_cache/ .pytest_cache/ .coverage
