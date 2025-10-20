@@ -36,7 +36,7 @@ def _stochastic_recon_subset_loss_update(
             causal_importances=ci,
             component_mask_sampling=sampling,
             weight_deltas=weight_deltas,
-            routing=get_coeff_value(routing.k, current_frac_of_training)
+            routing=get_coeff_value(routing.routing_density, current_frac_of_training)
             if isinstance(routing, DensityBasedRouting)
             else routing,
         )
