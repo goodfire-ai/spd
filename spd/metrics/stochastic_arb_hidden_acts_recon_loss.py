@@ -22,46 +22,70 @@ def _stochastic_arb_hidden_acts_recon_loss_update(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
-    output_target_module_paths: list[str],
+    post_target_module_paths: list[str],
+    pre_target_module_paths: list[str],
 ) -> dict[str, tuple[Float[Tensor, ""], int]]:
     assert ci, "Empty ci"
     device = get_obj_device(ci)
 
-    target_output_acts = model(
+    target_pre_acts = model(
         batch,
-        cache_type="output",
-        output_target_module_paths=output_target_module_paths,
+        cache_type="input",
+        cache_points=pre_target_module_paths,
     ).cache
 
-    stoch_mask_infos_list = [
-        calc_stochastic_component_mask_info(
+    target_post_acts = model(
+        batch,
+        cache_type="output",
+        cache_points=post_target_module_paths,
+    ).cache
+
+    sum_mse = defaultdict[str, Float[Tensor, ""]](lambda: torch.tensor(0.0, device=device))
+    n_examples = defaultdict[str, int](int)
+
+    for _ in range(n_mask_samples):
+        stoch_mask_infos = calc_stochastic_component_mask_info(
             causal_importances=ci,
             component_mask_sampling=sampling,
             weight_deltas=weight_deltas,
             routing="all",
         )
-        for _ in range(n_mask_samples)
-    ]
 
-    sum_mse = defaultdict[str, Float[Tensor, ""]](lambda: torch.tensor(0.0, device=device))
-    n_examples = defaultdict[str, int](int)
-
-    for stoch_mask_infos in stoch_mask_infos_list:
-        stoch_output_acts = model(
+        # Pre
+        stoch_pre_acts = model(
             batch,
-            cache_type="output",
+            cache_type="input",
             mask_infos=stoch_mask_infos,
-            output_target_module_paths=output_target_module_paths,
+            cache_points=pre_target_module_paths,
         ).cache
 
-        assert (
-            set(stoch_output_acts) == set(output_target_module_paths) == set(target_output_acts)
-        ), (
-            f"{set(stoch_output_acts)=}\n{set(output_target_module_paths)=}\n{set(target_output_acts)}"
+        assert set(stoch_pre_acts) == set(pre_target_module_paths) == set(target_pre_acts), (
+            f"{set(stoch_pre_acts)=}\n{set(pre_target_module_paths)=}\n{set(target_pre_acts)}"
         )
 
         for module_name, (target_act, stoch_act) in zip_dicts(
-            target_output_acts, stoch_output_acts
+            target_pre_acts, stoch_pre_acts
+        ).items():
+            mse = torch.nn.functional.mse_loss(target_act, stoch_act, reduction="sum")
+            assert target_act.shape == stoch_act.shape
+
+            sum_mse[module_name] += mse
+            n_examples[module_name] += target_act.numel()
+
+        # Post
+        stoch_post_acts = model(
+            batch,
+            cache_type="output",
+            mask_infos=stoch_mask_infos,
+            cache_points=post_target_module_paths,
+        ).cache
+
+        assert set(stoch_post_acts) == set(post_target_module_paths) == set(target_post_acts), (
+            f"{set(stoch_post_acts)=}\n{set(post_target_module_paths)=}\n{set(target_post_acts)}"
+        )
+
+        for module_name, (target_act, stoch_act) in zip_dicts(
+            target_post_acts, stoch_post_acts
         ).items():
             mse = torch.nn.functional.mse_loss(target_act, stoch_act, reduction="sum")
             assert target_act.shape == stoch_act.shape
@@ -75,7 +99,7 @@ def _stochastic_arb_hidden_acts_recon_loss_update(
 def _stochastic_arb_hidden_acts_recon_loss_compute(
     results: dict[str, tuple[Float[Tensor, ""], int]],
 ) -> dict[str, Float[Tensor, ""]]:
-    return {f"_/{module_name}": (sum / n) for module_name, (sum, n) in results.items()}
+    return {f"post_recon_{module_name}": (sum / n) for module_name, (sum, n) in results.items()}
 
 
 def stochastic_arb_hidden_acts_recon_loss(
@@ -84,7 +108,8 @@ def stochastic_arb_hidden_acts_recon_loss(
     n_mask_samples: int,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     ci: dict[str, Float[Tensor, "... C"]],
-    output_target_module_patterns: list[str],
+    post_target_module_patterns: list[str],
+    pre_target_module_patterns: list[str],
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
 ) -> dict[str, Float[Tensor, ""]]:
     results = _stochastic_arb_hidden_acts_recon_loss_update(
@@ -93,8 +118,11 @@ def stochastic_arb_hidden_acts_recon_loss(
         n_mask_samples=n_mask_samples,
         batch=batch,
         ci=ci,
-        output_target_module_paths=get_target_module_paths(
-            model.target_model, output_target_module_patterns
+        post_target_module_paths=get_target_module_paths(
+            model.target_model, post_target_module_patterns
+        ),
+        pre_target_module_paths=get_target_module_paths(
+            model.target_model, pre_target_module_patterns
         ),
         weight_deltas=weight_deltas,
     )
@@ -113,14 +141,18 @@ class StochasticArbHiddenActsReconLoss(Metric):
         sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
-        output_target_module_patterns: list[str],
+        post_target_module_patterns: list[str],
+        pre_target_module_patterns: list[str],
     ) -> None:
         self.model = model
         self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
-        self.output_target_module_paths: list[str] = get_target_module_paths(
-            model.target_model, output_target_module_patterns
+        self.post_target_module_paths: list[str] = get_target_module_paths(
+            model.target_model, post_target_module_patterns
+        )
+        self.pre_target_module_paths: list[str] = get_target_module_paths(
+            model.target_model, pre_target_module_patterns
         )
 
         self.sum_mse = defaultdict[str, Float[Tensor, ""]](lambda: torch.tensor(0.0, device=device))
@@ -145,7 +177,8 @@ class StochasticArbHiddenActsReconLoss(Metric):
             batch=batch,
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
-            output_target_module_paths=self.output_target_module_paths,
+            post_target_module_paths=self.post_target_module_paths,
+            pre_target_module_paths=self.pre_target_module_paths,
         )
         for module_name, (sum_mse, n_examples) in results.items():
             self.sum_mse[module_name] += sum_mse
