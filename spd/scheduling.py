@@ -3,7 +3,7 @@ from math import cos, pi
 from spd.configs import CosineSchedule, LinearSchedule
 
 
-def get_linear_schedule_value(
+def _get_linear_schedule_value(
     schedule: LinearSchedule,
     current_frac_of_training: float,
 ) -> float:
@@ -18,7 +18,7 @@ def get_linear_schedule_value(
 
 
 # WARNING: This is probably not what we want to call "cosine schedule".
-def get_cosine_schedule_value(
+def _get_cosine_schedule_value(
     schedule: CosineSchedule,
     current_frac_of_training: float,
 ) -> float:
@@ -30,3 +30,16 @@ def get_cosine_schedule_value(
         return schedule.end_value + 0.5 * (schedule.start_value - schedule.end_value) * (
             1 + cos(pi * current_frac_of_training)
         )
+
+
+def get_coeff_value(
+    coeff: LinearSchedule | CosineSchedule | float | int,
+    current_frac_of_training: float,
+) -> float:
+    match coeff:
+        case LinearSchedule():
+            return _get_linear_schedule_value(coeff, current_frac_of_training)
+        case CosineSchedule():
+            return _get_cosine_schedule_value(coeff, current_frac_of_training)
+        case float() | int():
+            return coeff

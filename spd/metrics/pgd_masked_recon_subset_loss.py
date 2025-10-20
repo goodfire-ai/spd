@@ -5,10 +5,11 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import PGDConfig
+from spd.configs import DensityBasedRouting, PGDConfig, SubsetRoutingType
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
 from spd.models.component_model import CIOutputs, ComponentModel
+from spd.scheduling import get_coeff_value
 from spd.utils.distributed_utils import all_reduce
 
 
@@ -21,6 +22,8 @@ def pgd_recon_subset_loss(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
+    routing: SubsetRoutingType,
+    current_frac_of_training: float,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = pgd_masked_recon_loss_update(
         model=model,
@@ -29,8 +32,10 @@ def pgd_recon_subset_loss(
         output_loss_type=output_loss_type,
         batch=batch,
         target_out=target_out,
-        routing="uniform_k-stochastic",  # <- Key difference from pgd_masked_recon_loss.py
         pgd_config=pgd_config,
+        routing=get_coeff_value(routing.k, current_frac_of_training)
+        if isinstance(routing, DensityBasedRouting)
+        else routing,
     )
     return sum_loss / n_examples
 
@@ -48,11 +53,14 @@ class PGDReconSubsetLoss(Metric):
         output_loss_type: Literal["mse", "kl"],
         use_delta_component: bool,
         pgd_config: PGDConfig,
+        routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
         self.use_delta_component: bool = use_delta_component
+        self.routing: SubsetRoutingType = routing
+
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -64,6 +72,7 @@ class PGDReconSubsetLoss(Metric):
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
+        current_frac_of_training: float,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = pgd_masked_recon_loss_update(
@@ -73,8 +82,10 @@ class PGDReconSubsetLoss(Metric):
             output_loss_type=self.output_loss_type,
             batch=batch,
             target_out=target_out,
-            routing="uniform_k-stochastic",  # <- Key difference from pgd_masked_recon_loss.py
             pgd_config=self.pgd_config,
+            routing=get_coeff_value(self.routing.k, current_frac_of_training)
+            if isinstance(self.routing, DensityBasedRouting)
+            else self.routing,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

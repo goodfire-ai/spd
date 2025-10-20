@@ -151,7 +151,10 @@ def init_metric(
             )
         case CIMaskedReconSubsetLossConfig():
             metric = CIMaskedReconSubsetLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+                routing=cfg.subset_routing_cfg,
             )
         case CIMaskedReconLayerwiseLossConfig():
             metric = CIMaskedReconLayerwiseLoss(
@@ -207,6 +210,7 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
                 output_loss_type=run_config.output_loss_type,
+                routing=cfg.subset_routing_cfg,
             )
         case PGDReconLossConfig():
             metric = PGDReconLoss(
@@ -223,6 +227,7 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
                 pgd_config=cfg,
+                routing=cfg.subset_routing_cfg,
             )
         case PGDReconLayerwiseLossConfig():
             metric = PGDReconLayerwiseLoss(
@@ -264,7 +269,8 @@ def init_metric(
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
-                output_target_module_patterns=cfg.output_target_module_patterns,
+                pre_target_module_patterns=cfg.pre_target_module_patterns,
+                post_target_module_patterns=cfg.post_target_module_patterns,
             )
     return metric
 
