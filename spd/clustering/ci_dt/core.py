@@ -3,11 +3,10 @@
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
 
 import numpy as np
 from jaxtyping import Bool, Float
-from sklearn.base import ClassifierMixin
+from muutils.dbg import dbg, dbg_auto, dbg_tensor
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -15,7 +14,6 @@ from sklearn.metrics import (
 )
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
-from muutils.dbg import dbg_auto, dbg, dbg_tensor
 
 
 @dataclass
@@ -23,7 +21,7 @@ class LayerModel:
     """Holds a trained per-layer model."""
 
     layer_index: int
-    model: ClassifierMixin
+    model: MultiOutputClassifier
     feature_dim: int
     target_dim: int
 
@@ -56,12 +54,11 @@ def build_xy(
 def train_trees(
     layers: Sequence[Bool[np.ndarray, "n_samples n_components"]],
     *,
-    strategy: Literal["one_vs_all", "single_tree"] = "one_vs_all",
     max_depth: int | None = None,
     min_samples_leaf: int = 1,
     random_state: int | None = 0,
 ) -> list[LayerModel]:
-    """Train one model per target layer using previous layers as features."""
+    """Train one decision tree per component per target layer using previous layers as features."""
     XYs = build_xy(layers)
     models: list[LayerModel] = []
     for k, (X_k, Y_k) in enumerate(XYs, start=1):
@@ -70,10 +67,38 @@ def train_trees(
             min_samples_leaf=min_samples_leaf,
             random_state=random_state,
         )
-        model: ClassifierMixin = MultiOutputClassifier(base) if strategy == "one_vs_all" else base
-        _ = model.fit(X_k.astype(np.uint8), Y_k.astype(np.uint8))
+        model = MultiOutputClassifier(base)
+        model.fit(X_k.astype(np.uint8), Y_k.astype(np.uint8))
         models.append(LayerModel(k, model, int(X_k.shape[1]), int(Y_k.shape[1])))
     return models
+
+
+def extract_prob_class_1(
+    proba_list: list[np.ndarray],
+    model: MultiOutputClassifier,
+) -> np.ndarray:
+    """Extract P(y=1) for each output, handling constant components.
+
+    When a component is always 0 or always 1 in training data,
+    sklearn only returns probabilities for the observed class.
+    This function handles all cases correctly.
+    """
+    result: list[np.ndarray] = []
+    for i, p in enumerate(proba_list):
+        estimator = model.estimators_[i]
+        classes = estimator.classes_
+        if len(classes) == 1:
+            # Only one class observed during training
+            if classes[0] == 0:
+                # Only saw class 0, so P(y=1) = 0
+                result.append(np.zeros(p.shape[0]))
+            else:  # classes[0] == 1
+                # Only saw class 1, so P(y=1) = 1
+                result.append(np.ones(p.shape[0]))
+        else:
+            # Saw both classes, extract P(y=1) from second column
+            result.append(p[:, 1])
+    return np.stack(result, axis=1)
 
 
 def predict_k(
@@ -86,17 +111,15 @@ def predict_k(
     """Predict layer k activations from layers[:k]."""
     lm: LayerModel = next(m for m in models if m.layer_index == k)
     X: np.ndarray = concat_cols(prefix_layers)
-    dbg_auto(X)
+    # dbg_auto(X)
     proba = lm.model.predict_proba(X.astype(np.uint8))  # type: ignore
-    dbg_auto(proba)
-    dbg_auto(proba[0])
-
+    # dbg_auto(proba)
+    # dbg_auto(proba[0])
     dbg(Counter(tuple(p.shape) for p in proba))
-
-    P: np.ndarray = np.stack(proba, axis=1)
-    dbg_auto(P)
-    Y_hat: np.ndarray = (float(threshold) <= P).astype(bool)
-    dbg_auto(Y_hat)
+    P: np.ndarray = extract_prob_class_1(proba, lm.model)
+    # dbg_auto(P)
+    Y_hat: np.ndarray = (P >= threshold).astype(bool)
+    # dbg_auto(Y_hat)
     return Y_hat
 
 
@@ -148,10 +171,8 @@ def layer_metrics(
 
 def proba_for_layer(lm: LayerModel, X: np.ndarray) -> np.ndarray:
     """Return P(y=1) per target column."""
-    pr = lm.model.predict_proba(X.astype(np.uint8))  # type: ignore
-    if isinstance(pr, list):
-        return np.stack([p[:, 1] for p in pr], axis=1)
-    return pr[..., 1]  # type: ignore
+    proba_list = lm.model.predict_proba(X.astype(np.uint8))  # type: ignore
+    return extract_prob_class_1(proba_list, lm.model)
 
 
 def get_estimator_for(
@@ -159,6 +180,4 @@ def get_estimator_for(
 ) -> DecisionTreeClassifier:
     """Fetch the per-output estimator for a given layer and column."""
     lm = next(m for m in models if m.layer_index == layer_idx)
-    if isinstance(lm.model, MultiOutputClassifier):
-        return lm.model.estimators_[target_idx]  # type: ignore
-    return lm.model  # type: ignore
+    return lm.model.estimators_[target_idx]  # type: ignore
