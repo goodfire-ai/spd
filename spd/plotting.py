@@ -132,12 +132,10 @@ def plot_mean_component_cis_both_scales(
     # Create both figures
     images = []
     for log_y in [False, True]:
-        fig, axs = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height), dpi=200)
+        fig, axs = plt.subplots(
+            n_rows, n_cols, figsize=(fig_width, fig_height), dpi=200, squeeze=False
+        )
         axs = np.array(axs)
-
-        # Ensure axs is always 2D array for consistent indexing
-        if axs.ndim == 1:
-            axs = axs.reshape(n_rows, n_cols)
 
         # Hide unused subplots
         for i in range(n_modules, n_rows * n_cols):
