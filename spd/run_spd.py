@@ -24,7 +24,7 @@ from spd.log import logger
 from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
-from spd.models.component_model import ComponentModel, OutputWithCache
+from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -136,7 +136,10 @@ def optimize(
         pretrained_model_output_attr=config.pretrained_model_output_attr,
         sigmoid_type=config.sigmoid_type,
     )
-
+    # Load a model from pretrained run
+    # model = ComponentModel.from_pretrained("wandb:goodfire/spd/runs/3rthvni3")
+    # target_model = model.target_model
+    # target_model.requires_grad_(False)
     if ln_stds is not None:
         # model has ablated layernorms, patch in the fixed std values
         replace_std_values_in_layernorm(model, ln_stds)
