@@ -62,8 +62,16 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     eps: float = 1e-12
 
 
+class DensityBasedRouting(BaseConfig):
+    k: int | float | CoeffSchedule
+
+
+SubsetRoutingType = Literal["uniform_k-stochastic"] | DensityBasedRouting
+
+
 class CIMaskedReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
+    subset_routing_cfg: SubsetRoutingType
 
 
 class CIMaskedReconLayerwiseLossConfig(LossMetricConfig):
@@ -80,6 +88,7 @@ class StochasticReconLossConfig(LossMetricConfig):
 
 class StochasticReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+    subset_routing_cfg: SubsetRoutingType
 
 
 class StochasticReconLayerwiseLossConfig(LossMetricConfig):
@@ -104,6 +113,7 @@ class PGDReconLossConfig(PGDConfig):
 
 class PGDReconSubsetLossConfig(PGDConfig):
     classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
+    subset_routing_cfg: SubsetRoutingType
 
 
 class PGDReconLayerwiseLossConfig(PGDConfig):
@@ -116,7 +126,8 @@ class StochasticHiddenActsReconLossConfig(LossMetricConfig):
 
 class StochasticArbHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticArbHiddenActsReconLoss"] = "StochasticArbHiddenActsReconLoss"
-    output_target_module_patterns: list[str]
+    pre_target_module_patterns: list[str]
+    post_target_module_patterns: list[str]
 
 
 #### Metrics that can only be used in eval ####
@@ -507,3 +518,10 @@ class Config(BaseConfig):
             assert cfg.coeff is not None, "All loss_metric_configs must have a coeff"
 
         return self
+
+
+if __name__ == "__main__":
+    import json
+
+    with open("./config.schema.json", "w") as f:
+        json.dump(Config.model_json_schema(), f)

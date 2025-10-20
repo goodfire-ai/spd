@@ -1,7 +1,6 @@
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, overload, override
 
@@ -39,6 +38,8 @@ from spd.utils.wandb_utils import (
     fetch_latest_wandb_checkpoint,
     fetch_wandb_run_dir,
 )
+
+HookFuncType = Callable[[nn.Module, tuple[Any], dict[Any, Any], Any], Any]
 
 
 @dataclass
@@ -313,6 +314,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         cache_type: Literal["none"] = "none",
+        cache_points: None = None,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         **kwargs: Any,
     ) -> Tensor: ...
@@ -321,18 +323,9 @@ class ComponentModel(LoadableModule):
     def __call__(
         self,
         *args: Any,
-        cache_type: Literal["input"],
+        cache_type: Literal["input", "output"],
+        cache_points: list[str] | None = None,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        **kwargs: Any,
-    ) -> OutputWithCache: ...
-
-    @overload
-    def __call__(
-        self,
-        *args: Any,
-        cache_type: Literal["output"],
-        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        output_target_module_paths: list[str],
         **kwargs: Any,
     ) -> OutputWithCache: ...
 
@@ -345,85 +338,43 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         cache_type: Literal["input", "none", "output"] = "none",
+        cache_points: list[str] | None = None,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        output_target_module_paths: list[str] | None = None,
         **kwargs: Any,
     ) -> Tensor | OutputWithCache:
-        """Forward pass with optional component replacement and/or input caching.
-
-        This method handles the following 4 cases:
-        1. mask_infos is None and cache_type is "none": Regular forward pass.
-        2. mask_infos is None and cache_type is "input": Forward pass with input caching on
-            all modules in self.target_module_paths.
-        3. mask_infos is not None and cache_type is "input": Forward pass with component replacement
-            and input caching on the modules provided in mask_infos.
-        4. mask_infos is not None and cache_type is "none": Forward pass with component replacement
-            on the modules provided in mask_infos and no caching.
-
-        We use the same _components_and_cache_hook for cases 2, 3, and 4, and don't use any hooks
-        for case 1.
-
-        Args:
-            mask_infos: Dictionary mapping module names to ComponentsMaskInfo.
-                If provided, those modules will be replaced with their components.
-            cache_type: If "input", cache the inputs to the modules provided in mask_infos. If
-                mask_infos is None, cache the inputs to all modules in self.target_module_paths.
-
-        Returns:
-            OutputWithCache object if cache_type is "input", otherwise the model output tensor.
-        """
         if mask_infos is None and cache_type == "none":
             # No hooks needed. Do a regular forward pass of the target model.
             return self._extract_output(self.target_model(*args, **kwargs))
 
-        if cache_type == "output":
-            assert output_target_module_paths is not None, (
-                "output_target_module_paths is required when cache_type is 'output'"
-            )
+        if cache_points is None and cache_type != "none":
+            cache_points = self.target_module_paths
 
-            hooks: dict[str, Callable[..., Any]] = {}
+        cache = dict[str, Tensor]()
+        hooks = dict[str, HookFuncType]()
 
-            all_modules_to_hook = set(output_target_module_paths).union(
-                set(mask_infos) if mask_infos else set()
-            )
+        hook_module_names = set[str]()
 
-            output_acts_cache: dict[str, Tensor] = {}
-
-            for module_name in all_modules_to_hook:
-                cache_output = module_name in output_target_module_paths
-
-                mask_info = (mask_infos or {}).get(module_name, None)
-                components = self.components[module_name] if mask_info is not None else None
-
-                hooks[module_name] = partial(
-                    self._components_and_cache_hook,
-                    module_name=module_name,
-                    components=components,
-                    mask_info=mask_info,
-                    cache_type="output" if cache_output else "none",
-                    cache=output_acts_cache,
-                )
-
-            with self._attach_forward_hooks(hooks):
-                raw_out = self.target_model(*args, **kwargs)
-
-            out = self._extract_output(raw_out)
-            return OutputWithCache(output=out, cache=output_acts_cache)
-
-        cache: dict[str, Tensor] = {}
-        hooks = {}
-        hook_module_names = list(mask_infos.keys()) if mask_infos else self.target_module_paths
+        if mask_infos:
+            hook_module_names.update(mask_infos.keys())
+        if cache_points:
+            hook_module_names.update(cache_points)
 
         for module_name in hook_module_names:
-            mask_info = mask_infos[module_name] if mask_infos else None
-            components = self.components[module_name] if mask_info else None
+            should_cache = cache_points is not None and module_name in cache_points
+            module_cache_type = cache_type if should_cache else "none"
 
-            hooks[module_name] = partial(
-                self._components_and_cache_hook,
+            should_mask = mask_infos is not None and module_name in mask_infos
+
+            components_and_mask_info = (
+                (self.components[module_name], runtime_cast(dict, mask_infos)[module_name])
+                if should_mask
+                else None
+            )
+
+            hooks[module_name] = self._create_components_and_cache_hook(
                 module_name=module_name,
-                components=components,
-                mask_info=mask_info,
-                cache_type=cache_type,
+                components_and_mask_info=components_and_mask_info,
+                cache_type=module_cache_type,
                 cache=cache,
             )
 
@@ -433,86 +384,70 @@ class ComponentModel(LoadableModule):
         out = self._extract_output(raw_out)
 
         match cache_type:
-            case "input":
+            case "input" | "output":
                 return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
 
-    @staticmethod
-    def _make_output_cache_hook(
-        module_name: str,
-        output_acts_cache: dict[str, Tensor],
-    ) -> Callable[[nn.Module, list[Any], dict[Any, Any], Any], Any]:
-        def hook(module: nn.Module, args: list[Any], kwargs: dict[Any, Any], output: Any) -> Any:  # pyright: ignore[reportUnusedParameter]
-            output_acts_cache[module_name] = output
-            return None
-
-        return hook
-
-    # TODO: make this a higher order function instead of relying on perfect partial application
-    def _components_and_cache_hook(
+    def _create_components_and_cache_hook(
         self,
-        _module: nn.Module,
-        args: list[Any],
-        kwargs: dict[Any, Any],
-        output: Any,
         module_name: str,
-        components: Components | None,
-        mask_info: ComponentsMaskInfo | None,
+        components_and_mask_info: tuple[Components, ComponentsMaskInfo] | None,
         cache_type: Literal["input", "none", "output"],
         cache: dict[str, Tensor],
-    ) -> Any | None:
-        """Unified hook function that handles both component replacement and caching.
+    ) -> HookFuncType:
+        def _hook(
+            _module: nn.Module,
+            args: tuple[Any, ...],
+            kwargs: dict[Any, Any],
+            output: Any,
+        ):
+            assert len(args) == 1, f"Expected 1 argument, got {len(args)}"
+            x = args[0]
 
-        Args:
-            module: The module being hooked
-            args: Module forward args
-            kwargs: Module forward kwargs
-            output: Module forward output
-            module_name: Name of the module in the target model
-            components: Component replacement (if using components)
-            mask_info: Mask information (if using components)
-            cache_type: Whether to cache the input
-            cache: Cache dictionary to populate (if cache_type is not None)
-
-        Returns:
-            If using components: modified output (or None to keep original)
-            If not using components: None (keeps original output)
-        """
-        assert len(args) == 1, "Expected 1 argument"
-        assert len(kwargs) == 0, "Expected no keyword arguments"
-        x = args[0]
-        assert isinstance(x, Tensor), "Expected input tensor"
-        assert cache_type in ["input", "none", "output"], (
-            "Expected cache_type to be 'input', 'none', or 'output'"
-        )
-
-        if cache_type == "input":
-            cache[module_name] = x
-        elif cache_type == "output":
-            cache[module_name] = output
-
-        if components is not None and mask_info is not None:
-            assert isinstance(output, Tensor), (
-                f"Only supports single-tensor outputs, got {type(output)}"
+            assert len(kwargs) == 0, f"Expected no keyword arguments, got {len(kwargs)}"
+            assert isinstance(x, Tensor), f"Expected input tensor, got {type(x)}"
+            assert cache_type in ["input", "none", "output"], (
+                f"Expected cache_type to be 'input', 'none', or 'output', got {cache_type}"
             )
 
-            components_out = components(
-                x,
-                mask=mask_info.component_mask,
-                weight_delta_and_mask=mask_info.weight_delta_and_mask,
-            )
+            if components_and_mask_info is not None:
+                components, mask_info = components_and_mask_info
 
-            if mask_info.routing_mask == "all":
-                return components_out
+                assert isinstance(output, Tensor), (
+                    f"Only supports single-tensor outputs, got {type(output)}"
+                )
 
-            return torch.where(mask_info.routing_mask[..., None], components_out, output)
+                components_out = components(
+                    x,
+                    mask=mask_info.component_mask,
+                    weight_delta_and_mask=mask_info.weight_delta_and_mask,
+                )
 
-        # No component replacement - keep original output
-        return None
+                match mask_info.routing_mask:
+                    case "all":
+                        output = components_out
+                    case Tensor():
+                        output = torch.where(
+                            mask_info.routing_mask[..., None], components_out, output
+                        )
+
+            match cache_type:
+                case "output":
+                    assert cache is not None, "cache is required when cache_type is 'output'"
+                    cache[module_name] = output
+                case "input":
+                    assert cache is not None, "cache is required when cache_type is 'input'"
+                    cache[module_name] = x
+                case "none":
+                    pass
+
+            return output
+
+        return _hook
 
     @contextmanager
-    def _attach_forward_hooks(self, hooks: dict[str, Callable[..., Any]]) -> Generator[None]:
+    def _attach_forward_hooks(self, hooks: dict[str, HookFuncType]) -> Generator[None]:
         """Context manager to temporarily attach forward hooks to the target model."""
         handles: list[RemovableHandle] = []
         for module_name, hook in hooks.items():
