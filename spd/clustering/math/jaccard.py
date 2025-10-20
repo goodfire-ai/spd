@@ -105,90 +105,47 @@ def jaccard_index(
 
     _jaccard: Float[Tensor, "s s"] = torch.full((s_ensemble, s_ensemble), torch.nan)
 
-    # Create single large plot: (s + 2) rows × s cols
-    # Row 0: onehot expanded
-    # Row 1: matches
-    # Rows 2 to s+1: dist_mat for each pair
-    _fig, axes = plt.subplots(s_ensemble + 2, s_ensemble, figsize=(s_ensemble, (s_ensemble + 2)))
-
-    # Top row: onehot expanded
-    for i in range(s_ensemble):
-        largest_grp_size_i: int = int(matches[i].sum(dim=1).max().item())
-        onehot = expand_to_onehot(X[i], k_groups=int(X[i].max())).cpu().numpy()
-        axes[0, i].matshow(onehot, cmap="Blues")
-        axes[0, i].set_title(f"{i}\nLGS={largest_grp_size_i}")
-        axes[0, i].axis("off")
-
-    # Second row: matches
-    for i in range(s_ensemble):
-        axes[1, i].matshow(matches[i].cpu().numpy())
-        # axes[1, i].set_title(f"matches {i}")
-        axes[1, i].axis("off")
-
-    # Lower s rows: dist_mat for each pair
     for i in range(s_ensemble):
         for j in range(s_ensemble):
             _largest_grp_size_j: int = int(matches[j].sum(dim=1).max().item())
             dist_mat = matches[i].float() - matches[j].float()
-            # dbg_auto(dist_mat)
-
-            # Compute distance
             dist: float = (
                 torch.tril(dist_mat, diagonal=-1).abs().sum()
-                # > (_n_components / 2)
-            ).item()
+            ).item() 
             _jaccard[i, j] = dist
-            # Plot dist_mat on axes[i + 2, j]
-            _im = axes[i + 2, j].matshow(dist_mat.cpu().numpy(), cmap="RdBu", vmin=-1, vmax=1)
-            axes[i + 2, j].set_title(f"diff {i},{j}\n{dist=}", fontsize=8)
-            axes[i + 2, j].axis("off")
-            # dbg_auto((i, j, dist))
-
-    plt.tight_layout()
-    plt.show()
-
-    # for i in range(s_ensemble):
-    #     for j in range(i, s_ensemble):
-    #         M11: int = int((matches[i] & matches[j]).sum() - n_components) // 2
-    #         M10: int = int((matches[i] & ~matches[j]).sum()) // 2
-    #         M01: int = int((~matches[i] & matches[j]).sum()) // 2
-    #         if M11 + M10 + M01 == 0:
-    #             jaccard[i, j] = float("nan")
-    #         else:
-    #             jaccard[i, j] = M11 / (M11 + M10 + M01)
-    #         jaccard[j, i] = jaccard[i, j]
-    #         dbg_auto(i, j, M11, M10, M01, jaccard[i, j])
 
     return _jaccard
 
 
 # TODO: doesnt work when large groups??????
-X_test = torch.tensor(
-    [
-        # [1, 2, 3, 3],
-        # [0, 1, 2, 3],
-        #
-        [0, 1, 1, 2, 3, 3],
-        [3, 0, 0, 1, 2, 2],
-        [0, 3, 1, 1, 2, 2],
-        [0, 3, 0, 0, 1, 1],
-        [0, 0, 1, 0, 0, 1],
-        [0, 0, 0, 0, 0, 1],
-        [2, 3, 0, 0, 1, 1],
-        [2, 3, 0, 0, 1, 2],
-        #
-        [0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 1],
-        [0, 0, 0, 0, 1, 0],
-        [0, 0, 0, 0, 1, 1],
-        [0, 0, 0, 1, 0, 0],
-        [0, 0, 0, 2, 0, 0],
-        [0, 0, 0, 3, 2, 1],
-        [0, 0, 4, 3, 2, 1],
-        [0, 5, 4, 3, 2, 1],
-    ]
-)
+# X_test = torch.tensor(
+#     [
+#         # [1, 2, 3, 3],
+#         # [0, 1, 2, 3],
+#         #
+#         [0, 1, 1, 2, 3, 3],
+#         [3, 0, 0, 1, 2, 2],
+#         [0, 3, 1, 1, 2, 2],
+#         [0, 3, 0, 0, 1, 1],
+#         [0, 0, 1, 0, 0, 1],
+#         [0, 0, 0, 0, 0, 1],
+#         [2, 3, 0, 0, 1, 1],
+#         [2, 3, 0, 0, 1, 2],
+#         #
+#         [0, 0, 0, 0, 0, 0],
+#         [0, 0, 0, 0, 0, 1],
+#         [0, 0, 0, 0, 1, 0],
+#         [0, 0, 0, 0, 1, 1],
+#         [0, 0, 0, 1, 0, 0],
+#         [0, 0, 0, 2, 0, 0],
+#         [0, 0, 0, 3, 2, 1],
+#         [0, 0, 4, 3, 2, 1],
+#         [0, 5, 4, 3, 2, 1],
+#     ]
+# )
 
+
+X_test = torch.randint(low=0, high=20, size=(100, 20))
 
 dbg_auto(X_test)
 
@@ -201,22 +158,22 @@ pih = pih + np.tril(pih_raw, k=-1) + np.tril(pih_raw, k=-1).T
 jcrd = jaccard_index(X_test)
 
 
-# plt.matshow(pih)
-# plt.title("perm-invariant Hamming distance")
-# plt.colorbar()
-# plt.show()
-show_matrix(pih, title="perm-invariant Hamming distance", cmap="viridis", num_fmt=".0f")
+# # plt.matshow(pih)
+# # plt.title("perm-invariant Hamming distance")
+# # plt.colorbar()
+# # plt.show()
+# show_matrix(pih, title="perm-invariant Hamming distance", cmap="viridis", num_fmt=".0f")
 
-# plt.matshow(jcrd.numpy())
-# plt.title("jaccard index")
-# plt.colorbar()
-# plt.show()
-show_matrix(jcrd, title="jaccard index", cmap="viridis", num_fmt=".0f")
+# # plt.matshow(jcrd.numpy())
+# # plt.title("jaccard index")
+# # plt.colorbar()
+# # plt.show()
+# show_matrix(jcrd, title="jaccard index", cmap="viridis", num_fmt=".0f")
 
-diff = jcrd.numpy() - pih
-dbg_auto(diff)
-vlim = np.max(np.abs(diff))
-dbg_auto(vlim)
+# diff = jcrd.numpy() - pih
+# dbg_auto(diff)
+# vlim = np.max(np.abs(diff))
+# dbg_auto(vlim)
 # plt.matshow(
 #     diff,
 #     vmin=-vlim,
@@ -227,12 +184,12 @@ dbg_auto(vlim)
 # plt.colorbar()
 # plt.show()
 
-show_matrix(diff, title="difference", cmap="RdBu", vlims=vlim, num_fmt=".0f")
+# show_matrix(diff, title="difference", cmap="RdBu", vlims=vlim, num_fmt=".0f")
 
 
-ratio = jcrd.numpy() / pih
+# ratio = jcrd.numpy() / pih
 
-show_matrix(ratio, title="ratio", cmap="RdBu", vlims=(-5, 7))
+# show_matrix(ratio, title="ratio", cmap="RdBu", vlims=(-5, 7))
 
 # Scatter plot showing correlation between the two methods
 # Extract upper triangle to avoid duplicates (excluding diagonal)
@@ -242,13 +199,16 @@ pih_pairs = pih[mask]
 jcrd_pairs = jcrd.numpy()[mask]
 
 fig, ax = plt.subplots(figsize=(8, 8))
-ax.scatter(pih_pairs, jcrd_pairs, alpha=0.6, s=50)
+# add some x jitter
+pih_pairs_jitter = pih_pairs + np.random.normal(scale=0.15, size=pih_pairs.shape)
+ax.plot(pih_pairs_jitter, jcrd_pairs, "o", alpha=0.05, markeredgewidth=0)
 ax.set_xlabel("Permutation-Invariant Hamming Distance")
 ax.set_ylabel("Jaccard Distance")
 
 # Add diagonal reference line
-max_val = max(pih_pairs.max(), jcrd_pairs.max())
-min_val = min(pih_pairs.min(), jcrd_pairs.min())
+# max_val = max(pih_pairs.max(), jcrd_pairs.max())
+# min_val = min(pih_pairs.min(), jcrd_pairs.min())
+
 
 # Calculate and display correlation
 correlation = np.corrcoef(pih_pairs, jcrd_pairs)[0, 1]
