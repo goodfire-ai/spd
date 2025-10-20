@@ -2,21 +2,17 @@
   "merge_config": {
     "activation_threshold": 0.1,
     "alpha": 1.0,
-    "iters": null,
+    "iters": 20,
     "merge_pair_sampling_method": "range",
-    "merge_pair_sampling_kwargs": {"threshold": 0.001},
+    "merge_pair_sampling_kwargs": {"threshold": 0.01},
     "pop_component_prob": 0,
     "filter_dead_threshold": 0.1,
     "module_name_filter": null
   },
-  "model_path": "wandb:goodfire/spd/runs/rn9klzfs",
-  "task_name": "lm",
-  "distances_method": "jaccard",
-  "n_batches": 1,
+  "model_path": "wandb:goodfire/spd/runs/lxs77xye",
   "batch_size": 32,
-  "wandb_enabled": true,
-  "wandb_project": "spd-cluster",
-  "intervals": {
+  "wandb_project": null,
+  "logging_intervals": {
     "stat": 1,
     "tensor": 200,
     "plot": 2000,

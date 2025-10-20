@@ -1,6 +1,6 @@
-run_clustering_config_path: "spd/clustering/configs/test-simplestories.json"
-n_runs: 2
-distances_method: "perm_invariant_hamming"
+run_clustering_config_path: "spd/clustering/configs/simplestories_dev.json"
+n_runs: 5
+distances_methods: ["matching_dist", "perm_invariant_hamming"]
 base_output_dir: "tests/.temp/clustering"
 slurm_job_name_prefix: null
 slurm_partition: null

@@ -22,7 +22,7 @@ import os
 import shlex
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, overload
 
 import wandb_workspaces.workspaces as ws
 from pydantic import Field, PositiveInt, field_validator
@@ -200,10 +200,11 @@ def generate_calc_distances_commands(
         )
     return commands
 
-
 def main(
     pipeline_config: ClusteringPipelineConfig,
     local: bool = False,
+    local_clustering_parallel: bool = False,
+    local_calc_distances_parallel: bool = False,
     dataset_streaming: bool = False,
 ) -> None:
     """Submit clustering runs to SLURM.
@@ -216,6 +217,12 @@ def main(
     # ==========================================================================================
 
     logger.set_format("console", "terse")
+
+    if local_clustering_parallel or local_calc_distances_parallel:
+        assert local, (
+            "local_clustering_parallel and local_calc_distances_parallel can only be True if running locally"
+            f"{local_clustering_parallel=}, {local_calc_distances_parallel=}, {local=}"
+        )
 
     # Create ExecutionStamp for pipeline
     execution_stamp: ExecutionStamp = ExecutionStamp.create(
@@ -260,14 +267,14 @@ def main(
         # submit clustering array job
         run_script_array_local(
             commands=clustering_commands,
-            parallel=True,
+            parallel=local_clustering_parallel,
         )
 
         # submit calc_distances jobs in parallel
         logger.info("Calculating distances...")
         run_script_array_local(
             commands=calc_distances_commands,
-            parallel=True,
+            parallel=local_calc_distances_parallel,
             track_timing=True,
         )
 
@@ -402,6 +409,16 @@ def cli():
         help="Run locally instead of submitting to SLURM (required if slurm_job_name_prefix and slurm_partition are None in config)",
     )
     parser.add_argument(
+        "--local-clustering-parallel",
+        action="store_true",
+        help="If running locally, whether to run clustering runs in parallel",
+    )
+    parser.add_argument(
+        "--local-calc-distances-parallel",
+        action="store_true",
+        help="If running locally, whether to run distance calculations in parallel",
+    )
+    parser.add_argument(
         "--dataset-streaming",
         action="store_true",
         help="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
@@ -429,6 +446,8 @@ def cli():
         pipeline_config=pipeline_config,
         local=args.local,
         dataset_streaming=args.dataset_streaming,
+        local_clustering_parallel=args.local_clustering_parallel,
+        local_calc_distances_parallel=args.local_calc_distances_parallel,
     )
 
 
