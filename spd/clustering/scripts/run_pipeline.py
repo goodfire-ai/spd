@@ -260,6 +260,7 @@ def main(
         # submit clustering array job
         run_script_array_local(
             commands=clustering_commands,
+            parallel=True,
         )
 
         # submit calc_distances jobs in parallel

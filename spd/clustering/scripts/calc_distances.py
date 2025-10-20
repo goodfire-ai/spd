@@ -17,6 +17,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 
+from muutils.dbg import dbg_tensor
+
 from spd.clustering.consts import DistancesArray, DistancesMethod
 from spd.clustering.ensemble_registry import get_clustering_runs
 from spd.clustering.math.merge_distances import compute_distances
@@ -75,6 +77,8 @@ def main(pipeline_run_id: str, distances_method: DistancesMethod) -> None:
         normalized_merge_array=merge_array,
         method=distances_method,
     )
+
+    dbg_tensor(distances)
 
     distances_path = pipeline_dir / f"distances_{distances_method}.npz"
     np.savez_compressed(distances_path, distances=distances)
