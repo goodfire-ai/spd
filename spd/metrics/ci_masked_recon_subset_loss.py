@@ -25,7 +25,7 @@ def _ci_masked_recon_subset_loss_update(
     current_frac_of_training: float,
 ) -> tuple[Float[Tensor, ""], int]:
     materialized_routing = (
-        get_coeff_value(routing.k, current_frac_of_training)
+        get_coeff_value(routing.routing_density, current_frac_of_training)
         if isinstance(routing, DensityBasedRouting)
         else routing
     )
