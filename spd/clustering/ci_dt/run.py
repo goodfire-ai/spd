@@ -8,15 +8,12 @@ import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
 
-from spd.clustering.activations import component_activations
 from spd.clustering.ci_dt.config import CIDTConfig
-from spd.clustering.ci_dt.core import (
-    LayerModel,
-    build_xy,
-    layer_metrics,
-    proba_for_layer,
-    predict_all,
-    train_trees,
+from spd.clustering.ci_dt.core import LayerModel, predict_all, train_trees
+from spd.clustering.ci_dt.pipeline import (
+    compute_activations_multibatch,
+    compute_tree_metrics,
+    convert_to_boolean_layers,
 )
 from spd.clustering.ci_dt.plot import (
     plot_activations,
@@ -39,10 +36,9 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 # ----------------------- configuration -----------------------
 
 config = CIDTConfig(
-    batch_size=10,
-    n_batches=10,
+    batch_size=32,
+    n_batches=64,
     activation_threshold=0.01,
-    filter_dead_threshold=0.001,
     max_depth=8,
     random_state=42,
 )
@@ -91,107 +87,20 @@ print(f"Created LM dataset with {cfg.task_config.dataset_name}")
 # %%
 # ----------------------- get activations -----------------------
 
-# Loop over batches, accumulate on CPU
-print(f"Computing activations for {config.n_batches} batches (batch_size={config.batch_size})...")
-all_component_acts: list[dict[str, Tensor]] = []
-
-for batch_idx in range(config.n_batches):
-    batch_data = next(iter(dataloader))
-    batch: Tensor = batch_data["input_ids"]
-
-    # Get activations on GPU
-    component_acts_gpu: dict[str, Tensor] = component_activations(
-        model=model, device=device, batch=batch
-    )
-
-    # Move to CPU immediately and store
-    component_acts_cpu: dict[str, Tensor] = {
-        key: tensor.cpu() for key, tensor in component_acts_gpu.items()
-    }
-    all_component_acts.append(component_acts_cpu)
-
-    print(f"  Batch {batch_idx + 1}/{config.n_batches} processed")
-
-# Concatenate all batches on CPU
-print("Concatenating batches...")
-module_keys: list[str] = list(all_component_acts[0].keys())
-component_acts_concat: dict[str, Tensor] = {
-    key: torch.cat([batch[key] for batch in all_component_acts], dim=0)
-    for key in module_keys
-}
-
-# Apply seq_mean if needed (LM task)
-print("Applying seq_mean over sequence dimension...")
-component_acts_concat = {
-    key: act.mean(dim=1) if act.ndim == 3 else act
-    for key, act in component_acts_concat.items()
-}
-
-# Filter dead components (on CPU)
-print("\nFiltering dead components...")
-component_acts_filtered: dict[str, Float[np.ndarray, "n_samples n_components"]] = {}
-n_total_original: int = 0
-n_total_alive: int = 0
-n_total_dead: int = 0
-
-for module_key in module_keys:
-    acts_tensor: Tensor = component_acts_concat[module_key]
-    n_components_original: int = acts_tensor.shape[1]
-    n_total_original += n_components_original
-
-    # Filter components where max activation < threshold
-    max_acts: Tensor = acts_tensor.max(dim=0).values
-    alive_mask: Bool[Tensor, "n_components"] = max_acts >= config.filter_dead_threshold
-
-    acts_alive: Tensor = acts_tensor[:, alive_mask]
-    acts_np: Float[np.ndarray, "n_samples n_components"] = acts_alive.numpy()
-
-    n_dead: int = (~alive_mask).sum().item()
-    n_alive: int = alive_mask.sum().item()
-    n_total_alive += n_alive
-    n_total_dead += n_dead
-
-    component_acts_filtered[module_key] = acts_np
-    print(f"  {module_key:30s} {n_alive:5d} alive, {n_dead:5d} dead")
-
-print(f"\nTotal components (before filtering): {n_total_original}")
-print(f"Alive components: {n_total_alive}")
-print(f"Dead components: {n_total_dead}")
-print(f"Module keys: {module_keys}")
+component_acts_concat: dict[str, Tensor] = compute_activations_multibatch(
+    model=model,
+    device=device,
+    dataloader=dataloader,
+    n_batches=config.n_batches,
+)
 
 # %%
-# ----------------------- convert to layers -----------------------
+# ----------------------- convert to boolean layers -----------------------
 
-# Convert to boolean and filter constant components
-print("\nConverting to boolean layers...")
-layers_true: list[Bool[np.ndarray, "n_samples n_components"]] = []
-
-for module_key in module_keys:
-    module_acts: Float[np.ndarray, "n_samples n_components"] = component_acts_filtered[module_key]
-
-    # Convert to boolean
-    module_acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
-        module_acts >= config.activation_threshold
-    ).astype(bool)
-
-    # Filter out components that are always dead or always alive
-    # (they provide no information for decision trees)
-    component_variance: Float[np.ndarray, "n_components"] = module_acts_bool.var(axis=0)
-    varying_mask: Bool[np.ndarray, "n_components"] = component_variance > 0
-
-    # Count always-dead and always-alive components for diagnostics
-    always_dead_mask: Bool[np.ndarray, "n_components"] = ~module_acts_bool.any(axis=0)
-    always_alive_mask: Bool[np.ndarray, "n_components"] = module_acts_bool.all(axis=0)
-    n_always_dead: int = int(always_dead_mask.sum())
-    n_always_alive: int = int(always_alive_mask.sum())
-
-    module_acts_varying: Bool[np.ndarray, "n_samples n_varying"] = module_acts_bool[:, varying_mask]
-
-    layers_true.append(module_acts_varying)
-    n_varying: int = module_acts_varying.shape[1]
-    print(f"  {module_key:30s} {n_varying:5d} varying, {n_always_dead:5d} dead, {n_always_alive:5d} const")
-
-print(f"\nCreated {len(layers_true)} layers for decision tree training")
+layers_true: list[Bool[np.ndarray, "n_samples n_components"]] = convert_to_boolean_layers(
+    component_acts=component_acts_concat,
+    activation_threshold=config.activation_threshold,
+)
 
 # %%
 # ----------------------- fit and predict -----------------------
@@ -205,32 +114,10 @@ layers_pred: list[np.ndarray] = predict_all(models, [layers_true[0]])
 # %%
 # ----------------------- metrics -----------------------
 
-XYs_demo = build_xy(layers_true)
-per_layer_stats: list[dict[str, Any]] = []
-all_triplets: list[tuple[int, int, float]] = []  # (layer, target_idx, AP)
-
-for lm, (Xk, Yk) in zip(models, XYs_demo, strict=True):
-    Pk: np.ndarray = proba_for_layer(lm, Xk)
-    Yhat_k: np.ndarray = Pk >= 0.5
-    ap, acc, bacc, prev = layer_metrics(Yk, Pk, Yhat_k)
-    per_layer_stats.append(
-        {
-            "ap": ap,
-            "acc": acc,
-            "bacc": bacc,
-            "prev": prev,
-            "mean_ap": float(np.nanmean(ap)),
-            "mean_acc": float(np.nanmean(acc)),
-            "mean_bacc": float(np.nanmean(bacc)),
-        }
-    )
-    for j, apj in enumerate(ap):
-        all_triplets.append((lm.layer_index, j, float(apj)))
-
-# identify best and worst trees across all outputs by AP
-sorted_triplets = sorted(all_triplets, key=lambda t: (np.isnan(t[2]), t[2]))
-worst_list = [t for t in sorted_triplets if not np.isnan(t[2])][:2]
-best_list = [t for t in sorted_triplets if not np.isnan(t[2])][-2:]
+per_layer_stats, worst_list, best_list = compute_tree_metrics(
+    models=models,
+    layers_true=layers_true,
+)
 
 # %%
 # ----------------------- plot: layer metrics -----------------------
@@ -261,15 +148,34 @@ plot_covariance(layers_true)
 print("Covariance plot generated.")
 
 # %%
+# ----------------------- generate feature names -----------------------
+# Generate feature names with activation statistics and decoded directions
+
+from spd.clustering.ci_dt.feature_names import generate_feature_names
+
+module_keys = list(component_acts_concat.keys())
+
+feature_names = generate_feature_names(
+    component_model=model,
+    component_acts=component_acts_concat,
+    layers_true=layers_true,
+    layers_pred=layers_pred,
+    tokenizer=cfg.task_config.tokenizer if hasattr(cfg.task_config, 'tokenizer') else None,
+    module_keys=module_keys,
+    top_k=3,
+)
+print("Feature names generated.")
+
+# %%
 # ----------------------- plot: worst trees -----------------------
 # Decision tree visualization for worst performing trees
 
-plot_selected_trees(worst_list, "Worst", models)
+plot_selected_trees(worst_list, "Worst", models, feature_names=feature_names)
 print("Worst trees plots generated.")
 
 # %%
 # ----------------------- plot: best trees -----------------------
 # Decision tree visualization for best performing trees
 
-plot_selected_trees(best_list, "Best", models)
+plot_selected_trees(best_list, "Best", models, feature_names=feature_names)
 print("Best trees plots generated.")

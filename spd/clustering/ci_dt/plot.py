@@ -92,14 +92,29 @@ def plot_selected_trees(
     picks: list[tuple[int, int, float]],
     title_prefix: str,
     models: list[LayerModel],
+    feature_names: list[list[str]] | None = None,
 ) -> None:
-    """Plot a list of selected trees by (layer, target_idx, score)."""
+    """Plot a list of selected trees by (layer, target_idx, score).
+
+    Args:
+        picks: List of (layer_idx, target_idx, score) tuples identifying trees to plot
+        title_prefix: Prefix for plot titles (e.g. "Best" or "Worst")
+        models: Trained LayerModel objects
+        feature_names: Optional list of feature name lists, one per layer.
+                      feature_names[k] contains names for all features used to predict layer k.
+    """
     for layer_idx, target_idx, score in picks:
         est = get_estimator_for(models, layer_idx, target_idx)
         fig = plt.figure(figsize=(10, 6))
         ax = fig.add_subplot(1, 1, 1)
         ax.set_title(f"{title_prefix}: layer {layer_idx}, target {target_idx}, AP={score:.3f}")
-        plot_tree(est, ax=ax, filled=False)  # default styling
+
+        # Get feature names for this layer if available
+        feat_names = None
+        if feature_names is not None and 0 <= layer_idx < len(feature_names):
+            feat_names = feature_names[layer_idx]
+
+        plot_tree(est, ax=ax, filled=False, feature_names=feat_names)
         fig.tight_layout()
 
 
