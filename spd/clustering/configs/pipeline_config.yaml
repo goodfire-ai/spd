@@ -1,6 +1,6 @@
 run_clustering_config_path: "spd/clustering/configs/example.yaml"
 n_runs: 2
-distances_method: "perm_invariant_hamming"
+distances_methods: ["perm_invariant_hamming"]
 base_output_dir: "/mnt/polished-lake/spd/clustering"
 slurm_job_name_prefix: "spd"
 slurm_partition: "h100-reserved"

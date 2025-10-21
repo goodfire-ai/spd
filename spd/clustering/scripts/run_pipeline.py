@@ -20,13 +20,12 @@ Output structure (only pipeline_config.json is saved to directly in this script.
 import argparse
 import os
 import shlex
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import wandb_workspaces.workspaces as ws
-from pydantic import Field, PositiveInt
+from pydantic import Field, PositiveInt, field_validator
 
 from spd.base_config import BaseConfig
 from spd.clustering.consts import DistancesMethod
@@ -72,7 +71,9 @@ class ClusteringPipelineConfig(BaseConfig):
 
     run_clustering_config_path: Path = Field(description="Path to ClusteringRunConfig file.")
     n_runs: PositiveInt = Field(description="Number of clustering runs in the ensemble")
-    distances_method: DistancesMethod = Field(description="Method to use for calculating distances")
+    distances_methods: list[DistancesMethod] = Field(
+        description="List of method(s) to use for calculating distances"
+    )
     base_output_dir: Path = Field(description="Base directory for outputs of clustering runs.")
     slurm_job_name_prefix: str | None = Field(description="Prefix for SLURM job names")
     slurm_partition: str | None = Field(description="SLURM partition to use")
@@ -82,6 +83,16 @@ class ClusteringPipelineConfig(BaseConfig):
     )
     wandb_entity: str = Field(description="WandB entity (team/user) name")
     create_git_snapshot: bool = Field(description="Create a git snapshot for the run")
+
+    @field_validator("distances_methods")
+    @classmethod
+    def validate_distances_methods(cls, v: list[DistancesMethod]) -> list[DistancesMethod]:
+        """Validate that distances_methods is non-empty and contains valid methods."""
+        assert all(method in DistancesMethod.__args__ for method in v), (
+            f"Invalid distances_methods: {v}"
+        )
+
+        return v
 
 
 def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str) -> str:
@@ -155,29 +166,42 @@ def generate_clustering_commands(
     return commands
 
 
-def generate_calc_distances_command(pipeline_run_id: str, distances_method: DistancesMethod) -> str:
-    """Generate command for calculating distances.
+def generate_calc_distances_commands(
+    pipeline_run_id: str, distances_methods: list[DistancesMethod]
+) -> list[str]:
+    """Generate commands for calculating distances.
 
     Args:
         pipeline_run_id: Pipeline run ID (will query registry for clustering runs)
-        distances_method: Method for calculating distances
+        distances_methods: List of methods for calculating distances
+
+    Returns:
+        List of shell-safe command strings, one per method
     """
-    return shlex.join(
-        [
-            "python",
-            "spd/clustering/scripts/calc_distances.py",
-            "--pipeline-run-id",
-            pipeline_run_id,
-            "--distances-method",
-            distances_method,
-        ]
-    )
+    commands: list[str] = []
+    for method in distances_methods:
+        commands.append(
+            shlex.join(
+                [
+                    "python",
+                    "spd/clustering/scripts/calc_distances.py",
+                    "--pipeline-run-id",
+                    pipeline_run_id,
+                    "--distances-method",
+                    method,
+                ]
+            )
+        )
+    return commands
 
 
 def main(
     pipeline_config: ClusteringPipelineConfig,
     local: bool = False,
+    local_clustering_parallel: bool = False,
+    local_calc_distances_parallel: bool = False,
     dataset_streaming: bool = False,
+    track_resources_calc_distances: bool = False,
 ) -> None:
     """Submit clustering runs to SLURM.
 
@@ -189,6 +213,13 @@ def main(
     # ==========================================================================================
 
     logger.set_format("console", "terse")
+
+    if local_clustering_parallel or local_calc_distances_parallel or track_resources_calc_distances:
+        assert local, (
+            "local_clustering_parallel, local_calc_distances_parallel, track_resources_calc_distances "
+            "can only be set when running locally\n"
+            f"{local_clustering_parallel=}, {local_calc_distances_parallel=}, {track_resources_calc_distances=}, {local=}"
+        )
 
     # Create ExecutionStamp for pipeline
     execution_stamp: ExecutionStamp = ExecutionStamp.create(
@@ -222,10 +253,10 @@ def main(
         dataset_streaming=dataset_streaming,
     )
 
-    # Generate command for calculating distances
-    calc_distances_command = generate_calc_distances_command(
+    # Generate commands for calculating distances
+    calc_distances_commands = generate_calc_distances_commands(
         pipeline_run_id=pipeline_run_id,
-        distances_method=pipeline_config.distances_method,
+        distances_methods=pipeline_config.distances_methods,
     )
 
     # Submit to SLURM
@@ -233,23 +264,31 @@ def main(
         # submit clustering array job
         run_script_array_local(
             commands=clustering_commands,
+            parallel=local_clustering_parallel,
         )
 
-        # submit calc_distances job
+        # submit calc_distances jobs in parallel
         logger.info("Calculating distances...")
-        logger.info(f"Command: {calc_distances_command}")
-        subprocess.run(shlex.split(calc_distances_command), shell=False, check=True)
+        run_script_array_local(
+            commands=calc_distances_commands,
+            parallel=local_calc_distances_parallel,
+            track_resources=track_resources_calc_distances,
+        )
 
         logger.section("complete!")
-        distances_plot_path = (
-            storage.plots_dir / f"distances_{pipeline_config.distances_method}.png"
-        )
+
+        # Build distances plot paths dict
+        distances_plots = {
+            f"distances via {method}": str(storage.plots_dir / f"distances_{method}.png")
+            for method in pipeline_config.distances_methods
+        }
+
         logger.values(
             {
                 "Total clustering runs": len(clustering_commands),
                 "Pipeline run ID": pipeline_run_id,
                 "Pipeline output dir": str(storage.base_dir),
-                "Distances plot": str(distances_plot_path),
+                **distances_plots,
             }
         )
 
@@ -275,36 +314,52 @@ def main(
             )
             array_job_id = submit_slurm_script(clustering_script_path)
 
-            # Submit calc_distances job with dependency on array job
-            calc_distances_script_path = Path(temp_dir) / f"calc_distances_{pipeline_run_id}.sh"
+            # Submit calc_distances jobs (one per method) with dependency on array job
+            calc_distances_job_ids: list[str] = []
+            calc_distances_logs: list[str] = []
 
-            create_slurm_script(
-                script_path=calc_distances_script_path,
-                job_name=f"{pipeline_config.slurm_job_name_prefix}_distances",
-                command=calc_distances_command,
-                snapshot_branch=execution_stamp.snapshot_branch,
-                n_gpus=1,  # Always 1 GPU for distances calculation
-                partition=pipeline_config.slurm_partition,
-                dependency_job_id=array_job_id,
-            )
-            calc_distances_job_id = submit_slurm_script(calc_distances_script_path)
+            for _i, (method, cmd) in enumerate(
+                zip(pipeline_config.distances_methods, calc_distances_commands, strict=True)
+            ):
+                calc_distances_script_path = (
+                    Path(temp_dir) / f"calc_distances_{method}_{pipeline_run_id}.sh"
+                )
+
+                create_slurm_script(
+                    script_path=calc_distances_script_path,
+                    job_name=f"{pipeline_config.slurm_job_name_prefix}_dist_{method}",
+                    command=cmd,
+                    snapshot_branch=execution_stamp.snapshot_branch,
+                    n_gpus=1,  # Always 1 GPU for distances calculation
+                    partition=pipeline_config.slurm_partition,
+                    dependency_job_id=array_job_id,
+                )
+                job_id = submit_slurm_script(calc_distances_script_path)
+                calc_distances_job_ids.append(job_id)
+                calc_distances_logs.append(f"~/slurm_logs/slurm-{job_id}.out")
 
             logger.section("Jobs submitted successfully!")
-            distances_plot_path = (
-                storage.plots_dir / f"distances_{pipeline_config.distances_method}.png"
-            )
+
+            # Build distances plot paths dict
+            distances_plots = {
+                method: str(storage.plots_dir / f"distances_{method}.png")
+                for method in pipeline_config.distances_methods
+            }
+
             logger.values(
                 {
                     "Clustering Array Job ID": array_job_id,
-                    "Calc Distances Job ID": calc_distances_job_id,
+                    "Calc Distances Job IDs": ", ".join(calc_distances_job_ids),
                     "Total clustering runs": len(clustering_commands),
                     "Pipeline run ID": pipeline_run_id,
                     "Pipeline output dir": str(storage.base_dir),
                     "Clustering logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
-                    "Calc Distances log": f"~/slurm_logs/slurm-{calc_distances_job_id}.out",
-                    "Distances plot will be saved to": str(distances_plot_path),
+                    "Calc Distances logs": ", ".join(calc_distances_logs),
                 }
             )
+            logger.info("Distances plots will be saved to:")
+            for method, path in distances_plots.items():
+                logger.info(f"  {method}: {path}")
 
 
 def cli():
@@ -339,10 +394,31 @@ def cli():
         help="WandB entity name (user or team)",
     )
     parser.add_argument(
+        "--distances-methods",
+        type=str,
+        default=None,
+        help="Comma-separated list of distance methods (e.g., 'perm_invariant_hamming,matching_dist')",
+    )
+    parser.add_argument(
         "--local",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Run locally instead of submitting to SLURM (required if slurm_job_name_prefix and slurm_partition are None in config)",
+    )
+    parser.add_argument(
+        "--local-clustering-parallel",
+        action="store_true",
+        help="If running locally, whether to run clustering runs in parallel",
+    )
+    parser.add_argument(
+        "--local-calc-distances-parallel",
+        action="store_true",
+        help="If running locally, whether to run distance calculations in parallel",
+    )
+    parser.add_argument(
+        "--track-resources-calc-distances",
+        action="store_true",
+        help="If running locally, whether to track resource usage during distance calculations",
     )
     parser.add_argument(
         "--dataset-streaming",
@@ -361,6 +437,10 @@ def cli():
         overrides["wandb_project"] = args.wandb_project
     if args.wandb_entity is not None:
         overrides["wandb_entity"] = args.wandb_entity
+    if args.distances_methods is not None:
+        # Parse comma-separated list of distance methods
+        methods = [method.strip() for method in args.distances_methods.split(",")]
+        overrides["distances_methods"] = methods
 
     pipeline_config = replace_pydantic_model(pipeline_config, overrides)
 
@@ -368,6 +448,9 @@ def cli():
         pipeline_config=pipeline_config,
         local=args.local,
         dataset_streaming=args.dataset_streaming,
+        local_clustering_parallel=args.local_clustering_parallel,
+        local_calc_distances_parallel=args.local_calc_distances_parallel,
+        track_resources_calc_distances=args.track_resources_calc_distances,
     )
 
 

@@ -1,6 +1,6 @@
 {
   "merge_config": {
-    "activation_threshold": 0.5,
+    "activation_threshold": 0.9,
     "alpha": 1.0,
     "iters": 5,
     "merge_pair_sampling_method": "range",
