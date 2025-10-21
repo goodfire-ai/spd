@@ -10,7 +10,7 @@ C: 200
 n_mask_samples: 1
 ci_fn_type: "mlp"
 ci_fn_hidden_dims: [16]
-sigmoid_type: "leaky_hard"
+sigmoid_type: "heavyside"
 target_module_patterns: ["linear1", "linear2"]
 identity_module_patterns: null
 use_delta_component: true
