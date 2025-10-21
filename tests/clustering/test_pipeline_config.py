@@ -20,28 +20,24 @@ class TestClusteringRunConfigStableHash:
             model_path="wandb:test/project/run1",
             batch_size=32,
             dataset_seed=0,
-            idx_in_ensemble=0,
             merge_config=MergeConfig(),
         )
         config2 = ClusteringRunConfig(
             model_path="wandb:test/project/run1",
             batch_size=32,
             dataset_seed=0,
-            idx_in_ensemble=0,
             merge_config=MergeConfig(),
         )
         config3 = ClusteringRunConfig(
             model_path="wandb:test/project/run2",  # Different model_path
             batch_size=32,
             dataset_seed=0,
-            idx_in_ensemble=0,
             merge_config=MergeConfig(),
         )
         config4 = ClusteringRunConfig(
             model_path="wandb:test/project/run1",
             batch_size=32,
             dataset_seed=0,
-            idx_in_ensemble=0,
             merge_config=MergeConfig(
                 activation_threshold=0.2
             ),  # Different merge_config to test nested fields
@@ -96,7 +92,6 @@ class TestClusteringPipelineConfigValidation:
                     batch_size=32,
                     merge_config=MergeConfig(),
                     dataset_seed=0,
-                    idx_in_ensemble=0,
                 ),
                 n_runs=2,
                 distances_methods=["perm_invariant_hamming"],
@@ -132,7 +127,6 @@ class TestClusteringPipelineConfigGetConfigPath:
             model_path="wandb:test/project/run1",
             batch_size=32,
             dataset_seed=0,
-            idx_in_ensemble=0,
             merge_config=MergeConfig(),
         )
 
@@ -171,7 +165,6 @@ class TestClusteringPipelineConfigGetConfigPath:
             model_path="wandb:test/project/run1",
             batch_size=32,
             dataset_seed=0,
-            idx_in_ensemble=0,
             merge_config=MergeConfig(),
         )
 
@@ -216,7 +209,6 @@ class TestClusteringPipelineConfigGetConfigPath:
             model_path="wandb:test/project/run1",
             batch_size=32,
             dataset_seed=0,
-            idx_in_ensemble=0,
             merge_config=MergeConfig(),
         )
 
@@ -231,7 +223,6 @@ class TestClusteringPipelineConfigGetConfigPath:
             model_path="wandb:test/project/run2",  # Different!
             batch_size=32,
             dataset_seed=0,
-            idx_in_ensemble=0,
             merge_config=MergeConfig(),
         )
         different_config.to_file(collision_path)
