@@ -9,12 +9,9 @@
     "module_name_filter": null
   },
   "experiment_key": "resid_mlp1",
-  "distances_methods": ["perm_invariant_hamming"],
-  "n_batches": 8,
   "batch_size": 128,
-  "wandb_enabled": true,
   "wandb_project": "spd-cluster",
-  "intervals": {
+  "logging_intervals": {
     "stat": 1,
     "tensor": 5,
     "plot": 5,

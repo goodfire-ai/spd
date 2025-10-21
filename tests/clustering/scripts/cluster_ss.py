@@ -16,11 +16,11 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
+from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.dataset import load_dataset
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
-from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -51,7 +51,6 @@ CONFIG: ClusteringRunConfig = ClusteringRunConfig(
     model_path=MODEL_PATH,
     batch_size=2,
     dataset_seed=42,
-    idx_in_ensemble=0,
     dataset_streaming=True,  # no effect since we do this manually
 )
 

@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from spd.clustering.clustering_run_config import ClusteringRunConfig, LoggingIntervals
 from spd.clustering.merge_config import MergeConfig
-from spd.clustering.merge_run_config import ClusteringRunConfig, LoggingIntervals
 from spd.clustering.scripts.run_clustering import main
 
 
@@ -16,7 +16,6 @@ def test_run_clustering_happy_path():
             model_path="wandb:goodfire/spd/runs/zxbu57pt",  # An ss_llama run
             batch_size=4,
             dataset_seed=0,
-            idx_in_ensemble=0,
             base_output_dir=Path(temp_dir),
             ensemble_id=None,
             merge_config=MergeConfig(
