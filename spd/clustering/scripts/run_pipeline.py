@@ -72,7 +72,7 @@ class ClusteringPipelineConfig(BaseConfig):
 
     run_clustering_config_path: Path = Field(description="Path to ClusteringRunConfig file.")
     n_runs: PositiveInt = Field(description="Number of clustering runs in the ensemble")
-    distances_method: DistancesMethod = Field(description="Method to use for calculating distances")
+    distances_methods: list[DistancesMethod] = Field(description="Methods to use for calculating distances")
     base_output_dir: Path = Field(description="Base directory for outputs of clustering runs.")
     slurm_job_name_prefix: str | None = Field(description="Prefix for SLURM job names")
     slurm_partition: str | None = Field(description="SLURM partition to use")

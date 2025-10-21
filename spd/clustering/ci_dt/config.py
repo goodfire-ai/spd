@@ -7,7 +7,8 @@ from dataclasses import dataclass
 class CIDTConfig:
     """Configuration for causal importance decision tree training."""
 
-    n_samples: int = 250
+    batch_size: int = 10  # Number of samples per batch for GPU inference
+    n_batches: int = 25  # Number of batches to process (total samples = batch_size * n_batches)
     activation_threshold: float = 0.01  # Threshold for boolean conversion
     filter_dead_threshold: float = 0.001  # Threshold for filtering dead components
     max_depth: int = 8  # Maximum depth for decision trees

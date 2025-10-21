@@ -8,11 +8,7 @@ import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
 
-from spd.clustering.activations import (
-    ProcessedActivations,
-    component_activations,
-    process_activations,
-)
+from spd.clustering.activations import component_activations
 from spd.clustering.ci_dt.config import CIDTConfig
 from spd.clustering.ci_dt.core import (
     LayerModel,
@@ -43,7 +39,8 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 # ----------------------- configuration -----------------------
 
 config = CIDTConfig(
-    n_samples=64, # batch size 64 -> 16GB vram
+    batch_size=10,
+    n_batches=10,
     activation_threshold=0.01,
     filter_dead_threshold=0.001,
     max_depth=8,
@@ -83,76 +80,116 @@ dataset_config = DatasetConfig(
 )
 dataloader, _ = create_data_loader(
     dataset_config=dataset_config,
-    batch_size=config.n_samples,
+    batch_size=config.batch_size,
     buffer_size=cfg.task_config.buffer_size,
     global_seed=cfg.seed,
     ddp_rank=0,
     ddp_world_size=1,
 )
-batch_data = next(iter(dataloader))
-batch: Tensor = batch_data["input_ids"]
-print(f"Created LM dataset with {cfg.task_config.dataset_name}, batch shape: {batch.shape}")
+print(f"Created LM dataset with {cfg.task_config.dataset_name}")
 
 # %%
 # ----------------------- get activations -----------------------
 
-# Get component activations (on device)
-print("Computing component activations...")
-component_acts: dict[str, Tensor] = component_activations(
-    model=model,
-    device=device,
-    batch=batch,
-)
+# Loop over batches, accumulate on CPU
+print(f"Computing activations for {config.n_batches} batches (batch_size={config.batch_size})...")
+all_component_acts: list[dict[str, Tensor]] = []
 
-# Process activations (filter dead components, concatenate)
-print("Processing activations...")
-processed_acts: ProcessedActivations = process_activations(
-    component_acts,
-    filter_dead_threshold=config.filter_dead_threshold,
-    seq_mode="seq_mean",  # LM task needs seq_mean
-)
+for batch_idx in range(config.n_batches):
+    batch_data = next(iter(dataloader))
+    batch: Tensor = batch_data["input_ids"]
 
-print(f"Total components (before filtering): {processed_acts.n_components_original}")
-print(f"Alive components: {processed_acts.n_components_alive}")
-print(f"Dead components: {processed_acts.n_components_dead}")
-print(f"Module keys: {processed_acts.module_keys}")
+    # Get activations on GPU
+    component_acts_gpu: dict[str, Tensor] = component_activations(
+        model=model, device=device, batch=batch
+    )
+
+    # Move to CPU immediately and store
+    component_acts_cpu: dict[str, Tensor] = {
+        key: tensor.cpu() for key, tensor in component_acts_gpu.items()
+    }
+    all_component_acts.append(component_acts_cpu)
+
+    print(f"  Batch {batch_idx + 1}/{config.n_batches} processed")
+
+# Concatenate all batches on CPU
+print("Concatenating batches...")
+module_keys: list[str] = list(all_component_acts[0].keys())
+component_acts_concat: dict[str, Tensor] = {
+    key: torch.cat([batch[key] for batch in all_component_acts], dim=0)
+    for key in module_keys
+}
+
+# Apply seq_mean if needed (LM task)
+print("Applying seq_mean over sequence dimension...")
+component_acts_concat = {
+    key: act.mean(dim=1) if act.ndim == 3 else act
+    for key, act in component_acts_concat.items()
+}
+
+# Filter dead components (on CPU)
+print("\nFiltering dead components...")
+component_acts_filtered: dict[str, Float[np.ndarray, "n_samples n_components"]] = {}
+n_total_original: int = 0
+n_total_alive: int = 0
+n_total_dead: int = 0
+
+for module_key in module_keys:
+    acts_tensor: Tensor = component_acts_concat[module_key]
+    n_components_original: int = acts_tensor.shape[1]
+    n_total_original += n_components_original
+
+    # Filter components where max activation < threshold
+    max_acts: Tensor = acts_tensor.max(dim=0).values
+    alive_mask: Bool[Tensor, "n_components"] = max_acts >= config.filter_dead_threshold
+
+    acts_alive: Tensor = acts_tensor[:, alive_mask]
+    acts_np: Float[np.ndarray, "n_samples n_components"] = acts_alive.numpy()
+
+    n_dead: int = (~alive_mask).sum().item()
+    n_alive: int = alive_mask.sum().item()
+    n_total_alive += n_alive
+    n_total_dead += n_dead
+
+    component_acts_filtered[module_key] = acts_np
+    print(f"  {module_key:30s} {n_alive:5d} alive, {n_dead:5d} dead")
+
+print(f"\nTotal components (before filtering): {n_total_original}")
+print(f"Alive components: {n_total_alive}")
+print(f"Dead components: {n_total_dead}")
+print(f"Module keys: {module_keys}")
 
 # %%
 # ----------------------- convert to layers -----------------------
 
-# Move to CPU and convert to numpy for sklearn
-# Group by module to create "layers" for decision trees
+# Convert to boolean and filter constant components
 print("\nConverting to boolean layers...")
 layers_true: list[Bool[np.ndarray, "n_samples n_components"]] = []
-for module_key in processed_acts.module_keys:
-    # Get the activations for this module from activations_raw, move to CPU
-    module_acts_cpu: Float[np.ndarray, "n_samples n_components"] = (
-        processed_acts.activations_raw[module_key].cpu().numpy()
-    )
+
+for module_key in module_keys:
+    module_acts: Float[np.ndarray, "n_samples n_components"] = component_acts_filtered[module_key]
+
+    # Convert to boolean
     module_acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
-        module_acts_cpu >= config.activation_threshold
+        module_acts >= config.activation_threshold
     ).astype(bool)
 
     # Filter out components that are always dead or always alive
     # (they provide no information for decision trees)
-    n_before: int = module_acts_bool.shape[1]
     component_variance: Float[np.ndarray, "n_components"] = module_acts_bool.var(axis=0)
     varying_mask: Bool[np.ndarray, "n_components"] = component_variance > 0
 
     # Count always-dead and always-alive components for diagnostics
     always_dead_mask: Bool[np.ndarray, "n_components"] = ~module_acts_bool.any(axis=0)
     always_alive_mask: Bool[np.ndarray, "n_components"] = module_acts_bool.all(axis=0)
-    n_always_dead: int = always_dead_mask.sum()
-    n_always_alive: int = always_alive_mask.sum()
+    n_always_dead: int = int(always_dead_mask.sum())
+    n_always_alive: int = int(always_alive_mask.sum())
 
-    module_acts_filtered: Bool[np.ndarray, "n_samples n_varying"] = module_acts_bool[:, varying_mask]
-    n_after: int = module_acts_filtered.shape[1]
+    module_acts_varying: Bool[np.ndarray, "n_samples n_varying"] = module_acts_bool[:, varying_mask]
 
-    layers_true.append(module_acts_filtered)
-    print(
-        f"Layer {len(layers_true) - 1} ({module_key}): {n_after} varying components "
-        f"({n_always_dead} always dead, {n_always_alive} always alive removed)"
-    )
+    layers_true.append(module_acts_varying)
+    n_varying: int = module_acts_varying.shape[1]
+    print(f"  {module_key:30s} {n_varying:5d} varying, {n_always_dead:5d} dead, {n_always_alive:5d} const")
 
 print(f"\nCreated {len(layers_true)} layers for decision tree training")
 
