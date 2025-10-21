@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal, override
+from typing import Literal, cast, override
 
 import einops
 import torch
@@ -102,7 +102,7 @@ class VectorMLPCiFn(nn.Module):
 class VectorSharedMLPCiFn(nn.Module):
     """Maps a module's input vector to a scalar output for each component with a 'pure' MLP."""
 
-    def __init__(self, C: int, input_dim: int, hidden_dims: list[int]):
+    def __init__(self, C: int, input_dim: int, hidden_dims: list[int], center_output_bias: bool):
         super().__init__()
         self.layers = nn.Sequential()
         for i in range(len(hidden_dims)):
@@ -112,6 +112,9 @@ class VectorSharedMLPCiFn(nn.Module):
             self.layers.append(nn.GELU())
         final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else input_dim
         self.layers.append(Linear(final_dim, C, nonlinearity="linear"))
+        if center_output_bias:
+            with torch.no_grad():
+                cast(Linear, self.layers[-1]).b.fill_(0.5)
 
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:

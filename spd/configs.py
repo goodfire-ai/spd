@@ -258,6 +258,14 @@ class Config(BaseConfig):
         default=[8],
         description="Hidden dimensions for the causal importance function used to calculate the causal importance",
     )
+    ci_fn_center_output_bias: bool = Field(
+        default=False,
+        description="If True, center the output bias of the causal importance function",
+    )
+    normalise_activations: bool = Field(
+        default=False,
+        description="If True, normalise the activations of the target model before passing them to the causal importance function",
+    )
     sampling: SamplingType = Field(
         default="continuous",
         description="Sampling mode for stochastic elements: 'continuous' (default) or 'binomial'",

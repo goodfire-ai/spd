@@ -2,6 +2,7 @@
 
 import gc
 from collections import defaultdict
+from collections.abc import Iterator
 from pathlib import Path
 from time import perf_counter
 from typing import cast
@@ -14,6 +15,7 @@ import wandb
 from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
+from torch.distributed import ReduceOp
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -28,6 +30,7 @@ from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
+    all_reduce,
     avg_metrics_across_ranks,
     get_world_size,
     is_distributed,
@@ -102,6 +105,143 @@ def get_unique_metric_configs(
     return metrics
 
 
+@torch.no_grad()  # pyright: ignore[reportUntypedFunctionDecorator]
+def get_activation_scales(
+    train_iterator: Iterator[Int[Tensor, "..."]]
+    | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    model: ComponentModel,
+    device: str,
+    n_examples: int = 10_000,
+) -> dict[str, float]:
+    model.eval()
+    scales = defaultdict[str, list[float]](list)
+    n_examples_seen = 0
+    while n_examples_seen < n_examples:
+        batch = extract_batch_data(next(train_iterator)).to(device)
+        n_examples_seen += batch.shape.numel()
+        cache = model(batch, cache_type="input").cache
+        for module_name, input_acts in cache.items():
+            norms = input_acts.norm(dim=-1, p=2)
+            scales[module_name].append(norms.mean().item())
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    # avg across DDP ranks
+    return {
+        module_name: all_reduce(torch.tensor(scales, device=device).mean(), op=ReduceOp.AVG).item()
+        for module_name, scales in scales.items()
+    }
+
+
+# @torch.no_grad()
+# def get_activation_stats(
+#     train_iterator: Iterator[Int[Tensor, "..."]]
+#     | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+#     model: ComponentModel,
+#     device: str,
+#     n_examples: int = 10_000,
+# ) -> dict[str, tuple[Float[Tensor, " d"], float]]:
+#     model.eval()
+#     # Per-module running stats
+#     sum_x = dict[str, Float[Tensor, " d"]]()
+#     sum_sum_square = dict[str, Float[Tensor, ""]]()
+
+#     seen = 0
+#     while seen < n_examples:
+#         batch = extract_batch_data(next(train_iterator)).to(device)
+#         assert not batch.is_floating_point(), "batch should be tokenized"
+#         seen += batch.shape.numel()
+
+#         cache = model(batch, cache_type="input").cache
+#         for name, acts in cache.items():
+#             d = acts.shape[-1]
+#             flat_acts = acts.reshape(-1, d)  # (B*T, d) or similar
+
+#             if name not in sum_x:
+#                 sum_x[name] = torch.zeros(d, device=device)
+#             sum_x[name] += flat_acts.sum(dim=0)
+
+#             if name not in sum_sum_square:
+#                 sum_sum_square[name] = torch.zeros((), device=device)
+#             sum_sum_square[name] += flat_acts.pow(2).sum()
+
+#     seen *= get_world_size()
+
+#     sum_x = {name: all_reduce(t, op=ReduceOp.SUM) for name, t in sum_x.items()}
+#     sum_sum_square = {name: all_reduce(t, op=ReduceOp.SUM) for name, t in sum_sum_square.items()}
+
+#     # Convert to mean vectors and scalar RMS scales
+#     stats = dict[str, tuple[Float[Tensor, " d"], float]]()
+#     for name in sum_x:
+#         mean_x = sum_x[name] / seen
+
+#         mean_sum_square = sum_sum_square[name] / seen
+#         trC = mean_sum_square - mean_x.pow(2).sum().item()
+#         d = mean_x.numel()
+#         s = (trC / max(d, 1)) ** 0.5
+#         stats[name] = (mean_x, float(s))
+
+#     return stats
+
+
+# @torch.no_grad()
+# def get_activation_stats(
+#     train_iterator: Iterator[Int[Tensor, "..."]]
+#     | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+#     model: ComponentModel,
+#     device: str,
+#     n_examples: int = 10_000,
+# ) -> dict[str, tuple[Float[Tensor, " d"], float]]:
+#     model.eval()
+#     # Per-module running stats
+#     sum_x = dict[str, Float[Tensor, " d"]]()  # per-module sum (d,)
+#     sum_sqnorm = defaultdict[str, float](float)  # E[||x||^2] numerator
+
+#     seen = 0
+#     while seen < n_examples:
+#         batch = extract_batch_data(next(train_iterator)).to(device)
+#         assert not batch.is_floating_point(), "batch should be tokenized"
+#         seen += batch.shape.numel()
+
+#         cache = model(batch, cache_type="input").cache
+#         for name, acts in cache.items():
+#             d = acts.shape[-1]
+#             flat_acts = acts.reshape(-1, d)  # (B*T, d) or similar
+#             if name not in sum_x:
+#                 sum_x[name] = torch.zeros(d, device=device).double()
+#             sum_x[name] += flat_acts.sum(dim=0).double()
+#             sum_sqnorm[name] += flat_acts.pow(2).sum().item()
+
+#     seen *= get_world_size()
+
+#     # DDP all-reduce: sums across ranks
+#     for name in list(sum_x.keys()):
+#         # sum_x
+#         sum_x[name] = all_reduce(sum_x[name], op=ReduceOp.SUM)
+#         # n and sum_sqnorm as tensors to reduce
+#         ssn_tensor = all_reduce(
+#             torch.tensor(sum_sqnorm[name], device=device, dtype=torch.float32),
+#             op=ReduceOp.SUM,
+#         )
+#         # n[name] = int(n_tensor.item())
+#         sum_sqnorm[name] = float(ssn_tensor.item())
+
+#     # Convert to mean vectors and scalar RMS scales
+#     stats = dict[str, tuple[Float[Tensor, " d"], float]]()
+
+#     for name, sx in sum_x.items():
+#         mu = sx / seen  # (d,)
+#         # tr(C) = E||x||^2 - ||mu||^2
+#         ex2 = sum_sqnorm[name] / seen
+#         trC = max(ex2 - mu.pow(2).sum().item(), 0.0)
+#         d = mu.numel()
+#         s = (trC / max(d, 1)) ** 0.5
+#         stats[name] = (mu.float(), float(s))
+
+#     return stats
+
+
 def optimize(
     target_model: nn.Module,
     config: Config,
@@ -134,6 +274,7 @@ def optimize(
         C=config.C,
         ci_fn_type=config.ci_fn_type,
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
+        ci_fn_center_output_bias=config.ci_fn_center_output_bias,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
         sigmoid_type=config.sigmoid_type,
     )
@@ -174,6 +315,15 @@ def optimize(
             )
             tgt.U.data = src.V.data.T
             tgt.V.data = src.U.data.T
+
+    if config.normalise_activations:
+        component_model.set_activation_norms(
+            get_activation_scales(train_iterator, component_model, device)
+        )
+
+    # component_model.set_activation_stats(
+    #     get_activation_stats(train_iterator, component_model, device)
+    # )
 
     component_params: list[torch.nn.Parameter] = []
     ci_fn_params: list[torch.nn.Parameter] = []
@@ -287,7 +437,9 @@ def optimize(
             grad_norms = get_grad_norms_dict(component_model, device)
             microbatch_log_data.update({f"train/grad_norms/{k}": v for k, v in grad_norms.items()})
 
-            microbatch_log_data["train/meta/time_per_step"] = (perf_counter() - start_training) / (step + 1)
+            microbatch_log_data["train/meta/time_per_step"] = (perf_counter() - start_training) / (
+                step + 1
+            )
 
             microbatch_log_data["train/schedules/lr"] = step_lr
 

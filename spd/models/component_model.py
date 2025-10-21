@@ -110,6 +110,7 @@ class ComponentModel(LoadableModule):
         C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
+        ci_fn_center_output_bias: bool,
         sigmoid_type: SigmoidType,
         pretrained_model_output_attr: str | None,
     ):
@@ -141,6 +142,7 @@ class ComponentModel(LoadableModule):
             C=C,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
+            ci_fn_center_output_bias=ci_fn_center_output_bias,
         )
         self._ci_fns = nn.ModuleDict(
             {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
@@ -153,6 +155,9 @@ class ComponentModel(LoadableModule):
             # For other sigmoid types, use the same function for both
             self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
             self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+
+        self.activation_norms = None
+        self.activation_stats = None
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
@@ -226,11 +231,16 @@ class ComponentModel(LoadableModule):
         component_C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
+        ci_fn_center_output_bias: bool,
     ) -> nn.Module:
         """Helper to create a causal importance function (ci_fn) based on ci_fn_type and module type."""
         if isinstance(target_module, nn.Embedding):
             assert ci_fn_type in ["mlp", "identity"], (
                 "Embedding modules only supported for ci_fn_type='mlp' or 'identity'"
+            )
+        if ci_fn_center_output_bias:
+            assert ci_fn_type == "shared_mlp", (
+                "Center output bias only supported for ci_fn_type='shared_mlp'"
             )
 
         if ci_fn_type == "mlp":
@@ -256,7 +266,10 @@ class ComponentModel(LoadableModule):
                 )
             case "shared_mlp":
                 return VectorSharedMLPCiFn(
-                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
+                    C=component_C,
+                    input_dim=input_dim,
+                    hidden_dims=ci_fn_hidden_dims,
+                    center_output_bias=ci_fn_center_output_bias,
                 )
 
     @staticmethod
@@ -266,6 +279,7 @@ class ComponentModel(LoadableModule):
         C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
+        ci_fn_center_output_bias: bool,
     ) -> dict[str, nn.Module]:
         ci_fns: dict[str, nn.Module] = {}
         for target_module_path in target_module_paths:
@@ -275,6 +289,7 @@ class ComponentModel(LoadableModule):
                 C,
                 ci_fn_type,
                 ci_fn_hidden_dims,
+                ci_fn_center_output_bias,
             )
         return ci_fns
 
@@ -514,6 +529,7 @@ class ComponentModel(LoadableModule):
             C=config.C,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
+            ci_fn_center_output_bias=config.ci_fn_center_output_bias,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
             sigmoid_type=config.sigmoid_type,
         )
@@ -533,6 +549,12 @@ class ComponentModel(LoadableModule):
         """Load a trained ComponentModel checkpoint from a local or wandb path."""
         run_info = SPDRunInfo.from_path(path)
         return cls.from_run_info(run_info)
+
+    # def set_activation_stats(self, activation_stats: dict[str, tuple[Float[Tensor, " d"], float]]) -> None:
+    #     self.activation_stats = activation_stats
+
+    def set_activation_norms(self, activation_norms: dict[str, float]) -> None:
+        self.activation_norms = activation_norms
 
     def calc_causal_importances(
         self,
@@ -569,6 +591,9 @@ class ComponentModel(LoadableModule):
 
             if detach_inputs:
                 ci_fn_input = ci_fn_input.detach()
+
+            if self.activation_norms is not None:
+                ci_fn_input = ci_fn_input / self.activation_norms[target_module_name]
 
             ci_fn_output = runtime_cast(Tensor, ci_fn(ci_fn_input))
 
