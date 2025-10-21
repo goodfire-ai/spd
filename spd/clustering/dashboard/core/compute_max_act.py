@@ -18,13 +18,11 @@ from spd.clustering.dashboard.core import (
 )
 from spd.clustering.merge_history import MergeHistory
 from spd.models.component_model import ComponentModel
-from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import get_obj_device
 
 
 def compute_max_activations(
     model: ComponentModel,
-    sigmoid_type: SigmoidTypes,
     tokenizer: PreTrainedTokenizer,
     dataloader: DataLoader[Any],
     merge_history: MergeHistory,
@@ -97,7 +95,6 @@ def compute_max_activations(
                 model=model,
                 tokenizer=tokenizer,
                 device=device,
-                sigmoid_type=sigmoid_type,
             )
 
     # Create DashboardData and add clusters incrementally

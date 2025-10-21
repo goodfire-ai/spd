@@ -63,7 +63,7 @@
     }
     
     .token {
-        display: inline;
+        display: inline-block;
         padding: 2px 4px;
         margin: 0 1px;
         border-radius: 2px;
@@ -699,11 +699,8 @@
         data: {
           dataDir: "data",
           files: {
-            clusters: "clusters.jsonl",
-            modelInfo: "model_info.json",
-            textSamples: "text_samples.jsonl",
-            activations: "activations.npz",
-            activationsMap: "activations_map.json",
+            // DEPRECATED: ZANJ handles loading clusters, modelInfo, textSamples, activations automatically
+            // Only explanations is loaded separately (not part of ZANJ)
             explanations: "explanations.jsonl"
           }
         },
@@ -3711,11 +3708,11 @@
     let clusterData = null;
     let allClusters = null;
     let textSamples = {};
-    let activationsArray = null;
-    let activationsMap = {};
     let currentClusterHash = null;
     let modelInfo = {};
     let explanations = {};
+    
+    // DEPRECATED: activationsArray and activationsMap no longer needed - data is self-contained in cluster.samples
     
     // Component-level data
     let componentActivations = {};  // Map component labels to their activation data
@@ -3743,83 +3740,18 @@
     }
     
     async function loadData() {
-        const progressBar = NOTIF.pbar('Loading cluster data...');
-    
         try {
-            progressBar.progress(0.1);
+            // Load all data via ZANJ
+            const loader = new ZanjLoader(CONFIG.data.dataDir);
+            const data = await loader.read();
     
-            // Load data in parallel
-            let clusters, samples, activationsMapResponse, modelInfoResponse;
+            allClusters = data.clusters;
+            textSamples = data.text_samples;
+            modelInfo = data.model_info;
     
-            const clustersPath = CONFIG.getDataPath('clusters');
-            const textSamplesPath = CONFIG.getDataPath('textSamples');
-            const activationsMapPath = CONFIG.getDataPath('activationsMap');
-            const modelInfoPath = CONFIG.getDataPath('modelInfo');
+            // Load explanations separately (not part of ZANJ)
             const explanationsPath = CONFIG.getDataPath('explanations');
-    
-            try {
-                [clusters, samples, activationsMapResponse, modelInfoResponse] = await Promise.all([
-                    loadJSONL(clustersPath, 'cluster_hash').catch(e => {
-                        throw new Error(`Failed to load ${clustersPath}: ${e.message}`);
-                    }),
-                    loadJSONL(textSamplesPath, 'text_hash').catch(e => {
-                        throw new Error(`Failed to load ${textSamplesPath}: ${e.message}`);
-                    }),
-                    fetch(activationsMapPath).catch(e => {
-                        throw new Error(`Failed to load ${activationsMapPath}: ${e.message}`);
-                    }),
-                    fetch(modelInfoPath).catch(e => {
-                        throw new Error(`Failed to load ${modelInfoPath}: ${e.message}`);
-                    })
-                ]);
-    
-                // Load explanations (non-critical, don't fail if missing)
-                explanations = await loadJSONL(explanationsPath, 'cluster_id').catch(() => ({}));
-            } catch (error) {
-                progressBar.complete();
-                NOTIF.error(error.message, error, null);
-                const loading = document.getElementById('loading');
-                if (loading) {
-                    loading.textContent = error.message;
-                } else {
-                    console.error('loading element not found, cannot display error message');
-                }
-                throw error;
-            }
-    
-            progressBar.progress(0.4);
-    
-            if (!activationsMapResponse.ok) {
-                const msg = `Failed to load ${activationsMapPath} (HTTP ${activationsMapResponse.status})`;
-                NOTIF.error(msg, null, null);
-                throw new Error(msg);
-            }
-            if (!modelInfoResponse.ok) {
-                const msg = `Failed to load ${modelInfoPath} (HTTP ${modelInfoResponse.status})`;
-                NOTIF.error(msg, null, null);
-                throw new Error(msg);
-            }
-    
-            allClusters = clusters;
-            textSamples = samples;
-    
-            try {
-                activationsMap = await activationsMapResponse.json();
-            } catch (error) {
-                const msg = `Failed to parse ${activationsMapPath} (invalid JSON)`;
-                NOTIF.error(msg, error, null);
-                throw new Error(msg);
-            }
-    
-            try {
-                modelInfo = await modelInfoResponse.json();
-            } catch (error) {
-                const msg = `Failed to parse ${modelInfoPath} (invalid JSON)`;
-                NOTIF.error(msg, error, null);
-                throw new Error(msg);
-            }
-    
-            progressBar.progress(0.6);
+            explanations = await loadJSONL(explanationsPath, 'cluster_id').catch(() => ({}));
     
             if (!allClusters[currentClusterHash]) {
                 const msg = 'Cluster not found';
@@ -3830,26 +3762,12 @@
                 } else {
                     console.error('loading element not found, cannot display error message');
                 }
-                progressBar.complete();
                 return;
             }
     
             clusterData = allClusters[currentClusterHash];
     
-            // Load activations (float16 compressed npz)
-            const activationsPath = CONFIG.getDataPath('activations');
-            try {
-                activationsArray = await NDArray.load(activationsPath);
-            } catch (error) {
-                const msg = `Failed to load ${activationsPath}`;
-                NOTIF.error(msg, error, null);
-                throw new Error(msg);
-            }
-    
-            progressBar.progress(0.9);
-    
             displayCluster();
-            progressBar.complete();
             const loading = document.getElementById('loading');
             if (!loading) {
                 const msg = 'Fatal error: loading element not found in HTML';
@@ -3859,9 +3777,9 @@
             }
             loading.style.display = 'none';
         } catch (error) {
-            progressBar.complete();
             console.error('Load error:', error);
             console.error('Stack:', error.stack);
+            NOTIF.error('Failed to load cluster data: ' + error.message, error, null);
         }
     }
     
@@ -4337,82 +4255,44 @@
         }
         tbody.innerHTML = '';
     
-        // Get the main criterion samples (max_activation)
-        const criterionKey = Object.keys(clusterData.criterion_samples)[0];
-        if (!criterionKey) {
+        // Use self-contained samples from cluster data
+        const samples = clusterData.samples || [];
+        if (samples.length === 0) {
             tbody.innerHTML = '<tr><td colspan="2">No samples available</td></tr>';
             return;
         }
     
-        const sampleHashes = clusterData.criterion_samples[criterionKey];
-        const samplesToShow = Math.min(CONFIG.clusterPage.maxSamplesPerCluster, sampleHashes.length);
-    
-        // Check if we need to use component-level activations
-        const useComponentActivations = componentActivations &&
-                                         Object.keys(componentActivations).length > 0 &&
-                                         enabledComponents.size < clusterData.components.length;
+        const samplesToShow = Math.min(CONFIG.clusterPage.maxSamplesPerCluster, samples.length);
     
         for (let i = 0; i < samplesToShow; i++) {
-            const textHash = sampleHashes[i];
-            const textSample = textSamples[textHash];
+            const sample = samples[i];
+            const textSample = textSamples[sample.text_hash];
     
             if (!textSample) {
-                console.warn(`Text sample not found for hash: ${textHash}`);
+                console.warn(`Text sample not found for hash: ${sample.text_hash}`);
                 continue;
             }
     
-            let activationsData;
-    
-            if (useComponentActivations) {
-                // Compute combined activations from enabled components
-                const componentActsList = [];
-    
-                for (const comp of clusterData.components) {
-                    if (enabledComponents.has(comp.label) && componentActivations[comp.label]) {
-                        const compData = componentActivations[comp.label];
-                        // Find the activation for this text sample
-                        const hashIdx = compData.activation_sample_hashes.indexOf(`${currentClusterHash}:${comp.label}:${textHash}`);
-                        if (hashIdx !== -1) {
-                            const activationIdx = compData.activation_indices[hashIdx];
-                            if (activationIdx !== undefined && activationsArray) {
-                                const compActivations = activationsArray.get(activationIdx);
-                                componentActsList.push(Array.from(compActivations.data));
-                            }
-                        }
-                    }
-                }
-    
-                if (componentActsList.length > 0) {
-                    activationsData = combineComponentActivations(componentActsList, combinationStrategy);
-                }
-            }
-    
-            // Fall back to cluster-level activations if component activations not available
-            if (!activationsData) {
-                const fullHash = `${currentClusterHash}:${textHash}`;
-                const activationIdx = activationsMap[fullHash];
-    
-                if (activationIdx !== undefined && activationsArray) {
-                    const activations = activationsArray.get(activationIdx);
-                    activationsData = Array.from(activations.data);
-                }
-            }
+            // Activations are directly on the sample object
+            const activationsData = Array.isArray(sample.activations)
+                ? sample.activations
+                : Array.from(sample.activations);
     
             let tokenViz;
-            if (activationsData) {
+            if (activationsData && activationsData.length > 0) {
                 // Find max position
                 const maxPosition = activationsData.indexOf(Math.max(...activationsData));
     
                 // Use the proper token visualization with coloring and tooltips
                 tokenViz = createTokenVisualizationWithTooltip(
-                    textSample.tokens,
+                    sample.tokens,  // Tokens are also on the sample
                     activationsData,
                     maxPosition
                 );
             } else {
                 // Fallback to simple visualization if no activations
                 console.warn(`No activations found for sample ${i}`);
-                tokenViz = createSimpleTokenViz(textSample.tokens);
+                tokenViz = createSimpleTokenViz(sample.tokens);
             }
     
             const tr = document.createElement('tr');
@@ -4427,10 +4307,10 @@
             tbody.appendChild(tr);
         }
     
-        if (sampleHashes.length > CONFIG.clusterPage.maxSamplesPerCluster) {
+        if (samples.length > CONFIG.clusterPage.maxSamplesPerCluster) {
             const tr = document.createElement('tr');
             tr.innerHTML = `<td colspan="2" style="text-align: center;">
-                ... and ${sampleHashes.length - CONFIG.clusterPage.maxSamplesPerCluster} more samples
+                ... and ${samples.length - CONFIG.clusterPage.maxSamplesPerCluster} more samples
             </td>`;
             tbody.appendChild(tr);
         }

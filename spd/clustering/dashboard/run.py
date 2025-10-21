@@ -1,7 +1,7 @@
 """CLI script for computing max-activating text samples for language model component clusters."""
 
 import argparse
-import json
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +10,7 @@ from muutils.spinner import SpinnerContext
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizer
 from wandb.apis.public import Run
+from zanj import ZANJ
 
 from spd.clustering.dashboard.core import (
     DashboardData,
@@ -112,15 +113,22 @@ def main(dashboard_config: DashboardConfig) -> None:
     if dashboard_data.coactivations is not None:
         logger.info(f"computed coactivations: shape={dashboard_data.coactivations.shape}")
 
-    # Save model info
-    model_info_path: Path = final_output_dir / "model_info.json"
-    model_info_path.write_text(json.dumps(model_info, indent=2))
-    logger.info(f"Model info saved to: {model_info_path}")
+    # Add model info to dashboard data
+    dashboard_data.model_info = model_info
+    logger.info("Added model info to dashboard data")
 
-    # Save dashboard data
-    logger.info("Saving dashboard data...")
-    dashboard_data.save(str(final_output_dir))
-    logger.info(f"Dashboard data saved to: {final_output_dir}")
+    # Save dashboard data using ZANJ
+    logger.info("Saving dashboard data with ZANJ...")
+    zanj_path: Path = final_output_dir / "dashboard.zanj"
+    ZANJ().save(dashboard_data, str(zanj_path))
+    logger.info(f"ZANJ file saved to: {zanj_path}")
+
+    # Extract for web serving
+    data_dir: Path = final_output_dir / "data"
+    logger.info(f"Extracting ZANJ to: {data_dir}")
+    with zipfile.ZipFile(zanj_path) as zf:
+        zf.extractall(data_dir)
+    logger.info(f"Dashboard data extracted to: {data_dir}")
 
 
 def cli() -> None:

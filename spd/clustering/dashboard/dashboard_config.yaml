@@ -2,19 +2,21 @@
 # This config is used by the clustering dashboard to compute max-activating text samples
 
 # WandB clustering run path (format: entity/project/run_id or wandb:entity/project/runs/run_id)
-wandb_run: "goodfire/spd-cluster/runs/e5gbybvn"
+# wandb_run: "goodfire/spd-cluster/runs/e5gbybvn"
+wandb_run: "goodfire/spd-cluster/runs/2yqdzc21"
 
 # Merge iteration to analyze (negative indexes from end, -1 = latest)
-iteration: 4600
+# iteration: 4600
+iteration: 4795
 
 # Number of top-activating samples to collect per cluster
-n_samples: 32
+n_samples: 16
 
 # Number of data batches to process
-n_batches: 4
+n_batches: 1
 
 # Batch size for data loading
-batch_size: 128
+batch_size: 64
 
 # Context length for tokenization
 context_length: 64

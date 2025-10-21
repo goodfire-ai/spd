@@ -41,7 +41,7 @@ def load_wandb_artifacts(wandb_path: str) -> tuple[MergeHistory, dict[str, Any]]
     logger.info(f"Found artifact: {artifact.name}")
 
     artifact_dir: str = artifact.download()
-    merge_history_path: Path = Path(artifact_dir) / "merge_history.zip"
+    merge_history_path: Path = Path(artifact_dir) / "history.zip"
     merge_history: MergeHistory = MergeHistory.read(merge_history_path)
     logger.info(f"Loaded merge history: {merge_history}")
 

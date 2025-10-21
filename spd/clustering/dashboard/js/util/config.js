@@ -57,11 +57,8 @@ function getDefaultConfig() {
     data: {
       dataDir: "data",
       files: {
-        clusters: "clusters.jsonl",
-        modelInfo: "model_info.json",
-        textSamples: "text_samples.jsonl",
-        activations: "activations.npz",
-        activationsMap: "activations_map.json",
+        // DEPRECATED: ZANJ handles loading clusters, modelInfo, textSamples, activations automatically
+        // Only explanations is loaded separately (not part of ZANJ)
         explanations: "explanations.jsonl"
       }
     },

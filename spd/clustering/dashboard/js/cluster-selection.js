@@ -8,22 +8,6 @@ const modelInfoData = {
     data: {},
     hasData: false,
 
-    async loadData() {
-        try {
-            const response = await fetch(CONFIG.getDataPath('modelInfo'));
-            this.data = await response.json();
-            this.hasData = Object.keys(this.data).length > 0;
-
-            // Also populate global modelInfo for DataTable renderers
-            modelInfo = this.data;
-
-            console.log('Model info loaded:', this.hasData, Object.keys(this.data));
-        } catch (error) {
-            console.error('Failed to load model info:', error);
-            this.hasData = false;
-        }
-    },
-
     formatParameters(totalParams) {
         if (!totalParams) return '-';
         if (totalParams >= 1000000) return (totalParams / 1000000).toFixed(1) + 'M';
@@ -625,12 +609,15 @@ function processClusterData() {
 }
 
 async function loadData() {
-    // Load cluster data (model info is handled by Alpine.js)
-    const clusters = await loadJSONL(CONFIG.getDataPath('clusters'), 'cluster_hash');
+    // Load data via ZANJ
+    const loader = new ZanjLoader(CONFIG.data.dataDir);
+    const data = await loader.read();
 
-    clusterData = clusters;
+    // Extract data
+    clusterData = data.clusters;
+    modelInfo = data.model_info;
 
-    // Load explanations (non-critical, don't fail if missing)
+    // Load explanations separately (not part of ZANJ)
     explanations = await loadJSONL(CONFIG.getDataPath('explanations'), 'cluster_id').catch(() => ({}));
 
     const tableData = processClusterData();
@@ -828,14 +815,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const msg = 'Fatal error: Alpine.js failed to load. Check your internet connection or CDN.';
         NOTIF.error(msg, null, null);
         console.error(msg);
-    } else {
-        // Manually trigger Alpine component's loadData now that CONFIG is ready
-        const modelInfoEl = document.getElementById('modelInfo');
-        if (modelInfoEl && Alpine.$data(modelInfoEl)) {
-            Alpine.$data(modelInfoEl).loadData();
-        }
     }
 
-    // Load cluster data and render table
-    loadData();
+    // Load cluster data and render table (includes model info from ZANJ)
+    await loadData();
+
+    // Populate Alpine.js component with loaded model info
+    const modelInfoEl = document.getElementById('modelInfo');
+    if (modelInfoEl && Alpine.$data(modelInfoEl)) {
+        Alpine.$data(modelInfoEl).data = modelInfo;
+        Alpine.$data(modelInfoEl).hasData = Object.keys(modelInfo).length > 0;
+    }
 });

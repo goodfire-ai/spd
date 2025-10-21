@@ -26,7 +26,6 @@ from spd.clustering.dashboard.core.compute_helpers import (
 )
 from spd.clustering.dashboard.core.tokenization import tokenize_and_create_text_samples
 from spd.models.component_model import ComponentModel
-from spd.models.sigmoids import SigmoidTypes
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -119,7 +118,6 @@ class BatchProcessingStorage:
         model: ComponentModel,
         tokenizer: PreTrainedTokenizer,
         device: torch.device,
-        sigmoid_type: SigmoidTypes,
     ) -> None:
         """Process a single batch and update storage.
 
@@ -140,7 +138,6 @@ class BatchProcessingStorage:
             model,
             device,
             batch=batch,
-            sigmoid_type=sigmoid_type,
         )
 
         processed: ProcessedActivations = process_activations(

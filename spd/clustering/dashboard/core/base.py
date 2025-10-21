@@ -8,6 +8,7 @@ from typing import Literal, NewType
 
 import numpy as np
 from jaxtyping import Float
+from muutils.json_serialize import SerializableDataclass, serializable_dataclass
 
 # Type aliases
 TextSampleHash = NewType("TextSampleHash", str)
@@ -118,3 +119,16 @@ ACTIVATION_SAMPLE_BATCH_STATS: dict[
     max_activation=lambda batch: np.max(batch.activations, axis=1),
     max_position=lambda batch: np.argmax(batch.activations, axis=1).astype(float),
 )
+
+
+@serializable_dataclass
+class ClusterSample(SerializableDataclass):
+    """Self-contained sample combining text reference, tokens, and activations.
+
+    This allows clusters to be self-contained without requiring external lookups.
+    """
+
+    text_hash: str  # Reference to TextSample in text_samples dict
+    tokens: list[str]  # Token strings for display
+    activations: Float[np.ndarray, " n_ctx"]  # ZANJ will save as .npy ref
+    criteria: list[str]  # Which tracking criteria this sample satisfied (e.g., ["max_activation-max-16"])

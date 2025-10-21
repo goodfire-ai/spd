@@ -15,6 +15,7 @@ from spd.clustering.dashboard.core.base import (
     ActivationSampleHash,
     ClusterId,
     ClusterIdHash,
+    ClusterSample,
     Direction,
     TextSampleHash,
     TrackingCriterionHash,
@@ -74,11 +75,14 @@ class BinnedData:
 class ClusterData:
     cluster_hash: ClusterIdHash
     components: list[SubComponentKey]  # Component info: module, index, label
-    criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]]
+    samples: list[ClusterSample]  # Self-contained samples with text + activations
     stats: dict[str, Any]
     # Component-level metrics
     component_coactivations: Float[np.ndarray, "n_comps n_comps"] | None = None
     # TODO: Add component_cosine_similarities for U/V vectors when dimension mismatch is resolved
+
+    # DEPRECATED: Can be removed once refactor is complete and JS is updated
+    criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]] | None = None
 
     @classmethod
     def generate(
@@ -92,10 +96,16 @@ class ClusterData:
         top_n_tokens: int = 50,
     ) -> "ClusterData":
         cluster_hash: ClusterIdHash = cluster_id.to_string()
-        criterion_samples: dict[TrackingCriterionHash, list[TextSampleHash]] = {}
         stats: dict[str, Any] = dict()
 
-        # filter out top-k samples per criterion
+        # Build mapping: text_hash -> (sample_idx, criteria_list)
+        sample_criteria_map: dict[TextSampleHash, list[str]] = {}
+        sample_indices: dict[TextSampleHash, int] = {}
+
+        # DEPRECATED: For backward compatibility during transition
+        criterion_samples_deprecated: dict[TrackingCriterionHash, list[TextSampleHash]] = {}
+
+        # Filter out top-k samples per criterion
         for criterion in criteria:
             # Extract property values
             prop_values: Float[np.ndarray, " batch"] = ACTIVATION_SAMPLE_BATCH_STATS[
@@ -104,20 +114,28 @@ class ClusterData:
             # Sort by property value
             reverse: bool = criterion.direction == "max"
 
-            # Zip property values with text hashes and sort
-            samples_with_values: list[tuple[TextSampleHash, float]] = list(
-                zip(activation_samples.text_hashes, prop_values.tolist(), strict=True)
-            )
-            samples_with_values.sort(key=lambda x: x[1], reverse=reverse)
+            # Zip property values with text hashes and indices
+            samples_with_values: list[tuple[int, TextSampleHash, float]] = [
+                (idx, th, val)
+                for idx, (th, val) in enumerate(zip(activation_samples.text_hashes, prop_values.tolist(), strict=True))
+            ]
+            samples_with_values.sort(key=lambda x: x[2], reverse=reverse)
 
             # Take top k
-            top_k: list[tuple[TextSampleHash, float]] = samples_with_values[: criterion.n_samples]
+            top_k: list[tuple[int, TextSampleHash, float]] = samples_with_values[: criterion.n_samples]
 
-            # Extract just text hashes
-            criterion_samples[criterion.to_string()] = [th for th, _ in top_k]
+            criterion_str = criterion.to_string()
 
-            # add stats
-            stats[criterion.to_string()] = BinnedData.from_arr(
+            # Track which samples satisfy which criteria
+            for idx, text_hash, _ in top_k:
+                sample_criteria_map.setdefault(text_hash, []).append(criterion_str)
+                sample_indices[text_hash] = idx
+
+            # DEPRECATED: Keep for backward compat
+            criterion_samples_deprecated[criterion.to_string()] = [th for _, th, _ in top_k]
+
+            # Add stats
+            stats[criterion_str] = BinnedData.from_arr(
                 prop_values,
                 n_bins=hist_bins,
             )
@@ -200,11 +218,25 @@ class ClusterData:
                 "activation_threshold": activation_threshold,
             }
 
+        # Build self-contained ClusterSample objects
+        samples: list[ClusterSample] = []
+        for text_hash, criteria_list in sample_criteria_map.items():
+            sample_idx = sample_indices[text_hash]
+            samples.append(
+                ClusterSample(
+                    text_hash=str(text_hash),
+                    tokens=activation_samples.tokens[sample_idx] if activation_samples.tokens else [],
+                    activations=activation_samples.activations[sample_idx],
+                    criteria=criteria_list,
+                )
+            )
+
         return cls(
             cluster_hash=cluster_hash,
             components=components,
-            criterion_samples=criterion_samples,
+            samples=samples,
             stats=stats,
+            criterion_samples=criterion_samples_deprecated,  # DEPRECATED
         )
 
     def get_unique_text_hashes(self) -> set[TextSampleHash]:
@@ -247,11 +279,16 @@ class ClusterData:
                 {"module": comp.module, "index": comp.index, "label": comp.label}
                 for comp in self.components
             ],
-            "criterion_samples": {
-                str(k): [str(h) for h in v] for k, v in self.criterion_samples.items()
-            },
+            # Serialize samples (ClusterSample has .serialize() from SerializableDataclass)
+            "samples": [sample.serialize() for sample in self.samples],
             "stats": serialized_stats,
         }
+
+        # DEPRECATED: Keep for backward compat during transition
+        if self.criterion_samples is not None:
+            result["criterion_samples"] = {
+                str(k): [str(h) for h in v] for k, v in self.criterion_samples.items()
+            }
 
         # Add component-level metrics if available
         if self.component_coactivations is not None:

@@ -66,14 +66,14 @@ class ZanjLoader {
 			if (this._cache.has(key)) return this._cache.get(key);
 			let p;
 			if (fmt === "npy") {
-				p = NDArray.load(joinUrl(this.baseUrl, path), undefined, this.fetchInit);
+				p = NDArray.load(joinUrl(this.path, path), undefined, this.fetchInit);
 			} else if (fmt === "json") {
-				p = fetch(joinUrl(this.baseUrl, path), this.fetchInit).then(r => {
+				p = fetch(joinUrl(this.path, path), this.fetchInit).then(r => {
 					if (!r.ok) throw new Error("Failed to fetch " + path + ": " + r.status);
 					return r.json();
 				});
 			} else if (fmt === "jsonl") {
-				p = fetch(joinUrl(this.baseUrl, path), this.fetchInit)
+				p = fetch(joinUrl(this.path, path), this.fetchInit)
 					.then(r => {
 						if (!r.ok) throw new Error("Failed to fetch " + path + ": " + r.status);
 						return r.text();
