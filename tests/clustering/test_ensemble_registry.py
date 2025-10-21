@@ -13,7 +13,7 @@ from spd.clustering.ensemble_registry import (
 
 
 @pytest.fixture
-def _temp_registry_db(monkeypatch: Any):
+def _temp_registry_db(monkeypatch: Any):  # pyright: ignore[reportUnusedFunction]
     """Create a temporary registry database for testing."""
     with tempfile.TemporaryDirectory() as tmpdir:
         temp_db_path = Path(tmpdir) / "test_registry.db"
