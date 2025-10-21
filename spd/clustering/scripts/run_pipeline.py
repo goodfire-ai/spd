@@ -98,7 +98,7 @@ class ClusteringPipelineConfig(BaseConfig):
     )
 
     @model_validator(mode="after")
-    def validate_mrc_fields(self) -> "ClusteringPipelineConfig":
+    def validate_crc_fields(self) -> "ClusteringPipelineConfig":
         """Validate that exactly one of run_clustering_config_path or run_clustering_config is provided."""
         has_path: bool = self.run_clustering_config_path is not None
         has_inline: bool = self.run_clustering_config is not None

@@ -108,7 +108,7 @@ class TestClusteringPipelineConfigGetConfigPath:
 
     def test_returns_path_directly_when_using_path_field(self):
         """Test that get_config_path returns the path directly when using run_clustering_config_path."""
-        expected_path = Path("spd/clustering/configs/mrc/resid_mlp1.json")
+        expected_path = Path("spd/clustering/configs/crc/resid_mlp1.json")
 
         config = ClusteringPipelineConfig(
             run_clustering_config_path=expected_path,
@@ -279,21 +279,21 @@ class TestAllConfigsValidation:
 
     def test_all_merge_run_configs_valid(self):
         """Test that all merge run config files are valid."""
-        mrc_dir = REPO_ROOT / "spd" / "clustering" / "configs" / "mrc"
+        crc_dir = REPO_ROOT / "spd" / "clustering" / "configs" / "crc"
 
-        # Find all JSON/YAML/YML files in the mrc directory
-        mrc_files = (
-            list(mrc_dir.glob("*.json"))
-            + list(mrc_dir.glob("*.yaml"))
-            + list(mrc_dir.glob("*.yml"))
+        # Find all JSON/YAML/YML files in the crc directory
+        crc_files = (
+            list(crc_dir.glob("*.json"))
+            + list(crc_dir.glob("*.yaml"))
+            + list(crc_dir.glob("*.yml"))
         )
 
         # Should have at least some configs
-        assert len(mrc_files) > 0, "No merge run config files found"
+        assert len(crc_files) > 0, "No merge run config files found"
 
         errors: list[tuple[Path, Exception]] = []
 
-        for config_file in mrc_files:
+        for config_file in crc_files:
             try:
                 _config = ClusteringRunConfig.from_file(config_file)
             except Exception as e:
