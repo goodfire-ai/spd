@@ -1,7 +1,8 @@
 """Evaluation utilities using the new Metric classes."""
 
+from collections import defaultdict
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 from jaxtyping import Float, Int
 from PIL import Image
@@ -117,7 +118,7 @@ def init_metric(
     model: ComponentModel,
     run_config: Config,
     device: str,
-) -> Metric:
+) -> tuple[Metric, MetricConfigType]:
     match cfg:
         case ImportanceMinimalityLossConfig():
             metric = ImportanceMinimalityLoss(
@@ -272,7 +273,53 @@ def init_metric(
                 pre_target_module_patterns=cfg.pre_target_module_patterns,
                 post_target_module_patterns=cfg.post_target_module_patterns,
             )
-    return metric
+    return metric, cfg
+
+
+def safe_update(d1: dict[str, Any], d2: dict[str, Any]) -> None:
+    """Update a dictionary with another dictionary, but only if the keys are not already present."""
+    for k, v in d2.items():
+        assert k not in d1
+        d1[k] = v
+
+
+def find_differing_config_keys(configs: list[MetricConfigType]) -> list[str]:
+    """Find the differing config keys between a list of configs."""
+    differing_keys: list[str] = []
+    model_dumps = [config.model_dump() for config in configs]
+    for key in model_dumps[0]:
+        if not all(dump[key] == model_dumps[0][key] for dump in model_dumps[1:]):
+            differing_keys.append(key)
+    return differing_keys
+
+
+def merge_with_qualification(
+    outputs: list[tuple[Metric, MetricConfigType, MetricOutType]],
+) -> MetricOutType:
+    """Merge metric outputs with their qualifications."""
+    outs_and_configs_by_metric_type: dict[
+        type[Metric], list[tuple[MetricOutType, MetricConfigType]]
+    ] = defaultdict(list)
+    for metric, cfg, out in outputs:
+        outs_and_configs_by_metric_type[type(metric)].append((out, cfg))
+
+    merged: MetricOutType = {}
+    for metric_outs_and_configs in outs_and_configs_by_metric_type.values():
+        if len(metric_outs_and_configs) == 1:
+            out, _cfg = metric_outs_and_configs[0]
+            safe_update(merged, out)
+            continue
+
+        configs = [config for _, config in metric_outs_and_configs]
+        differing_config_keys = find_differing_config_keys(configs)
+
+        for out, cfg in metric_outs_and_configs:
+            cfg_dict = cfg.model_dump()
+            cfg_suffix = "_".join(f"{k}={cfg_dict[k]}" for k in differing_config_keys)
+            new_items = {f"{k}_{cfg_suffix}": v for k, v in out.items()}
+            safe_update(merged, new_items)
+
+    return merged
 
 
 def evaluate(
@@ -287,12 +334,12 @@ def evaluate(
 ) -> MetricOutType:
     """Run evaluation and return a mapping of metric names to values/images."""
 
-    metrics: list[Metric] = []
+    metrics_and_configs: list[tuple[Metric, MetricConfigType]] = []
     for cfg in eval_metric_configs:
-        metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
+        metric, cfg = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
         if metric.slow and not slow_step:
             continue
-        metrics.append(metric)
+        metrics_and_configs.append((metric, cfg))
 
     # Weight deltas can be computed once per eval since params are frozen
     weight_deltas = model.calc_weight_deltas()
@@ -308,7 +355,7 @@ def evaluate(
             sampling=run_config.sampling,
         )
 
-        for metric in metrics:
+        for metric, _ in metrics_and_configs:
             metric.update(
                 batch=batch,
                 target_out=target_output.output,
@@ -318,14 +365,32 @@ def evaluate(
                 weight_deltas=weight_deltas,
             )
 
-    outputs: MetricOutType = {}
-    for metric in metrics:
+    outputs: list[tuple[Metric, MetricConfigType, MetricOutType]] = []
+    for metric, cfg in metrics_and_configs:
         computed_raw: Any = metric.compute()
         computed = clean_metric_output(
             section=metric.metric_section,
             metric_name=type(metric).__name__,
             computed_raw=computed_raw,
         )
-        outputs.update(computed)
+        outputs.append((metric, cfg, computed))
 
-    return outputs
+    return merge_with_qualification(outputs)
+
+
+
+# if __name__ == "__main__":
+#     # quick test of merge_with_qualification
+#     c1 = FaithfulnessLossConfig(coeff=1.0)
+#     c2 = FaithfulnessLossConfig(coeff=2.0)
+
+#     l1 = FaithfulnessLoss(model=None, device=None)
+#     l2 = FaithfulnessLoss(model=None, device=None)
+
+#     outputs: list[tuple[Metric, MetricConfigType, MetricOutType]] = [
+#         (l1, c1, {"a": 1, "b": 2}),
+#         (l2, c2, {"a": 3, "b": 4}),
+#     ]
+
+#     merged = merge_with_qualification(outputs)
+#     print(merged)
