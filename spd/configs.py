@@ -63,7 +63,7 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
 
 
 class DensityBasedRouting(BaseConfig):
-    k: int | float | CoeffSchedule
+    routing_density: int | float | CoeffSchedule
 
 
 SubsetRoutingType = Literal["uniform_k-stochastic"] | DensityBasedRouting
@@ -143,7 +143,10 @@ class CIHistogramsConfig(BaseConfig):
 
 class CI_L0Config(BaseConfig):
     classname: Literal["CI_L0"] = "CI_L0"
-    groups: dict[str, list[str]] | None
+    groups: dict[str, list[str]] | None = Field(
+        default=None,
+        description="Extra groups to compute L0 for. Group names and patterns to compute L0 for. If None, L0 is computed for all layers.",
+    )
 
 
 class CIMeanPerComponentConfig(BaseConfig):
@@ -393,8 +396,8 @@ class Config(BaseConfig):
         default=0.0,
         description="Causal importance threshold above which a component is considered 'firing'",
     )
-    n_examples_until_dead: PositiveInt = Field(
-        ...,
+    n_examples_until_dead: PositiveInt | None = Field(
+        default=None,
         description="Number of examples without firing before a component is considered dead. "
         "Note that in LMs, an example is a token, not a sequence.",
     )
