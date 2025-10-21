@@ -117,12 +117,16 @@ class ClusterData:
             # Zip property values with text hashes and indices
             samples_with_values: list[tuple[int, TextSampleHash, float]] = [
                 (idx, th, val)
-                for idx, (th, val) in enumerate(zip(activation_samples.text_hashes, prop_values.tolist(), strict=True))
+                for idx, (th, val) in enumerate(
+                    zip(activation_samples.text_hashes, prop_values.tolist(), strict=True)
+                )
             ]
             samples_with_values.sort(key=lambda x: x[2], reverse=reverse)
 
             # Take top k
-            top_k: list[tuple[int, TextSampleHash, float]] = samples_with_values[: criterion.n_samples]
+            top_k: list[tuple[int, TextSampleHash, float]] = samples_with_values[
+                : criterion.n_samples
+            ]
 
             criterion_str = criterion.to_string()
 
@@ -225,7 +229,9 @@ class ClusterData:
             samples.append(
                 ClusterSample(
                     text_hash=str(text_hash),
-                    tokens=activation_samples.tokens[sample_idx] if activation_samples.tokens else [],
+                    tokens=activation_samples.tokens[sample_idx]
+                    if activation_samples.tokens
+                    else [],
                     activations=activation_samples.activations[sample_idx],
                     criteria=criteria_list,
                 )

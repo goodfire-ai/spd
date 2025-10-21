@@ -131,4 +131,6 @@ class ClusterSample(SerializableDataclass):
     text_hash: str  # Reference to TextSample in text_samples dict
     tokens: list[str]  # Token strings for display
     activations: Float[np.ndarray, " n_ctx"]  # ZANJ will save as .npy ref
-    criteria: list[str]  # Which tracking criteria this sample satisfied (e.g., ["max_activation-max-16"])
+    criteria: list[
+        str
+    ]  # Which tracking criteria this sample satisfied (e.g., ["max_activation-max-16"])

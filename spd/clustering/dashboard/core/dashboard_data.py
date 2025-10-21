@@ -1,6 +1,5 @@
 """Top-level dashboard data structure."""
 
-from dataclasses import field
 from typing import Any
 
 import numpy as np
@@ -10,7 +9,6 @@ from muutils.json_serialize import SerializableDataclass, serializable_dataclass
 from spd.clustering.consts import SubComponentKey
 from spd.clustering.dashboard.core.base import (
     ActivationSampleBatch,
-    ActivationSampleHash,
     ClusterId,
     ClusterIdHash,
     TextSample,
@@ -32,7 +30,9 @@ class DashboardData(SerializableDataclass):
     text_samples: dict[TextSampleHash, TextSample] = serializable_field(default_factory=dict)
 
     # Optional global metrics
-    coactivations: Float[np.ndarray, "n_clusters n_clusters"] | None = serializable_field(default=None)
+    coactivations: Float[np.ndarray, "n_clusters n_clusters"] | None = serializable_field(
+        default=None
+    )
     cluster_indices: list[int] | None = serializable_field(default=None)
 
     @classmethod
