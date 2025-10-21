@@ -201,6 +201,7 @@ def main(
     local_clustering_parallel: bool = False,
     local_calc_distances_parallel: bool = False,
     dataset_streaming: bool = False,
+    track_resources_calc_distances: bool = False,
 ) -> None:
     """Submit clustering runs to SLURM.
 
@@ -213,10 +214,11 @@ def main(
 
     logger.set_format("console", "terse")
 
-    if local_clustering_parallel or local_calc_distances_parallel:
+    if local_clustering_parallel or local_calc_distances_parallel or track_resources_calc_distances:
         assert local, (
-            "local_clustering_parallel and local_calc_distances_parallel can only be True if running locally"
-            f"{local_clustering_parallel=}, {local_calc_distances_parallel=}, {local=}"
+            "local_clustering_parallel, local_calc_distances_parallel, track_resources_calc_distances "
+            "can only be set when running locally\n"
+            f"{local_clustering_parallel=}, {local_calc_distances_parallel=}, {track_resources_calc_distances=}, {local=}"
         )
 
     # Create ExecutionStamp for pipeline
@@ -270,7 +272,7 @@ def main(
         run_script_array_local(
             commands=calc_distances_commands,
             parallel=local_calc_distances_parallel,
-            track_resources=True,
+            track_resources=track_resources_calc_distances,
         )
 
         logger.section("complete!")
@@ -414,6 +416,11 @@ def cli():
         help="If running locally, whether to run distance calculations in parallel",
     )
     parser.add_argument(
+        "--track-resources-calc-distances",
+        action="store_true",
+        help="If running locally, whether to track resource usage during distance calculations",
+    )
+    parser.add_argument(
         "--dataset-streaming",
         action="store_true",
         help="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
@@ -443,6 +450,7 @@ def cli():
         dataset_streaming=args.dataset_streaming,
         local_clustering_parallel=args.local_clustering_parallel,
         local_calc_distances_parallel=args.local_calc_distances_parallel,
+        track_resources_calc_distances=args.track_resources_calc_distances,
     )
 
 
