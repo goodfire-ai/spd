@@ -51,7 +51,6 @@ CONFIG: ClusteringRunConfig = ClusteringRunConfig(
     model_path=MODEL_PATH,
     batch_size=2,
     dataset_seed=42,
-    idx_in_ensemble=0,
     dataset_streaming=True,  # no effect since we do this manually
 )
 
