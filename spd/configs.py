@@ -23,23 +23,30 @@ from spd.spd_types import ModelPath, Probability
 
 
 #### Metrics that can be used in training (or eval) ####
+class LinearSchedule(BaseConfig):
+    type: Literal["linear"] = "linear"
+    start_value: float
+    end_value: float
+    start_frac: float
+    end_frac: float
+
+
+class CosineSchedule(BaseConfig):
+    type: Literal["cosine"] = "cosine"
+    start_value: float
+    end_value: float
+    start_frac: float
+    end_frac: float
+
+
+CoeffSchedule = Annotated[LinearSchedule | CosineSchedule, Field(discriminator="type")]
+
+
 class LossMetricConfig(BaseConfig):
     coeff: float | None = Field(
         default=None,
-        description="Loss coefficient. Used when metric is in loss_metric_configs.",
+        description="Loss coefficient or coefficient schedule. Used when metric is in loss_metric_configs.",
     )
-
-
-class CIMaskedReconSubsetLossConfig(LossMetricConfig):
-    classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
-
-
-class CIMaskedReconLayerwiseLossConfig(LossMetricConfig):
-    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
-
-
-class CIMaskedReconLossConfig(LossMetricConfig):
-    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
 
 
 class FaithfulnessLossConfig(LossMetricConfig):
@@ -55,8 +62,16 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     eps: float = 1e-12
 
 
-class StochasticReconLayerwiseLossConfig(LossMetricConfig):
-    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
+class CIMaskedReconSubsetLossConfig(LossMetricConfig):
+    classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
+
+
+class CIMaskedReconLayerwiseLossConfig(LossMetricConfig):
+    classname: Literal["CIMaskedReconLayerwiseLoss"] = "CIMaskedReconLayerwiseLoss"
+
+
+class CIMaskedReconLossConfig(LossMetricConfig):
+    classname: Literal["CIMaskedReconLoss"] = "CIMaskedReconLoss"
 
 
 class StochasticReconLossConfig(LossMetricConfig):
@@ -65,6 +80,34 @@ class StochasticReconLossConfig(LossMetricConfig):
 
 class StochasticReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+
+
+class StochasticReconLayerwiseLossConfig(LossMetricConfig):
+    classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
+
+
+PGDInitStrategy = Literal["random", "ones", "zeroes"]
+
+MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
+
+
+class PGDConfig(LossMetricConfig):
+    init: PGDInitStrategy
+    step_size: float
+    n_steps: int
+    mask_scope: MaskScope
+
+
+class PGDReconLossConfig(PGDConfig):
+    classname: Literal["PGDReconLoss"] = "PGDReconLoss"
+
+
+class PGDReconSubsetLossConfig(PGDConfig):
+    classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
+
+
+class PGDReconLayerwiseLossConfig(PGDConfig):
+    classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
 
 
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
@@ -126,14 +169,22 @@ class UVPlotsConfig(BaseConfig):
 
 
 LossMetricConfigType = (
-    CIMaskedReconSubsetLossConfig
-    | CIMaskedReconLayerwiseLossConfig
-    | CIMaskedReconLossConfig
-    | FaithfulnessLossConfig
+    FaithfulnessLossConfig
     | ImportanceMinimalityLossConfig
-    | StochasticReconLayerwiseLossConfig
+    # Recon losses:
+    # CI masked recon
+    | CIMaskedReconLossConfig
+    | CIMaskedReconSubsetLossConfig
+    | CIMaskedReconLayerwiseLossConfig
+    # Stochastic
     | StochasticReconLossConfig
     | StochasticReconSubsetLossConfig
+    | StochasticReconLayerwiseLossConfig
+    # PGD
+    | PGDReconLossConfig
+    | PGDReconSubsetLossConfig
+    | PGDReconLayerwiseLossConfig
+    # Hidden acts
     | StochasticHiddenActsReconLossConfig
 )
 EvalOnlyMetricConfigType = (
@@ -150,6 +201,8 @@ EvalOnlyMetricConfigType = (
 MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
+
+SamplingType = Literal["continuous"] | Literal["binomial"]
 
 
 class Config(BaseConfig):
@@ -185,7 +238,7 @@ class Config(BaseConfig):
         default=[8],
         description="Hidden dimensions for the causal importance function used to calculate the causal importance",
     )
-    sampling: Literal["continuous", "binomial"] = Field(
+    sampling: SamplingType = Field(
         default="continuous",
         description="Sampling mode for stochastic elements: 'continuous' (default) or 'binomial'",
     )
