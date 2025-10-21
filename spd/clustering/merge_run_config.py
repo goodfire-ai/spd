@@ -1,5 +1,8 @@
 """ClusteringRunConfig"""
 
+import base64
+import hashlib
+import json
 from pathlib import Path
 from typing import Any, Self
 
@@ -127,3 +130,19 @@ class ClusteringRunConfig(BaseConfig):
         )
 
         return base_dump
+
+    def stable_hash_b64(self) -> str:
+        """Generate a stable, deterministic base64-encoded hash of this config.
+
+        Uses SHA256 hash of the JSON representation with sorted keys for determinism.
+        Returns URL-safe base64 encoding without padding.
+
+        Returns:
+            URL-safe base64-encoded hash (without padding)
+        """
+        config_dict: dict[str, Any] = self.model_dump(mode="json")
+        config_json: str = json.dumps(config_dict, indent=2, sort_keys=True)
+        hash_digest: bytes = hashlib.sha256(config_json.encode()).digest()
+        # Use base64 URL-safe encoding and strip padding for filesystem safety
+        hash_b64: str = base64.urlsafe_b64encode(hash_digest).decode().rstrip("=")
+        return hash_b64

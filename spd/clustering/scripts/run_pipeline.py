@@ -25,12 +25,14 @@ from pathlib import Path
 from typing import Any
 
 import wandb_workspaces.workspaces as ws
-from pydantic import Field, PositiveInt, field_validator
+from pydantic import Field, PositiveInt, field_validator, model_validator
 
 from spd.base_config import BaseConfig
 from spd.clustering.consts import DistancesMethod
+from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.storage import StorageBase
 from spd.log import logger
+from spd.settings import SPD_CACHE_DIR
 from spd.utils.command_utils import run_script_array_local
 from spd.utils.general_utils import replace_pydantic_model
 from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, read_noneable_str
@@ -69,7 +71,14 @@ class ClusteringPipelineStorage(StorageBase):
 class ClusteringPipelineConfig(BaseConfig):
     """Configuration for submitting an ensemble of clustering runs to SLURM."""
 
-    run_clustering_config_path: Path = Field(description="Path to ClusteringRunConfig file.")
+    run_clustering_config_path: Path | None = Field(
+        default=None,
+        description="Path to ClusteringRunConfig file. Mutually exclusive with run_clustering_config.",
+    )
+    run_clustering_config: ClusteringRunConfig | None = Field(
+        default=None,
+        description="Inline ClusteringRunConfig. Mutually exclusive with run_clustering_config_path.",
+    )
     n_runs: PositiveInt = Field(description="Number of clustering runs in the ensemble")
     distances_methods: list[DistancesMethod] = Field(
         description="List of method(s) to use for calculating distances"
@@ -84,6 +93,25 @@ class ClusteringPipelineConfig(BaseConfig):
     wandb_entity: str = Field(description="WandB entity (team/user) name")
     create_git_snapshot: bool = Field(description="Create a git snapshot for the run")
 
+    @model_validator(mode="after")
+    def validate_config_fields(self) -> "ClusteringPipelineConfig":
+        """Validate that exactly one of run_clustering_config_path or run_clustering_config is provided."""
+        has_path: bool = self.run_clustering_config_path is not None
+        has_inline: bool = self.run_clustering_config is not None
+
+        if not has_path and not has_inline:
+            raise ValueError(
+                "Must specify exactly one of 'run_clustering_config_path' or 'run_clustering_config'"
+            )
+
+        if has_path and has_inline:
+            raise ValueError(
+                "Cannot specify both 'run_clustering_config_path' and 'run_clustering_config'. "
+                "Use only one."
+            )
+
+        return self
+
     @field_validator("distances_methods")
     @classmethod
     def validate_distances_methods(cls, v: list[DistancesMethod]) -> list[DistancesMethod]:
@@ -93,6 +121,46 @@ class ClusteringPipelineConfig(BaseConfig):
         )
 
         return v
+
+    def get_config_path(self) -> Path:
+        """Get the path to the ClusteringRunConfig file.
+
+        - If run_clustering_config_path is provided, returns it directly.
+        - If run_clustering_config is provided, caches it to a deterministic path
+        based on its content hash and returns that path.
+          - if the config file already exists in the cache, assert that it is identical.
+
+        Returns:
+            Path to the (potentially newly created) ClusteringRunConfig file
+        """
+        if self.run_clustering_config_path is not None:
+            return self.run_clustering_config_path
+
+        assert self.run_clustering_config is not None, (
+            "Either run_clustering_config_path or run_clustering_config must be set"
+        )
+
+        # Generate deterministic hash from config
+        hash_b64: str = self.run_clustering_config.stable_hash_b64()
+
+        # Create cache directory
+        cache_dir: Path = SPD_CACHE_DIR / "merge_run_configs"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write config to cache if it doesn't exist
+        config_path: Path = cache_dir / f"{hash_b64}.json"
+        if not config_path.exists():
+            self.run_clustering_config.to_file(config_path)
+            logger.info(f"Cached inline config to {config_path}")
+        else:
+            # Verify that existing file matches
+            existing_config = ClusteringRunConfig.from_file(config_path)
+            if existing_config != self.run_clustering_config:
+                raise ValueError(
+                    f"Hash collision detected for config hash {hash_b64} at {config_path}\n{existing_config=}\n{self.run_clustering_config=}"
+                )
+
+        return config_path
 
 
 def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str) -> str:
@@ -148,7 +216,7 @@ def generate_clustering_commands(
             "python",
             "spd/clustering/scripts/run_clustering.py",
             "--config",
-            pipeline_config.run_clustering_config_path.as_posix(),
+            pipeline_config.get_config_path().as_posix(),
             "--pipeline-run-id",
             pipeline_run_id,
             "--idx-in-ensemble",
