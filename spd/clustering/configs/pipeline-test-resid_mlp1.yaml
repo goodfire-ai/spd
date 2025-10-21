@@ -1,4 +1,4 @@
-run_clustering_config_path: "spd/clustering/configs/test-resid_mlp1.json"
+run_clustering_config_path: "spd/clustering/configs/mrc/test-resid_mlp1.json"
 n_runs: 3
 distances_methods: ["matching_dist"]
 base_output_dir: "tests/.temp/clustering"

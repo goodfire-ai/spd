@@ -10,11 +10,9 @@
     "module_name_filter": null
   },
   "experiment_key": "resid_mlp2",
-  "n_batches": 16,
   "batch_size": 1024,
-  "wandb_enabled": true,
   "wandb_project": "spd-cluster",
-  "intervals": {
+  "logging_intervals": {
     "stat": 1,
     "tensor": 5,
     "plot": 5,
