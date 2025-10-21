@@ -13,6 +13,8 @@ C: 1000
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
 ci_fn_hidden_dims: [512]
+ci_fn_center_output_bias: true
+normalise_activations: true
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   - "model.layers.*.self_attn.q_proj"
@@ -30,7 +32,7 @@ loss_metric_configs:
     pnorm: 1.0
   - classname: "StochasticReconSubsetLoss"
     coeff: 1.0
-    subset_routing_cfg:
+    subset_routing_cfg: # "uniform_k-stochastic"
       routing_density:
         type: "linear"
         start_value: 0.05
@@ -42,7 +44,7 @@ output_loss_type: kl
 
 # --- Training ---
 batch_size: 256
-gradient_accumulation_steps: 1
+gradient_accumulation_steps: 4
 eval_batch_size: 64
 n_eval_steps: 5
 steps: 50000
