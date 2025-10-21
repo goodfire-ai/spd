@@ -679,7 +679,7 @@ function displaySamples() {
 
         // Fall back to cluster-level activations if component activations not available
         if (!activationsData) {
-            const fullHash = `${currentClusterHash}:${textHash}`;
+            const fullHash = `${currentClusterHash}|${textHash}`;
             const activationIdx = activationsMap[fullHash];
 
             if (activationIdx !== undefined && activationsArray) {
