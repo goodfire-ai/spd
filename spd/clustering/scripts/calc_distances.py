@@ -12,10 +12,13 @@ Output structure:
 
 import argparse
 import json
+import multiprocessing
 
 import numpy as np
+import torch
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
+from muutils.dbg import dbg_tensor
 
 from spd.clustering.consts import DistancesArray, DistancesMethod
 from spd.clustering.ensemble_registry import get_clustering_runs
@@ -24,6 +27,15 @@ from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
+
+# Set spawn method for CUDA compatibility with multiprocessing
+# Must be done before any CUDA operations
+if torch.cuda.is_available():
+    try:  # noqa: SIM105
+        multiprocessing.set_start_method("spawn")
+    except RuntimeError:
+        # Already set, ignore
+        pass
 
 
 def main(pipeline_run_id: str, distances_method: DistancesMethod) -> None:
@@ -76,6 +88,8 @@ def main(pipeline_run_id: str, distances_method: DistancesMethod) -> None:
         method=distances_method,
     )
 
+    dbg_tensor(distances)
+
     distances_path = pipeline_dir / f"distances_{distances_method}.npz"
     np.savez_compressed(distances_path, distances=distances)
     logger.info(f"Distances computed and saved: shape={distances.shape}, path={distances_path}")
@@ -109,7 +123,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--distances-method",
-        choices=["perm_invariant_hamming", "jaccard"],
+        choices=DistancesMethod.__args__,
         default="perm_invariant_hamming",
         help="Method for calculating distances",
     )

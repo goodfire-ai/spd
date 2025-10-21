@@ -428,6 +428,8 @@ class MergeHistoryEnsemble:
             else:
                 history_metadatas.append(None)
 
+        dbg_tensor(merges_array)
+
         return (
             # TODO: dataclass this
             merges_array,

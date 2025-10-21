@@ -186,6 +186,8 @@ def plot_dists_distribution(
     ax: plt.Axes | None = None,
     kwargs_fig: dict[str, Any] | None = None,
     kwargs_plot: dict[str, Any] | None = None,
+    use_symlog: bool = True,
+    linthresh: float = 1.0,
 ) -> plt.Axes:
     n_iters: int = distances.shape[0]
     n_ens: int = distances.shape[1]
@@ -277,6 +279,34 @@ def plot_dists_distribution(
     ax_.set_xlabel("Iteration #")
     ax_.set_ylabel("distance")
     ax_.set_title("Distribution of pairwise distances between group merges in an ensemble")
+
+    if use_symlog:
+        from matplotlib.ticker import FuncFormatter
+
+        ax_.set_yscale("symlog", linthresh=linthresh, linscale=0.2)
+
+        # Custom formatter for y-axis ticks
+        def custom_format(y: float, _pos: int) -> str:
+            if abs(y) < linthresh:
+                # Show exact values in the linear range
+                return f"{y:.1f}"
+            elif abs(y) == 1:
+                return "1"
+            elif abs(y) == 10:
+                return "10"
+            else:
+                # Use scientific notation for larger values
+                exponent = int(np.log10(abs(y)))
+                return f"$10^{{{exponent}}}$"
+
+        ax_.yaxis.set_major_formatter(FuncFormatter(custom_format))
+
+        # Add a visual indicator for the linear region (0 to linthresh)
+        ax_.axhspan(0, linthresh, alpha=0.05, color="gray", zorder=-10)
+        # Add subtle lines at linthresh boundaries
+        ax_.axhline(linthresh, color="gray", linestyle="--", linewidth=0.5, alpha=0.3)
+        if linthresh > 0:
+            ax_.axhline(0, color="gray", linestyle="-", linewidth=0.5, alpha=0.3)
 
     return ax_
 

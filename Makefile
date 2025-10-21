@@ -109,3 +109,9 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name "*.egg-info" -exec rm -rf {} +
 	rm -rf build/ dist/ .ruff_cache/ .pytest_cache/ .coverage
+
+
+.PHONY: clustering-dev
+clustering-dev:
+	uv run spd-cluster --local --config spd/clustering/configs/pipeline-dev-simplestories.yaml
+
