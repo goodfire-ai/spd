@@ -27,7 +27,8 @@ def _stochastic_arb_hidden_acts_recon_loss_update(
     post_target_module_paths: list[str],
     pre_target_module_paths: list[str],
 ) -> dict[CachePoint, tuple[Float[Tensor, ""], int]]:
-    assert ci, "Empty ci"
+    assert pre_target_module_paths or post_target_module_paths
+
     device = get_obj_device(ci)
 
     target_pre_acts = model(
@@ -113,8 +114,8 @@ def stochastic_arb_hidden_acts_recon_loss(
     n_mask_samples: int,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     ci: dict[str, Float[Tensor, "... C"]],
-    post_target_module_patterns: list[str],
-    pre_target_module_patterns: list[str],
+    post_target_module_patterns: list[str] | None,
+    pre_target_module_patterns: list[str] | None,
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
 ) -> dict[str, Float[Tensor, ""]]:
     results = _stochastic_arb_hidden_acts_recon_loss_update(
@@ -124,10 +125,10 @@ def stochastic_arb_hidden_acts_recon_loss(
         batch=batch,
         ci=ci,
         post_target_module_paths=get_target_module_paths(
-            model.target_model, post_target_module_patterns
+            model.target_model, post_target_module_patterns or []
         ),
         pre_target_module_paths=get_target_module_paths(
-            model.target_model, pre_target_module_patterns
+            model.target_model, pre_target_module_patterns or []
         ),
         weight_deltas=weight_deltas,
     )
@@ -146,18 +147,18 @@ class StochasticArbHiddenActsReconLoss(Metric):
         sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
-        pre_target_module_patterns: list[str],
-        post_target_module_patterns: list[str],
+        pre_target_module_patterns: list[str] | None,
+        post_target_module_patterns: list[str] | None,
     ) -> None:
         self.model = model
         self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
         self.pre_target_module_paths: list[str] = get_target_module_paths(
-            model.target_model, pre_target_module_patterns
+            model.target_model, pre_target_module_patterns or []
         )
         self.post_target_module_paths: list[str] = get_target_module_paths(
-            model.target_model, post_target_module_patterns
+            model.target_model, post_target_module_patterns or []
         )
 
         self.sum_mse = defaultdict[CachePoint, Float[Tensor, ""]](
