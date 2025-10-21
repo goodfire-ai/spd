@@ -10,7 +10,7 @@ n_mask_samples: 1
 ci_fn_type: "vector_mlp"
 ci_fn_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["h.*.mlp.c_fc", "h.*.mlp.c_proj", "h.*.attn.k_proj", "h.*.attn.v_proj", "h.*.attn.c_proj"]
+target_module_patterns: ["h.*.mlp.c_fc", "h.*.mlp.down_proj", "h.*.attn.k_proj", "h.*.attn.q_proj", "h.*.attn.v_proj", "h.*.attn.o_proj"]
 identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
@@ -73,7 +73,7 @@ eval_metric_configs:
       layer_2_only: ["h.2.*"]
       layer_3_only: ["h.3.*"]
       mlp_only: ["*.mlp.*"]
-      attention_only: ["*.self_attn.*"]
+      attention_only: ["*.attn.*"]
     exclude_patterns:
       all_but_layer_0: ["h.0.*"]
       all_but_layer_1: ["h.1.*"]
@@ -83,9 +83,9 @@ eval_metric_configs:
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
-pretrained_model_name: wandb:goodfire/spd/runs/syhzse3u # With ln
+pretrained_model_name: wandb:goodfire/spd/runs/p273hxax # With ln
 pretrained_model_output_attr: idx_0
-tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # We'll load this from wandb in future
+tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # TODO: load this from wandb
 
 # --- Task Specific ---
 task_config:
