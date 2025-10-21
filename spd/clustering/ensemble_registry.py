@@ -6,7 +6,7 @@ Uses SQLite to maintain a mapping of (pipeline_run_id, idx, clustering_run_id).
 import sqlite3
 from contextlib import contextmanager
 
-from spd.clustering.merge_run_config import ClusteringEnsembleIndex
+from spd.clustering.clustering_run_config import ClusteringEnsembleIndex
 from spd.settings import SPD_CACHE_DIR
 
 # SQLite database path

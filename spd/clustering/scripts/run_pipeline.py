@@ -28,8 +28,8 @@ import wandb_workspaces.workspaces as ws
 from pydantic import Field, PositiveInt, field_validator, model_validator
 
 from spd.base_config import BaseConfig
+from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.consts import DistancesMethod
-from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.storage import StorageBase
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR

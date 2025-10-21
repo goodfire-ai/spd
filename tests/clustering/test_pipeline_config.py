@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.merge_config import MergeConfig
-from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.scripts.run_pipeline import ClusteringPipelineConfig
 from spd.settings import REPO_ROOT, SPD_CACHE_DIR
 
