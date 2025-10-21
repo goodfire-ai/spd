@@ -98,7 +98,7 @@ class ClusteringPipelineConfig(BaseConfig):
     )
 
     @model_validator(mode="after")
-    def validate_config_fields(self) -> "ClusteringPipelineConfig":
+    def validate_mrc_fields(self) -> "ClusteringPipelineConfig":
         """Validate that exactly one of run_clustering_config_path or run_clustering_config is provided."""
         has_path: bool = self.run_clustering_config_path is not None
         has_inline: bool = self.run_clustering_config is not None
@@ -108,11 +108,19 @@ class ClusteringPipelineConfig(BaseConfig):
                 "Must specify exactly one of 'run_clustering_config_path' or 'run_clustering_config'"
             )
 
-        if has_path and has_inline:
-            raise ValueError(
-                "Cannot specify both 'run_clustering_config_path' and 'run_clustering_config'. "
-                "Use only one."
-            )
+        if has_path:
+            if has_inline:
+                raise ValueError(
+                    "Cannot specify both 'run_clustering_config_path' and 'run_clustering_config'. "
+                    "Use only one."
+                )
+            else:
+                # Ensure the path exists
+                # pyright ignore because it doesn't recognize that has_path implies not None
+                if not self.run_clustering_config_path.exists():  # pyright: ignore[reportOptionalMemberAccess]
+                    raise ValueError(
+                        f"run_clustering_config_path does not exist: {self.run_clustering_config_path = }"
+                    )
 
         return self
 
@@ -138,6 +146,9 @@ class ClusteringPipelineConfig(BaseConfig):
             Path to the (potentially newly created) ClusteringRunConfig file
         """
         if self.run_clustering_config_path is not None:
+            assert self.run_clustering_config_path.exists(), (
+                f"no file at run_clustering_config_path: {self.run_clustering_config_path = }"
+            )
             return self.run_clustering_config_path
 
         assert self.run_clustering_config is not None, (

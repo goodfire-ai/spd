@@ -54,6 +54,8 @@ class ClusteringRunConfig(BaseConfig):
         default=None,
         description="Ensemble identifier for WandB grouping",
     )
+    # TODO: allow idx_in_ensemble to be `None` if ensemble_id is `None`?
+    # TODO: allow idx_in_ensemble to be auto-assigned by reading from db if -1?
     idx_in_ensemble: int = Field(0, description="Index of this run in the ensemble")
 
     merge_config: MergeConfig = Field(description="Merge algorithm configuration")
