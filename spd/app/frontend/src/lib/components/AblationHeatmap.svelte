@@ -52,9 +52,11 @@
                                     tokenStat.original_active_count,
                                     tokenStat.ablated_count
                                 )}"
-                                title="Active: {tokenStat.original_active_count}, Ablated: {tokenStat.ablated_count}, Magnitude: {tokenStat.ablated_magnitude.toFixed(
-                                    3
-                                )}"
+                                title={[
+                                    `Active: ${tokenStat.original_active_count}`,
+                                    `Ablated: ${tokenStat.ablated_count}`,
+                                    `Magnitude: ${tokenStat.ablated_magnitude.toFixed(3)}`
+                                ].join()}
                             ></div>
                         {/each}
                     </div>

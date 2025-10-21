@@ -1,6 +1,5 @@
-<!-- <script context="module">
-</script> -->
-
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     type PopupData = {
         token: string;
@@ -9,7 +8,7 @@
         layerName: string;
         tokenCIs: MatrixCausalImportances;
     };
-    import type { ClusterRunDTO, MatrixCausalImportances } from "$lib/api";
+    import type { MatrixCausalImportances } from "$lib/api";
 
     import * as api from "$lib/api";
     import ComponentCard from "./ComponentCard.svelte";
@@ -23,8 +22,6 @@
         componentIdx: number
     ) => boolean;
 
-    export let cluster: ClusterRunDTO;
-    export let dashboard: api.ClusterDashboardResponse;
     export let popupData: PopupData;
 
     type ComponentItem = {
@@ -33,25 +30,25 @@
         componentAggCi: number;
     };
 
-    $: componentItems = (() => {
-        const groups: number[][] =
-            cluster.clustering_shape.module_component_groups[popupData.layerName];
-        const componentItems = groups.map<ComponentItem>((subcomponent_group, componentIdx) => ({
-            componentIdx,
-            subcomponentCis: subcomponent_group.map(
-                (subcomponentIdx) => popupData.tokenCIs.subcomponent_cis[subcomponentIdx]
-            ),
-            componentAggCi: popupData.tokenCIs.component_agg_cis[componentIdx]
-        }));
+    // $: componentItems = (() => {
+    //     const groups: number[][] =
+    //         cluster.clustering_shape.module_component_groups[popupData.layerName];
+    //     const componentItems = groups.map<ComponentItem>((subcomponent_group, componentIdx) => ({
+    //         componentIdx,
+    //         subcomponentCis: subcomponent_group.map(
+    //             (subcomponentIdx) => popupData.tokenCIs.subcomponent_cis[subcomponentIdx]
+    //         ),
+    //         componentAggCi: popupData.tokenCIs.component_agg_cis[componentIdx]
+    //     }));
 
-        componentItems.sort(
-            (a, b) =>
-                b.componentAggCi - a.componentAggCi ||
-                b.subcomponentCis.length - a.subcomponentCis.length
-        );
+    //     componentItems.sort(
+    //         (a, b) =>
+    //             b.componentAggCi - a.componentAggCi ||
+    //             b.subcomponentCis.length - a.subcomponentCis.length
+    //     );
 
-        return componentItems;
-    })();
+    //     return componentItems;
+    // })();
 
     type ComponentExample = {
         textHash: string;
@@ -60,13 +57,13 @@
         activations: number[];
     };
 
-    // Build activation examples from dashboard data (like ClusterDashboardBody)
-    $: textSampleLookup = Object.fromEntries(
-        dashboard.text_samples.map((sample) => [
-            sample.text_hash,
-            { full_text: sample.full_text, tokens: sample.tokens }
-        ])
-    );
+    // // Build activation examples from dashboard data (like ClusterDashboardBody)
+    // $: textSampleLookup = Object.fromEntries(
+    //     dashboard.text_samples.map((sample) => [
+    //         sample.text_hash,
+    //         { full_text: sample.full_text, tokens: sample.tokens }
+    //     ])
+    // );
 
     function buildOffsets(tokens: string[]): [number, number][] {
         const offsets: [number, number][] = [];
@@ -174,8 +171,6 @@
 </script>
 
 {#if popupData}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="popup-overlay" on:click={onClose}>
         <div class="popup-modal" on:click|stopPropagation>
             <div class="popup-content">

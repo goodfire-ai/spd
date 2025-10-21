@@ -2,7 +2,7 @@ import { writable } from "svelte/store";
 import type {
     OutputTokenLogit,
     RunPromptResponse,
-    MaskOverrideDTO,
+    MaskOverride,
     ComponentMask,
     LayerCIs,
     MatrixCausalImportances,
@@ -13,7 +13,7 @@ export interface AblationResult {
     tokenLogits: OutputTokenLogit[][];
     applied_mask: ComponentMask;
     id: number;
-    maskOverride?: MaskOverrideDTO;
+    maskOverride?: MaskOverride;
     ablationStats: AblationStats;
 }
 

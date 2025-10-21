@@ -6,27 +6,18 @@
     import { onMount } from "svelte";
 
     import ActivationContextsTab from "$lib/components/ActivationContextsTab.svelte";
-    import NewClusterDashboard from "$lib/components/ClusterDashboardTab.svelte";
     import InterventionsTab from "$lib/components/InterventionsTab.svelte";
-    import { getClusterWandbRunId } from "$lib";
+    import { getWandbRunId } from "$lib";
 
     let loadingTrainRun: boolean = false;
 
     /** can be a wandb run path, or id. we should sanitse this */
     let trainWandbRunEntry: string | null = null;
 
-    let status: Status = { train_run: null, cluster_run: null };
-
-    $: availableClusterRuns = status.train_run?.available_cluster_runs;
-
-    /** can be a wandb run path, or id. we should sanitse this */
-    let clusterWandbRunEntry: string | null = null;
-
-    let clusterIteration: number | null = null;
-    let loadingClusterRun: boolean = false;
+    let status: Status = { train_run: null };
 
     async function loadStatus() {
-        if (loadingTrainRun || loadingClusterRun) return;
+        if (loadingTrainRun) return;
 
         console.log("getting status");
 
@@ -37,9 +28,6 @@
             console.log("status:", status);
             if (!status.train_run) return;
             trainWandbRunEntry = status.train_run.wandb_path.split("/").pop()!;
-
-            if (!status.cluster_run) return;
-            clusterWandbRunEntry = status.cluster_run.wandb_path;
         } catch (error) {
             console.error("error loading status", error);
         }
@@ -51,8 +39,8 @@
 
         try {
             loadingTrainRun = true;
-            status = { train_run: null, cluster_run: null };
-            trainWandbRunEntry = getClusterWandbRunId(input);
+            status = { train_run: null };
+            trainWandbRunEntry = getWandbRunId(input);
             console.log("loading run", trainWandbRunEntry);
             await api.loadRun(trainWandbRunEntry);
             await loadStatus();
@@ -63,41 +51,12 @@
         }
     }
 
-    async function loadClusterRun() {
-        console.log("loading cluster run", clusterWandbRunEntry, clusterIteration);
-        const canLoadCluster = clusterWandbRunEntry !== null && clusterIteration !== null;
-        if (!canLoadCluster) {
-            console.log("cannot submit cluster settings", {
-                clusterWandbRunEntry,
-                clusterIteration
-            });
-            return;
-        }
-
-        try {
-            loadingClusterRun = true;
-
-            if (!clusterWandbRunEntry) {
-                throw new Error("Inconsistent state: clusterWandbRunEntry is null");
-            }
-            clusterWandbRunEntry = getClusterWandbRunId(clusterWandbRunEntry);
-            await api.loadClusterRun(clusterWandbRunEntry, clusterIteration!);
-            loadingClusterRun = false;
-
-            await loadStatus();
-        } catch (error) {
-            console.error("error loading cluster run", error);
-        } finally {
-            loadingClusterRun = false;
-        }
-    }
-
     onMount(() => {
         loadStatus();
         setInterval(loadStatus, 5000);
     });
 
-    let activeTab: "ablation" | "activation-contexts" | "cluster-dashboard" | null = null;
+    let activeTab: "ablation" | "activation-contexts" | null = null;
 </script>
 
 <div class="app-layout">
@@ -127,48 +86,15 @@
                 >
                     Activation Contexts
                 </button>
-                <div class="cluster-settings">
-                    <h4>Cluster Settings</h4>
-                    <!-- svelte-ignore a11y_consider_explicit_label -->
-                    <form on:submit|preventDefault={loadClusterRun}>
-                        <label>
-                            Clustering Run
-                            <select bind:value={clusterWandbRunEntry}>
-                                {#if availableClusterRuns != null}
-                                    {#each availableClusterRuns as run}
-                                        <option value={run}>{run}</option>
-                                    {/each}
-                                {/if}
-                            </select>
-                        </label>
-                        <div class="settings-grid">
-                            <label>
-                                Iteration
-                                <input type="number" bind:value={clusterIteration} />
-                            </label>
-                        </div>
-                        <button class="cluster-load" type="submit" disabled={loadingClusterRun}
-                            >Load Cluster Run</button
-                        >
-                    </form>
-                </div>
                 <button
                     class="tab-button"
                     class:active={activeTab === "ablation"}
-                    disabled={status.cluster_run == null}
                     on:click={() => (activeTab = "ablation")}
                 >
+                    <!-- disabled={status.cluster_run == null} -->
                     Component Ablation
-                    <div class="spinner" class:hidden={!loadingClusterRun}></div>
-                </button>
-                <button
-                    class="tab-button"
-                    class:active={activeTab === "cluster-dashboard"}
-                    disabled={status.cluster_run == null}
-                    on:click={() => (activeTab = "cluster-dashboard")}
-                >
-                    Cluster Dashboard
-                    <div class="spinner" class:hidden={!loadingClusterRun}></div>
+                    <div class="spinner" ></div>
+                    <!-- class:hidden={!loadingClusterRun} -->
                 </button>
             {/if}
         </div>
@@ -187,21 +113,7 @@
                 <ActivationContextsTab />
             </div>
             <div class:hidden={activeTab !== "ablation"}>
-                {#if status.cluster_run && clusterIteration !== null}
-                    <InterventionsTab
-                        cluster_run={status.cluster_run}
-                        iteration={clusterIteration}
-                    />
-                {:else}
-                    <div class="status">No cluster run selected.</div>
-                {/if}
-            </div>
-            <div class:hidden={activeTab !== "cluster-dashboard"}>
-                {#if status.cluster_run && clusterIteration !== null}
-                    <NewClusterDashboard iteration={clusterIteration} />
-                {:else}
-                    <div class="status">No cluster run selected.</div>
-                {/if}
+                <InterventionsTab />
             </div>
         {/if}
     </div>

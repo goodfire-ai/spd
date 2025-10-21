@@ -1,11 +1,11 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import * as api from "$lib/api";
-    import type { MaskOverrideDTO } from "$lib/api";
+    import type { MaskOverride } from "$lib/api";
 
     export let onApplyMask: (maskId: string) => void;
 
-    let savedMasks: MaskOverrideDTO[] = [];
+    let savedMasks: MaskOverride[] = [];
     let loading = false;
 
     export async function loadMasks() {

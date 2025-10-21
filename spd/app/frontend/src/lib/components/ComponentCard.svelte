@@ -1,11 +1,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
-    import type { CosineSimilarityData } from "$lib/api";
-    import * as api from "$lib/api";
     import { ablationComponentMask } from "$lib/stores/componentState";
-    import { onMount } from "svelte";
-    import CosineSimilarityPlot from "./CosineSimilarityPlot.svelte";
     import TokenHighlights from "./TokenHighlights.svelte";
 
     type ComponentExample = {
@@ -37,16 +33,6 @@
     $: disabledComponentIndices = isDisabled ? [componentIdx] : [];
 
     $: textColor = componentAggCi > 0.5 ? "#ffffff" : "#000000";
-
-    let similarityData: CosineSimilarityData | null = null;
-    let loading = false;
-    async function loadCosineSims() {
-        loading = true;
-        await new Promise((resolve) => setTimeout(resolve, componentIdx * 50));
-        similarityData = await api.getCosineSimilarities(layer, componentIdx);
-        loading = false;
-    }
-    onMount(loadCosineSims);
 </script>
 
 <div class="component-card-container" class:disabled={isDisabled} on:click={toggle}>
@@ -82,34 +68,6 @@
                 {/each}
             </div>
         </div>
-
-        {#if similarityData}
-            <div class="similarity-plots">
-                <h4>Pairwise Cosine Similarities</h4>
-                <div class="plots-container">
-                    <div class="plot-wrapper">
-                        <h5>Input</h5>
-                        <CosineSimilarityPlot
-                            data={similarityData.input_singular_vectors}
-                            indices={similarityData.component_indices}
-                            disabledIndices={disabledComponentIndices}
-                        />
-                    </div>
-                    <div class="plot-wrapper">
-                        <h5>Output</h5>
-                        <CosineSimilarityPlot
-                            data={similarityData.output_singular_vectors}
-                            indices={similarityData.component_indices}
-                            disabledIndices={disabledComponentIndices}
-                        />
-                    </div>
-                </div>
-            </div>
-        {:else}
-            <div class="loading-similarities">
-                <p>Loading...</p>
-            </div>
-        {/if}
     </div>
 </div>
 

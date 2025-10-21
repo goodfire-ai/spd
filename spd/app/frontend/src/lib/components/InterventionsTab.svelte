@@ -8,7 +8,6 @@
         ComponentMask,
         MatrixCausalImportances,
         AvailablePrompt,
-        ClusterDashboardResponse
     } from "$lib/api";
     import {
         ablationComponentMask,
@@ -20,15 +19,10 @@
 
     import ComponentHeatmap from "$lib/components/ComponentHeatmap.svelte";
     import DisabledComponentsPanel from "$lib/components/DisabledComponentsPanel.svelte";
-    // import ComponentDetailModal, {
-    //     type PopupData
-    // } from "$lib/components/ComponentDetailModal.svelte";
+    import ComponentDetailModal from "$lib/components/ComponentDetailModal.svelte";
     import OriginalPredictions from "$lib/components/OriginalPredictions.svelte";
     import AblationPredictions from "$lib/components/AblationPredictions.svelte";
     import SavedMasksPanel from "$lib/components/SavedMasksPanel.svelte";
-
-    export let cluster_run: api.ClusterRunDTO;
-    export let iteration: number;
 
     let isLoading = false;
     let result: RunPromptResponse | null = null;
@@ -46,7 +40,6 @@
     };
 
     let popupData: PopupData | null = null;
-    let dashboard: ClusterDashboardResponse | null = null;
 
     async function loadAvailablePrompts() {
         try {
@@ -54,16 +47,6 @@
         } catch (error: any) {
             console.error("Failed to load prompts:", error.message);
         }
-    }
-
-    async function loadDashboard() {
-        dashboard = await api.getClusterDashboardData({
-            iteration,
-            n_samples: 16,
-            n_batches: 2,
-            batch_size: 64,
-            context_length: 64
-        });
     }
 
     function toggleAvailablePrompts() {
@@ -144,7 +127,7 @@
                 ...$ablationResults,
                 {
                     tokenLogits: maskResult.token_logits,
-                    applied_mask: {}, // The mask was applied uniformly to all tokens
+                    applied_mask: {}, // The mask was applied uniformly to all tokens // TODO: check what this is doing
                     id: Date.now(),
                     maskOverride: appliedMask, // Store mask info for display
                     ablationStats: maskResult.ablation_stats
@@ -201,7 +184,7 @@
 
         isLoading = true;
         try {
-            const data = await api.ablateComponents(currentPromptId, $ablationComponentMask);
+            const data = await api.ablateSubcomponents(currentPromptId, $ablationComponentMask);
 
             const deepCopyMask: ComponentMask = {};
             for (const [layerName, tokenArrays] of Object.entries($ablationComponentMask)) {
@@ -214,7 +197,6 @@
                     tokenLogits: data.token_logits,
                     applied_mask: deepCopyMask,
                     id: Date.now(),
-                    ablationStats: data.ablation_stats
                 }
             ];
         } catch (error: any) {
