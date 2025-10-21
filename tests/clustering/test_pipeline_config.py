@@ -145,7 +145,7 @@ class TestClusteringPipelineConfigGetConfigPath:
         assert config_path.exists()
 
         # Check that it's in the expected directory
-        expected_cache_dir = SPD_CACHE_DIR / "merge_run_configs"
+        expected_cache_dir = SPD_CACHE_DIR / "clustering_run_configs"
         assert config_path.parent == expected_cache_dir
 
         # Check that filename is the hash
@@ -214,7 +214,7 @@ class TestClusteringPipelineConfigGetConfigPath:
 
         # Create a fake collision by manually creating a file with same hash
         hash_value = inline_config.stable_hash_b64()
-        cache_dir = SPD_CACHE_DIR / "merge_run_configs"
+        cache_dir = SPD_CACHE_DIR / "clustering_run_configs"
         cache_dir.mkdir(parents=True, exist_ok=True)
         collision_path = cache_dir / f"{hash_value}.json"
 
@@ -277,7 +277,7 @@ class TestAllConfigsValidation:
                 error_msg += f"  - {path.name}: {exc}\n"
             pytest.fail(error_msg)
 
-    def test_all_merge_run_configs_valid(self):
+    def test_all_clustering_run_configs_valid(self):
         """Test that all merge run config files are valid."""
         crc_dir = REPO_ROOT / "spd" / "clustering" / "configs" / "crc"
 

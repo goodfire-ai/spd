@@ -159,7 +159,7 @@ class ClusteringPipelineConfig(BaseConfig):
         hash_b64: str = self.run_clustering_config.stable_hash_b64()
 
         # Create cache directory
-        cache_dir: Path = SPD_CACHE_DIR / "merge_run_configs"
+        cache_dir: Path = SPD_CACHE_DIR / "clustering_run_configs"
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Write config to cache if it doesn't exist
