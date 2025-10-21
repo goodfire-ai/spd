@@ -25,7 +25,6 @@ class TestMergeIntegration:
             iters=5,
             merge_pair_sampling_method="range",
             merge_pair_sampling_kwargs={"threshold": 0.1},
-            pop_component_prob=0,
             filter_dead_threshold=0.001,
         )
 
@@ -59,7 +58,6 @@ class TestMergeIntegration:
             iters=5,
             merge_pair_sampling_method="mcmc",
             merge_pair_sampling_kwargs={"temperature": 1.0},
-            pop_component_prob=0,
             filter_dead_threshold=0.001,
         )
 
@@ -76,37 +74,6 @@ class TestMergeIntegration:
         # Should have fewer groups after iterations
         assert history.merges.k_groups[-1].item() < n_components
         assert history.merges.k_groups[-1].item() >= 2
-
-    def test_merge_with_popping(self):
-        """Test merge iteration with component popping."""
-        # Create test data
-        n_samples = 100
-        n_components = 15
-        activations = torch.rand(n_samples, n_components)
-        component_labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
-
-        # Configure with popping enabled
-        config = MergeConfig(
-            activation_threshold=0.1,
-            alpha=1.0,
-            iters=10,
-            merge_pair_sampling_method="range",
-            merge_pair_sampling_kwargs={"threshold": 0.05},
-            pop_component_prob=0.3,  # 30% chance of popping
-            filter_dead_threshold=0.001,
-        )
-
-        # Run merge iteration
-        history = merge_iteration(
-            activations=activations, merge_config=config, component_labels=component_labels
-        )
-
-        # Check results
-        assert history is not None
-        # First entry is after first merge, so should be n_components - 1
-        assert history.merges.k_groups[0].item() == n_components - 1
-        # Final group count depends on pops, but should be less than initial
-        assert history.merges.k_groups[-1].item() < n_components
 
     def test_merge_comparison_samplers(self):
         """Compare behavior of different samplers with same data."""
@@ -128,7 +95,6 @@ class TestMergeIntegration:
             iters=3,
             merge_pair_sampling_method="range",
             merge_pair_sampling_kwargs={"threshold": 0.0},  # Always select minimum
-            pop_component_prob=0,
         )
 
         history_range = merge_iteration(
@@ -144,7 +110,6 @@ class TestMergeIntegration:
             iters=3,
             merge_pair_sampling_method="mcmc",
             merge_pair_sampling_kwargs={"temperature": 0.01},  # Very low temp
-            pop_component_prob=0,
         )
 
         history_mcmc = merge_iteration(
@@ -173,7 +138,6 @@ class TestMergeIntegration:
             iters=1,  # Just one merge
             merge_pair_sampling_method="mcmc",
             merge_pair_sampling_kwargs={"temperature": 2.0},
-            pop_component_prob=0,
         )
 
         history = merge_iteration(

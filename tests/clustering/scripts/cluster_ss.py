@@ -47,7 +47,7 @@ SPD_CONFIG = SPD_RUN.config
 
 # Use load_dataset with RunConfig to get real data
 CONFIG: ClusteringRunConfig = ClusteringRunConfig(
-    merge_config=MergeConfig(),
+    merge_config=MergeConfig(batch_size=2),
     model_path=MODEL_PATH,
     batch_size=2,
     dataset_seed=42,
@@ -103,7 +103,6 @@ MERGE_CFG: MergeConfig = MergeConfig(
     iters=2,
     merge_pair_sampling_method="range",
     merge_pair_sampling_kwargs={"threshold": 0.1},
-    pop_component_prob=0,
     module_name_filter=FILTER_MODULES,
     filter_dead_threshold=FILTER_DEAD_THRESHOLD,
 )
