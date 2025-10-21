@@ -24,9 +24,6 @@ from spd.configs import (
     ImportanceMinimalityLossConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
-    PGDReconLayerwiseLossConfig,
-    PGDReconLossConfig,
-    PGDReconSubsetLossConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -47,9 +44,6 @@ from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
 from spd.metrics.permuted_ci_plots import PermutedCIPlots
-from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
-from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
-from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
 from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
@@ -126,11 +120,6 @@ def init_metric(
                 p_anneal_final_p=cfg.p_anneal_final_p,
                 p_anneal_end_frac=cfg.p_anneal_end_frac,
             )
-        case FaithfulnessLossConfig():
-            metric = FaithfulnessLoss(
-                model=model,
-                device=device,
-            )
         case CEandKLLossesConfig():
             metric = CEandKLLosses(
                 model=model,
@@ -165,6 +154,8 @@ def init_metric(
             metric = ComponentActivationDensity(
                 model=model, device=device, ci_alive_threshold=run_config.ci_alive_threshold
             )
+        case FaithfulnessLossConfig():
+            metric = FaithfulnessLoss(model=model, device=device)
         case IdentityCIErrorConfig():
             metric = IdentityCIError(
                 model=model,
@@ -205,30 +196,6 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
                 output_loss_type=run_config.output_loss_type,
-            )
-        case PGDReconLossConfig():
-            metric = PGDReconLoss(
-                model=model,
-                device=device,
-                use_delta_component=run_config.use_delta_component,
-                output_loss_type=run_config.output_loss_type,
-                pgd_config=cfg,
-            )
-        case PGDReconSubsetLossConfig():
-            metric = PGDReconSubsetLoss(
-                model=model,
-                device=device,
-                use_delta_component=run_config.use_delta_component,
-                output_loss_type=run_config.output_loss_type,
-                pgd_config=cfg,
-            )
-        case PGDReconLayerwiseLossConfig():
-            metric = PGDReconLayerwiseLoss(
-                model=model,
-                device=device,
-                use_delta_component=run_config.use_delta_component,
-                output_loss_type=run_config.output_loss_type,
-                pgd_config=cfg,
             )
         case StochasticReconSubsetCEAndKLConfig():
             metric = StochasticReconSubsetCEAndKL(

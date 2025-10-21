@@ -1,8 +1,7 @@
-from typing import Any, ClassVar, override
+from typing import Any, ClassVar, Literal, override
 
 from torch import Tensor
 
-from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.plotting import get_single_feature_causal_importances
@@ -20,12 +19,12 @@ class IdentityCIError(Metric):
     def __init__(
         self,
         model: ComponentModel,
-        sampling: SamplingType,
+        sampling: Literal["continuous", "binomial"],
         identity_ci: list[dict[str, str | int]] | None = None,
         dense_ci: list[dict[str, str | int]] | None = None,
     ) -> None:
         self.model = model
-        self.sampling: SamplingType = sampling
+        self.sampling: Literal["continuous", "binomial"] = sampling
         self.identity_ci = identity_ci
         self.dense_ci = dense_ci
 

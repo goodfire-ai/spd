@@ -9,7 +9,7 @@ from torch import Tensor, nn
 
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
-CiFnType = Literal["mlp", "vector_mlp", "shared_mlp", "identity"]
+CiFnType = Literal["mlp", "vector_mlp", "shared_mlp"]
 
 
 class ParallelLinear(nn.Module):
@@ -43,10 +43,6 @@ class Linear(nn.Module):
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
         return einops.einsum(x, self.W, "... d_in, d_in d_out -> ... d_out") + self.b
 
-class IdentityCiFn(nn.Module):
-    @override
-    def forward(self, x: Int[Tensor, "... C"]) -> Float[Tensor, "... C"]:
-        return x
 
 class MLPCiFn(nn.Module):
     """MLP-based function that map component 'inner acts' to a scalar output for each component."""
@@ -305,19 +301,16 @@ class ComponentsMaskInfo:
     component_mask: Float[Tensor, "... C"]
     """when components are routed to, this specifies which subcomponents to use"""
 
-    routing_mask: Bool[Tensor, "..."] | Literal["all"] = "all"
+    routing_mask: Bool[Tensor, "..."] | None = None
     """Which (batch,) or (batch, seq_len) positions to route to components vs target modules.
-    If "all", all positions are routed to components."""
+    If None, all positions are routed to components."""
 
     weight_delta_and_mask: WeightDeltaAndMask | None = None
 
 
-RoutingMasks = dict[str, Bool[Tensor, "..."]] | Literal["all"]
-
-
 def make_mask_infos(
     component_masks: dict[str, Float[Tensor, "... C"]],
-    routing_masks: RoutingMasks = "all",
+    routing_masks: dict[str, Bool[Tensor, "..."]] | None = None,
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None,
 ) -> dict[str, ComponentsMaskInfo]:
     """Create ComponentsMaskInfo dict from dicts of component masks, and optionally routing masks,
@@ -332,7 +325,7 @@ def make_mask_infos(
     Returns:
         Dict mapping module names to ComponentsMaskInfo objects.
     """
-    if isinstance(routing_masks, dict):
+    if routing_masks is not None:
         assert set(routing_masks) == set(component_masks)
 
     if weight_deltas_and_masks is not None:
@@ -340,7 +333,7 @@ def make_mask_infos(
 
     result: dict[str, ComponentsMaskInfo] = {}
     for name in component_masks:
-        routing_mask = routing_masks[name] if isinstance(routing_masks, dict) else "all"
+        routing_mask = routing_masks[name] if routing_masks is not None else None
 
         weight_delta_and_mask = (
             weight_deltas_and_masks[name] if weight_deltas_and_masks is not None else None

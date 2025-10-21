@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, override
+from typing import Any, ClassVar, Literal, override
 
 import einops
 import torch
@@ -7,7 +7,6 @@ from jaxtyping import Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
@@ -48,11 +47,11 @@ class CEandKLLosses(Metric):
         self,
         model: ComponentModel,
         device: str,
-        sampling: SamplingType,
+        sampling: Literal["continuous", "binomial"],
         rounding_threshold: float,
     ) -> None:
         self.model = model
-        self.sampling: SamplingType = sampling
+        self.sampling: Literal["continuous", "binomial"] = sampling
         self.rounding_threshold = rounding_threshold
 
         self.loss_sums: dict[str, Tensor] = {
@@ -114,7 +113,7 @@ class CEandKLLosses(Metric):
         # Sample stochastic masks based on the causal importances
         mask_infos = calc_stochastic_component_mask_info(
             causal_importances=ci,
-            component_mask_sampling=self.sampling,
+            sampling=self.sampling,
             routing="all",
             weight_deltas=None,
         )

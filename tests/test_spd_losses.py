@@ -423,6 +423,7 @@ class TestStochasticReconLoss:
         result = stochastic_recon_loss(
             model=model,
             sampling="continuous",
+            use_delta_component=True,
             n_mask_samples=3,
             output_loss_type="mse",
             batch=batch,
@@ -446,6 +447,7 @@ class TestStochasticReconLoss:
         result = stochastic_recon_loss(
             model=model,
             sampling="binomial",
+            use_delta_component=True,
             n_mask_samples=3,
             output_loss_type="mse",
             batch=batch,
@@ -471,6 +473,7 @@ class TestStochasticReconLoss:
             result = stochastic_recon_loss(
                 model=model,
                 sampling="continuous",
+                use_delta_component=True,
                 n_mask_samples=n_samples,
                 output_loss_type="mse",
                 batch=batch,
@@ -493,6 +496,7 @@ class TestStochasticReconLoss:
         loss_with_delta = stochastic_recon_loss(
             model=model,
             sampling="continuous",
+            use_delta_component=True,
             n_mask_samples=3,
             output_loss_type="mse",
             batch=batch,
@@ -504,12 +508,13 @@ class TestStochasticReconLoss:
         loss_without_delta = stochastic_recon_loss(
             model=model,
             sampling="continuous",
+            use_delta_component=False,
             n_mask_samples=3,
             output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
-            weight_deltas=None,
+            weight_deltas=weight_deltas,
         )
 
         # Both should be valid
@@ -531,6 +536,7 @@ class TestStochasticReconLayerwiseLoss:
         result = stochastic_recon_layerwise_loss(
             model=model,
             sampling="continuous",
+            use_delta_component=True,
             n_mask_samples=2,
             output_loss_type="mse",
             batch=batch,
@@ -555,6 +561,7 @@ class TestStochasticReconLayerwiseLoss:
             result = stochastic_recon_layerwise_loss(
                 model=model,
                 sampling="continuous",
+                use_delta_component=True,
                 n_mask_samples=n_samples,
                 output_loss_type="mse",
                 batch=batch,
@@ -579,6 +586,7 @@ class TestStochasticReconSubsetLoss:
         result = stochastic_recon_subset_loss(
             model=model,
             sampling="continuous",
+            use_delta_component=True,
             n_mask_samples=3,
             output_loss_type="mse",
             batch=batch,
@@ -602,6 +610,7 @@ class TestStochasticReconSubsetLoss:
         result = stochastic_recon_subset_loss(
             model=model,
             sampling="binomial",
+            use_delta_component=True,
             n_mask_samples=3,
             output_loss_type="mse",
             batch=batch,
@@ -626,6 +635,7 @@ class TestStochasticReconSubsetLoss:
             stochastic_recon_subset_loss(
                 model=model,
                 sampling="continuous",
+                use_delta_component=True,
                 n_mask_samples=2,
                 output_loss_type="mse",
                 batch=batch,

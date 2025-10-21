@@ -371,18 +371,14 @@ def generate_grid_combinations(parameters: dict[str, Any]) -> list[dict[str, Any
 
 METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     # Loss metrics
-    "FaithfulnessLoss": "Faith",
-    "ImportanceMinimalityLoss": "ImpMin",
-    "StochasticReconLoss": "StochRecon",
-    "StochasticReconSubsetLoss": "StochReconSub",
-    "StochasticReconLayerwiseLoss": "StochReconLayer",
-    "CIMaskedReconLoss": "CIMaskRecon",
     "CIMaskedReconSubsetLoss": "CIMaskReconSub",
     "CIMaskedReconLayerwiseLoss": "CIMaskReconLayer",
-    "PGDReconLoss": "PGDRecon",
-    "PGDReconSubsetLoss": "PGDReconSub",
-    "PGDReconLayerwiseLoss": "PGDReconLayer",
-    "StochasticHiddenActsReconLoss": "StochHiddenRecon",
+    "CIMaskedReconLoss": "CIMaskRecon",
+    "FaithfulnessLoss": "Faith",
+    "ImportanceMinimalityLoss": "ImpMin",
+    "StochasticReconLayerwiseLoss": "StochReconLayer",
+    "StochasticReconLoss": "StochRecon",
+    "StochasticReconSubsetLoss": "StochReconSub",
     # Eval metrics
     "CEandKLLosses": "CEandKL",
     "CIHistograms": "CIHist",
@@ -393,6 +389,7 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PermutedCIPlots": "PermCIPlots",
     "UVPlots": "UVPlots",
     "StochasticReconSubsetCEAndKL": "StochReconSubCEKL",
+    "StochasticHiddenActsReconLoss": "StochHiddenRecon",
 }
 
 

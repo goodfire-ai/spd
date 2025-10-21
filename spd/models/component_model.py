@@ -14,7 +14,7 @@ from torch.utils.hooks import RemovableHandle
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
-from spd.configs import Config, SamplingType
+from spd.configs import Config
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
@@ -23,7 +23,6 @@ from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
     Identity,
-    IdentityCiFn,
     LinearComponents,
     MLPCiFn,
     VectorMLPCiFn,
@@ -232,9 +231,6 @@ class ComponentModel(LoadableModule):
 
         if ci_fn_type == "mlp":
             return MLPCiFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
-        if ci_fn_type == "identity":
-            return IdentityCiFn()
-
 
         match target_module:
             case nn.Linear():
@@ -440,10 +436,10 @@ class ComponentModel(LoadableModule):
                 weight_delta_and_mask=mask_info.weight_delta_and_mask,
             )
 
-            if mask_info.routing_mask == "all":
-                return components_out
+            if mask_info.routing_mask is not None:
+                return torch.where(mask_info.routing_mask[..., None], components_out, output)
 
-            return torch.where(mask_info.routing_mask[..., None], components_out, output)
+            return components_out
 
         # No component replacement - keep original output
         return None
@@ -539,7 +535,7 @@ class ComponentModel(LoadableModule):
     def calc_causal_importances(
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
-        sampling: SamplingType,
+        sampling: Literal["continuous", "binomial"],
         detach_inputs: bool = False,
     ) -> CIOutputs:
         """Calculate causal importances.

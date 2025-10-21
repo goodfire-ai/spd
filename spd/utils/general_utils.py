@@ -3,7 +3,7 @@ import random
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Protocol, overload
+from typing import Any, Literal, Protocol
 
 import einops
 import numpy as np
@@ -324,7 +324,7 @@ CanGetDevice = (
 )
 
 
-def _get_obj_devices(d: CanGetDevice) -> set[torch.device]:
+def get_obj_devices(d: CanGetDevice) -> set[torch.device]:
     """try to get the set of devices on which an object's parameters are located"""
     if hasattr(d, "device"):
         # pyright doesn't realize that we just checked for a `.device` attribute, hence the ignores
@@ -341,24 +341,6 @@ def _get_obj_devices(d: CanGetDevice) -> set[torch.device]:
 
 def get_obj_device(d: CanGetDevice) -> torch.device:
     """Try to get the device of an object's parameters. Asserts that all parameters are on the same device."""
-    devices: set[torch.device] = _get_obj_devices(d)
+    devices: set[torch.device] = get_obj_devices(d)
     assert len(devices) == 1, f"Object parameters are on multiple devices: {devices}"
     return devices.pop()
-
-
-@overload
-def zip_dicts[T1, T2](d1: dict[str, T1], d2: dict[str, T2], /) -> dict[str, tuple[T1, T2]]: ...
-
-
-@overload
-def zip_dicts[T1, T2, T3](
-    d1: dict[str, T1], d2: dict[str, T2], d3: dict[str, T3], /
-) -> dict[str, tuple[T1, T2, T3]]: ...
-
-
-def zip_dicts(*dicts: dict[str, Any]) -> dict[str, tuple[Any, ...]]:
-    all_keys = set(dicts[0])
-    for d in dicts[1:]:
-        assert set(d.keys()) == all_keys
-        all_keys.update(d.keys())
-    return {k: tuple(d[k] for d in dicts) for k in all_keys}

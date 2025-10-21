@@ -4,13 +4,33 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from spd.configs import SamplingType
-from spd.models.components import (
-    ComponentsMaskInfo,
-    RoutingMasks,
-    WeightDeltaAndMask,
-    make_mask_infos,
-)
+from spd.models.components import ComponentsMaskInfo, WeightDeltaAndMask, make_mask_infos
+
+
+def _sample_stochastic_mask(
+    causal_importances: Float[Tensor, "... C"],
+    sampling: Literal["continuous", "binomial"],
+) -> Float[Tensor, "... C"]:
+    match sampling:
+        case "binomial":
+            rand_tensor = torch.randint(
+                0, 2, causal_importances.shape, device=causal_importances.device
+            ).float()
+        case "continuous":
+            rand_tensor = torch.rand_like(causal_importances)
+
+    return causal_importances + (1 - causal_importances) * rand_tensor
+
+
+RoutingType = Literal["uniform_k-stochastic", "all"]
+"""How to choose which (batch,) or (batch, seq_len) positions to route to components or target.
+
+uniform_k-stochastic:
+    for each position, sample k from [1, n_modules], then route to components for k out of
+    `n_modules` modules
+all:
+    use components for all positions
+"""
 
 
 def rand_perm(
@@ -76,37 +96,11 @@ def sample_uniform_k_subset_routing_masks(
     return {mod: perms[i] < k_modules_to_route for i, mod in enumerate(module_names)}
 
 
-RoutingType = Literal["uniform_k-stochastic", "all"]
-"""How to choose which (batch,) or (batch, seq_len) positions to route to components or target.
-
-uniform_k-stochastic:
-    for each position, sample k from [1, n_modules], then route to components for k out of
-    `n_modules` modules
-all:
-    use components for all positions
-given:
-    use the given routing masks
-"""
-
-
-def calc_routing_masks(
-    routing: RoutingType,
-    leading_dims: tuple[int, ...],
-    module_names: list[str],
-    device: torch.device | str,
-) -> RoutingMasks:
-    match routing:
-        case "all":
-            return "all"
-        case "uniform_k-stochastic":
-            return sample_uniform_k_subset_routing_masks(leading_dims, module_names, device)
-
-
 def calc_stochastic_component_mask_info(
     causal_importances: dict[str, Float[Tensor, "... C"]],
-    component_mask_sampling: SamplingType,
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    sampling: Literal["continuous", "binomial"],
     routing: RoutingType,
+    weight_deltas: dict[str, Tensor] | None,
 ) -> dict[str, ComponentsMaskInfo]:
     ci_sample = next(iter(causal_importances.values()))
     leading_dims = ci_sample.shape[:-1]
@@ -115,28 +109,31 @@ def calc_stochastic_component_mask_info(
 
     component_masks: dict[str, Float[Tensor, "... C"]] = {}
     for layer, ci in causal_importances.items():
-        match component_mask_sampling:
-            case "binomial":
-                rand_tensor = torch.randint(0, 2, ci.shape, device=device).float()
-            case "continuous":
-                rand_tensor = torch.rand_like(ci)
-        component_masks[layer] = ci + (1 - ci) * rand_tensor
+        component_masks[layer] = _sample_stochastic_mask(ci, sampling)
 
-    weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None
+    weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None
     if weight_deltas is not None:
-        weight_deltas_and_masks = {}
-        for layer in causal_importances:
-            weight_deltas_and_masks[layer] = (
-                weight_deltas[layer],
-                torch.rand(leading_dims, device=device, dtype=dtype),
+        weight_deltas_and_masks = {
+            layer: (weight_deltas[layer], torch.rand(leading_dims, device=device, dtype=dtype))
+            for layer in causal_importances
+        }
+    else:
+        weight_deltas_and_masks = None
+
+    match routing:
+        case "uniform_k-stochastic":
+            routing_masks = sample_uniform_k_subset_routing_masks(
+                leading_dims,
+                list(causal_importances.keys()),
+                device,
             )
+        case "all":
+            routing_masks = None
 
     return make_mask_infos(
         component_masks=component_masks,
+        routing_masks=routing_masks,
         weight_deltas_and_masks=weight_deltas_and_masks,
-        routing_masks=calc_routing_masks(
-            routing, leading_dims, list(causal_importances.keys()), device
-        ),
     )
 
 
