@@ -26,30 +26,17 @@ sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.003
-    pnorm: 2.0
+    coeff: 0.0001
+    pnorm: 1.0
   - classname: "StochasticReconSubsetLoss"
-    subset_routing_cfg:
-      k:
-        type: "linear"
-        start_value: 0
-        end_value: 1.0
-        start_frac: 0
-        end_frac: 1.0
     coeff: 1.0
-  - classname: "PGDReconSubsetLoss"
-    init: "random"
-    step_size: 0.05
-    n_steps: 10
-    mask_scope: "shared_across_batch"
     subset_routing_cfg:
-      k:
+      routing_density:
         type: "linear"
         start_value: 0.05
         end_value: 1.0
         start_frac: 0
         end_frac: 1.0
-    coeff: 1.0
 
 output_loss_type: kl
 
@@ -81,7 +68,14 @@ eval_metric_configs:
   - classname: "ComponentActivationDensity"
   - classname: "CEandKLLosses"
     rounding_threshold: 0.0
+  - classname: "CI_L0"
   - classname: "CIMeanPerComponent"
+  - classname: "PGDReconSubsetLoss"
+    init: "random"
+    step_size: 0.05
+    n_steps: 10
+    mask_scope: "shared_across_batch"
+    subset_routing_cfg: "uniform_k-stochastic"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.LlamaForCausalLM

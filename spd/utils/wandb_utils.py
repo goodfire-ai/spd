@@ -31,22 +31,6 @@ WORKSPACE_TEMPLATES = {
 }
 
 
-class SPDWandbSection(Enum):
-    class Train(Enum):
-        TRAIN_GRAD_NORM_SUMMARY = "train/grad_norm/summary"
-        TRAIN_GRAD_NORM_GATES = "train/grad_norm/gates"
-        TRAIN_GRAD_NORM_COMPONENTS = "train/grad_norm/components"
-        TRAIN_LR = "train/lr"
-        TRAIN_ALIVE = "train/alive_t{ci_alive_threshold}"
-        TRAIN_L0 = "train/l0"
-        TRAIN_LOSS = "train/loss"
-
-    class Eval(Enum): ...
-
-    TRAIN = Train
-    EVAL = Eval
-
-
 def flatten_metric_configs(config_dict: dict[str, Any]) -> dict[str, Any]:
     """Flatten loss_metric_configs and eval_metric_configs into dot-notation for wandb searchability.
 
