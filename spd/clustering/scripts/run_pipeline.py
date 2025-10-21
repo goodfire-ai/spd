@@ -84,14 +84,18 @@ class ClusteringPipelineConfig(BaseConfig):
         description="List of method(s) to use for calculating distances"
     )
     base_output_dir: Path = Field(description="Base directory for outputs of clustering runs.")
-    slurm_job_name_prefix: str | None = Field(description="Prefix for SLURM job names")
-    slurm_partition: str | None = Field(description="SLURM partition to use")
+    slurm_job_name_prefix: str | None = Field(
+        default=None, description="Prefix for SLURM job names"
+    )
+    slurm_partition: str | None = Field(default=None, description="SLURM partition to use")
     wandb_project: str | None = Field(
         default=None,
         description="Weights & Biases project name (set to None to disable WandB logging)",
     )
-    wandb_entity: str = Field(description="WandB entity (team/user) name")
-    create_git_snapshot: bool = Field(description="Create a git snapshot for the run")
+    wandb_entity: str = Field(default="goodfire", description="WandB entity (team/user) name")
+    create_git_snapshot: bool = Field(
+        default=False, description="Create a git snapshot for the run"
+    )
 
     @model_validator(mode="after")
     def validate_config_fields(self) -> "ClusteringPipelineConfig":
