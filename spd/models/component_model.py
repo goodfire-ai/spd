@@ -154,6 +154,9 @@ class ComponentModel(LoadableModule):
             self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
             self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
 
+        self.activation_norms = None
+        self.activation_stats = None
+
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
 
@@ -534,6 +537,12 @@ class ComponentModel(LoadableModule):
         run_info = SPDRunInfo.from_path(path)
         return cls.from_run_info(run_info)
 
+    # def set_activation_stats(self, activation_stats: dict[str, tuple[Float[Tensor, " d"], float]]) -> None:
+    #     self.activation_stats = activation_stats
+
+    def set_activation_norms(self, activation_norms: dict[str, float]) -> None:
+        self.activation_norms = activation_norms
+
     def calc_causal_importances(
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
@@ -569,6 +578,9 @@ class ComponentModel(LoadableModule):
 
             if detach_inputs:
                 ci_fn_input = ci_fn_input.detach()
+
+            if self.activation_norms is not None:
+                ci_fn_input = ci_fn_input / self.activation_norms[target_module_name]
 
             ci_fn_output = runtime_cast(Tensor, ci_fn(ci_fn_input))
 
