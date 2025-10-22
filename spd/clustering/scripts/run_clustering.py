@@ -36,7 +36,7 @@ from spd.clustering.consts import (
     ActivationsTensor,
     BatchTensor,
     ClusterCoactivationShaped,
-    ComponentLabels,
+    SubComponentKey,
 )
 from spd.clustering.dataset import load_dataset
 from spd.clustering.ensemble_registry import _ENSEMBLE_REGISTRY_DB, register_clustering_run
@@ -78,7 +78,7 @@ class ClusteringRunStorage(StorageBase):
 LogCallback = Callable[
     [
         ClusterCoactivationShaped,
-        ComponentLabels,
+        list[SubComponentKey],
         GroupMerge,
         ClusterCoactivationShaped,
         MergeHistory,
@@ -123,7 +123,7 @@ def _log_callback(
     run: Run,
     run_config: ClusteringRunConfig,
     current_coact: ClusterCoactivationShaped,
-    component_labels: ComponentLabels,
+    subcomponent_keys: list[SubComponentKey],
     current_merge: GroupMerge,
     costs: ClusterCoactivationShaped,
     merge_history: MergeHistory,
@@ -201,7 +201,7 @@ def _log_callback(
             current_coact=current_coact,
             costs=costs,
             iteration=iter_idx,
-            component_labels=component_labels,
+            subcomponent_keys=subcomponent_keys,
             show=False,
         )
         run.log({"plots/merges": wandb.Image(fig)}, step=iter_idx)
@@ -339,7 +339,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
 
     # Clean up memory
     activations: ActivationsTensor = processed_activations.activations
-    component_labels: ComponentLabels = ComponentLabels(processed_activations.labels.copy())
+    subcomponent_keys: list[SubComponentKey] = processed_activations.subcomponent_keys.copy()
     del processed_activations
     del activations_dict
     del model
@@ -357,7 +357,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
     history: MergeHistory = merge_iteration(
         merge_config=run_config.merge_config,
         activations=activations,
-        component_labels=component_labels,
+        subcomponent_keys=subcomponent_keys,
         log_callback=log_callback,
     )
 
