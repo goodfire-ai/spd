@@ -13,6 +13,7 @@ from spd.clustering.consts import SubComponentKey, SubComponentLabel
 from spd.clustering.dashboard.core.tokenization import attach_vocab_arr
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
+from spd.clustering.scripts.run_clustering import ClusteringRunStorage
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.log import logger
@@ -41,7 +42,7 @@ def load_wandb_artifacts(wandb_path: str) -> tuple[MergeHistory, dict[str, Any]]
     logger.info(f"Found artifact: {artifact.name}")
 
     artifact_dir: str = artifact.download()
-    merge_history_path: Path = Path(artifact_dir) / "history.zip"
+    merge_history_path: Path = Path(artifact_dir) / ClusteringRunStorage._HISTORY
     merge_history: MergeHistory = MergeHistory.read(merge_history_path)
     logger.info(f"Loaded merge history: {merge_history}")
 
