@@ -38,7 +38,7 @@ dev = [
     "pytest-cov", # for coverage reports
     "pytest-xdist", # parallel test execution
     "ruff",
-    "basedpyright",
+    "basedpyright<1.32.0",
     "pre-commit",
 ]
 
