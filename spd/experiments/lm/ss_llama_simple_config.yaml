@@ -1,5 +1,3 @@
-# This config expects to be run on 8 H100s
-
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null
@@ -105,9 +103,19 @@ eval_metric_configs:
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
-pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w
+# pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w # 100k steps 4019 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/t1kb82ja # 60k steps 4019 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/04dz5b6c # 4096 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/wdb1mywc # 20k steps 4096 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/df5a67ac # 60k steps 4096 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/p7u2m4ws # 5k steps 4096 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/0i25bynt # 1k steps 4096 tok 
+# pretrained_model_name: wandb:goodfire/spd/runs/4wssl9j5 # 500 steps 4096 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/ph6qtfo4 # 100 steps 4096 tok 
+pretrained_model_name: wandb:goodfire/spd/runs/lu2kcktu # 10 steps 4096 tok
 pretrained_model_output_attr: idx_0
-tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # TODO: Load from wandb instead
+# tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok: TODO: Load from wandb instead
+tokenizer_name: SimpleStories/SimpleStories-1.25M # 4096 tok: TODO: Load from wandb instead
 
 # --- Task Specific ---
 task_config:
