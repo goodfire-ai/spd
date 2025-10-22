@@ -24,7 +24,7 @@ loss_metric_configs:
     post_target_module_patterns:
       - "model.embed_tokens"
   - classname: "PGDArbHiddenActsReconLoss"
-    coeff: 0.0 # Sentinel
+    coeff: 0.1
     post_target_module_path: "model.embed_tokens"
     init: "random"
     step_size: 0.2
