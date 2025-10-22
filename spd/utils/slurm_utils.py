@@ -116,7 +116,7 @@ def submit_slurm_array(script_path: Path) -> str:
         Array job ID from submitted job array
     """
     result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
+        ["sudo", "sbatch", str(script_path)], capture_output=True, text=True, check=True
     )
     # Extract job ID from sbatch output (format: "Submitted batch job 12345")
     job_id = result.stdout.strip().split()[-1]
