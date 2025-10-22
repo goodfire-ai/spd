@@ -6,7 +6,7 @@
     import { onMount } from "svelte";
 
     import ActivationContextsTab from "$lib/components/ActivationContextsTab.svelte";
-    import InterventionsTab from "$lib/components/InterventionsTab.svelte";
+    // import InterventionsTab from "$lib/components/InterventionsTab.svelte";
     import { getWandbRunId } from "$lib";
 
     let loadingTrainRun: boolean = false;
@@ -86,16 +86,6 @@
                 >
                     Activation Contexts
                 </button>
-                <button
-                    class="tab-button"
-                    class:active={activeTab === "ablation"}
-                    on:click={() => (activeTab = "ablation")}
-                >
-                    <!-- disabled={status.cluster_run == null} -->
-                    Component Ablation
-                    <div class="spinner" ></div>
-                    <!-- class:hidden={!loadingClusterRun} -->
-                </button>
             {/if}
         </div>
         {#if status.train_run}
@@ -111,9 +101,6 @@
         {#if status.train_run}
             <div class:hidden={activeTab !== "activation-contexts"}>
                 <ActivationContextsTab />
-            </div>
-            <div class:hidden={activeTab !== "ablation"}>
-                <InterventionsTab />
             </div>
         {/if}
     </div>
