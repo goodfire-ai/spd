@@ -119,7 +119,7 @@ def main(dashboard_config: DashboardConfig) -> None:
     # Save dashboard data using ZANJ
     logger.info("Saving dashboard data with ZANJ...")
     zanj_path: Path = final_output_dir / "dashboard.zanj"
-    ZANJ().save(dashboard_data, str(zanj_path))
+    ZANJ().save(dashboard_data.serialize(), str(zanj_path))
     logger.info(f"ZANJ file saved to: {zanj_path}")
 
     # Extract for web serving

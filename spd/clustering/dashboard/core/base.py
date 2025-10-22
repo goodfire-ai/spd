@@ -18,7 +18,7 @@ TrackingCriterionHash = NewType("TrackingCriterionHash", str)
 ClusterLabel = NewType("ClusterLabel", int)  # Just a cluster index
 Direction = Literal["max", "min"]
 
-_SEPARATOR_1: str = "-"  # For cluster_id parts (e.g., runid-iteration-label)
+_SEPARATOR_1: str = "."  # For cluster_id parts (e.g., runid-iteration-label)
 _SEPARATOR_2: str = ":"  # ONLY for component labels (e.g., module:component_index)
 _SEPARATOR_3: str = "|"  # For ALL activation hashes (cluster|text or cluster|comp|text)
 
