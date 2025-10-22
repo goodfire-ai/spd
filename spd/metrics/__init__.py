@@ -1,4 +1,10 @@
 # Note that "... as ..." allows for these to be imported elsewhere (See PEP 484 on re-exporting)
+from spd.metrics.pgd_arb_hidden_acts_loss import (
+    PGDArbHiddenActsReconLoss as PGDArbHiddenActsReconLoss,
+)
+from spd.metrics.pgd_arb_hidden_acts_loss import (
+    pgd_arb_hidden_acts_recon_loss as pgd_arb_hidden_acts_recon_loss,
+)
 from spd.metrics.pgd_masked_recon_layerwise_loss import (
     pgd_recon_layerwise_loss as pgd_recon_layerwise_loss,
 )

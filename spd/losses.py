@@ -11,6 +11,7 @@ from spd.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     LossMetricConfigType,
+    PGDArbHiddenActsReconLossConfig,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
@@ -27,9 +28,10 @@ from spd.metrics import (
     ci_masked_recon_subset_loss,
     faithfulness_loss,
     importance_minimality_loss,
+    pgd_arb_hidden_acts_recon_loss,
     pgd_recon_layerwise_loss,
     pgd_recon_loss,
-    pgd_recon_subset_loss,  # pyright: ignore[reportUnusedImport]  # noqa: F401
+    pgd_recon_subset_loss,
     stochastic_arb_hidden_acts_recon_loss,
     stochastic_hidden_acts_recon_loss,
     stochastic_recon_layerwise_loss,
@@ -189,6 +191,15 @@ def compute_total_loss(
                     pre_target_module_patterns=cfg.pre_target_module_patterns,
                     post_target_module_patterns=cfg.post_target_module_patterns,
                     weight_deltas=weight_deltas if use_delta_component else None,
+                )
+            case PGDArbHiddenActsReconLossConfig():
+                loss = pgd_arb_hidden_acts_recon_loss(
+                    model=model,
+                    batch=batch,
+                    ci=ci.lower_leaky,
+                    post_target_module_path=cfg.post_target_module_path,
+                    weight_deltas=weight_deltas if use_delta_component else None,
+                    pgd_config=cfg,
                 )
 
         if isinstance(loss, dict):

@@ -23,8 +23,15 @@ loss_metric_configs:
     coeff: 1.0
     post_target_module_patterns:
       - "model.embed_tokens"
+  - classname: "PGDArbHiddenActsReconLoss"
+    coeff: 0.0 # Sentinel
+    post_target_module_path: "model.embed_tokens"
+    init: "random"
+    step_size: 0.2
+    n_steps: 2
+    mask_scope: "shared_across_batch"
   - classname: "ImportanceMinimalityLoss"
-    coeff: 999999
+    coeff: 0.0 # Sentinel
     pnorm: 2.0
     p_anneal_start_frac: 0.0
     p_anneal_final_p: 0.3

@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from collections.abc import Iterator
-from typing import Any, cast
+from typing import Any
 
 from jaxtyping import Float, Int
 from PIL import Image
@@ -25,6 +25,7 @@ from spd.configs import (
     ImportanceMinimalityLossConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
+    PGDArbHiddenActsReconLossConfig,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
@@ -36,7 +37,7 @@ from spd.configs import (
     StochasticReconSubsetLossConfig,
     UVPlotsConfig,
 )
-from spd.metrics import StochasticArbHiddenActsReconLoss
+from spd.metrics import PGDArbHiddenActsReconLoss, StochasticArbHiddenActsReconLoss
 from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
@@ -273,6 +274,14 @@ def init_metric(
                 pre_target_module_patterns=cfg.pre_target_module_patterns,
                 post_target_module_patterns=cfg.post_target_module_patterns,
             )
+        case PGDArbHiddenActsReconLossConfig():
+            metric = PGDArbHiddenActsReconLoss(
+                model=model,
+                device=device,
+                use_delta_component=run_config.use_delta_component,
+                post_target_module_path=cfg.post_target_module_path,
+                pgd_config=cfg,
+            )
     return metric, cfg
 
 
@@ -376,7 +385,6 @@ def evaluate(
         outputs.append((metric, cfg, computed))
 
     return merge_with_qualification(outputs)
-
 
 
 # if __name__ == "__main__":
