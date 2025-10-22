@@ -248,60 +248,30 @@ class TestClusteringPipelineConfigGetConfigPath:
                 collision_path.unlink()
 
 
+def _get_config_files(path: Path):
+    """Helper to get all config files."""
+    pipeline_config_files = (
+        list(path.glob("*.yaml")) + list(path.glob("*.yml")) + list(path.glob("*.json"))
+    )
+    assert len(pipeline_config_files) > 0, f"No pipeline files found in {path}"
+    return pipeline_config_files
+
+
 class TestAllConfigsValidation:
     """Test that all existing config files can be loaded and validated."""
 
-    def test_all_pipeline_configs_valid(self):
-        """Test that all pipeline config files are valid."""
-        configs_dir = REPO_ROOT / "spd" / "clustering" / "configs"
+    @pytest.mark.parametrize(
+        "config_file", _get_config_files(REPO_ROOT / "spd" / "clustering" / "configs")
+    )
+    def test_pipeline_config_valid(self, config_file: Path):
+        """Test that each pipeline config file is valid."""
+        _config = ClusteringPipelineConfig.from_file(config_file)
+        assert _config.get_config_path().exists()
 
-        # Find all YAML/YML files in the configs directory (not subdirectories)
-        pipeline_config_files = list(configs_dir.glob("*.yaml")) + list(configs_dir.glob("*.yml"))
-
-        # Should have at least some configs
-        assert len(pipeline_config_files) > 0, "No pipeline config files found"
-
-        errors: list[tuple[Path, Exception]] = []
-
-        for config_file in pipeline_config_files:
-            try:
-                _config = ClusteringPipelineConfig.from_file(config_file)
-                assert _config.get_config_path().exists()
-            except Exception as e:
-                errors.append((config_file, e))
-
-        # Report all errors at once
-        if errors:
-            error_msg = "Failed to validate pipeline configs:\n"
-            for path, exc in errors:
-                error_msg += f"  - {path.name}: {exc}\n"
-            pytest.fail(error_msg)
-
-    def test_all_clustering_run_configs_valid(self):
-        """Test that all merge run config files are valid."""
-        crc_dir = REPO_ROOT / "spd" / "clustering" / "configs" / "crc"
-
-        # Find all JSON/YAML/YML files in the crc directory
-        crc_files = (
-            list(crc_dir.glob("*.json"))
-            + list(crc_dir.glob("*.yaml"))
-            + list(crc_dir.glob("*.yml"))
-        )
-
-        # Should have at least some configs
-        assert len(crc_files) > 0, "No merge run config files found"
-
-        errors: list[tuple[Path, Exception]] = []
-
-        for config_file in crc_files:
-            try:
-                _config = ClusteringRunConfig.from_file(config_file)
-            except Exception as e:
-                errors.append((config_file, e))
-
-        # Report all errors at once
-        if errors:
-            error_msg = "Failed to validate merge run configs:\n"
-            for path, exc in errors:
-                error_msg += f"  - {path.name}: {exc}\n"
-            pytest.fail(error_msg)
+    @pytest.mark.parametrize(
+        "config_file", _get_config_files(REPO_ROOT / "spd" / "clustering" / "configs" / "crc")
+    )
+    def test_clustering_run_config_valid(self, config_file: Path):
+        """Test that each clustering run config file is valid."""
+        _config = ClusteringRunConfig.from_file(config_file)
+        assert isinstance(_config, ClusteringRunConfig)
