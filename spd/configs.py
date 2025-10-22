@@ -71,7 +71,7 @@ SubsetRoutingType = Literal["uniform_k-stochastic"] | DensityBasedRouting
 
 class CIMaskedReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
-    subset_routing_cfg: SubsetRoutingType
+    subset_routing_cfg: SubsetRoutingType = "uniform_k-stochastic"
 
 
 class CIMaskedReconLayerwiseLossConfig(LossMetricConfig):
@@ -88,7 +88,7 @@ class StochasticReconLossConfig(LossMetricConfig):
 
 class StochasticReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
-    subset_routing_cfg: SubsetRoutingType
+    subset_routing_cfg: SubsetRoutingType = "uniform_k-stochastic"
 
 
 class StochasticReconLayerwiseLossConfig(LossMetricConfig):
@@ -113,7 +113,7 @@ class PGDReconLossConfig(PGDConfig):
 
 class PGDReconSubsetLossConfig(PGDConfig):
     classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
-    subset_routing_cfg: SubsetRoutingType
+    subset_routing_cfg: SubsetRoutingType = "uniform_k-stochastic"
 
 
 class PGDReconLayerwiseLossConfig(PGDConfig):

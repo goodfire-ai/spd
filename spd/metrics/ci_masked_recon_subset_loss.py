@@ -85,11 +85,11 @@ class CIMaskedReconSubsetLoss(Metric):
         model: ComponentModel,
         device: str,
         output_loss_type: Literal["mse", "kl"],
-        routing: SubsetRoutingType,
+        # routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        self.routing: SubsetRoutingType = routing
+        self.routing: SubsetRoutingType = "uniform_k-stochastic"
 
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
