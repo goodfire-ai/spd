@@ -4,8 +4,7 @@
     "alpha": 1.0,
     "iters": 100,
     "merge_pair_sampling_method": "range",
-    "merge_pair_sampling_kwargs": {"threshold": 0.01},
-    "pop_component_prob": 0,
+    "merge_pair_sampling_kwargs": {"threshold": 0.001},
     "filter_dead_threshold": 0.1,
     "module_name_filter": null
   },

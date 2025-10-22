@@ -8,7 +8,7 @@ import warnings
 from typing import Protocol
 
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Bool, Float
 from torch import Tensor
 from tqdm import tqdm
 
@@ -16,7 +16,6 @@ from spd.clustering.compute_costs import (
     compute_mdl_cost,
     compute_merge_costs,
     recompute_coacts_merge_pair,
-    recompute_coacts_pop_group,
 )
 from spd.clustering.consts import (
     ActivationsTensor,
@@ -77,24 +76,6 @@ def merge_iteration(
     # determine number of iterations based on config and number of components
     num_iters: int = merge_config.get_num_iters(c_components)
 
-    # pop logic setup
-    # --------------------------------------------------
-    # for speed, we precompute whether to pop components and which components to pop
-    # if we are not popping, we don't need these variables and can also delete other things
-    do_pop: bool = merge_config.pop_component_prob > 0.0
-    if do_pop:
-        # at each iteration, we will pop a component with probability `pop_component_prob`
-        iter_pop: Bool[Tensor, " iters"] = (
-            torch.rand(num_iters, device=coact.device) < merge_config.pop_component_prob
-        )
-        # we pick a subcomponent at random, and if we decide to pop, we pop that one out of its group
-        # if the component is a singleton, nothing happens. this naturally biases towards popping
-        # less at the start and more at the end, since the effective probability of popping a component
-        # is actually something like `pop_component_prob * (c_components - k_groups) / c_components`
-        pop_component_idx: Int[Tensor, " iters"] = torch.randint(
-            0, c_components, (num_iters,), device=coact.device
-        )
-
     # initialize vars
     # --------------------------------------------------
     # start with an identity merge
@@ -113,12 +94,6 @@ def merge_iteration(
         labels=labels_for_storage,
     )
 
-    # free up memory
-    if not do_pop:
-        del coact
-        del activation_mask_orig
-        activation_mask_orig = None
-
     # merge iteration
     # ==================================================
     pbar: tqdm[int] = tqdm(
@@ -127,30 +102,6 @@ def merge_iteration(
         total=num_iters,
     )
     for iter_idx in pbar:
-        # pop components
-        # --------------------------------------------------
-        if do_pop and iter_pop[iter_idx]:  # pyright: ignore[reportPossiblyUnboundVariable]
-            # we split up the group which our chosen component belongs to
-            pop_component_idx_i: int = int(pop_component_idx[iter_idx].item())  # pyright: ignore[reportPossiblyUnboundVariable]
-            n_components_in_pop_grp: int = int(
-                current_merge.components_per_group[  # pyright: ignore[reportArgumentType]
-                    current_merge.group_idxs[pop_component_idx_i].item()
-                ]
-            )
-
-            # but, if the component is the only one in its group, there is nothing to do
-            if n_components_in_pop_grp > 1:
-                current_merge, current_coact, current_act_mask = recompute_coacts_pop_group(
-                    coact=current_coact,
-                    merges=current_merge,
-                    component_idx=pop_component_idx_i,
-                    activation_mask=current_act_mask,
-                    # this complains if `activation_mask_orig is None`, but this is only the case
-                    # if `do_pop` is False, which it won't be here. we do this to save memory
-                    activation_mask_orig=activation_mask_orig,  # pyright: ignore[reportArgumentType]
-                )
-                k_groups = current_coact.shape[0]
-
         # compute costs, figure out what to merge
         # --------------------------------------------------
         # HACK: this is messy
