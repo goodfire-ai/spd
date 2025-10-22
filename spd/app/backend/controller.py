@@ -20,9 +20,9 @@ from spd.app.backend.api import (
     SubcomponentAblationRequest,
     SubcomponentAblationResponse,
 )
+from spd.app.backend.lib.activation_contexts import get_subcomponents_activation_contexts
 from spd.app.backend.services.ablation_service import AblationService
 from spd.app.backend.services.run_context_service import ENTITY, TRAIN_PROJECT, RunContextService
-from spd.app.backend.lib.activation_contexts import get_subcomponents_activation_contexts
 
 run_context_service = RunContextService()
 ablation_service = AblationService(run_context_service)
