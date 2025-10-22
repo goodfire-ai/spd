@@ -208,7 +208,7 @@ def pgd_masked_hidden_acts_recon_loss_update(
         ).cache[post_target_module_path]
 
         mse = torch.nn.functional.mse_loss(target_post_acts, stoch_post_acts, reduction="sum")
-        assert not target_post_acts.is_floating_point()
+        assert not batch.is_floating_point()
         n_examples = batch.shape.numel()
         return mse, n_examples
 
