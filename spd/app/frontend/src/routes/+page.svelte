@@ -6,12 +6,11 @@
     import { onMount } from "svelte";
 
     import ActivationContextsTab from "$lib/components/ActivationContextsTab.svelte";
-    // import InterventionsTab from "$lib/components/InterventionsTab.svelte";
-    import { getWandbRunId } from "$lib";
+    import { parseWandbRunId } from "$lib";
 
     let loadingTrainRun: boolean = false;
 
-    /** can be a wandb run path, or id. we should sanitse this */
+    /** can be a wandb run path, or id. we sanitize this on sumbit */
     let trainWandbRunEntry: string | null = null;
 
     let status: Status = { train_run: null };
@@ -40,7 +39,7 @@
         try {
             loadingTrainRun = true;
             status = { train_run: null };
-            trainWandbRunEntry = getWandbRunId(input);
+            trainWandbRunEntry = parseWandbRunId(input);
             console.log("loading run", trainWandbRunEntry);
             await api.loadRun(trainWandbRunEntry);
             await loadStatus();
@@ -170,94 +169,6 @@
         background: #007bff;
         border-color: #007bff;
         box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
-    }
-
-    .cluster-settings {
-        padding: 1.25rem;
-        background: white;
-        border: 1px solid #e9ecef;
-        border-radius: 8px;
-    }
-
-    .cluster-settings h4 {
-        margin: 0 0 1rem 0;
-        font-size: 0.95rem;
-        font-weight: 600;
-        color: #343a40;
-    }
-
-    .cluster-settings form {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-    }
-
-    .cluster-settings label {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: #495057;
-    }
-
-    .cluster-settings select,
-    .cluster-settings input {
-        padding: 0.5rem;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 0.9rem;
-        background: white;
-    }
-
-    .cluster-settings select:focus,
-    .cluster-settings input:focus {
-        outline: none;
-        border-color: #007bff;
-        box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-    }
-
-    .cluster-load {
-        padding: 0.625rem 1rem;
-        background: #007bff;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        font-size: 0.9rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.15s ease;
-    }
-
-    .cluster-load.done {
-        background: #28a745;
-    }
-
-    .cluster-load:hover:not(:disabled) {
-        background: #0056b3;
-    }
-
-    .cluster-load:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .spinner {
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #007bff;
-        border-radius: 50%;
-        width: 20px;
-        height: 20px;
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        0% {
-            transform: rotate(0deg);
-        }
-        100% {
-            transform: rotate(360deg);
-        }
     }
 
     .run-selector {

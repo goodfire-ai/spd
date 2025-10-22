@@ -56,12 +56,6 @@ class AblationService:
     def __init__(
         self,
         run_context_service: RunContextService,
-        *,
-        dashboard_iteration: int = 3000,
-        dashboard_n_samples: int = 16,
-        dashboard_n_batches: int = 2,
-        dashboard_batch_size: int = 64,
-        dashboard_context_length: int = 64,
     ):
         self.run_context_service = run_context_service
         self.prompt_contexts: dict[str, PromptContext] = {}

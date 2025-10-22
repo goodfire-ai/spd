@@ -17,7 +17,7 @@ const WAND_TAG_RE = /^wandb:[^/]+\/[^/]+\/([a-z0-9]{8})$/;
 // "entity/project/runId" form:
 const WAND_PATH_RE = /^[^/]+\/[^/]+\/([a-z0-9]{8})$/;
 
-export function getWandbRunId(wandbString: string): string {
+export function parseWandbRunId(wandbString: string): string {
   // 1) Full URL
   const urlMatch = WAND_URL_RE.exec(wandbString);
   if (urlMatch) return urlMatch[1];

@@ -1,3 +1,5 @@
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     export let rawText: string;
     export let offsetMapping: [number, number][];
@@ -57,8 +59,8 @@
                 class="token-highlight"
                 class:active-token={segment.isActive}
                 style={`background-color:${getHighlightColor(segment.ciValue)};`}
-                data-ci={`CI: ${segment.ciValue.toFixed(precision)}`}
-            >{segment.text}</span>
+                data-ci={`CI: ${segment.ciValue.toFixed(precision)}`}>{segment.text}</span
+            >
         {:else}
             {segment.text}
         {/if}

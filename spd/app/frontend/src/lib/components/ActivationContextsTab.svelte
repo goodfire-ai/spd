@@ -1,3 +1,5 @@
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     import type { ActivationContextsConfig, SubcomponentActivationContexts } from "$lib/api";
     import * as api from "$lib/api";
@@ -37,7 +39,7 @@
     }
 
     function handleKeydown(event: KeyboardEvent) {
-        if (event.key === 'Enter' && !loading) {
+        if (event.key === "Enter" && !loading) {
             loadContexts();
         }
     }
@@ -75,12 +77,26 @@
 
                 <div class="config-item">
                     <label for="n-steps">Number of Batches:</label>
-                    <input id="n-steps" type="number" step="1" min="1" bind:value={nBatches} on:keydown={handleKeydown} />
+                    <input
+                        id="n-steps"
+                        type="number"
+                        step="1"
+                        min="1"
+                        bind:value={nBatches}
+                        on:keydown={handleKeydown}
+                    />
                 </div>
 
                 <div class="config-item">
                     <label for="batch-size">Batch Size:</label>
-                    <input id="batch-size" type="number" step="1" min="1" bind:value={batchSize} on:keydown={handleKeydown} />
+                    <input
+                        id="batch-size"
+                        type="number"
+                        step="1"
+                        min="1"
+                        bind:value={batchSize}
+                        on:keydown={handleKeydown}
+                    />
                 </div>
 
                 <div class="config-item">

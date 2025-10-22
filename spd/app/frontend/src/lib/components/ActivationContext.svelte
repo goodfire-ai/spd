@@ -1,3 +1,5 @@
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     import type { ActivationContext } from "$lib/api";
     import TokenHighlights from "$lib/components/TokenHighlights.svelte";

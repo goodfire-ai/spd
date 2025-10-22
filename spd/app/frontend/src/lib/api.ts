@@ -1,7 +1,5 @@
 export const API_URL = "http://localhost:8000";
 
-const apiUrl: string = API_URL;
-
 export type TrainRun = {
     wandb_path: string;
     config: Record<string, any>;
@@ -10,13 +8,13 @@ export type TrainRun = {
 export type Status = { train_run: TrainRun | null };
 
 export async function getStatus(): Promise<Status> {
-    const response = await fetch(`${apiUrl}/status`);
+    const response = await fetch(`${API_URL}/status`);
     const data = await response.json();
     return data;
 }
 
 export async function loadRun(wandbRunId: string): Promise<void> {
-    const response = await fetch(`${apiUrl}/runs/load/${wandbRunId}`, {
+    const response = await fetch(`${API_URL}/runs/load/${wandbRunId}`, {
         method: "POST"
     });
     if (!response.ok) {
@@ -31,7 +29,7 @@ export type AvailablePrompt = {
 };
 
 export async function getAvailablePrompts(): Promise<AvailablePrompt[]> {
-    const response = await fetch(`${apiUrl}/available_prompts`, {
+    const response = await fetch(`${API_URL}/available_prompts`, {
         method: "GET",
         headers: {
             "Content-Type": "application/json"
@@ -61,7 +59,6 @@ export type OutputTokenLogit = {
 export type MatrixCausalImportances = {
     subcomponent_cis_sparse: SparseVector;
     subcomponent_cis: number[];
-    component_agg_cis: number[];
 };
 
 export type LayerCIs = {
@@ -78,7 +75,7 @@ export type RunPromptResponse = {
 };
 
 export async function runPromptByIndex(datasetIndex: number): Promise<RunPromptResponse> {
-    const response = await fetch(`${apiUrl}/run_prompt/${datasetIndex}`, {
+    const response = await fetch(`${API_URL}/run_prompt/${datasetIndex}`, {
         method: "POST"
     });
 
@@ -106,7 +103,7 @@ export async function ablateSubcomponents(
         subcomponent_mask: subcomponentMask
     };
 
-    const response = await fetch(`${apiUrl}/ablate_components`, {
+    const response = await fetch(`${API_URL}/ablate_subcomponents`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -134,7 +131,7 @@ export type SimulateMergeResponse = {
 };
 
 export async function simulateMerge(req: SimulateMergeRequest): Promise<SimulateMergeResponse> {
-    const response = await fetch(`${apiUrl}/simulate_merge`, {
+    const response = await fetch(`${API_URL}/simulate_merge`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -159,11 +156,11 @@ export type CombineMasksRequest = {
 
 export type CombineMasksResponse = {
     mask_id: string;
-    mask_override: MaskOverride;
+    mask: MaskOverride;
 };
 
 export async function combineMasks(req: CombineMasksRequest): Promise<CombineMasksResponse> {
-    const response = await fetch(`${apiUrl}/combine_masks`, {
+    const response = await fetch(`${API_URL}/combine_masks`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -187,7 +184,7 @@ export type MaskOverride = {
 };
 
 export async function getMaskOverrides(): Promise<MaskOverride[]> {
-    const response = await fetch(`${apiUrl}/mask_overrides`, {
+    const response = await fetch(`${API_URL}/mask`, {
         method: "GET",
         headers: {
             "Content-Type": "application/json"
@@ -226,14 +223,14 @@ export async function applyMaskAsAblation(
     promptId: string,
     maskOverrideId: string
 ): Promise<InterventionResponse> {
-    const response = await fetch(`${apiUrl}/apply_mask`, {
+    const response = await fetch(`${API_URL}/apply_mask`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
             prompt_id: promptId,
-            mask_override_id: maskOverrideId
+            mask_id: maskOverrideId
         })
     });
 
@@ -279,7 +276,7 @@ export type ActivationContextsConfig = {
 export async function getSubcomponentActivationContexts(
     config: ActivationContextsConfig
 ): Promise<ModelActivationContexts> {
-    const url = new URL(`${apiUrl}/activation_contexts/subcomponents`);
+    const url = new URL(`${API_URL}/activation_contexts/subcomponents`);
     for (const [key, value] of Object.entries(config)) {
         url.searchParams.set(key, String(value));
     }
