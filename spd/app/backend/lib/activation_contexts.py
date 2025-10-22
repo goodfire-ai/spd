@@ -16,7 +16,7 @@ from spd.app.backend.api import (
     SubcomponentActivationContexts,
     TokenDensity,
 )
-from spd.app.backend.services.run_context_service import RunContextService, TrainRunContext
+from spd.app.backend.services.run_context_service import TrainRunContext
 from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel
