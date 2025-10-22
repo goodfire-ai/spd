@@ -382,6 +382,7 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PGDReconLoss": "PGDRecon",
     "PGDReconSubsetLoss": "PGDReconSub",
     "PGDReconLayerwiseLoss": "PGDReconLayer",
+    "PGDArbHiddenActsReconLoss": "PGDArbHiddenRecon",
     "StochasticHiddenActsReconLoss": "StochHiddenRecon",
     "StochasticArbHiddenActsReconLoss": "StochArbHiddenRecon",
     # Eval metrics
