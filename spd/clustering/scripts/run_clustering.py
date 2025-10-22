@@ -66,7 +66,8 @@ class ClusteringRunStorage(StorageBase):
 
     # Relative path constants
     _CONFIG = "clustering_run_config.json"
-    _HISTORY = "history.npz"
+    # we are saving a zip file with things in it besides npy files -- hence, `.zip` and not `.npz`
+    _HISTORY = "history.zip"
 
     def __init__(self, execution_stamp: ExecutionStamp) -> None:
         super().__init__(execution_stamp)
@@ -281,6 +282,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
     wandb_run: Run | None = None
     if run_config.wandb_project is not None:
         wandb_run = wandb.init(
+            id=clustering_run_id,
             entity=run_config.wandb_entity,
             project=run_config.wandb_project,
             group=run_config.ensemble_id,

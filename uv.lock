@@ -1951,7 +1951,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "basedpyright" },
+    { name = "basedpyright", specifier = "<1.32.0" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
