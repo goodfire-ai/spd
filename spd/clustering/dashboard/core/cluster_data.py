@@ -228,12 +228,12 @@ class ClusterData:
             sample_idx = sample_indices[text_hash]
             samples.append(
                 ClusterSample(
-                    text_hash=str(text_hash),
-                    tokens=activation_samples.tokens[sample_idx]
+                    text_hash=str(text_hash),  # pyright: ignore[reportCallIssue]
+                    tokens=activation_samples.tokens[sample_idx]  # pyright: ignore[reportCallIssue]
                     if activation_samples.tokens
                     else [],
-                    activations=activation_samples.activations[sample_idx],
-                    criteria=criteria_list,
+                    activations=activation_samples.activations[sample_idx],  # pyright: ignore[reportCallIssue]
+                    criteria=criteria_list,  # pyright: ignore[reportCallIssue]
                 )
             )
 
@@ -248,6 +248,7 @@ class ClusterData:
     def get_unique_text_hashes(self) -> set[TextSampleHash]:
         """Get all unique text hashes across all criteria."""
         unique_hashes: set[TextSampleHash] = set()
+        assert self.criterion_samples is not None, "criterion_samples is None"
         for hashes in self.criterion_samples.values():
             unique_hashes.update(hashes)
         return unique_hashes
@@ -256,6 +257,7 @@ class ClusterData:
         """Get all unique activation hashes across all criteria."""
         unique_hashes: set[ActivationSampleHash] = set()
         cluster_str = self.cluster_hash
+        assert self.criterion_samples is not None, "criterion_samples is None"
         for hashes in self.criterion_samples.values():
             unique_hashes.update(
                 ActivationSampleHash(f"{cluster_str}{_SEPARATOR_3}{th}") for th in hashes

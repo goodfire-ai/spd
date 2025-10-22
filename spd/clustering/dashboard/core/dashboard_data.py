@@ -17,7 +17,7 @@ from spd.clustering.dashboard.core.base import (
 from spd.clustering.dashboard.core.cluster_data import ClusterData, TrackingCriterion
 
 
-@serializable_dataclass(kw_only=True)
+@serializable_dataclass(kw_only=True)  # pyright: ignore[reportUntypedClassDecorator]
 class DashboardData(SerializableDataclass):
     """All data for the dashboard.
 
@@ -45,7 +45,7 @@ class DashboardData(SerializableDataclass):
         Returns:
             Empty DashboardData ready for incremental population
         """
-        return cls(text_samples=text_samples)
+        return cls(text_samples=text_samples)  # pyright: ignore[reportCallIssue]
 
     def add_cluster(
         self,
