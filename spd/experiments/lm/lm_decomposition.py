@@ -94,7 +94,12 @@ def main(
             assert ln_stds is not None, "Run had enable_ln_ablation set to True but no ln_stds"
         assert hasattr(pretrained_model_class, "from_run_info")
         # Just loads from local file
-        target_model = pretrained_model_class.from_run_info(run_info)  # pyright: ignore[reportAttributeAccessIssue]
+        # target_model = pretrained_model_class.from_run_info(run_info)  # pyright: ignore[reportAttributeAccessIssue]
+        from simple_stories_train.models.llama_simple import LlamaSimple, LlamaSimpleConfig
+
+        # Load a randomly initialized target model
+        target_model = LlamaSimple(config=LlamaSimpleConfig(**run_info.model_config_dict))
+        logger.info("Loading a randomly initialized target model")
     else:
         # Avoid concurrent wandb API requests by first calling from_pretrained on rank 0 only
         target_model = ensure_cached_and_call(
