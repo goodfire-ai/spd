@@ -83,7 +83,8 @@ eval_metric_configs:
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
-pretrained_model_name: wandb:goodfire/spd/runs/p273hxax # With ln
+# pretrained_model_name: wandb:goodfire/spd/runs/p273hxax # 100k steps. 4019 tokenizer
+pretrained_model_name: wandb:goodfire/spd/runs/b10ei3pc # 60k steps. 4019 tokenizer
 pretrained_model_output_attr: idx_0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # TODO: load this from wandb
 
