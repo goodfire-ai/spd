@@ -70,34 +70,23 @@ class _TopKExamples:
         return [ex for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)]
 
 
-@dataclass
-class WorkerArgs:
-    wandb_path: str
-    importance_threshold: float
-    # separation_threshold_tokens: int
-    max_examples_per_subcomponent: int
-    n_batches: int
-    n_tokens_either_side: int
-    batch_size: int
-
-
-def worker_main(args: WorkerArgs) -> ModelActivationContexts:
+def get_subcomponents_activation_contexts(
+    run_context: TrainRunContext,
+    importance_threshold: float,
+    max_examples_per_subcomponent: int,
+    n_batches: int,
+    n_tokens_either_side: int,
+    batch_size: int,
+) -> ModelActivationContexts:
     logger.info("worker: Getting activation contexts")
-
-    rcs = RunContextService()
-    logger.info("worker: Loading run context")
-    rcs.load_run(args.wandb_path)
-    assert (run_context := rcs.train_run_context) is not None, "Run context not found"
-
-    run_context.cm.to(DEVICE)
 
     topk_by_subcomponent = get_topk_by_subcomponent(
         run_context,
-        args.importance_threshold,
-        args.max_examples_per_subcomponent,
-        args.n_batches,
-        args.n_tokens_either_side,
-        args.batch_size,
+        importance_threshold,
+        max_examples_per_subcomponent,
+        n_batches,
+        n_tokens_either_side,
+        batch_size,
     )
 
     return map_to_model_ctxs(run_context, topk_by_subcomponent)
@@ -251,12 +240,11 @@ def _get_importances_by_module(
             cache_type="input",
             module_names=list(cm.components.keys()),
         )
-        importances_by_module, _ = cm.calc_causal_importances(
+        importances_by_module = cm.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
-            sigmoid_type=config.sigmoid_type,
             detach_inputs=True,
             sampling=config.sampling,
-        )
+        ).lower_leaky
     return importances_by_module
 
 

@@ -58,6 +58,7 @@ class SPDRunInfo(RunInfo[Config]):
             else:
                 # Download from wandb
                 wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
+                print(f"Downloading from wandb: {wandb_path}")
                 comp_model_path, config_path = ComponentModel._download_wandb_files(wandb_path)
         else:
             comp_model_path = Path(path)

@@ -56,7 +56,7 @@
         setInterval(loadStatus, 5000);
     });
 
-    let activeTab: "ablation" | "activation-contexts" | null = null;
+    let activeTab: "activation-contexts" | null = null;
 </script>
 
 <div class="app-layout">
