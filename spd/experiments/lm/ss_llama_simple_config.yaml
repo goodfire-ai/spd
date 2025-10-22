@@ -105,9 +105,14 @@ eval_metric_configs:
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
-pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w
+# pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w # 4019 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/04dz5b6c # 4096 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/wdb1mywc # 20k steps 4096 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/df5a67ac # 60k steps 4096 tok
+pretrained_model_name: wandb:goodfire/spd/runs/p7u2m4ws # 5k steps 4096 tok
 pretrained_model_output_attr: idx_0
-tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # TODO: Load from wandb instead
+# tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # TODO: Load from wandb instead
+tokenizer_name: SimpleStories/SimpleStories-1.25M # TODO: Load from wandb instead
 
 # --- Task Specific ---
 task_config:
