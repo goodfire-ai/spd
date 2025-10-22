@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -6,12 +7,16 @@ import wandb
 import wandb_workspaces.reports.v2 as wr
 import wandb_workspaces.workspaces as ws
 from dotenv import load_dotenv
+from pydantic import BaseModel
 from wandb.apis.public import File, Run
 
 from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import BaseModel, _fetch_latest_checkpoint_name, replace_pydantic_model
+from spd.utils.general_utils import (
+    _fetch_latest_checkpoint_name,
+    replace_pydantic_model,
+)
 from spd.utils.run_utils import METRIC_CONFIG_SHORT_NAMES
 
 WORKSPACE_TEMPLATES = {
@@ -24,6 +29,22 @@ WORKSPACE_TEMPLATES = {
     "resid_mlp2": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
     "resid_mlp3": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
 }
+
+
+class SPDWandbSection(Enum):
+    class Train(Enum):
+        TRAIN_GRAD_NORM_SUMMARY = "train/grad_norm/summary"
+        TRAIN_GRAD_NORM_GATES = "train/grad_norm/gates"
+        TRAIN_GRAD_NORM_COMPONENTS = "train/grad_norm/components"
+        TRAIN_LR = "train/lr"
+        TRAIN_ALIVE = "train/alive_t{ci_alive_threshold}"
+        TRAIN_L0 = "train/l0"
+        TRAIN_LOSS = "train/loss"
+
+    class Eval(Enum): ...
+
+    TRAIN = Train
+    EVAL = Eval
 
 
 def flatten_metric_configs(config_dict: dict[str, Any]) -> dict[str, Any]:
