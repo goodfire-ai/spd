@@ -148,8 +148,16 @@ class CEandKLLosses(Metric):
 
         target_model_ce_loss = ce_vs_labels(target_out)
 
+        # with torch.no_grad():
+        #     for name, param in self.model.target_model.named_parameters():
+        #         if "rms" in name:
+        #             param.zero_()
+
         def pct_ce_unrecovered(ce: float) -> float:
-            return (ce - target_model_ce_loss) / (zero_masked_ce_loss - target_model_ce_loss)
+            denom = zero_masked_ce_loss - target_model_ce_loss
+            if denom == 0:
+                return 0.0
+            return (ce - target_model_ce_loss) / denom
 
         def ce_difference(ce: float) -> float:
             return ce - target_model_ce_loss
