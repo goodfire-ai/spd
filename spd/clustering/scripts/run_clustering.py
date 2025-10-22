@@ -282,6 +282,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
     wandb_run: Run | None = None
     if run_config.wandb_project is not None:
         wandb_run = wandb.init(
+            id=clustering_run_id,
             entity=run_config.wandb_entity,
             project=run_config.wandb_project,
             group=run_config.ensemble_id,
