@@ -261,17 +261,25 @@ class TestAllConfigsValidation:
     """Test that all existing config files can be loaded and validated."""
 
     @pytest.mark.parametrize(
-        "config_file", _get_config_files(REPO_ROOT / "spd" / "clustering" / "configs")
+        "config_file",
+        _get_config_files(REPO_ROOT / "spd" / "clustering" / "configs"),
+        ids=lambda p: p.stem,
     )
-    def test_pipeline_config_valid(self, config_file: Path):
+    def test_config_validate_pipeline(self, config_file: Path):
         """Test that each pipeline config file is valid."""
+        print(config_file)
         _config = ClusteringPipelineConfig.from_file(config_file)
-        assert _config.get_config_path().exists()
+        crc_path = _config.get_config_path()
+        print(f"{crc_path = }")
+        assert crc_path.exists()
 
     @pytest.mark.parametrize(
-        "config_file", _get_config_files(REPO_ROOT / "spd" / "clustering" / "configs" / "crc")
+        "config_file",
+        _get_config_files(REPO_ROOT / "spd" / "clustering" / "configs" / "crc"),
+        ids=lambda p: p.stem,
     )
-    def test_clustering_run_config_valid(self, config_file: Path):
+    def test_config_validate_pipeline_clustering_run(self, config_file: Path):
         """Test that each clustering run config file is valid."""
+        print(config_file)
         _config = ClusteringRunConfig.from_file(config_file)
         assert isinstance(_config, ClusteringRunConfig)
