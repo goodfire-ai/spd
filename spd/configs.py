@@ -21,6 +21,8 @@ from spd.log import logger
 from spd.models.components import CiFnType
 from spd.spd_types import ModelPath, Probability
 
+from transformers import LlamaForCausalLM
+
 
 #### Metrics that can be used in training (or eval) ####
 class LinearSchedule(BaseConfig):
@@ -126,8 +128,8 @@ class StochasticHiddenActsReconLossConfig(LossMetricConfig):
 
 class StochasticArbHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticArbHiddenActsReconLoss"] = "StochasticArbHiddenActsReconLoss"
-    pre_target_module_patterns: list[str]
-    post_target_module_patterns: list[str]
+    pre_target_module_patterns: list[str] | None = None
+    post_target_module_patterns: list[str] | None = None
 
 
 #### Metrics that can only be used in eval ####
