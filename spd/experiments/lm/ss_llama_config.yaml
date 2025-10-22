@@ -43,7 +43,7 @@ output_loss_type: kl
 lr: 0.0005
 lr_schedule: cosine
 steps: 200000
-batch_size: 384 # / 4 (DDP) == 96
+batch_size: 256 # / 4 (DDP) == 96
 gradient_accumulation_steps: 1
 eval_batch_size: 128
 n_eval_steps: 5
