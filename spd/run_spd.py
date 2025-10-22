@@ -128,6 +128,11 @@ def optimize(
 
     target_model.requires_grad_(False)
 
+    # Randomly initialize the target model weights
+    for name, param in target_model.named_parameters():
+        if param.requires_grad:
+            param.data.uniform_(-0.01, 0.01)
+
     model = ComponentModel(
         target_model=target_model,
         target_module_patterns=config.all_module_patterns,
