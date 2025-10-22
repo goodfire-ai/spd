@@ -3,7 +3,7 @@
 
 # WandB clustering run path (format: entity/project/run_id or wandb:entity/project/runs/run_id)
 # wandb_run: "goodfire/spd-cluster/runs/e5gbybvn"
-wandb_run: "goodfire/spd-cluster/runs/2yqdzc21"
+wandb_run: "goodfire/spd-cluster/runs/c-c3623a67"
 
 # Merge iteration to analyze (negative indexes from end, -1 = latest)
 # iteration: 4600
