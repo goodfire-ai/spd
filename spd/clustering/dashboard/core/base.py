@@ -44,8 +44,12 @@ class ClusterId:
         # Use all identifying information to create unique hash
         parts_tuple = self.to_tuple()
         parts_str = tuple(str(part) for part in parts_tuple)
-        assert all(_SEPARATOR_1 not in part for part in parts_str), "Parts cannot contain separator"
-        assert all(_SEPARATOR_2 not in part for part in parts_str), "Parts cannot contain separator"
+        assert all(_SEPARATOR_1 not in part for part in parts_str), (
+            f"Parts cannot contain separator {_SEPARATOR_1=}, {parts_tuple=}, {parts_str=}"
+        )
+        assert all(_SEPARATOR_2 not in part for part in parts_str), (
+            f"Parts cannot contain separator {_SEPARATOR_2=}, {parts_tuple=}, {parts_str=}"
+        )
 
         return ClusterIdHash(_SEPARATOR_1.join(parts_str))
 
@@ -121,7 +125,7 @@ ACTIVATION_SAMPLE_BATCH_STATS: dict[
 )
 
 
-@serializable_dataclass
+@serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
 class ClusterSample(SerializableDataclass):
     """Self-contained sample combining text reference, tokens, and activations.
 
