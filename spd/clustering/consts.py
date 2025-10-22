@@ -1,9 +1,10 @@
 """Constants and shared abstractions for clustering pipeline."""
 
+import hashlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, NewType
+from typing import Literal, NewType, override
 
 import numpy as np
 from jaxtyping import Bool, Float, Int
@@ -40,11 +41,13 @@ class SubComponentKey:
         module, index_str = label.rsplit(":", 1)
         return cls(module=module, index=int(index_str))
 
+    @override
     def __str__(self) -> str:
         return self.label
 
+    @override
     def __hash__(self) -> int:
-        return hash(self.label)
+        return int(hashlib.md5(str(self).encode()).hexdigest(), 16)
 
 
 BatchId = NewType("BatchId", str)

@@ -100,7 +100,6 @@ def main(dashboard_config: DashboardConfig) -> None:
     logger.info("computing max activations")
     dashboard_data: DashboardData = compute_max_activations(
         model=model,
-        sigmoid_type=spd_config.sigmoid_type,
         tokenizer=tokenizer,
         dataloader=dataloader,
         merge_history=merge_history,
