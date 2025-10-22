@@ -358,8 +358,8 @@ def optimize(
     else:
         alive_tracker = None
 
-    start_training = perf_counter()
     for step in tqdm(range(config.steps + 1), ncols=0):
+        step_start = perf_counter()
         optimizer.zero_grad()
 
         step_lr = get_lr_with_warmup(
@@ -437,10 +437,6 @@ def optimize(
             grad_norms = get_grad_norms_dict(component_model, device)
             microbatch_log_data.update({f"train/grad_norms/{k}": v for k, v in grad_norms.items()})
 
-            microbatch_log_data["train/meta/time_per_step"] = (perf_counter() - start_training) / (
-                step + 1
-            )
-
             microbatch_log_data["train/schedules/lr"] = step_lr
 
             if is_main_process():
@@ -511,6 +507,10 @@ def optimize(
         if step != config.steps:
             sync_across_processes()
             optimizer.step()
+
+
+        if config.wandb_project:
+            wandb.log({"train/meta/time_per_step": perf_counter() - step_start}, step=step)
 
     if is_main_process():
         logger.info("Finished training loop.")

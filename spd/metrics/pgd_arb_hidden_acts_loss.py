@@ -6,8 +6,9 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import SamplingType
+from spd.configs import PGDConfig, SamplingType
 from spd.metrics.base import Metric
+from spd.metrics.pgd_utils import pgd_masked_hidden_acts_recon_loss_update
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
@@ -17,7 +18,7 @@ from spd.utils.module_utils import get_target_module_paths
 CachePoint = tuple[str, Literal["pre", "post"]]
 
 
-def _stochastic_arb_hidden_acts_recon_loss_update(
+def _pgd_arb_hidden_acts_loss_update(
     model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
@@ -26,7 +27,19 @@ def _stochastic_arb_hidden_acts_recon_loss_update(
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
     post_target_module_paths: list[str],
     pre_target_module_paths: list[str],
+    pgd_config: PGDConfig
 ) -> dict[CachePoint, tuple[Float[Tensor, ""], int]]:
+    return pgd_masked_hidden_acts_recon_loss_update(
+        model=model,
+        batch=batch,
+        ci=ci,
+        weight_deltas=weight_deltas,
+        target_out=target_out,
+        output_loss_type=output_loss_type,
+        pre_target_module_paths=pre_target_module_paths,
+        post_target_module_paths=post_target_module_paths,
+    )
+
     assert pre_target_module_paths or post_target_module_paths
 
     device = get_obj_device(ci)

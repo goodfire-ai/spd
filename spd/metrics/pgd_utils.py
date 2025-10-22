@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Literal
 
 import torch
@@ -9,6 +10,9 @@ from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import RoutingType, calc_routing_masks
 from spd.utils.general_utils import calc_sum_recon_loss_lm, zip_dicts
+
+# TODO: REMOVE - duplicate
+CachePoint = tuple[str, Literal["pre", "post"]]
 
 
 def pgd_masked_recon_loss_update(
@@ -37,7 +41,7 @@ def pgd_masked_recon_loss_update(
     def objective_fn(
         component_sample_points: dict[str, Float[Tensor, "... C"]],
         weight_delta_masks: dict[str, Float[Tensor, "..."]] | None,
-    ) -> Tensor:
+    ) -> tuple[Float[Tensor, ""], int]:
         match weight_deltas, weight_delta_masks:
             case None, None:
                 weight_deltas_and_masks = None
@@ -55,7 +59,7 @@ def pgd_masked_recon_loss_update(
         out = model(batch, mask_infos=mask_infos)
         total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
         n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
-        return total_loss / n_examples
+        return total_loss, n_examples
 
     *batch_dims, C = next(iter(ci.values())).shape
 
@@ -103,11 +107,12 @@ def pgd_masked_recon_loss_update(
         assert all(v.grad is None for v in adv_vars)
 
         with torch.enable_grad():
-            obj = objective_fn(
+            loss, n_examples = objective_fn(
                 *maybe_repeat_to_batch_shape(
                     adversarial_component_sample_points, adversarial_weight_delta_masks
                 )
             )
+            obj = loss / n_examples
 
             grads = torch.autograd.grad(
                 obj,
@@ -134,26 +139,7 @@ def pgd_masked_recon_loss_update(
     if adversarial_weight_delta_masks is not None:
         assert not any(v.requires_grad for v in adversarial_weight_delta_masks.values())
 
-    match weight_deltas, adversarial_weight_delta_masks:
-        case None, None:
-            adversarial_weight_deltas_and_masks = None
-        case dict(), dict():
-            adversarial_weight_deltas_and_masks = zip_dicts(
-                weight_deltas, adversarial_weight_delta_masks
-            )
-        case _:
-            raise ValueError("weight deltas and masks must exist or not exist together")
-
-    sampled_mask_infos = make_mask_infos(
-        component_masks=_interpolate_component_mask(ci, adversarial_component_sample_points),
-        weight_deltas_and_masks=adversarial_weight_deltas_and_masks,
-        routing_masks=routing_masks,
-    )
-
-    out = model(batch, mask_infos=sampled_mask_infos)
-    total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-    n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
-    return total_loss, n_examples
+    return objective_fn(adversarial_component_sample_points, adversarial_weight_delta_masks)
 
 
 def _get_pgd_init_tensor(

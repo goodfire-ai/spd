@@ -10,6 +10,7 @@ import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
@@ -418,15 +419,12 @@ class ComponentModel(LoadableModule):
             output: Any,
         ):
             assert len(args) == 1, f"Expected 1 argument, got {len(args)}"
-            x = args[0]
-
-            assert len(kwargs) == 0, f"Expected no keyword arguments, got {len(kwargs)}"
-            assert isinstance(x, Tensor), f"Expected input tensor, got {type(x)}"
-            assert cache_type in ["input", "none", "output"], (
-                f"Expected cache_type to be 'input', 'none', or 'output', got {cache_type}"
-            )
+            x = runtime_cast(Tensor, args[0])
 
             if components_and_mask_info is not None:
+                assert not isinstance(_module, LlamaDecoderLayer), "LlamaDecoderLayer not supported with components"
+                assert len(kwargs) == 0, f"Expected no keyword arguments, got {len(kwargs)}"
+
                 components, mask_info = components_and_mask_info
 
                 assert isinstance(output, Tensor), (
