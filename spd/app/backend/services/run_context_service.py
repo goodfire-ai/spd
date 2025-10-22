@@ -80,6 +80,7 @@ class RunContextService:
         logger.info("Creating component model from run info")
         cm = ComponentModel.from_run_info(run_info)
         cm.to(DEVICE)
+        logger.info(f"Component model created on device: {DEVICE}")
 
         return TrainRunContext(
             wandb_id=wandb_path,
