@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import einops
+import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -306,7 +307,8 @@ def plot_spd_feature_contributions_truncated(
 
     n_rows = 2
     fig1, axes1 = plt.subplots(n_rows, 1, figsize=(10, 7), constrained_layout=True)
-    axes1 = np.atleast_1d(axes1)
+    # Convert to list of Axes objects for consistent indexing
+    axes1 = [axes1] if isinstance(axes1, matplotlib.axes.Axes) else list(axes1.flatten())
 
     labelled_neurons = feature_contribution_plot(
         ax=axes1[0],

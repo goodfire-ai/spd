@@ -1,0 +1,14 @@
+# Configuration for forward_plot.py
+
+# Model path (supports both wandb: and local paths)
+model_path: "wandb:goodfire/spd/bg54y6xz" # 5q3xxmmy"
+
+# Plotting parameters
+figsize: [8, 6]  # Figure size (width height)
+dpi: 150  # DPI for the figures
+
+# Device settings
+device: "auto"  # Device to use (auto, cpu, cuda, etc.)
+
+# Output settings (optional - defaults to 'out' directory relative to script location)
+# output_dir: "/path/to/custom/output/directory"
