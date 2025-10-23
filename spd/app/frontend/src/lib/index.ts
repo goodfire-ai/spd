@@ -5,8 +5,10 @@ const RUN_ID_RE = /^[a-z0-9]{8}$/;
 
 // Full W&B run URL like:
 // https://wandb.ai/<entity>/<project>/runs/<runId>
-// Optional trailing slash and/or query string allowed.
-const WAND_URL_RE = /^https:\/\/wandb\.ai\/[^/]+\/[^/]+\/runs\/([a-z0-9]{8})(?:\/)?(?:\?.*)?$/;
+// https://wandb.ai/<entity>/<project>/runs/<runId>/overview
+// https://wandb.ai/<entity>/<project>/runs/<runId>/files
+// Optional trailing slash, path extensions (overview, files, etc.), and/or query string allowed.
+const WAND_URL_RE = /^https:\/\/wandb\.ai\/[^/]+\/[^/]+\/runs\/([a-z0-9]{8})(?:\/[^?]*)?(?:\?.*)?$/;
 
 // "wandb:" tagged form like:
 // wandb:<entity>/<project>/<runId>
@@ -34,8 +36,9 @@ export function parseWandbRunId(wandbString: string): string {
     // Anything else: error out
     throw new Error(
         `Invalid W&B run reference. Expected one of:
-     - https://wandb.ai/<entity>/<project>/runs/<8-char id>
+     - https://wandb.ai/<entity>/<project>/runs/<8-char id>[/path][?query]
      - wandb:<entity>/<project>/<8-char id>
+     - <entity>/<project>/<8-char id>
      - <8-char id>
      Got: ${wandbString}`
     );
