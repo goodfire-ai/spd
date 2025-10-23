@@ -60,21 +60,21 @@ jobs:
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
   build-frontend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spd/app/frontend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: (cd spd/app/frontend && npm install)
-
-      - name: Install dependencies
-        run: (cd spd/app/frontend && npm install)
+        run: npm install
 
       - name: Run svelte-check
-        run: (cd spd/app/frontend && npm run check)
+        run: npm run check
 
       - name: Run linter
-        run: (cd spd/app/frontend && npm run lint)
+        run: npm run lint
 
       - name: Build frontend
-        run: (cd spd/app/frontend && npm run build)
+        run: npm run build
