@@ -128,14 +128,16 @@ def get_topk_by_subcomponent(
     C = run_context.cm.C
 
     n_toks_seen = 0
-    component_sum_cis = defaultdict[str, Float[torch.Tensor, " C"]](lambda: torch.zeros(C).float())
+    component_sum_cis = defaultdict[str, Float[torch.Tensor, " C"]](
+        lambda: torch.zeros(C, device=DEVICE, dtype=torch.float)
+    )
 
     batches = roll_batch_size_1_into_x(
         singleton_batches=(extract_batch_data(b).to(DEVICE) for b in run_context.train_loader),
         batch_size=batch_size,
     )
 
-    for _ in tqdm(range(n_batches), desc="Harvesting activation contexts", file=sys.stderr):
+    for _ in tqdm(range(n_batches), desc="Harvesting activation contexts"):
         batch: Int[torch.Tensor, "B S"] = next(batches)
         assert not batch.requires_grad, "Batch tensors with requires_grad are not supported"
         assert isinstance(batch, torch.Tensor)
@@ -148,7 +150,7 @@ def get_topk_by_subcomponent(
             run_context.cm, batch, run_context.config
         )
 
-        for module_name, causal_importances in importances_by_module.items():
+        for module_name, causal_importances in tqdm(importances_by_module.items(), desc="Processing importances"):
             assert causal_importances.shape == (B, S, C), "Expected (B,S,C) per module"
 
             # Thresholding to find "firings"
