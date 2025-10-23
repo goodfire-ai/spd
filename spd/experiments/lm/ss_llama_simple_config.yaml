@@ -1,5 +1,3 @@
-# This config expects to be run on 8 H100s
-
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null
@@ -14,8 +12,7 @@ ci_fn_hidden_dims: [1000]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   [
-    "h.0.mlp.gate_proj",
-    "h.0.mlp.up_proj",
+    "h.0.mlp.c_fc",
     "h.0.mlp.down_proj",
     "h.0.attn.q_proj",
     "h.0.attn.k_proj",
@@ -42,7 +39,6 @@ loss_metric_configs:
 
   - classname: "StochasticReconSubsetLoss"
     coeff: 1.0
-
 output_loss_type: kl
 
 # --- Training ---
@@ -54,6 +50,7 @@ lr_schedule: cosine
 lr_warmup_pct: 0.0
 lr_exponential_halflife: null
 gradient_accumulation_steps: 1
+
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
@@ -104,33 +101,18 @@ eval_metric_configs:
   #   init: random
 
 # --- Pretrained model info ---
-pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
-pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w
+pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
+pretrained_model_name: wandb:goodfire/spd/runs/kz3m0fle # 200k steps. 4019 tokenizer
+# pretrained_model_name: wandb:goodfire/spd/runs/rvu66183 # 100k steps. 4019 tokenizer
+# pretrained_model_name: wandb:goodfire/spd/runs/b10ei3pc # 60k steps. 4019 tokenizer
 pretrained_model_output_attr: idx_0
-tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # TODO: Load from wandb instead
+tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # TODO: load this from wandb
 
 # --- Task Specific ---
 task_config:
-  task_name: lm
+  task_name: lm 
   max_seq_len: 512
-  buffer_size: 1000
   dataset_name: "SimpleStories/SimpleStories"
   column_name: "story"
   train_data_split: "train"
   eval_data_split: "test"
-  shuffle_each_epoch: true
-  is_tokenized: false
-  streaming: false
-# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
-# "1.25M": LlamaConfig(
-#     block_size=512,
-#     vocab_size=4096,
-#     n_layer=4,
-#     n_head=4,
-#     n_embd=128,
-#     n_intermediate=128 * 4 * 2 // 3 = 341,
-#     rotary_dim=128 // 4 = 32,
-#     n_ctx=512,
-#     n_key_value_heads=2,
-#     flash_attention=True,
-# ),
