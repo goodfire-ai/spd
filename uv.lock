@@ -1852,7 +1852,6 @@ name = "spd"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
-    { name = "basedpyright" },
     { name = "datasets" },
     { name = "einops" },
     { name = "fire" },
@@ -1886,7 +1885,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "basedpyright", specifier = "<1.32.0" },
     { name = "datasets", specifier = ">=2.21.0" },
     { name = "einops" },
     { name = "fire" },
@@ -1910,7 +1908,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "basedpyright" },
+    { name = "basedpyright", specifier = "<1.32.0" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
