@@ -36,8 +36,8 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 # ----------------------- configuration -----------------------
 
 config = CIDTConfig(
-    batch_size=32,
-    n_batches=64,
+    batch_size=50, # 50 ~~ 16GB VRAM
+    n_batches=4,
     activation_threshold=0.01,
     max_depth=8,
     random_state=42,

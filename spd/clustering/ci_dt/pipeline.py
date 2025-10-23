@@ -8,6 +8,7 @@ from jaxtyping import Bool, Float
 from torch import Tensor
 from torch.utils.data import DataLoader
 from muutils.dbg import dbg_tensor
+from tqdm import tqdm
 
 from spd.clustering.activations import component_activations
 from spd.clustering.ci_dt.core import LayerModel, build_xy, layer_metrics, proba_for_layer
@@ -43,7 +44,7 @@ def compute_activations_multibatch(
     print(f"Computing activations for {n_batches} batches...")
     all_component_acts: list[dict[str, Tensor]] = []
 
-    for batch_idx in range(n_batches):
+    for batch_idx in tqdm(range(n_batches), desc="Batches", total=n_batches):
         batch_data = next(iter(dataloader))
         batch: Tensor = batch_data["input_ids"]
 
@@ -57,8 +58,6 @@ def compute_activations_multibatch(
             key: tensor.cpu() for key, tensor in component_acts_gpu.items()
         }
         all_component_acts.append(component_acts_cpu)
-
-        print(f"  Batch {batch_idx + 1}/{n_batches} processed")
 
     # Concatenate all batches on CPU
     print("Concatenating batches...")
