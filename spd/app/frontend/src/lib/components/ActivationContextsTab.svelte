@@ -20,7 +20,7 @@
                 n_batches: nBatches,
                 batch_size: batchSize,
                 n_tokens_either_side: nTokensEitherSide,
-                importance_threshold: importanceThreshold,
+                importance_threshold: importanceThreshold
             };
             console.log("loading contexts with config", config);
             const startTime = performance.now();
