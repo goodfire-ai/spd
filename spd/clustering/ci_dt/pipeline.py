@@ -4,8 +4,8 @@ from typing import Any
 
 import numpy as np
 import torch
-from jaxtyping import Bool, Float
-from torch import Tensor
+from jaxtyping import Bool, Float, Int
+from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from muutils.dbg import dbg_tensor
 from tqdm import tqdm

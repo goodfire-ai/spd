@@ -18,6 +18,8 @@ from spd.clustering.ci_dt.pipeline import (
 from spd.clustering.ci_dt.plot import (
     greedy_sort,
     plot_activations,
+    plot_ap_vs_prevalence,
+    plot_component_activity_breakdown,
     plot_covariance,
     plot_layer_metrics,
     plot_selected_trees,
@@ -140,14 +142,22 @@ print(f"Computed sample ordering ({len(sample_order)} samples)")
 # ----------------------- plot: layer metrics -----------------------
 # Scatter plots with jitter showing distribution of metrics per layer
 
-plot_layer_metrics(
-    per_layer_stats,
-    models,
-    module_keys,
-    component_acts_concat,
-    config.activation_threshold,
-)
+plot_layer_metrics(per_layer_stats, module_keys)
 print("Layer metrics plots generated.")
+
+# %%
+# ----------------------- plot: AP vs prevalence -----------------------
+
+plot_ap_vs_prevalence(per_layer_stats, models)
+print("AP vs prevalence plot generated.")
+
+# %%
+# ----------------------- plot: component activity breakdown -----------------------
+
+plot_component_activity_breakdown(
+    component_acts_concat, module_keys, config.activation_threshold
+)
+print("Component activity breakdown plot generated.")
 
 # %%
 # ----------------------- plot: tree statistics -----------------------

@@ -269,19 +269,13 @@ def plot_covariance(
 
 def plot_layer_metrics(
     per_layer_stats: list[dict[str, Any]],
-    models: list[LayerModel],
     module_keys: list[str],
-    component_acts: dict[str, np.ndarray],
-    activation_threshold: float,
 ) -> None:
     """Plot distributions of metrics per layer with scatter plots and jitter.
 
     Args:
         per_layer_stats: List of dicts with metrics per layer
-        models: List of trained LayerModel objects (needed for tree depths)
         module_keys: List of module names for x-axis labels
-        component_acts: Dict of continuous activations per module
-        activation_threshold: Threshold used for binary conversion
     """
     L: int = len(per_layer_stats)
 
@@ -379,8 +373,17 @@ def plot_layer_metrics(
     ax3.legend()
     fig3.tight_layout()
 
-    # AP vs prevalence scatter with tree depth coloring
-    fig4, ax4 = plt.subplots(figsize=(8, 6))
+
+def plot_ap_vs_prevalence(
+    per_layer_stats: list[dict[str, Any]], models: list[LayerModel]
+) -> None:
+    """Plot AP vs prevalence scatter colored by tree depth.
+
+    Args:
+        per_layer_stats: List of dicts with metrics per layer
+        models: List of trained LayerModel objects (needed for tree depths)
+    """
+    fig, ax = plt.subplots(figsize=(8, 6))
 
     prevalence_list: list[float] = []
     ap_list: list[float] = []
@@ -399,7 +402,7 @@ def plot_layer_metrics(
     ap_arr: np.ndarray = np.array(ap_list)
     depth_arr: np.ndarray = np.array(depth_list)
 
-    scatter = ax4.scatter(
+    scatter = ax.scatter(
         prevalence_arr,
         ap_arr,
         c=depth_arr,
@@ -409,23 +412,35 @@ def plot_layer_metrics(
         edgecolors='none',
     )
 
-    ax4.set_title(
+    ax.set_title(
         r"Average Precision vs Component Prevalence" + "\n"
         r"Prevalence = $\frac{n_{\text{active samples}}}{n_{\text{total samples}}}$, colored by tree depth"
     )
-    ax4.set_xlabel("Prevalence (log scale)")
-    ax4.set_ylabel("Average Precision")
-    ax4.set_xscale("log")
-    ax4.set_ylim(-0.05, 1.05)
-    ax4.grid(True, alpha=0.3)
+    ax.set_xlabel("Prevalence (log scale)")
+    ax.set_ylabel("Average Precision")
+    ax.set_xscale("log")
+    ax.set_ylim(-0.05, 1.05)
+    ax.grid(True, alpha=0.3)
 
-    cbar = plt.colorbar(scatter, ax=ax4)
+    cbar = plt.colorbar(scatter, ax=ax)
     cbar.set_label("Tree Depth")
 
-    fig4.tight_layout()
+    fig.tight_layout()
 
-    # Component activity breakdown per module
-    fig5, ax5 = plt.subplots(figsize=(12, 6))
+
+def plot_component_activity_breakdown(
+    component_acts: dict[str, np.ndarray],
+    module_keys: list[str],
+    activation_threshold: float,
+) -> None:
+    """Plot stacked bar chart of component activity breakdown per module.
+
+    Args:
+        component_acts: Dict of continuous activations per module
+        module_keys: List of module names for x-axis labels
+        activation_threshold: Threshold used for binary conversion
+    """
+    fig, ax = plt.subplots(figsize=(12, 6))
 
     # Compute counts for each module
     n_varying_list: list[int] = []
@@ -458,16 +473,6 @@ def plot_layer_metrics(
     # This will be stacked bottom-to-top as smallest, medium, largest
     x_pos: np.ndarray = np.arange(len(module_keys))
 
-    # Build stacked bars with sorted segments per module
-    bottom_vals: np.ndarray = np.zeros(len(module_keys))
-
-    # Collect all three categories with labels
-    categories: list[tuple[str, np.ndarray, str]] = [
-        ("Varying", n_varying, "C2"),
-        ("Always Active", n_always_alive, "C1"),
-        ("Always Inactive", n_always_dead, "C0"),
-    ]
-
     # For each position, we need to stack in order of size
     # We'll plot all bars for the smallest category first, then medium, then largest
     for module_idx in range(len(module_keys)):
@@ -484,7 +489,7 @@ def plot_layer_metrics(
         bottom: float = 0
         for val, label, color in vals:
             if val > 0:  # Only plot if non-zero
-                ax5.bar(
+                ax.bar(
                     module_idx,
                     val,
                     bottom=bottom,
@@ -493,12 +498,12 @@ def plot_layer_metrics(
                 )
                 bottom += val
 
-    ax5.set_title("Component Activity Distribution per Module")
-    ax5.set_xlabel("Module")
-    ax5.set_ylabel("Number of Components (log scale)")
-    ax5.set_xticks(x_pos)
-    ax5.set_xticklabels(module_keys, rotation=45, ha='right')
-    ax5.set_yscale('log')
+    ax.set_title("Component Activity Distribution per Module")
+    ax.set_xlabel("Module")
+    ax.set_ylabel("Number of Components (log scale)")
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(module_keys, rotation=45, ha='right')
+    ax.set_yscale('log')
 
     # Create legend with correct labels
     from matplotlib.patches import Patch
@@ -507,10 +512,10 @@ def plot_layer_metrics(
         Patch(facecolor='C1', label='Always Active'),
         Patch(facecolor='C0', label='Always Inactive'),
     ]
-    ax5.legend(handles=legend_elements, loc='upper left')
-    ax5.grid(True, alpha=0.3, axis='y')
+    ax.legend(handles=legend_elements, loc='upper left')
+    ax.grid(True, alpha=0.3, axis='y')
 
-    fig5.tight_layout()
+    fig.tight_layout()
 
 
 def plot_selected_trees(
