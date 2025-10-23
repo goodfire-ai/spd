@@ -253,7 +253,7 @@ export type ActivationContext = {
 export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     examples: ActivationContext[];
-    // token_densities: TokenDensity[];
+    token_densities: TokenDensity[];
     mean_ci: number;
 };
 
@@ -268,7 +268,6 @@ export type TokenDensity = {
 
 export type ActivationContextsConfig = {
     importance_threshold: number;
-    max_examples_per_subcomponent: number;
     n_batches: number;
     batch_size: number;
     n_tokens_either_side: number;

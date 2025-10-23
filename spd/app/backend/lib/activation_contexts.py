@@ -12,6 +12,7 @@ from spd.app.backend.api import (
     ActivationContext,
     ModelActivationContexts,
     SubcomponentActivationContexts,
+    TokenDensity,
 )
 from spd.app.backend.services.run_context_service import TrainRunContext
 from spd.configs import Config
@@ -26,23 +27,23 @@ DEVICE = get_device()
 def get_subcomponents_activation_contexts(
     run_context: TrainRunContext,
     importance_threshold: float,
-    max_examples_per_subcomponent: int,
+    # max_examples_per_subcomponent: int,
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
 ) -> ModelActivationContexts:
     logger.info("Getting activation contexts")
 
-    examples, component_mean_cis = get_topk_by_subcomponent(
+    activations_data = get_topk_by_subcomponent(
         run_context,
         importance_threshold,
-        max_examples_per_subcomponent,
+        # max_examples_per_subcomponent,
         n_batches,
         n_tokens_either_side,
         batch_size,
     )
 
-    return map_to_model_ctxs(run_context, examples, component_mean_cis)
+    return map_to_model_ctxs(run_context, activations_data)
 
 
 @dataclass
@@ -96,17 +97,35 @@ def roll_batch_size_1_into_x(
         yield torch.stack(examples)
 
 
+@dataclass
+class ActivationsData:
+    examples: Mapping[str, Mapping[int, _TopKExamples]]
+    component_token_densities: dict[str, dict[int, list[tuple[str, float]]]]
+    component_mean_cis: dict[str, Float[torch.Tensor, " C"]]
+
+
+TOPK_EXAMPLES = 1000
+
+
 def get_topk_by_subcomponent(
     run_context: TrainRunContext,
     importance_threshold: float,
-    max_examples_per_subcomponent: int,
+    # max_examples_per_subcomponent: int,
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
-) -> tuple[Mapping[str, Mapping[int, _TopKExamples]], dict[str, Int[torch.Tensor, " C"]]]:
-    # Tracks top-k examples per (module_name, component_idx)
+) -> ActivationsData:
+    # for each (module_name, component_idx), track the top-k activations
     examples = defaultdict[str, defaultdict[int, _TopKExamples]](
-        lambda: defaultdict(lambda: _TopKExamples(max_examples_per_subcomponent))
+        lambda: defaultdict(lambda: _TopKExamples(k=TOPK_EXAMPLES))
+    )
+
+    # for each (module_name, component_idx):
+    # the number of tokens seen
+    component_activation_counts = defaultdict[str, defaultdict[int, int]](lambda: defaultdict(int))
+    # and the number of activations for each token
+    component_activation_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
+        lambda: defaultdict(lambda: defaultdict(int))
     )
 
     C = run_context.cm.C
@@ -158,7 +177,7 @@ def get_topk_by_subcomponent(
                 b = int(batch_idx[j].item())
                 s = int(seq_idx[j].item())
                 m = int(comp_idx[j].item())
-
+                token_id = int(batch[b, s].item())
                 importance_val = float(causal_importances[b, s, m].item())
 
                 # Build window around the firing position
@@ -181,13 +200,33 @@ def get_topk_by_subcomponent(
                 )
 
                 examples[module_name][m].maybe_add(ex)
+                component_activation_counts[module_name][m] += 1
+                component_activation_tokens[module_name][m][token_id] += 1
 
     component_mean_cis = {
         module_name: component_sum_cis[module_name] / n_toks_seen
         for module_name in component_sum_cis
     }
 
-    return examples, component_mean_cis
+    component_token_densities = defaultdict[str, dict[int, list[tuple[str, float]]]](dict)
+    for module_name, tokens_by_components in component_activation_tokens.items():
+        for component_idx, component_token_acts in tokens_by_components.items():
+            component_densities: list[tuple[str, float]] = []
+            for token_id, count in component_token_acts.items():
+                density = count / component_activation_counts[module_name][component_idx]
+                tok_str = run_context.tokenizer.convert_ids_to_tokens(token_id)  # pyright: ignore[reportAttributeAccessIssue]
+                assert isinstance(tok_str, str), "Token id should convert to string"
+                component_densities.append((tok_str, density))
+
+            # sort by density descending
+            component_densities.sort(key=lambda x: x[1], reverse=True)
+            component_token_densities[module_name][component_idx] = component_densities
+
+    return ActivationsData(
+        examples=examples,
+        component_token_densities=component_token_densities,
+        component_mean_cis=component_mean_cis,
+    )
 
 
 def _get_importances_by_module(
@@ -210,17 +249,15 @@ def _get_importances_by_module(
 
 
 def map_to_model_ctxs(
-    run_context: TrainRunContext,
-    examples: Mapping[str, Mapping[int, _TopKExamples]],
-    component_mean_cis: dict[str, Float[torch.Tensor, " C"]],
+    run_context: TrainRunContext, activations_data: ActivationsData
 ) -> ModelActivationContexts:
-    model_ctxs = {}
+    model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
 
-    for module_name, module_examples in examples.items():
+    for module_name, module_examples_by_component in activations_data.examples.items():
         module_subcomponent_ctxs = []
-        module_mean_cis = component_mean_cis[module_name]
+        module_mean_cis = activations_data.component_mean_cis[module_name]
 
-        for subcomponent_idx, subcomponent_examples in module_examples.items():
+        for subcomponent_idx, subcomponent_examples in module_examples_by_component.items():
             activation_contexts = []
             for example in subcomponent_examples.to_sorted_list_desc():
                 activation_context = ActivationContext(
@@ -232,11 +269,23 @@ def map_to_model_ctxs(
                     ci_value=example.last_tok_importance,
                 )
                 activation_contexts.append(activation_context)
+
+            token_densities = [
+                TokenDensity(token=token, density=density)
+                for token, density in activations_data.component_token_densities[module_name][
+                    subcomponent_idx
+                ]
+            ]
+
+            mean_ci = float(module_mean_cis[subcomponent_idx].item())
+
             subcomponent_ctx = SubcomponentActivationContexts(
                 subcomponent_idx=subcomponent_idx,
                 examples=activation_contexts,
-                mean_ci=float(module_mean_cis[subcomponent_idx].item()),
+                token_densities=token_densities,
+                mean_ci=mean_ci,
             )
+
             module_subcomponent_ctxs.append(subcomponent_ctx)
 
         model_ctxs[module_name] = module_subcomponent_ctxs

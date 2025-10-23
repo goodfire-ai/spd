@@ -11,7 +11,6 @@
     let batchSize = 1;
     let nTokensEitherSide = 10;
     let importanceThreshold = 0.0;
-    let maxExamplesPerSubcomponent = 100;
 
     async function loadContexts() {
         loading = true;
@@ -22,7 +21,6 @@
                 batch_size: batchSize,
                 n_tokens_either_side: nTokensEitherSide,
                 importance_threshold: importanceThreshold,
-                max_examples_per_subcomponent: maxExamplesPerSubcomponent
             };
             console.log("loading contexts with config", config);
             const startTime = performance.now();
@@ -93,18 +91,6 @@
                         min="0"
                         max="1"
                         bind:value={importanceThreshold}
-                        on:keydown={handleKeydown}
-                    />
-                </div>
-
-                <div class="config-item">
-                    <label for="max-examples">Max Examples per Subcomponent:</label>
-                    <input
-                        id="max-examples"
-                        type="number"
-                        step="10"
-                        min="1"
-                        bind:value={maxExamplesPerSubcomponent}
                         on:keydown={handleKeydown}
                     />
                 </div>

@@ -58,7 +58,7 @@
                 ? currentItem.mean_ci.toExponential(2)
                 : currentItem.mean_ci.toFixed(3)})
         </h4>
-        <!-- {#if currentItem.token_densities && currentItem.token_densities.length > 0}
+        {#if currentItem.token_densities && currentItem.token_densities.length > 0}
             <div class="token-densities">
                 <h5>
                     Token Activation Densities {currentItem.token_densities.length > 20
@@ -77,7 +77,7 @@
                     {/each}
                 </div>
             </div>
-        {/if} -->
+        {/if}
 
         <div class="subcomponent-section">
             {currentItem.examples.length > 200

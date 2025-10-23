@@ -137,7 +137,6 @@ def apply_mask_as_ablation(request: ApplyMaskRequest) -> AblationResponse:
 @handle_errors
 def get_subcomponent_activation_contexts(
     importance_threshold: float,
-    max_examples_per_subcomponent: int,
     n_batches: int,
     batch_size: int,
     n_tokens_either_side: int,
@@ -146,7 +145,6 @@ def get_subcomponent_activation_contexts(
     return get_subcomponents_activation_contexts(
         run_context,
         importance_threshold=importance_threshold,
-        max_examples_per_subcomponent=max_examples_per_subcomponent,
         n_batches=n_batches,
         n_tokens_either_side=n_tokens_either_side,
         batch_size=batch_size,
