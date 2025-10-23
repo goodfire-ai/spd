@@ -1,11 +1,4 @@
 /* Token visualization styles */
-
-/* .token-container {
-    font-family: monospace;
-    line-height: 1.6;
-    max-width: 800px;
-    overflow-x: auto;
-} */
 .token {
     display: inline-block;
     padding: 2px 4px;

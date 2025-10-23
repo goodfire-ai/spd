@@ -85,14 +85,19 @@ function createTokenVisualization(
 
         // Format token using tokenizer-specific logic
         const { displayText, addSpaceAfter } = tokenizerFormatter(token, idx, tokens);
-        span.textContent = displayText;
+
+        // Replace spaces with visible character for display
+        // Use \u00A0 (non-breaking space) or \u2423 (open box) to show spaces
+        const visibleDisplay = displayText.replace(/ /g, '\u2423');
+        span.textContent = visibleDisplay;
 
         // Color based on activation
         const activation = activations[idx];
         span.style.backgroundColor = colorScheme(activation);
 
         // Set tooltip using data-tip attribute
-        const tooltipText = `"${token}": ${activation.toFixed(6)}`;
+        // Replace spaces in tooltip with \u00A0 to prevent line breaks
+        const tooltipText = `"${token.replace(/ /g, '\u00A0')}": ${activation.toFixed(6)}`;
         span.setAttribute('data-tip', tooltipText);
 
         tokenContainer.appendChild(span);
