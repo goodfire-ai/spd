@@ -6,6 +6,7 @@ Uses SQLite to maintain a mapping of (pipeline_run_id, idx, clustering_run_id).
 import sqlite3
 from contextlib import contextmanager
 
+from spd.clustering.clustering_run_config import ClusteringEnsembleIndex
 from spd.settings import SPD_CACHE_DIR
 
 # SQLite database path
@@ -39,20 +40,41 @@ def _get_connection():
         conn.close()
 
 
-def register_clustering_run(pipeline_run_id: str, idx: int, clustering_run_id: str) -> None:
+def register_clustering_run(
+    pipeline_run_id: str, idx: ClusteringEnsembleIndex, clustering_run_id: str
+) -> int:
     """Register a clustering run as part of a pipeline ensemble.
 
     Args:
         pipeline_run_id: The ensemble/pipeline run ID
-        idx: Index of this run in the ensemble
+        idx: Index of this run in the ensemble. If -1, auto-assigns the next available index.
         clustering_run_id: The individual clustering run ID
+
+    Returns:
+        The index assigned to this run (either the provided idx or the auto-assigned one)
     """
     with _get_connection() as conn:
+        # Use BEGIN IMMEDIATE for thread-safe auto-increment
+        conn.execute("BEGIN IMMEDIATE")
+
+        assigned_idx: int
+        if idx == -1:
+            # Auto-assign next available index
+            cursor = conn.execute(
+                "SELECT COALESCE(MAX(idx), -1) + 1 FROM ensemble_runs WHERE pipeline_run_id = ?",
+                (pipeline_run_id,),
+            )
+            assigned_idx = cursor.fetchone()[0]
+        else:
+            assigned_idx = idx
+
         conn.execute(
             "INSERT INTO ensemble_runs (pipeline_run_id, idx, clustering_run_id) VALUES (?, ?, ?)",
-            (pipeline_run_id, idx, clustering_run_id),
+            (pipeline_run_id, assigned_idx, clustering_run_id),
         )
         conn.commit()
+
+        return assigned_idx
 
 
 def get_clustering_runs(pipeline_run_id: str) -> list[tuple[int, str]]:

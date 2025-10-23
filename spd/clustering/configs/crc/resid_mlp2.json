@@ -2,22 +2,19 @@
   "merge_config": {
     "activation_threshold": 0.01,
     "alpha": 1,
-    "iters": 350,
+    "iters": 100,
     "merge_pair_sampling_method": "range",
     "merge_pair_sampling_kwargs": {"threshold": 0.05},
-    "pop_component_prob": 0,
     "filter_dead_threshold": 0.01,
     "module_name_filter": null
   },
-  "experiment_key": "resid_mlp3",
-  "n_batches": 4,
+  "experiment_key": "resid_mlp2",
   "batch_size": 1024,
-  "wandb_enabled": true,
   "wandb_project": "spd-cluster",
-  "intervals": {
+  "logging_intervals": {
     "stat": 1,
-    "tensor": 32,
-    "plot": 32,
-    "artifact": 32
+    "tensor": 5,
+    "plot": 5,
+    "artifact": 50
   }
 }

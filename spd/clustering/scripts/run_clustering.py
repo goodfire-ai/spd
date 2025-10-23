@@ -31,6 +31,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
+from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.consts import (
     ActivationsTensor,
     BatchTensor,
@@ -43,7 +44,6 @@ from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
-from spd.clustering.merge_run_config import ClusteringRunConfig
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_iteration
 from spd.clustering.storage import StorageBase
@@ -66,7 +66,8 @@ class ClusteringRunStorage(StorageBase):
 
     # Relative path constants
     _CONFIG = "clustering_run_config.json"
-    _HISTORY = "history.npz"
+    # we are saving a zip file with things in it besides npy files -- hence, `.zip` and not `.npz`
+    _HISTORY = "history.zip"
 
     def __init__(self, execution_stamp: ExecutionStamp) -> None:
         super().__init__(execution_stamp)
@@ -229,17 +230,29 @@ def main(run_config: ClusteringRunConfig) -> Path:
     # Register with ensemble if this is part of a pipeline
     if run_config.ensemble_id:
         assert run_config.idx_in_ensemble is not None, (
-            "idx_in_ensemble must be set when ensemble_id is provided"
+            "idx_in_ensemble must be set when ensemble_id is provided! to auto-assign, set idx_in_ensemble = -1.\n"
+            f"{'!' * 50}\nNOTE: this should be an unreachable state -- such a case should have been caught by the pydantic validator.\n{'!' * 50}"
         )
-        register_clustering_run(
+        assigned_idx: int = register_clustering_run(
             run_config.ensemble_id,
             run_config.idx_in_ensemble,
             clustering_run_id,
         )
+
+        # Update config if index was auto-assigned
+        if run_config.idx_in_ensemble == -1:
+            run_config = replace_pydantic_model(run_config, {"idx_in_ensemble": assigned_idx})
+            logger.info(f"Auto-assigned ensemble index: {assigned_idx}")
+
         logger.info(
-            f"Registered with pipeline {run_config.ensemble_id} at index {run_config.idx_in_ensemble} in {_ENSEMBLE_REGISTRY_DB}"
+            f"Registered with pipeline {run_config.ensemble_id} at index {assigned_idx} in {_ENSEMBLE_REGISTRY_DB}"
         )
 
+    # save config
+    run_config.to_file(storage.config_path)
+    logger.info(f"Config saved to {storage.config_path}")
+
+    # start
     logger.info("Starting clustering run")
     logger.info(f"Output directory: {storage.base_dir}")
     device = get_device()
@@ -269,6 +282,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
     wandb_run: Run | None = None
     if run_config.wandb_project is not None:
         wandb_run = wandb.init(
+            id=clustering_run_id,
             entity=run_config.wandb_entity,
             project=run_config.wandb_project,
             group=run_config.ensemble_id,
@@ -347,9 +361,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
         log_callback=log_callback,
     )
 
-    # 8. Save merge history and config
-    run_config.to_file(storage.config_path)
-    logger.info(f"Config saved to {storage.config_path}")
+    # 8. Save merge history
 
     history.save(storage.history_path)
     logger.info(f"History saved to {storage.history_path}")

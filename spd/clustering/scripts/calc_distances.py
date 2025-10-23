@@ -12,18 +12,32 @@ Output structure:
 
 import argparse
 import json
+import multiprocessing
 
 import numpy as np
+import torch
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
+from muutils.dbg import dbg_tensor
 
 from spd.clustering.consts import DistancesArray, DistancesMethod
 from spd.clustering.ensemble_registry import get_clustering_runs
 from spd.clustering.math.merge_distances import compute_distances
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.plotting.merge import plot_dists_distribution
+from spd.clustering.scripts.run_clustering import ClusteringRunStorage
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
+from spd.utils.run_utils import ExecutionStamp
+
+# Set spawn method for CUDA compatibility with multiprocessing
+# Must be done before any CUDA operations
+if torch.cuda.is_available():
+    try:  # noqa: SIM105
+        multiprocessing.set_start_method("spawn")
+    except RuntimeError:
+        # Already set, ignore
+        pass
 
 
 def main(pipeline_run_id: str, distances_method: DistancesMethod) -> None:
@@ -45,7 +59,16 @@ def main(pipeline_run_id: str, distances_method: DistancesMethod) -> None:
     # Load histories from individual clustering run directories
     histories: list[MergeHistory] = []
     for idx, clustering_run_id in clustering_runs:
-        history_path = SPD_CACHE_DIR / "cluster" / clustering_run_id / "history.npz"
+        history_path = ClusteringRunStorage(
+            ExecutionStamp(
+                run_id=clustering_run_id,
+                snapshot_branch="<not needed>",
+                commit_hash="<not needed>",
+                run_type="cluster",
+            )
+        ).history_path
+
+        # SPD_CACHE_DIR / "cluster" / clustering_run_id / "history.npz"
         if not history_path.exists():
             raise FileNotFoundError(
                 f"History not found for run {clustering_run_id}: {history_path}"
@@ -75,6 +98,8 @@ def main(pipeline_run_id: str, distances_method: DistancesMethod) -> None:
         normalized_merge_array=merge_array,
         method=distances_method,
     )
+
+    dbg_tensor(distances)
 
     distances_path = pipeline_dir / f"distances_{distances_method}.npz"
     np.savez_compressed(distances_path, distances=distances)
@@ -109,7 +134,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--distances-method",
-        choices=["perm_invariant_hamming", "jaccard"],
+        choices=DistancesMethod.__args__,
         default="perm_invariant_hamming",
         help="Method for calculating distances",
     )
