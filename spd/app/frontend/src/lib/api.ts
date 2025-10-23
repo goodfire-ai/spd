@@ -247,7 +247,7 @@ export type ActivationContext = {
     token_ci_values: number[];
     active_position: number;
     ci_value: number;
-    __id: string
+    __id: string;
 };
 
 export type SubcomponentActivationContexts = {
@@ -285,12 +285,13 @@ export async function getSubcomponentActivationContexts(
         const error = await response.json();
         throw new Error(error.detail || "Failed to get layer activation contexts");
     }
-    const payload = await response.json() as unknown as ModelActivationContexts;
+    const payload = (await response.json()) as unknown as ModelActivationContexts;
     for (const layer of Object.keys(payload.layers)) {
         for (const subcomponent of payload.layers[layer]) {
             for (const example of subcomponent.examples) {
                 example.__id = crypto.randomUUID();
             }
         }
-    }    return payload;
+    }
+    return payload;
 }

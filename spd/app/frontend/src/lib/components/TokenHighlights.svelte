@@ -25,7 +25,8 @@
                 class="token-highlight"
                 class:active-token={idx === activePosition}
                 style={`background-color:${getHighlightColor(tokenCiValues[idx])};`}
-                data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}>{fmtTokenString(tokenString)}</span
+                data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}
+                >{fmtTokenString(tokenString)}</span
             >
         {:else}
             {fmtTokenString(tokenString)}
