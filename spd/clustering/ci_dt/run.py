@@ -17,11 +17,13 @@ from spd.clustering.ci_dt.pipeline import (
 )
 from spd.clustering.ci_dt.plot import (
     greedy_sort,
+    plot_accuracy,
     plot_activations,
     plot_ap_vs_prevalence,
+    plot_average_precision,
+    plot_balanced_accuracy,
     plot_component_activity_breakdown,
     plot_covariance,
-    plot_layer_metrics,
     plot_selected_trees,
     plot_tree_statistics,
 )
@@ -139,11 +141,22 @@ sample_order: np.ndarray = greedy_sort(A_true_concat, axis=0)
 print(f"Computed sample ordering ({len(sample_order)} samples)")
 
 # %%
-# ----------------------- plot: layer metrics -----------------------
-# Scatter plots with jitter showing distribution of metrics per layer
+# ----------------------- plot: average precision -----------------------
 
-plot_layer_metrics(per_layer_stats, module_keys)
-print("Layer metrics plots generated.")
+plot_average_precision(per_layer_stats, module_keys)
+print("Average precision plot generated.")
+
+# %%
+# ----------------------- plot: accuracy -----------------------
+
+plot_accuracy(per_layer_stats, module_keys)
+print("Accuracy plot generated.")
+
+# %%
+# ----------------------- plot: balanced accuracy -----------------------
+
+plot_balanced_accuracy(per_layer_stats, module_keys)
+print("Balanced accuracy plot generated.")
 
 # %%
 # ----------------------- plot: AP vs prevalence -----------------------
@@ -155,7 +168,12 @@ print("AP vs prevalence plot generated.")
 # ----------------------- plot: component activity breakdown -----------------------
 
 plot_component_activity_breakdown(
-    component_acts_concat, module_keys, config.activation_threshold
+    component_acts_concat, module_keys, config.activation_threshold,
+	logy=False,
+)
+plot_component_activity_breakdown(
+    component_acts_concat, module_keys, config.activation_threshold,
+	logy=True,
 )
 print("Component activity breakdown plot generated.")
 
