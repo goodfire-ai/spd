@@ -1,5 +1,4 @@
 import heapq
-import sys
 from collections import defaultdict
 from collections.abc import Generator, Iterable, Mapping
 from dataclasses import dataclass
@@ -150,7 +149,9 @@ def get_topk_by_subcomponent(
             run_context.cm, batch, run_context.config
         )
 
-        for module_name, causal_importances in tqdm(importances_by_module.items(), desc="Processing importances"):
+        for module_name, causal_importances in tqdm(
+            importances_by_module.items(), desc="Processing importances"
+        ):
             assert causal_importances.shape == (B, S, C), "Expected (B,S,C) per module"
 
             # Thresholding to find "firings"

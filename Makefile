@@ -78,4 +78,4 @@ coverage:
 
 .PHONY: app
 app:
-	@bash spd/app/run.sh
+	@uv run python spd/app/run.py
