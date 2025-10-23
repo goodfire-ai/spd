@@ -1,5 +1,3 @@
-# This config expects to be run on 8 H100s
-
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null
@@ -14,13 +12,13 @@ ci_fn_hidden_dims: [1000]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   [
-    "h.0.mlp.gate_proj",
-    "h.0.mlp.up_proj",
-    "h.0.mlp.down_proj",
-    "h.0.attn.q_proj",
-    "h.0.attn.k_proj",
-    "h.0.attn.v_proj",
-    "h.0.attn.o_proj",
+    "h.*.mlp.gate_proj",
+    "h.*.mlp.up_proj",
+    "h.*.mlp.down_proj",
+    "h.*.attn.q_proj",
+    "h.*.attn.k_proj",
+    "h.*.attn.v_proj",
+    "h.*.attn.o_proj",
   ]
 identity_module_patterns: null
 sampling: "continuous"
@@ -32,13 +30,6 @@ loss_metric_configs:
     p_anneal_start_frac: 0.0
     p_anneal_final_p: 0.3
     p_anneal_end_frac: 1.0
-
-  # - classname: "PGDReconSubsetLoss"
-  #   coeff: 0.2
-  #   init: random
-  #   mask_scope: unique_per_datapoint
-  #   n_steps: 1
-  #   step_size: 0.1
 
   - classname: "StochasticReconSubsetLoss"
     coeff: 1.0
@@ -76,38 +67,33 @@ eval_metric_configs:
   - classname: "CI_L0"
     groups:
       total: ["*"] # Sum of all L0 values
-      # layer_0: ["h.0.*"]
-      # layer_1: ["h.1.*"]
-      # layer_2: ["h.2.*"]
-      # layer_3: ["h.3.*"]
+      layer_0: ["h.0.*"]
+      layer_1: ["h.1.*"]
+      layer_2: ["h.2.*"]
+      layer_3: ["h.3.*"]
   - classname: "CEandKLLosses"
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
-  # - classname: "StochasticReconSubsetCEAndKL"
-  #   include_patterns:
-  #     layer_0_only: ["h.0.*"]
-  #     layer_1_only: ["h.1.*"]
-  #     layer_2_only: ["h.2.*"]
-  #     layer_3_only: ["h.3.*"]
-  #     mlp_only: ["*.mlp.*"]
-  #     attention_only: ["*.attn.*"]
-  #   exclude_patterns:
-  #     all_but_layer_0: ["h.0.*"]
-  #     all_but_layer_1: ["h.1.*"]
-  #     all_but_layer_2: ["h.2.*"]
-  #     all_but_layer_3: ["h.3.*"]
+  - classname: "StochasticReconSubsetCEAndKL"
+    include_patterns:
+      layer_0_only: ["h.0.*"]
+      layer_1_only: ["h.1.*"]
+      layer_2_only: ["h.2.*"]
+      layer_3_only: ["h.3.*"]
+      mlp_only: ["*.mlp.*"]
+      attention_only: ["*.attn.*"]
+    exclude_patterns:
+      all_but_layer_0: ["h.0.*"]
+      all_but_layer_1: ["h.1.*"]
+      all_but_layer_2: ["h.2.*"]
+      all_but_layer_3: ["h.3.*"]
   - classname: "StochasticHiddenActsReconLoss"
-  # - classname: PGDReconLoss
-  #   step_size: 0.1
-  #   n_steps: 20
-  #   mask_scope: shared_across_batch
-  #   init: random
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
-pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w
+pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w # 100k steps 4019 tok
 pretrained_model_output_attr: idx_0
-tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # TODO: Load from wandb instead
+tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok: TODO: Load from wandb instead
 
 # --- Task Specific ---
 task_config:
@@ -122,9 +108,9 @@ task_config:
   is_tokenized: false
   streaming: false
 # Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
-# "1.25M": LlamaConfig(
+# "llama_simple-1.25M": LlamaSimpleConfig(
 #     block_size=512,
-#     vocab_size=4096,
+#     vocab_size=4019,
 #     n_layer=4,
 #     n_head=4,
 #     n_embd=128,
