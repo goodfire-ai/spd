@@ -27,7 +27,6 @@ DEVICE = get_device()
 def get_subcomponents_activation_contexts(
     run_context: TrainRunContext,
     importance_threshold: float,
-    # max_examples_per_subcomponent: int,
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
@@ -37,7 +36,6 @@ def get_subcomponents_activation_contexts(
     activations_data = get_topk_by_subcomponent(
         run_context,
         importance_threshold,
-        # max_examples_per_subcomponent,
         n_batches,
         n_tokens_either_side,
         batch_size,
@@ -110,7 +108,6 @@ TOPK_EXAMPLES = 1000
 def get_topk_by_subcomponent(
     run_context: TrainRunContext,
     importance_threshold: float,
-    # max_examples_per_subcomponent: int,
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
