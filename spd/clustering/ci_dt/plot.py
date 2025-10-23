@@ -453,28 +453,61 @@ def plot_layer_metrics(
     n_varying: np.ndarray = np.array(n_varying_list)
     n_always_dead: np.ndarray = np.array(n_always_dead_list)
     n_always_alive: np.ndarray = np.array(n_always_alive_list)
-    n_total_per_module: np.ndarray = n_varying + n_always_dead + n_always_alive
 
-    # Sort modules by total components (smallest to largest)
-    sort_idx: np.ndarray = np.argsort(n_total_per_module)
-    module_keys_sorted: list[str] = [module_keys[i] for i in sort_idx]
-    n_varying_sorted: np.ndarray = n_varying[sort_idx]
-    n_always_dead_sorted: np.ndarray = n_always_dead[sort_idx]
-    n_always_alive_sorted: np.ndarray = n_always_alive[sort_idx]
+    # For each module, sort the three categories by size (smallest to largest)
+    # This will be stacked bottom-to-top as smallest, medium, largest
+    x_pos: np.ndarray = np.arange(len(module_keys))
 
-    # Create stacked bar chart
-    x_pos: np.ndarray = np.arange(len(module_keys_sorted))
-    ax5.bar(x_pos, n_varying_sorted, label="Varying", color="C3")
-    ax5.bar(x_pos, n_always_alive_sorted, bottom=n_varying_sorted, label="Always Active", color="C2")
-    ax5.bar(x_pos, n_always_dead_sorted, bottom=n_varying_sorted + n_always_alive_sorted, label="Always Inactive", color="C1")
+    # Build stacked bars with sorted segments per module
+    bottom_vals: np.ndarray = np.zeros(len(module_keys))
+
+    # Collect all three categories with labels
+    categories: list[tuple[str, np.ndarray, str]] = [
+        ("Varying", n_varying, "C2"),
+        ("Always Active", n_always_alive, "C1"),
+        ("Always Inactive", n_always_dead, "C0"),
+    ]
+
+    # For each position, we need to stack in order of size
+    # We'll plot all bars for the smallest category first, then medium, then largest
+    for module_idx in range(len(module_keys)):
+        # Get values for this module
+        vals: list[tuple[float, str, str]] = [
+            (n_varying[module_idx], "Varying", "C2"),
+            (n_always_alive[module_idx], "Always Active", "C1"),
+            (n_always_dead[module_idx], "Always Inactive", "C0"),
+        ]
+        # Sort by value (smallest to largest)
+        vals.sort(key=lambda x: x[0])
+
+        # Stack them
+        bottom: float = 0
+        for val, label, color in vals:
+            if val > 0:  # Only plot if non-zero
+                ax5.bar(
+                    module_idx,
+                    val,
+                    bottom=bottom,
+                    color=color,
+                    label=label if module_idx == 0 else "",  # Only label once
+                )
+                bottom += val
 
     ax5.set_title("Component Activity Distribution per Module")
-    ax5.set_xlabel("Module (sorted by total component count)")
+    ax5.set_xlabel("Module")
     ax5.set_ylabel("Number of Components (log scale)")
     ax5.set_xticks(x_pos)
-    ax5.set_xticklabels(module_keys_sorted, rotation=45, ha='right')
-    # ax5.set_yscale('log')
-    ax5.legend(loc='upper left')
+    ax5.set_xticklabels(module_keys, rotation=45, ha='right')
+    ax5.set_yscale('log')
+
+    # Create legend with correct labels
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='C2', label='Varying'),
+        Patch(facecolor='C1', label='Always Active'),
+        Patch(facecolor='C0', label='Always Inactive'),
+    ]
+    ax5.legend(handles=legend_elements, loc='upper left')
     ax5.grid(True, alpha=0.3, axis='y')
 
     fig5.tight_layout()
