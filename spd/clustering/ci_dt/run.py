@@ -16,6 +16,7 @@ from spd.clustering.ci_dt.pipeline import (
     convert_to_boolean_layers,
 )
 from spd.clustering.ci_dt.plot import (
+    greedy_sort,
     plot_activations,
     plot_covariance,
     plot_layer_metrics,
@@ -36,8 +37,8 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 # ----------------------- configuration -----------------------
 
 config = CIDTConfig(
-    batch_size=50, # 50 ~~ 16GB VRAM
-    n_batches=4,
+    batch_size=8, # 50 ~~ 16GB VRAM
+    n_batches=2,
     activation_threshold=0.01,
     max_depth=8,
     random_state=42,
@@ -134,18 +135,63 @@ plot_tree_statistics(models, per_layer_stats)
 print("Tree statistics plots generated.")
 
 # %%
-# ----------------------- plot: activations -----------------------
-# Simple heatmaps of true vs predicted activations
+# ----------------------- compute orderings -----------------------
+# Generate sample ordering once for use in multiple plots
 
-plot_activations(layers_true, layers_pred)
-print("Activation plots generated.")
+# Get module keys for labeling
+module_keys: list[str] = list(component_acts_concat.keys())
+
+# Concatenate true activations for ordering
+A_true_concat: np.ndarray = np.concatenate(layers_true, axis=1).astype(float)
+
+# Compute sample ordering by similarity
+sample_order: np.ndarray = greedy_sort(A_true_concat, axis=0)
+print(f"Computed sample ordering ({len(sample_order)} samples)")
+
+# %%
+# ----------------------- plot: activations -----------------------
+# Heatmaps of true vs predicted activations (unsorted and sorted)
+
+# Unsorted version with layer boundaries
+plot_activations(
+    layers_true=layers_true,
+    layers_pred=layers_pred,
+    module_keys=module_keys,
+    activation_threshold=config.activation_threshold,
+    sample_order=None,
+)
+print("Activation plots (unsorted) generated.")
+
+# Sorted version with diff plot
+plot_activations(
+    layers_true=layers_true,
+    layers_pred=layers_pred,
+    module_keys=module_keys,
+    activation_threshold=config.activation_threshold,
+    sample_order=sample_order,
+)
+print("Activation plots (sorted by samples) generated.")
 
 # %%
 # ----------------------- plot: covariance -----------------------
 # Covariance matrix - can be slow with many components
 
-plot_covariance(layers_true)
-print("Covariance plot generated.")
+# Unsorted version with layer boundaries
+plot_covariance(
+    layers_true=layers_true,
+    module_keys=module_keys,
+    component_order=None,
+)
+print("Covariance plot (unsorted) generated.")
+
+# Sorted version by component similarity
+component_order: np.ndarray = greedy_sort(A_true_concat, axis=1)
+plot_covariance(
+    layers_true=layers_true,
+    module_keys=module_keys,
+    component_order=component_order,
+)
+print("Covariance plot (sorted by components) generated.")
 
 # %%
 # ----------------------- generate feature names -----------------------

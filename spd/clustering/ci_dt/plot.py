@@ -4,41 +4,267 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-from jaxtyping import Float, Int
+from jaxtyping import Bool, Float, Int
 from sklearn.tree import plot_tree
 
 from spd.clustering.ci_dt.core import LayerModel, get_estimator_for
 
 
-def plot_activations(layers_true: list[np.ndarray], layers_pred: list[np.ndarray]) -> None:
-    """Show true and predicted activations as heatmaps."""
-    A_true: np.ndarray = np.concatenate(layers_true, axis=1)
-    A_pred: np.ndarray = np.concatenate([layers_pred[0]] + layers_pred[1:], axis=1)
-    fig1 = plt.figure(figsize=(10, 6))
-    ax1 = fig1.add_subplot(2, 1, 1)
-    ax1.set_title("Activations (True)")
-    ax1.imshow(A_true, aspect="auto", interpolation="nearest")
-    ax1.set_xlabel("components (all layers concatenated)")
-    ax1.set_ylabel("samples")
-    ax2 = fig1.add_subplot(2, 1, 2)
-    ax2.set_title("Activations (Predicted)")
-    ax2.imshow(A_pred, aspect="auto", interpolation="nearest")
-    ax2.set_xlabel("components (all layers concatenated)")
-    ax2.set_ylabel("samples")
-    fig1.tight_layout()
+def greedy_sort(A: np.ndarray, axis: int) -> np.ndarray:
+    """Greedy ordering by cosine similarity.
+
+    Starts from the most central item (highest average similarity to all others)
+    and greedily adds the nearest neighbor at each step.
+
+    Args:
+        A: 2D array to sort
+        axis: 0 to sort rows (samples), 1 to sort columns (components)
+
+    Returns:
+        Array of indices in sorted order
+    """
+    # Transpose if sorting columns
+    if axis == 1:
+        A = A.T
+
+    # Compute cosine similarity
+    norms: Float[np.ndarray, "n 1"] = np.linalg.norm(A, axis=1, keepdims=True)
+    norms = np.where(norms > 1e-8, norms, 1.0)  # Avoid division by zero
+    A_normalized: Float[np.ndarray, "n d"] = A / norms
+    similarity: Float[np.ndarray, "n n"] = A_normalized @ A_normalized.T
+
+    # Start from most central item (highest average similarity)
+    n: int = similarity.shape[0]
+    avg_sim: Float[np.ndarray, "n"] = similarity.mean(axis=1)
+    start_idx: int = int(np.argmax(avg_sim))
+
+    # Greedy ordering: always add nearest unvisited neighbor
+    ordered: list[int] = [start_idx]
+    remaining: set[int] = set(range(n))
+    remaining.remove(start_idx)
+    current: int = start_idx
+
+    while remaining:
+        # Find unvisited item with highest similarity to current
+        best_sim: float = -1.0
+        best_idx: int = -1
+        for idx in remaining:
+            sim: float = float(similarity[current, idx])
+            if sim > best_sim:
+                best_sim = sim
+                best_idx = idx
+
+        ordered.append(best_idx)
+        remaining.remove(best_idx)
+        current = best_idx
+
+    return np.array(ordered, dtype=np.int64)
 
 
-def plot_covariance(layers_true: list[np.ndarray]) -> None:
-    """Plot covariance between all components across layers."""
-    A: np.ndarray = np.concatenate(layers_true, axis=1).astype(float)
-    C: np.ndarray = np.cov(A, rowvar=False)
-    fig2 = plt.figure(figsize=(6, 6))
-    ax = fig2.add_subplot(1, 1, 1)
-    ax.set_title("Covariance of components (all layers)")
-    ax.imshow(C, aspect="auto", interpolation="nearest")
-    ax.set_xlabel("component index")
-    ax.set_ylabel("component index")
-    fig2.tight_layout()
+def add_component_labeling(
+    ax: plt.Axes, component_labels: list[str], axis: str = "x"
+) -> None:
+    """Add component labeling using major/minor ticks to show module boundaries.
+
+    Args:
+        ax: Matplotlib axis to modify
+        component_labels: List of component labels in format "module:index"
+        axis: Which axis to label ('x' or 'y')
+    """
+    if not component_labels:
+        return
+
+    # Extract module information
+    module_changes: list[int] = []
+    current_module: str = component_labels[0].split(":")[0]
+    module_labels: list[str] = []
+
+    for i, label in enumerate(component_labels):
+        module: str = label.split(":")[0]
+        if module != current_module:
+            module_changes.append(i)
+            module_labels.append(current_module)
+            current_module = module
+    module_labels.append(current_module)
+
+    # Set up major and minor ticks
+    # Minor ticks: every 10 components
+    minor_ticks: list[int] = list(range(0, len(component_labels), 10))
+
+    # Major ticks: module boundaries (start of each module)
+    major_ticks: list[int] = [0] + module_changes
+    major_labels_final: list[str] = module_labels
+
+    if axis == "x":
+        ax.set_xticks(minor_ticks, minor=True)
+        ax.set_xticks(major_ticks)
+        ax.set_xticklabels(major_labels_final, rotation=45, ha="right")
+        ax.set_xlim(-0.5, len(component_labels) - 0.5)
+        # Style the ticks
+        ax.tick_params(axis="x", which="minor", length=2, width=0.5)
+        ax.tick_params(axis="x", which="major", length=6, width=1.5)
+        for x in major_ticks:
+            ax.axvline(x - 0.5, color="black", linestyle="--", linewidth=0.5, alpha=0.5)
+    else:
+        ax.set_yticks(minor_ticks, minor=True)
+        ax.set_yticks(major_ticks)
+        ax.set_yticklabels(major_labels_final)
+        ax.set_ylim(-0.5, len(component_labels) - 0.5)
+        # Style the ticks
+        ax.tick_params(axis="y", which="minor", length=2, width=0.5)
+        ax.tick_params(axis="y", which="major", length=6, width=1.5)
+        for y in major_ticks:
+            ax.axhline(y - 0.5, color="black", linestyle="--", linewidth=0.5, alpha=0.5)
+
+
+def plot_activations(
+    layers_true: list[np.ndarray],
+    layers_pred: list[np.ndarray],
+    module_keys: list[str],
+    activation_threshold: float,
+    sample_order: np.ndarray | None = None,
+) -> None:
+    """Plot true and predicted activations with optional sorting and diff.
+
+    Args:
+        layers_true: List of boolean activation arrays per layer
+        layers_pred: List of predicted activation arrays per layer
+        module_keys: List of module names (e.g., ["blocks.0.attn.W_Q", ...])
+        activation_threshold: Threshold used for binary conversion
+        sample_order: Optional array of sample indices for sorting. If None, plots unsorted.
+    """
+    A_true: Float[np.ndarray, "n_samples n_components"] = np.concatenate(
+        layers_true, axis=1
+    ).astype(float)
+    A_pred: Float[np.ndarray, "n_samples n_components"] = np.concatenate(
+        layers_pred, axis=1
+    ).astype(float)
+
+    # Apply sample ordering if provided
+    if sample_order is not None:
+        A_true = A_true[sample_order, :]
+        A_pred = A_pred[sample_order, :]
+        sorted_label: str = " (Sorted by Sample Similarity)"
+        xlabel: str = "Sample index (sorted)"
+    else:
+        sorted_label = ""
+        xlabel = "Sample index"
+
+    # Create component labels for unsorted plots
+    component_labels: list[str] | None = None
+    if sample_order is None:
+        component_labels = []
+        for module_key, layer in zip(module_keys, layers_true, strict=True):
+            n_components: int = layer.shape[1]
+            component_labels.extend([f"{module_key}:{i}" for i in range(n_components)])
+
+    # Determine number of subplots
+    n_plots: int = 3 if sample_order is not None else 2
+    fig, axes = plt.subplots(n_plots, 1, figsize=(12, 6 * n_plots))
+    if n_plots == 2:
+        ax1, ax2 = axes
+    else:
+        ax1, ax2, ax3 = axes
+
+    # Plot true activations
+    ax1.imshow(A_true.T, aspect="auto", interpolation="nearest", cmap="Blues")
+    ax1.set_title(
+        rf"True Binary Activations{sorted_label}" + "\n"
+        r"$A_{ij} = \mathbb{1}[\text{activation}_{ij} > \theta]$, "
+        rf"$\theta = {activation_threshold}$"
+    )
+    ax1.set_xlabel(xlabel)
+    ax1.set_ylabel("Component index")
+    if component_labels is not None:
+        add_component_labeling(ax1, component_labels, axis="y")
+
+    # Plot predicted activations
+    ax2.imshow(A_pred.T, aspect="auto", interpolation="nearest", cmap="Reds")
+    ax2.set_title(
+        rf"Predicted Binary Activations{sorted_label}" + "\n"
+        r"$\hat{A}_{ij} = \mathbb{1}[P(A_{ij}=1) > 0.5]$"
+    )
+    ax2.set_xlabel(xlabel)
+    ax2.set_ylabel("Component index")
+    if component_labels is not None:
+        add_component_labeling(ax2, component_labels, axis="y")
+
+    # Add diff plot if sorted
+    if sample_order is not None:
+        A_diff: Float[np.ndarray, "n_samples n_components"] = A_pred - A_true
+        im3 = ax3.imshow(
+            A_diff.T, aspect="auto", interpolation="nearest", cmap="RdBu_r", vmin=-1, vmax=1
+        )
+        ax3.set_title(
+            r"Prediction Errors (Predicted - True)" + "\n"
+            r"Red = FP ($\hat{A}=1, A=0$), Blue = FN ($\hat{A}=0, A=1$), White = Correct"
+        )
+        ax3.set_xlabel(xlabel)
+        ax3.set_ylabel("Component index")
+        plt.colorbar(im3, ax=ax3, label="Error")
+
+    fig.tight_layout()
+
+
+def plot_covariance(
+    layers_true: list[np.ndarray],
+    module_keys: list[str],
+    component_order: np.ndarray | None = None,
+) -> None:
+    """Plot covariance matrix with optional component ordering.
+
+    Args:
+        layers_true: List of boolean activation arrays per layer
+        module_keys: List of module names for labeling
+        component_order: Optional array of component indices for sorting. If None, plots unsorted.
+    """
+    A: Float[np.ndarray, "n_samples n_components"] = np.concatenate(
+        layers_true, axis=1
+    ).astype(float)
+
+    # Apply component ordering if provided
+    if component_order is not None:
+        A = A[:, component_order]
+        sorted_label: str = " (Sorted by Component Similarity)"
+        xlabel: str = "Component index (sorted)"
+        ylabel: str = "Component index (sorted)"
+    else:
+        sorted_label = ""
+        xlabel = "Component index"
+        ylabel = "Component index"
+
+    # Compute covariance
+    C: Float[np.ndarray, "n_components n_components"] = np.cov(A, rowvar=False)
+
+    # Center colormap on 0
+    vmax: float = float(np.abs(C).max())
+    vmin: float = -vmax
+
+    # Create component labels for unsorted plots
+    component_labels: list[str] | None = None
+    if component_order is None:
+        component_labels = []
+        for module_key, layer in zip(module_keys, layers_true, strict=True):
+            n_components: int = layer.shape[1]
+            component_labels.extend([f"{module_key}:{i}" for i in range(n_components)])
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    im = ax.imshow(C, aspect="auto", interpolation="nearest", cmap="RdBu_r", vmin=vmin, vmax=vmax)
+    ax.set_title(
+        rf"Component Covariance Matrix{sorted_label}" + "\n"
+        r"$\text{Cov}(i,j) = \mathbb{E}[(A_i - \mu_i)(A_j - \mu_j)]$" + "\n"
+        r"where $A_i$ is binary activation of component $i$"
+    )
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+    # Add layer boundaries for unsorted
+    if component_labels is not None:
+        add_component_labeling(ax, component_labels, axis="x")
+        add_component_labeling(ax, component_labels, axis="y")
+
+    plt.colorbar(im, ax=ax, label="Covariance")
+    fig.tight_layout()
 
 
 def plot_layer_metrics(per_layer_stats: list[dict[str, Any]]) -> None:
