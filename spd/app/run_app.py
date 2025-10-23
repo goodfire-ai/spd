@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from types import FrameType
 from typing import TextIO
@@ -17,7 +18,6 @@ from urllib.error import URLError
 
 # ANSI color codes
 GREEN = "\033[0;32m"
-BLUE = "\033[0;34m"
 YELLOW = "\033[1;33m"
 RED = "\033[0;31m"
 DIM = "\033[2m"
@@ -26,9 +26,11 @@ UNDERLINE = "\033[4m"
 RESET = "\033[0m"
 
 # Configuration
-SCRIPT_DIR = Path(__file__).parent.resolve()
-LOGFILE = SCRIPT_DIR / "run.log"
-STARTUP_TIMEOUT = 30  # seconds
+APP_DIR = Path(__file__).parent.resolve()
+LOGS_DIR = APP_DIR / "logs"
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+LOGFILE = LOGS_DIR / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+STARTUP_TIMEOUT_SECONDS = 30
 
 
 class ProcessManager:
@@ -113,7 +115,7 @@ def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
     """Start the backend server."""
     print(f"{DIM}  ▸ Starting backend...{RESET}", end="", flush=True)
 
-    project_root = SCRIPT_DIR.parent.parent
+    project_root = APP_DIR.parent.parent
     cmd = [
         "uv",
         "run",
@@ -135,7 +137,7 @@ def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
     )
 
     # Wait for backend to be healthy
-    wait_for_service(f"http://localhost:{port}", STARTUP_TIMEOUT, "Backend")
+    wait_for_service(f"http://localhost:{port}", STARTUP_TIMEOUT_SECONDS, "Backend")
     print(f"\r  {GREEN}✓{RESET} Backend started (port {port})        ")
 
     return process
@@ -145,7 +147,7 @@ def install_frontend_deps() -> None:
     """Install frontend dependencies."""
     print(f"{DIM}  ▸ Installing frontend dependencies...{RESET}", end="", flush=True)
 
-    frontend_dir = SCRIPT_DIR / "frontend"
+    frontend_dir = APP_DIR / "frontend"
     result = subprocess.run(
         ["npm", "ci", "--silent"], cwd=frontend_dir, capture_output=True, text=True
     )
@@ -160,7 +162,7 @@ def start_frontend(port: int, backend_port: int, logfile: TextIO) -> subprocess.
     """Start the frontend server."""
     print(f"{DIM}  ▸ Starting frontend...{RESET}", end="", flush=True)
 
-    frontend_dir = SCRIPT_DIR / "frontend"
+    frontend_dir = APP_DIR / "frontend"
     env = os.environ.copy()
     env["VITE_API_URL"] = f"http://localhost:{backend_port}"
 
@@ -178,7 +180,7 @@ def start_frontend(port: int, backend_port: int, logfile: TextIO) -> subprocess.
     )
 
     # Wait for frontend to be healthy
-    wait_for_service(f"http://localhost:{port}", STARTUP_TIMEOUT, "Frontend")
+    wait_for_service(f"http://localhost:{port}", STARTUP_TIMEOUT_SECONDS, "Frontend")
     print(f"\r  {GREEN}✓{RESET} Frontend started (port {port})        ")
 
     return process
