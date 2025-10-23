@@ -9,7 +9,7 @@ readme = "README.md"
 dependencies = [
     "torch>=2.6",
     "torchvision>=0.23,<0.24",
-    "pydantic>=2",
+    "pydantic<2.12", # https://github.com/goodfire-ai/spd/pull/232 , https://github.com/goodfire-ai/spd/issues/221
     "wandb>=0.20.1", # Avoid wandb.sdk.wandb_manager.ManagerConnectionRefusedError
     "fire",
     "tqdm",
@@ -38,7 +38,7 @@ dev = [
     "pytest-cov", # for coverage reports
     "pytest-xdist", # parallel test execution
     "ruff",
-    "basedpyright<1.32.0",
+    "basedpyright<1.32.0", # pyright and wandb issues, see https://github.com/goodfire-ai/spd/pull/232
     "pre-commit",
 ]
 
