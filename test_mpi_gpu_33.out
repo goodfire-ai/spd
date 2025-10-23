@@ -1,0 +1,36 @@
+=== Environment Info ===
+Node: h200-reserved-145-003
+Date: Thu Oct 23 12:30:41 PM UTC 2025
+SLURM_JOB_ID: 33
+SLURM_NTASKS: 4
+SLURM_GPUS: 
+CUDA_VISIBLE_DEVICES: 0,1,2,3
+
+=== Testing basic MPI ===
+Rank 0 on h200-reserved-145-003
+Rank 1 on h200-reserved-145-003
+Rank 2 on h200-reserved-145-003
+Rank 3 on h200-reserved-145-003
+
+=== Testing GPU visibility ===
+Rank 0: CUDA_VISIBLE_DEVICES=0,1,2,3
+Rank 1: CUDA_VISIBLE_DEVICES=0,1,2,3
+Rank 2: CUDA_VISIBLE_DEVICES=0,1,2,3
+Rank 3: CUDA_VISIBLE_DEVICES=0,1,2,3
+
+=== Testing nvidia-smi per rank ===
+Rank 0 GPU:
+Rank 1 GPU:
+Rank 2 GPU:
+Rank 3 GPU:
+GPU 0: NVIDIA H200 (UUID: GPU-ac213bbf-caad-6151-f6d4-8392417b6876)
+GPU 0: NVIDIA H200 (UUID: GPU-ac213bbf-caad-6151-f6d4-8392417b6876)
+GPU 0: NVIDIA H200 (UUID: GPU-ac213bbf-caad-6151-f6d4-8392417b6876)
+GPU 0: NVIDIA H200 (UUID: GPU-ac213bbf-caad-6151-f6d4-8392417b6876)
+
+=== Testing Python + PyTorch ===
+Rank 1: PyTorch sees 4 GPUs, using device 0
+Rank 0: PyTorch sees 4 GPUs, using device 0
+Rank 2: PyTorch sees 4 GPUs, using device 0
+Rank 3: PyTorch sees 4 GPUs, using device 0
+=== Test complete ===
