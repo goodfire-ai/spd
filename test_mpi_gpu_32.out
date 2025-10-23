@@ -1,0 +1,107 @@
+=== Environment Info ===
+Node: h200-reserved-145-003
+Date: Thu Oct 23 12:28:17 PM UTC 2025
+SLURM_JOB_ID: 32
+SLURM_NTASKS: 4
+SLURM_GPUS_PER_TASK: 
+
+=== Testing basic MPI ===
+--------------------------------------------------------------------------
+Open MPI tried to bind a new process, but something went wrong.  The
+process was killed without launching the target application.  Your job
+will now abort.
+
+  Local host:        h200-reserved-145-003
+  Application name:  /usr/bin/bash
+  Error message:     hwloc_set_cpubind returned "Error" for bitmap "0,96"
+  Location:          rtc_hwloc.c:382
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+mpirun was unable to start the specified application as it encountered an
+error:
+
+Error code: -125
+Error name: The specified application failed to start
+Node: h200-reserved-145-003
+
+when attempting to start process rank 0.
+--------------------------------------------------------------------------
+[h200-reserved-145-003:121359] 2 more processes have sent help message help-orte-odls-default.txt / binding generic error
+[h200-reserved-145-003:121359] Set MCA parameter "orte_base_help_aggregate" to 0 to see all help / error messages
+3 total processes failed to start
+
+=== Testing GPU visibility ===
+--------------------------------------------------------------------------
+Open MPI tried to bind a new process, but something went wrong.  The
+process was killed without launching the target application.  Your job
+will now abort.
+
+  Local host:        h200-reserved-145-003
+  Application name:  /usr/bin/bash
+  Error message:     hwloc_set_cpubind returned "Error" for bitmap "0,96"
+  Location:          rtc_hwloc.c:382
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+mpirun was unable to start the specified application as it encountered an
+error:
+
+Error code: -125
+Error name: The specified application failed to start
+Node: h200-reserved-145-003
+
+when attempting to start process rank 0.
+--------------------------------------------------------------------------
+[h200-reserved-145-003:121411] 2 more processes have sent help message help-orte-odls-default.txt / binding generic error
+[h200-reserved-145-003:121411] Set MCA parameter "orte_base_help_aggregate" to 0 to see all help / error messages
+3 total processes failed to start
+
+=== Testing nvidia-smi per rank ===
+--------------------------------------------------------------------------
+Open MPI tried to bind a new process, but something went wrong.  The
+process was killed without launching the target application.  Your job
+will now abort.
+
+  Local host:        h200-reserved-145-003
+  Application name:  /usr/bin/bash
+  Error message:     hwloc_set_cpubind returned "Error" for bitmap "0,96"
+  Location:          rtc_hwloc.c:382
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+mpirun was unable to start the specified application as it encountered an
+error:
+
+Error code: -125
+Error name: The specified application failed to start
+Node: h200-reserved-145-003
+
+when attempting to start process rank 0.
+--------------------------------------------------------------------------
+[h200-reserved-145-003:121440] 2 more processes have sent help message help-orte-odls-default.txt / binding generic error
+[h200-reserved-145-003:121440] Set MCA parameter "orte_base_help_aggregate" to 0 to see all help / error messages
+3 total processes failed to start
+
+=== Testing Python + PyTorch ===
+--------------------------------------------------------------------------
+Open MPI tried to bind a new process, but something went wrong.  The
+process was killed without launching the target application.  Your job
+will now abort.
+
+  Local host:        h200-reserved-145-003
+  Application name:  /mnt/polished-lake/home/braun/spd/.venv/bin/python
+  Error message:     hwloc_set_cpubind returned "Error" for bitmap "0,96"
+  Location:          rtc_hwloc.c:382
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+mpirun was unable to start the specified application as it encountered an
+error:
+
+Error code: -125
+Error name: The specified application failed to start
+Node: h200-reserved-145-003
+
+when attempting to start process rank 0.
+--------------------------------------------------------------------------
+[h200-reserved-145-003:121459] 2 more processes have sent help message help-orte-odls-default.txt / binding generic error
+[h200-reserved-145-003:121459] Set MCA parameter "orte_base_help_aggregate" to 0 to see all help / error messages
+3 total processes failed to start
+=== Test complete ===
