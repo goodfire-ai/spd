@@ -283,14 +283,21 @@ def map_to_model_ctxs(
     # convert to ModelActivationContexts which uses tuple form for persistence
     return ModelActivationContexts(
         layers={
-            layer: [
-                SubcomponentActivationContexts(
-                    subcomponent_idx=subcomponent_idx,
-                    examples=examples,
-                    token_densities=_compute_token_densities(examples, run_context),
-                )
-                for subcomponent_idx, examples in subcomponents.items()
-            ]
+            layer: sorted(
+                [
+                    SubcomponentActivationContexts(
+                        subcomponent_idx=subcomponent_idx,
+                        examples=examples,
+                        token_densities=_compute_token_densities(examples, run_context),
+                        mean_ci=sum(ex.ci_value for ex in examples) / len(examples)
+                        if examples
+                        else 0.0,
+                    )
+                    for subcomponent_idx, examples in subcomponents.items()
+                ],
+                key=lambda sc: sc.mean_ci,
+                reverse=True,
+            )
             for layer, subcomponents in layers.items()
         }
     )

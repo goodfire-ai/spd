@@ -254,6 +254,7 @@ export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     examples: ActivationContext[];
     token_densities: TokenDensity[];
+    mean_ci: number;
 };
 
 export type ModelActivationContexts = {

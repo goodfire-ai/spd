@@ -53,7 +53,11 @@
 
 {#if currentItem}
     <div class="subcomponent-section-header">
-        <h4>Subcomponent {currentItem.subcomponent_idx}</h4>
+        <h4>
+            Subcomponent {currentItem.subcomponent_idx} (Mean CI: {currentItem.mean_ci.toExponential(
+                2
+            )})
+        </h4>
         {#if currentItem.token_densities && currentItem.token_densities.length > 0}
             <div class="token-densities">
                 <h5>

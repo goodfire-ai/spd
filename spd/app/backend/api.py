@@ -20,6 +20,7 @@ class SubcomponentActivationContexts(BaseModel):
     subcomponent_idx: int
     examples: list[ActivationContext]
     token_densities: list[TokenDensity]
+    mean_ci: float
 
 
 class ModelActivationContexts(BaseModel):
