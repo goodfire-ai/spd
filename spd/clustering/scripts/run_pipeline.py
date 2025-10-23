@@ -83,7 +83,10 @@ class ClusteringPipelineConfig(BaseConfig):
     distances_methods: list[DistancesMethod] = Field(
         description="List of method(s) to use for calculating distances"
     )
-    base_output_dir: Path = Field(description="Base directory for outputs of clustering runs.")
+    base_output_dir: Path = Field(
+        default=SPD_CACHE_DIR / "clustering_pipeline",
+        description="Base directory for outputs of clustering ensemble pipeline runs.",
+    )
     slurm_job_name_prefix: str | None = Field(
         default=None, description="Prefix for SLURM job names"
     )
