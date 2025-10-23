@@ -7,7 +7,7 @@ on:
       - dev
   pull_request:
     branches:
-      - '**'
+      - "**"
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -32,11 +32,11 @@ jobs:
         run: uv python install 3.13
 
       - name: Install dependencies
-        run:  make install-ci
-      
+        run: make install-ci
+
       - name: clear uv cache
         run: uv cache clean || true
-    
+
       - name: Print dependencies
         run: uv pip list
 
@@ -67,6 +67,9 @@ jobs:
       - name: Install dependencies
         run: (cd spd/app/frontend && npm install)
 
+      - name: Install dependencies
+        run: (cd spd/app/frontend && npm install)
+
       - name: Run svelte-check
         run: (cd spd/app/frontend && npm run check)
 
@@ -74,4 +77,4 @@ jobs:
         run: (cd spd/app/frontend && npm run lint)
 
       - name: Build frontend
-        run: (cd spd/app/frontend && npm run build) 
+        run: (cd spd/app/frontend && npm run build)
