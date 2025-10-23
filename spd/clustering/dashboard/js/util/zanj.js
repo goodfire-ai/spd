@@ -2,7 +2,9 @@
 // Minimal ZANJ loader with transparent lazy loading.
 // Supports refs to npy, json, and jsonl. Requires array.js (NDArray).
 
-const REF_KEY = "$ref";
+// Must match muutils.json_serialize.util.{_REF_KEY, _FORMAT_KEY}
+// _FORMAT_KEY is defined in array.js
+const _REF_KEY = "$ref";
 
 function joinUrl(base, rel) {
 	const b = base.replace(/\/+$/, "");
@@ -30,12 +32,20 @@ class ZanjLoader {
 		if (Array.isArray(node)) return node.map(v => this._makeLazy(v));
 
 		if (typeof node === "object") {
-			if (Object.prototype.hasOwnProperty.call(node, REF_KEY)) {
-				const path = String(node[REF_KEY]);
+			// Check for external reference ($ref)
+			if (Object.prototype.hasOwnProperty.call(node, _REF_KEY)) {
+				const path = String(node[_REF_KEY]);
 				const fmt = String(node.format || this._inferFormat(path));
 				if (!["npy", "json", "jsonl"].includes(fmt))
 					throw new Error("Unsupported ref format: " + fmt);
 				return this._makeLazyRef(fmt, path);
+			}
+
+			// Check for inline array formats
+			const arrayFormat = NDArray.inferFormat(node);
+			if (arrayFormat) {
+				// Inline array - deserialize immediately
+				return NDArray.fromJSON(node, arrayFormat);
 			}
 
 			// Recursively wrap objects

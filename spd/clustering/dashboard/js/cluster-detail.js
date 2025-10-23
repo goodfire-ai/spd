@@ -76,7 +76,7 @@ async function loadData() {
     }
 }
 
-function displayCluster() {
+async function displayCluster() {
     // Update title
     const clusterTitle = document.getElementById('clusterTitle');
     if (!clusterTitle) {
@@ -122,7 +122,7 @@ function displayCluster() {
     }
 
     // Display samples
-    displaySamples();
+    await displaySamples();
 }
 
 function displayExplanation() {
@@ -442,18 +442,18 @@ async function recomputeDisplayedActivations() {
     // If no components are enabled or component activations not available, use cluster-level
     if (enabledComponents.size === 0 || !componentActivations || Object.keys(componentActivations).length === 0) {
         // Just redisplay with cluster-level activations (default)
-        displaySamples();
+        await displaySamples();
         return;
     }
 
     // If all components are enabled, use cluster-level activations (faster)
     if (enabledComponents.size === clusterData.components.length) {
-        displaySamples();
+        await displaySamples();
         return;
     }
 
     // Recompute activations based on enabled components
-    displaySamples();
+    await displaySamples();
 }
 
 function combineComponentActivations(componentActsList, strategy) {
@@ -538,7 +538,7 @@ function setupModelViewHighlighting() {
     });
 }
 
-function displaySamples() {
+async function displaySamples() {
     const tbody = document.getElementById('samplesTableBody');
     if (!tbody) {
         const msg = 'Fatal error: samplesTableBody element not found in HTML';
@@ -566,23 +566,44 @@ function displaySamples() {
             continue;
         }
 
-        // Activations are directly on the sample object
-        const activationsData = Array.isArray(sample.activations)
-            ? sample.activations
-            : Array.from(sample.activations);
+        // Debug: Log the actual sample structure
+        console.log(`Sample ${i} structure:`, {
+            keys: Object.keys(sample),
+            sample: sample,
+            hasActivations: 'activations' in sample,
+            activationsType: typeof sample.activations,
+            activationsValue: sample.activations
+        });
 
-        let tokenViz;
-        if (activationsData && activationsData.length > 0) {
-            // Use the proper token visualization with coloring and tooltips
-            tokenViz = createTokenVisualization(
-                sample.tokens,  // Tokens are also on the sample
-                activationsData
+        // Activations might be a ZANJ Proxy (lazy-loaded .npy reference)
+        // Need to await it to get the actual NDArray object
+        const activations = await sample.activations;
+
+        // The NDArray object has the actual data in the .data property (Float32Array)
+        // Convert to regular array for visualization
+        const activationsData = activations.data
+            ? Array.from(activations.data)
+            : (Array.isArray(activations) ? activations : Array.from(activations));
+
+        // Fail immediately if activations are missing or empty
+        if (!activationsData || activationsData.length === 0) {
+            console.error('sample:', sample);
+            console.error('activations:', activations);
+            console.error('activationsData:', activationsData);
+            throw new Error(
+                `No activations found for sample ${i} in cluster ${currentClusterHash}.\n` +
+                `Sample structure: ${JSON.stringify(Object.keys(sample))}\n` +
+                `sample.activations type: ${typeof sample.activations}\n` +
+                `activations after await type: ${typeof activations}\n` +
+                `activationsData length: ${activationsData?.length}\n` +
+                `Expected: Array or ArrayLike with length > 0`
             );
-        } else {
-            // Fallback to simple visualization if no activations
-            console.warn(`No activations found for sample ${i}`);
-            tokenViz = createSimpleTokenViz(sample.tokens);
         }
+
+        const tokenViz = createTokenVisualization(
+            sample.tokens,
+            activationsData
+        );
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -605,12 +626,6 @@ function displaySamples() {
     }
 }
 
-function createSimpleTokenViz(tokens) {
-    const container = document.createElement('div');
-    container.className = 'token-container';
-    container.textContent = tokens.join(' ');
-    return container;
-}
 
 // Initialize config and load data on page load
 (async () => {

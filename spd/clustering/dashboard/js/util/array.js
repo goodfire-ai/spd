@@ -6,107 +6,91 @@
 // https://github.com/aplbrain/npyjs
 // under Apache License
 // https://github.com/aplbrain/npyjs/blob/b0cd99b7f4c2bff791b4977e16dec3478519920b/LICENSE
-// Added float16 support and NPZ loading
+// added:
+// - npz loading (requires jszip)
+// - JSON deserialization for various inline array formats (see https://github.com/mivanit/muutils , https://github.com/mivanit/zanj )
 // ------------------------------------------------------------
+
+// Must match muutils.json_serialize.util._FORMAT_KEY
+const _FORMAT_KEY = "__muutils_format__";
+
+// Float16 converter function
+function float16ToFloat32(float16) {
+	const sign = (float16 >> 15) & 0x1;
+	const exponent = (float16 >> 10) & 0x1f;
+	const fraction = float16 & 0x3ff;
+
+	if (exponent === 0) {
+		if (fraction === 0) {
+			return sign ? -0 : 0;
+		}
+		return (sign ? -1 : 1) * Math.pow(2, -14) * (fraction / 0x400);
+	} else if (exponent === 0x1f) {
+		if (fraction === 0) {
+			return sign ? -Infinity : Infinity;
+		}
+		return NaN;
+	}
+
+	return (sign ? -1 : 1) * Math.pow(2, exponent - 15) * (1 + fraction / 0x400);
+}
+
+function float16ToFloat32Array(float16Array) {
+	const length = float16Array.length;
+	const float32Array = new Float32Array(length);
+	for (let i = 0; i < length; i++) {
+		float32Array[i] = float16ToFloat32(float16Array[i]);
+	}
+	return float32Array;
+}
+
+// Canonical dtype list - single source of truth
+const _DTYPES = [
+	{ descriptors: ["<u1", "|u1"], name: "uint8", size: 8, arrayConstructor: Uint8Array, converter: null },
+	{ descriptors: ["<u2"], name: "uint16", size: 16, arrayConstructor: Uint16Array, converter: null },
+	{ descriptors: ["<u4"], name: "uint32", size: 32, arrayConstructor: Uint32Array, converter: null },
+	{ descriptors: ["<u8"], name: "uint64", size: 64, arrayConstructor: BigUint64Array, converter: null },
+	{ descriptors: ["|i1"], name: "int8", size: 8, arrayConstructor: Int8Array, converter: null },
+	{ descriptors: ["<i2"], name: "int16", size: 16, arrayConstructor: Int16Array, converter: null },
+	{ descriptors: ["<i4"], name: "int32", size: 32, arrayConstructor: Int32Array, converter: null },
+	{ descriptors: ["<i8"], name: "int64", size: 64, arrayConstructor: BigInt64Array, converter: null },
+	{ descriptors: ["<f4"], name: "float32", size: 32, arrayConstructor: Float32Array, converter: null },
+	{ descriptors: ["<f8"], name: "float64", size: 64, arrayConstructor: Float64Array, converter: null },
+	{ descriptors: ["<f2"], name: "float16", size: 16, arrayConstructor: Uint16Array, converter: float16ToFloat32Array },
+];
+
+// Generate map: numpy descriptor -> dtype info (for NPY parsing)
+const _DTYPE_BY_DESCRIPTOR = {};
+for (const dtype of _DTYPES) {
+	for (const desc of dtype.descriptors) {
+		_DTYPE_BY_DESCRIPTOR[desc] = dtype;
+	}
+}
+
+// Generate map: dtype name -> dtype info (for JSON deserialization)
+const _DTYPE_BY_NAME = {};
+for (const dtype of _DTYPES) {
+	_DTYPE_BY_NAME[dtype.name] = dtype;
+}
+
 class npyjs {
 
 	constructor(opts) {
 		this.convertFloat16 = opts?.convertFloat16 ?? true;
+		this.dtypes = {};
 
-		this.dtypes = {
-			"<u1": {
-				name: "uint8",
-				size: 8,
-				arrayConstructor: Uint8Array,
-			},
-			"|u1": {
-				name: "uint8",
-				size: 8,
-				arrayConstructor: Uint8Array,
-			},
-			"<u2": {
-				name: "uint16",
-				size: 16,
-				arrayConstructor: Uint16Array,
-			},
-			"|i1": {
-				name: "int8",
-				size: 8,
-				arrayConstructor: Int8Array,
-			},
-			"<i2": {
-				name: "int16",
-				size: 16,
-				arrayConstructor: Int16Array,
-			},
-			"<u4": {
-				name: "uint32",
-				size: 32,
-				arrayConstructor: Uint32Array,
-			},
-			"<i4": {
-				name: "int32",
-				size: 32,
-				arrayConstructor: Int32Array,
-			},
-			"<u8": {
-				name: "uint64",
-				size: 64,
-				arrayConstructor: BigUint64Array,
-			},
-			"<i8": {
-				name: "int64",
-				size: 64,
-				arrayConstructor: BigInt64Array,
-			},
-			"<f4": {
-				name: "float32",
-				size: 32,
-				arrayConstructor: Float32Array
-			},
-			"<f8": {
-				name: "float64",
-				size: 64,
-				arrayConstructor: Float64Array
-			},
-			"<f2": {
-				name: "float16",
-				size: 16,
-				arrayConstructor: Uint16Array,
-				converter: this.convertFloat16 ? this.float16ToFloat32Array.bind(this) : undefined
-			},
-		};
-	}
-
-	float16ToFloat32Array(float16Array) {
-		const length = float16Array.length;
-		const float32Array = new Float32Array(length);
-
-		for (let i = 0; i < length; i++) {
-			float32Array[i] = npyjs.float16ToFloat32(float16Array[i]);
+		// Build dtypes map from canonical list
+		for (const desc in _DTYPE_BY_DESCRIPTOR) {
+			const dtype = _DTYPE_BY_DESCRIPTOR[desc];
+			this.dtypes[desc] = {
+				name: dtype.name,
+				size: dtype.size,
+				arrayConstructor: dtype.arrayConstructor,
+				converter: (dtype.converter && this.convertFloat16)
+					? dtype.converter
+					: undefined
+			};
 		}
-
-		return float32Array;
-	}
-
-	static float16ToFloat32(float16) {
-		const sign = (float16 >> 15) & 0x1;
-		const exponent = (float16 >> 10) & 0x1f;
-		const fraction = float16 & 0x3ff;
-
-		if (exponent === 0) {
-			if (fraction === 0) {
-				return sign ? -0 : 0;
-			}
-			return (sign ? -1 : 1) * Math.pow(2, -14) * (fraction / 0x400);
-		} else if (exponent === 0x1f) {
-			if (fraction === 0) {
-				return sign ? -Infinity : Infinity;
-			}
-			return NaN;
-		}
-
-		return (sign ? -1 : 1) * Math.pow(2, exponent - 15) * (1 + fraction / 0x400);
 	}
 
 	parse(arrayBufferContents) {
@@ -222,6 +206,8 @@ class NDArray {
 			throw new Error(`Data length ${data.length} doesn't match shape ${shape} (expected ${this._size})`);
 		}
 	}
+
+	// TODO: sum, mean, reshape, transpose, etc
 
 	/**
 	 * Converts multidimensional indices to flat index
@@ -443,5 +429,128 @@ class NDArray {
 			}
 			return new NDArray(npyData.data, npyData.shape, npyData.dtype);
 		}
+	}
+
+	/**
+	 * Infer the array format from a JSON object
+	 * @param {Object} obj - JSON object potentially containing array data
+	 * @returns {string|null} - Format name or null if not an array format
+	 */
+	static inferFormat(obj) {
+		if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+			if (Array.isArray(obj)) return 'list';
+			return null;
+		}
+
+		const fmt = obj[_FORMAT_KEY];
+		if (!fmt || typeof fmt !== 'string') return null;
+
+		// Format is like "numpy.ndarray:array_b64_meta" or "torch.Tensor:array_list_meta"
+		if (fmt.includes(':')) {
+			const suffix = fmt.split(':')[1];
+			if (['array_list_meta', 'array_hex_meta', 'array_b64_meta', 'zero_dim'].includes(suffix)) {
+				return suffix;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Deserialize an NDArray from JSON in various formats
+	 * @param {Object} obj - JSON object containing array data
+	 * @param {string} [format] - Optional format override (auto-detected if not provided)
+	 * @returns {NDArray} - Deserialized NDArray
+	 */
+	static fromJSON(obj, format = null) {
+		// Auto-detect format if not provided
+		if (!format) {
+			format = NDArray.inferFormat(obj);
+			if (!format) {
+				throw new Error('Cannot infer array format from object');
+			}
+		}
+
+		// Handle plain list
+		if (format === 'list') {
+			if (!Array.isArray(obj)) {
+				throw new Error('Expected array for list format');
+			}
+			// Convert nested list to flat TypedArray
+			const flatList = obj.flat(Infinity);
+			const data = new Float64Array(flatList);
+			// Try to infer shape (simple 1D for now)
+			const shape = [obj.length];
+			return new NDArray(data, shape, 'float64');
+		}
+
+		// All other formats have metadata
+		if (!obj.shape || !obj.dtype) {
+			throw new Error(`Missing shape or dtype for format ${format}`);
+		}
+
+		const shape = obj.shape;
+		const dtypeName = obj.dtype;
+		const dtypeInfo = _DTYPE_BY_NAME[dtypeName];
+
+		if (!dtypeInfo) {
+			throw new Error(`Unsupported dtype: ${dtypeName}`);
+		}
+
+		// Handle zero-dimensional arrays
+		if (format === 'zero_dim') {
+			let dataValue = obj.data;
+			// Convert to BigInt for 64-bit integer types
+			if (dtypeName === 'int64' || dtypeName === 'uint64') {
+				dataValue = BigInt(dataValue);
+			}
+			const data = new dtypeInfo.arrayConstructor([dataValue]);
+			return new NDArray(data, shape, dtypeName);
+		}
+
+		// Handle array_list_meta
+		if (format === 'array_list_meta') {
+			const flatList = obj.data.flat(Infinity);
+			// Convert to BigInt for 64-bit integer types
+			const processedList = (dtypeName === 'int64' || dtypeName === 'uint64')
+				? flatList.map(v => BigInt(v))
+				: flatList;
+			const data = new dtypeInfo.arrayConstructor(processedList);
+			if (dtypeInfo.converter) {
+				const converted = dtypeInfo.converter(data);
+				return new NDArray(converted, shape, dtypeName);
+			}
+			return new NDArray(data, shape, dtypeName);
+		}
+
+		// Handle array_hex_meta
+		if (format === 'array_hex_meta') {
+			const hexString = obj.data;
+			const bytes = new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+			const data = new dtypeInfo.arrayConstructor(bytes.buffer);
+			if (dtypeInfo.converter) {
+				const converted = dtypeInfo.converter(data);
+				return new NDArray(converted, shape, dtypeName);
+			}
+			return new NDArray(data, shape, dtypeName);
+		}
+
+		// Handle array_b64_meta
+		if (format === 'array_b64_meta') {
+			const b64String = obj.data;
+			const binaryString = atob(b64String);
+			const bytes = new Uint8Array(binaryString.length);
+			for (let i = 0; i < binaryString.length; i++) {
+				bytes[i] = binaryString.charCodeAt(i);
+			}
+			const data = new dtypeInfo.arrayConstructor(bytes.buffer);
+			if (dtypeInfo.converter) {
+				const converted = dtypeInfo.converter(data);
+				return new NDArray(converted, shape, dtypeName);
+			}
+			return new NDArray(data, shape, dtypeName);
+		}
+
+		throw new Error(`Unsupported array format: ${format}`);
 	}
 }
