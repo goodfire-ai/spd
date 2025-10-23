@@ -137,7 +137,6 @@ def apply_mask_as_ablation(request: ApplyMaskRequest) -> AblationResponse:
 @handle_errors
 def get_subcomponent_activation_contexts(
     importance_threshold: float,
-    max_examples_per_subcomponent: int,
     n_batches: int,
     batch_size: int,
     n_tokens_either_side: int,
@@ -146,18 +145,23 @@ def get_subcomponent_activation_contexts(
     return get_subcomponents_activation_contexts(
         run_context,
         importance_threshold=importance_threshold,
-        max_examples_per_subcomponent=max_examples_per_subcomponent,
         n_batches=n_batches,
         n_tokens_either_side=n_tokens_either_side,
         batch_size=batch_size,
     )
 
 
-@app.get("/healthcheck")
+@app.get("/")
 @handle_errors
 def healthcheck() -> str:
-    return "OK"
+    return "Hello, World!"
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the SPD backend server")
+    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
+    args = parser.parse_args()
+
+    uvicorn.run(app, host="0.0.0.0", port=args.port)

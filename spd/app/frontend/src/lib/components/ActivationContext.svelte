@@ -7,8 +7,7 @@
 
 <div class="example-item">
     <TokenHighlights
-        rawText={example.raw_text}
-        offsetMapping={example.offset_mapping}
+        tokenStrings={example.token_strings}
         tokenCiValues={example.token_ci_values}
         activePosition={example.active_position}
     />

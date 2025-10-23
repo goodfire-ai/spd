@@ -7,22 +7,20 @@
     let allLayersData: Record<string, SubcomponentActivationContexts[]> | null = null;
 
     // Configuration parameters
-    let importanceThreshold = 0.01;
-    let maxExamplesPerSubcomponent = 100;
     let nBatches = 1;
-    let batchSize = 128;
+    let batchSize = 1;
     let nTokensEitherSide = 10;
+    let importanceThreshold = 0.0;
 
     async function loadContexts() {
         loading = true;
         allLayersData = null;
         try {
             const config: ActivationContextsConfig = {
-                importance_threshold: importanceThreshold,
-                max_examples_per_subcomponent: maxExamplesPerSubcomponent,
                 n_batches: nBatches,
                 batch_size: batchSize,
-                n_tokens_either_side: nTokensEitherSide
+                n_tokens_either_side: nTokensEitherSide,
+                importance_threshold: importanceThreshold,
             };
             console.log("loading contexts with config", config);
             const startTime = performance.now();
@@ -37,7 +35,7 @@
     }
 
     function handleKeydown(event: KeyboardEvent) {
-        if (event.key === 'Enter' && !loading) {
+        if (event.key === "Enter" && !loading) {
             loadContexts();
         }
     }
@@ -49,38 +47,27 @@
             <h4>Configuration</h4>
             <div class="config-grid">
                 <div class="config-item">
-                    <label for="importance-threshold">Importance Threshold:</label>
-                    <input
-                        id="importance-threshold"
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        max="1"
-                        bind:value={importanceThreshold}
-                        on:keydown={handleKeydown}
-                    />
-                </div>
-
-                <div class="config-item">
-                    <label for="max-examples">Max Examples per Subcomponent:</label>
-                    <input
-                        id="max-examples"
-                        type="number"
-                        step="10"
-                        min="1"
-                        bind:value={maxExamplesPerSubcomponent}
-                        on:keydown={handleKeydown}
-                    />
-                </div>
-
-                <div class="config-item">
                     <label for="n-steps">Number of Batches:</label>
-                    <input id="n-steps" type="number" step="1" min="1" bind:value={nBatches} on:keydown={handleKeydown} />
+                    <input
+                        id="n-steps"
+                        type="number"
+                        step="1"
+                        min="1"
+                        bind:value={nBatches}
+                        on:keydown={handleKeydown}
+                    />
                 </div>
 
                 <div class="config-item">
                     <label for="batch-size">Batch Size:</label>
-                    <input id="batch-size" type="number" step="1" min="1" bind:value={batchSize} on:keydown={handleKeydown} />
+                    <input
+                        id="batch-size"
+                        type="number"
+                        step="1"
+                        min="1"
+                        bind:value={batchSize}
+                        on:keydown={handleKeydown}
+                    />
                 </div>
 
                 <div class="config-item">
@@ -91,6 +78,19 @@
                         step="1"
                         min="0"
                         bind:value={nTokensEitherSide}
+                        on:keydown={handleKeydown}
+                    />
+                </div>
+
+                <div class="config-item">
+                    <label for="importance-threshold">Importance Threshold:</label>
+                    <input
+                        id="importance-threshold"
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        max="1"
+                        bind:value={importanceThreshold}
                         on:keydown={handleKeydown}
                     />
                 </div>

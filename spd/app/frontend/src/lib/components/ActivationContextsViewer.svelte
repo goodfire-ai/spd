@@ -38,7 +38,7 @@
 <div class="layer-select-section">
     <label for="layer-select">Layer:</label>
     <select id="layer-select" bind:value={selectedLayer}>
-        {#each availableComponentLayers as layer}
+        {#each availableComponentLayers as layer (layer)}
             <option value={layer}>{layer}</option>
         {/each}
     </select>
@@ -53,7 +53,11 @@
 
 {#if currentItem}
     <div class="subcomponent-section-header">
-        <h4>Subcomponent {currentItem.subcomponent_idx}</h4>
+        <h4>
+            Subcomponent {currentItem.subcomponent_idx} (Mean CI: {currentItem.mean_ci < 0.001
+                ? currentItem.mean_ci.toExponential(2)
+                : currentItem.mean_ci.toFixed(3)})
+        </h4>
         {#if currentItem.token_densities && currentItem.token_densities.length > 0}
             <div class="token-densities">
                 <h5>
@@ -62,7 +66,7 @@
                         : ""}
                 </h5>
                 <div class="densities-grid">
-                    {#each currentItem.token_densities.slice(0, 20) as { token, density }}
+                    {#each currentItem.token_densities.slice(0, 20) as { token, density } (`${token}-${density}`)}
                         <div class="density-item">
                             <span class="token">{token}</span>
                             <div class="density-bar-container">
@@ -79,7 +83,7 @@
             {currentItem.examples.length > 200
                 ? `Showing top 200 examples of ${currentItem.examples.length} examples`
                 : ""}
-            {#each currentItem.examples.slice(0, 200) as example}
+            {#each currentItem.examples.slice(0, 200) as example (example.__id)}
                 <ActivationContext {example} />
             {/each}
         </div>

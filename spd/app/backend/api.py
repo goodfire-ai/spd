@@ -4,8 +4,9 @@ from pydantic import BaseModel
 
 
 class ActivationContext(BaseModel):
-    raw_text: str
-    offset_mapping: list[tuple[int, int]]
+    # raw_text: str
+    # offset_mapping: list[tuple[int, int]]
+    token_strings: list[str]
     token_ci_values: list[float]
     active_position: int
     ci_value: float
@@ -20,6 +21,7 @@ class SubcomponentActivationContexts(BaseModel):
     subcomponent_idx: int
     examples: list[ActivationContext]
     token_densities: list[TokenDensity]
+    mean_ci: float
 
 
 class ModelActivationContexts(BaseModel):
