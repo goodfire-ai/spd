@@ -1,5 +1,3 @@
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     export let rawText: string;
     export let offsetMapping: [number, number][];
@@ -53,7 +51,7 @@
 </script>
 
 <span class="token-highlights">
-    {#each segments as segment, idx}
+    {#each segments as segment (`${segment.text}-${segment.ciValue}-${segment.isActive}`)}
         {#if segment.ciValue > 0}
             <span
                 class="token-highlight"

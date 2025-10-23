@@ -1,5 +1,3 @@
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     import type { ActivationContextsConfig, SubcomponentActivationContexts } from "$lib/api";
     import * as api from "$lib/api";
@@ -9,22 +7,22 @@
     let allLayersData: Record<string, SubcomponentActivationContexts[]> | null = null;
 
     // Configuration parameters
-    let importanceThreshold = 0.01;
-    let maxExamplesPerSubcomponent = 100;
     let nBatches = 1;
-    let batchSize = 128;
+    let batchSize = 1;
     let nTokensEitherSide = 10;
+    let importanceThreshold = 0.0;
+    let maxExamplesPerSubcomponent = 100;
 
     async function loadContexts() {
         loading = true;
         allLayersData = null;
         try {
             const config: ActivationContextsConfig = {
-                importance_threshold: importanceThreshold,
-                max_examples_per_subcomponent: maxExamplesPerSubcomponent,
                 n_batches: nBatches,
                 batch_size: batchSize,
-                n_tokens_either_side: nTokensEitherSide
+                n_tokens_either_side: nTokensEitherSide,
+                importance_threshold: importanceThreshold,
+                max_examples_per_subcomponent: maxExamplesPerSubcomponent
             };
             console.log("loading contexts with config", config);
             const startTime = performance.now();
@@ -50,31 +48,6 @@
         <div class="config-section">
             <h4>Configuration</h4>
             <div class="config-grid">
-                <div class="config-item">
-                    <label for="importance-threshold">Importance Threshold:</label>
-                    <input
-                        id="importance-threshold"
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        max="1"
-                        bind:value={importanceThreshold}
-                        on:keydown={handleKeydown}
-                    />
-                </div>
-
-                <div class="config-item">
-                    <label for="max-examples">Max Examples per Subcomponent:</label>
-                    <input
-                        id="max-examples"
-                        type="number"
-                        step="10"
-                        min="1"
-                        bind:value={maxExamplesPerSubcomponent}
-                        on:keydown={handleKeydown}
-                    />
-                </div>
-
                 <div class="config-item">
                     <label for="n-steps">Number of Batches:</label>
                     <input
@@ -107,6 +80,31 @@
                         step="1"
                         min="0"
                         bind:value={nTokensEitherSide}
+                        on:keydown={handleKeydown}
+                    />
+                </div>
+
+                <div class="config-item">
+                    <label for="importance-threshold">Importance Threshold:</label>
+                    <input
+                        id="importance-threshold"
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        max="1"
+                        bind:value={importanceThreshold}
+                        on:keydown={handleKeydown}
+                    />
+                </div>
+
+                <div class="config-item">
+                    <label for="max-examples">Max Examples per Subcomponent:</label>
+                    <input
+                        id="max-examples"
+                        type="number"
+                        step="10"
+                        min="1"
+                        bind:value={maxExamplesPerSubcomponent}
                         on:keydown={handleKeydown}
                     />
                 </div>

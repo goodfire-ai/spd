@@ -1,5 +1,3 @@
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <script lang="ts">
     import type { SubcomponentActivationContexts } from "$lib/api";
     import ActivationContext from "./ActivationContext.svelte";
@@ -40,7 +38,7 @@
 <div class="layer-select-section">
     <label for="layer-select">Layer:</label>
     <select id="layer-select" bind:value={selectedLayer}>
-        {#each availableComponentLayers as layer}
+        {#each availableComponentLayers as layer (layer)}
             <option value={layer}>{layer}</option>
         {/each}
     </select>
@@ -64,7 +62,7 @@
                         : ""}
                 </h5>
                 <div class="densities-grid">
-                    {#each currentItem.token_densities.slice(0, 20) as { token, density }}
+                    {#each currentItem.token_densities.slice(0, 20) as { token, density } (`${token}-${density}`)}
                         <div class="density-item">
                             <span class="token">{token}</span>
                             <div class="density-bar-container">
@@ -81,7 +79,7 @@
             {currentItem.examples.length > 200
                 ? `Showing top 200 examples of ${currentItem.examples.length} examples`
                 : ""}
-            {#each currentItem.examples.slice(0, 200) as example}
+            {#each currentItem.examples.slice(0, 200) as example (`${example.raw_text}-${example.token_ci_values.map(String).join}`)}
                 <ActivationContext {example} />
             {/each}
         </div>

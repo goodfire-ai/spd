@@ -2,7 +2,7 @@ export const API_URL = "http://localhost:8000";
 
 export type TrainRun = {
     wandb_path: string;
-    config: Record<string, any>;
+    config: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 };
 
 export type Status = { train_run: TrainRun | null };
