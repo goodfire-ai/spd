@@ -78,4 +78,4 @@ coverage:
 
 .PHONY: app
 app:
-	@uv run python spd/app/run.py
+	@uv run python spd/app/run_app.py
