@@ -80,6 +80,7 @@ def compute_activations_multibatch(
 def convert_to_boolean_layers(
     component_acts: dict[str, Tensor],
     activation_threshold: float,
+    verbose: bool = False,
 ) -> list[Bool[np.ndarray, "n_samples n_components"]]:
     """Convert activations to boolean, filter constant (always dead/alive) components.
 
@@ -120,15 +121,16 @@ def convert_to_boolean_layers(
         ]
 
         layers_true.append(module_acts_varying)
-        n_varying: int = module_acts_varying.shape[1]
-        n_total: int = module_acts_bool.shape[1]
-        print(
-            f"  {module_key:30s} {n_varying:5d} varying, {n_always_dead:5d} dead, {n_always_alive:5d} const, {n_total:5d} total",
-            flush=True,
-        )
-        dbg_tensor(module_acts_np)
-        dbg_tensor(module_acts_bool)
-        dbg_tensor(module_acts_varying)
+        if verbose:
+            n_varying: int = module_acts_varying.shape[1]
+            n_total: int = module_acts_bool.shape[1]
+            print(
+                f"  {module_key:30s} {n_varying:5d} varying, {n_always_dead:5d} dead, {n_always_alive:5d} const, {n_total:5d} total",
+                flush=True,
+            )
+            dbg_tensor(module_acts_np)
+            dbg_tensor(module_acts_bool)
+            dbg_tensor(module_acts_varying)
 
     print(f"\nCreated {len(layers_true)} layers for decision tree training")
 

@@ -37,8 +37,10 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 # ----------------------- configuration -----------------------
 
 config = CIDTConfig(
-    batch_size=8, # 50 ~~ 16GB VRAM
-    n_batches=2,
+    # batch_size=50, # 50 ~~ 16GB VRAM max
+    # n_batches=8,
+	batch_size=16,
+	n_batches=4,
     activation_threshold=0.01,
     max_depth=8,
     random_state=42,
@@ -121,20 +123,6 @@ per_layer_stats, worst_list, best_list = compute_tree_metrics(
 )
 
 # %%
-# ----------------------- plot: layer metrics -----------------------
-# Simplest - just bar charts and scatter plot of summary statistics
-
-plot_layer_metrics(per_layer_stats)
-print("Layer metrics plots generated.")
-
-# %%
-# ----------------------- plot: tree statistics -----------------------
-# Distributions of tree depth, leaf counts, and correlations with accuracy
-
-plot_tree_statistics(models, per_layer_stats)
-print("Tree statistics plots generated.")
-
-# %%
 # ----------------------- compute orderings -----------------------
 # Generate sample ordering once for use in multiple plots
 
@@ -149,28 +137,48 @@ sample_order: np.ndarray = greedy_sort(A_true_concat, axis=0)
 print(f"Computed sample ordering ({len(sample_order)} samples)")
 
 # %%
+# ----------------------- plot: layer metrics -----------------------
+# Scatter plots with jitter showing distribution of metrics per layer
+
+plot_layer_metrics(
+    per_layer_stats,
+    models,
+    module_keys,
+    component_acts_concat,
+    config.activation_threshold,
+)
+print("Layer metrics plots generated.")
+
+# %%
+# ----------------------- plot: tree statistics -----------------------
+# Distributions of tree depth, leaf counts, and correlations with accuracy
+
+plot_tree_statistics(models, per_layer_stats)
+print("Tree statistics plots generated.")
+
+# %%
 # ----------------------- plot: activations -----------------------
 # Heatmaps of true vs predicted activations (unsorted and sorted)
 
 # Unsorted version with layer boundaries
-plot_activations(
-    layers_true=layers_true,
-    layers_pred=layers_pred,
-    module_keys=module_keys,
-    activation_threshold=config.activation_threshold,
-    sample_order=None,
-)
-print("Activation plots (unsorted) generated.")
+# plot_activations(
+#     layers_true=layers_true,
+#     layers_pred=layers_pred,
+#     module_keys=module_keys,
+#     activation_threshold=config.activation_threshold,
+#     sample_order=None,
+# )
+# print("Activation plots (unsorted) generated.")
 
-# Sorted version with diff plot
-plot_activations(
-    layers_true=layers_true,
-    layers_pred=layers_pred,
-    module_keys=module_keys,
-    activation_threshold=config.activation_threshold,
-    sample_order=sample_order,
-)
-print("Activation plots (sorted by samples) generated.")
+# # Sorted version with diff plot
+# plot_activations(
+#     layers_true=layers_true,
+#     layers_pred=layers_pred,
+#     module_keys=module_keys,
+#     activation_threshold=config.activation_threshold,
+#     sample_order=sample_order,
+# )
+# print("Activation plots (sorted by samples) generated.")
 
 # %%
 # ----------------------- plot: covariance -----------------------
@@ -197,31 +205,31 @@ print("Covariance plot (sorted by components) generated.")
 # ----------------------- generate feature names -----------------------
 # Generate feature names with activation statistics and decoded directions
 
-from spd.clustering.ci_dt.feature_names import generate_feature_names
+# from spd.clustering.ci_dt.feature_names import generate_feature_names
 
-module_keys = list(component_acts_concat.keys())
+# module_keys = list(component_acts_concat.keys())
 
-feature_names = generate_feature_names(
-    component_model=model,
-    component_acts=component_acts_concat,
-    layers_true=layers_true,
-    layers_pred=layers_pred,
-    tokenizer=cfg.task_config.tokenizer if hasattr(cfg.task_config, 'tokenizer') else None,
-    module_keys=module_keys,
-    top_k=3,
-)
-print("Feature names generated.")
+# feature_names = generate_feature_names(
+#     component_model=model,
+#     component_acts=component_acts_concat,
+#     layers_true=layers_true,
+#     layers_pred=layers_pred,
+#     tokenizer=cfg.task_config.tokenizer if hasattr(cfg.task_config, 'tokenizer') else None,
+#     module_keys=module_keys,
+#     top_k=3,
+# )
+# print("Feature names generated.")
 
 # %%
 # ----------------------- plot: worst trees -----------------------
 # Decision tree visualization for worst performing trees
 
-plot_selected_trees(worst_list, "Worst", models, feature_names=feature_names)
-print("Worst trees plots generated.")
+# plot_selected_trees(worst_list, "Worst", models, feature_names=feature_names)
+# print("Worst trees plots generated.")
 
-# %%
-# ----------------------- plot: best trees -----------------------
-# Decision tree visualization for best performing trees
+# # %%
+# # ----------------------- plot: best trees -----------------------
+# # Decision tree visualization for best performing trees
 
-plot_selected_trees(best_list, "Best", models, feature_names=feature_names)
-print("Best trees plots generated.")
+# plot_selected_trees(best_list, "Best", models, feature_names=feature_names)
+# print("Best trees plots generated.")

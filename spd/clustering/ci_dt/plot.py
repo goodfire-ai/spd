@@ -267,51 +267,217 @@ def plot_covariance(
     fig.tight_layout()
 
 
-def plot_layer_metrics(per_layer_stats: list[dict[str, Any]]) -> None:
-    """Plot summary metrics per layer and per-target AP vs prevalence."""
-    L: int = len(per_layer_stats)
-    mean_ap: np.ndarray = np.array([d["mean_ap"] for d in per_layer_stats])
-    mean_acc: np.ndarray = np.array([d["mean_acc"] for d in per_layer_stats])
-    mean_bacc: np.ndarray = np.array([d["mean_bacc"] for d in per_layer_stats])
+def plot_layer_metrics(
+    per_layer_stats: list[dict[str, Any]],
+    models: list[LayerModel],
+    module_keys: list[str],
+    component_acts: dict[str, np.ndarray],
+    activation_threshold: float,
+) -> None:
+    """Plot distributions of metrics per layer with scatter plots and jitter.
 
-    # bar: mean AP, ACC, BACC per layer (three separate figures to respect one-plot rule)
-    fig3 = plt.figure(figsize=(8, 3))
-    ax3 = fig3.add_subplot(1, 1, 1)
-    ax3.set_title("Mean Average Precision per layer")
-    ax3.bar(np.arange(1, L + 1), mean_ap)
-    ax3.set_xlabel("layer index (target)")
-    ax3.set_ylabel("mean AP")
+    Args:
+        per_layer_stats: List of dicts with metrics per layer
+        models: List of trained LayerModel objects (needed for tree depths)
+        module_keys: List of module names for x-axis labels
+        component_acts: Dict of continuous activations per module
+        activation_threshold: Threshold used for binary conversion
+    """
+    L: int = len(per_layer_stats)
+
+    # Prepare data: all values per layer with jitter for visualization
+    np.random.seed(42)  # Reproducible jitter
+    jitter_amount: float = 0.15
+
+    # AP per layer
+    fig1, ax1 = plt.subplots(figsize=(10, 5))
+    for layer_idx, stats in enumerate(per_layer_stats):
+        ap_values: np.ndarray = stats["ap"]
+        # Remove NaN values
+        ap_valid: np.ndarray = ap_values[~np.isnan(ap_values)]
+        if len(ap_valid) > 0:
+            # Add horizontal jitter
+            x_positions: np.ndarray = np.ones(len(ap_valid)) * (layer_idx + 1)
+            x_jittered: np.ndarray = x_positions + np.random.uniform(
+                -jitter_amount, jitter_amount, len(ap_valid)
+            )
+            ax1.scatter(x_jittered, ap_valid, alpha=0.5, s=20, color="C0", edgecolors='none')
+            # Add mean line
+            ax1.plot([layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
+                    [stats["mean_ap"], stats["mean_ap"]],
+                    'r-', linewidth=2, label='Mean' if layer_idx == 0 else '')
+
+    ax1.set_title(
+        r"Average Precision per Target Component" + "\n"
+        r"$\text{AP} = \sum_n (R_n - R_{n-1}) P_n$ where "
+        r"$P_n = \frac{\text{TP}}{\text{TP}+\text{FP}}$, "
+        r"$R_n = \frac{\text{TP}}{\text{TP}+\text{FN}}$"
+    )
+    ax1.set_xlabel("Target Module")
+    ax1.set_ylabel("Average Precision")
+    ax1.set_xticks(np.arange(1, L + 1))
+    # Only use module keys that correspond to target layers (skip input layer)
+    ax1.set_xticklabels(module_keys[1:L+1], rotation=45, ha='right')
+    ax1.set_ylim(-0.05, 1.05)
+    ax1.grid(True, alpha=0.3, axis='y')
+    ax1.legend()
+    fig1.tight_layout()
+
+    # Accuracy per layer
+    fig2, ax2 = plt.subplots(figsize=(10, 5))
+    for layer_idx, stats in enumerate(per_layer_stats):
+        acc_values: np.ndarray = stats["acc"]
+        acc_valid: np.ndarray = acc_values[~np.isnan(acc_values)]
+        if len(acc_valid) > 0:
+            x_positions = np.ones(len(acc_valid)) * (layer_idx + 1)
+            x_jittered = x_positions + np.random.uniform(
+                -jitter_amount, jitter_amount, len(acc_valid)
+            )
+            ax2.scatter(x_jittered, acc_valid, alpha=0.5, s=20, color="C1", edgecolors='none')
+            ax2.plot([layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
+                    [stats["mean_acc"], stats["mean_acc"]],
+                    'r-', linewidth=2, label='Mean' if layer_idx == 0 else '')
+
+    ax2.set_title(
+        r"Accuracy per Target Component" + "\n"
+        r"$\text{Accuracy} = \frac{\text{TP} + \text{TN}}{\text{TP} + \text{TN} + \text{FP} + \text{FN}}$"
+    )
+    ax2.set_xlabel("Target Module")
+    ax2.set_ylabel("Accuracy")
+    ax2.set_xticks(np.arange(1, L + 1))
+    ax2.set_xticklabels(module_keys[1:L+1], rotation=45, ha='right')
+    ax2.set_ylim(-0.05, 1.05)
+    ax2.grid(True, alpha=0.3, axis='y')
+    ax2.legend()
+    fig2.tight_layout()
+
+    # Balanced Accuracy per layer
+    fig3, ax3 = plt.subplots(figsize=(10, 5))
+    for layer_idx, stats in enumerate(per_layer_stats):
+        bacc_values: np.ndarray = stats["bacc"]
+        bacc_valid: np.ndarray = bacc_values[~np.isnan(bacc_values)]
+        if len(bacc_valid) > 0:
+            x_positions = np.ones(len(bacc_valid)) * (layer_idx + 1)
+            x_jittered = x_positions + np.random.uniform(
+                -jitter_amount, jitter_amount, len(bacc_valid)
+            )
+            ax3.scatter(x_jittered, bacc_valid, alpha=0.5, s=20, color="C2", edgecolors='none')
+            ax3.plot([layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
+                    [stats["mean_bacc"], stats["mean_bacc"]],
+                    'r-', linewidth=2, label='Mean' if layer_idx == 0 else '')
+
+    ax3.set_title(
+        r"Balanced Accuracy per Target Component" + "\n"
+        r"$\text{Balanced Acc} = \frac{1}{2}\left(\frac{\text{TP}}{\text{TP}+\text{FN}} + \frac{\text{TN}}{\text{TN}+\text{FP}}\right)$"
+    )
+    ax3.set_xlabel("Target Module")
+    ax3.set_ylabel("Balanced Accuracy")
+    ax3.set_xticks(np.arange(1, L + 1))
+    ax3.set_xticklabels(module_keys[1:L+1], rotation=45, ha='right')
+    ax3.set_ylim(-0.05, 1.05)
+    ax3.grid(True, alpha=0.3, axis='y')
+    ax3.legend()
     fig3.tight_layout()
 
-    fig4 = plt.figure(figsize=(8, 3))
-    ax4 = fig4.add_subplot(1, 1, 1)
-    ax4.set_title("Mean Accuracy per layer")
-    ax4.bar(np.arange(1, L + 1), mean_acc)
-    ax4.set_xlabel("layer index (target)")
-    ax4.set_ylabel("mean accuracy")
+    # AP vs prevalence scatter with tree depth coloring
+    fig4, ax4 = plt.subplots(figsize=(8, 6))
+
+    prevalence_list: list[float] = []
+    ap_list: list[float] = []
+    depth_list: list[int] = []
+
+    for layer_idx, (stats, model) in enumerate(zip(per_layer_stats, models, strict=True)):
+        for target_idx, (prev, ap) in enumerate(zip(stats["prev"], stats["ap"], strict=True)):
+            if not np.isnan(ap):
+                prevalence_list.append(prev)
+                ap_list.append(ap)
+                # Get tree depth for this target
+                estimator = model.model.estimators_[target_idx]
+                depth_list.append(int(estimator.tree_.max_depth))
+
+    prevalence_arr: np.ndarray = np.array(prevalence_list)
+    ap_arr: np.ndarray = np.array(ap_list)
+    depth_arr: np.ndarray = np.array(depth_list)
+
+    scatter = ax4.scatter(
+        prevalence_arr,
+        ap_arr,
+        c=depth_arr,
+        cmap="viridis",
+        alpha=0.6,
+        s=30,
+        edgecolors='none',
+    )
+
+    ax4.set_title(
+        r"Average Precision vs Component Prevalence" + "\n"
+        r"Prevalence = $\frac{n_{\text{active samples}}}{n_{\text{total samples}}}$, colored by tree depth"
+    )
+    ax4.set_xlabel("Prevalence (log scale)")
+    ax4.set_ylabel("Average Precision")
+    ax4.set_xscale("log")
+    ax4.set_ylim(-0.05, 1.05)
+    ax4.grid(True, alpha=0.3)
+
+    cbar = plt.colorbar(scatter, ax=ax4)
+    cbar.set_label("Tree Depth")
+
     fig4.tight_layout()
 
-    fig5 = plt.figure(figsize=(8, 3))
-    ax5 = fig5.add_subplot(1, 1, 1)
-    ax5.set_title("Mean Balanced Accuracy per layer")
-    ax5.bar(np.arange(1, L + 1), mean_bacc)
-    ax5.set_xlabel("layer index (target)")
-    ax5.set_ylabel("mean balanced accuracy")
-    fig5.tight_layout()
+    # Component activity breakdown per module
+    fig5, ax5 = plt.subplots(figsize=(12, 6))
 
-    # scatter: prevalence vs AP for all targets across layers
-    fig6 = plt.figure(figsize=(6, 5))
-    ax6 = fig6.add_subplot(1, 1, 1)
-    ax6.set_title("Per-target AP vs prevalence")
-    x_list: list[float] = []
-    y_list: list[float] = []
-    for d in per_layer_stats:
-        x_list.extend(list(d["prev"]))
-        y_list.extend(list(d["ap"]))
-    ax6.scatter(x_list, y_list, alpha=0.6)
-    ax6.set_xlabel("prevalence")
-    ax6.set_ylabel("average precision")
-    fig6.tight_layout()
+    # Compute counts for each module
+    n_varying_list: list[int] = []
+    n_always_dead_list: list[int] = []
+    n_always_alive_list: list[int] = []
+
+    for module_key in module_keys:
+        acts: np.ndarray = component_acts[module_key]
+        # Convert to numpy if needed
+        if hasattr(acts, 'cpu'):
+            acts = acts.cpu().numpy()
+        # Convert to boolean
+        acts_bool: np.ndarray = (acts >= activation_threshold).astype(bool)
+
+        # Count each category
+        always_dead: np.ndarray = ~acts_bool.any(axis=0)
+        always_alive: np.ndarray = acts_bool.all(axis=0)
+        varying: np.ndarray = ~(always_dead | always_alive)
+
+        n_always_dead_list.append(int(always_dead.sum()))
+        n_always_alive_list.append(int(always_alive.sum()))
+        n_varying_list.append(int(varying.sum()))
+
+    # Convert to arrays
+    n_varying: np.ndarray = np.array(n_varying_list)
+    n_always_dead: np.ndarray = np.array(n_always_dead_list)
+    n_always_alive: np.ndarray = np.array(n_always_alive_list)
+    n_total_per_module: np.ndarray = n_varying + n_always_dead + n_always_alive
+
+    # Sort modules by total components (smallest to largest)
+    sort_idx: np.ndarray = np.argsort(n_total_per_module)
+    module_keys_sorted: list[str] = [module_keys[i] for i in sort_idx]
+    n_varying_sorted: np.ndarray = n_varying[sort_idx]
+    n_always_dead_sorted: np.ndarray = n_always_dead[sort_idx]
+    n_always_alive_sorted: np.ndarray = n_always_alive[sort_idx]
+
+    # Create stacked bar chart
+    x_pos: np.ndarray = np.arange(len(module_keys_sorted))
+    ax5.bar(x_pos, n_varying_sorted, label="Varying", color="C3")
+    ax5.bar(x_pos, n_always_alive_sorted, bottom=n_varying_sorted, label="Always Active", color="C2")
+    ax5.bar(x_pos, n_always_dead_sorted, bottom=n_varying_sorted + n_always_alive_sorted, label="Always Inactive", color="C1")
+
+    ax5.set_title("Component Activity Distribution per Module")
+    ax5.set_xlabel("Module (sorted by total component count)")
+    ax5.set_ylabel("Number of Components (log scale)")
+    ax5.set_xticks(x_pos)
+    ax5.set_xticklabels(module_keys_sorted, rotation=45, ha='right')
+    # ax5.set_yscale('log')
+    ax5.legend(loc='upper left')
+    ax5.grid(True, alpha=0.3, axis='y')
+
+    fig5.tight_layout()
 
 
 def plot_selected_trees(
@@ -474,3 +640,61 @@ def plot_tree_statistics(
             if count > 0:
                 ax6.text(i, j, str(count), ha="center", va="center")
     plt.colorbar(im, ax=ax6, label="log10(count+1)")
+
+    # Heatmap: AP vs prevalence
+    # Need to compute prevalence for each tree from per_layer_stats
+    prevalence_list: list[float] = []
+    ap_list_for_heatmap: list[float] = []
+
+    for layer_stats in per_layer_stats:
+        for prev, ap in zip(layer_stats["prev"], layer_stats["ap"], strict=True):
+            if not np.isnan(ap):
+                prevalence_list.append(prev)
+                ap_list_for_heatmap.append(ap)
+
+    prevalence_arr: np.ndarray = np.array(prevalence_list)
+    ap_arr_for_heatmap: np.ndarray = np.array(ap_list_for_heatmap)
+
+    # Prevalence bins (log scale)
+    prev_min: float = max(prevalence_arr.min(), 1e-4)  # Avoid log(0)
+    prev_max: float = prevalence_arr.max()
+    prev_bins: Float[np.ndarray, "n_bins"] = np.logspace(
+        np.log10(prev_min), np.log10(prev_max), 10
+    )
+
+    # AP bins (linear)
+    ap_bins_heatmap: Float[np.ndarray, "n_bins"] = np.linspace(0, 1, 11)
+
+    heatmap_prev_ap: Float[np.ndarray, "prev_bins ap_bins"]
+    heatmap_prev_ap, _, _ = np.histogram2d(
+        prevalence_arr, ap_arr_for_heatmap, bins=[prev_bins, ap_bins_heatmap]
+    )
+
+    fig7, ax7 = plt.subplots(figsize=(8, 6))
+    heatmap_log = np.log10(heatmap_prev_ap.T + 1)
+    im = ax7.imshow(heatmap_log, origin="lower", aspect="auto", cmap="Blues")
+
+    # X-axis: prevalence (log scale)
+    ax7.set_xticks(range(len(prev_bins) - 1))
+    ax7.set_xticklabels([f"{x:.3f}" for x in prev_bins[:-1]], rotation=45, ha="right")
+    ax7.set_xlabel("Prevalence (log scale)")
+
+    # Y-axis: AP
+    ax7.set_yticks(range(len(ap_bins_heatmap) - 1))
+    ax7.set_yticklabels([f"{x:.1f}" for x in ap_bins_heatmap[:-1]])
+    ax7.set_ylabel("Average Precision")
+
+    ax7.set_title(
+        r"Tree Performance vs Component Prevalence" + "\n"
+        r"AP = Average Precision, Prev = $\frac{n_{\text{active}}}{n_{\text{total}}}$"
+    )
+
+    # Add counts to cells
+    for i in range(len(prev_bins) - 1):
+        for j in range(len(ap_bins_heatmap) - 1):
+            count = int(heatmap_prev_ap[i, j])
+            if count > 0:
+                ax7.text(i, j, str(count), ha="center", va="center", fontsize=8)
+
+    plt.colorbar(im, ax=ax7, label="log10(count+1)")
+    fig7.tight_layout()
