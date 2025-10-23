@@ -170,9 +170,11 @@ def init_wandb[T_config: BaseConfig](
     config_dict = config.model_dump(mode="json")
     # We also want flattened names for easier wandb searchability
     flattened_config_dict = flatten_metric_configs(config_dict)
-    # Remove the nested metric configs to avoid duplication
-    del config_dict["loss_metric_configs"]
-    del config_dict["eval_metric_configs"]
+    # Remove the nested metric configs to avoid duplication (if they exist)
+    if "loss_metric_configs" in config_dict:
+        del config_dict["loss_metric_configs"]
+    if "eval_metric_configs" in config_dict:
+        del config_dict["eval_metric_configs"]
     wandb.config.update({**config_dict, **flattened_config_dict})
     return config
 
