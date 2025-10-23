@@ -1,5 +1,3 @@
-# This config expects to be run on 8 H100s
-
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null
@@ -7,20 +5,20 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 1200
+C: 800
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
 ci_fn_hidden_dims: [1000]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   [
-    "h.0.mlp.gate_proj",
-    "h.0.mlp.up_proj",
-    "h.0.mlp.down_proj",
-    "h.0.attn.q_proj",
-    "h.0.attn.k_proj",
-    "h.0.attn.v_proj",
-    "h.0.attn.o_proj",
+    "h.1.mlp.gate_proj",
+    "h.1.mlp.up_proj",
+    "h.1.mlp.down_proj",
+    "h.1.attn.q_proj",
+    "h.1.attn.k_proj",
+    "h.1.attn.v_proj",
+    "h.1.attn.o_proj",
   ]
 identity_module_patterns: null
 sampling: "continuous"
@@ -32,13 +30,6 @@ loss_metric_configs:
     p_anneal_start_frac: 0.0
     p_anneal_final_p: 0.3
     p_anneal_end_frac: 1.0
-
-  # - classname: "PGDReconSubsetLoss"
-  #   coeff: 0.2
-  #   init: random
-  #   mask_scope: unique_per_datapoint
-  #   n_steps: 1
-  #   step_size: 0.1
 
   - classname: "StochasticReconSubsetLoss"
     coeff: 1.0
@@ -97,17 +88,16 @@ eval_metric_configs:
   #     all_but_layer_2: ["h.2.*"]
   #     all_but_layer_3: ["h.3.*"]
   - classname: "StochasticHiddenActsReconLoss"
-  # - classname: PGDReconLoss
-  #   step_size: 0.1
-  #   n_steps: 20
-  #   mask_scope: shared_across_batch
-  #   init: random
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
-pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w
+# pretrained_model_name: wandb:goodfire/spd/runs/zz4armi6 # 1.5M steps 4019 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/agfp9v2n # 500k steps 4019 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/qtdtcsez # 200k steps 4019 tok
+# pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w # 100k steps 4019 tok
+pretrained_model_name: wandb:goodfire/spd/runs/t1kb82ja # 60k steps 4019 tok (The old ss_llama used 60k on the 4096 tokenizer)
 pretrained_model_output_attr: idx_0
-tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # TODO: Load from wandb instead
+tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok: TODO: Load from wandb instead
 
 # --- Task Specific ---
 task_config:
@@ -122,9 +112,9 @@ task_config:
   is_tokenized: false
   streaming: false
 # Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
-# "1.25M": LlamaConfig(
+# "llama_simple-1.25M": LlamaSimpleConfig(
 #     block_size=512,
-#     vocab_size=4096,
+#     vocab_size=4019,
 #     n_layer=4,
 #     n_head=4,
 #     n_embd=128,
