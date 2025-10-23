@@ -573,14 +573,10 @@ function displaySamples() {
 
         let tokenViz;
         if (activationsData && activationsData.length > 0) {
-            // Find max position
-            const maxPosition = activationsData.indexOf(Math.max(...activationsData));
-
             // Use the proper token visualization with coloring and tooltips
-            tokenViz = createTokenVisualizationWithTooltip(
+            tokenViz = createTokenVisualization(
                 sample.tokens,  // Tokens are also on the sample
-                activationsData,
-                maxPosition
+                activationsData
             );
         } else {
             // Fallback to simple visualization if no activations

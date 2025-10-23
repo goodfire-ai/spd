@@ -49,35 +49,6 @@ a {
     font-family: monospace;
 }
 
-.token-container {
-    font-family: monospace;
-    line-height: 1.6;
-    max-width: 800px;
-    overflow-x: auto;
-}
-
-.token {
-    display: inline-block;
-    padding: 2px 4px;
-    margin: 0 1px;
-    border-radius: 2px;
-    cursor: help;
-    position: relative;
-}
-
-.token-tooltip {
-    position: fixed;
-    background: #333;
-    color: white;
-    padding: 5px 8px;
-    border-radius: 3px;
-    white-space: nowrap;
-    z-index: 999999;
-    font-size: 12px;
-    pointer-events: none;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
 #samplesTable {
     width: auto;
     max-width: 100%;
