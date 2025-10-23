@@ -1,12 +1,10 @@
 """Core library functions for causal importance decision trees."""
 
-from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
 from jaxtyping import Bool, Float
-from muutils.dbg import dbg
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,

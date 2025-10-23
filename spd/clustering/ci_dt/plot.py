@@ -4,7 +4,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Float, Int
 from sklearn.tree import plot_tree
 
 from spd.clustering.ci_dt.core import LayerModel, get_estimator_for
@@ -35,7 +35,7 @@ def greedy_sort(A: np.ndarray, axis: int) -> np.ndarray:
 
     # Start from most central item (highest average similarity)
     n: int = similarity.shape[0]
-    avg_sim: Float[np.ndarray, "n"] = similarity.mean(axis=1)
+    avg_sim: Float[np.ndarray, n] = similarity.mean(axis=1)
     start_idx: int = int(np.argmax(avg_sim))
 
     # Greedy ordering: always add nearest unvisited neighbor
@@ -61,9 +61,7 @@ def greedy_sort(A: np.ndarray, axis: int) -> np.ndarray:
     return np.array(ordered, dtype=np.int64)
 
 
-def add_component_labeling(
-    ax: plt.Axes, component_labels: list[str], axis: str = "x"
-) -> None:
+def add_component_labeling(ax: plt.Axes, component_labels: list[str], axis: str = "x") -> None:
     """Add component labeling using major/minor ticks to show module boundaries.
 
     Args:
@@ -218,9 +216,9 @@ def plot_covariance(
         module_keys: List of module names for labeling
         component_order: Optional array of component indices for sorting. If None, plots unsorted.
     """
-    A: Float[np.ndarray, "n_samples n_components"] = np.concatenate(
-        layers_true, axis=1
-    ).astype(float)
+    A: Float[np.ndarray, "n_samples n_components"] = np.concatenate(layers_true, axis=1).astype(
+        float
+    )
 
     # Apply component ordering if provided
     if component_order is not None:
@@ -292,11 +290,15 @@ def plot_average_precision(
             x_jittered: np.ndarray = x_positions + np.random.uniform(
                 -jitter_amount, jitter_amount, len(ap_valid)
             )
-            ax.scatter(x_jittered, ap_valid, alpha=0.5, s=20, color="C0", edgecolors='none')
+            ax.scatter(x_jittered, ap_valid, alpha=0.5, s=20, color="C0", edgecolors="none")
             # Add mean line
-            ax.plot([layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
-                    [stats["mean_ap"], stats["mean_ap"]],
-                    'r-', linewidth=2, label='Mean' if layer_idx == 0 else '')
+            ax.plot(
+                [layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
+                [stats["mean_ap"], stats["mean_ap"]],
+                "r-",
+                linewidth=2,
+                label="Mean" if layer_idx == 0 else "",
+            )
 
     ax.set_title(
         r"Average Precision per Target Component" + "\n"
@@ -308,9 +310,9 @@ def plot_average_precision(
     ax.set_ylabel("Average Precision")
     ax.set_xticks(np.arange(1, L + 1))
     # Only use module keys that correspond to target layers (skip input layer)
-    ax.set_xticklabels(module_keys[1:L+1], rotation=45, ha='right')
+    ax.set_xticklabels(module_keys[1 : L + 1], rotation=45, ha="right")
     ax.set_ylim(-0.05, 1.05)
-    ax.grid(True, alpha=0.3, axis='y')
+    ax.grid(True, alpha=0.3, axis="y")
     ax.legend()
     fig.tight_layout()
 
@@ -338,10 +340,14 @@ def plot_accuracy(
             x_jittered: np.ndarray = x_positions + np.random.uniform(
                 -jitter_amount, jitter_amount, len(acc_valid)
             )
-            ax.scatter(x_jittered, acc_valid, alpha=0.5, s=20, color="C1", edgecolors='none')
-            ax.plot([layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
-                    [stats["mean_acc"], stats["mean_acc"]],
-                    'r-', linewidth=2, label='Mean' if layer_idx == 0 else '')
+            ax.scatter(x_jittered, acc_valid, alpha=0.5, s=20, color="C1", edgecolors="none")
+            ax.plot(
+                [layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
+                [stats["mean_acc"], stats["mean_acc"]],
+                "r-",
+                linewidth=2,
+                label="Mean" if layer_idx == 0 else "",
+            )
 
     ax.set_title(
         r"Accuracy per Target Component" + "\n"
@@ -350,9 +356,9 @@ def plot_accuracy(
     ax.set_xlabel("Target Module")
     ax.set_ylabel("Accuracy")
     ax.set_xticks(np.arange(1, L + 1))
-    ax.set_xticklabels(module_keys[1:L+1], rotation=45, ha='right')
+    ax.set_xticklabels(module_keys[1 : L + 1], rotation=45, ha="right")
     ax.set_ylim(-0.05, 1.05)
-    ax.grid(True, alpha=0.3, axis='y')
+    ax.grid(True, alpha=0.3, axis="y")
     ax.legend()
     fig.tight_layout()
 
@@ -380,10 +386,14 @@ def plot_balanced_accuracy(
             x_jittered: np.ndarray = x_positions + np.random.uniform(
                 -jitter_amount, jitter_amount, len(bacc_valid)
             )
-            ax.scatter(x_jittered, bacc_valid, alpha=0.5, s=20, color="C2", edgecolors='none')
-            ax.plot([layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
-                    [stats["mean_bacc"], stats["mean_bacc"]],
-                    'r-', linewidth=2, label='Mean' if layer_idx == 0 else '')
+            ax.scatter(x_jittered, bacc_valid, alpha=0.5, s=20, color="C2", edgecolors="none")
+            ax.plot(
+                [layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
+                [stats["mean_bacc"], stats["mean_bacc"]],
+                "r-",
+                linewidth=2,
+                label="Mean" if layer_idx == 0 else "",
+            )
 
     ax.set_title(
         r"Balanced Accuracy per Target Component" + "\n"
@@ -392,16 +402,14 @@ def plot_balanced_accuracy(
     ax.set_xlabel("Target Module")
     ax.set_ylabel("Balanced Accuracy")
     ax.set_xticks(np.arange(1, L + 1))
-    ax.set_xticklabels(module_keys[1:L+1], rotation=45, ha='right')
+    ax.set_xticklabels(module_keys[1 : L + 1], rotation=45, ha="right")
     ax.set_ylim(-0.05, 1.05)
-    ax.grid(True, alpha=0.3, axis='y')
+    ax.grid(True, alpha=0.3, axis="y")
     ax.legend()
     fig.tight_layout()
 
 
-def plot_ap_vs_prevalence(
-    per_layer_stats: list[dict[str, Any]], models: list[LayerModel]
-) -> None:
+def plot_ap_vs_prevalence(per_layer_stats: list[dict[str, Any]], models: list[LayerModel]) -> None:
     """Plot AP vs prevalence scatter colored by tree depth.
 
     Args:
@@ -414,7 +422,7 @@ def plot_ap_vs_prevalence(
     ap_list: list[float] = []
     depth_list: list[int] = []
 
-    for layer_idx, (stats, model) in enumerate(zip(per_layer_stats, models, strict=True)):
+    for _layer_idx, (stats, model) in enumerate(zip(per_layer_stats, models, strict=True)):
         for target_idx, (prev, ap) in enumerate(zip(stats["prev"], stats["ap"], strict=True)):
             if not np.isnan(ap):
                 prevalence_list.append(prev)
@@ -434,7 +442,7 @@ def plot_ap_vs_prevalence(
         cmap="viridis",
         alpha=0.6,
         s=30,
-        edgecolors='none',
+        edgecolors="none",
     )
 
     ax.set_title(
@@ -476,7 +484,7 @@ def plot_component_activity_breakdown(
     for module_key in module_keys:
         acts: np.ndarray = component_acts[module_key]
         # Convert to numpy if needed
-        if hasattr(acts, 'cpu'):
+        if hasattr(acts, "cpu"):
             acts = acts.cpu().numpy()
         # Convert to boolean
         acts_bool: np.ndarray = (acts >= activation_threshold).astype(bool)
@@ -528,19 +536,20 @@ def plot_component_activity_breakdown(
     ax.set_xlabel("Module")
     ax.set_ylabel("Number of Components (log scale)")
     ax.set_xticks(x_pos)
-    ax.set_xticklabels(module_keys, rotation=45, ha='right')
+    ax.set_xticklabels(module_keys, rotation=45, ha="right")
     if logy:
-        ax.set_yscale('log')
+        ax.set_yscale("log")
 
     # Create legend with correct labels
     from matplotlib.patches import Patch
+
     legend_elements = [
-        Patch(facecolor='C2', label='Varying'),
-        Patch(facecolor='C1', label='Always Active'),
-        Patch(facecolor='C0', label='Always Inactive'),
+        Patch(facecolor="C2", label="Varying"),
+        Patch(facecolor="C1", label="Always Active"),
+        Patch(facecolor="C0", label="Always Inactive"),
     ]
-    ax.legend(handles=legend_elements, loc='upper left')
-    ax.grid(True, alpha=0.3, axis='y')
+    ax.legend(handles=legend_elements, loc="upper left")
+    ax.grid(True, alpha=0.3, axis="y")
 
     fig.tight_layout()
 
@@ -578,7 +587,7 @@ def plot_selected_trees(
 def extract_tree_stats(
     models: list[LayerModel],
     per_layer_stats: list[dict[str, Any]],
-) -> dict[str, Float[np.ndarray, "n_trees"]]:
+) -> dict[str, Float[np.ndarray, " n_trees"]]:
     """Extract depth, leaf count, and accuracy for all trees across all layers."""
     depths: list[int] = []
     leaf_counts: list[int] = []
@@ -603,9 +612,7 @@ def extract_tree_stats(
     }
 
 
-def plot_tree_statistics(
-    models: list[LayerModel], per_layer_stats: list[dict[str, Any]]
-) -> None:
+def plot_tree_statistics(models: list[LayerModel], per_layer_stats: list[dict[str, Any]]) -> None:
     """Plot distributions of tree depth, leaf count, and their correlations with accuracy."""
     stats = extract_tree_stats(models, per_layer_stats)
 
@@ -632,10 +639,10 @@ def plot_tree_statistics(
 
     # Heatmap: depth vs accuracy
     valid_mask: np.ndarray = ~np.isnan(stats["accuracy"])
-    depth_bins: Int[np.ndarray, "n_bins"] = np.arange(
+    depth_bins: Int[np.ndarray, " n_bins"] = np.arange(
         int(stats["depth"].min()), int(stats["depth"].max()) + 2
     )
-    acc_bins: Float[np.ndarray, "n_bins"] = np.linspace(0, 1, 11)
+    acc_bins: Float[np.ndarray, " n_bins"] = np.linspace(0, 1, 11)
     heatmap_depth_acc: Float[np.ndarray, "depth_bins acc_bins"]
     heatmap_depth_acc, _, _ = np.histogram2d(
         stats["depth"][valid_mask], stats["accuracy"][valid_mask], bins=[depth_bins, acc_bins]
@@ -660,7 +667,7 @@ def plot_tree_statistics(
     plt.colorbar(im, ax=ax4, label="log10(count+1)")
 
     # Heatmap: leaf count vs accuracy
-    leaf_bins: Int[np.ndarray, "n_bins"] = np.linspace(
+    leaf_bins: Int[np.ndarray, " n_bins"] = np.linspace(
         int(stats["n_leaves"].min()), int(stats["n_leaves"].max()) + 1, 11, dtype=int
     )
     heatmap_leaf_acc: Float[np.ndarray, "leaf_bins acc_bins"]
@@ -723,12 +730,12 @@ def plot_tree_statistics(
     # Prevalence bins (log scale)
     prev_min: float = max(prevalence_arr.min(), 1e-4)  # Avoid log(0)
     prev_max: float = prevalence_arr.max()
-    prev_bins: Float[np.ndarray, "n_bins"] = np.logspace(
+    prev_bins: Float[np.ndarray, " n_bins"] = np.logspace(
         np.log10(prev_min), np.log10(prev_max), 10
     )
 
     # AP bins (linear)
-    ap_bins_heatmap: Float[np.ndarray, "n_bins"] = np.linspace(0, 1, 11)
+    ap_bins_heatmap: Float[np.ndarray, " n_bins"] = np.linspace(0, 1, 11)
 
     heatmap_prev_ap: Float[np.ndarray, "prev_bins ap_bins"]
     heatmap_prev_ap, _, _ = np.histogram2d(

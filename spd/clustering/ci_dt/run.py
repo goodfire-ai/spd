@@ -1,11 +1,9 @@
 # %%
 """Main execution script for causal importance decision tree training."""
 
-from typing import Any
-
 import numpy as np
 import torch
-from jaxtyping import Bool, Float
+from jaxtyping import Bool
 from torch import Tensor
 
 from spd.clustering.ci_dt.config import CIDTConfig
@@ -18,13 +16,11 @@ from spd.clustering.ci_dt.pipeline import (
 from spd.clustering.ci_dt.plot import (
     greedy_sort,
     plot_accuracy,
-    plot_activations,
     plot_ap_vs_prevalence,
     plot_average_precision,
     plot_balanced_accuracy,
     plot_component_activity_breakdown,
     plot_covariance,
-    plot_selected_trees,
     plot_tree_statistics,
 )
 from spd.configs import Config
@@ -32,10 +28,9 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
-
 # magic autoreload
-%load_ext autoreload
-%autoreload 2
+# %load_ext autoreload
+# %autoreload 2
 
 # %%
 # ----------------------- configuration -----------------------
@@ -43,8 +38,8 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 config = CIDTConfig(
     # batch_size=50, # 50 ~~ 16GB VRAM max
     # n_batches=8,
-	batch_size=16,
-	n_batches=4,
+    batch_size=16,
+    n_batches=4,
     activation_threshold=0.01,
     max_depth=8,
     random_state=42,
@@ -168,12 +163,16 @@ print("AP vs prevalence plot generated.")
 # ----------------------- plot: component activity breakdown -----------------------
 
 plot_component_activity_breakdown(
-    component_acts_concat, module_keys, config.activation_threshold,
-	logy=False,
+    component_acts_concat,
+    module_keys,
+    config.activation_threshold,
+    logy=False,
 )
 plot_component_activity_breakdown(
-    component_acts_concat, module_keys, config.activation_threshold,
-	logy=True,
+    component_acts_concat,
+    module_keys,
+    config.activation_threshold,
+    logy=True,
 )
 print("Component activity breakdown plot generated.")
 

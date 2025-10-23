@@ -4,10 +4,10 @@ from typing import Any
 
 import numpy as np
 import torch
-from jaxtyping import Bool, Float, Int
-from torch import Tensor, nn
-from torch.utils.data import DataLoader
+from jaxtyping import Bool, Float
 from muutils.dbg import dbg_tensor
+from torch import Tensor
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.clustering.activations import component_activations
@@ -44,7 +44,7 @@ def compute_activations_multibatch(
     print(f"Computing activations for {n_batches} batches...")
     all_component_acts: list[dict[str, Tensor]] = []
 
-    for batch_idx in tqdm(range(n_batches), desc="Batches", total=n_batches):
+    for _batch_idx in tqdm(range(n_batches), desc="Batches", total=n_batches):
         batch_data = next(iter(dataloader))
         batch: Tensor = batch_data["input_ids"]
 
@@ -63,15 +63,13 @@ def compute_activations_multibatch(
     print("Concatenating batches...")
     module_keys: list[str] = list(all_component_acts[0].keys())
     component_acts_concat: dict[str, Tensor] = {
-        key: torch.cat([batch[key] for batch in all_component_acts], dim=0)
-        for key in module_keys
+        key: torch.cat([batch[key] for batch in all_component_acts], dim=0) for key in module_keys
     }
 
     # Apply seq_mean if needed (LM task)
     print("Applying seq_mean over sequence dimension...")
     component_acts_concat = {
-        key: act.mean(dim=1) if act.ndim == 3 else act
-        for key, act in component_acts_concat.items()
+        key: act.mean(dim=1) if act.ndim == 3 else act for key, act in component_acts_concat.items()
     }
 
     return component_acts_concat
@@ -107,12 +105,12 @@ def convert_to_boolean_layers(
 
         # Filter out components that are always dead or always alive
         # (they provide no information for decision trees)
-        component_variance: Float[np.ndarray, "n_components"] = module_acts_bool.var(axis=0)
-        varying_mask: Bool[np.ndarray, "n_components"] = component_variance > 0
+        component_variance: Float[np.ndarray, " n_components"] = module_acts_bool.var(axis=0)
+        varying_mask: Bool[np.ndarray, " n_components"] = component_variance > 0
 
         # Count always-dead and always-alive components for diagnostics
-        always_dead_mask: Bool[np.ndarray, "n_components"] = ~module_acts_bool.any(axis=0)
-        always_alive_mask: Bool[np.ndarray, "n_components"] = module_acts_bool.all(axis=0)
+        always_dead_mask: Bool[np.ndarray, " n_components"] = ~module_acts_bool.any(axis=0)
+        always_alive_mask: Bool[np.ndarray, " n_components"] = module_acts_bool.all(axis=0)
         n_always_dead: int = int(always_dead_mask.sum())
         n_always_alive: int = int(always_alive_mask.sum())
 

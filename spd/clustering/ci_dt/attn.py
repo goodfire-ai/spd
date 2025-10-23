@@ -1,8 +1,6 @@
 # %%
 """Attention pattern visualization for CI decision tree analysis."""
 
-from typing import Any
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -17,10 +15,9 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
-
 # magic autoreload
-%load_ext autoreload
-%autoreload 2
+# %load_ext autoreload
+# %autoreload 2
 
 # %%
 # ----------------------- configuration -----------------------
@@ -99,7 +96,7 @@ def extract_attention_patterns_multibatch(
     print(f"Extracting attention patterns for {n_batches} batches...")
     all_attention_patterns: list[dict[str, Tensor]] = []
 
-    for batch_idx in tqdm(range(n_batches), desc="Batches", total=n_batches):
+    for _batch_idx in tqdm(range(n_batches), desc="Batches", total=n_batches):
         batch_data = next(iter(dataloader))
         input_ids: Int[Tensor, "batch seq_len"] = batch_data["input_ids"].to(device)
 
@@ -123,9 +120,7 @@ def extract_attention_patterns_multibatch(
     print("Concatenating batches...")
     layer_names: list[str] = list(all_attention_patterns[0].keys())
     attention_patterns_concat: dict[str, Tensor] = {
-        layer_name: torch.cat(
-            [batch[layer_name] for batch in all_attention_patterns], dim=0
-        )
+        layer_name: torch.cat([batch[layer_name] for batch in all_attention_patterns], dim=0)
         for layer_name in layer_names
     }
 
@@ -188,9 +183,7 @@ def compute_attention_stats(
         max_attention: np.ndarray = attn_np.max(axis=-1)  # [samples, n_heads, seq_len]
 
         # Sparsity: fraction of attention weights < 0.01
-        sparsity: np.ndarray = (attn_np < 0.01).mean(
-            axis=(2, 3)
-        )  # [samples, n_heads]
+        sparsity: np.ndarray = (attn_np < 0.01).mean(axis=(2, 3))  # [samples, n_heads]
 
         stats[layer_name] = {
             "mean_pattern": mean_pattern,
@@ -371,9 +364,7 @@ def plot_attention_sparsity(
     ax.plot(range(len(layer_names)), mean_sparsities, marker="o", color="C1")
     ax.set_xlabel("Layer")
     ax.set_ylabel("Mean Sparsity (fraction < 0.01)")
-    ax.set_title(
-        "Attention Sparsity Across Layers\n(Higher = more sparse/focused attention)"
-    )
+    ax.set_title("Attention Sparsity Across Layers\n(Higher = more sparse/focused attention)")
     ax.set_xticks(range(len(layer_names)))
     ax.set_xticklabels(layer_names, rotation=45, ha="right")
     ax.set_ylim(0, 1)

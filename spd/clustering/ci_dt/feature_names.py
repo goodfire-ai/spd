@@ -84,7 +84,7 @@ def decode_direction_top_k(
 
     # Decode tokens
     tokens = []
-    for idx, val in zip(top_k_indices.tolist(), top_k_values.tolist()):
+    for idx, val in zip(top_k_indices.tolist(), top_k_values.tolist(), strict=False):
         token_str = tokenizer.decode([idx])
         # Clean up token string for display
         token_str = repr(token_str)[1:-1]  # Remove quotes and escape special chars
@@ -112,7 +112,7 @@ def get_component_directions(
     # Get the component module
     component = component_model.components[module_key]
 
-    assert isinstance(component, (LinearComponents, EmbeddingComponents)), (
+    assert isinstance(component, LinearComponents | EmbeddingComponents), (
         f"Expected LinearComponents or EmbeddingComponents, got {type(component)}"
     )
 
@@ -206,10 +206,7 @@ def generate_feature_names(
                         )
 
                         feature_name = (
-                            f"{comp_label}\n"
-                            f"{act_info}\n"
-                            f"R→E:{read_embed}\n"
-                            f"W→U:{write_unembed}"
+                            f"{comp_label}\n{act_info}\nR→E:{read_embed}\nW→U:{write_unembed}"
                         )
                     except Exception as e:
                         print(f"Warning: Could not decode component {comp_label}: {e}")
