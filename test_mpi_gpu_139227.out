@@ -1,0 +1,36 @@
+=== Environment Info ===
+Node: tenant-ac-goodfre-h100-reserved-196-005
+Date: Thu Oct 23 12:32:04 PM UTC 2025
+SLURM_JOB_ID: 139227
+SLURM_NTASKS: 4
+SLURM_GPUS: 
+CUDA_VISIBLE_DEVICES: 0,1,2,3
+
+=== Testing basic MPI ===
+Rank 1 on tenant-ac-goodfre-h100-reserved-196-005
+Rank 0 on tenant-ac-goodfre-h100-reserved-196-005
+Rank 2 on tenant-ac-goodfre-h100-reserved-196-005
+Rank 3 on tenant-ac-goodfre-h100-reserved-196-005
+
+=== Testing GPU visibility ===
+Rank 0: CUDA_VISIBLE_DEVICES=0,1,2,3
+Rank 2: CUDA_VISIBLE_DEVICES=0,1,2,3
+Rank 3: CUDA_VISIBLE_DEVICES=0,1,2,3
+Rank 1: CUDA_VISIBLE_DEVICES=0,1,2,3
+
+=== Testing nvidia-smi per rank ===
+Rank 0 GPU:
+Rank 1 GPU:
+Rank 2 GPU:
+Rank 3 GPU:
+GPU 0: NVIDIA H100 80GB HBM3 (UUID: GPU-3de6b6ae-3016-b267-5e3b-7cfb55cb523c)
+GPU 0: NVIDIA H100 80GB HBM3 (UUID: GPU-3de6b6ae-3016-b267-5e3b-7cfb55cb523c)
+GPU 0: NVIDIA H100 80GB HBM3 (UUID: GPU-3de6b6ae-3016-b267-5e3b-7cfb55cb523c)
+GPU 0: NVIDIA H100 80GB HBM3 (UUID: GPU-3de6b6ae-3016-b267-5e3b-7cfb55cb523c)
+
+=== Testing Python + PyTorch ===
+Rank 2: PyTorch sees 4 GPUs, using device 0
+Rank 3: PyTorch sees 4 GPUs, using device 0
+Rank 0: PyTorch sees 4 GPUs, using device 0
+Rank 1: PyTorch sees 4 GPUs, using device 0
+=== Test complete ===
