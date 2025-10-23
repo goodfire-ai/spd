@@ -250,16 +250,22 @@ def example_to_activation_context(
     ex: SubcomponentExample,
     tokenizer: PreTrainedTokenizer,
 ) -> ActivationContext:
-    raw_text = tokenizer.decode(ex.window_tokens, add_special_tokens=False)  # pyright: ignore[reportAttributeAccessIssue]
-    tokenized = tokenizer.encode_plus(  # pyright: ignore[reportAttributeAccessIssue]
-        raw_text,
-        return_tensors="pt",
-        return_offsets_mapping=True,
-        truncation=False,
-        padding=False,
-        add_special_tokens=False,
-    )
-    offset_mapping = tokenized["offset_mapping"][0].tolist()
+    # Decode each token individually to build text and offset mapping
+    # This preserves the original tokenization and keeps CI values aligned
+    token_texts: list[str] = []
+    offset_mapping: list[tuple[int, int]] = []
+    current_pos = 0
+
+    for token_id in ex.window_tokens:
+        token_text = tokenizer.decode([token_id], add_special_tokens=False)  # pyright: ignore[reportAttributeAccessIssue]
+        token_texts.append(token_text)
+        start = current_pos
+        end = current_pos + len(token_text)
+        offset_mapping.append((start, end))
+        current_pos = end
+
+    raw_text = "".join(token_texts)
+
     return ActivationContext(
         raw_text=raw_text,
         offset_mapping=offset_mapping,
