@@ -1,6 +1,6 @@
 import heapq
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Generator, Iterable
 from dataclasses import dataclass
 
@@ -76,7 +76,7 @@ def get_subcomponents_activation_contexts(
     n_tokens_either_side: int,
     batch_size: int,
 ) -> ModelActivationContexts:
-    logger.info("worker: Getting activation contexts")
+    logger.info("Getting activation contexts")
 
     topk_by_subcomponent = get_topk_by_subcomponent(
         run_context,
@@ -121,7 +121,7 @@ def get_topk_by_subcomponent(
 
     C = run_context.cm.C
 
-    logger.info("worker: starting data iteration")
+    logger.info("Starting data iteration")
 
     batches = roll_batch_size_1_into_x(
         singleton_batches=(extract_batch_data(b).to(DEVICE) for b in run_context.train_loader),
@@ -306,10 +306,6 @@ def map_to_model_ctxs(
 def _compute_token_densities(
     examples: list[ActivationContext], run_context: TrainRunContext
 ) -> list[TokenDensity]:
-    from collections import Counter
-
-    from spd.app.backend.api import TokenDensity
-
     token_counts = Counter[int]()
     total = 0
 

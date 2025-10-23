@@ -153,11 +153,17 @@ def get_subcomponent_activation_contexts(
     )
 
 
-@app.get("/healthcheck")
+@app.get("/")
 @handle_errors
 def healthcheck() -> str:
-    return "OK"
+    return "Hello, World!"
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the SPD backend server")
+    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
+    args = parser.parse_args()
+
+    uvicorn.run(app, host="0.0.0.0", port=args.port)
