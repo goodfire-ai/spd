@@ -243,17 +243,17 @@ export async function applyMaskAsAblation(
 }
 
 export type ActivationContext = {
-    raw_text: string;
-    offset_mapping: [number, number][];
+    token_strings: string[];
     token_ci_values: number[];
     active_position: number;
     ci_value: number;
+    __id: string
 };
 
 export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     examples: ActivationContext[];
-    token_densities: TokenDensity[];
+    // token_densities: TokenDensity[];
     mean_ci: number;
 };
 
@@ -286,5 +286,12 @@ export async function getSubcomponentActivationContexts(
         const error = await response.json();
         throw new Error(error.detail || "Failed to get layer activation contexts");
     }
-    return response.json();
+    const payload = await response.json() as unknown as ModelActivationContexts;
+    for (const layer of Object.keys(payload.layers)) {
+        for (const subcomponent of payload.layers[layer]) {
+            for (const example of subcomponent.examples) {
+                example.__id = crypto.randomUUID();
+            }
+        }
+    }    return payload;
 }

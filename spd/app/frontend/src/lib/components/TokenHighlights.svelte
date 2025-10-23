@@ -1,66 +1,25 @@
 <script lang="ts">
-    export let rawText: string;
-    export let offsetMapping: [number, number][];
+    export let tokenStrings: string[];
     export let tokenCiValues: number[];
     export let activePosition: number = -1;
     export let precision: number = 3;
 
-    type Segment = {
-        text: string;
-        ciValue: number;
-        isActive: boolean;
+    const getHighlightColor = (importance: number): string => {
+        return `rgba(0, 200, 0, ${importance * 0.5})`;
     };
-
-    const defaultHighlightColor = (importance: number): string => {
-        const clamped = Math.min(Math.max(importance, 0), 1);
-        const opacity = 0.15 + clamped * 0.35;
-        return `rgba(0, 200, 0, ${opacity})`;
-    };
-
-    export let getHighlightColor: (importance: number) => string = defaultHighlightColor;
-
-    $: segments = buildSegments(rawText, offsetMapping, tokenCiValues, activePosition);
-
-    function buildSegments(
-        text: string,
-        offsets: [number, number][],
-        ciValues: number[],
-        activeIdx: number
-    ): Segment[] {
-        const result: Segment[] = [];
-        let cursor = 0;
-
-        offsets.forEach(([start, end], idx) => {
-            if (cursor < start) {
-                result.push({ text: text.slice(cursor, start), ciValue: 0, isActive: false });
-            }
-
-            const tokenText = text.slice(start, end);
-            const ciValue = ciValues[idx] ?? 0;
-            result.push({ text: tokenText, ciValue, isActive: idx === activeIdx });
-
-            cursor = end;
-        });
-
-        if (cursor < text.length) {
-            result.push({ text: text.slice(cursor), ciValue: 0, isActive: false });
-        }
-
-        return result.filter((segment) => segment.text.length > 0);
-    }
 </script>
 
 <span class="token-highlights">
-    {#each segments as segment (`${segment.text}-${segment.ciValue}-${segment.isActive}`)}
-        {#if segment.ciValue > 0}
+    {#each tokenStrings as tokenString, idx (idx)}
+        {#if tokenCiValues[idx] > 0}
             <span
                 class="token-highlight"
-                class:active-token={segment.isActive}
-                style={`background-color:${getHighlightColor(segment.ciValue)};`}
-                data-ci={`CI: ${segment.ciValue.toFixed(precision)}`}>{segment.text}</span
+                class:active-token={idx === activePosition}
+                style={`background-color:${getHighlightColor(tokenCiValues[idx])};`}
+                data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}>{tokenString}</span
             >
         {:else}
-            {segment.text}
+            {tokenString}
         {/if}
     {/each}
 </span>

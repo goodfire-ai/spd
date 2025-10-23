@@ -54,11 +54,11 @@
 {#if currentItem}
     <div class="subcomponent-section-header">
         <h4>
-            Subcomponent {currentItem.subcomponent_idx} (Mean CI: {currentItem.mean_ci.toExponential(
-                2
-            )})
+            Subcomponent {currentItem.subcomponent_idx} (Mean CI: {currentItem.mean_ci < 0.001
+                ? currentItem.mean_ci.toExponential(2)
+                : currentItem.mean_ci.toFixed(3)})
         </h4>
-        {#if currentItem.token_densities && currentItem.token_densities.length > 0}
+        <!-- {#if currentItem.token_densities && currentItem.token_densities.length > 0}
             <div class="token-densities">
                 <h5>
                     Token Activation Densities {currentItem.token_densities.length > 20
@@ -77,13 +77,13 @@
                     {/each}
                 </div>
             </div>
-        {/if}
+        {/if} -->
 
         <div class="subcomponent-section">
             {currentItem.examples.length > 200
                 ? `Showing top 200 examples of ${currentItem.examples.length} examples`
                 : ""}
-            {#each currentItem.examples.slice(0, 200) as example (`${example.raw_text}-${example.token_ci_values.map(String).join}`)}
+            {#each currentItem.examples.slice(0, 200) as example (example.__id)}
                 <ActivationContext {example} />
             {/each}
         </div>
