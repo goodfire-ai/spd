@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Development server launcher for SPD app.
 Starts both backend and frontend servers with automatic port detection and graceful cleanup.
