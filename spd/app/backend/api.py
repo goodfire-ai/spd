@@ -4,8 +4,6 @@ from pydantic import BaseModel
 
 
 class ActivationContext(BaseModel):
-    # raw_text: str
-    # offset_mapping: list[tuple[int, int]]
     token_strings: list[str]
     token_ci_values: list[float]
     active_position: int
