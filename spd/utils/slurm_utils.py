@@ -71,6 +71,8 @@ def create_slurm_array_script(
         #SBATCH --distribution=pack
         #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
 
+        echo "PATH: $PATH"
+
         # Create job-specific working directory
         WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
 
@@ -115,9 +117,17 @@ def submit_slurm_array(script_path: Path) -> str:
     Returns:
         Array job ID from submitted job array
     """
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
-    )
+    try:
+        result = subprocess.run(
+            ["sudo", "sbatch", str(script_path)], capture_output=True, text=True, check=True
+        )
+    except subprocess.CalledProcessError as e:
+        error_msg = f"sbatch failed with exit code {e.returncode}"
+        if e.stdout:
+            error_msg += f"\nStdout: {e.stdout}"
+        if e.stderr:
+            error_msg += f"\nStderr: {e.stderr}"
+        raise RuntimeError(error_msg) from e
     # Extract job ID from sbatch output (format: "Submitted batch job 12345")
     job_id = result.stdout.strip().split()[-1]
     return job_id
@@ -132,9 +142,17 @@ def submit_slurm_job(script_path: Path) -> str:
     Returns:
         Job ID from submitted job
     """
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
-    )
+    try:
+        result = subprocess.run(
+            ["sbatch", str(script_path)], capture_output=True, text=True, check=True
+        )
+    except subprocess.CalledProcessError as e:
+        error_msg = f"sbatch failed with exit code {e.returncode}"
+        if e.stdout:
+            error_msg += f"\nStdout: {e.stdout}"
+        if e.stderr:
+            error_msg += f"\nStderr: {e.stderr}"
+        raise RuntimeError(error_msg) from e
     # Extract job ID from sbatch output (format: "Submitted batch job 12345")
     job_id = result.stdout.strip().split()[-1]
     return job_id
