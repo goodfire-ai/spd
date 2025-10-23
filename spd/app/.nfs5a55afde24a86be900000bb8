@@ -1,0 +1,172 @@
+INFO:     Started server process [400962]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:3000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55472 - "GET / HTTP/1.1" 200 OK
+
+> frontend@0.0.1 dev
+> vite dev --port 5173
+
+4:09:17 PM [vite] (client) Forced re-optimization of dependencies
+
+  VITE v7.1.7  ready in 3077 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+  ➜  press h + enter to show help
+INFO:     127.0.0.1:55434 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46546 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46546 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55434 - "GET /status HTTP/1.1" 200 OK
+Loading run from wandb path: goodfire/spd/lxs77xye
+INFO:     127.0.0.1:46546 - "GET /status HTTP/1.1" 200 OK
+Creating train loader from run info
+INFO:     127.0.0.1:46546 - "GET /status HTTP/1.1" 200 OK
+Creating component model from run info
+Inserting identity operations before 1 modules
+  Added identity layer to model.layers.0.mlp.gate_proj with dimension 128
+Component model created on device: cuda
+Loaded run from wandb path: goodfire/spd/lxs77xye
+INFO:     127.0.0.1:55434 - "POST /runs/load/lxs77xye HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55434 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58304 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58304 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58304 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45712 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46904 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46904 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45712 - "GET /status HTTP/1.1" 200 OK
+Getting activation contexts
+Harvesting activation contexts:   0%|          | 0/1 [00:00<?, ?it/s]
+Processing importances:   0%|          | 0/29 [00:00<?, ?it/s][A
+Processing importances:   3%|▎         | 1/29 [00:00<00:08,  3.14it/s][A
+Processing importances:   7%|▋         | 2/29 [00:00<00:07,  3.41it/s][A
+Processing importances:  10%|█         | 3/29 [00:00<00:07,  3.34it/s][AINFO:     127.0.0.1:46904 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46906 - "GET /status HTTP/1.1" 200 OK
+
+Processing importances:  14%|█▍        | 4/29 [00:01<00:12,  1.95it/s][A
+Processing importances:  17%|█▋        | 5/29 [00:02<00:15,  1.50it/s][A
+Processing importances:  21%|██        | 6/29 [00:03<00:17,  1.33it/s][A
+Processing importances:  24%|██▍       | 7/29 [00:04<00:18,  1.19it/s][A
+Processing importances:  28%|██▊       | 8/29 [00:05<00:21,  1.00s/it][AINFO:     127.0.0.1:46906 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46906 - "GET /status HTTP/1.1" 200 OK
+
+Processing importances:  31%|███       | 9/29 [00:06<00:16,  1.23it/s][A
+Processing importances:  34%|███▍      | 10/29 [00:06<00:13,  1.39it/s][A
+Processing importances:  38%|███▊      | 11/29 [00:07<00:11,  1.61it/s][A
+Processing importances:  41%|████▏     | 12/29 [00:07<00:10,  1.60it/s][A
+Processing importances:  45%|████▍     | 13/29 [00:09<00:13,  1.16it/s][A
+Processing importances:  48%|████▊     | 14/29 [00:10<00:14,  1.04it/s][AINFO:     127.0.0.1:46906 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57388 - "GET /status HTTP/1.1" 200 OK
+
+Processing importances:  52%|█████▏    | 15/29 [00:12<00:17,  1.22s/it][A
+Processing importances:  55%|█████▌    | 16/29 [00:12<00:13,  1.01s/it][A
+Processing importances:  59%|█████▊    | 17/29 [00:13<00:10,  1.11it/s][A
+Processing importances:  62%|██████▏   | 18/29 [00:14<00:09,  1.12it/s][A
+Processing importances:  66%|██████▌   | 19/29 [00:15<00:10,  1.08s/it][AINFO:     127.0.0.1:57388 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57392 - "GET /status HTTP/1.1" 200 OK
+
+Processing importances:  69%|██████▉   | 20/29 [00:17<00:11,  1.31s/it][A
+Processing importances:  72%|███████▏  | 21/29 [00:19<00:11,  1.38s/it][AINFO:     127.0.0.1:57392 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57388 - "GET /status HTTP/1.1" 200 OK
+
+Processing importances:  76%|███████▌  | 22/29 [00:21<00:12,  1.75s/it][A
+Processing importances:  79%|███████▉  | 23/29 [00:22<00:08,  1.41s/it][A
+Processing importances:  83%|████████▎ | 24/29 [00:23<00:05,  1.19s/it][A
+Processing importances:  86%|████████▌ | 25/29 [00:25<00:05,  1.47s/it][AINFO:     127.0.0.1:57388 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41286 - "GET /status HTTP/1.1" 200 OK
+
+Processing importances:  90%|████████▉ | 26/29 [00:27<00:05,  1.71s/it][A
+Processing importances:  93%|█████████▎| 27/29 [00:31<00:04,  2.24s/it][AINFO:     127.0.0.1:41286 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41300 - "GET /status HTTP/1.1" 200 OK
+
+Processing importances:  97%|█████████▋| 28/29 [00:35<00:02,  2.89s/it][AINFO:     127.0.0.1:41300 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41300 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41300 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37586 - "GET /status HTTP/1.1" 200 OK
+
+Processing importances: 100%|██████████| 29/29 [00:42<00:00,  4.20s/it][AProcessing importances: 100%|██████████| 29/29 [00:42<00:00,  1.47s/it]
+Harvesting activation contexts: 100%|██████████| 1/1 [00:42<00:00, 42.99s/it]Harvesting activation contexts: 100%|██████████| 1/1 [00:42<00:00, 42.99s/it]
+INFO:     127.0.0.1:37586 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42716 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34038 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45712 - "GET /activation_contexts/subcomponents?n_batches=1&batch_size=8&n_tokens_either_side=10&importance_threshold=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34042 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34042 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34042 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34042 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34058 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34058 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37102 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37102 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37114 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37114 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48280 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48280 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53340 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53340 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53344 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53344 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53346 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53346 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45938 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45938 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45954 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45954 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45954 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45954 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52506 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52506 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52512 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52512 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52512 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52512 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54870 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54870 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54884 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54884 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54884 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54884 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47760 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47760 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37678 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37678 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37680 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37680 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46092 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46092 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46094 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46094 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46094 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46094 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56064 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56064 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59774 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59774 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59778 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59778 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58630 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58630 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58630 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58630 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58050 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58050 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58050 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58050 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58062 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58062 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45032 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45032 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52862 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52862 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52862 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52862 - "GET /status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37544 - "GET /status HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [400962]

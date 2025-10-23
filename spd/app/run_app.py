@@ -13,6 +13,7 @@ import sys
 import time
 from pathlib import Path
 from types import FrameType
+from typing import TextIO
 from urllib.error import URLError
 
 # ANSI color codes
@@ -71,7 +72,7 @@ class ProcessManager:
         self.logfile.close()
 
 
-def find_available_port(start_port: int = 8000) -> int:
+def find_available_port(start_port: int) -> int:
     """Find an available port starting from start_port."""
     for port in range(start_port, start_port + 100):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -109,7 +110,7 @@ def wait_for_service(url: str, timeout: int, service_name: str) -> None:
             time.sleep(0.5)
 
 
-def start_backend(port: int, manager: ProcessManager) -> subprocess.Popen[str]:
+def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
     """Start the backend server."""
     print(f"{DIM}  ▸ Starting backend...{RESET}", end="", flush=True)
 
@@ -127,7 +128,7 @@ def start_backend(port: int, manager: ProcessManager) -> subprocess.Popen[str]:
     process = subprocess.Popen(
         cmd,
         cwd=project_root,
-        stdout=manager.logfile,
+        stdout=logfile,
         stderr=subprocess.STDOUT,
         bufsize=1,
         universal_newlines=True,
@@ -156,7 +157,7 @@ def install_frontend_deps() -> None:
         print(f"\r  {YELLOW}⚠{RESET} Frontend dependency installation had issues (trying anyway)")
 
 
-def start_frontend(port: int, backend_port: int, manager: ProcessManager) -> subprocess.Popen[str]:
+def start_frontend(port: int, backend_port: int, logfile: TextIO) -> subprocess.Popen[str]:
     """Start the frontend server."""
     print(f"{DIM}  ▸ Starting frontend...{RESET}", end="", flush=True)
 
@@ -169,7 +170,7 @@ def start_frontend(port: int, backend_port: int, manager: ProcessManager) -> sub
     process = subprocess.Popen(
         cmd,
         cwd=frontend_dir,
-        stdout=manager.logfile,
+        stdout=logfile,
         stderr=subprocess.STDOUT,
         env=env,
         bufsize=1,
@@ -184,18 +185,51 @@ def start_frontend(port: int, backend_port: int, manager: ProcessManager) -> sub
     return process
 
 
+def exit(_signum: int, _frame: FrameType | None) -> None:
+    """Handle interrupt signals."""
+    sys.exit(0)  # Will trigger atexit cleanup
+
+
 def main():
     """Main entry point."""
     # Initialize logfile
     LOGFILE.unlink(missing_ok=True)
     LOGFILE.touch()
 
-    manager = ProcessManager()
+    backend_process: subprocess.Popen[str] | None = None
+    frontend_process: subprocess.Popen[str] | None = None
+    logfile = open(LOGFILE, "w", buffering=1)  # noqa: SIM115
+
+    def cleanup():
+        """Cleanup all running processes."""
+        print("\n👋 Shutting down...")
+
+        # Terminate processes gracefully
+        if backend_process:
+            backend_process.terminate()
+        if frontend_process:
+            frontend_process.terminate()
+
+        # Give processes time to cleanup gracefully
+        time.sleep(1.0)
+
+        # Force kill if still running
+        if backend_process:
+            backend_process.kill()
+        if frontend_process:
+            frontend_process.kill()
+
+        logfile.close()
+
+    # Register cleanup handlers
+    atexit.register(cleanup)
+    signal.signal(signal.SIGINT, exit)
+    signal.signal(signal.SIGTERM, exit)
 
     # Find available ports
     print(f"{DIM}Finding available ports...{RESET}")
-    backend_port = find_available_port(8000)
-    frontend_port = find_available_port(5173)
+    backend_port = find_available_port(start_port=3000)
+    frontend_port = find_available_port(start_port=5173)
 
     print(f"{DIM}  Backend port: {backend_port}{RESET}")
     print(f"{DIM}  Frontend port: {frontend_port}{RESET}")
@@ -206,9 +240,9 @@ def main():
     print(f"{DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
 
     # Start services
-    manager.backend_process = start_backend(backend_port, manager)
+    backend_process = start_backend(backend_port, logfile)
     install_frontend_deps()
-    manager.frontend_process = start_frontend(frontend_port, backend_port, manager)
+    frontend_process = start_frontend(frontend_port, backend_port, logfile)
 
     print(f"{DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
 
@@ -226,11 +260,11 @@ def main():
     try:
         while True:
             # Check if processes are still alive
-            if manager.backend_process.poll() is not None:
+            if backend_process.poll() is not None:
                 print(f"\n{RED}✗{RESET} Backend process died unexpectedly", file=sys.stderr)
                 print(f"{DIM}Check {LOGFILE} for details{RESET}", file=sys.stderr)
                 sys.exit(1)
-            if manager.frontend_process.poll() is not None:
+            if frontend_process.poll() is not None:
                 print(f"\n{RED}✗{RESET} Frontend process died unexpectedly", file=sys.stderr)
                 print(f"{DIM}Check {LOGFILE} for details{RESET}", file=sys.stderr)
                 sys.exit(1)
