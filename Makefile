@@ -77,21 +77,27 @@ coverage:
 	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/
 
 
+BUNDLED_DASHBOARD_DIR=spd/clustering/dashboard/_bundled
+
 .PHONY: bundle-dashboard
 bundle-dashboard:
-	@mkdir -p spd/clustering/dashboard/_bundled
+	@mkdir -p $(BUNDLED_DASHBOARD_DIR)
 	uv run python -m muutils.web.bundle_html \
 		spd/clustering/dashboard/index.html \
-		--output spd/clustering/dashboard/_bundled/index.html \
+		--output $(BUNDLED_DASHBOARD_DIR)/index.html \
 		--source-dir spd/clustering/dashboard
 	uv run python -m muutils.web.bundle_html \
 		spd/clustering/dashboard/cluster.html \
-		--output spd/clustering/dashboard/_bundled/cluster.html \
+		--output $(BUNDLED_DASHBOARD_DIR)/cluster.html \
 		--source-dir spd/clustering/dashboard
-	@echo "Bundled HTML files to spd/clustering/dashboard/_bundled/"
+	@echo "Bundled HTML files to $(BUNDLED_DASHBOARD_DIR)/"
+
+.PHONY: clean-test-dashboard
+clean-test-dashboard:
+	rm -rf tests/.temp/dashboard-integration
 
 .PHONY: test-dashboard
-test-dashboard: bundle-dashboard
+test-dashboard: clean-test-dashboard bundle-dashboard
 	pytest tests/clustering/dashboard/test_dashboard_integration.py --runslow -v --durations 10
 
 

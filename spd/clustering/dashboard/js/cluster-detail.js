@@ -113,7 +113,7 @@ async function displayCluster() {
     displayModelVisualization();
 
     // Setup components table
-    setupComponentsTable();
+    await setupComponentsTable();
 
     // Setup hover highlighting between model view and components table
     setupModelViewHighlighting();
@@ -385,8 +385,10 @@ function displayTokenActivations() {
     }
 }
 
-function setupComponentsTable() {
-    const tableData = clusterData.components.map(comp => ({
+async function setupComponentsTable() {
+    // Await lazy-loaded components
+    const components = await clusterData.components;
+    const tableData = components.map(comp => ({
         label: comp.label,
         module: comp.module,
         index: comp.index,
@@ -454,8 +456,11 @@ async function recomputeDisplayedActivations() {
         return;
     }
 
+    // Await lazy-loaded components
+    const components = await clusterData.components;
+
     // If all components are enabled, use cluster-level activations (faster)
-    if (enabledComponents.size === clusterData.components.length) {
+    if (enabledComponents.size === components.length) {
         await displaySamples();
         return;
     }
@@ -636,7 +641,7 @@ async function displaySamples() {
 
 
 // Initialize config and load data on page load
-(async () => {
+document.addEventListener('DOMContentLoaded', async () => {
     await initConfig();
     init();
-})();
+});

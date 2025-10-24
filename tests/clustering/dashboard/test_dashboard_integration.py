@@ -58,12 +58,11 @@ def test_dashboard_end_to_end():
     # ============================================================================
     # SECTION 1: Generate dashboard data
     # ============================================================================
-    output_dir = TEST_OUTPUT_DIR / "end_to_end"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    TEST_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     config = DashboardConfig(
         wandb_run=_WANDB_RUN,
-        output_dir=output_dir,
+        output_dir=TEST_OUTPUT_DIR,
         iteration=-10,  # Late iteration with fewer, larger clusters
         n_samples=2,  # Minimal samples for speed
         n_batches=2,
@@ -75,7 +74,7 @@ def test_dashboard_end_to_end():
     main(config)
 
     # Get the generated directory
-    output_subdirs = list(output_dir.iterdir())
+    output_subdirs = list(TEST_OUTPUT_DIR.iterdir())
     assert len(output_subdirs) == 1, f"Expected 1 output dir, got {len(output_subdirs)}"
     run_output_dir = output_subdirs[0]
 
@@ -168,8 +167,10 @@ def test_dashboard_end_to_end():
                 # Collect errors for this cluster
                 console_errors = []
                 page_errors = []
-                page.on("console", lambda msg, errors=console_errors: errors.append(msg) if msg.type == "error" else None)
-                page.on("pageerror", lambda exc, errors=page_errors: errors.append(str(exc)))
+                page.on("console", lambda msg, errors=console_errors:
+                        errors.append(f"{msg.text} @ {msg.location}") if msg.type == "error" else None)
+                page.on("pageerror", lambda exc, errors=page_errors:
+                        errors.append(f"{exc}"))
 
                 # Load cluster page
                 url = f"http://localhost:{port}/cluster.html?id={cluster_id}"

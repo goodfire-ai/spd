@@ -3321,7 +3321,19 @@
                     }
     
                     const td = this.createStyledElement('td', 'data-cell', tdStyles);
-                    const value = this.getNestedValue(row, col.key);
+                    try {
+                        const value = this.getNestedValue(row, col.key);
+                    } catch (e) {
+                        console.error(`Error accessing key '${col.key}' in row '${row}' for col '${col}'. error: '${e}'`);
+                        console.error("col", col);
+                        console.error("row", row);
+                        console.error("this.data", this.data);
+                        console.error("this.columns", this.columns);
+                        console.error("this.filteredData", this.filteredData);
+                        console.error("this.pageData", pageData);
+                        console.error("this.tbody", this.tbody);
+                        throw e;
+                    }
     
                     // Check for custom renderer in column definition
                     if (col.renderer) {

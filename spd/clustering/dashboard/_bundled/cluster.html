@@ -2018,7 +2018,19 @@
                     }
     
                     const td = this.createStyledElement('td', 'data-cell', tdStyles);
-                    const value = this.getNestedValue(row, col.key);
+                    try {
+                        const value = this.getNestedValue(row, col.key);
+                    } catch (e) {
+                        console.error(`Error accessing key '${col.key}' in row '${row}' for col '${col}'. error: '${e}'`);
+                        console.error("col", col);
+                        console.error("row", row);
+                        console.error("this.data", this.data);
+                        console.error("this.columns", this.columns);
+                        console.error("this.filteredData", this.filteredData);
+                        console.error("this.pageData", pageData);
+                        console.error("this.tbody", this.tbody);
+                        throw e;
+                    }
     
                     // Check for custom renderer in column definition
                     if (col.renderer) {
@@ -4365,8 +4377,10 @@
         }
     }
     
-    function setupComponentsTable() {
-        const tableData = clusterData.components.map(comp => ({
+    async function setupComponentsTable() {
+        // Await lazy-loaded components
+        const components = await clusterData.components;
+        const tableData = components.map(comp => ({
             label: comp.label,
             module: comp.module,
             index: comp.index,
@@ -4616,10 +4630,10 @@
     
     
     // Initialize config and load data on page load
-    (async () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         await initConfig();
         init();
-    })();
+    });
     </script>
     <!-- end 'js/cluster-detail.js' -->
 </body>
