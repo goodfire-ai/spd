@@ -20,14 +20,14 @@ from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 
-def load_wandb_artifacts(wandb_path: str) -> tuple[MergeHistory, dict[str, Any]]:
+def load_wandb_artifacts(wandb_path: str) -> tuple[MergeHistory, dict[str, Any], str]:
     """Download and load WandB artifacts.
 
     Args:
         wandb_path: WandB run path (e.g., entity/project/run_id)
 
     Returns:
-        Tuple of (MergeHistory, run_config_dict)
+        Tuple of (MergeHistory, run_config_dict, run_id)
     """
     api: wandb.Api = wandb.Api()
     run: Run = api.run(wandb_path)
@@ -46,7 +46,7 @@ def load_wandb_artifacts(wandb_path: str) -> tuple[MergeHistory, dict[str, Any]]
     merge_history: MergeHistory = MergeHistory.read(merge_history_path)
     logger.info(f"Loaded merge history: {merge_history}")
 
-    return merge_history, run.config
+    return merge_history, run.config, run.id
 
 
 def setup_model_and_data(

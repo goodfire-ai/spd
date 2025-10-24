@@ -5,11 +5,9 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-import wandb
 from muutils.spinner import SpinnerContext
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizer
-from wandb.apis.public import Run
 from zanj import ZANJ
 
 from spd.clustering.dashboard.core import (
@@ -43,13 +41,9 @@ def main(dashboard_config: DashboardConfig) -> None:
     # Load artifacts from WandB
     merge_history: MergeHistory
     run_config: dict[str, Any]
+    run_id: str
     with SpinnerContext(message="Loading WandB artifacts"):
-        merge_history, run_config = load_wandb_artifacts(wandb_clustering_run)
-
-    # Extract run_id for output directory
-    api: wandb.Api = wandb.Api()
-    run: Run = api.run(wandb_clustering_run)
-    run_id: str = run.id
+        merge_history, run_config, run_id = load_wandb_artifacts(wandb_clustering_run)
 
     # Get actual iteration number (handle negative indexing)
     actual_iteration: int = (
@@ -71,6 +65,10 @@ def main(dashboard_config: DashboardConfig) -> None:
     final_output_dir: Path = dashboard_config.output_dir / dir_name
     final_output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Output directory: {final_output_dir}")
+
+    # Write HTML files if requested
+    if dashboard_config.write_html:
+        write_html_files(final_output_dir)
 
     # Setup model and data
     with SpinnerContext(message="Setting up model and data"):
@@ -148,12 +146,10 @@ def cli() -> None:
     config: DashboardConfig = DashboardConfig.from_file(args.config)
     logger.info(f"Loaded config from: {args.config}")
 
-    # Setup output directory and write HTML if requested
+    # Setup base output directory
     config.output_dir.mkdir(parents=True, exist_ok=True)
-    if config.write_html:
-        write_html_files(config.output_dir)
 
-    # run main logic
+    # Run main logic (HTML files written inside main to final_output_dir)
     main(config)
 
 
