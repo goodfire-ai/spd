@@ -48,7 +48,7 @@ gradient_accumulation_steps: 1
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.01
-faithfulness_warmup_weight_decay: 0.1
+faithfulness_warmup_weight_decay: 0.0
 
 # --- Logging & Saving ---
 train_log_freq: 200
@@ -87,6 +87,11 @@ eval_metric_configs:
       all_but_layer_2: ["h.2.*"]
       all_but_layer_3: ["h.3.*"]
   - classname: "StochasticHiddenActsReconLoss"
+  - classname: PGDReconLoss
+    step_size: 0.1
+    n_steps: 20
+    mask_scope: shared_across_batch
+    init: random
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
