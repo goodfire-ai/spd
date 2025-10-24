@@ -31,8 +31,8 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 # magic autoreload
-# %load_ext autoreload
-# %autoreload 2
+%load_ext autoreload
+%autoreload 2
 
 # %%
 # ----------------------- configuration -----------------------
@@ -98,6 +98,25 @@ component_acts_concat: dict[str, Tensor] = compute_activations_multibatch(
     dataloader=dataloader,
     n_batches=config.n_batches,
 )
+# Get module keys for labeling
+module_keys: list[str] = list(component_acts_concat.keys())
+
+# %%
+# ----------------------- plot: component activity breakdown -----------------------
+
+plot_component_activity_breakdown(
+    component_acts_concat,
+    module_keys,
+    config.activation_threshold,
+    logy=False,
+)
+plot_component_activity_breakdown(
+    component_acts_concat,
+    module_keys,
+    config.activation_threshold,
+    logy=True,
+)
+print("Component activity breakdown plot generated.")
 
 # %%
 # ----------------------- convert to boolean layers -----------------------
@@ -127,9 +146,6 @@ per_layer_stats, worst_list, best_list = compute_tree_metrics(
 # %%
 # ----------------------- compute orderings -----------------------
 # Generate sample ordering once for use in multiple plots
-
-# Get module keys for labeling
-module_keys: list[str] = list(component_acts_concat.keys())
 
 # Concatenate true activations for ordering
 A_true_concat: np.ndarray = np.concatenate(layers_true, axis=1).astype(float)
@@ -162,22 +178,7 @@ print("Balanced accuracy plot generated.")
 plot_ap_vs_prevalence(per_layer_stats, models)
 print("AP vs prevalence plot generated.")
 
-# %%
-# ----------------------- plot: component activity breakdown -----------------------
 
-plot_component_activity_breakdown(
-    component_acts_concat,
-    module_keys,
-    config.activation_threshold,
-    logy=False,
-)
-plot_component_activity_breakdown(
-    component_acts_concat,
-    module_keys,
-    config.activation_threshold,
-    logy=True,
-)
-print("Component activity breakdown plot generated.")
 
 # %%
 # ----------------------- plot: tree statistics -----------------------

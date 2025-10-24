@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from jaxtyping import Float, Int
 from sklearn.tree import plot_tree
+import torch
 
 from spd.clustering.ci_dt.core import LayerModel, get_estimator_for
 
@@ -447,7 +448,7 @@ def plot_ap_vs_prevalence(per_layer_stats: list[dict[str, Any]], models: list[La
         alpha=0.6,
         s=30,
         edgecolors="none",
-        markeredgewidth=0,
+        linewidths=0,
         zorder=2,
     )
 
@@ -470,7 +471,7 @@ def plot_ap_vs_prevalence(per_layer_stats: list[dict[str, Any]], models: list[La
 
 
 def plot_component_activity_breakdown(
-    component_acts: dict[str, np.ndarray],
+    component_acts: dict[str, np.ndarray|torch.Tensor],
     module_keys: list[str],
     activation_threshold: float,
     logy: bool = False,
@@ -494,6 +495,12 @@ def plot_component_activity_breakdown(
         # Convert to numpy if needed
         if hasattr(acts, "cpu"):
             acts = acts.cpu().numpy()
+
+        # Flatten if 3D (batch, seq_len, n_components) -> (batch*seq_len, n_components)
+        # This treats each token position as a separate sample, consistent with decision tree training
+        if acts.ndim == 3:
+            acts = acts.reshape(-1, acts.shape[-1])
+
         # Convert to boolean
         acts_bool: np.ndarray = (acts >= activation_threshold).astype(bool)
 
