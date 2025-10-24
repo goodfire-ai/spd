@@ -14,7 +14,7 @@ from torch.utils.hooks import RemovableHandle
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 from wandb.apis.public import Run
 
-from spd.configs import Config
+from spd.configs import Config, SamplingType
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
@@ -436,10 +436,10 @@ class ComponentModel(LoadableModule):
                 weight_delta_and_mask=mask_info.weight_delta_and_mask,
             )
 
-            if mask_info.routing_mask is not None:
-                return torch.where(mask_info.routing_mask[..., None], components_out, output)
+            if mask_info.routing_mask == "all":
+                return components_out
 
-            return components_out
+            return torch.where(mask_info.routing_mask[..., None], components_out, output)
 
         # No component replacement - keep original output
         return None
@@ -535,7 +535,7 @@ class ComponentModel(LoadableModule):
     def calc_causal_importances(
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
-        sampling: Literal["continuous", "binomial"],
+        sampling: SamplingType,
         detach_inputs: bool = False,
     ) -> CIOutputs:
         """Calculate causal importances.
