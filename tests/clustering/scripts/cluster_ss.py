@@ -114,7 +114,7 @@ for _i in range(ENSEMBLE_SIZE):
     HISTORY: MergeHistory = merge_iteration(
         merge_config=MERGE_CFG,
         activations=PROCESSED_ACTIVATIONS.activations,
-        component_labels=PROCESSED_ACTIVATIONS.labels,
+        subcomponent_keys=PROCESSED_ACTIVATIONS.subcomponent_keys,
         log_callback=None,
     )
     HISTORIES.append(HISTORY)

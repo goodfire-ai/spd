@@ -11,16 +11,18 @@ from jaxtyping import Float, Int
 from muutils.dbg import dbg_tensor
 
 from spd.clustering.consts import (
-    ComponentLabels,
     DistancesArray,
     DistancesMethod,
     MergePair,
     MergesArray,
     SaveableObject,
+    SubComponentKey,
+    SubComponentLabel,
 )
 from spd.clustering.math.merge_distances import compute_distances
 from spd.clustering.math.merge_matrix import BatchedGroupMerge, GroupMerge
 from spd.clustering.merge_config import MergeConfig
+from spd.utils.data_utils import _zip_save_arr_dict
 
 
 @dataclass(frozen=True)
@@ -32,28 +34,13 @@ class IterationInfo:
     merges: GroupMerge
 
 
-def _zip_save_arr(zf: zipfile.ZipFile, name: str, arr: np.ndarray) -> None:
-    """Save a numpy array to a zip file."""
-    buf: io.BytesIO = io.BytesIO()
-    np.save(buf, arr)
-    zf.writestr(name, buf.getvalue())
-
-
-def _zip_save_arr_dict(zf: zipfile.ZipFile, data: dict[str, np.ndarray]) -> None:
-    """Save a dictionary of numpy arrays to a zip file, {key}.npy used as path"""
-    key: str
-    arr: np.ndarray
-    for key, arr in data.items():
-        _zip_save_arr(zf, f"{key}.npy", arr)
-
-
 @dataclass(kw_only=True)
 class MergeHistory(SaveableObject):
     """Track merge iteration history"""
 
     merges: BatchedGroupMerge
     selected_pairs: Int[np.ndarray, " n_iters 2"]
-    labels: ComponentLabels
+    labels: list[SubComponentLabel]
     merge_config: MergeConfig
     n_iters_current: int
 
@@ -67,7 +54,7 @@ class MergeHistory(SaveableObject):
     def from_config(
         cls,
         merge_config: MergeConfig,
-        labels: ComponentLabels,
+        labels: list[SubComponentLabel],
     ) -> "MergeHistory":
         n_components: int = len(labels)
         n_iters_target: int = merge_config.get_num_iters(n_components)
@@ -155,7 +142,9 @@ class MergeHistory(SaveableObject):
         merge: GroupMerge = self.merges[iteration]
         return torch.unique(merge.group_idxs).tolist()
 
-    def get_cluster_component_labels(self, iteration: int, cluster_id: int) -> ComponentLabels:
+    def get_cluster_component_labels(
+        self, iteration: int, cluster_id: int
+    ) -> list[SubComponentLabel]:
         """Get component labels for a specific cluster at a given iteration.
 
         Args:
@@ -172,7 +161,7 @@ class MergeHistory(SaveableObject):
         )
         merge: GroupMerge = self.merges[iteration]
         component_indices: list[int] = merge.components_in_group(cluster_id)
-        return ComponentLabels([self.labels[idx] for idx in component_indices])
+        return [self.labels[idx] for idx in component_indices]
 
     def get_cluster_components_info(self, iteration: int, cluster_id: int) -> list[dict[str, Any]]:
         """Get detailed component information for a cluster.
@@ -184,13 +173,13 @@ class MergeHistory(SaveableObject):
         Returns:
             List of dicts with keys: module, index, label
         """
-        component_labels: list[str] = self.get_cluster_component_labels(iteration, cluster_id)
+        component_labels: list[SubComponentLabel] = self.get_cluster_component_labels(
+            iteration, cluster_id
+        )
         result: list[dict[str, Any]] = []
         for label in component_labels:
-            module: str
-            idx_str: str
-            module, idx_str = label.rsplit(":", 1)
-            result.append({"module": module, "index": int(idx_str), "label": label})
+            comp: SubComponentKey = SubComponentKey.from_label(label)
+            result.append({"module": comp.module, "index": comp.index, "label": label})
         return result
 
     # Convenience properties for sweep analysis
@@ -254,7 +243,7 @@ class MergeHistory(SaveableObject):
                 k_groups=torch.from_numpy(k_groups),
             )
             labels_raw: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
-            labels: ComponentLabels = ComponentLabels(labels_raw)
+            labels: list[SubComponentLabel] = [SubComponentLabel(x) for x in labels_raw]
             metadata: dict[str, Any] = json.loads(zf.read("metadata.json").decode("utf-8"))
             merge_config: MergeConfig = MergeConfig.model_validate(metadata["merge_config"])
 
@@ -363,7 +352,7 @@ class MergeHistoryEnsemble:
             unique_labels_set.update(history.labels)
 
         unique_labels_list: list[str] = sorted(unique_labels_set)
-        unique_labels: ComponentLabels = ComponentLabels(unique_labels_list)
+        unique_labels: list[SubComponentLabel] = [SubComponentLabel(x) for x in unique_labels_list]
         c_components: int = len(unique_labels)
         component_label_idxs: dict[str, int] = {
             label: idx for idx, label in enumerate(unique_labels)
@@ -391,7 +380,7 @@ class MergeHistoryEnsemble:
         i_ens: int
         history: MergeHistory
         for i_ens, history in enumerate(self.data):
-            hist_c_labels: list[str] = history.labels
+            hist_c_labels: list[SubComponentLabel] = history.labels
             hist_n_components: int = len(hist_c_labels)
             overlap_stats[i_ens] = hist_n_components / c_components
             # map from old component indices to new component indices

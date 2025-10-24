@@ -1,0 +1,19 @@
+{
+  "data": {
+    "dataDir": "data/c-c3623a67-i4795/data"
+  },
+  "indexPage": {
+    "pageSize": 25,
+    "pageSizeOptions": [10, 25, 50, 100],
+    "showFilters": true
+  },
+  "clusterPage": {
+    "pageSize": 25,
+    "maxSamplesPerCluster": 32,
+    "showFilters": true
+  },
+  "visualization": {
+    "colormap": "blues",
+    "histogramBins": 10
+  }
+}

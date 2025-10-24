@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Token Display Test</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/token-display.css">
+</head>
+<body>
+    <h1>Token Display Test</h1>
+
+    <h2>Example 1: BERT-style (default red)</h2>
+    <div id="example1"></div>
+
+    <h2>Example 2: BERT-style with blue color scheme</h2>
+    <div id="example2"></div>
+
+    <h2>Example 3: GPT2-style tokenization</h2>
+    <div id="example3"></div>
+
+    <h2>Example 4: GPT2-style with custom color [255, 128, 0]</h2>
+    <div id="example4"></div>
+
+    <script src="../js/token-display.js"></script>
+    <script>
+        // Example 1: Default BERT-style with red gradient
+        const tokens1 = ['The', 'quick', 'brown', 'fox', 'jumps'];
+        const activations1 = [0.1, 0.3, 0.5, 0.9, 0.7];
+        const viz1 = createTokenVisualization(tokens1, activations1);
+        document.getElementById('example1').appendChild(viz1);
+
+        // Example 2: BERT-style with subwords and blue color
+        const tokens2 = ['natural', 'language', 'process', '##ing'];
+        const activations2 = [0.2, 0.95, 0.6, 0.8];
+        const viz2 = createTokenVisualization(tokens2, activations2, bertTokenFormatter, blueColorScheme);
+        document.getElementById('example2').appendChild(viz2);
+
+        // Example 3: GPT2-style (spaces as part of token)
+        const tokens3 = ['The', ' quick', ' brown', ' fox'];
+        const activations3 = [0.3, 0.7, 0.5, 0.9];
+        const viz3 = createTokenVisualization(tokens3, activations3, gpt2TokenFormatter);
+        document.getElementById('example3').appendChild(viz3);
+
+        // Example 4: GPT2-style with custom orange color
+        const tokens4 = ['I', ' love', ' natural', ' language'];
+        const activations4 = [0.1, 0.3, 0.95, 0.8];
+        const orangeScheme = createColorScheme([255, 128, 0]);
+        const viz4 = createTokenVisualization(tokens4, activations4, gpt2TokenFormatter, orangeScheme);
+        document.getElementById('example4').appendChild(viz4);
+    </script>
+</body>
+</html>
