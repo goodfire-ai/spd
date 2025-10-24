@@ -12,6 +12,7 @@ from sklearn.metrics import (
 )
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
+from tqdm import tqdm
 
 
 @dataclass
@@ -59,7 +60,7 @@ def train_trees(
     """Train one decision tree per component per target layer using previous layers as features."""
     XYs = build_xy(layers)
     models: list[LayerModel] = []
-    for k, (X_k, Y_k) in enumerate(XYs, start=1):
+    for k, (X_k, Y_k) in tqdm(enumerate(XYs, start=1), total=len(XYs), desc="Training trees"):
         base = DecisionTreeClassifier(
             max_depth=max_depth,
             min_samples_leaf=min_samples_leaf,

@@ -30,7 +30,7 @@ def compute_activations_multibatch(
 
     After all batches:
     - Concatenate along batch dimension
-    - Apply seq_mean if ndim==3 (for LM tasks)
+    - Keep sequence dimension for per-token analysis (no seq_mean)
 
     Args:
         model: ComponentModel to get activations from
@@ -39,7 +39,8 @@ def compute_activations_multibatch(
         n_batches: Number of batches to process
 
     Returns:
-        Dictionary mapping module keys to concatenated activations (on CPU, seq_mean applied)
+        Dictionary mapping module keys to concatenated activations
+        (on CPU, shape: batch, seq_len, n_components)
     """
     print(f"Computing activations for {n_batches} batches...")
     all_component_acts: list[dict[str, Tensor]] = []
@@ -66,11 +67,9 @@ def compute_activations_multibatch(
         key: torch.cat([batch[key] for batch in all_component_acts], dim=0) for key in module_keys
     }
 
-    # Apply seq_mean if needed (LM task)
-    print("Applying seq_mean over sequence dimension...")
-    component_acts_concat = {
-        key: act.mean(dim=1) if act.ndim == 3 else act for key, act in component_acts_concat.items()
-    }
+    print("Activation shapes (keeping sequence dimension for per-token analysis):")
+    for key in module_keys[:3]:  # Show first 3 for brevity
+        print(f"  {key}: {component_acts_concat[key].shape}")
 
     return component_acts_concat
 
@@ -82,22 +81,31 @@ def convert_to_boolean_layers(
 ) -> list[Bool[np.ndarray, "n_samples n_components"]]:
     """Convert activations to boolean, filter constant (always dead/alive) components.
 
+    Handles 3D activations (batch, seq_len, n_components) by flattening to 2D (batch*seq_len, n_components).
+
     Args:
-        component_acts: Dictionary of continuous activations per module (on CPU)
+        component_acts: Dictionary of continuous activations per module (on CPU, shape: batch, seq_len, n_components or batch, n_components)
         activation_threshold: Threshold for converting to boolean
 
     Returns:
-        List of boolean numpy arrays, one per module (layer)
+        List of boolean numpy arrays, one per module (layer), shape (batch*seq_len, n_varying_components)
     """
     print("\nConverting to boolean and filtering constant components...")
     layers_true: list[Bool[np.ndarray, "n_samples n_components"]] = []
     module_keys: list[str] = list(component_acts.keys())
 
     for module_key in module_keys:
-        # Convert to numpy and boolean
-        module_acts_np: Float[np.ndarray, "n_samples n_components"] = component_acts[
-            module_key
-        ].numpy()
+        # Convert to numpy
+        module_acts_tensor: Tensor = component_acts[module_key]
+
+        # Flatten if 3D (batch, seq_len, n_components) -> (batch*seq_len, n_components)
+        if module_acts_tensor.ndim == 3:
+            batch_size, seq_len, n_components = module_acts_tensor.shape
+            module_acts_np: Float[np.ndarray, "n_samples n_components"] = (
+                module_acts_tensor.reshape(batch_size * seq_len, n_components).numpy()
+            )
+        else:
+            module_acts_np = module_acts_tensor.numpy()
 
         module_acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
             module_acts_np >= activation_threshold
@@ -130,7 +138,8 @@ def convert_to_boolean_layers(
             dbg_tensor(module_acts_bool)
             dbg_tensor(module_acts_varying)
 
-    print(f"\nCreated {len(layers_true)} layers for decision tree training")
+    n_samples: int = layers_true[0].shape[0] if layers_true else 0
+    print(f"Created {len(layers_true)} layers with {n_samples} samples for decision tree training")
 
     return layers_true
 
