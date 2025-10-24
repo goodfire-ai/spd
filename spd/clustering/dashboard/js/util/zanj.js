@@ -101,8 +101,23 @@ class ZanjLoader {
 			{},
 			{
 				get(_, prop) {
-					// if already loaded, just return
+					// Handle 'then' property for await support
+					// This must be checked BEFORE the loaded check to handle multiple awaits
+					if (prop === "then") {
+						if (loaded) {
+							// Already loaded - return a thenable that resolves to the value
+							// This ensures 'await proxy' returns the actual value, not the proxy
+							return (resolve) => resolve(value);
+						}
+						// Not loaded yet - return a thenable that loads first
+						return (resolve, reject) => {
+							load().then(resolve, reject);
+						};
+					}
+
+					// if already loaded, just return property from value
 					if (loaded) return value[prop];
+
 					// start loading if not started
 					if (!value) {
 						// kick off loading once, async
@@ -111,14 +126,8 @@ class ZanjLoader {
 							loaded = true;
 						});
 					}
-					// For async use (await data.big_array)
-					if (prop === "then") {
-						// Allow 'await data.big_array' syntax
-						return (resolve, reject) => {
-							load().then(resolve, reject);
-						};
-					}
-					// Before loaded: placeholder or Promise
+
+					// Before loaded: can't access properties
 					throw new Error(`Accessing property '${prop}' before ${path} loaded; use 'await data.${path.split(".").pop()}' or wait a bit.`);
 				},
 			}
