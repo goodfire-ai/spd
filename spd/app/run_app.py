@@ -33,46 +33,6 @@ LOGFILE = LOGS_DIR / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
 STARTUP_TIMEOUT_SECONDS = 30
 
 
-class ProcessManager:
-    """Manages backend and frontend processes with cleanup."""
-
-    def __init__(self):
-        self.backend_process: subprocess.Popen[str] | None = None
-        self.frontend_process: subprocess.Popen[str] | None = None
-        self.logfile = open(LOGFILE, "w", buffering=1)  # noqa: SIM115
-
-        # Register cleanup handlers
-        atexit.register(self.cleanup)
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
-
-    def _signal_handler(self, _signum: int, _frame: FrameType | None) -> None:
-        """Handle interrupt signals."""
-        sys.exit(0)  # Will trigger atexit cleanup
-
-    def cleanup(self):
-        """Cleanup all running processes."""
-        print("\n👋 Shutting down...")
-
-        # Terminate processes gracefully
-        if self.backend_process:
-            self.backend_process.terminate()
-
-        if self.frontend_process:
-            self.frontend_process.terminate()
-
-        # Give processes time to cleanup gracefully
-        time.sleep(1.0)
-
-        # Force kill if still running
-        if self.backend_process:
-            self.backend_process.kill()
-        if self.frontend_process:
-            self.frontend_process.kill()
-
-        self.logfile.close()
-
-
 def find_available_port(start_port: int) -> int:
     """Find an available port starting from start_port."""
     for port in range(start_port, start_port + 100):
