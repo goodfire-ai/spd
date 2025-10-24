@@ -5,6 +5,7 @@ import json
 import socketserver
 import threading
 from pathlib import Path
+from typing import Any, override
 
 import pytest
 
@@ -18,28 +19,37 @@ TEST_OUTPUT_DIR = Path("tests/.temp/dashboard-integration")
 _WANDB_RUN = "wandb:goodfire/spd-cluster/runs/c-c3623a67"
 
 
-def find_free_port():
+def find_free_port() -> int:
     """Find a free port to use for the test server."""
-    with socketserver.TCPServer(("", 0), None) as s:
+    with socketserver.TCPServer(("", 0), http.server.SimpleHTTPRequestHandler) as s:
         return s.server_address[1]
 
 
-def start_test_server(directory: Path, port: int) -> threading.Thread:
+class _ServerThread(threading.Thread):
+    """Thread subclass that stores a server reference for cleanup."""
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.server: socketserver.TCPServer | None = None
+
+
+def start_test_server(directory: Path, port: int) -> _ServerThread:
     """Start a simple HTTP server in a background thread."""
 
     class Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args: Any, **kwargs: Any):
             super().__init__(*args, directory=str(directory), **kwargs)
 
-        def log_message(self, format, *args):
+        @override
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
             # Suppress server logs during tests
             pass
 
     server = socketserver.TCPServer(("", port), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = _ServerThread(target=server.serve_forever, daemon=True)
     thread.start()
     # Store server reference so we can shut it down
-    thread.server = server  # type: ignore
+    thread.server = server
     return thread
 
 
@@ -220,5 +230,5 @@ def test_dashboard_end_to_end():
 
     finally:
         # Shutdown server
-        if hasattr(server_thread, "server"):
-            server_thread.server.shutdown()  # type: ignore
+        if server_thread.server is not None:
+            server_thread.server.shutdown()
