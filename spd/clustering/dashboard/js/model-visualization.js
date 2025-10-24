@@ -1,14 +1,17 @@
 // Self-contained utilities for model visualization
 // No global variables, all functions take necessary data as parameters
 
-function getClusterModuleStats(clusterId, clusterData) {
+async function getClusterModuleStats(clusterId, clusterData) {
     if (!clusterData || !clusterData[clusterId]) return {};
 
     const cluster = clusterData[clusterId];
     const moduleStats = {};
 
+    // Await lazy-loaded components
+    const components = await cluster.components;
+
     // Count components per module for this specific cluster
-    cluster.components.forEach(comp => {
+    components.forEach(comp => {
         const module = comp.module;
         if (!moduleStats[module]) {
             moduleStats[module] = {
@@ -34,12 +37,12 @@ function getModuleOrder(moduleName) {
     return 999;
 }
 
-function renderModelArchitecture(clusterId, clusterData, modelInfo, colormap = 'blues') {
+async function renderModelArchitecture(clusterId, clusterData, modelInfo, colormap = 'blues') {
     if (!modelInfo || !modelInfo.module_list) {
         throw new Error('Model info not loaded');
     }
 
-    const moduleStats = clusterData && clusterData[clusterId] ? getClusterModuleStats(clusterId, clusterData) : {};
+    const moduleStats = clusterData && clusterData[clusterId] ? await getClusterModuleStats(clusterId, clusterData) : {};
     const maxComponents = Math.max(...Object.values(moduleStats).map(s => s.componentCount), 1);
 
     // Group ALL modules from model_info by layer and type
@@ -192,7 +195,7 @@ function setupTooltips(containerElement) {
 }
 
 // Consolidated render function - creates model visualization in a container
-function renderModelView(containerElement, clusterHash, clusterData, modelInfo, colormap = 'blues', cellSize = null) {
+async function renderModelView(containerElement, clusterHash, clusterData, modelInfo, colormap = 'blues', cellSize = null) {
     if (!modelInfo || !modelInfo.module_list) {
         containerElement.innerHTML = '<span style="color: #999; font-size: 11px;">Model info loading...</span>';
         return;
@@ -204,7 +207,7 @@ function renderModelView(containerElement, clusterHash, clusterData, modelInfo, 
     }
 
     try {
-        const architecture = renderModelArchitecture(clusterHash, clusterData, modelInfo, colormap);
+        const architecture = await renderModelArchitecture(clusterHash, clusterData, modelInfo, colormap);
         const html = renderToHTML(architecture);
         containerElement.innerHTML = html;
 

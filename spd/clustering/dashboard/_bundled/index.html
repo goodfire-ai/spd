@@ -3704,14 +3704,17 @@
     // Self-contained utilities for model visualization
     // No global variables, all functions take necessary data as parameters
     
-    function getClusterModuleStats(clusterId, clusterData) {
+    async function getClusterModuleStats(clusterId, clusterData) {
         if (!clusterData || !clusterData[clusterId]) return {};
     
         const cluster = clusterData[clusterId];
         const moduleStats = {};
     
+        // Await lazy-loaded components
+        const components = await cluster.components;
+    
         // Count components per module for this specific cluster
-        cluster.components.forEach(comp => {
+        components.forEach(comp => {
             const module = comp.module;
             if (!moduleStats[module]) {
                 moduleStats[module] = {
