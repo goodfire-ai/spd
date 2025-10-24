@@ -102,7 +102,7 @@ def test_dashboard_end_to_end():
         zanj_data = json.load(f)
 
     cluster_ids = list(zanj_data.get("clusters", {}).keys())
-    print(f"{'!'*150}\n{cluster_ids = }\n{'!'*150}")
+    print(f"{'!' * 150}\n{cluster_ids = }\n{'!' * 150}")
     assert len(cluster_ids) > 0, "No clusters found in generated data"
 
     # ============================================================================
@@ -125,10 +125,16 @@ def test_dashboard_end_to_end():
             console_errors = []
             page_errors = []
             failed_requests = []
-            page.on("console", lambda msg: console_errors.append(msg) if msg.type == "error" else None)
+            page.on(
+                "console", lambda msg: console_errors.append(msg) if msg.type == "error" else None
+            )
             page.on("pageerror", lambda exc: page_errors.append(str(exc)))
-            page.on("response", lambda response:
-                    failed_requests.append(response.url) if response.status == 404 else None)
+            page.on(
+                "response",
+                lambda response: failed_requests.append(response.url)
+                if response.status == 404
+                else None,
+            )
 
             # Load index page
             url = f"http://localhost:{port}/index.html"
@@ -145,22 +151,25 @@ def test_dashboard_end_to_end():
                 pytest.fail(f"Page errors on index.html: {page_errors}")
 
             if failed_requests:
-                pytest.fail(f"Failed to load resources (404) on index.html:\n{'\n'.join(failed_requests)}")
+                pytest.fail(
+                    f"Failed to load resources (404) on index.html:\n{'\n'.join(failed_requests)}"
+                )
 
             if console_errors:
                 error_text = "\n".join(msg.text for msg in console_errors)
                 pytest.fail(f"Console errors on index.html:\n{error_text}")
 
             # Verify table loaded
-            assert page.query_selector("#clusterTableContainer") is not None, \
+            assert page.query_selector("#clusterTableContainer") is not None, (
                 "Cluster table container not found"
+            )
 
             page.close()
 
             # ========================================================================
             # SECTION 5: Test cluster.html loads for multiple clusters
             # ========================================================================
-            test_cluster_ids = cluster_ids[:min(3, len(cluster_ids))]
+            test_cluster_ids = cluster_ids[: min(3, len(cluster_ids))]
 
             for cluster_id in test_cluster_ids:
                 page = context.new_page()
@@ -168,10 +177,13 @@ def test_dashboard_end_to_end():
                 # Collect errors for this cluster
                 console_errors = []
                 page_errors = []
-                page.on("console", lambda msg, errors=console_errors:
-                        errors.append(f"{msg.text} @ {msg.location}") if msg.type == "error" else None)
-                page.on("pageerror", lambda exc, errors=page_errors:
-                        errors.append(f"{exc}"))
+                page.on(
+                    "console",
+                    lambda msg, errors=console_errors: errors.append(f"{msg.text} @ {msg.location}")
+                    if msg.type == "error"
+                    else None,
+                )
+                page.on("pageerror", lambda exc, errors=page_errors: errors.append(f"{exc}"))
 
                 # Load cluster page
                 url = f"http://localhost:{port}/cluster.html?id={cluster_id}"
@@ -192,12 +204,15 @@ def test_dashboard_end_to_end():
                     pytest.fail(f"Console errors for cluster {cluster_id}:\n{error_text}")
 
                 # Verify key elements
-                assert page.query_selector("#clusterTitle") is not None, \
+                assert page.query_selector("#clusterTitle") is not None, (
                     f"Cluster title not found for {cluster_id}"
-                assert page.query_selector("#componentsTable") is not None, \
+                )
+                assert page.query_selector("#componentsTable") is not None, (
                     f"Components table not found for {cluster_id}"
-                assert page.query_selector("#samplesTable") is not None, \
+                )
+                assert page.query_selector("#samplesTable") is not None, (
                     f"Samples table not found for {cluster_id}"
+                )
 
                 page.close()
 
@@ -205,5 +220,5 @@ def test_dashboard_end_to_end():
 
     finally:
         # Shutdown server
-        if hasattr(server_thread, 'server'):
+        if hasattr(server_thread, "server"):
             server_thread.server.shutdown()  # type: ignore
