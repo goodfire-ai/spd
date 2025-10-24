@@ -6,22 +6,4 @@ slurm_partition: null
 wandb_project: "spd-cluster" # wandb fails in CI
 wandb_entity: "goodfire"
 create_git_snapshot: false
-# run_clustering_config_path: "spd/clustering/configs/crc/simplestories_dev.json"
-run_clustering_config:
-  model_path: "wandb:goodfire/spd/runs/lxs77xye"
-  batch_size: 16
-  wandb_project: "spd-cluster"
-  logging_intervals:
-    stat: 5
-    tensor: 100
-    plot: 10000
-    artifact: 10000
-  merge_config:
-    activation_threshold: 0.1
-    alpha: 1.0
-    iters: null
-    merge_pair_sampling_method: "range"
-    merge_pair_sampling_kwargs:
-      threshold: 0.001
-    filter_dead_threshold: 0.1
-    module_name_filter: null
+run_clustering_config_path: "spd/clustering/configs/crc/simplestories_dev.json"
