@@ -25,8 +25,10 @@ from spd.clustering.ensemble_registry import get_clustering_runs
 from spd.clustering.math.merge_distances import compute_distances
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.plotting.merge import plot_dists_distribution
+from spd.clustering.scripts.run_clustering import ClusteringRunStorage
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
+from spd.utils.run_utils import ExecutionStamp
 
 # Set spawn method for CUDA compatibility with multiprocessing
 # Must be done before any CUDA operations
@@ -57,7 +59,16 @@ def main(pipeline_run_id: str, distances_method: DistancesMethod) -> None:
     # Load histories from individual clustering run directories
     histories: list[MergeHistory] = []
     for idx, clustering_run_id in clustering_runs:
-        history_path = SPD_CACHE_DIR / "cluster" / clustering_run_id / "history.npz"
+        history_path = ClusteringRunStorage(
+            ExecutionStamp(
+                run_id=clustering_run_id,
+                snapshot_branch="<not needed>",
+                commit_hash="<not needed>",
+                run_type="cluster",
+            )
+        ).history_path
+
+        # SPD_CACHE_DIR / "cluster" / clustering_run_id / "history.npz"
         if not history_path.exists():
             raise FileNotFoundError(
                 f"History not found for run {clustering_run_id}: {history_path}"

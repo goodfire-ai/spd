@@ -23,7 +23,7 @@ def load_dataset(
 ) -> BatchTensor:
     """Load a single batch for clustering.
 
-    Each run gets its own dataset batch, seeded by idx_in_ensemble.
+    Each run gets its own dataset batch, seeded by index in ensemble.
 
     Args:
         model_path: Path to decomposed model

@@ -1,7 +1,7 @@
 import math
 
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Bool, Float
 from torch import Tensor
 
 from spd.clustering.consts import ClusterCoactivationShaped, MergePair
@@ -182,114 +182,6 @@ def recompute_coacts_merge_pair(
     # remove the old group
     activation_mask_new = activation_mask_new[:, mask]
 
-    return (
-        merge_new,
-        coact_new,
-        activation_mask_new,
-    )
-
-
-def recompute_coacts_pop_group(
-    coact: ClusterCoactivationShaped,
-    merges: GroupMerge,
-    component_idx: int,
-    activation_mask: Bool[Tensor, "n_samples k_groups"],
-    activation_mask_orig: Bool[Tensor, "n_samples n_components"],
-) -> tuple[
-    GroupMerge,
-    Float[Tensor, "k_groups+1 k_groups+1"],
-    Bool[Tensor, "n_samples k_groups+1"],
-]:
-    # sanity check dims
-    # ==================================================
-
-    k_groups: int = coact.shape[0]
-    n_samples: int = activation_mask.shape[0]
-    k_groups_new: int = k_groups + 1
-    assert coact.shape[1] == k_groups, "Coactivation matrix must be square"
-    assert activation_mask.shape[1] == k_groups, (
-        "Activation mask must match coactivation matrix shape"
-    )
-    assert n_samples == activation_mask_orig.shape[0], (
-        "Activation mask original must match number of samples"
-    )
-
-    # get the activations we need
-    # ==================================================
-    # which group does the component belong to?
-    group_idx: int = int(merges.group_idxs[component_idx].item())
-    group_size_old: int = int(merges.components_per_group[group_idx].item())
-    group_size_new: int = group_size_old - 1
-
-    # activations of component we are popping out
-    acts_pop: Bool[Tensor, " samples"] = activation_mask_orig[:, component_idx]
-
-    # activations of the "remainder" -- everything other than the component we are popping out,
-    # in the group we're popping it out of
-    acts_remainder: Bool[Tensor, " samples"] = (
-        activation_mask_orig[
-            :, [i for i in merges.components_in_group(group_idx) if i != component_idx]
-        ]
-        .max(dim=-1)
-        .values
-    )
-
-    # assemble the new activation mask
-    # ==================================================
-    # first concat the popped-out component onto the end
-    activation_mask_new: Bool[Tensor, " samples k_groups+1"] = torch.cat(
-        [activation_mask, acts_pop.unsqueeze(1)],
-        dim=1,
-    )
-    # then replace the group we are popping out of with the remainder
-    activation_mask_new[:, group_idx] = acts_remainder
-
-    # assemble the new coactivation matrix
-    # ==================================================
-    coact_new: Float[Tensor, "k_groups+1 k_groups+1"] = torch.full(
-        (k_groups_new, k_groups_new),
-        fill_value=float("nan"),
-        dtype=coact.dtype,
-        device=coact.device,
-    )
-    # copy in the old coactivation matrix
-    coact_new[:k_groups, :k_groups] = coact.clone()
-    # compute new coactivations we need
-    coact_pop: Float[Tensor, " k_groups"] = acts_pop.float() @ activation_mask_new.float()
-    coact_remainder: Float[Tensor, " k_groups"] = (
-        acts_remainder.float() @ activation_mask_new.float()
-    )
-
-    # replace the relevant rows and columns
-    coact_new[group_idx, :] = coact_remainder
-    coact_new[:, group_idx] = coact_remainder
-    coact_new[-1, :] = coact_pop
-    coact_new[:, -1] = coact_pop
-
-    # assemble the new group merge
-    # ==================================================
-    group_idxs_new: Int[Tensor, " k_groups+1"] = merges.group_idxs.clone()
-    # the popped-out component is now its own group
-    new_group_idx: int = k_groups_new - 1
-    group_idxs_new[component_idx] = new_group_idx
-    merge_new: GroupMerge = GroupMerge(
-        group_idxs=group_idxs_new,
-        k_groups=k_groups_new,
-    )
-
-    # sanity check
-    assert merge_new.components_per_group.shape == (k_groups_new,), (
-        "New merge must have k_groups+1 components"
-    )
-    assert merge_new.components_per_group[new_group_idx] == 1, (
-        "New group must have exactly one component"
-    )
-    assert merge_new.components_per_group[group_idx] == group_size_new, (
-        "Old group must have one less component"
-    )
-
-    # return
-    # ==================================================
     return (
         merge_new,
         coact_new,

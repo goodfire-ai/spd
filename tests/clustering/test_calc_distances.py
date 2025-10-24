@@ -11,7 +11,6 @@ def test_merge_history_normalization_happy_path():
         iters=3,
         alpha=1.0,
         activation_threshold=None,
-        pop_component_prob=0.0,
     )
 
     histories = []

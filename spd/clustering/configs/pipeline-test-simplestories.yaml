@@ -1,4 +1,4 @@
-run_clustering_config_path: "spd/clustering/configs/test-simplestories.json"
+clustering_run_config_path: "spd/clustering/configs/crc/test-simplestories.json"
 n_runs: 2
 distances_methods: ["matching_dist"]
 base_output_dir: "tests/.temp/clustering"

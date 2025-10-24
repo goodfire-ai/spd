@@ -1,9 +1,12 @@
 """ClusteringRunConfig"""
 
+import base64
+import hashlib
+import json
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
-from pydantic import Field, PositiveInt, model_validator
+from pydantic import Field, PositiveInt, field_validator, model_validator
 
 from spd.base_config import BaseConfig
 from spd.clustering.merge_config import MergeConfig
@@ -51,8 +54,6 @@ class ClusteringRunConfig(BaseConfig):
         default=None,
         description="Ensemble identifier for WandB grouping",
     )
-    idx_in_ensemble: int = Field(0, description="Index of this run in the ensemble")
-
     merge_config: MergeConfig = Field(description="Merge algorithm configuration")
     logging_intervals: LoggingIntervals = Field(
         default_factory=LoggingIntervals,
@@ -68,16 +69,6 @@ class ClusteringRunConfig(BaseConfig):
         default=False,
         description="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
     )
-
-    # TODO: no way to check this without knowing task
-    # @model_validator(mode="after")
-    # def validate_streaming_compatibility(self) -> Self:
-    #     """Ensure dataset_streaming is only enabled for compatible tasks."""
-    #     if self.dataset_streaming and self.task_name != "lm":
-    #         raise ValueError(
-    #             f"Streaming dataset loading only supported for 'lm' task, got '{self.task_name}'"
-    #         )
-    #     return self
 
     @model_validator(mode="before")
     def process_experiment_key(cls, values: dict[str, Any]) -> dict[str, Any]:
@@ -100,12 +91,12 @@ class ClusteringRunConfig(BaseConfig):
 
         return values
 
-    @model_validator(mode="after")
-    def validate_model_path(self) -> Self:
+    @field_validator("model_path")
+    def validate_model_path(cls, v: str) -> str:
         """Validate that model_path is a proper WandB path."""
-        if not self.model_path.startswith("wandb:"):
-            raise ValueError(f"model_path must start with 'wandb:', got: {self.model_path}")
-        return self
+        if not v.startswith("wandb:"):
+            raise ValueError(f"model_path must start with 'wandb:', got: {v}")
+        return v
 
     @property
     def wandb_decomp_model(self) -> str:
@@ -127,3 +118,19 @@ class ClusteringRunConfig(BaseConfig):
         )
 
         return base_dump
+
+    def stable_hash_b64(self) -> str:
+        """Generate a stable, deterministic base64-encoded hash of this config.
+
+        Uses SHA256 hash of the JSON representation with sorted keys for determinism.
+        Returns URL-safe base64 encoding without padding.
+
+        Returns:
+            URL-safe base64-encoded hash (without padding)
+        """
+        config_dict: dict[str, Any] = self.model_dump(mode="json")
+        config_json: str = json.dumps(config_dict, indent=2, sort_keys=True)
+        hash_digest: bytes = hashlib.sha256(config_json.encode()).digest()
+        # Use base64 URL-safe encoding and strip padding for filesystem safety
+        hash_b64: str = base64.urlsafe_b64encode(hash_digest).decode().rstrip("=")
+        return hash_b64

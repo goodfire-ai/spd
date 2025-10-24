@@ -25,12 +25,14 @@ from pathlib import Path
 from typing import Any
 
 import wandb_workspaces.workspaces as ws
-from pydantic import Field, PositiveInt, field_validator
+from pydantic import Field, PositiveInt, field_validator, model_validator
 
 from spd.base_config import BaseConfig
+from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.consts import DistancesMethod
 from spd.clustering.storage import StorageBase
 from spd.log import logger
+from spd.settings import SPD_CACHE_DIR
 from spd.utils.command_utils import run_script_array_local
 from spd.utils.general_utils import replace_pydantic_model
 from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, read_noneable_str
@@ -69,20 +71,40 @@ class ClusteringPipelineStorage(StorageBase):
 class ClusteringPipelineConfig(BaseConfig):
     """Configuration for submitting an ensemble of clustering runs to SLURM."""
 
-    run_clustering_config_path: Path = Field(description="Path to ClusteringRunConfig file.")
+    clustering_run_config_path: Path = Field(
+        description="Path to ClusteringRunConfig file.",
+    )
     n_runs: PositiveInt = Field(description="Number of clustering runs in the ensemble")
     distances_methods: list[DistancesMethod] = Field(
         description="List of method(s) to use for calculating distances"
     )
-    base_output_dir: Path = Field(description="Base directory for outputs of clustering runs.")
-    slurm_job_name_prefix: str | None = Field(description="Prefix for SLURM job names")
-    slurm_partition: str | None = Field(description="SLURM partition to use")
+    base_output_dir: Path = Field(
+        default=SPD_CACHE_DIR / "clustering_pipeline",
+        description="Base directory for outputs of clustering ensemble pipeline runs.",
+    )
+    slurm_job_name_prefix: str | None = Field(
+        default=None, description="Prefix for SLURM job names"
+    )
+    slurm_partition: str | None = Field(default=None, description="SLURM partition to use")
     wandb_project: str | None = Field(
         default=None,
         description="Weights & Biases project name (set to None to disable WandB logging)",
     )
-    wandb_entity: str = Field(description="WandB entity (team/user) name")
-    create_git_snapshot: bool = Field(description="Create a git snapshot for the run")
+    wandb_entity: str = Field(default="goodfire", description="WandB entity (team/user) name")
+    create_git_snapshot: bool = Field(
+        default=False, description="Create a git snapshot for the run"
+    )
+
+    @model_validator(mode="after")
+    def validate_crc(self) -> "ClusteringPipelineConfig":
+        """Validate that exactly one of clustering_run_config_path points to a valid `ClusteringRunConfig`."""
+        assert self.clustering_run_config_path.exists(), (
+            f"clustering_run_config_path does not exist: {self.clustering_run_config_path}"
+        )
+        # Try to load ClusteringRunConfig
+        assert ClusteringRunConfig.from_file(self.clustering_run_config_path)
+
+        return self
 
     @field_validator("distances_methods")
     @classmethod
@@ -148,7 +170,7 @@ def generate_clustering_commands(
             "python",
             "spd/clustering/scripts/run_clustering.py",
             "--config",
-            pipeline_config.run_clustering_config_path.as_posix(),
+            pipeline_config.clustering_run_config_path.as_posix(),
             "--pipeline-run-id",
             pipeline_run_id,
             "--idx-in-ensemble",

@@ -153,6 +153,7 @@ def init_wandb[T_config: BaseConfig](
     """
     load_dotenv(override=True)
 
+    # TODO: pass run id from ExecutionStamp
     wandb.init(
         project=project,
         entity=os.getenv("WANDB_ENTITY"),

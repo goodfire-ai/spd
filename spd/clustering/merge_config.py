@@ -23,7 +23,6 @@ MergeConfigKey = Literal[
     "iters",
     "merge_pair_sampling_method",
     "merge_pair_sampling_kwargs",
-    "pop_component_prob",
     "filter_dead_threshold",
 ]
 
@@ -64,10 +63,6 @@ class MergeConfig(BaseConfig):
     merge_pair_sampling_kwargs: dict[str, Any] = Field(
         default_factory=lambda: {"threshold": 0.05},
         description="Keyword arguments for the merge pair sampling method.",
-    )
-    pop_component_prob: Probability = Field(
-        default=0,
-        description="Probability of popping a component in each iteration. If 0, no components are popped.",
     )
     filter_dead_threshold: float = Field(
         default=0.001,

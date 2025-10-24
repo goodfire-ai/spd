@@ -1,4 +1,4 @@
-run_clustering_config_path: "spd/clustering/configs/example.yaml"
+clustering_run_config_path: "spd/clustering/configs/crc/example.yaml"
 n_runs: 2
 distances_methods: ["perm_invariant_hamming"]
 base_output_dir: "/mnt/polished-lake/spd/clustering"
