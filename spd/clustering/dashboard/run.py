@@ -80,6 +80,7 @@ def main(dashboard_config: DashboardConfig) -> None:
             run_config=run_config,
             context_length=dashboard_config.context_length,
             batch_size=dashboard_config.batch_size,
+            streaming=dashboard_config.dataset_streaming,
         )
 
     logger.info("Generating model information")

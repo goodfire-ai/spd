@@ -79,6 +79,7 @@ def test_dashboard_end_to_end():
         batch_size=2,
         context_length=4,
         write_html=True,
+        dataset_streaming=True,  # Use streaming for faster load
     )
 
     main(config)

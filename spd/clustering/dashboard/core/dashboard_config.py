@@ -38,3 +38,7 @@ class DashboardConfig(BaseConfig):
         default=False,
         description="Write bundled HTML files to output directory",
     )
+    dataset_streaming: bool = Field(
+        default=False,
+        description="Whether to use streaming dataset loading. recommended True for large datasets or tests.",
+    )

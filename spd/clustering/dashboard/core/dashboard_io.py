@@ -53,6 +53,7 @@ def setup_model_and_data(
     run_config: dict[str, Any],
     context_length: int,
     batch_size: int,
+    streaming: bool = False,
 ) -> tuple[ComponentModel, PreTrainedTokenizer, DataLoader[Any], Config]:
     """Set up model, tokenizer, and dataloader.
 
@@ -93,7 +94,7 @@ def setup_model_and_data(
         split="train",
         n_ctx=context_length,
         is_tokenized=False,  # Text dataset
-        streaming=False,
+        streaming=streaming,
         column_name="story",
     )
     logger.info(f"Using {dataset_config = }")
