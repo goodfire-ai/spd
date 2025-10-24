@@ -1,7 +1,8 @@
 let clusterData = {};
 let modelInfo = {};
 let dataTable = null;
-let explanations = {};
+// TODO: Re-enable explanations feature
+// let explanations = {};
 
 // Alpine.js data component for model info
 const modelInfoData = {
@@ -159,21 +160,22 @@ const columnRenderers = {
         return `<a href="cluster.html?id=${row.clusterHash}">View →</a>`;
     },
 
-    explanation: function(value, row, col) {
-        if (!value) {
-            return '<span style="color: #999; font-style: italic;">—</span>';
-        }
-        // Truncate long explanations
-        const maxLength = 60;
-        if (value.length > maxLength) {
-            const truncated = value.substring(0, maxLength) + '...';
-            const span = document.createElement('span');
-            span.textContent = truncated;
-            span.title = value;  // Show full text on hover
-            return span;
-        }
-        return value;
-    },
+    // TODO: Re-enable explanations feature
+    // explanation: function(value, row, col) {
+    //     if (!value) {
+    //         return '<span style="color: #999; font-style: italic;">—</span>';
+    //     }
+    //     // Truncate long explanations
+    //     const maxLength = 60;
+    //     if (value.length > maxLength) {
+    //         const truncated = value.substring(0, maxLength) + '...';
+    //         const span = document.createElement('span');
+    //         span.textContent = truncated;
+    //         span.title = value;  // Show full text on hover
+    //         return span;
+    //     }
+    //     return value;
+    // },
 
     tokenEntropy: function(value, row, col) {
         const tokenStats = row.stats.token_activations;
@@ -576,12 +578,15 @@ function createNumericFilter(filterValue, valueExtractor) {
     };
 }
 
-function processClusterData() {
+async function processClusterData() {
     const tableData = [];
 
     for (const [clusterHash, cluster] of Object.entries(clusterData)) {
+        // Await lazy-loaded components
+        const components = await cluster.components;
+
         const modules = new Set();
-        cluster.components.forEach(comp => {
+        components.forEach(comp => {
             modules.add(comp.module);
         });
 
@@ -591,17 +596,19 @@ function processClusterData() {
         const parts = clusterHash.split('-');
         const clusterId = parseInt(parts[parts.length - 1]);
 
+        // TODO: Re-enable explanations feature
         // Get explanation for this cluster
-        const explanationData = explanations[clusterHash];
-        const explanation = explanationData ? explanationData.explanation : null;
+        // const explanationData = explanations[clusterHash];
+        // const explanation = explanationData ? explanationData.explanation : null;
 
         tableData.push({
             id: clusterId,
             clusterHash: clusterHash,
-            componentCount: cluster.components.length,
+            componentCount: components.length,
             modules: Array.from(modules),
             stats: stats,
-            explanation: explanation
+            // TODO: Re-enable explanations feature
+            // explanation: explanation
         });
     }
 
@@ -617,10 +624,11 @@ async function loadData() {
     clusterData = data.clusters;
     modelInfo = data.model_info;
 
+    // TODO: Re-enable explanations feature
     // Load explanations separately (not part of ZANJ)
-    explanations = await loadJSONL(CONFIG.getDataPath('explanations'), 'cluster_id').catch(() => ({}));
+    // explanations = await loadJSONL(CONFIG.getDataPath('explanations'), 'cluster_id').catch(() => ({}));
 
-    const tableData = processClusterData();
+    const tableData = await processClusterData();
 
     // Discover histogram stats from first cluster
     const firstCluster = Object.values(clusterData)[0];
@@ -765,16 +773,17 @@ async function loadData() {
         filterTooltip: 'Filter by concentration (0-1). Use operators: >, <, >=, <=, ==, != (e.g., >0.5)'
     });
 
+    // TODO: Re-enable explanations feature
     // Explanation column
-    columns.push({
-        key: 'explanation',
-        label: 'Explanation',
-        type: 'string',
-        width: '200px',
-        align: 'left',
-        renderer: columnRenderers.explanation,
-        filterTooltip: 'Filter by explanation text (case-insensitive substring match)'
-    });
+    // columns.push({
+    //     key: 'explanation',
+    //     label: 'Explanation',
+    //     type: 'string',
+    //     width: '200px',
+    //     align: 'left',
+    //     renderer: columnRenderers.explanation,
+    //     filterTooltip: 'Filter by explanation text (case-insensitive substring match)'
+    // });
 
     // Actions column
     columns.push({

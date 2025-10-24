@@ -67,10 +67,6 @@ NUM_PROCESSES ?= $(shell nproc | awk '{print ($$1<4?$$1:4)}')
 test-all:
 	pytest tests/ --runslow --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
 
-.PHONY: test-dashboard
-test-dashboard:
-	pytest tests/clustering/dashboard/test_dashboard_integration.py --runslow -v --durations 10
-
 COVERAGE_DIR=docs/coverage
 
 .PHONY: coverage
@@ -93,6 +89,11 @@ bundle-dashboard:
 		--output spd/clustering/dashboard/_bundled/cluster.html \
 		--source-dir spd/clustering/dashboard
 	@echo "Bundled HTML files to spd/clustering/dashboard/_bundled/"
+
+.PHONY: test-dashboard
+test-dashboard: bundle-dashboard
+	pytest tests/clustering/dashboard/test_dashboard_integration.py --runslow -v --durations 10
+
 
 .PHONY: clustering-dashboard
 clustering-dashboard: bundle-dashboard

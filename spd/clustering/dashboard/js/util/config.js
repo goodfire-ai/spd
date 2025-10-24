@@ -58,8 +58,9 @@ function getDefaultConfig() {
       dataDir: "data",
       files: {
         // DEPRECATED: ZANJ handles loading clusters, modelInfo, textSamples, activations automatically
+        // TODO: Re-enable explanations feature
         // Only explanations is loaded separately (not part of ZANJ)
-        explanations: "explanations.jsonl"
+        // explanations: "explanations.jsonl"
       }
     },
 

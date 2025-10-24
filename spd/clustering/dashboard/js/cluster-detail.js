@@ -3,7 +3,8 @@ let allClusters = null;
 let textSamples = {};
 let currentClusterHash = null;
 let modelInfo = {};
-let explanations = {};
+// TODO: Re-enable explanations feature
+// let explanations = {};
 
 // DEPRECATED: activationsArray and activationsMap no longer needed - data is self-contained in cluster.samples
 
@@ -42,9 +43,10 @@ async function loadData() {
         textSamples = data.text_samples;
         modelInfo = data.model_info;
 
+        // TODO: Re-enable explanations feature
         // Load explanations separately (not part of ZANJ)
-        const explanationsPath = CONFIG.getDataPath('explanations');
-        explanations = await loadJSONL(explanationsPath, 'cluster_id').catch(() => ({}));
+        // const explanationsPath = CONFIG.getDataPath('explanations');
+        // explanations = await loadJSONL(explanationsPath, 'cluster_id').catch(() => ({}));
 
         if (!allClusters[currentClusterHash]) {
             const msg = 'Cluster not found';
@@ -95,14 +97,17 @@ async function displayCluster() {
         console.error(msg);
         return;
     }
-    componentCount.textContent = clusterData.components.length;
+    // Await lazy-loaded components
+    const components = await clusterData.components;
+    componentCount.textContent = components.length;
 
+    // TODO: Re-enable explanations feature
     // Display explanation and setup copy handler
-    displayExplanation();
-    setupCopyHandler();
+    // displayExplanation();
+    // setupCopyHandler();
 
     // Initialize component data
-    initializeComponentData();
+    await initializeComponentData();
 
     // Display model visualization
     displayModelVisualization();
@@ -125,55 +130,56 @@ async function displayCluster() {
     await displaySamples();
 }
 
-function displayExplanation() {
-    const explanationSpan = document.getElementById('clusterExplanation');
-    if (!explanationSpan) return;
+// TODO: Re-enable explanations feature
+// function displayExplanation() {
+//     const explanationSpan = document.getElementById('clusterExplanation');
+//     if (!explanationSpan) return;
+//
+//     const explanationData = explanations[currentClusterHash];
+//     if (explanationData && explanationData.explanation) {
+//         explanationSpan.textContent = explanationData.explanation;
+//         explanationSpan.style.fontStyle = 'normal';
+//         explanationSpan.style.color = '#000';
+//     } else {
+//         explanationSpan.textContent = 'No explanation';
+//         explanationSpan.style.fontStyle = 'italic';
+//         explanationSpan.style.color = '#666';
+//     }
+// }
+//
+// function setupCopyHandler() {
+//     const copyBtn = document.getElementById('copyTemplateBtn');
+//     if (!copyBtn) return;
+//
+//     copyBtn.addEventListener('click', async () => {
+//         const template = JSON.stringify({
+//             cluster_id: currentClusterHash,
+//             explanation: ""
+//         }) + '\n';
+//
+//         try {
+//             await navigator.clipboard.writeText(template);
+//             NOTIF.success('Template copied to clipboard!');
+//         } catch (err) {
+//             // Fallback for older browsers
+//             const textArea = document.createElement('textarea');
+//             textArea.value = template;
+//             textArea.style.position = 'fixed';
+//             textArea.style.left = '-999999px';
+//             document.body.appendChild(textArea);
+//             textArea.select();
+//             try {
+//                 document.execCommand('copy');
+//                 NOTIF.success('Template copied to clipboard!');
+//             } catch (e) {
+//                 NOTIF.error('Failed to copy template', e, null);
+//             }
+//             document.body.removeChild(textArea);
+//         }
+//     });
+// }
 
-    const explanationData = explanations[currentClusterHash];
-    if (explanationData && explanationData.explanation) {
-        explanationSpan.textContent = explanationData.explanation;
-        explanationSpan.style.fontStyle = 'normal';
-        explanationSpan.style.color = '#000';
-    } else {
-        explanationSpan.textContent = 'No explanation';
-        explanationSpan.style.fontStyle = 'italic';
-        explanationSpan.style.color = '#666';
-    }
-}
-
-function setupCopyHandler() {
-    const copyBtn = document.getElementById('copyTemplateBtn');
-    if (!copyBtn) return;
-
-    copyBtn.addEventListener('click', async () => {
-        const template = JSON.stringify({
-            cluster_id: currentClusterHash,
-            explanation: ""
-        }) + '\n';
-
-        try {
-            await navigator.clipboard.writeText(template);
-            NOTIF.success('Template copied to clipboard!');
-        } catch (err) {
-            // Fallback for older browsers
-            const textArea = document.createElement('textarea');
-            textArea.value = template;
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-999999px';
-            document.body.appendChild(textArea);
-            textArea.select();
-            try {
-                document.execCommand('copy');
-                NOTIF.success('Template copied to clipboard!');
-            } catch (e) {
-                NOTIF.error('Failed to copy template', e, null);
-            }
-            document.body.removeChild(textArea);
-        }
-    });
-}
-
-function initializeComponentData() {
+async function initializeComponentData() {
     // Load component activations if available
     if (clusterData.component_activations) {
         componentActivations = clusterData.component_activations;
@@ -181,7 +187,9 @@ function initializeComponentData() {
 
     // Enable all components by default
     enabledComponents.clear();
-    clusterData.components.forEach(comp => {
+    // Await lazy-loaded components
+    const components = await clusterData.components;
+    components.forEach(comp => {
         enabledComponents.add(comp.label);
     });
 }

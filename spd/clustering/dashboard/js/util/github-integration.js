@@ -1,5 +1,8 @@
 // github-integration.js - Utilities for GitHub issue creation and explanation tracking
 
+// TODO: Re-enable explanations feature
+// This entire file is currently disabled - explanations feature is temporarily disabled
+
 /**
  * Generate GitHub issue URL for cluster explanation submission
  * @param {number} clusterId - Cluster ID

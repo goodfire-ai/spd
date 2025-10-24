@@ -88,6 +88,15 @@ def test_dashboard_end_to_end():
     assert (run_output_dir / "index.html").exists(), "index.html missing"
     assert (run_output_dir / "cluster.html").exists(), "cluster.html missing"
 
+    # Create frontend_config.json for JavaScript to load
+    frontend_config = {
+        "github": {
+            "enabled": False  # Disable GitHub integration for tests
+        }
+    }
+    with open(run_output_dir / "frontend_config.json", "w") as f:
+        json.dump(frontend_config, f, indent=2)
+
     # Load cluster IDs for testing
     zanj_json_path = run_output_dir / "data" / "__zanj__.json"
     with open(zanj_json_path) as f:
@@ -112,11 +121,14 @@ def test_dashboard_end_to_end():
             # ========================================================================
             page = context.new_page()
 
-            # Collect console errors
+            # Collect console errors and failed requests
             console_errors = []
             page_errors = []
+            failed_requests = []
             page.on("console", lambda msg: console_errors.append(msg) if msg.type == "error" else None)
             page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+            page.on("response", lambda response:
+                    failed_requests.append(response.url) if response.status == 404 else None)
 
             # Load index page
             url = f"http://localhost:{port}/index.html"
@@ -131,6 +143,9 @@ def test_dashboard_end_to_end():
             # Check for errors
             if page_errors:
                 pytest.fail(f"Page errors on index.html: {page_errors}")
+
+            if failed_requests:
+                pytest.fail(f"Failed to load resources (404) on index.html:\n{'\n'.join(failed_requests)}")
 
             if console_errors:
                 error_text = "\n".join(msg.text for msg in console_errors)
