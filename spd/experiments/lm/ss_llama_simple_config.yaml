@@ -26,35 +26,37 @@ use_delta_component: true
 loss_metric_configs:
 
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.004
+    coeff: 0.002
     pnorm: 2.0
     p_anneal_start_frac: 0.0
     p_anneal_final_p: 0.3
     p_anneal_end_frac: 1.0
 
 
-  - classname: "PGDReconSubsetLoss"
-    init: "random"
-    step_size: 0.01
-    n_steps: 3
-    mask_scope: "shared_across_batch"
-    coeff:
-      type: "cosine"
-      start_value: 0.0
-      end_value: 0.0
-      start_frac: 0.0
-      end_frac: 1.0
+  # - classname: "PGDReconSubsetLoss"
+  #   init: "random"
+  #   step_size: 0.1
+  #   n_steps: 1
+  #   mask_scope: "shared_across_batch"
+  #   coeff:
+  #     type: "cosine"
+  #     start_value: 0.0
+  #     end_value: 0.0
+  #     start_frac: 0.0
+  #     end_frac: 1.0
 
   - classname: "StochasticReconSubsetLoss"
-    coeff: 1.0
+    coeff: 0.5
+  - classname: "StochasticReconLoss"
+    coeff: 0.5
 
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 256
+batch_size: 64
 eval_batch_size: 64
-steps: 20000
-lr: 0.0005
+steps: 200000
+lr: 3e-4
 lr_schedule: cosine
 lr_warmup_pct: 0.0
 lr_exponential_halflife: null
@@ -102,10 +104,15 @@ eval_metric_configs:
       all_but_layer_2: ["h.2.*"]
       all_but_layer_3: ["h.3.*"]
   - classname: "StochasticHiddenActsReconLoss"
+  - classname: "PGDReconLoss"
+    init: "random"
+    step_size: 0.1
+    n_steps: 20
+    mask_scope: "shared_across_batch"
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
-pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w # 100k steps 4019 tok
+pretrained_model_name: wandb:goodfire/spd/runs/zz4armi6
 pretrained_model_output_attr: idx_0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok: TODO: Load from wandb instead
 
