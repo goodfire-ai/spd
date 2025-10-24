@@ -100,7 +100,8 @@ clean-test-dashboard:
 .PHONY: install-playwright
 install-playwright:
 	@echo "Install Playwright browsers, used for dashboard tests"
-	uv run --with playwright playwright install chromium
+	uv run playwright install chromium
+	uv run playwright install-deps
 
 .PHONY: test-dashboard
 test-dashboard: clean-test-dashboard bundle-dashboard
