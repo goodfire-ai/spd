@@ -4,9 +4,9 @@ import base64
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Any
 
-from pydantic import Field, NonNegativeInt, PositiveInt, field_validator, model_validator
+from pydantic import Field, PositiveInt, field_validator, model_validator
 
 from spd.base_config import BaseConfig
 from spd.clustering.merge_config import MergeConfig
@@ -29,10 +29,6 @@ class LoggingIntervals(BaseConfig):
     artifact: PositiveInt = Field(
         default=100, description="Creating artifacts (e.g., merge_history)"
     )
-
-
-ClusteringEnsembleIndex = NonNegativeInt | Literal[-1]
-"index in an ensemble; -1 will cause register_clustering_run() to auto-assign the next available index"
 
 
 class ClusteringRunConfig(BaseConfig):
@@ -58,12 +54,6 @@ class ClusteringRunConfig(BaseConfig):
         default=None,
         description="Ensemble identifier for WandB grouping",
     )
-    # TODO: given our use of `register_clustering_run()` and the atomic guarantees of that, do we even need this index?
-    # probably still nice to have for clarity
-    idx_in_ensemble: ClusteringEnsembleIndex | None = Field(
-        default=None, description="Index of this run in the ensemble"
-    )
-
     merge_config: MergeConfig = Field(description="Merge algorithm configuration")
     logging_intervals: LoggingIntervals = Field(
         default_factory=LoggingIntervals,
@@ -107,13 +97,6 @@ class ClusteringRunConfig(BaseConfig):
         if not v.startswith("wandb:"):
             raise ValueError(f"model_path must start with 'wandb:', got: {v}")
         return v
-
-    @model_validator(mode="after")
-    def validate_ensemble_id_index(self) -> Self:
-        assert (self.idx_in_ensemble is None) == (self.ensemble_id is None), (
-            "If ensemble_id is None, idx_in_ensemble must also be None"
-        )
-        return self
 
     @property
     def wandb_decomp_model(self) -> str:

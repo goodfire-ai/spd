@@ -228,25 +228,23 @@ def main(run_config: ClusteringRunConfig) -> Path:
     logger.info(f"Clustering run ID: {clustering_run_id}")
 
     # Register with ensemble if this is part of a pipeline
+    assigned_idx: int | None
     if run_config.ensemble_id:
-        assert run_config.idx_in_ensemble is not None, (
-            "idx_in_ensemble must be set when ensemble_id is provided! to auto-assign, set idx_in_ensemble = -1.\n"
-            f"{'!' * 50}\nNOTE: this should be an unreachable state -- such a case should have been caught by the pydantic validator.\n{'!' * 50}"
+        assigned_idx = register_clustering_run(
+            pipeline_run_id=run_config.ensemble_id,
+            clustering_run_id=clustering_run_id,
         )
-        assigned_idx: int = register_clustering_run(
-            run_config.ensemble_id,
-            run_config.idx_in_ensemble,
-            clustering_run_id,
-        )
-
-        # Update config if index was auto-assigned
-        if run_config.idx_in_ensemble == -1:
-            run_config = replace_pydantic_model(run_config, {"idx_in_ensemble": assigned_idx})
-            logger.info(f"Auto-assigned ensemble index: {assigned_idx}")
 
         logger.info(
             f"Registered with pipeline {run_config.ensemble_id} at index {assigned_idx} in {_ENSEMBLE_REGISTRY_DB}"
         )
+        # IMPORTANT: set dataset seed based on assigned index
+        run_config = replace_pydantic_model(
+            run_config,
+            {"dataset_seed": run_config.dataset_seed + assigned_idx},
+        )
+    else:
+        assigned_idx = None
 
     # save config
     run_config.to_file(storage.config_path)
@@ -292,7 +290,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
                 f"task:{task_name}",
                 f"model:{run_config.wandb_decomp_model}",
                 f"ensemble_id:{run_config.ensemble_id}",
-                f"idx:{run_config.idx_in_ensemble}",
+                f"assigned_idx:{assigned_idx}",
             ],
         )
         # logger.info(f"WandB run: {wandb_run.url}")
@@ -426,9 +424,6 @@ def cli() -> None:
     }
 
     # Handle ensemble-related overrides
-    if args.idx_in_ensemble is not None:
-        overrides["dataset_seed"] = run_config.dataset_seed + args.idx_in_ensemble
-        overrides["idx_in_ensemble"] = args.idx_in_ensemble
     if args.pipeline_run_id is not None:
         overrides["ensemble_id"] = args.pipeline_run_id
 
