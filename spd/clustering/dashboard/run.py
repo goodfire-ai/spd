@@ -101,7 +101,7 @@ def main(dashboard_config: DashboardConfig) -> None:
         tokenizer=tokenizer,
         dataloader=dataloader,
         merge_history=merge_history,
-        iteration=dashboard_config.iteration,
+        iteration=actual_iteration,
         n_samples=dashboard_config.n_samples,
         n_batches=dashboard_config.n_batches,
         clustering_run=run_id,

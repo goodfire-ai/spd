@@ -4379,12 +4379,24 @@
     }
     
     async function setupComponentsTable() {
+        // Debug: check what clusterData.components actually is
+        console.log("clusterData.components (before await):", clusterData.components);
+        console.log("typeof clusterData.components:", typeof clusterData.components);
+        console.log("clusterData.components.then:", clusterData.components.then);
+    
         // Await lazy-loaded components
         const components = await clusterData.components;
     
+        console.log("components (after await):", components);
+        console.log("typeof components:", typeof components);
+        console.log("Array.isArray(components):", Array.isArray(components));
+    
         // Fail fast: verify components is a valid array
         if (!Array.isArray(components)) {
-            throw new Error(`clusterData.components is not an array: ${typeof components}`);
+            console.error("components:", components);
+            console.error("components keys:", Object.keys(components));
+            console.error("clusterData:", clusterData);
+            throw new Error(`clusterData.components is not an array: ${typeof components}. Keys: ${Object.keys(components).join(", ")}`);
         }
     
         // Fail fast: check for undefined/null entries

@@ -102,6 +102,7 @@ def test_dashboard_end_to_end():
         zanj_data = json.load(f)
 
     cluster_ids = list(zanj_data.get("clusters", {}).keys())
+    print(f"{'!'*150}\n{cluster_ids = }\n{'!'*150}")
     assert len(cluster_ids) > 0, "No clusters found in generated data"
 
     # ============================================================================
