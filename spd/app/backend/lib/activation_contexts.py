@@ -101,7 +101,7 @@ class ActivationsData:
     component_mean_cis: dict[str, Float[torch.Tensor, " C"]]
 
 
-TOPK_EXAMPLES = 1000
+TOPK_EXAMPLES = 100
 
 
 def get_topk_by_subcomponent(
