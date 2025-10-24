@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = "==3.13.*"
 resolution-markers = [
     "sys_platform == 'linux'",
@@ -1898,7 +1898,7 @@ dev = [
 requires-dist = [
     { name = "datasets", specifier = ">=2.21.0" },
     { name = "einops" },
-    { name = "fastapi", specifier = ">=0.119.1" },
+    { name = "fastapi" },
     { name = "fire" },
     { name = "ipykernel" },
     { name = "jaxtyping" },
@@ -1914,7 +1914,7 @@ requires-dist = [
     { name = "torchvision", specifier = ">=0.23,<0.24" },
     { name = "tqdm" },
     { name = "transformers" },
-    { name = "uvicorn", specifier = ">=0.38.0" },
+    { name = "uvicorn" },
     { name = "wandb", specifier = ">=0.20.1" },
     { name = "wandb-workspaces", specifier = "==0.1.12" },
 ]
