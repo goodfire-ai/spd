@@ -9,7 +9,7 @@ from spd.configs import PGDConfig, PGDInitStrategy
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import RoutingType, calc_routing_masks
-from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
+from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast, gather_all_tensors, get_world_size
 from spd.utils.general_utils import calc_sum_recon_loss_lm, zip_dicts
 
 
@@ -179,3 +179,8 @@ def _interpolate_component_mask(
         assert torch.all(component_mask[module_name] >= ci[module_name])
         assert torch.all(component_mask[module_name] <= 1.0)
     return component_mask
+
+# def assert_same_across_ranks(tensor: Tensor) -> None:
+#     sum = gather_all_tensors(tensor.clone(), op=ReduceOp.SUM)
+#     world_size = get_world_size()
+#     assert sum / world_size == tensor
