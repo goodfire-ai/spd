@@ -8,7 +8,145 @@ from jaxtyping import Float, Int
 from sklearn.tree import plot_tree
 import torch
 
-from spd.clustering.ci_dt.core import LayerModel, get_estimator_for
+from spd.clustering.ci_dt.core import LayerModel, MetricKey, get_estimator_for
+
+METRIC_DISPLAY_INFO: dict[MetricKey, dict[str, str]] = {
+    "ap": {
+        "ylabel": "Average Precision",
+        "title": (
+            r"Average Precision per Target Component" + "\n"
+            r"$\text{AP} = \sum_n (R_n - R_{n-1}) P_n$ where "
+            r"$P_n = \frac{\text{TP}}{\text{TP}+\text{FP}}$, "
+            r"$R_n = \frac{\text{TP}}{\text{TP}+\text{FN}}$"
+        ),
+        "color": "C0",
+    },
+    "acc": {
+        "ylabel": "Accuracy",
+        "title": (
+            r"Accuracy per Target Component" + "\n"
+            r"$\text{Accuracy} = \frac{\text{TP} + \text{TN}}{\text{TP} + \text{TN} + \text{FP} + \text{FN}}$"
+        ),
+        "color": "C1",
+    },
+    "bacc": {
+        "ylabel": "Balanced Accuracy",
+        "title": (
+            r"Balanced Accuracy per Target Component" + "\n"
+            r"$\text{Balanced Acc} = \frac{1}{2}\left(\frac{\text{TP}}{\text{TP}+\text{FN}} + \frac{\text{TN}}{\text{TN}+\text{FP}}\right)$"
+        ),
+        "color": "C2",
+    },
+    "prev": {
+        "ylabel": "Prevalence",
+        "title": (
+            r"Component Prevalence" + "\n"
+            r"$\text{Prevalence} = \frac{\text{TP}+\text{FN}}{\text{TP}+\text{TN}+\text{FP}+\text{FN}}$ (fraction of samples where component is active)"
+        ),
+        "color": "C5",
+    },
+    "tpr": {
+        "ylabel": "TPR",
+        "title": (
+            r"True Positive Rate (TPR / Recall / Sensitivity)" + "\n"
+            r"$\text{TPR} = \frac{\text{TP}}{\text{TP}+\text{FN}}$ (how well we predict active components)"
+        ),
+        "color": "C0",
+    },
+    "tnr": {
+        "ylabel": "TNR",
+        "title": (
+            r"True Negative Rate (TNR / Specificity)" + "\n"
+            r"$\text{TNR} = \frac{\text{TN}}{\text{TN}+\text{FP}}$ (how well we predict inactive components)"
+        ),
+        "color": "C1",
+    },
+    "precision": {
+        "ylabel": "Precision",
+        "title": (
+            r"Precision (Positive Predictive Value)" + "\n"
+            r"$\text{PPV} = \frac{\text{TP}}{\text{TP}+\text{FP}}$ (when we predict active, how often are we right?)"
+        ),
+        "color": "C2",
+    },
+    "npv": {
+        "ylabel": "NPV",
+        "title": (
+            r"Negative Predictive Value (NPV)" + "\n"
+            r"$\text{NPV} = \frac{\text{TN}}{\text{TN}+\text{FN}}$ (when we predict inactive, how often are we right?)"
+        ),
+        "color": "C3",
+    },
+    "f1": {
+        "ylabel": "F1 Score",
+        "title": (
+            r"F1 Score per Target Component" + "\n"
+            r"$F1 = 2 \cdot \frac{\text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$ (harmonic mean)"
+        ),
+        "color": "C4",
+    },
+}
+
+
+def _plot_metric_scatter(
+    ax: plt.Axes,
+    per_layer_stats: list[dict[str, Any]],
+    module_keys: list[str],
+    metric_key: MetricKey,
+    jitter_amount: float = 0.15,
+) -> None:
+    """Helper function to plot jittered scatter with mean lines for a metric.
+
+    Handles all formatting including axis labels, ticks, grid, and module name cleaning.
+    Display properties (title, ylabel, color) are looked up from METRIC_DISPLAY_INFO.
+
+    Args:
+        ax: Matplotlib axis to plot on
+        per_layer_stats: List of dicts with metrics per layer
+        module_keys: List of module names for x-axis labels
+        metric_key: Key for metric (e.g., "tpr", "npv", "f1")
+        jitter_amount: Amount of horizontal jitter for scatter points
+    """
+    # Look up display properties
+    display_info = METRIC_DISPLAY_INFO[metric_key]
+    mean_key = f"mean_{metric_key}"
+    ylabel = display_info["ylabel"]
+    title = display_info["title"]
+    color = display_info["color"]
+
+    L: int = len(per_layer_stats)
+    np.random.seed(42)
+
+    # Plot scatter and means
+    for layer_idx, stats in enumerate(per_layer_stats):
+        values: np.ndarray = stats[metric_key]
+        valid: np.ndarray = values[~np.isnan(values)]
+        if len(valid) > 0:
+            x_positions: np.ndarray = np.ones(len(valid)) * (layer_idx + 1)
+            x_jittered: np.ndarray = x_positions + np.random.uniform(
+                -jitter_amount, jitter_amount, len(valid)
+            )
+            ax.scatter(x_jittered, valid, alpha=0.5, s=20, color=color, edgecolors="none")
+            ax.plot(
+                [layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
+                [stats[mean_key], stats[mean_key]],
+                "r-",
+                linewidth=2,
+                label="Mean" if layer_idx == 0 else "",
+            )
+
+    # Clean module names
+    clean_keys = [k.removeprefix("model.layers.").replace("_proj", "") for k in module_keys]
+
+    # Formatting
+    ax.set_title(title)
+    ax.set_xlabel("Target Module")
+    ax.set_ylabel(ylabel)
+    ax.set_xticks(np.arange(1, L + 1))
+    ax.set_xticklabels(clean_keys[1 : L + 1], rotation=45, ha="right")
+    ax.set_ylim(-0.05, 1.05)
+    ax.grid(True, alpha=0.3, axis="y")
+    ax.legend()
 
 
 def greedy_sort(A: np.ndarray, axis: int) -> np.ndarray:
@@ -266,147 +404,27 @@ def plot_covariance(
     fig.tight_layout()
 
 
-def plot_average_precision(
+def plot_metric(
     per_layer_stats: list[dict[str, Any]],
     module_keys: list[str],
+    metric_key: MetricKey,
 ) -> None:
-    """Plot distribution of average precision per layer with scatter plot and jitter.
+    """Plot distribution of a metric per layer with scatter plot and jitter.
+
+    Display properties (title, ylabel, color) are looked up from METRIC_DISPLAY_INFO.
 
     Args:
         per_layer_stats: List of dicts with metrics per layer
         module_keys: List of module names for x-axis labels
+        metric_key: Key for metric to plot (e.g., "tpr", "npv", "f1", "ap", "bacc")
     """
-    L: int = len(per_layer_stats)
-    np.random.seed(42)  # Reproducible jitter
-    jitter_amount: float = 0.15
-
     fig, ax = plt.subplots(figsize=(10, 5))
-    for layer_idx, stats in enumerate(per_layer_stats):
-        ap_values: np.ndarray = stats["ap"]
-        # Remove NaN values
-        ap_valid: np.ndarray = ap_values[~np.isnan(ap_values)]
-        if len(ap_valid) > 0:
-            # Add horizontal jitter
-            x_positions: np.ndarray = np.ones(len(ap_valid)) * (layer_idx + 1)
-            x_jittered: np.ndarray = x_positions + np.random.uniform(
-                -jitter_amount, jitter_amount, len(ap_valid)
-            )
-            ax.scatter(x_jittered, ap_valid, alpha=0.5, s=20, color="C0", edgecolors="none")
-            # Add mean line
-            ax.plot(
-                [layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
-                [stats["mean_ap"], stats["mean_ap"]],
-                "r-",
-                linewidth=2,
-                label="Mean" if layer_idx == 0 else "",
-            )
-
-    ax.set_title(
-        r"Average Precision per Target Component" + "\n"
-        r"$\text{AP} = \sum_n (R_n - R_{n-1}) P_n$ where "
-        r"$P_n = \frac{\text{TP}}{\text{TP}+\text{FP}}$, "
-        r"$R_n = \frac{\text{TP}}{\text{TP}+\text{FN}}$"
+    _plot_metric_scatter(
+        ax=ax,
+        per_layer_stats=per_layer_stats,
+        module_keys=module_keys,
+        metric_key=metric_key,
     )
-    ax.set_xlabel("Target Module")
-    ax.set_ylabel("Average Precision")
-    ax.set_xticks(np.arange(1, L + 1))
-    # Only use module keys that correspond to target layers (skip input layer)
-    ax.set_xticklabels(module_keys[1 : L + 1], rotation=45, ha="right")
-    ax.set_ylim(-0.05, 1.05)
-    ax.grid(True, alpha=0.3, axis="y")
-    ax.legend()
-    fig.tight_layout()
-
-
-def plot_accuracy(
-    per_layer_stats: list[dict[str, Any]],
-    module_keys: list[str],
-) -> None:
-    """Plot distribution of accuracy per layer with scatter plot and jitter.
-
-    Args:
-        per_layer_stats: List of dicts with metrics per layer
-        module_keys: List of module names for x-axis labels
-    """
-    L: int = len(per_layer_stats)
-    np.random.seed(42)  # Reproducible jitter
-    jitter_amount: float = 0.15
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    for layer_idx, stats in enumerate(per_layer_stats):
-        acc_values: np.ndarray = stats["acc"]
-        acc_valid: np.ndarray = acc_values[~np.isnan(acc_values)]
-        if len(acc_valid) > 0:
-            x_positions: np.ndarray = np.ones(len(acc_valid)) * (layer_idx + 1)
-            x_jittered: np.ndarray = x_positions + np.random.uniform(
-                -jitter_amount, jitter_amount, len(acc_valid)
-            )
-            ax.scatter(x_jittered, acc_valid, alpha=0.5, s=20, color="C1", edgecolors="none")
-            ax.plot(
-                [layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
-                [stats["mean_acc"], stats["mean_acc"]],
-                "r-",
-                linewidth=2,
-                label="Mean" if layer_idx == 0 else "",
-            )
-
-    ax.set_title(
-        r"Accuracy per Target Component" + "\n"
-        r"$\text{Accuracy} = \frac{\text{TP} + \text{TN}}{\text{TP} + \text{TN} + \text{FP} + \text{FN}}$"
-    )
-    ax.set_xlabel("Target Module")
-    ax.set_ylabel("Accuracy")
-    ax.set_xticks(np.arange(1, L + 1))
-    ax.set_xticklabels(module_keys[1 : L + 1], rotation=45, ha="right")
-    ax.set_ylim(-0.05, 1.05)
-    ax.grid(True, alpha=0.3, axis="y")
-    ax.legend()
-    fig.tight_layout()
-
-
-def plot_balanced_accuracy(
-    per_layer_stats: list[dict[str, Any]],
-    module_keys: list[str],
-) -> None:
-    """Plot distribution of balanced accuracy per layer with scatter plot and jitter.
-
-    Args:
-        per_layer_stats: List of dicts with metrics per layer
-        module_keys: List of module names for x-axis labels
-    """
-    L: int = len(per_layer_stats)
-    np.random.seed(42)  # Reproducible jitter
-    jitter_amount: float = 0.15
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    for layer_idx, stats in enumerate(per_layer_stats):
-        bacc_values: np.ndarray = stats["bacc"]
-        bacc_valid: np.ndarray = bacc_values[~np.isnan(bacc_values)]
-        if len(bacc_valid) > 0:
-            x_positions: np.ndarray = np.ones(len(bacc_valid)) * (layer_idx + 1)
-            x_jittered: np.ndarray = x_positions + np.random.uniform(
-                -jitter_amount, jitter_amount, len(bacc_valid)
-            )
-            ax.scatter(x_jittered, bacc_valid, alpha=0.5, s=20, color="C2", edgecolors="none")
-            ax.plot(
-                [layer_idx + 1 - 0.3, layer_idx + 1 + 0.3],
-                [stats["mean_bacc"], stats["mean_bacc"]],
-                "r-",
-                linewidth=2,
-                label="Mean" if layer_idx == 0 else "",
-            )
-
-    ax.set_title(
-        r"Balanced Accuracy per Target Component" + "\n"
-        r"$\text{Balanced Acc} = \frac{1}{2}\left(\frac{\text{TP}}{\text{TP}+\text{FN}} + \frac{\text{TN}}{\text{TN}+\text{FP}}\right)$"
-    )
-    ax.set_xlabel("Target Module")
-    ax.set_ylabel("Balanced Accuracy")
-    ax.set_xticks(np.arange(1, L + 1))
-    ax.set_xticklabels(module_keys[1 : L + 1], rotation=45, ha="right")
-    ax.set_ylim(-0.05, 1.05)
-    ax.grid(True, alpha=0.3, axis="y")
-    ax.legend()
     fig.tight_layout()
 
 

@@ -15,13 +15,11 @@ from spd.clustering.ci_dt.pipeline import (
 )
 from spd.clustering.ci_dt.plot import (
     greedy_sort,
-    plot_accuracy,
     plot_activations,
     plot_ap_vs_prevalence,
-    plot_average_precision,
-    plot_balanced_accuracy,
     plot_component_activity_breakdown,
     plot_covariance,
+    plot_metric,
     plot_selected_trees,
     plot_tree_statistics,
 )
@@ -40,9 +38,9 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 config = CIDTConfig(
     # batch_size=50, # 50 ~~ 16GB VRAM max
     # n_batches=8,
-    batch_size=16,
+    batch_size=2,
     n_batches=2,
-	n_ctx=64,
+	n_ctx=16,
     activation_threshold=0.01,
     max_depth=3,
     random_state=42,
@@ -116,7 +114,6 @@ plot_component_activity_breakdown(
     config.activation_threshold,
     logy=True,
 )
-print("Component activity breakdown plot generated.")
 
 # %%
 # ----------------------- convert to boolean layers -----------------------
@@ -155,43 +152,29 @@ sample_order: np.ndarray = greedy_sort(A_true_concat, axis=0)
 print(f"Computed sample ordering ({len(sample_order)} samples)")
 
 # %%
-# ----------------------- plot: average precision -----------------------
+# ----------------------- plots: metrics -----------------------
 
-plot_average_precision(per_layer_stats, module_keys)
-print("Average precision plot generated.")
-
-# %%
-# ----------------------- plot: accuracy -----------------------
-
-plot_accuracy(per_layer_stats, module_keys)
-print("Accuracy plot generated.")
-
-# %%
-# ----------------------- plot: balanced accuracy -----------------------
-
-plot_balanced_accuracy(per_layer_stats, module_keys)
-print("Balanced accuracy plot generated.")
-
-# %%
-# ----------------------- plot: AP vs prevalence -----------------------
-
+plot_metric(per_layer_stats, module_keys, "ap")
+plot_metric(per_layer_stats, module_keys, "acc")
+plot_metric(per_layer_stats, module_keys, "bacc")
+plot_metric(per_layer_stats, module_keys, "prev")
+plot_metric(per_layer_stats, module_keys, "tpr")
+plot_metric(per_layer_stats, module_keys, "tnr")
+plot_metric(per_layer_stats, module_keys, "precision")
+plot_metric(per_layer_stats, module_keys, "npv")
+plot_metric(per_layer_stats, module_keys, "f1")
 plot_ap_vs_prevalence(per_layer_stats, models)
-print("AP vs prevalence plot generated.")
 
 
 
 # %%
-# ----------------------- plot: tree statistics -----------------------
-# Distributions of tree depth, leaf counts, and correlations with accuracy
+# ----------------------- plots: tree statistics -----------------------
 
 plot_tree_statistics(models, per_layer_stats)
-print("Tree statistics plots generated.")
 
 # %%
-# ----------------------- plot: activations -----------------------
-# Heatmaps of true vs predicted activations (unsorted and sorted)
+# ----------------------- plots: activations -----------------------
 
-# Unsorted version with layer boundaries
 plot_activations(
     layers_true=layers_true,
     layers_pred=layers_pred,
@@ -199,49 +182,33 @@ plot_activations(
     activation_threshold=config.activation_threshold,
     sample_order=None,
 )
-print("Activation plots (unsorted) generated.")
 
-# # Sorted version with diff plot
-plot_activations(
-    layers_true=layers_true,
-    layers_pred=layers_pred,
-    module_keys=module_keys,
-    activation_threshold=config.activation_threshold,
-    sample_order=sample_order,
-)
-print("Activation plots (sorted by samples) generated.")
+# plot_activations(
+#     layers_true=layers_true,
+#     layers_pred=layers_pred,
+#     module_keys=module_keys,
+#     activation_threshold=config.activation_threshold,
+#     sample_order=sample_order,
+# )
 
 # %%
-# ----------------------- plot: covariance -----------------------
-# Covariance matrix - can be slow with many components
+# ----------------------- plots: covariance -----------------------
 
-# Unsorted version with layer boundaries
 plot_covariance(
     layers_true=layers_true,
     module_keys=module_keys,
     component_order=None,
 )
-print("Covariance plot (unsorted) generated.")
 
-# Sorted version by component similarity
 component_order: np.ndarray = greedy_sort(A_true_concat, axis=1)
 plot_covariance(
     layers_true=layers_true,
     module_keys=module_keys,
     component_order=component_order,
 )
-print("Covariance plot (sorted by components) generated.")
 
 # %%
-# ----------------------- plot: worst trees -----------------------
-# Decision tree visualization for worst performing trees
+# ----------------------- plots: decision trees -----------------------
 
 plot_selected_trees(worst_list, "Worst", models)
-print("Worst trees plots generated.")
-
-# %%
-# ----------------------- plot: best trees -----------------------
-# Decision tree visualization for best performing trees
-
 plot_selected_trees(best_list, "Best", models)
-print("Best trees plots generated.")

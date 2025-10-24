@@ -169,19 +169,17 @@ def compute_tree_metrics(
     for lm, (Xk, Yk) in zip(models, XYs_demo, strict=True):
         Pk: np.ndarray = proba_for_layer(lm, Xk)
         Yhat_k: np.ndarray = Pk >= 0.5
-        ap, acc, bacc, prev = layer_metrics(Yk, Pk, Yhat_k)
+        metrics = layer_metrics(Yk, Pk, Yhat_k)
         per_layer_stats.append(
             {
-                "ap": ap,
-                "acc": acc,
-                "bacc": bacc,
-                "prev": prev,
-                "mean_ap": float(np.nanmean(ap)),
-                "mean_acc": float(np.nanmean(acc)),
-                "mean_bacc": float(np.nanmean(bacc)),
+                **metrics,
+                **{
+                    f"mean_{key}": float(np.nanmean(values))
+                    for key, values in metrics.items()
+                }
             }
         )
-        for j, apj in enumerate(ap):
+        for j, apj in enumerate(metrics["ap"]):
             all_triplets.append((lm.layer_index, j, float(apj)))
 
     # identify best and worst trees across all outputs by AP

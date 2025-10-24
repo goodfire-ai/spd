@@ -2,6 +2,8 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
+import warnings
 
 import numpy as np
 from jaxtyping import Bool, Float
@@ -76,27 +78,17 @@ def extract_prob_class_1(
     proba_list: list[np.ndarray],
     model: MultiOutputClassifier,
 ) -> np.ndarray:
-    """Extract P(y=1) for each output, handling constant components.
+    """Extract P(y=1) for each output.
 
-    When a component is always 0 or always 1 in training data,
-    sklearn only returns probabilities for the observed class.
-    This function handles all cases correctly.
+    Assumes constant components are filtered out, so both classes should always be present.
     """
     result: list[np.ndarray] = []
     for i, p in enumerate(proba_list):
         estimator = model.estimators_[i]
         classes = estimator.classes_
-        if len(classes) == 1:
-            # Only one class observed during training
-            if classes[0] == 0:
-                # Only saw class 0, so P(y=1) = 0
-                result.append(np.zeros(p.shape[0]))
-            else:  # classes[0] == 1
-                # Only saw class 1, so P(y=1) = 1
-                result.append(np.ones(p.shape[0]))
-        else:
-            # Saw both classes, extract P(y=1) from second column
-            result.append(p[:, 1])
+        assert len(classes) == 2, f"Expected 2 classes but got {len(classes)} for output {i}"
+        # Extract P(y=1) from second column
+        result.append(p[:, 1])
     return np.stack(result, axis=1)
 
 
@@ -136,35 +128,89 @@ def predict_all(
     return out
 
 
+MetricKey = Literal["ap", "acc", "bacc", "prev", "tpr", "tnr", "precision", "npv", "f1"]
+
 def layer_metrics(
     Y_true: Bool[np.ndarray, "n t"],
     Y_prob: Float[np.ndarray, "n t"],
     Y_pred: Bool[np.ndarray, "n t"],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Return per-target AP, acc, bacc, prevalence."""
+) -> dict[MetricKey, np.ndarray]:
+    """Return per-target metrics: AP, acc, bacc, prevalence, TPR, TNR, precision, NPV, F1.
+
+    Returns:
+        Dictionary with keys:
+        - ap: Average precision
+        - acc: Accuracy
+        - bacc: Balanced accuracy
+        - prev: Prevalence (fraction of positive samples)
+        - tpr: True Positive Rate (Recall/Sensitivity)
+        - tnr: True Negative Rate (Specificity)
+        - precision: Precision (when we predict active, how often are we right?)
+        - npv: Negative Predictive Value (when we predict inactive, how often are we right?)
+        - f1: F1 score
+
+        Each value is an array of length T (number of target components).
+    """
     T: int = Y_true.shape[1]
-    ap: np.ndarray = np.zeros(T)
-    acc: np.ndarray = np.zeros(T)
-    bacc: np.ndarray = np.zeros(T)
-    prev: np.ndarray = np.zeros(T)
+
+    ap: Float[np.ndarray, " t"] = np.full(T, np.nan)
+    acc: Float[np.ndarray, " t"] = np.full(T, np.nan)
+    bacc: Float[np.ndarray, " t"] = np.full(T, np.nan)
+    prev: Float[np.ndarray, " t"] = np.full(T, np.nan)
+    tpr: Float[np.ndarray, " t"] = np.full(T, np.nan)
+    tnr: Float[np.ndarray, " t"] = np.full(T, np.nan)
+    precision: Float[np.ndarray, " t"] = np.full(T, np.nan)
+    npv: Float[np.ndarray, " t"] = np.full(T, np.nan)
+    f1: Float[np.ndarray, " t"] = np.full(T, np.nan)
+
     for j in range(T):
         y: np.ndarray = Y_true[:, j].astype(int)
         p: np.ndarray = Y_prob[:, j]
         yhat: np.ndarray = Y_pred[:, j].astype(int)
         prev[j] = float(y.mean())
-        try:
-            ap[j] = average_precision_score(y, p)
-        except Exception:
-            ap[j] = np.nan
-        try:
-            acc[j] = accuracy_score(y, yhat)
-        except Exception:
-            acc[j] = np.nan
-        try:
-            bacc[j] = balanced_accuracy_score(y, yhat)
-        except Exception:
-            bacc[j] = np.nan
-    return ap, acc, bacc, prev
+
+        # Compute confusion matrix elements
+        tp: int = int(((y == 1) & (yhat == 1)).sum())
+        tn: int = int(((y == 0) & (yhat == 0)).sum())
+        fp: int = int(((y == 0) & (yhat == 1)).sum())
+        fn: int = int(((y == 1) & (yhat == 0)).sum())
+
+        # TPR (Recall/Sensitivity) = TP / (TP + FN)
+        tpr[j] = tp / (tp + fn)
+
+        # TNR (Specificity) = TN / (TN + FP)
+        tnr[j] = tn / (tn + fp)
+
+        # Precision (PPV) = TP / (TP + FP) - when we predict active, how often are we right?
+        if (tp + fp) > 0:
+            precision[j] = tp / (tp + fp)
+        else:
+            precision[j] = np.nan
+            warnings.warn(f"Precision failed:  {tp=}, {fp=}, {tp+fp=}")
+
+        # Negative Predictive Value = TN / (TN + FN) - when we predict inactive, how often are we right?
+        npv[j] = tn / (tn + fn)
+
+        # F1 = 2 * (precision * recall) / (precision + recall)
+        f1[j] = 2 * (precision[j] * tpr[j]) / (precision[j] + tpr[j])
+
+        # Sklearn metrics
+        ap[j] = average_precision_score(y, p)
+        acc[j] = accuracy_score(y, yhat)
+        bacc[j] = balanced_accuracy_score(y, yhat)
+
+
+    return {
+        "ap": ap,
+        "acc": acc,
+        "bacc": bacc,
+        "prev": prev,
+        "tpr": tpr,
+        "tnr": tnr,
+        "precision": precision,
+        "npv": npv,
+        "f1": f1,
+    }
 
 
 def proba_for_layer(lm: LayerModel, X: np.ndarray) -> np.ndarray:
