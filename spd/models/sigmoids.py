@@ -29,10 +29,10 @@ class LowerLeakyHardSigmoidFunction(Function):
         (x,) = ctx.saved_tensors
         alpha = ctx.alpha
 
-        # Gradient as if forward pass was alpha * x for x<=0
+        # Gradient as if forward pass was alpha * x for x<=0 when the gradient is negative
         grad_input = torch.where(
             x <= 0,
-            alpha * grad_output,
+            torch.where(grad_output < 0, alpha * grad_output, torch.zeros_like(grad_output)),
             torch.where(x <= 1, grad_output, torch.zeros_like(grad_output)),
         )
 
