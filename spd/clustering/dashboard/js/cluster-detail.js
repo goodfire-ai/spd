@@ -110,7 +110,7 @@ async function displayCluster() {
     await initializeComponentData();
 
     // Display model visualization
-    displayModelVisualization();
+    await displayModelVisualization();
 
     // Setup components table
     await setupComponentsTable();
@@ -194,7 +194,7 @@ async function initializeComponentData() {
     });
 }
 
-function displayModelVisualization() {
+async function displayModelVisualization() {
     const modelViewDiv = document.getElementById('modelView');
     if (!modelViewDiv) {
         const msg = 'Fatal error: modelView element not found in HTML';
@@ -202,7 +202,7 @@ function displayModelVisualization() {
         console.error(msg);
         return;
     }
-    renderModelView(modelViewDiv, currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap, CONFIG.visualization.modelViewCellSize);
+    await renderModelView(modelViewDiv, currentClusterHash, allClusters, modelInfo, CONFIG.visualization.colormap, CONFIG.visualization.modelViewCellSize);
 }
 
 function displayHistograms() {
