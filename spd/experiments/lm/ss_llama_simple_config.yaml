@@ -1,115 +1,92 @@
-# --- WandB ---
-wandb_project: spd
-wandb_run_name: null
-wandb_run_name_prefix: ""
+wandb_run_name: "baseline - bs 64 - 8 rank DDP"
 
-# --- General ---
-seed: 0
 C: 1200
-n_mask_samples: 1
-ci_fn_type: "shared_mlp"
-ci_fn_hidden_dims: [1000]
-sigmoid_type: "leaky_hard"
-target_module_patterns:
-  [
-    "h.*.mlp.gate_proj",
-    "h.*.mlp.up_proj",
-    "h.*.mlp.down_proj",
-    "h.*.attn.q_proj",
-    "h.*.attn.k_proj",
-    "h.*.attn.v_proj",
-    "h.*.attn.o_proj",
-  ]
-identity_module_patterns: null
-sampling: "continuous"
-use_delta_component: true
-loss_metric_configs:
-
-  - classname: "ImportanceMinimalityLoss"
-    coeff: 0.002
-    pnorm: 2.0
-    p_anneal_start_frac: 0.0
-    p_anneal_final_p: 0.3
-    p_anneal_end_frac: 1.0
-
-  - classname: "StochasticReconSubsetLoss"
-    coeff: 1.0
-
-output_loss_type: kl
-
-# --- Training ---
-batch_size: 256
+batch_size: 64
+ci_alive_threshold: 0.0
+ci_fn_hidden_dims:
+  - 1000
+ci_fn_type: shared_mlp
 eval_batch_size: 64
-steps: 200000
+eval_freq: 1000
+eval_metric_configs:
+  - classname: CIHistograms
+    n_batches_accum: 1
+  - classname: ComponentActivationDensity
+  - classname: CI_L0
+    groups:
+      layer_0:
+        - model.layers.0.*
+      layer_1:
+        - model.layers.1.*
+      layer_2:
+        - model.layers.2.*
+      layer_3:
+        - model.layers.3.*
+  - classname: CEandKLLosses
+    rounding_threshold: 0.0
+  - classname: CIMeanPerComponent
+  - classname: StochasticHiddenActsReconLoss
+    coeff: null
+faithfulness_warmup_lr: 0.001
+faithfulness_warmup_steps: 0
+faithfulness_warmup_weight_decay: 0.0
+gradient_accumulation_steps: 1
+identity_module_patterns: null
+loss_metric_configs:
+  - classname: ImportanceMinimalityLoss
+    coeff: 0.001
+    eps: 1.0e-12
+    p_anneal_end_frac: 1.0
+    p_anneal_final_p: 0.3
+    p_anneal_start_frac: 0.0
+    pnorm: 1.0
+  - classname: PGDReconSubsetLoss
+    coeff: 1.0
+    init: random
+    mask_scope: shared_across_batch
+    n_steps: 1
+    step_size: 1.0
 lr: 0.0002
+lr_exponential_halflife: null
 lr_schedule: cosine
 lr_warmup_pct: 0.0
-lr_exponential_halflife: null
-gradient_accumulation_steps: 1
-
-# --- Faithfulness Warmup ---
-faithfulness_warmup_steps: 0
-faithfulness_warmup_lr: 0.001
-faithfulness_warmup_weight_decay: 0.0
-
-# --- Logging & Saving ---
-train_log_freq: 200
-eval_freq: 1000
+n_eval_steps: 5
+n_examples_until_dead: 1368400
+n_mask_samples: 1
+out_dir: null
+output_loss_type: kl
+pretrained_model_class: transformers.LlamaForCausalLM
+pretrained_model_name: SimpleStories/SimpleStories-1.25M
+pretrained_model_output_attr: logits
+pretrained_model_path: null
+sampling: continuous
+save_freq: null
+seed: 0
+sigmoid_type: leaky_hard
 slow_eval_freq: 2000
 slow_eval_on_first_step: true
-n_eval_steps: 5
-save_freq: null
-ci_alive_threshold: 0.0
-n_examples_until_dead: 1368400
-eval_metric_configs:
-  - classname: "CIHistograms"
-    n_batches_accum: 5
-  - classname: "ComponentActivationDensity"
-  - classname: "CI_L0"
-    groups:
-      total: ["*"] # Sum of all L0 values
-      layer_0: ["h.0.*"]
-      layer_1: ["h.1.*"]
-      layer_2: ["h.2.*"]
-      layer_3: ["h.3.*"]
-  - classname: "CEandKLLosses"
-    rounding_threshold: 0.0
-  - classname: "CIMeanPerComponent"
-  - classname: "StochasticHiddenActsReconLoss"
-  - classname: "PGDReconSubsetLoss"
-    init: "random"
-    step_size: 0.01
-    n_steps: 20
-    mask_scope: "shared_across_batch"
-
-# --- Pretrained model info ---
-pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
-pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w # 100k steps 4019 tok
-pretrained_model_output_attr: idx_0
-tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok: TODO: Load from wandb instead
-
-# --- Task Specific ---
+steps: 200000
+target_module_patterns:
+  - model.layers.*.mlp.gate_proj
+  - model.layers.*.mlp.down_proj
+  - model.layers.*.mlp.up_proj
+  - model.layers.*.self_attn.q_proj
+  - model.layers.*.self_attn.k_proj
+  - model.layers.*.self_attn.v_proj
+  - model.layers.*.self_attn.o_proj
 task_config:
-  task_name: lm
-  max_seq_len: 512
   buffer_size: 1000
-  dataset_name: "SimpleStories/SimpleStories"
-  column_name: "story"
-  train_data_split: "train"
-  eval_data_split: "test"
-  shuffle_each_epoch: true
+  column_name: story
+  dataset_name: SimpleStories/SimpleStories
+  eval_data_split: test
   is_tokenized: false
+  max_seq_len: 512
+  shuffle_each_epoch: true
   streaming: false
-# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/models/model_configs.py#L54
-# "llama_simple-1.25M": LlamaSimpleConfig(
-#     block_size=512,
-#     vocab_size=4019,
-#     n_layer=4,
-#     n_head=4,
-#     n_embd=128,
-#     n_intermediate=128 * 4 * 2 // 3 = 341,
-#     rotary_dim=128 // 4 = 32,
-#     n_ctx=512,
-#     n_key_value_heads=2,
-#     flash_attention=True,
-# ),
+  task_name: lm
+  train_data_split: train
+tokenizer_name: SimpleStories/SimpleStories-1.25M
+train_log_freq: 200
+use_delta_component: true
+wandb_project: spd
+wandb_run_name_prefix: ""
