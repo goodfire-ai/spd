@@ -2018,8 +2018,9 @@
                     }
     
                     const td = this.createStyledElement('td', 'data-cell', tdStyles);
+                    let value;
                     try {
-                        const value = this.getNestedValue(row, col.key);
+                        value = this.getNestedValue(row, col.key);
                     } catch (e) {
                         console.error(`Error accessing key '${col.key}' in row '${row}' for col '${col}'. error: '${e}'`);
                         console.error("col", col);
@@ -4105,7 +4106,7 @@
         displayModelVisualization();
     
         // Setup components table
-        setupComponentsTable();
+        await setupComponentsTable();
     
         // Setup hover highlighting between model view and components table
         setupModelViewHighlighting();
@@ -4380,6 +4381,18 @@
     async function setupComponentsTable() {
         // Await lazy-loaded components
         const components = await clusterData.components;
+    
+        // Fail fast: verify components is a valid array
+        if (!Array.isArray(components)) {
+            throw new Error(`clusterData.components is not an array: ${typeof components}`);
+        }
+    
+        // Fail fast: check for undefined/null entries
+        const badIndex = components.findIndex(comp => comp === undefined || comp === null);
+        if (badIndex !== -1) {
+            throw new Error(`clusterData.components contains undefined/null at index ${badIndex}`);
+        }
+    
         const tableData = components.map(comp => ({
             label: comp.label,
             module: comp.module,
@@ -4448,8 +4461,11 @@
             return;
         }
     
+        // Await lazy-loaded components
+        const components = await clusterData.components;
+    
         // If all components are enabled, use cluster-level activations (faster)
-        if (enabledComponents.size === clusterData.components.length) {
+        if (enabledComponents.size === components.length) {
             await displaySamples();
             return;
         }

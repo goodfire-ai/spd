@@ -388,6 +388,18 @@ function displayTokenActivations() {
 async function setupComponentsTable() {
     // Await lazy-loaded components
     const components = await clusterData.components;
+
+    // Fail fast: verify components is a valid array
+    if (!Array.isArray(components)) {
+        throw new Error(`clusterData.components is not an array: ${typeof components}`);
+    }
+
+    // Fail fast: check for undefined/null entries
+    const badIndex = components.findIndex(comp => comp === undefined || comp === null);
+    if (badIndex !== -1) {
+        throw new Error(`clusterData.components contains undefined/null at index ${badIndex}`);
+    }
+
     const tableData = components.map(comp => ({
         label: comp.label,
         module: comp.module,

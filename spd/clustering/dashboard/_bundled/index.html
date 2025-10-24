@@ -3321,8 +3321,9 @@
                     }
     
                     const td = this.createStyledElement('td', 'data-cell', tdStyles);
+                    let value;
                     try {
-                        const value = this.getNestedValue(row, col.key);
+                        value = this.getNestedValue(row, col.key);
                     } catch (e) {
                         console.error(`Error accessing key '${col.key}' in row '${row}' for col '${col}'. error: '${e}'`);
                         console.error("col", col);
