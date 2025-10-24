@@ -4,11 +4,13 @@ from typing import Literal
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
+from torch.distributed import ReduceOp
 
 from spd.configs import PGDConfig, PGDInitStrategy
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import RoutingType, calc_routing_masks
+from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
 from spd.utils.general_utils import calc_sum_recon_loss_lm, zip_dicts
 
 ObjFn = Callable[
@@ -28,6 +30,15 @@ def _run_pgd_optimization(
     """Run PGD optimization for any objective function."""
 
     *batch_dims, C = next(iter(ci.values())).shape
+
+    def init_and_sync_adversarial_tensor(shape: torch.Size) -> Float[Tensor, "..."]:
+        return (
+            call_on_rank0_then_broadcast(
+                lambda: _get_pgd_init_tensor(pgd_config.init, shape, "cpu")
+            )
+            .to(batch_device)
+            .requires_grad_(True)
+        )
 
     def maybe_repeat_to_batch_shape(
         component_sample_points: dict[str, Float[Tensor, "... C"]],
@@ -50,17 +61,15 @@ def _run_pgd_optimization(
 
     adversarial_component_sample_points: dict[str, Float[Tensor, "... C"]] = {}
     for layer in ci:
-        sample_point = _get_pgd_init_tensor(pgd_config.init, ci_mask_shape, batch_device)
-        sample_point.requires_grad_(True)
-        adversarial_component_sample_points[layer] = sample_point
+        adversarial_component_sample_points[layer] = init_and_sync_adversarial_tensor(ci_mask_shape)
 
     adversarial_weight_delta_masks: dict[str, Float[Tensor, " ..."]] | None = None
     if weight_deltas is not None:
         adversarial_weight_delta_masks = {}
         for layer in ci:
-            wd_init = _get_pgd_init_tensor(pgd_config.init, weight_delta_mask_shape, batch_device)
-            wd_init.requires_grad_(True)
-            adversarial_weight_delta_masks[layer] = wd_init
+            adversarial_weight_delta_masks[layer] = init_and_sync_adversarial_tensor(
+                weight_delta_mask_shape
+            )
 
     # PGD ascent
     adv_vars = list(adversarial_component_sample_points.values())
@@ -72,20 +81,18 @@ def _run_pgd_optimization(
         assert all(v.grad is None for v in adv_vars)
 
         with torch.enable_grad():
-            loss, n_examples = objective_fn(
+            obj, n_examples = objective_fn(
                 *maybe_repeat_to_batch_shape(
                     adversarial_component_sample_points, adversarial_weight_delta_masks
                 )
             )
-            obj = loss / n_examples
+            total_examples_tensor = all_reduce(obj.new_tensor(float(n_examples)), op=ReduceOp.SUM)
+            obj = obj / total_examples_tensor
+            grads = list(torch.autograd.grad(obj, adv_vars))  # list so we can mutate in place
 
-            grads = torch.autograd.grad(
-                obj,
-                adv_vars,
-                retain_graph=False,
-                create_graph=False,
-                allow_unused=True,
-            )
+        for i, grad in enumerate(grads):
+            # clone to avoid issues with in-place ops on autograd tensors
+            grads[i] = all_reduce(grad.clone(), op=ReduceOp.SUM)
 
         with torch.no_grad():
             for v, g in zip(adv_vars, grads, strict=True):
@@ -104,7 +111,15 @@ def _run_pgd_optimization(
     if adversarial_weight_delta_masks is not None:
         assert not any(v.requires_grad for v in adversarial_weight_delta_masks.values())
 
-    return objective_fn(adversarial_component_sample_points, adversarial_weight_delta_masks)
+    total_loss, n_examples = objective_fn(
+        adversarial_component_sample_points, adversarial_weight_delta_masks
+    )
+
+    total_loss = all_reduce(total_loss.clone())
+    n_examples_tensor = all_reduce(total_loss.new_tensor(float(n_examples)))
+    n_examples = int(n_examples_tensor.item())
+
+    return total_loss, n_examples
 
 
 def pgd_masked_recon_loss_update(
