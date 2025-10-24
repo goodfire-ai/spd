@@ -76,7 +76,7 @@ eval_metric_configs:
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
-  - classname: "PGDReconSubsetLoss"
+  - classname: "PGDReconLoss"
     init: "random"
     step_size: 0.01
     n_steps: 20
