@@ -96,6 +96,12 @@ bundle-dashboard:
 clean-test-dashboard:
 	rm -rf tests/.temp/dashboard-integration
 
+
+.PHONY: install-playwright
+install-playwright:
+	@echo "Install Playwright browsers, used for dashboard tests"
+	uv run --with playwright playwright install chromium
+
 .PHONY: test-dashboard
 test-dashboard: clean-test-dashboard bundle-dashboard
 	pytest tests/clustering/dashboard/test_dashboard_integration.py --runslow -v --durations 10
