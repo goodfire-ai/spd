@@ -112,21 +112,17 @@ def pgd_masked_recon_loss_update(
         assert all(v.grad is None for v in adv_vars)
 
         with torch.enable_grad():
-            obj, n_examples = objective_fn(
+            total_loss, _ = objective_fn( # n_examples doesn't matter bc we're doing sign ascent
                 *maybe_repeat_to_batch_shape(
                     adversarial_component_sample_points, adversarial_weight_delta_masks
                 )
             )
-            total_examples_tensor = all_reduce(obj.new_tensor(float(n_examples)), op=ReduceOp.SUM)
-            obj = obj / total_examples_tensor
-            grads = list(torch.autograd.grad(obj, adv_vars))  # list so we can mutate in place
+            grads = torch.autograd.grad(total_loss, adv_vars)
 
-        for i, grad in enumerate(grads):
-            # clone to avoid issues with in-place ops on autograd tensors
-            grads[i] = all_reduce(grad.clone(), op=ReduceOp.SUM)
+        reduced_grads = [all_reduce(grad.clone(), op=ReduceOp.SUM) for grad in grads]
 
         with torch.no_grad():
-            for v, g in zip(adv_vars, grads, strict=True):
+            for v, g in zip(adv_vars, reduced_grads, strict=True):
                 v.add_(pgd_config.step_size * g.sign())
                 v.clamp_(0.0, 1.0)
 
