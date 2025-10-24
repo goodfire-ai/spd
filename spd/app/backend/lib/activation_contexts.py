@@ -288,6 +288,7 @@ def map_to_model_ctxs(
 
             module_subcomponent_ctxs.append(subcomponent_ctx)
 
+        module_subcomponent_ctxs.sort(key=lambda x: x.mean_ci, reverse=True)
         model_ctxs[module_name] = module_subcomponent_ctxs
 
     return ModelActivationContexts(layers=model_ctxs)
