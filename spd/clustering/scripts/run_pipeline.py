@@ -71,7 +71,7 @@ class ClusteringPipelineStorage(StorageBase):
 class ClusteringPipelineConfig(BaseConfig):
     """Configuration for submitting an ensemble of clustering runs to SLURM."""
 
-    run_clustering_config_path: Path = Field(
+    clustering_run_config_path: Path = Field(
         description="Path to ClusteringRunConfig file.",
     )
     n_runs: PositiveInt = Field(description="Number of clustering runs in the ensemble")
@@ -97,12 +97,12 @@ class ClusteringPipelineConfig(BaseConfig):
 
     @model_validator(mode="after")
     def validate_crc(self) -> "ClusteringPipelineConfig":
-        """Validate that exactly one of run_clustering_config_path points to a valid `ClusteringRunConfig`."""
-        assert self.run_clustering_config_path.exists(), (
-            f"run_clustering_config_path does not exist: {self.run_clustering_config_path}"
+        """Validate that exactly one of clustering_run_config_path points to a valid `ClusteringRunConfig`."""
+        assert self.clustering_run_config_path.exists(), (
+            f"clustering_run_config_path does not exist: {self.clustering_run_config_path}"
         )
         # Try to load ClusteringRunConfig
-        assert ClusteringRunConfig.from_file(self.run_clustering_config_path)
+        assert ClusteringRunConfig.from_file(self.clustering_run_config_path)
 
         return self
 
@@ -170,7 +170,7 @@ def generate_clustering_commands(
             "python",
             "spd/clustering/scripts/run_clustering.py",
             "--config",
-            pipeline_config.run_clustering_config_path.as_posix(),
+            pipeline_config.clustering_run_config_path.as_posix(),
             "--pipeline-run-id",
             pipeline_run_id,
             "--idx-in-ensemble",

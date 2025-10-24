@@ -71,10 +71,10 @@ class TestClusteringPipelineConfigValidation:
     """Test ClusteringPipelineConfig validation logic."""
 
     def test_error_when_path_does_not_exist(self):
-        """Test that error is raised when run_clustering_config_path does not exist."""
+        """Test that error is raised when clustering_run_config_path does not exist."""
         with pytest.raises(pydantic_core._pydantic_core.ValidationError):
             ClusteringPipelineConfig(
-                run_clustering_config_path=Path("nonexistent/path.json"),
+                clustering_run_config_path=Path("nonexistent/path.json"),
                 n_runs=2,
                 distances_methods=["perm_invariant_hamming"],
                 base_output_dir=Path("/tmp/test"),
@@ -89,7 +89,7 @@ class TestClusteringPipelineConfigValidation:
         expected_path = Path("spd/clustering/configs/crc/resid_mlp1.json")
 
         config = ClusteringPipelineConfig(
-            run_clustering_config_path=expected_path,
+            clustering_run_config_path=expected_path,
             n_runs=2,
             distances_methods=["perm_invariant_hamming"],
             base_output_dir=Path("/tmp/test"),
@@ -97,7 +97,7 @@ class TestClusteringPipelineConfigValidation:
             create_git_snapshot=False,
         )
 
-        assert config.run_clustering_config_path == expected_path
+        assert config.clustering_run_config_path == expected_path
 
 
 def _get_config_files(path: Path):
@@ -121,7 +121,7 @@ class TestAllConfigsValidation:
         """Test that each pipeline config file is valid."""
         print(config_file)
         _config = ClusteringPipelineConfig.from_file(config_file)
-        crc_path = _config.run_clustering_config_path
+        crc_path = _config.clustering_run_config_path
         print(f"{crc_path = }")
         assert crc_path.exists()
 
