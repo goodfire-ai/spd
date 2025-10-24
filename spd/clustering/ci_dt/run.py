@@ -16,11 +16,13 @@ from spd.clustering.ci_dt.pipeline import (
 from spd.clustering.ci_dt.plot import (
     greedy_sort,
     plot_accuracy,
+    plot_activations,
     plot_ap_vs_prevalence,
     plot_average_precision,
     plot_balanced_accuracy,
     plot_component_activity_breakdown,
     plot_covariance,
+    plot_selected_trees,
     plot_tree_statistics,
 )
 from spd.configs import Config
@@ -38,10 +40,10 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 config = CIDTConfig(
     # batch_size=50, # 50 ~~ 16GB VRAM max
     # n_batches=8,
-    batch_size=16,
+    batch_size=32,
     n_batches=4,
     activation_threshold=0.01,
-    max_depth=8,
+    max_depth=3,
     random_state=42,
 )
 device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -188,24 +190,24 @@ print("Tree statistics plots generated.")
 # Heatmaps of true vs predicted activations (unsorted and sorted)
 
 # Unsorted version with layer boundaries
-# plot_activations(
-#     layers_true=layers_true,
-#     layers_pred=layers_pred,
-#     module_keys=module_keys,
-#     activation_threshold=config.activation_threshold,
-#     sample_order=None,
-# )
-# print("Activation plots (unsorted) generated.")
+plot_activations(
+    layers_true=layers_true,
+    layers_pred=layers_pred,
+    module_keys=module_keys,
+    activation_threshold=config.activation_threshold,
+    sample_order=None,
+)
+print("Activation plots (unsorted) generated.")
 
 # # Sorted version with diff plot
-# plot_activations(
-#     layers_true=layers_true,
-#     layers_pred=layers_pred,
-#     module_keys=module_keys,
-#     activation_threshold=config.activation_threshold,
-#     sample_order=sample_order,
-# )
-# print("Activation plots (sorted by samples) generated.")
+plot_activations(
+    layers_true=layers_true,
+    layers_pred=layers_pred,
+    module_keys=module_keys,
+    activation_threshold=config.activation_threshold,
+    sample_order=sample_order,
+)
+print("Activation plots (sorted by samples) generated.")
 
 # %%
 # ----------------------- plot: covariance -----------------------
@@ -229,34 +231,15 @@ plot_covariance(
 print("Covariance plot (sorted by components) generated.")
 
 # %%
-# ----------------------- generate feature names -----------------------
-# Generate feature names with activation statistics and decoded directions
-
-# from spd.clustering.ci_dt.feature_names import generate_feature_names
-
-# module_keys = list(component_acts_concat.keys())
-
-# feature_names = generate_feature_names(
-#     component_model=model,
-#     component_acts=component_acts_concat,
-#     layers_true=layers_true,
-#     layers_pred=layers_pred,
-#     tokenizer=cfg.task_config.tokenizer if hasattr(cfg.task_config, 'tokenizer') else None,
-#     module_keys=module_keys,
-#     top_k=3,
-# )
-# print("Feature names generated.")
-
-# %%
 # ----------------------- plot: worst trees -----------------------
 # Decision tree visualization for worst performing trees
 
-# plot_selected_trees(worst_list, "Worst", models, feature_names=feature_names)
-# print("Worst trees plots generated.")
+plot_selected_trees(worst_list, "Worst", models)
+print("Worst trees plots generated.")
 
-# # %%
-# # ----------------------- plot: best trees -----------------------
-# # Decision tree visualization for best performing trees
+# %%
+# ----------------------- plot: best trees -----------------------
+# Decision tree visualization for best performing trees
 
-# plot_selected_trees(best_list, "Best", models, feature_names=feature_names)
-# print("Best trees plots generated.")
+plot_selected_trees(best_list, "Best", models)
+print("Best trees plots generated.")

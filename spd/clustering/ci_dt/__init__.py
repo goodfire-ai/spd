@@ -13,10 +13,6 @@ from spd.clustering.ci_dt.core import (
     proba_for_layer,
     train_trees,
 )
-from spd.clustering.ci_dt.plot import (
-    plot_layer_metrics,
-    plot_selected_trees,
-)
 
 __all__ = [
     # Config
@@ -32,7 +28,4 @@ __all__ = [
     "layer_metrics",
     "proba_for_layer",
     "get_estimator_for",
-    # Plot
-    "plot_layer_metrics",
-    "plot_selected_trees",
 ]
