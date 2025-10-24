@@ -448,7 +448,7 @@ Examples:
     spd-run --experiments tms_5-2 --cpu
 
     # Run with data parallelism over 4 GPUs (only supported for lm experiments)
-    spd-run --experiments ss_llama --dp 4
+    spd-run --experiments ss_llama_simple --dp 4
 """
 
 
