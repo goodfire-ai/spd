@@ -5,19 +5,19 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 1200
+C: 800
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
 ci_fn_hidden_dims: [1000]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   [
-    "h.*.mlp.c_fc",
-    "h.*.mlp.down_proj",
-    "h.*.attn.q_proj",
-    "h.*.attn.k_proj",
-    "h.*.attn.v_proj",
-    "h.*.attn.o_proj",
+    "h.1.mlp.c_fc",
+    "h.1.mlp.down_proj",
+    "h.1.attn.q_proj",
+    "h.1.attn.k_proj",
+    "h.1.attn.v_proj",
+    "h.1.attn.o_proj",
   ]
 identity_module_patterns: null
 sampling: "continuous"
@@ -29,16 +29,11 @@ loss_metric_configs:
     p_anneal_start_frac: 0.0
     p_anneal_final_p: 0.3
     p_anneal_end_frac: 1.0
-
   - classname: "StochasticReconSubsetLoss"
     coeff: 1.0
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 256
-eval_batch_size: 64
-steps: 20000
-lr: 0.0005
 lr_schedule: cosine
 lr_warmup_pct: 0.0
 lr_exponential_halflife: null
@@ -66,31 +61,26 @@ eval_metric_configs:
   - classname: "CI_L0"
     groups:
       total: ["*"] # Sum of all L0 values
-      layer_0: ["h.0.*"]
-      layer_1: ["h.1.*"]
-      layer_2: ["h.2.*"]
-      layer_3: ["h.3.*"]
+      # layer_0: ["h.0.*"]
+      # layer_1: ["h.1.*"]
+      # layer_2: ["h.2.*"]
+      # layer_3: ["h.3.*"]
   - classname: "CEandKLLosses"
     rounding_threshold: 0.0
-  - classname: "CIMeanPerComponent"
-  - classname: "StochasticReconSubsetCEAndKL"
-    include_patterns:
-      layer_0_only: ["h.0.*"]
-      layer_1_only: ["h.1.*"]
-      layer_2_only: ["h.2.*"]
-      layer_3_only: ["h.3.*"]
-      mlp_only: ["*.mlp.*"]
-      attention_only: ["*.attn.*"]
-    exclude_patterns:
-      all_but_layer_0: ["h.0.*"]
-      all_but_layer_1: ["h.1.*"]
-      all_but_layer_2: ["h.2.*"]
-      all_but_layer_3: ["h.3.*"]
+  #     # layer_3_only: ["h.3.*"]
+  #     mlp_only: ["*.mlp.*"]
+  #     attention_only: ["*.attn.*"]
+  #   exclude_patterns:
+  #     all_but_layer_1: ["h.1.*"]
+  #     all_but_layer_2: ["h.2.*"]
+  #     all_but_layer_3: ["h.3.*"]
   - classname: "StochasticHiddenActsReconLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
-pretrained_model_name: wandb:goodfire/spd/runs/rvu66183 # 100k steps. 4019 tokenizer
+pretrained_model_name: wandb:goodfire/spd/runs/kz3m0fle # 200k steps. 4019 tokenizer
+# pretrained_model_name: wandb:goodfire/spd/runs/rvu66183 # 100k steps. 4019 tokenizer
+# pretrained_model_name: wandb:goodfire/spd/runs/b10ei3pc # 60k steps. 4019 tokenizer
 pretrained_model_output_attr: idx_0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok:  TODO: Load from wandb instead
 
@@ -102,13 +92,3 @@ task_config:
   column_name: "story"
   train_data_split: "train"
   eval_data_split: "test"
-
-# Config details for the target model taken from https://github.com/goodfire-ai/simple_stories_train/blob/dev/simple_stories_train/models/model_configs.py
-# "gpt2_simple-1.25M": GPT2SimpleConfig(
-#     block_size=512,
-#     vocab_size=4019,
-#     n_layer=4,
-#     n_head=4,
-#     n_embd=128,
-#     flash_attention=False,
-# ),
