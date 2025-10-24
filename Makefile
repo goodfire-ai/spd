@@ -67,6 +67,10 @@ NUM_PROCESSES ?= $(shell nproc | awk '{print ($$1<4?$$1:4)}')
 test-all:
 	pytest tests/ --runslow --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
 
+.PHONY: test-dashboard
+test-dashboard:
+	pytest tests/clustering/dashboard/test_dashboard_integration.py --runslow -v --durations 10
+
 COVERAGE_DIR=docs/coverage
 
 .PHONY: coverage
