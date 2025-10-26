@@ -127,16 +127,19 @@ def optimize(
 
     target_model.requires_grad_(False)
 
-    model = ComponentModel(
-        target_model=target_model,
-        target_module_patterns=config.all_module_patterns,
-        C=config.C,
-        ci_fn_type=config.ci_fn_type,
-        ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-        pretrained_model_output_attr=config.pretrained_model_output_attr,
-        sigmoid_type=config.sigmoid_type,
-    )
-
+    # model = ComponentModel(
+    #     target_model=target_model,
+    #     target_module_patterns=config.all_module_patterns,
+    #     C=config.C,
+    #     ci_fn_type=config.ci_fn_type,
+    #     ci_fn_hidden_dims=config.ci_fn_hidden_dims,
+    #     pretrained_model_output_attr=config.pretrained_model_output_attr,
+    #     sigmoid_type=config.sigmoid_type,
+    # )
+    # Load a model from pretrained run
+    model = ComponentModel.from_pretrained("wandb:goodfire/spd/runs/3rthvni3")
+    target_model = model.target_model
+    target_model.requires_grad_(False)
     if ln_stds is not None:
         # model has ablated layernorms, patch in the fixed std values
         replace_std_values_in_layernorm(model, ln_stds)
