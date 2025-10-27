@@ -25,6 +25,19 @@ class MergePairSampler(Protocol):
     ) -> MergePair: ...
 
 
+def get_valid_mask(
+    costs: ClusterCoactivationShaped,
+) -> ClusterCoactivationShaped:
+    """Get a boolean mask of valid merge pairs (non-NaN, non-diagonal)."""
+    k_groups: int = costs.shape[0]
+    return (
+        ~torch.isnan(costs)  # mask out NaN entries
+        & ~torch.eye(
+            k_groups, dtype=torch.bool, device=costs.device
+        )  # mask out diagonal (can't merge with self)
+    )
+
+
 def range_sampler(
     costs: ClusterCoactivationShaped,
     threshold: float = 0.05,
@@ -47,12 +60,7 @@ def range_sampler(
     k_groups: int = costs.shape[0]
     assert costs.shape[1] == k_groups, "Cost matrix must be square"
 
-    # Mask out NaN entries and diagonal
-    valid_mask: Bool[Tensor, "k_groups k_groups"] = ~torch.isnan(costs)
-    diag_mask: Bool[Tensor, "k_groups k_groups"] = ~torch.eye(
-        k_groups, dtype=torch.bool, device=costs.device
-    )
-    valid_mask = valid_mask & diag_mask
+    valid_mask: ClusterCoactivationShaped = get_valid_mask(costs)
 
     # Get valid costs
     valid_costs: Float[Tensor, " n_valid"] = costs[valid_mask]
@@ -101,11 +109,7 @@ def mcmc_sampler(
     k_groups: int = costs.shape[0]
     assert costs.shape[1] == k_groups, "Cost matrix must be square"
 
-    # Create mask for valid pairs (non-diagonal and non-NaN)
-    valid_mask: Bool[Tensor, "k_groups k_groups"] = ~torch.eye(
-        k_groups, dtype=torch.bool, device=costs.device
-    )
-    valid_mask = valid_mask & ~torch.isnan(costs)
+    valid_mask: ClusterCoactivationShaped = get_valid_mask(costs)
 
     # Check if we have any valid pairs
     if not valid_mask.any():
