@@ -329,6 +329,7 @@ def plot_activations(
     # Add diff plot if sorted
     if sample_order is not None:
         A_diff: Float[np.ndarray, "n_samples n_components"] = A_pred - A_true
+        assert isinstance(ax3, plt.Axes)
         im3 = ax3.imshow(
             A_diff.T, aspect="auto", interpolation="nearest", cmap="RdBu_r", vmin=-1, vmax=1
         )
@@ -602,7 +603,6 @@ def plot_selected_trees(
     picks: list[tuple[int, int, float]],
     title_prefix: str,
     models: list[LayerModel],
-    feature_names: list[list[str]] | None = None,
 ) -> None:
     """Plot a list of selected trees by (layer, target_idx, score).
 
@@ -610,8 +610,6 @@ def plot_selected_trees(
         picks: List of (layer_idx, target_idx, score) tuples identifying trees to plot
         title_prefix: Prefix for plot titles (e.g. "Best" or "Worst")
         models: Trained LayerModel objects
-        feature_names: Optional list of feature name lists, one per layer.
-                      feature_names[k] contains names for all features used to predict layer k.
     """
     for layer_idx, target_idx, score in picks:
         est = get_estimator_for(models, layer_idx, target_idx)
@@ -619,12 +617,7 @@ def plot_selected_trees(
         ax = fig.add_subplot(1, 1, 1)
         ax.set_title(f"{title_prefix}: layer {layer_idx}, target {target_idx}, AP={score:.3f}")
 
-        # Get feature names for this layer if available
-        feat_names = None
-        if feature_names is not None and 0 <= layer_idx < len(feature_names):
-            feat_names = feature_names[layer_idx]
-
-        plot_tree(est, ax=ax, filled=False, feature_names=feat_names)
+        plot_tree(est, ax=ax, filled=False)
         fig.tight_layout()
 
 
@@ -661,21 +654,21 @@ def plot_tree_statistics(models: list[LayerModel], per_layer_stats: list[dict[st
     stats = extract_tree_stats(models, per_layer_stats)
 
     # Distribution of tree depths
-    fig1, ax1 = plt.subplots()
+    _fig1, ax1 = plt.subplots()
     ax1.hist(stats["depth"], bins=range(int(stats["depth"].max()) + 2))
     ax1.set_yscale("log")
     ax1.set_xlabel("Tree depth")
     ax1.set_ylabel("Count (log scale)")
 
     # Distribution of leaf counts
-    fig2, ax2 = plt.subplots()
+    _fig2, ax2 = plt.subplots()
     ax2.hist(stats["n_leaves"], bins=50)
     ax2.set_yscale("log")
     ax2.set_xlabel("Number of leaves")
     ax2.set_ylabel("Count (log scale)")
 
     # Distribution of accuracies
-    fig3, ax3 = plt.subplots()
+    _fig3, ax3 = plt.subplots()
     ax3.hist(stats["accuracy"][~np.isnan(stats["accuracy"])], bins=30)
     ax3.set_yscale("log")
     ax3.set_xlabel("Accuracy")
@@ -692,7 +685,7 @@ def plot_tree_statistics(models: list[LayerModel], per_layer_stats: list[dict[st
         stats["depth"][valid_mask], stats["accuracy"][valid_mask], bins=[depth_bins, acc_bins]
     )
 
-    fig4, ax4 = plt.subplots()
+    _fig4, ax4 = plt.subplots()
     heatmap_log: Float[np.ndarray, "depth_bins acc_bins"] = np.log10(
         heatmap_depth_acc.T + 1
     )  # +1 to avoid log(0)
@@ -719,7 +712,7 @@ def plot_tree_statistics(models: list[LayerModel], per_layer_stats: list[dict[st
         stats["n_leaves"][valid_mask], stats["accuracy"][valid_mask], bins=[leaf_bins, acc_bins]
     )
 
-    fig5, ax5 = plt.subplots()
+    _fig5, ax5 = plt.subplots()
     heatmap_log = np.log10(heatmap_leaf_acc.T + 1)
     im = ax5.imshow(heatmap_log, origin="lower", aspect="auto", cmap="Blues")
     ax5.set_xticks(range(len(leaf_bins) - 1))
@@ -741,7 +734,7 @@ def plot_tree_statistics(models: list[LayerModel], per_layer_stats: list[dict[st
         stats["depth"][valid_mask], stats["n_leaves"][valid_mask], bins=[depth_bins, leaf_bins]
     )
 
-    fig6, ax6 = plt.subplots()
+    _fig6, ax6 = plt.subplots()
     heatmap_log = np.log10(heatmap_depth_leaf.T + 1)
     im = ax6.imshow(heatmap_log, origin="lower", aspect="auto", cmap="Blues")
     ax6.set_xticks(range(len(depth_bins) - 1))

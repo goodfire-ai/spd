@@ -1,6 +1,8 @@
 # %%
 """Attention pattern visualization for CI decision tree analysis."""
 
+from typing import Any
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -78,7 +80,7 @@ print(f"Created LM dataset with {cfg.task_config.dataset_name}")
 def extract_attention_patterns_multibatch(
     model: ComponentModel,
     device: torch.device | str,
-    dataloader: DataLoader,
+    dataloader: DataLoader[Any],
     n_batches: int,
 ) -> dict[str, Float[Tensor, "total_samples n_heads seq_len seq_len"]]:
     """Extract attention patterns over multiple batches.

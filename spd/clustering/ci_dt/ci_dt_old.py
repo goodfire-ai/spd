@@ -115,11 +115,12 @@ def predict_k(
     lm: LayerModel = next(m for m in models if m.layer_index == k)
     X: np.ndarray = concat_cols(prefix_layers)
     proba = lm.model.predict_proba(X.astype(np.uint8))  # type: ignore
-    if isinstance(proba, list):
-        P: np.ndarray = np.stack([p[:, 1] for p in proba], axis=1)
+    P_: np.ndarray
+    if isinstance(proba, list):  # noqa: SIM108
+        P_ = np.stack([p[:, 1] for p in proba], axis=1)
     else:
-        P = proba[..., 1]  # type: ignore
-    Y_hat: np.ndarray = (float(threshold) <= P).astype(bool)
+        P_ = proba[..., 1]  # type: ignore
+    Y_hat: np.ndarray = (float(threshold) <= P_).astype(bool)
     return Y_hat
 
 
