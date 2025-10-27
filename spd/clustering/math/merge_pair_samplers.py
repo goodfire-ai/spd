@@ -30,12 +30,15 @@ def get_valid_mask(
 ) -> ClusterCoactivationShaped:
     """Get a boolean mask of valid merge pairs (non-NaN, non-diagonal)."""
     k_groups: int = costs.shape[0]
-    return (
+    valid_mask: ClusterCoactivationShaped = (
         ~torch.isnan(costs)  # mask out NaN entries
         & ~torch.eye(
             k_groups, dtype=torch.bool, device=costs.device
         )  # mask out diagonal (can't merge with self)
     )
+    if not valid_mask.any():
+        raise ValueError("All non-diagonal costs are NaN, cannot sample merge pair")
+    return valid_mask
 
 
 def range_sampler(
@@ -64,9 +67,6 @@ def range_sampler(
 
     # Get valid costs
     valid_costs: Float[Tensor, " n_valid"] = costs[valid_mask]
-
-    if valid_costs.numel() == 0:
-        raise ValueError("All costs are NaN, cannot sample merge pair")
 
     # Find the range of valid costs
     min_cost: float = float(valid_costs.min().item())
@@ -110,10 +110,6 @@ def mcmc_sampler(
     assert costs.shape[1] == k_groups, "Cost matrix must be square"
 
     valid_mask: ClusterCoactivationShaped = get_valid_mask(costs)
-
-    # Check if we have any valid pairs
-    if not valid_mask.any():
-        raise ValueError("All costs are NaN, cannot sample merge pair")
 
     # Compute probabilities: exp(-cost/temperature)
     # Use stable softmax computation to avoid overflow
