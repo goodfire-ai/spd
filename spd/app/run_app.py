@@ -112,6 +112,7 @@ def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
         stderr=subprocess.STDOUT,
         bufsize=1,
         universal_newlines=True,
+        start_new_session=True,  # isolate child process group so cleanup signals do not hit launcher
     )
 
     # Wait for backend to be healthy
@@ -154,6 +155,7 @@ def start_frontend(port: int, backend_port: int, logfile: TextIO) -> subprocess.
         env=env,
         bufsize=1,
         universal_newlines=True,
+        start_new_session=True,  # isolate child process group so cleanup signals do not hit launcher
     )
 
     # Wait for frontend to be healthy
@@ -206,7 +208,7 @@ def main():
 
     # Find available ports
     print(f"{DIM}Finding available ports...{RESET}")
-    backend_port = find_available_port(start_port=3000)
+    backend_port = find_available_port(start_port=8000)
     frontend_port = find_available_port(start_port=5173)
 
     print(f"{DIM}  Backend port: {backend_port}{RESET}")
