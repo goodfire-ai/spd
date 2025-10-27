@@ -232,7 +232,6 @@ def precompute_batches_for_ensemble(
                     model, device, batch_data
                 )
 
-            # Process (concat, NO FILTERING)
             processed: ProcessedActivations = process_activations(
                 activations=acts_dict,
                 filter_dead_threshold=0.0,  # NO FILTERING

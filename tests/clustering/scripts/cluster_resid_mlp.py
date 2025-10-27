@@ -75,7 +75,9 @@ dbg_auto(
         data_generation_type=DATASET.data_generation_type,
     )
 )
-DATALOADER = DatasetGeneratedDataLoader(DATASET, batch_size=N_SAMPLES, shuffle=False)
+DATALOADER: DatasetGeneratedDataLoader = DatasetGeneratedDataLoader(
+    DATASET, batch_size=N_SAMPLES, shuffle=False
+)
 
 # %%
 # Get component activations
@@ -149,7 +151,7 @@ def _plot_func(
         )
 
 
-BATCHED_ACTIVATIONS = BatchedActivations.from_tensor(
+BATCHED_ACTIVATIONS: BatchedActivations = BatchedActivations.from_tensor(
     activations=PROCESSED_ACTIVATIONS.activations,
     labels=list(PROCESSED_ACTIVATIONS.labels),
 )
@@ -177,7 +179,7 @@ MERGE_HIST: MergeHistory = merge_iteration(
 ENSEMBLE_SIZE: int = 4
 HISTORIES: list[MergeHistory] = []
 for _i in range(ENSEMBLE_SIZE):
-    batched_acts = BatchedActivations.from_tensor(
+    batched_acts: BatchedActivations = BatchedActivations.from_tensor(
         activations=PROCESSED_ACTIVATIONS.activations,
         labels=list(PROCESSED_ACTIVATIONS.labels),
     )
