@@ -24,7 +24,7 @@
 
             console.log("status:", status);
             if (!status.train_run) return;
-            trainWandbRunEntry = status.train_run.wandb_path.split("/").pop()!;
+            trainWandbRunEntry = status.train_run.wandb_path;
         } catch (error) {
             console.error("error loading status", error);
         }

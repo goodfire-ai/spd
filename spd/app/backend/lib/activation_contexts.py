@@ -35,7 +35,7 @@ def get_subcomponents_activation_contexts(
         n_batches,
         n_tokens_either_side,
         batch_size,
-        str(run_context.cm.device),
+        topk_examples,
     )
 
     return map_to_model_ctxs(run_context, activations_data)
@@ -108,8 +108,10 @@ def get_topk_by_subcomponent(
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
-    device: str,
+    topk_examples: int,
 ) -> ActivationsData:
+    device = next(run_context.cm.parameters()).device
+
     # for each (module_name, component_idx), track the top-k activations
     examples = defaultdict[str, defaultdict[int, _TopKExamples]](
         lambda: defaultdict(lambda: _TopKExamples(k=TOPK_EXAMPLES))

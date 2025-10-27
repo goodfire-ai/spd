@@ -10,6 +10,7 @@
     let batchSize = 1;
     let nTokensEitherSide = 10;
     let importanceThreshold = 0.0;
+    let topkExamples = 40;
 
     async function loadContexts() {
         loading = true;
@@ -19,7 +20,8 @@
                 n_batches: nBatches,
                 batch_size: batchSize,
                 n_tokens_either_side: nTokensEitherSide,
-                importance_threshold: importanceThreshold
+                importance_threshold: importanceThreshold,
+                topk_examples: topkExamples,
             });
             allLayersData = data.layers;
         } catch (error) {
@@ -86,6 +88,18 @@
                         min="0"
                         max="1"
                         bind:value={importanceThreshold}
+                        on:keydown={handleKeydown}
+                    />
+                </div>
+
+                <div class="config-item">
+                    <label for="topk-examples">Top K Examples:</label>
+                    <input
+                        id="topk-examples"
+                        type="number"
+                        step="1"
+                        min="1"
+                        bind:value={topkExamples}
                         on:keydown={handleKeydown}
                     />
                 </div>

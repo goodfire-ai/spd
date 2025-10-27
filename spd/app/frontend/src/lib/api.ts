@@ -50,6 +50,7 @@ export type TokenDensity = {
 
 export type ActivationContextsConfig = {
     importance_threshold: number;
+    topk_examples: number;
     n_batches: number;
     batch_size: number;
     n_tokens_either_side: number;
