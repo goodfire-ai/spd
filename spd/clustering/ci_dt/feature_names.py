@@ -1,8 +1,7 @@
 """Generate feature names for decision tree visualization with activation and decoding info."""
 
-import numpy as np
 import torch
-from jaxtyping import Bool, Float
+from jaxtyping import Float
 from torch import Tensor
 
 from spd.models.component_model import ComponentModel

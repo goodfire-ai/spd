@@ -4,9 +4,9 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from jaxtyping import Float, Int
 from sklearn.tree import plot_tree
-import torch
 
 from spd.clustering.ci_dt.core import LayerModel, MetricKey, get_estimator_for
 
@@ -455,8 +455,18 @@ def plot_ap_vs_prevalence(per_layer_stats: list[dict[str, Any]], models: list[La
     depth_arr: np.ndarray = np.array(depth_list)
 
     # Plot baseline: for uncorrelated variables, expected AP = prevalence
-    prev_range: np.ndarray = np.logspace(np.log10(prevalence_arr.min()), np.log10(prevalence_arr.max()), 100)
-    ax.plot(prev_range, prev_range, 'k--', alpha=0.5, linewidth=1.5, label='Random baseline (AP = prevalence)', zorder=1)
+    prev_range: np.ndarray = np.logspace(
+        np.log10(prevalence_arr.min()), np.log10(prevalence_arr.max()), 100
+    )
+    ax.plot(
+        prev_range,
+        prev_range,
+        "k--",
+        alpha=0.5,
+        linewidth=1.5,
+        label="Random baseline (AP = prevalence)",
+        zorder=1,
+    )
 
     scatter = ax.scatter(
         prevalence_arr,
@@ -472,7 +482,8 @@ def plot_ap_vs_prevalence(per_layer_stats: list[dict[str, Any]], models: list[La
 
     ax.set_title(
         r"Average Precision vs Component Prevalence" + "\n"
-        r"$\text{AP} = \sum_n (R_n - R_{n-1}) P_n$ where $P_n = \frac{\text{TP}}{\text{TP}+\text{FP}}$, $R_n = \frac{\text{TP}}{\text{TP}+\text{FN}}$" + "\n"
+        r"$\text{AP} = \sum_n (R_n - R_{n-1}) P_n$ where $P_n = \frac{\text{TP}}{\text{TP}+\text{FP}}$, $R_n = \frac{\text{TP}}{\text{TP}+\text{FN}}$"
+        + "\n"
         r"Colored by tree depth"
     )
     ax.set_xlabel("Prevalence (log scale)")
@@ -480,7 +491,7 @@ def plot_ap_vs_prevalence(per_layer_stats: list[dict[str, Any]], models: list[La
     ax.set_xscale("log")
     ax.set_ylim(-0.05, 1.05)
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='lower right')
+    ax.legend(loc="lower right")
 
     cbar = plt.colorbar(scatter, ax=ax)
     cbar.set_label("Tree Depth")
@@ -489,7 +500,7 @@ def plot_ap_vs_prevalence(per_layer_stats: list[dict[str, Any]], models: list[La
 
 
 def plot_component_activity_breakdown(
-    component_acts: dict[str, np.ndarray|torch.Tensor],
+    component_acts: dict[str, np.ndarray | torch.Tensor],
     module_keys: list[str],
     activation_threshold: float,
     logy: bool = False,

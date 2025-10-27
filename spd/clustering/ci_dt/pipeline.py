@@ -173,10 +173,7 @@ def compute_tree_metrics(
         per_layer_stats.append(
             {
                 **metrics,
-                **{
-                    f"mean_{key}": float(np.nanmean(values))
-                    for key, values in metrics.items()
-                }
+                **{f"mean_{key}": float(np.nanmean(values)) for key, values in metrics.items()},
             }
         )
         for j, apj in enumerate(metrics["ap"]):

@@ -29,8 +29,8 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 # magic autoreload
-%load_ext autoreload
-%autoreload 2
+# %load_ext autoreload
+# %autoreload 2
 
 # %%
 # ----------------------- configuration -----------------------
@@ -40,7 +40,7 @@ config = CIDTConfig(
     # n_batches=8,
     batch_size=2,
     n_batches=2,
-	n_ctx=16,
+    n_ctx=16,
     activation_threshold=0.01,
     max_depth=3,
     random_state=42,
@@ -164,7 +164,6 @@ plot_metric(per_layer_stats, module_keys, "precision")
 plot_metric(per_layer_stats, module_keys, "npv")
 plot_metric(per_layer_stats, module_keys, "f1")
 plot_ap_vs_prevalence(per_layer_stats, models)
-
 
 
 # %%

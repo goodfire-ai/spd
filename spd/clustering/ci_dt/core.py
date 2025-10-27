@@ -1,9 +1,9 @@
 """Core library functions for causal importance decision trees."""
 
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
-import warnings
 
 import numpy as np
 from jaxtyping import Bool, Float
@@ -130,6 +130,7 @@ def predict_all(
 
 MetricKey = Literal["ap", "acc", "bacc", "prev", "tpr", "tnr", "precision", "npv", "f1"]
 
+
 def layer_metrics(
     Y_true: Bool[np.ndarray, "n t"],
     Y_prob: Float[np.ndarray, "n t"],
@@ -186,7 +187,7 @@ def layer_metrics(
             precision[j] = tp / (tp + fp)
         else:
             precision[j] = np.nan
-            warnings.warn(f"Precision failed:  {tp=}, {fp=}, {tp+fp=}")
+            warnings.warn(f"Precision failed:  {tp=}, {fp=}, {tp+fp=}", stacklevel=1)
 
         # Negative Predictive Value = TN / (TN + FN) - when we predict inactive, how often are we right?
         npv[j] = tn / (tn + fn)
@@ -198,7 +199,6 @@ def layer_metrics(
         ap[j] = average_precision_score(y, p)
         acc[j] = accuracy_score(y, yhat)
         bacc[j] = balanced_accuracy_score(y, yhat)
-
 
     return {
         "ap": ap,
