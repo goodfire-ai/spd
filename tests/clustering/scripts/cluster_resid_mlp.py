@@ -12,7 +12,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.batched_activations import batched_activations_from_tensor
+from spd.clustering.batched_activations import BatchedActivations
 from spd.clustering.consts import ComponentLabels
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
@@ -149,7 +149,7 @@ def _plot_func(
         )
 
 
-BATCHED_ACTIVATIONS = batched_activations_from_tensor(
+BATCHED_ACTIVATIONS = BatchedActivations.from_tensor(
     activations=PROCESSED_ACTIVATIONS.activations,
     labels=list(PROCESSED_ACTIVATIONS.labels),
 )
@@ -177,7 +177,7 @@ MERGE_HIST: MergeHistory = merge_iteration(
 ENSEMBLE_SIZE: int = 4
 HISTORIES: list[MergeHistory] = []
 for _i in range(ENSEMBLE_SIZE):
-    batched_acts = batched_activations_from_tensor(
+    batched_acts = BatchedActivations.from_tensor(
         activations=PROCESSED_ACTIVATIONS.activations,
         labels=list(PROCESSED_ACTIVATIONS.labels),
     )

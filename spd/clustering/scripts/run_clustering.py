@@ -287,7 +287,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
         batched_activations = BatchedActivations(run_config.precomputed_activations_dir)
 
         # Get labels from first batch
-        first_batch = batched_activations.get_next_batch()
+        first_batch = batched_activations._get_next_batch()
         component_labels = ComponentLabels(first_batch.labels)
 
         logger.info(f"Loaded {batched_activations.n_batches} precomputed batches")

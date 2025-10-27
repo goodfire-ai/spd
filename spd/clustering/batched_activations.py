@@ -6,92 +6,125 @@ This module provides:
 """
 
 import gc
+import re
+import zipfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 import torch
+from jaxtyping import Float
 from torch import Tensor
 from tqdm import tqdm
 
 from spd.clustering.activations import component_activations, process_activations
+from spd.clustering.consts import BatchTensor, ComponentLabels
 from spd.clustering.dataset import load_dataset
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.spd_types import TaskName
 from spd.utils.distributed_utils import get_device
 
 if TYPE_CHECKING:
     from spd.clustering.clustering_run_config import ClusteringRunConfig
 
 
+_BATCH_FORMAT: str = "batch_{idx:04}.zip"
+
+
 @dataclass
 class ActivationBatch:
-    """Single batch of activations - just tensors, no processing."""
+    """Single batch of subcomponent activations"""
 
-    activations: Tensor  # [samples, n_components]
-    labels: list[str]  # ["module:idx", ...]
+    activations: Float[Tensor, "samples n_components"]
+    labels: ComponentLabels
 
     def save(self, path: Path) -> None:
-        torch.save({"activations": self.activations, "labels": self.labels}, path)
+        zf: zipfile.ZipFile
+        with zipfile.ZipFile(path, "w") as zf:
+            with zf.open("activations.npy", "w") as f:
+                np.save(f, self.activations.cpu().numpy())
+            zf.writestr("labels.txt", "\n".join(self.labels))
+
+    def save_idx(self, batch_dir: Path, idx: int) -> None:
+        self.save(batch_dir / _BATCH_FORMAT.format(idx=idx))
 
     @staticmethod
-    def load(path: Path) -> "ActivationBatch":
-        data = torch.load(path, weights_only=False)
+    def read(path: Path) -> "ActivationBatch":
+        zf: zipfile.ZipFile
+        with zipfile.ZipFile(path, "r") as zf:
+            with zf.open("activations.npy", "r") as f:
+                activations_np = np.load(f)
+            labels_raw: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
         return ActivationBatch(
-            activations=data["activations"],
-            labels=data["labels"],
+            activations=torch.from_numpy(activations_np),
+            labels=ComponentLabels(labels_raw),
         )
 
 
-class BatchedActivations:
+class BatchedActivations(Iterator[ActivationBatch]):
     """Iterator over activation batches from disk."""
 
     def __init__(self, batch_dir: Path):
-        self.batch_dir = batch_dir
-        # Find all batch files: batch_0.pt, batch_1.pt, ...
-        self.batch_paths = sorted(batch_dir.glob("batch_*.pt"))
+        self.batch_dir: Path = batch_dir
+        # Find all batch files
+        _glob_pattern: str = re.sub(r"\{[^{}]*\}", "*", _BATCH_FORMAT)  # returns `batch_*.zip`
+        self.batch_paths: list[Path] = sorted(batch_dir.glob(_glob_pattern))
         assert len(self.batch_paths) > 0, f"No batch files found in {batch_dir}"
-        self.current_idx = 0
+        self.current_idx: int = 0
+
+        # Verify naming
+        for i in range(len(self.batch_paths)):
+            expected_name = _BATCH_FORMAT.format(idx=i)
+            actual_name = self.batch_paths[i].name
+            assert expected_name == actual_name, (
+                f"Expected batch file '{expected_name}', found '{actual_name}'"
+            )
 
     @property
     def n_batches(self) -> int:
         return len(self.batch_paths)
 
-    def get_next_batch(self) -> ActivationBatch:
+    def _get_next_batch(self) -> ActivationBatch:
         """Load and return next batch, cycling through available batches."""
-        batch = ActivationBatch.load(self.batch_paths[self.current_idx])
-        self.current_idx = (self.current_idx + 1) % self.n_batches
+        batch: ActivationBatch = ActivationBatch.read(
+            self.batch_paths[self.current_idx % self.n_batches]
+        )
+        self.current_idx += 1
         return batch
 
+    def __next__(self) -> ActivationBatch:
+        return self._get_next_batch()
 
-def batched_activations_from_tensor(
-    activations: Tensor,
-    labels: list[str],
-) -> BatchedActivations:
-    """
-    Create a BatchedActivations instance from a single activation tensor.
+    @classmethod
+    def from_tensor(
+        cls, activations: Tensor, labels: ComponentLabels | list[str]
+    ) -> "BatchedActivations":
+        """Create a BatchedActivations instance from a single activation tensor.
 
-    This is a helper for backward compatibility with tests and code that uses
-    single-batch mode. It creates a temporary directory with a single batch file.
+        This is a helper for backward compatibility with tests and code that uses
+        single-batch mode. It creates a temporary directory with a single batch file.
 
-    Args:
-        activations: Activation tensor [samples, n_components]
-        labels: Component labels ["module:idx", ...]
+        Args:
+            activations: Activation tensor [samples, n_components]
+            labels: Component labels ["module:idx", ...]
 
-    Returns:
-        BatchedActivations instance that cycles through the single batch
-    """
-    import tempfile
+        Returns:
+            BatchedActivations instance that cycles through the single batch
+        """
+        import tempfile
 
-    # Create a temporary directory
-    temp_dir = Path(tempfile.mkdtemp(prefix="batch_temp_"))
+        # Create a temporary directory
+        temp_dir = Path(tempfile.mkdtemp(prefix="batch_temp_"))
 
-    # Save the single batch
-    batch = ActivationBatch(activations=activations, labels=labels)
-    batch.save(temp_dir / "batch_0.pt")
+        # Save the single batch
+        batch = ActivationBatch(activations=activations, labels=ComponentLabels(labels))
+        batch.save(temp_dir / _BATCH_FORMAT.format(idx=0))
 
-    # Return BatchedActivations that will cycle through this single batch
-    return BatchedActivations(temp_dir)
+        # Return BatchedActivations that will cycle through this single batch
+        return BatchedActivations(temp_dir)
 
 
 def precompute_batches_for_ensemble(
@@ -116,7 +149,7 @@ def precompute_batches_for_ensemble(
         or None if single-batch mode (recompute_costs_every=1)
     """
     # Check if multi-batch mode
-    recompute_every = clustering_run_config.merge_config.recompute_costs_every
+    recompute_every: int | None = clustering_run_config.merge_config.recompute_costs_every
     if recompute_every is None:
         logger.info("Single-batch mode (recompute_costs_every=`None`), skipping precomputation")
         return None
@@ -124,15 +157,15 @@ def precompute_batches_for_ensemble(
     logger.info("Multi-batch mode detected, precomputing activation batches")
 
     # Load model to determine number of components
-    device = get_device()
-    spd_run = SPDRunInfo.from_path(clustering_run_config.model_path)
-    model = ComponentModel.from_run_info(spd_run).to(device)
-    task_name = spd_run.config.task_config.task_name
+    device: str = get_device()
+    spd_run: SPDRunInfo = SPDRunInfo.from_path(clustering_run_config.model_path)
+    model: ComponentModel = ComponentModel.from_run_info(spd_run).to(device)
+    task_name: TaskName = spd_run.config.task_config.task_name
 
     # Get number of components (no filtering, so just count from model)
     # Load a sample to count components
     logger.info("Loading sample batch to count components")
-    sample_batch = load_dataset(
+    sample_batch: BatchTensor = load_dataset(
         model_path=clustering_run_config.model_path,
         task_name=task_name,
         batch_size=clustering_run_config.batch_size,

@@ -105,7 +105,7 @@ def merge_iteration(
 
     # Load first batch
     # --------------------------------------------------
-    first_batch: ActivationBatch = batched_activations.get_next_batch()
+    first_batch: ActivationBatch = batched_activations._get_next_batch()
     activations: Tensor = first_batch.activations
 
     # Compute initial coactivations
@@ -204,7 +204,7 @@ def merge_iteration(
         ) % merge_config.recompute_costs_every == 0 and iter_idx + 1 < num_iters
 
         if should_recompute:
-            new_batch: ActivationBatch = batched_activations.get_next_batch()
+            new_batch: ActivationBatch = batched_activations._get_next_batch()
             activations = new_batch.activations
 
             # Recompute fresh coacts with current merge groups

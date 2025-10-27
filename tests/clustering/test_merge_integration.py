@@ -2,7 +2,7 @@
 
 import torch
 
-from spd.clustering.batched_activations import batched_activations_from_tensor
+from spd.clustering.batched_activations import BatchedActivations
 from spd.clustering.consts import ComponentLabels
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
@@ -30,7 +30,7 @@ class TestMergeIntegration:
         )
 
         # Run merge iteration
-        batched_activations = batched_activations_from_tensor(
+        batched_activations = BatchedActivations.from_tensor(
             activations=activations, labels=list(component_labels)
         )
         history = merge_iteration(
@@ -68,7 +68,7 @@ class TestMergeIntegration:
         )
 
         # Run merge iteration
-        batched_activations = batched_activations_from_tensor(
+        batched_activations = BatchedActivations.from_tensor(
             activations=activations, labels=list(component_labels)
         )
         history = merge_iteration(
@@ -108,7 +108,7 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"threshold": 0.0},  # Always select minimum
         )
 
-        batched_activations_range = batched_activations_from_tensor(
+        batched_activations_range = BatchedActivations.from_tensor(
             activations=activations.clone(), labels=list(component_labels)
         )
         history_range = merge_iteration(
@@ -126,7 +126,7 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"temperature": 0.01},  # Very low temp
         )
 
-        batched_activations_mcmc = batched_activations_from_tensor(
+        batched_activations_mcmc = BatchedActivations.from_tensor(
             activations=activations.clone(), labels=list(component_labels)
         )
         history_mcmc = merge_iteration(
@@ -157,7 +157,7 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"temperature": 2.0},
         )
 
-        batched_activations = batched_activations_from_tensor(
+        batched_activations = BatchedActivations.from_tensor(
             activations=activations, labels=list(component_labels)
         )
         history = merge_iteration(
