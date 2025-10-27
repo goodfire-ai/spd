@@ -24,6 +24,7 @@ If there's an assumption you're making while writing code, assert it.
 - Don't add type annotations only when they're redundant.
 	- i.e. `my_thing: Thing = Thing()` or `name: str = "John Doe"` don't need type annotations.
 	- however, `var = foo()` or `result = thing.bar()` should be annotated!
+- FOR CLAUDE: don't worry about cleaning up unused imports, we do this automatically with ruff using `make format`
 
 ## Tensor Operations
 - Try to use einops by default for clarity.
