@@ -24,7 +24,8 @@ class DistributedState:
 
 
 def _infer_default_backend() -> Literal["nccl", "gloo"]:
-    return "nccl" if torch.cuda.is_available() else "gloo"
+    # return "nccl" if torch.cuda.is_available() else "gloo"
+    return "gloo"
 
 
 def _init_default_state() -> DistributedState:

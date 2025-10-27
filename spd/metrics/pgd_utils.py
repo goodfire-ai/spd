@@ -1,4 +1,3 @@
-import uuid
 from typing import Literal
 
 import torch
@@ -12,9 +11,7 @@ from spd.models.components import make_mask_infos
 from spd.utils.component_utils import RoutingType, calc_routing_masks
 from spd.utils.distributed_utils import (
     all_reduce,
-    call_on_rank0_then_broadcast,
     gather_all_tensors,
-    get_rank,
     sync_across_processes,
 )
 from spd.utils.general_utils import calc_sum_recon_loss_lm, zip_dicts
@@ -56,19 +53,19 @@ def pgd_masked_recon_loss_update(
                 raise ValueError(
                     "weight_deltas and weight_delta_mask must exist or not exist together"
                 )
-        rank = get_rank()
-        print(f"{rank} - making mask infos")
+        # rank = get_rank()
+        # print(f"{rank} - making mask infos")
         mask_infos = make_mask_infos(
             component_masks=_interpolate_component_mask(ci, component_sample_points),
             weight_deltas_and_masks=weight_deltas_and_masks,
             routing_masks=routing_masks,
         )
-        print(f"{rank} - calling model")
+        # print(f"{rank} - calling model")
         out = model(batch, mask_infos=mask_infos)
-        print(f"{rank} - calling calc_sum_recon_loss_lm")
+        # print(f"{rank} - calling calc_sum_recon_loss_lm")
         total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
         n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
-        print(f"{rank} - done")
+        # print(f"{rank} - done")
         return total_loss, n_examples
 
     *batch_dims, C = next(iter(ci.values())).shape
@@ -93,27 +90,55 @@ def pgd_masked_recon_loss_update(
             weight_delta_mask_shape = torch.Size(1 for _ in batch_dims)
 
     adversarial_component_sample_points: dict[str, Float[Tensor, "... C"]] = {}
+
+    # TODO: Just create a single tensor instead of inside a for loop
+    # source = _get_pgd_init_tensor(pgd_config.init, ci_mask_shape, batch.device)
+    # print(f"{get_rank()} - source: {source[:, :, :10]}")
+    # ci_mask_shape[0]
     for layer in ci:
-        source = call_on_rank0_then_broadcast(
-            _get_pgd_init_tensor,
-            pgd_config.init,
-            ci_mask_shape,
-            batch.device,
-        ).requires_grad_(True)
-        assert_same_across_ranks(source)
+        # print(f"{get_rank()} - device: {batch.device}")
+        source = _get_pgd_init_tensor(pgd_config.init, ci_mask_shape, batch.device).requires_grad_(
+            True
+        )
+        # if is_main_process():
+        #     source = _get_pgd_init_tensor(pgd_config.init, ci_mask_shape, batch.device)
+        # else:
+        #     source = torch.zeros(ci_mask_shape, device=batch.device)
+
+        # Do and all-reduce on the tensor
+        # source = all_reduce(source, op=ReduceOp.SUM).requires_grad_(True)
+
+        # source = call_on_rank0_then_broadcast(
+        #     _get_pgd_init_tensor,
+        #     pgd_config.init,
+        #     ci_mask_shape,
+        #     batch.device,
+        # ).requires_grad_(True)
+        assert_same_across_ranks(source)  # RNGs should be the same across ranks
         adversarial_component_sample_points[layer] = source
+    # exit()
 
     adversarial_weight_delta_masks: dict[str, Float[Tensor, " ..."]] | None = None
     if weight_deltas is not None:
         adversarial_weight_delta_masks = {}
         for layer in ci:
-            source = call_on_rank0_then_broadcast(
-                _get_pgd_init_tensor,
-                pgd_config.init,
-                weight_delta_mask_shape,
-                batch.device,
+            # source = call_on_rank0_then_broadcast(
+            #     _get_pgd_init_tensor,
+            #     pgd_config.init,
+            #     weight_delta_mask_shape,
+            #     batch.device,
+            # ).requires_grad_(True)
+            source = _get_pgd_init_tensor(
+                pgd_config.init, weight_delta_mask_shape, batch.device
             ).requires_grad_(True)
-            assert_same_across_ranks(source)
+            # if is_main_process():
+            #     source = _get_pgd_init_tensor(
+            #         pgd_config.init, weight_delta_mask_shape, batch.device
+            #     )
+            # else:
+            #     source = torch.zeros(weight_delta_mask_shape, device=batch.device)
+            # source = all_reduce(source, op=ReduceOp.SUM).requires_grad_(True)
+            assert_same_across_ranks(source)  # RNGs should be the same across ranks
             adversarial_weight_delta_masks[layer] = source
 
     # PGD ascent
