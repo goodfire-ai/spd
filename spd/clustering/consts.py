@@ -8,6 +8,8 @@ import numpy as np
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+# TODO: docstrings for all types below
+
 # Merge arrays and distances (numpy-based for storage/analysis)
 MergesAtIterArray = Int[np.ndarray, "n_ens n_components"]
 MergesArray = Int[np.ndarray, "n_ens n_iters n_components"]

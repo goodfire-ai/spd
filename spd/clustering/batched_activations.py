@@ -11,7 +11,7 @@ import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import numpy as np
 import torch
@@ -24,7 +24,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
-from spd.clustering.consts import BatchTensor, ComponentLabels
+from spd.clustering.consts import ActivationsTensor, BatchTensor, ComponentLabels
 from spd.clustering.dataset import load_dataset
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -42,7 +42,7 @@ _BATCH_FORMAT: str = "batch_{idx:04}.zip"
 class ActivationBatch:
     """Single batch of subcomponent activations"""
 
-    activations: Float[Tensor, "samples n_components"]
+    activations: ActivationsTensor
     labels: ComponentLabels
 
     def save(self, path: Path) -> None:
@@ -100,6 +100,7 @@ class BatchedActivations(Iterator[ActivationBatch]):
         self.current_idx += 1
         return batch
 
+    @override
     def __next__(self) -> ActivationBatch:
         return self._get_next_batch()
 
@@ -227,7 +228,7 @@ def precompute_batches_for_ensemble(
 
             # Compute activations
             with torch.no_grad():
-                acts_dict: dict[str, Float[Tensor, "samples components"]] = component_activations(
+                acts_dict: dict[str, ActivationsTensor] = component_activations(
                     model, device, batch_data
                 )
 
@@ -242,7 +243,7 @@ def precompute_batches_for_ensemble(
             # Save as ActivationBatch
             activation_batch: ActivationBatch = ActivationBatch(
                 activations=processed.activations.cpu(),  # Move to CPU for storage
-                labels=list(processed.labels),
+                labels=ComponentLabels(list(processed.labels)),
             )
             activation_batch.save(run_batch_dir / f"batch_{batch_idx}.pt")
 

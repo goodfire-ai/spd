@@ -341,7 +341,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
 
         single_batch: ActivationBatch = ActivationBatch(
             activations=processed.activations,
-            labels=list(processed.labels),
+            labels=ComponentLabels(list(processed.labels)),
         )
         single_batch.save(temp_batch_dir / "batch_0.pt")
 

@@ -106,7 +106,7 @@ def merge_iteration(
     # Load first batch
     # --------------------------------------------------
     first_batch: ActivationBatch = batched_activations._get_next_batch()
-    activations: Tensor = first_batch.activations
+    activations: ActivationsTensor = first_batch.activations
 
     # Compute initial coactivations
     # --------------------------------------------------
@@ -199,20 +199,21 @@ def merge_iteration(
 
         # Recompute from new batch if it's time
         # --------------------------------------------------
-        should_recompute: bool = (
-            iter_idx + 1
-        ) % merge_config.recompute_costs_every == 0 and iter_idx + 1 < num_iters
+        if merge_config.recompute_costs_every is not None:
+            should_recompute: bool = (
+                (iter_idx + 1) % merge_config.recompute_costs_every == 0
+            ) and (iter_idx + 1 < num_iters)
 
-        if should_recompute:
-            new_batch: ActivationBatch = batched_activations._get_next_batch()
-            activations: Float[Tensor, "samples n_components"] = new_batch.activations
+            if should_recompute:
+                new_batch: ActivationBatch = batched_activations._get_next_batch()
+                activations = new_batch.activations
 
-            # Recompute fresh coacts with current merge groups
-            current_coact, current_act_mask = recompute_coacts_from_scratch(
-                activations=activations,
-                current_merge=current_merge,
-                activation_threshold=merge_config.activation_threshold,
-            )
+                # Recompute fresh coacts with current merge groups
+                current_coact, current_act_mask = recompute_coacts_from_scratch(
+                    activations=activations,
+                    current_merge=current_merge,
+                    activation_threshold=merge_config.activation_threshold,
+                )
 
         # Compute metrics for logging
         # --------------------------------------------------
