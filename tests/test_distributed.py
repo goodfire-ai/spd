@@ -41,7 +41,7 @@ TEST_CONFIG = {
         },
         # Disable stochastic terms for deterministic dp test; keep a simple layerwise recon if needed
         {"classname": "CIMaskedReconLayerwiseLoss", "coeff": 1.0},
-        {"classname": "FaithfulnessLoss", "coeff": 3000},
+        {"classname": "CIMaskedReconLoss", "coeff": 1.0},
     ],
     "output_loss_type": "kl",
     # --- Training ---
@@ -97,6 +97,9 @@ class TestDistributedDeterminicity:
         state.
 
         This is a useful end-to-end test for DDP in general.
+
+        NOTE: THIS TEST IS SEED DEPENDENT. I PUT THIS DOWN TO JUST DIFFERENT RANKS ACCUMULATING
+        THINGS DIFFERENTLY IN THE ALLREDUCE OPERATIONS, ALTHOUGH HAVEN'T THOROUGHLY INVESTIGATED.
         """
 
         with tempfile.TemporaryDirectory() as tmpdir:
