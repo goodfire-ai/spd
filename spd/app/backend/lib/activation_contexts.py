@@ -26,6 +26,7 @@ def get_subcomponents_activation_contexts(
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
+    topk_examples: int,
     device: str,
 ) -> ModelActivationContexts:
     logger.info("Getting activation contexts")
@@ -36,6 +37,7 @@ def get_subcomponents_activation_contexts(
         n_batches,
         n_tokens_either_side,
         batch_size,
+        topk_examples,
         device,
     )
 
@@ -100,7 +102,9 @@ class ActivationsData:
     component_mean_cis: dict[str, Float[torch.Tensor, " C"]]
 
 
-TOPK_EXAMPLES = 100
+LayerName = str
+ComponentIndex = int
+TokenId = int
 
 
 def get_topk_by_subcomponent(
@@ -109,25 +113,28 @@ def get_topk_by_subcomponent(
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
+    topk_examples: int,
     device: str,
 ) -> ActivationsData:
     # for each (module_name, component_idx), track the top-k activations
-    examples = defaultdict[str, defaultdict[int, _TopKExamples]](
-        lambda: defaultdict(lambda: _TopKExamples(k=TOPK_EXAMPLES))
+    examples = defaultdict[LayerName, defaultdict[ComponentIndex, _TopKExamples]](
+        lambda: defaultdict(lambda: _TopKExamples(k=topk_examples))
     )
 
     # for each (module_name, component_idx):
     # the number of tokens seen
-    component_activation_counts = defaultdict[str, defaultdict[int, int]](lambda: defaultdict(int))
+    component_activation_counts = defaultdict[LayerName, dict[ComponentIndex, int]](
+        lambda: defaultdict(int)
+    )
     # and the number of activations for each token
-    component_activation_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
+    component_activation_tokens = defaultdict[LayerName, dict[ComponentIndex, dict[TokenId, int]]](
         lambda: defaultdict(lambda: defaultdict(int))
     )
 
     C = run_context.cm.C
 
     n_toks_seen = 0
-    component_sum_cis = defaultdict[str, Float[torch.Tensor, " C"]](
+    component_sum_cis = defaultdict[LayerName, Float[torch.Tensor, " C"]](
         lambda: torch.zeros(C, device=device, dtype=torch.float)
     )
 
@@ -238,7 +245,7 @@ def get_topk_by_subcomponent(
         for module_name in component_sum_cis
     }
 
-    component_token_densities = defaultdict[str, dict[int, list[tuple[str, float]]]](dict)
+    component_token_densities = defaultdict[LayerName, dict[int, list[tuple[str, float]]]](dict)
     for module_name, tokens_by_components in component_activation_tokens.items():
         for component_idx, component_token_acts in tokens_by_components.items():
             component_densities: list[tuple[str, float]] = []
@@ -257,6 +264,7 @@ def get_topk_by_subcomponent(
         component_token_densities=component_token_densities,
         component_mean_cis=component_mean_cis,
     )
+
 
 def _get_importances_by_module(
     cm: ComponentModel, batch: torch.Tensor, config: Config

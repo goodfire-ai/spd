@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
+from tokenizers import Tokenizer
 from torch.utils.data import DataLoader
-from transformers import PreTrainedTokenizer
 
 from spd.app.backend.api import AvailablePrompt, Status, TrainRun
 from spd.configs import Config
@@ -25,7 +25,7 @@ class TrainRunContext:
     wandb_path: str
     config: Config
     cm: ComponentModel
-    tokenizer: PreTrainedTokenizer
+    tokenizer: Tokenizer
     train_loader: DataLoader[Any]
 
 
