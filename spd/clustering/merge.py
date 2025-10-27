@@ -148,6 +148,24 @@ def merge_iteration(
         total=num_iters,
     )
     for iter_idx in pbar:
+        # Recompute from new batch if it's time (do this BEFORE computing costs)
+        # --------------------------------------------------
+        if merge_config.recompute_costs_every is not None:
+            should_recompute: bool = (
+                iter_idx % merge_config.recompute_costs_every == 0
+            ) and (iter_idx > 0)
+
+            if should_recompute:
+                new_batch: ActivationBatch = batched_activations._get_next_batch()
+                activations = new_batch.activations
+
+                # Recompute fresh coacts with current merge groups
+                current_coact, current_act_mask = recompute_coacts_from_scratch(
+                    activations=activations,
+                    current_merge=current_merge,
+                    activation_threshold=merge_config.activation_threshold,
+                )
+
         # compute costs, figure out what to merge
         # --------------------------------------------------
         # HACK: this is messy
@@ -196,24 +214,6 @@ def merge_iteration(
             selected_pair=merge_pair,
             current_merge=current_merge,
         )
-
-        # Recompute from new batch if it's time
-        # --------------------------------------------------
-        if merge_config.recompute_costs_every is not None:
-            should_recompute: bool = (
-                (iter_idx + 1) % merge_config.recompute_costs_every == 0
-            ) and (iter_idx + 1 < num_iters)
-
-            if should_recompute:
-                new_batch: ActivationBatch = batched_activations._get_next_batch()
-                activations = new_batch.activations
-
-                # Recompute fresh coacts with current merge groups
-                current_coact, current_act_mask = recompute_coacts_from_scratch(
-                    activations=activations,
-                    current_merge=current_merge,
-                    activation_threshold=merge_config.activation_threshold,
-                )
 
         # Compute metrics for logging
         # --------------------------------------------------

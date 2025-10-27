@@ -26,7 +26,6 @@ from spd.clustering.activations import (
 )
 from spd.clustering.consts import ActivationsTensor, BatchTensor, ComponentLabels
 from spd.clustering.dataset import load_dataset
-from spd.clustering.util import ModuleFilterFunc
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import TaskName
@@ -163,10 +162,11 @@ def _generate_activation_batches(
     n_batches: int,
     output_dir: Path,
     base_seed: int,
-    filter_dead_threshold: float,
-    filter_modules: ModuleFilterFunc | None,
 ) -> None:
     """Core function to generate activation batches.
+
+    Batches are saved WITHOUT filtering - they contain raw/unfiltered activations.
+    This is required for merge_iteration to correctly recompute costs from fresh batches.
 
     Args:
         model: ComponentModel to compute activations
@@ -177,8 +177,6 @@ def _generate_activation_batches(
         n_batches: Number of batches to generate
         output_dir: Directory to save batches
         base_seed: Base seed for dataset loading (each batch gets base_seed + batch_idx)
-        filter_dead_threshold: Threshold for filtering dead components (0.0 = no filtering)
-        filter_modules: Module filter function (None = no filtering)
     """
 
     batch_idx: int
@@ -200,12 +198,14 @@ def _generate_activation_batches(
                 model, device, batch_data
             )
 
-        # Process activations
+        # Process activations WITHOUT filtering
+        # Batches must contain raw/unfiltered activations because merge_iteration
+        # expects to reload unfiltered data when recomputing costs
         processed: ProcessedActivations = process_activations(
             activations=acts_dict,
-            filter_dead_threshold=filter_dead_threshold,
+            filter_dead_threshold=0.0,  # Never filter when saving batches
             seq_mode="concat" if task_name == "lm" else None,
-            filter_modules=filter_modules,
+            filter_modules=None,  # Never filter modules when saving batches
         )
 
         # Save labels file (once, from first batch)
@@ -230,7 +230,6 @@ def precompute_batches_for_single_run(
     clustering_run_config: "ClusteringRunConfig",
     output_dir: Path,
     base_seed: int,
-    apply_filtering: bool,
 ) -> int:
     """
     Precompute activation batches for a single clustering run.
@@ -239,11 +238,13 @@ def precompute_batches_for_single_run(
     (based on recompute_costs_every and n_iters), generates all batches,
     and saves them to disk.
 
+    Batches are saved WITHOUT filtering to ensure merge_iteration can correctly
+    recompute costs from fresh batches.
+
     Args:
         clustering_run_config: Configuration for clustering run
         output_dir: Directory to save batches (will contain batch_0000.zip, batch_0001.zip, etc.)
         base_seed: Base seed for dataset loading (each batch gets base_seed + batch_idx)
-        apply_filtering: Whether to apply filter_dead_threshold and filter_modules from config
 
     Returns:
         Number of batches generated
@@ -289,17 +290,7 @@ def precompute_batches_for_single_run(
             f"Multi-batch mode: generating {n_batches_needed} batches for {n_iters} iterations (recompute_every={recompute_every})"
         )
 
-    # Determine filtering parameters
-    filter_dead_threshold: float
-    filter_modules: ModuleFilterFunc | None
-    if apply_filtering:
-        filter_dead_threshold = clustering_run_config.merge_config.filter_dead_threshold
-        filter_modules = clustering_run_config.merge_config.filter_modules
-    else:
-        filter_dead_threshold = 0.0
-        filter_modules = None
-
-    # Generate batches
+    # Generate batches (no filtering applied)
     _generate_activation_batches(
         model=model,
         device=device,
@@ -309,8 +300,6 @@ def precompute_batches_for_single_run(
         n_batches=n_batches_needed,
         output_dir=output_dir,
         base_seed=base_seed,
-        filter_dead_threshold=filter_dead_threshold,
-        filter_modules=filter_modules,
     )
 
     # Clean up model
@@ -364,12 +353,11 @@ def precompute_batches_for_ensemble(
         # Use unique seed offset for this run
         run_seed: int = clustering_run_config.dataset_seed + run_idx * 1000
 
-        # Generate all batches for this run (no filtering in ensemble mode)
+        # Generate all batches for this run
         precompute_batches_for_single_run(
             clustering_run_config=clustering_run_config,
             output_dir=run_batch_dir,
             base_seed=run_seed,
-            apply_filtering=False,
         )
 
     logger.info(f"All batches precomputed and saved to {batches_base_dir}")

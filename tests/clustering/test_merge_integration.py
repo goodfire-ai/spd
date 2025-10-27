@@ -29,7 +29,7 @@ class TestMergeIntegration:
             iters=5,
             merge_pair_sampling_method="range",
             merge_pair_sampling_kwargs={"threshold": 0.1},
-            filter_dead_threshold=0.001,
+            recompute_costs_every=2,  # Recompute every 2 iterations for single-batch tests
         )
 
         # Run merge iteration
@@ -69,7 +69,7 @@ class TestMergeIntegration:
             iters=5,
             merge_pair_sampling_method="mcmc",
             merge_pair_sampling_kwargs={"temperature": 1.0},
-            filter_dead_threshold=0.001,
+            recompute_costs_every=2,  # Recompute every 2 iterations for single-batch tests
         )
 
         # Run merge iteration
@@ -113,6 +113,7 @@ class TestMergeIntegration:
             iters=3,
             merge_pair_sampling_method="range",
             merge_pair_sampling_kwargs={"threshold": 0.0},  # Always select minimum
+            recompute_costs_every=2,  # Recompute every 2 iterations for single-batch tests
         )
 
         batched_activations_range: BatchedActivations = BatchedActivations.from_tensor(
@@ -131,6 +132,7 @@ class TestMergeIntegration:
             iters=3,
             merge_pair_sampling_method="mcmc",
             merge_pair_sampling_kwargs={"temperature": 0.01},  # Very low temp
+            recompute_costs_every=2,  # Recompute every 2 iterations for single-batch tests
         )
 
         batched_activations_mcmc: BatchedActivations = BatchedActivations.from_tensor(

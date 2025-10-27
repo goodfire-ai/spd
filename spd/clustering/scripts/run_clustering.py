@@ -288,7 +288,6 @@ def main(run_config: ClusteringRunConfig) -> Path:
             clustering_run_config=run_config,
             output_dir=batch_dir,
             base_seed=run_config.dataset_seed,
-            apply_filtering=True,  # Apply config filtering for single runs
         )
 
         # Load batches
