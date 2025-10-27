@@ -451,7 +451,7 @@ def plot_ap_vs_prevalence(per_layer_stats: list[dict[str, Any]], models: list[La
                 prevalence_list.append(prev)
                 ap_list.append(ap)
                 # Get tree depth for this target
-                estimator = model.model.estimators_[target_idx]
+                estimator = model.model.estimators_[target_idx]  # pyright: ignore[reportIndexIssue]
                 assert isinstance(estimator, DecisionTreeClassifier)
                 depth_list.append(int(estimator.tree_.max_depth))
 
@@ -542,8 +542,12 @@ def plot_component_activity_breakdown(
         ).astype(bool)
 
         # Count each category
-        always_dead: Bool[np.ndarray, " n_components"] = ~acts_bool.any(axis=0)
-        always_alive: Bool[np.ndarray, " n_components"] = acts_bool.all(axis=0)
+        # NOTE: any(axis=0) and all(axis=0) are typed as returning numpy.bool_ | NDArray
+        # because they could return a scalar for 0-d arrays. We know these are always 1-d
+        # arrays at runtime, so we use type: ignore. Can't use assert isinstance() because
+        # pyright doesn't narrow union types with ndarray checks.
+        always_dead: Bool[np.ndarray, " n_components"] = ~acts_bool.any(axis=0)  # pyright: ignore[reportAssignmentType]
+        always_alive: Bool[np.ndarray, " n_components"] = acts_bool.all(axis=0)  # pyright: ignore[reportAssignmentType]
         varying: Bool[np.ndarray, " n_components"] = ~(always_dead | always_alive)
 
         n_always_dead_list.append(int(always_dead.sum()))

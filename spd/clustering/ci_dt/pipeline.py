@@ -117,8 +117,12 @@ def convert_to_boolean_layers(
         varying_mask: Bool[np.ndarray, " n_components"] = component_variance > 0
 
         # Count always-dead and always-alive components for diagnostics
-        always_dead_mask: Bool[np.ndarray, " n_components"] = ~module_acts_bool.any(axis=0)
-        always_alive_mask: Bool[np.ndarray, " n_components"] = module_acts_bool.all(axis=0)
+        # NOTE: any(axis=0) and all(axis=0) are typed as returning numpy.bool_ | NDArray
+        # because they could return a scalar for 0-d arrays. We know these are always 1-d
+        # arrays at runtime, so we use type: ignore. Can't use assert isinstance() because
+        # pyright doesn't narrow union types with ndarray checks.
+        always_dead_mask: Bool[np.ndarray, " n_components"] = ~module_acts_bool.any(axis=0)  # pyright: ignore[reportAssignmentType]
+        always_alive_mask: Bool[np.ndarray, " n_components"] = module_acts_bool.all(axis=0)  # pyright: ignore[reportAssignmentType]
         n_always_dead: int = int(always_dead_mask.sum())
         n_always_alive: int = int(always_alive_mask.sum())
 

@@ -84,7 +84,7 @@ def extract_prob_class_1(
     """
     result: list[np.ndarray] = []
     for i, p in enumerate(proba_list):
-        estimator = model.estimators_[i]
+        estimator = model.estimators_[i]  # pyright: ignore[reportIndexIssue]
         assert isinstance(estimator, DecisionTreeClassifier)
         classes = estimator.classes_
         assert len(classes) == 2, f"Expected 2 classes but got {len(classes)} for output {i}"
@@ -225,6 +225,6 @@ def get_estimator_for(
 ) -> DecisionTreeClassifier:
     """Fetch the per-output estimator for a given layer and column."""
     lm = next(m for m in models if m.layer_index == layer_idx)
-    estimator = lm.model.estimators_[target_idx]
+    estimator = lm.model.estimators_[target_idx]  # pyright: ignore[reportIndexIssue]
     assert isinstance(estimator, DecisionTreeClassifier)
     return estimator
