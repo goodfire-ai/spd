@@ -1,4 +1,5 @@
 from typing import Literal
+
 import numpy as np
 from jaxtyping import Float
 
@@ -12,7 +13,7 @@ def sort_by_similarity(
 ) -> Float[np.ndarray, "m n"]:
     """Sort a 2D array by similarity of rows or columns using a greedy heuristic,
     with a secondary tie-breaker by absolute sum magnitude.
-    
+
     Starts from the first row (or column) and iteratively adds the most similar
     remaining vector until all are ordered. Uses cosine or dot-product similarity.
     When multiple candidates have equal similarity to the last selected vector,
@@ -60,7 +61,7 @@ def sort_by_similarity(
 
     # similarity matrix (dot product or cosine)
     sim: Float[np.ndarray, "n n"] = data @ data.T
-    abs_sums: Float[np.ndarray, "n"] = np.sum(np.abs(data), axis=1)
+    abs_sums: Float[np.ndarray, n] = np.sum(np.abs(data), axis=1)
 
     # greedy ordering
     remaining: list[int] = list(range(n))

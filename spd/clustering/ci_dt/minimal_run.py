@@ -1,18 +1,17 @@
-#%%
+# %%
 """Minimal single-script version of causal importance decision tree training."""
 
 import json
 from typing import Any
 
-from matplotlib import pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Bool, Float
+from matplotlib import pyplot as plt
 from sklearn.metrics import accuracy_score, average_precision_score, balanced_accuracy_score
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
 from torch import Tensor
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.clustering.ci_dt.matshow_sort import sort_by_similarity
@@ -90,9 +89,9 @@ for k in module_keys:
     # Flatten if 3D (batch, seq, components) -> (batch*seq, components)
     acts_tensor = acts_concat[k]
     if acts_tensor.ndim == 3:
-        acts_np: Float[np.ndarray, "n_samples n_components"] = (
-            acts_tensor.reshape(-1, acts_tensor.shape[-1]).numpy()
-        )
+        acts_np: Float[np.ndarray, "n_samples n_components"] = acts_tensor.reshape(
+            -1, acts_tensor.shape[-1]
+        ).numpy()
     else:
         acts_np = acts_tensor.numpy()
 
@@ -104,7 +103,7 @@ for k in module_keys:
     # plt.title(f"{k}")
     # sort by column similarity
     acts_sorted = sort_by_similarity(sort_by_similarity(acts_bool.astype(float), axis=0), axis=1)
-    plt.matshow(acts_sorted[:,:600], aspect="auto")
+    plt.matshow(acts_sorted[:, :600], aspect="auto")
     plt.show()
 
     # Filter constant components (always 0 or always 1)
@@ -197,17 +196,19 @@ for layer_idx, clf in models:
     # Store results with tree structures
     trees_data = [tree_to_dict(est) for est in clf.estimators_]  # type: ignore
 
-    results.append({
-        "layer_idx": layer_idx,
-        "module_key": module_keys[layer_idx],
-        "trees": trees_data,
-        "ap_scores": ap_scores,
-        "acc_scores": acc_scores,
-        "bacc_scores": bacc_scores,
-        "mean_ap": float(np.mean(ap_scores)),
-        "mean_acc": float(np.mean(acc_scores)),
-        "mean_bacc": float(np.mean(bacc_scores)),
-    })
+    results.append(
+        {
+            "layer_idx": layer_idx,
+            "module_key": module_keys[layer_idx],
+            "trees": trees_data,
+            "ap_scores": ap_scores,
+            "acc_scores": acc_scores,
+            "bacc_scores": bacc_scores,
+            "mean_ap": float(np.mean(ap_scores)),
+            "mean_acc": float(np.mean(acc_scores)),
+            "mean_bacc": float(np.mean(bacc_scores)),
+        }
+    )
 
 # %% ----------------------- Save Trees -----------------------
 output_path = "trees.json"
