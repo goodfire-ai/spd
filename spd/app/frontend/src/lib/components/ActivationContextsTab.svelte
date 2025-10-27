@@ -1,10 +1,9 @@
 <script lang="ts">
-    import type { ActivationContextsConfig, SubcomponentActivationContexts } from "$lib/api";
     import * as api from "$lib/api";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
 
     let loading = false;
-    let allLayersData: Record<string, SubcomponentActivationContexts[]> | null = null;
+    let allLayersData: api.ModelActivationContexts["layers"] | null = null;
 
     // Configuration parameters
     let nBatches = 1;
@@ -16,19 +15,15 @@
         loading = true;
         allLayersData = null;
         try {
-            const config: ActivationContextsConfig = {
+            const data = await api.getSubcomponentActivationContexts({
                 n_batches: nBatches,
                 batch_size: batchSize,
                 n_tokens_either_side: nTokensEitherSide,
                 importance_threshold: importanceThreshold
-            };
-            console.log("loading contexts with config", config);
-            const startTime = performance.now();
-            const data = await api.getSubcomponentActivationContexts(config);
-            console.log("data", data);
+            });
             allLayersData = data.layers;
-            const endTime = performance.now();
-            console.log(`Loading contexts took ${endTime - startTime}ms`);
+        } catch (error) {
+            console.error("Error loading contexts", error);
         } finally {
             loading = false;
         }
@@ -142,7 +137,7 @@
 
     .config-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 1rem;
     }
 

@@ -17,10 +17,7 @@ from spd.app.backend.services.run_context_service import TrainRunContext
 from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel
-from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
-
-DEVICE = get_device()
 
 
 def get_subcomponents_activation_contexts(
@@ -29,6 +26,7 @@ def get_subcomponents_activation_contexts(
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
+    device: str,
 ) -> ModelActivationContexts:
     logger.info("Getting activation contexts")
 
@@ -38,6 +36,7 @@ def get_subcomponents_activation_contexts(
         n_batches,
         n_tokens_either_side,
         batch_size,
+        device,
     )
 
     return map_to_model_ctxs(run_context, activations_data)
@@ -110,6 +109,7 @@ def get_topk_by_subcomponent(
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
+    device: str,
 ) -> ActivationsData:
     # for each (module_name, component_idx), track the top-k activations
     examples = defaultdict[str, defaultdict[int, _TopKExamples]](
@@ -128,11 +128,11 @@ def get_topk_by_subcomponent(
 
     n_toks_seen = 0
     component_sum_cis = defaultdict[str, Float[torch.Tensor, " C"]](
-        lambda: torch.zeros(C, device=DEVICE, dtype=torch.float)
+        lambda: torch.zeros(C, device=device, dtype=torch.float)
     )
 
     batches = roll_batch_size_1_into_x(
-        singleton_batches=(extract_batch_data(b).to(DEVICE) for b in run_context.train_loader),
+        singleton_batches=(extract_batch_data(b).to(device) for b in run_context.train_loader),
         batch_size=batch_size,
     )
 
@@ -149,9 +149,7 @@ def get_topk_by_subcomponent(
             run_context.cm, batch, run_context.config
         )
 
-        for module_name, causal_importances in tqdm(
-            importances_by_module.items(), desc="Processing importances"
-        ):
+        for module_name, causal_importances in importances_by_module.items():
             assert causal_importances.shape == (B, S, C), "Expected (B,S,C) per module"
 
             # Thresholding to find "firings"
@@ -165,39 +163,71 @@ def get_topk_by_subcomponent(
             batch_idx, seq_idx, comp_idx = torch.where(mask)
             (K,) = batch_idx.shape
 
-            # TODO: try me when we're sure this works
-            # Sort for cache-friendly iteration
-            # order = torch.argsort(batch_idx * S + seq_idx)
-            # batch_idx = batch_idx[order]
-            # seq_idx = seq_idx[order]
-            # comp_idx = comp_idx[order]
+            # No sorting - just use the indices as-is
 
-            # Iterate across K firings
+            # Pad batch and causal_importances to avoid boundary issues
+            # Pad left and right with zeros
+            batch_padded = torch.nn.functional.pad(
+                batch, (n_tokens_either_side, n_tokens_either_side), value=0
+            )
+            causal_importances_padded = torch.nn.functional.pad(
+                causal_importances, (0, 0, n_tokens_either_side, n_tokens_either_side), value=0.0
+            )
+
+            # Adjust sequence indices for padding
+            seq_idx_padded = seq_idx + n_tokens_either_side
+
+            # Extract importance values and token IDs for all firings at once
+            importance_vals = causal_importances[batch_idx, seq_idx, comp_idx]
+            token_ids = batch[batch_idx, seq_idx]
+
+            # Vectorized window extraction using unfold-like indexing
+            window_size = 2 * n_tokens_either_side + 1
+
+            # Create index offsets for the window (e.g., [-2, -1, 0, 1, 2] for n_tokens_either_side=2)
+            window_offsets = torch.arange(
+                -n_tokens_either_side, n_tokens_either_side + 1, device=batch.device
+            )
+
+            # Broadcast to get all window indices: (K, window_size)
+            window_indices = seq_idx_padded.unsqueeze(1) + window_offsets.unsqueeze(0)
+
+            # Extract windows for tokens using advanced indexing
+            batch_idx_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)
+            window_token_ids_tensor = batch_padded[batch_idx_expanded, window_indices]
+
+            # Extract windows for causal importances
+            comp_idx_expanded = comp_idx.unsqueeze(1).expand(-1, window_size)
+            window_ci_values_tensor = causal_importances_padded[
+                batch_idx_expanded, window_indices, comp_idx_expanded
+            ]
+
+            # Move everything to CPU/numpy for final processing
+            window_token_ids_np = window_token_ids_tensor.cpu().numpy()
+            window_ci_values_np = window_ci_values_tensor.cpu().numpy()
+            seq_idx_np = seq_idx.cpu().numpy()
+            comp_idx_np = comp_idx.cpu().numpy()
+            token_ids_np = token_ids.cpu().numpy()
+            importance_vals_np = importance_vals.cpu().numpy()
+
+            # Active position is always at the center of the window
+            active_pos_in_window = n_tokens_either_side
+
+            # Now iterate to create examples (just data structure creation, no heavy computation)
             for j in range(K):
-                b = int(batch_idx[j].item())
-                s = int(seq_idx[j].item())
-                m = int(comp_idx[j].item())
-                token_id = int(batch[b, s].item())
-                importance_val = float(causal_importances[b, s, m].item())
-
-                # Build window around the firing position
-                start_idx = max(0, s - n_tokens_either_side)
-                end_idx = min(S, s + n_tokens_either_side + 1)
-
-                window_token_ids: list[int] = batch[b, start_idx:end_idx].cpu().tolist()
-                active_pos_in_window = s - start_idx
-
-                token_ci_values: list[float] = (
-                    causal_importances[b, start_idx:end_idx, m].cpu().tolist()
-                )
+                window_token_ids: list[int] = window_token_ids_np[j].tolist()
+                token_ci_values: list[float] = window_ci_values_np[j].tolist()
 
                 ex = SubcomponentExample(
                     window_token_ids=window_token_ids,
-                    pos=s,
+                    pos=int(seq_idx_np[j]),
                     active_pos_in_window=active_pos_in_window,
                     token_ci_values=token_ci_values,
-                    last_tok_importance=importance_val,
+                    last_tok_importance=float(importance_vals_np[j]),
                 )
+
+                m = int(comp_idx_np[j])
+                token_id = int(token_ids_np[j])
 
                 examples[module_name][m].maybe_add(ex)
                 component_activation_counts[module_name][m] += 1
@@ -227,7 +257,6 @@ def get_topk_by_subcomponent(
         component_token_densities=component_token_densities,
         component_mean_cis=component_mean_cis,
     )
-
 
 def _get_importances_by_module(
     cm: ComponentModel, batch: torch.Tensor, config: Config

@@ -33,15 +33,34 @@ LOGFILE = LOGS_DIR / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
 STARTUP_TIMEOUT_SECONDS = 30
 
 
+def is_port_in_use(port: int) -> bool:
+    """Check if a port is in use on any interface (IPv4 or IPv6)."""
+    # Check IPv4
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return True
+
+    # Check IPv6
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind(("::1", port))
+            except OSError:
+                return True
+    except OSError:
+        # IPv6 not available on this system
+        pass
+
+    return False
+
+
 def find_available_port(start_port: int) -> int:
     """Find an available port starting from start_port."""
     for port in range(start_port, start_port + 100):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            try:
-                sock.bind(("localhost", port))
-                return port
-            except OSError:
-                continue
+        if not is_port_in_use(port):
+            return port
 
     print(
         f"{RED}✗{RESET} Could not find available port after checking 100 ports from {start_port}",
@@ -108,14 +127,14 @@ def install_frontend_deps() -> None:
     print(f"{DIM}  ▸ Installing frontend dependencies...{RESET}", end="", flush=True)
 
     frontend_dir = APP_DIR / "frontend"
-    result = subprocess.run(
-        ["npm", "ci", "--silent"], cwd=frontend_dir, capture_output=True, text=True
-    )
+    result = subprocess.run(["npm", "ci"], cwd=frontend_dir, capture_output=True, text=True)
 
-    if result.returncode == 0:
-        print(f"\r  {GREEN}✓{RESET} Frontend dependencies installed        ")
-    else:
-        print(f"\r  {YELLOW}⚠{RESET} Frontend dependency installation had issues (trying anyway)")
+    if result.returncode != 0:
+        print(result.stderr)
+        print(result.stdout)
+        raise subprocess.CalledProcessError(result.returncode, ["npm", "ci"], result.stderr)
+    
+    print(f"\r  {GREEN}✓{RESET} Frontend dependencies installed        ")
 
 
 def start_frontend(port: int, backend_port: int, logfile: TextIO) -> subprocess.Popen[str]:
@@ -165,20 +184,20 @@ def main():
         """Cleanup all running processes."""
         print("\n👋 Shutting down...")
 
-        # Terminate processes gracefully
-        if backend_process:
-            backend_process.terminate()
-        if frontend_process:
-            frontend_process.terminate()
+        # Terminate process groups gracefully
+        if backend_process and backend_process.poll() is None:
+            os.killpg(os.getpgid(backend_process.pid), signal.SIGTERM)
+        if frontend_process and frontend_process.poll() is None:
+            os.killpg(os.getpgid(frontend_process.pid), signal.SIGTERM)
 
         # Give processes time to cleanup gracefully
         time.sleep(1.0)
 
-        # Force kill if still running
-        if backend_process:
-            backend_process.kill()
-        if frontend_process:
-            frontend_process.kill()
+        # Force kill process groups if still running
+        if backend_process and backend_process.poll() is None:
+            os.killpg(os.getpgid(backend_process.pid), signal.SIGKILL)
+        if frontend_process and frontend_process.poll() is None:
+            os.killpg(os.getpgid(frontend_process.pid), signal.SIGKILL)
 
         logfile.close()
 
@@ -201,9 +220,14 @@ def main():
     print(f"{DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
 
     # Start services
+    logfile.write(f"Backend started (port {backend_port})\n")
+    logfile.write(f"Frontend started (port {frontend_port})\n")
+
     backend_process = start_backend(backend_port, logfile)
+    logfile.write(f"Backend started (pid {backend_process.pid})\n")
     install_frontend_deps()
     frontend_process = start_frontend(frontend_port, backend_port, logfile)
+    logfile.write(f"Frontend started (pid {frontend_process.pid})\n")
 
     print(f"{DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
 
