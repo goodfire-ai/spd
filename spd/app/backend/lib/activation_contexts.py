@@ -26,6 +26,7 @@ def get_subcomponents_activation_contexts(
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
+    topk_examples: int,
 ) -> ModelActivationContexts:
     logger.info("Getting activation contexts")
 
@@ -95,7 +96,7 @@ def roll_batch_size_1_into_x(
 @dataclass
 class ActivationsData:
     examples: Mapping[str, Mapping[int, _TopKExamples]]
-    component_token_densities: dict[str, dict[int, list[tuple[str, float]]]]
+    component_token_densities: dict[str, dict[int, list[tuple[str, float, float]]]]
     component_mean_cis: dict[str, Float[torch.Tensor, " C"]]
 
 
@@ -124,6 +125,8 @@ def get_topk_by_subcomponent(
     component_activation_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
         lambda: defaultdict(lambda: defaultdict(int))
     )
+    # track total occurrences of each token across all batches
+    total_token_counts = defaultdict[int, int](int)
 
     C = run_context.cm.C
 
@@ -145,6 +148,11 @@ def get_topk_by_subcomponent(
         B, S = batch.shape
 
         n_toks_seen += B * S
+
+        # Count all token occurrences in batch for precision calculation
+        token_ids_in_batch, counts = batch.flatten().unique(return_counts=True)
+        for token_id, count in zip(token_ids_in_batch.tolist(), counts.tolist(), strict=True):
+            total_token_counts[token_id] += count
 
         importances_by_module = _get_importances_by_module(
             run_context.cm, batch, run_context.config
@@ -239,17 +247,18 @@ def get_topk_by_subcomponent(
         for module_name in component_sum_cis
     }
 
-    component_token_densities = defaultdict[str, dict[int, list[tuple[str, float]]]](dict)
+    component_token_densities = defaultdict[str, dict[int, list[tuple[str, float, float]]]](dict)
     for module_name, tokens_by_components in component_activation_tokens.items():
         for component_idx, component_token_acts in tokens_by_components.items():
-            component_densities: list[tuple[str, float]] = []
+            component_densities: list[tuple[str, float, float]] = []
             for token_id, count in component_token_acts.items():
-                density = count / component_activation_counts[module_name][component_idx]
+                recall = count / component_activation_counts[module_name][component_idx]
+                precision = count / total_token_counts[token_id]
                 tok_str = run_context.tokenizer.convert_ids_to_tokens(token_id)  # pyright: ignore[reportAttributeAccessIssue]
                 assert isinstance(tok_str, str), "Token id should convert to string"
-                component_densities.append((tok_str, density))
+                component_densities.append((tok_str, recall, precision))
 
-            # sort by density descending
+            # sort by recall descending
             component_densities.sort(key=lambda x: x[1], reverse=True)
             component_token_densities[module_name][component_idx] = component_densities
 
@@ -301,10 +310,10 @@ def map_to_model_ctxs(
                 activation_contexts.append(activation_context)
 
             token_densities = [
-                TokenDensity(token=token, density=density)
-                for token, density in activations_data.component_token_densities[module_name][
-                    subcomponent_idx
-                ]
+                TokenDensity(token=token, recall=recall, precision=precision)
+                for token, recall, precision in activations_data.component_token_densities[
+                    module_name
+                ][subcomponent_idx]
             ]
 
             mean_ci = float(module_mean_cis[subcomponent_idx].item())

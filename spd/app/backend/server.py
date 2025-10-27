@@ -58,6 +58,7 @@ def get_subcomponent_activation_contexts(
     n_batches: int,
     batch_size: int,
     n_tokens_either_side: int,
+    topk_examples: int,
 ) -> ModelActivationContexts:
     assert (run_context := run_context_service.train_run_context) is not None
     return get_subcomponents_activation_contexts(
@@ -66,6 +67,7 @@ def get_subcomponent_activation_contexts(
         n_batches=n_batches,
         n_tokens_either_side=n_tokens_either_side,
         batch_size=batch_size,
+        topk_examples=topk_examples,
     )
 
 

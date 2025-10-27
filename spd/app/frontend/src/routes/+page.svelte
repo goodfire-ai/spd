@@ -4,7 +4,7 @@
     import { onMount } from "svelte";
 
     import ActivationContextsTab from "$lib/components/ActivationContextsTab.svelte";
-    import { parseWandbRunId } from "$lib";
+    import { parseWandbRunPath } from "$lib";
 
     let loadingTrainRun: boolean = false;
 
@@ -37,9 +37,10 @@
         try {
             loadingTrainRun = true;
             status = { train_run: null };
-            trainWandbRunEntry = parseWandbRunId(input);
-            console.log("loading run", trainWandbRunEntry);
-            await api.loadRun(trainWandbRunEntry);
+            const wandbRunPath = parseWandbRunPath(input);
+            console.log("loading run", wandbRunPath);
+            trainWandbRunEntry = wandbRunPath;
+            await api.loadRun(wandbRunPath);
             await loadStatus();
         } catch (error) {
             console.error("error loading run", error);

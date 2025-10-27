@@ -6,9 +6,11 @@
     if (Object.keys(allLayersData).length === 0) {
         throw new Error("No layers data");
     }
+    const LIMIT = 20;
 
     let currentPage = 0;
     let selectedLayer: string = Object.keys(allLayersData)[0];
+    let metricMode: "recall" | "precision" = "recall";
 
     // reset selectedLayer to first layer when allLayersData changes
     $: {
@@ -33,6 +35,10 @@
 
     // Reset page when layer changes
     $: if (selectedLayer) currentPage = 0;
+
+    $: densities = currentItem?.token_densities
+        ?.toSorted((a, b) => b[metricMode] - a[metricMode])
+        .slice(0, LIMIT);
 </script>
 
 <div class="layer-select-section">
@@ -42,6 +48,23 @@
             <option value={layer}>{layer}</option>
         {/each}
     </select>
+
+    <div class="metric-toggle">
+        <label>Token Metric:</label>
+        <div class="toggle-buttons">
+            <button class:active={metricMode === "recall"} on:click={() => (metricMode = "recall")}>
+                Recall
+                <span class="math-notation"> P(token | firing) </span>
+            </button>
+            <button
+                class:active={metricMode === "precision"}
+                on:click={() => (metricMode = "precision")}
+            >
+                Precision
+                <span class="math-notation"> P(firing | token) </span>
+            </button>
+        </div>
+    </div>
 </div>
 
 <div class="pagination-controls">
@@ -58,21 +81,23 @@
                 ? currentItem.mean_ci.toExponential(2)
                 : currentItem.mean_ci.toFixed(3)})
         </h4>
-        {#if currentItem.token_densities && currentItem.token_densities.length > 0}
+        {#if densities != null}
             <div class="token-densities">
                 <h5>
-                    Token Activation Densities {currentItem.token_densities.length > 20
-                        ? `(top 20) of ${currentItem.token_densities.length}`
+                    Token {metricMode === "recall" ? "Recall" : "Precision"}
+                    {currentItem.token_densities.length > LIMIT
+                        ? `(top ${LIMIT} of ${currentItem.token_densities.length})`
                         : ""}
                 </h5>
                 <div class="densities-grid">
-                    {#each currentItem.token_densities.slice(0, 20) as { token, density } (`${token}-${density}`)}
+                    {#each densities as { token, recall, precision } (`${token}-${recall}-${precision}`)}
+                        {@const value = metricMode === "recall" ? recall : precision}
                         <div class="density-item">
                             <span class="token">{token}</span>
                             <div class="density-bar-container">
-                                <div class="density-bar" style="width: {density * 100}%"></div>
+                                <div class="density-bar" style="width: {value * 100}%"></div>
                             </div>
-                            <span class="density-value">{(density * 100).toFixed(1)}%</span>
+                            <span class="density-value">{(value * 100).toFixed(1)}%</span>
                         </div>
                     {/each}
                 </div>
@@ -94,11 +119,12 @@
     .layer-select-section {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 1rem;
         padding: 1rem;
         background: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #dee2e6;
+        flex-wrap: wrap;
     }
 
     .layer-select-section label {
@@ -115,6 +141,44 @@
         background: white;
         cursor: pointer;
         min-width: 200px;
+    }
+
+    .metric-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .toggle-buttons {
+        display: flex;
+        gap: 0;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .toggle-buttons button {
+        padding: 0.5rem 1rem;
+        border: none;
+        background: white;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+        border-right: 1px solid #dee2e6;
+    }
+
+    .toggle-buttons button:last-child {
+        border-right: none;
+    }
+
+    .toggle-buttons button:hover {
+        background: #f8f9fa;
+    }
+
+    .toggle-buttons button.active {
+        background: #0d6efd;
+        color: white;
+        font-weight: 500;
     }
 
     .pagination-controls {
@@ -173,6 +237,12 @@
         margin: 0 0 1rem 0;
         font-size: 1rem;
         color: #495057;
+    }
+
+    .math-notation {
+        font-family: "Georgia", "Times New Roman", serif;
+        font-style: italic;
+        font-size: 0.9em;
     }
 
     .densities-grid {

@@ -12,7 +12,8 @@ class ActivationContext(BaseModel):
 
 class TokenDensity(BaseModel):
     token: str
-    density: float
+    recall: float
+    precision: float
 
 
 class SubcomponentActivationContexts(BaseModel):

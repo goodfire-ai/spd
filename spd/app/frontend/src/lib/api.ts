@@ -45,7 +45,8 @@ export type ModelActivationContexts = {
 
 export type TokenDensity = {
     token: string;
-    density: number;
+    recall: number;
+    precision: number;
 };
 
 export type ActivationContextsConfig = {
