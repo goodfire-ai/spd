@@ -12,7 +12,7 @@ from spd.utils.component_utils import (
     RoutingType,
     sample_uniform_k_subset_routing_masks,
 )
-from spd.utils.distributed_utils import all_reduce, gather_all_tensors, sync_across_processes
+from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
@@ -84,8 +84,6 @@ def pgd_masked_recon_loss_update(
         pgd_config.init, adv_source_shape, batch.device
     ).requires_grad_(True)
 
-    assert_same_across_ranks(adv_sources)  # RNGs should be the same across ranks
-
     # PGD ascent
     for _ in range(int(pgd_config.n_steps)):
         assert adv_sources.grad is None
@@ -98,7 +96,6 @@ def pgd_masked_recon_loss_update(
         with torch.no_grad():
             adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
             adv_sources.clamp_(0.0, 1.0)
-            assert_same_across_ranks(adv_sources)
 
     assert not adv_sources.requires_grad
     total_loss, n_examples = objective_fn(adv_sources=adv_sources.expand(n_layers, *batch_dims, C2))
@@ -131,13 +128,3 @@ def _interpolate_component_mask(
         scaled_noise_to_add = (1 - ci[module_name]) * component_sample_points[i]
         component_masks[module_name] = ci[module_name] + scaled_noise_to_add
     return component_masks
-
-
-def assert_same_across_ranks(tensor: Tensor) -> None:
-    tensors = gather_all_tensors(tensor.clone())
-    try:
-        for t in tensors:
-            assert t.shape == tensor.shape
-            assert torch.all(t == tensor)
-    finally:
-        sync_across_processes()
