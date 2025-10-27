@@ -139,10 +139,15 @@ class BatchedActivations(Iterator[ActivationBatch]):
         # Create a temporary directory
         temp_dir: Path = Path(tempfile.mkdtemp(prefix="batch_temp_"))
 
+        # Normalize labels
+        normalized_labels: ComponentLabels = ComponentLabels(labels)
+
+        # Save labels file
+        labels_path: Path = temp_dir / _LABELS_FILE
+        labels_path.write_text("\n".join(normalized_labels))
+
         # Save the single batch
-        batch: ActivationBatch = ActivationBatch(
-            activations=activations, labels=ComponentLabels(labels)
-        )
+        batch: ActivationBatch = ActivationBatch(activations=activations, labels=normalized_labels)
         batch.save(temp_dir / _BATCH_FORMAT.format(idx=0))
 
         # Return BatchedActivations that will cycle through this single batch
