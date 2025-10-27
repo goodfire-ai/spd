@@ -1,3 +1,4 @@
+import uuid
 from typing import Literal
 
 import torch
@@ -9,7 +10,13 @@ from spd.configs import PGDConfig, PGDInitStrategy
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import RoutingType, calc_routing_masks
-from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
+from spd.utils.distributed_utils import (
+    all_reduce,
+    call_on_rank0_then_broadcast,
+    gather_all_tensors,
+    get_rank,
+    sync_across_processes,
+)
 from spd.utils.general_utils import calc_sum_recon_loss_lm, zip_dicts
 
 
@@ -49,27 +56,22 @@ def pgd_masked_recon_loss_update(
                 raise ValueError(
                     "weight_deltas and weight_delta_mask must exist or not exist together"
                 )
+        rank = get_rank()
+        print(f"{rank} - making mask infos")
         mask_infos = make_mask_infos(
             component_masks=_interpolate_component_mask(ci, component_sample_points),
             weight_deltas_and_masks=weight_deltas_and_masks,
             routing_masks=routing_masks,
         )
+        print(f"{rank} - calling model")
         out = model(batch, mask_infos=mask_infos)
+        print(f"{rank} - calling calc_sum_recon_loss_lm")
         total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
         n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
+        print(f"{rank} - done")
         return total_loss, n_examples
 
     *batch_dims, C = next(iter(ci.values())).shape
-    batch_device = next(iter(ci.values())).device
-
-    def init_and_sync_adversarial_tensor(shape: torch.Size) -> Float[Tensor, "..."]:
-        return (
-            call_on_rank0_then_broadcast(
-                lambda: _get_pgd_init_tensor(pgd_config.init, shape, "cpu")
-            )
-            .to(batch_device)
-            .requires_grad_(True)
-        )
 
     def maybe_repeat_to_batch_shape(
         component_sample_points: dict[str, Float[Tensor, "... C"]],
@@ -92,48 +94,70 @@ def pgd_masked_recon_loss_update(
 
     adversarial_component_sample_points: dict[str, Float[Tensor, "... C"]] = {}
     for layer in ci:
-        adversarial_component_sample_points[layer] = init_and_sync_adversarial_tensor(ci_mask_shape)
+        source = call_on_rank0_then_broadcast(
+            _get_pgd_init_tensor,
+            pgd_config.init,
+            ci_mask_shape,
+            batch.device,
+        ).requires_grad_(True)
+        assert_same_across_ranks(source)
+        adversarial_component_sample_points[layer] = source
 
     adversarial_weight_delta_masks: dict[str, Float[Tensor, " ..."]] | None = None
     if weight_deltas is not None:
         adversarial_weight_delta_masks = {}
         for layer in ci:
-            adversarial_weight_delta_masks[layer] = init_and_sync_adversarial_tensor(
-                weight_delta_mask_shape
-            )
+            source = call_on_rank0_then_broadcast(
+                _get_pgd_init_tensor,
+                pgd_config.init,
+                weight_delta_mask_shape,
+                batch.device,
+            ).requires_grad_(True)
+            assert_same_across_ranks(source)
+            adversarial_weight_delta_masks[layer] = source
 
     # PGD ascent
-    adv_vars = list(adversarial_component_sample_points.values())
+    adv_sources = list(adversarial_component_sample_points.values())
     if adversarial_weight_delta_masks is not None:
-        adv_vars.extend(list(adversarial_weight_delta_masks.values()))
+        adv_sources.extend(list(adversarial_weight_delta_masks.values()))
 
-    for _ in range(int(pgd_config.n_steps)):
-        assert all(v.requires_grad for v in adv_vars)
-        assert all(v.grad is None for v in adv_vars)
+    for i in range(int(pgd_config.n_steps)):
+        assert all(v.requires_grad for v in adv_sources)
+        assert all(v.grad is None for v in adv_sources)
 
         with torch.enable_grad():
-            total_loss, _ = objective_fn( # n_examples doesn't matter bc we're doing sign ascent
+            total_loss, _ = objective_fn(  # n_examples doesn't matter bc we're doing sign ascent
                 *maybe_repeat_to_batch_shape(
                     adversarial_component_sample_points, adversarial_weight_delta_masks
                 )
             )
-            grads = torch.autograd.grad(total_loss, adv_vars)
+            grads = torch.autograd.grad(total_loss, adv_sources)
 
         reduced_grads = [all_reduce(grad.clone(), op=ReduceOp.SUM) for grad in grads]
+        for grad in reduced_grads:
+            assert_same_across_ranks(grad)
 
         with torch.no_grad():
-            for v, g in zip(adv_vars, reduced_grads, strict=True):
-                v.add_(pgd_config.step_size * g.sign())
-                v.clamp_(0.0, 1.0)
+            for source, grad in zip(adv_sources, reduced_grads, strict=True):
+                source.add_(pgd_config.step_size * grad.sign())
+                source.clamp_(0.0, 1.0)
+                assert_same_across_ranks(source)
 
-    for var in adv_vars:
-        var.detach_()
+    for source in adv_sources:
+        source.detach_()
 
     adversarial_component_sample_points, adversarial_weight_delta_masks = (
         maybe_repeat_to_batch_shape(
             adversarial_component_sample_points, adversarial_weight_delta_masks
         )
     )
+
+    for source in adversarial_component_sample_points.values():
+        assert_same_across_ranks(source)
+    if adversarial_weight_delta_masks is not None:
+        for source in adversarial_weight_delta_masks.values():
+            assert_same_across_ranks(source)
+
     assert all(not v.requires_grad for v in adversarial_component_sample_points.values())
     if adversarial_weight_delta_masks is not None:
         assert not any(v.requires_grad for v in adversarial_weight_delta_masks.values())
@@ -142,9 +166,7 @@ def pgd_masked_recon_loss_update(
         adversarial_component_sample_points, adversarial_weight_delta_masks
     )
 
-    total_loss = all_reduce(total_loss.clone())
-    n_examples_tensor = all_reduce(total_loss.new_tensor(float(n_examples)))
-    n_examples = int(n_examples_tensor.item())
+    # no need to all-reduce total_loss or n_examples bc consumers handle this
 
     return total_loss, n_examples
 
@@ -179,3 +201,11 @@ def _interpolate_component_mask(
         assert torch.all(component_mask[module_name] >= ci[module_name])
         assert torch.all(component_mask[module_name] <= 1.0)
     return component_mask
+
+
+def assert_same_across_ranks(tensor: Tensor) -> None:
+    tensors = gather_all_tensors(tensor.clone())
+    for t in tensors:
+        assert t.shape == tensor.shape
+        assert torch.all(t == tensor)
+    sync_across_processes()
