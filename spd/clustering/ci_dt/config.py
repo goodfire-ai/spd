@@ -7,6 +7,7 @@ from dataclasses import dataclass
 class CIDTConfig:
     """Configuration for causal importance decision tree training."""
 
+    wandb_run_path: str  # WandB run path for the SPD model
     batch_size: int = 10  # Number of samples per batch for GPU inference
     n_batches: int = 25  # Number of batches to process (total samples = batch_size * n_batches)
     n_ctx: int = 64  # Context length (sequence length) for tokenization

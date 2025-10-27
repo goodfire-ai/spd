@@ -4,6 +4,7 @@
 import numpy as np
 import torch
 from jaxtyping import Bool
+from matplotlib import pyplot as plt
 from torch import Tensor
 
 from spd.clustering.ci_dt.config import CIDTConfig
@@ -23,6 +24,7 @@ from spd.clustering.ci_dt.plot import (
     plot_selected_trees,
     plot_tree_statistics,
 )
+from spd.clustering.ci_dt.serialize import TreeCollection
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -35,11 +37,14 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 # %%
 # ----------------------- configuration -----------------------
 
+wandb_run_path: str = "wandb:goodfire/spd/runs/lxs77xye"
+
 config = CIDTConfig(
-    batch_size=32,  # 50 ~~ 16GB VRAM max
-    n_batches=8,
-    # batch_size=2,
-    # n_batches=2,
+    wandb_run_path=wandb_run_path,
+    # batch_size=32,  # 50 ~~ 16GB VRAM max
+    # n_batches=8,
+    batch_size=2,
+    n_batches=2,
     n_ctx=16,
     activation_threshold=0.01,
     max_depth=3,
@@ -49,8 +54,6 @@ device: str = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {device=}")
 # %%
 # ----------------------- load model -----------------------
-
-wandb_run_path: str = "wandb:goodfire/spd/runs/lxs77xye"
 
 spd_run: SPDRunInfo = SPDRunInfo.from_path(wandb_run_path)
 model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
@@ -141,6 +144,23 @@ per_layer_stats, worst_list, best_list = compute_tree_metrics(
 )
 
 # %%
+# ----------------------- save trees -----------------------
+
+n_samples: int = layers_true[0].shape[0]
+tree_collection = TreeCollection.from_models(
+    models=models,
+    per_layer_stats=per_layer_stats,
+    config=config,
+    module_keys=module_keys,
+    device=device,
+    n_samples=n_samples,
+)
+
+output_path = "trees.json"
+tree_collection.save_json(output_path)
+print(f"\nSaved {len(tree_collection.trees)} trees to {output_path}")
+
+# %%
 # ----------------------- compute orderings -----------------------
 # Generate sample ordering once for use in multiple plots
 
@@ -209,5 +229,9 @@ plot_covariance(
 # %%
 # ----------------------- plots: decision trees -----------------------
 
-plot_selected_trees(worst_list, "Worst", models)
+print("Best")
 plot_selected_trees(best_list, "Best", models)
+plt.show()
+print("Worst")
+plot_selected_trees(worst_list, "Worst", models)
+plt.show()
