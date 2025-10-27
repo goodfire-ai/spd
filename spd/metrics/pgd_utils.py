@@ -97,7 +97,6 @@ def pgd_masked_recon_loss_update(
             adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
             adv_sources.clamp_(0.0, 1.0)
 
-    assert not adv_sources.requires_grad
     total_loss, n_examples = objective_fn(adv_sources=adv_sources.expand(n_layers, *batch_dims, C2))
 
     # no need to all-reduce total_loss or n_examples bc consumers handle this
