@@ -42,12 +42,11 @@ class RunContextService:
         return Status(train_run=train_run)
 
     def load_run(self, wandb_path: str):
+        logger.info(f"Loading run from wandb path: {wandb_path}")
         self.train_run_context = self._load_run_from_wandb_path(wandb_path)
         logger.info(f"Loaded run from wandb path: {wandb_path}")
 
     def _load_run_from_wandb_path(self, wandb_path: str):
-        logger.info(f"Loading run from wandb path: {wandb_path}")
-
         run_info = SPDRunInfo.from_path(f"wandb:{wandb_path}")
 
         task_config = runtime_cast(LMTaskConfig, run_info.config.task_config)
