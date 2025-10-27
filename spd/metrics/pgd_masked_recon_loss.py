@@ -24,11 +24,11 @@ def pgd_recon_loss(
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = pgd_masked_recon_loss_update(
         model=model,
+        batch=batch,
         ci=ci,
         weight_deltas=weight_deltas,
-        output_loss_type=output_loss_type,
-        batch=batch,
         target_out=target_out,
+        output_loss_type=output_loss_type,
         routing="all",  # <- Key difference from pgd_masked_recon_subset_loss.py
         pgd_config=pgd_config,
     )
@@ -68,11 +68,11 @@ class PGDReconLoss(Metric):
     ) -> None:
         sum_loss, n_examples = pgd_masked_recon_loss_update(
             model=self.model,
+            batch=batch,
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
-            output_loss_type=self.output_loss_type,
-            batch=batch,
             target_out=target_out,
+            output_loss_type=self.output_loss_type,
             routing="all",
             pgd_config=self.pgd_config,
         )

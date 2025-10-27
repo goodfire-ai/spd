@@ -31,7 +31,6 @@ def pgd_masked_recon_loss_update(
 
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
     """
-
     match routing:
         case "all":
             routing_masks = "all"
@@ -122,6 +121,8 @@ def _interpolate_component_mask(
     component_sample_points: Float[Tensor, "n_layers *batch_dims C"],
 ) -> dict[str, Float[Tensor, "*batch_dims C"]]:
     assert torch.all(component_sample_points <= 1.0) and torch.all(component_sample_points >= 0.0)
+    assert component_sample_points.shape[0] == len(ci)
+    assert all(ci[k].shape[-1] == component_sample_points.shape[-1] for k in ci)
     component_masks: dict[str, Float[Tensor, "*batch_dims C"]] = {}
     for i, module_name in enumerate(ci):
         scaled_noise_to_add = (1 - ci[module_name]) * component_sample_points[i]

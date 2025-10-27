@@ -30,11 +30,11 @@ def _pgd_recon_layerwise_loss_update(
         layer_weight_deltas = {layer: weight_deltas[layer]} if weight_deltas is not None else None
         sum_loss_layer, n_examples_layer = pgd_masked_recon_loss_update(
             model=model,
+            batch=batch,
             ci=layer_ci,
             weight_deltas=layer_weight_deltas,
-            output_loss_type=output_loss_type,
-            batch=batch,
             target_out=target_out,
+            output_loss_type=output_loss_type,
             routing="all",
             pgd_config=pgd_config,
         )
