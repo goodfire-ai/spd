@@ -75,7 +75,7 @@ dbg_auto(
         data_generation_type=DATASET.data_generation_type,
     )
 )
-DATALOADER: DatasetGeneratedDataLoader = DatasetGeneratedDataLoader(
+DATALOADER: DatasetGeneratedDataLoader[Any] = DatasetGeneratedDataLoader(
     DATASET, batch_size=N_SAMPLES, shuffle=False
 )
 
