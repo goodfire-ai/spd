@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 
 _BATCH_FORMAT: str = "batch_{idx:04}.zip"
+_LABELS_FILE: str = "labels.txt"
 
 
 @dataclass
@@ -88,6 +89,18 @@ class BatchedActivations(Iterator[ActivationBatch]):
             assert expected_name == actual_name, (
                 f"Expected batch file '{expected_name}', found '{actual_name}'"
             )
+
+        # Load labels from file
+        labels_path: Path = batch_dir / _LABELS_FILE
+        assert labels_path.exists(), f"Labels file not found: {labels_path}"
+        self._labels: ComponentLabels = ComponentLabels(
+            labels_path.read_text().strip().splitlines()
+        )
+
+    @property
+    def labels(self) -> ComponentLabels:
+        """Get component labels for all batches."""
+        return self._labels
 
     @property
     def n_batches(self) -> int:
@@ -189,6 +202,11 @@ def _generate_activation_batches(
             seq_mode="concat" if task_name == "lm" else None,
             filter_modules=filter_modules,
         )
+
+        # Save labels file (once, from first batch)
+        if batch_idx == 0:
+            labels_path: Path = output_dir / _LABELS_FILE
+            labels_path.write_text("\n".join(processed.labels))
 
         # Save as ActivationBatch
         activation_batch: ActivationBatch = ActivationBatch(

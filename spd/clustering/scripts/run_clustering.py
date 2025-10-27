@@ -26,7 +26,6 @@ from torch import Tensor
 from wandb.sdk.wandb_run import Run
 
 from spd.clustering.batched_activations import (
-    ActivationBatch,
     BatchedActivations,
     precompute_batches_for_single_run,
 )
@@ -270,7 +269,6 @@ def main(run_config: ClusteringRunConfig) -> Path:
     # Load or compute activations
     # =====================================
     batched_activations: BatchedActivations
-    component_labels: ComponentLabels
 
     if run_config.precomputed_activations_dir is not None:
         # Case 1: Use precomputed batches from disk (from ensemble pipeline)
@@ -297,9 +295,8 @@ def main(run_config: ClusteringRunConfig) -> Path:
         batched_activations = BatchedActivations(batch_dir)
         logger.info(f"Generated and loaded {n_batches} batches")
 
-    # Get labels from first batch
-    first_batch: ActivationBatch = batched_activations._get_next_batch()
-    component_labels = ComponentLabels(first_batch.labels)
+    # Get labels from batches
+    component_labels: ComponentLabels = batched_activations.labels
 
     # Run merge iteration
     # =====================================
