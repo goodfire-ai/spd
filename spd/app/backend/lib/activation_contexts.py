@@ -7,7 +7,7 @@ import torch
 from jaxtyping import Float, Int
 from tqdm import tqdm
 
-from spd.app.backend.api import (
+from spd.app.backend.schemas import (
     ActivationContext,
     ModelActivationContexts,
     SubcomponentActivationContexts,

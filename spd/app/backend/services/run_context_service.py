@@ -1,11 +1,10 @@
 from dataclasses import dataclass
 from typing import Any
 
-import torch
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizer
 
-from spd.app.backend.api import AvailablePrompt, Status, TrainRun
+from spd.app.backend.schemas import Status, TrainRun
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -14,8 +13,6 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import runtime_cast
 
-ENTITY = "goodfire"
-TRAIN_PROJECT = "spd"
 DEVICE = get_device()
 
 
@@ -90,17 +87,3 @@ class RunContextService:
             tokenizer=tokenizer,
             train_loader=train_loader,
         )
-
-    def get_available_prompts(self) -> list[AvailablePrompt]:
-        """Get first 100 prompts from the dataset with their indices and text."""
-        assert (ctx := self.train_run_context) is not None, "Run context not found"
-
-        prompts = []
-        for idx in range(min(100, len(ctx.train_loader.dataset))):  # pyright: ignore[reportArgumentType]
-            example = ctx.train_loader.dataset[idx]["input_ids"]
-            assert isinstance(example, torch.Tensor)
-            assert example.ndim == 1, "Example must be 1D (seq_len)"
-            text = ctx.tokenizer.decode(example, skip_special_tokens=True)  # pyright: ignore[reportAttributeAccessIssue]
-            prompts.append(AvailablePrompt(index=idx, full_text=text))
-
-        return prompts

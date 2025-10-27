@@ -94,17 +94,17 @@ def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
     """Start the backend server."""
     print(f"{DIM}  ▸ Starting backend...{RESET}", end="", flush=True)
 
-    project_root = APP_DIR.parent.parent
     cmd = [
         "uv",
         "run",
         "python",
         "-u",
-        str(project_root / "spd" / "app" / "backend" / "controller.py"),
+        str(APP_DIR / "backend" / "server.py"),
         "--port",
         str(port),
     ]
 
+    project_root = APP_DIR.parent.parent
     process = subprocess.Popen(
         cmd,
         cwd=project_root,
@@ -112,7 +112,6 @@ def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
         stderr=subprocess.STDOUT,
         bufsize=1,
         universal_newlines=True,
-        preexec_fn=os.setsid if sys.platform != "win32" else None,
     )
 
     # Wait for backend to be healthy
@@ -155,7 +154,6 @@ def start_frontend(port: int, backend_port: int, logfile: TextIO) -> subprocess.
         env=env,
         bufsize=1,
         universal_newlines=True,
-        preexec_fn=os.setsid if sys.platform != "win32" else None,
     )
 
     # Wait for frontend to be healthy
