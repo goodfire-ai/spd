@@ -73,16 +73,16 @@ def pgd_masked_recon_loss_update(
         n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
         return total_loss, n_examples
 
-    # We create a single adv_source and index into it for each layer
+    # We create a single adv_sources tensor and index into it for each layer
     match pgd_config.mask_scope:
         case "unique_per_datapoint":
             adv_source_shape = torch.Size([n_layers, *batch_dims, C2])
         case "shared_across_batch":
             adv_source_shape = torch.Size([n_layers] + [1 for _ in batch_dims] + [C2])
 
-    adv_sources: Float[Tensor, "n_layers ... C2"] = _get_pgd_init_tensor(
-        pgd_config.init, adv_source_shape, batch.device
-    ).requires_grad_(True)
+    adv_sources: Float[Tensor, "n_layers *batch_dims C2"] | Float[Tensor, "n_layers *1 C2"] = (
+        _get_pgd_init_tensor(pgd_config.init, adv_source_shape, batch.device).requires_grad_(True)
+    )
 
     # PGD ascent
     for _ in range(int(pgd_config.n_steps)):
