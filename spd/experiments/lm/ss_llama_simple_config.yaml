@@ -32,15 +32,16 @@ loss_metric_configs:
     p_anneal_final_p: 0.3
     p_anneal_end_frac: 1.0
 
-  - classname: "StochasticReconSubsetLoss"
+  # - classname: "StochasticReconSubsetLoss"
+  - classname: "CIMaskedReconLoss"
     coeff: 1.0
 
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 256
+batch_size: 128
 eval_batch_size: 64
-steps: 200000
+steps: 20000
 lr: 0.0002
 lr_schedule: cosine
 lr_warmup_pct: 0.0
@@ -53,8 +54,8 @@ faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
 
 # --- Logging & Saving ---
-train_log_freq: 200
-eval_freq: 1000
+train_log_freq: 100
+eval_freq: 100
 slow_eval_freq: 2000
 slow_eval_on_first_step: true
 n_eval_steps: 5
@@ -62,21 +63,26 @@ save_freq: null
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
 eval_metric_configs:
-  - classname: "CIHistograms"
-    n_batches_accum: 5
-  - classname: "ComponentActivationDensity"
-  - classname: "CI_L0"
-    groups:
-      total: ["*"] # Sum of all L0 values
-      layer_0: ["h.0.*"]
-      layer_1: ["h.1.*"]
-      layer_2: ["h.2.*"]
-      layer_3: ["h.3.*"]
-  - classname: "CEandKLLosses"
-    rounding_threshold: 0.0
-  - classname: "CIMeanPerComponent"
-  - classname: "StochasticHiddenActsReconLoss"
-  - classname: "PGDReconSubsetLoss"
+  # - classname: "CIHistograms"
+  #   n_batches_accum: 5
+  # - classname: "ComponentActivationDensity"
+  # - classname: "CI_L0"
+  #   groups:
+  #     total: ["*"] # Sum of all L0 values
+  #     layer_0: ["h.0.*"]
+  #     layer_1: ["h.1.*"]
+  #     layer_2: ["h.2.*"]
+  #     layer_3: ["h.3.*"]
+  # - classname: "CEandKLLosses"
+  #   rounding_threshold: 0.0
+  # - classname: "CIMeanPerComponent"
+  # - classname: "StochasticHiddenActsReconLoss"
+  # - classname: "PGDReconSubsetLoss"
+  #   init: "random"
+  #   step_size: 0.01
+  #   n_steps: 20
+  #   mask_scope: "shared_across_batch"
+  - classname: "PGDReconLoss"
     init: "random"
     step_size: 0.01
     n_steps: 20
