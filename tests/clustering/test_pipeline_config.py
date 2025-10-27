@@ -2,12 +2,13 @@
 
 from pathlib import Path
 
+import pydantic_core
 import pytest
 
 from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.scripts.run_pipeline import ClusteringPipelineConfig
-from spd.settings import REPO_ROOT, SPD_CACHE_DIR
+from spd.settings import REPO_ROOT
 
 
 class TestClusteringRunConfigStableHash:
@@ -69,10 +70,11 @@ class TestClusteringRunConfigStableHash:
 class TestClusteringPipelineConfigValidation:
     """Test ClusteringPipelineConfig validation logic."""
 
-    def test_error_when_neither_field_provided(self):
-        """Test that error is raised when neither path nor inline config is provided."""
-        with pytest.raises(ValueError, match="Must specify exactly one"):
+    def test_error_when_path_does_not_exist(self):
+        """Test that error is raised when clustering_run_config_path does not exist."""
+        with pytest.raises(pydantic_core._pydantic_core.ValidationError):
             ClusteringPipelineConfig(
+                clustering_run_config_path=Path("nonexistent/path.json"),
                 n_runs=2,
                 distances_methods=["perm_invariant_hamming"],
                 base_output_dir=Path("/tmp/test"),
@@ -82,36 +84,12 @@ class TestClusteringPipelineConfigValidation:
                 create_git_snapshot=False,
             )
 
-    def test_error_when_both_fields_provided(self):
-        """Test that error is raised when both path and inline config are provided."""
-        with pytest.raises(ValueError, match="Cannot specify both"):
-            ClusteringPipelineConfig(
-                run_clustering_config_path=Path("some/path.json"),
-                run_clustering_config=ClusteringRunConfig(
-                    model_path="wandb:test/project/run1",
-                    batch_size=32,
-                    merge_config=MergeConfig(),
-                    dataset_seed=0,
-                ),
-                n_runs=2,
-                distances_methods=["perm_invariant_hamming"],
-                base_output_dir=Path("/tmp/test"),
-                slurm_job_name_prefix=None,
-                slurm_partition=None,
-                wandb_entity="test",
-                create_git_snapshot=False,
-            )
-
-
-class TestClusteringPipelineConfigGetConfigPath:
-    """Test ClusteringPipelineConfig.get_config_path() method."""
-
-    def test_returns_path_directly_when_using_path_field(self):
-        """Test that get_config_path returns the path directly when using run_clustering_config_path."""
+    def test_valid_config_with_existing_path(self):
+        """Test that config is valid when path points to existing file."""
         expected_path = Path("spd/clustering/configs/crc/resid_mlp1.json")
 
         config = ClusteringPipelineConfig(
-            run_clustering_config_path=expected_path,
+            clustering_run_config_path=expected_path,
             n_runs=2,
             distances_methods=["perm_invariant_hamming"],
             base_output_dir=Path("/tmp/test"),
@@ -119,133 +97,7 @@ class TestClusteringPipelineConfigGetConfigPath:
             create_git_snapshot=False,
         )
 
-        assert config.get_config_path() == expected_path
-
-    def test_creates_cached_file_when_using_inline_config(self):
-        """Test that get_config_path creates a cached file when using inline config."""
-        inline_config = ClusteringRunConfig(
-            model_path="wandb:test/project/run1",
-            batch_size=32,
-            dataset_seed=0,
-            merge_config=MergeConfig(),
-        )
-
-        config = ClusteringPipelineConfig(
-            run_clustering_config=inline_config,
-            n_runs=2,
-            distances_methods=["perm_invariant_hamming"],
-            base_output_dir=Path("/tmp/test"),
-            wandb_entity="test",
-            create_git_snapshot=False,
-        )
-
-        config_path = config.get_config_path()
-
-        # Check that file exists
-        assert config_path.exists()
-
-        # Check that it's in the expected directory
-        expected_cache_dir = SPD_CACHE_DIR / "clustering_run_configs"
-        assert config_path.parent == expected_cache_dir
-
-        # Check that filename is the hash
-        expected_hash = inline_config.stable_hash_b64()
-        assert config_path.name == f"{expected_hash}.json"
-
-        # Check that file contents match the config
-        loaded_config = ClusteringRunConfig.from_file(config_path)
-        assert loaded_config == inline_config
-
-        # Clean up
-        config_path.unlink()
-
-    def test_reuses_existing_cached_file(self):
-        """Test that get_config_path reuses existing cached file with same hash."""
-        inline_config = ClusteringRunConfig(
-            model_path="wandb:test/project/run1",
-            batch_size=32,
-            dataset_seed=0,
-            merge_config=MergeConfig(),
-        )
-
-        config1 = ClusteringPipelineConfig(
-            run_clustering_config=inline_config,
-            n_runs=2,
-            distances_methods=["perm_invariant_hamming"],
-            base_output_dir=Path("/tmp/test"),
-            wandb_entity="test",
-            create_git_snapshot=False,
-        )
-
-        # First call creates the file
-        config_path1 = config1.get_config_path()
-        assert config_path1.exists()
-
-        # Record modification time
-        mtime1 = config_path1.stat().st_mtime
-
-        # Create another config with same inline config
-        config2 = ClusteringPipelineConfig(
-            run_clustering_config=inline_config,
-            n_runs=3,  # Different n_runs shouldn't matter
-            distances_methods=["perm_invariant_hamming"],
-            base_output_dir=Path("/tmp/test"),
-            wandb_entity="test",
-            create_git_snapshot=False,
-        )
-
-        # Second call should reuse the file
-        config_path2 = config2.get_config_path()
-
-        assert config_path1 == config_path2
-        assert config_path2.stat().st_mtime == mtime1  # File not modified
-
-        # Clean up
-        config_path1.unlink()
-
-    def test_hash_collision_detection(self):
-        """Test that hash collision is detected when existing file differs."""
-        inline_config = ClusteringRunConfig(
-            model_path="wandb:test/project/run1",
-            batch_size=32,
-            dataset_seed=0,
-            merge_config=MergeConfig(),
-        )
-
-        # Create a fake collision by manually creating a file with same hash
-        hash_value = inline_config.stable_hash_b64()
-        cache_dir = SPD_CACHE_DIR / "clustering_run_configs"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        collision_path = cache_dir / f"{hash_value}.json"
-
-        # Write a different config to the file
-        different_config = ClusteringRunConfig(
-            model_path="wandb:test/project/run2",  # Different!
-            batch_size=32,
-            dataset_seed=0,
-            merge_config=MergeConfig(),
-        )
-        different_config.to_file(collision_path)
-
-        try:
-            config = ClusteringPipelineConfig(
-                run_clustering_config=inline_config,
-                n_runs=2,
-                distances_methods=["perm_invariant_hamming"],
-                base_output_dir=Path("/tmp/test"),
-                slurm_job_name_prefix=None,
-                slurm_partition=None,
-                wandb_entity="test",
-                create_git_snapshot=False,
-            )
-
-            # Should raise ValueError about hash collision
-            with pytest.raises(ValueError, match="Hash collision detected"):
-                config.get_config_path()
-        finally:
-            # Clean up
-            if collision_path.exists():
-                collision_path.unlink()
+        assert config.clustering_run_config_path == expected_path
 
 
 def _get_config_files(path: Path):
@@ -269,7 +121,7 @@ class TestAllConfigsValidation:
         """Test that each pipeline config file is valid."""
         print(config_file)
         _config = ClusteringPipelineConfig.from_file(config_file)
-        crc_path = _config.get_config_path()
+        crc_path = _config.clustering_run_config_path
         print(f"{crc_path = }")
         assert crc_path.exists()
 
