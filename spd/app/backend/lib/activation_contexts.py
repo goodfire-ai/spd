@@ -26,7 +26,6 @@ def get_subcomponents_activation_contexts(
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
-    device: str,
 ) -> ModelActivationContexts:
     logger.info("Getting activation contexts")
 
@@ -36,7 +35,7 @@ def get_subcomponents_activation_contexts(
         n_batches,
         n_tokens_either_side,
         batch_size,
-        device,
+        str(run_context.cm.device),
     )
 
     return map_to_model_ctxs(run_context, activations_data)

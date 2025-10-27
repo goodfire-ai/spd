@@ -32,8 +32,8 @@ app = FastAPI(debug=True)
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Don't host me publicly lol
     allow_credentials=True,
+    allow_origins=["*"],  # Don't host me publicly lol
     allow_methods=["*"],
     allow_headers=["*"],
 )
