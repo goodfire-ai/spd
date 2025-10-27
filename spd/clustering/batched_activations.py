@@ -8,6 +8,7 @@ This module provides:
 import gc
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor
@@ -18,6 +19,9 @@ from spd.clustering.dataset import load_dataset
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
+
+if TYPE_CHECKING:
+    from spd.clustering.clustering_run_config import ClusteringRunConfig
 
 
 @dataclass

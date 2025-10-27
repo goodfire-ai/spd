@@ -71,9 +71,7 @@ def range_sampler(
     within_range: Bool[Tensor, "k_groups k_groups"] = (costs <= max_considered_cost) & valid_mask
 
     # Get indices of candidate pairs
-    considered_idxs: Int[Tensor, "n_considered 2"] = torch.stack(
-        torch.where(within_range), dim=1
-    )
+    considered_idxs: Int[Tensor, "n_considered 2"] = torch.stack(torch.where(within_range), dim=1)
 
     if considered_idxs.shape[0] == 0:
         raise ValueError("No valid pairs within threshold range")

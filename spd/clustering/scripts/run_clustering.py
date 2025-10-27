@@ -34,7 +34,6 @@ from spd.clustering.activations import (
 from spd.clustering.batched_activations import ActivationBatch, BatchedActivations
 from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.consts import (
-    ActivationsTensor,
     BatchTensor,
     ClusterCoactivationShaped,
     ComponentLabels,

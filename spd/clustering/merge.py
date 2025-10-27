@@ -5,7 +5,7 @@ This wraps the pure merge_iteration_pure() function and adds WandB/plotting call
 """
 
 import warnings
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 import torch
 from jaxtyping import Bool, Float
@@ -16,7 +16,6 @@ from spd.clustering.batched_activations import ActivationBatch, BatchedActivatio
 from spd.clustering.compute_costs import (
     compute_mdl_cost,
     compute_merge_costs,
-    recompute_coacts_merge_pair,
 )
 from spd.clustering.consts import (
     ActivationsTensor,
@@ -189,9 +188,8 @@ def merge_iteration(
         # Recompute from new batch if it's time
         # --------------------------------------------------
         should_recompute: bool = (
-            (iter_idx + 1) % merge_config.recompute_costs_every == 0
-            and iter_idx + 1 < num_iters
-        )
+            iter_idx + 1
+        ) % merge_config.recompute_costs_every == 0 and iter_idx + 1 < num_iters
 
         if should_recompute:
             new_batch: ActivationBatch = batched_activations.get_next_batch()
