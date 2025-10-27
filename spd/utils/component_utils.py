@@ -7,7 +7,6 @@ from torch import Tensor
 from spd.configs import SamplingType
 from spd.models.components import (
     ComponentsMaskInfo,
-    RoutingMasks,
     WeightDeltaAndMask,
     make_mask_infos,
 )
@@ -85,19 +84,6 @@ uniform_k-stochastic:
 all:
     use components for all positions
 """
-
-
-def calc_routing_masks(
-    routing: RoutingType,
-    leading_dims: tuple[int, ...],
-    module_names: list[str],
-    device: torch.device | str,
-) -> RoutingMasks:
-    match routing:
-        case "all":
-            return "all"
-        case "uniform_k-stochastic":
-            return sample_uniform_k_subset_routing_masks(leading_dims, module_names, device)
 
 
 def calc_stochastic_component_mask_info(
