@@ -25,7 +25,6 @@ from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel, OutputWithCache
-from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
     get_world_size,
@@ -38,7 +37,7 @@ from spd.utils.general_utils import (
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
-from spd.utils.logging_utils import get_grad_norms_dict, local_log
+from spd.utils.logging_utils import local_log
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
@@ -258,11 +257,11 @@ def optimize(
                     loss_value / config.gradient_accumulation_steps
                 )
 
-            for layer_name, layer_ci in ci.lower_leaky.items():
-                l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                microbatch_log_data[f"train/l0/{layer_name}"] += (
-                    l0_val / config.gradient_accumulation_steps
-                )
+            # for layer_name, layer_ci in ci.lower_leaky.items():
+            #     l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
+            #     microbatch_log_data[f"train/l0/{layer_name}"] += (
+            #         l0_val / config.gradient_accumulation_steps
+            #     )
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
@@ -270,15 +269,15 @@ def optimize(
                 avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
                 microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
-            alive_counts = alive_tracker.compute()
-            for target_module_path, n_alive_count in alive_counts.items():
-                n_alive_key = (
-                    f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
-                )
-                microbatch_log_data[n_alive_key] = n_alive_count
+            # alive_counts = alive_tracker.compute()
+            # for target_module_path, n_alive_count in alive_counts.items():
+            #     n_alive_key = (
+            #         f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
+            #     )
+            #     microbatch_log_data[n_alive_key] = n_alive_count
 
-            grad_norms = get_grad_norms_dict(component_model, device)
-            microbatch_log_data.update({f"train/grad_norms/{k}": v for k, v in grad_norms.items()})
+            # grad_norms = get_grad_norms_dict(component_model, device)
+            # microbatch_log_data.update({f"train/grad_norms/{k}": v for k, v in grad_norms.items()})
 
             microbatch_log_data["train/schedules/lr"] = step_lr
 
