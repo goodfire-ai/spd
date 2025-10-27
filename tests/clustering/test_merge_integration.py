@@ -18,7 +18,9 @@ class TestMergeIntegration:
         n_samples: int = 100
         n_components: int = 10
         activations: torch.Tensor = torch.rand(n_samples, n_components)
-        component_labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        component_labels: ComponentLabels = ComponentLabels(
+            [f"comp_{i}" for i in range(n_components)]
+        )
 
         # Configure with range sampler
         config: MergeConfig = MergeConfig(
@@ -56,7 +58,9 @@ class TestMergeIntegration:
         n_samples: int = 100
         n_components: int = 10
         activations: torch.Tensor = torch.rand(n_samples, n_components)
-        component_labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        component_labels: ComponentLabels = ComponentLabels(
+            [f"comp_{i}" for i in range(n_components)]
+        )
 
         # Configure with MCMC sampler
         config: MergeConfig = MergeConfig(
@@ -98,7 +102,9 @@ class TestMergeIntegration:
         activations[:, 0] *= 2  # Component 0 is very active
         activations[:, 1] *= 0.1  # Component 1 is rarely active
 
-        component_labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        component_labels: ComponentLabels = ComponentLabels(
+            [f"comp_{i}" for i in range(n_components)]
+        )
 
         # Run with range sampler (threshold=0 for deterministic minimum selection)
         config_range: MergeConfig = MergeConfig(
@@ -148,7 +154,9 @@ class TestMergeIntegration:
         n_samples: int = 50
         n_components: int = 3
         activations: torch.Tensor = torch.rand(n_samples, n_components)
-        component_labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        component_labels: ComponentLabels = ComponentLabels(
+            [f"comp_{i}" for i in range(n_components)]
+        )
 
         config: MergeConfig = MergeConfig(
             activation_threshold=0.1,

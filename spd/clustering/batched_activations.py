@@ -125,7 +125,9 @@ class BatchedActivations(Iterator[ActivationBatch]):
         temp_dir: Path = Path(tempfile.mkdtemp(prefix="batch_temp_"))
 
         # Save the single batch
-        batch: ActivationBatch = ActivationBatch(activations=activations, labels=ComponentLabels(labels))
+        batch: ActivationBatch = ActivationBatch(
+            activations=activations, labels=ComponentLabels(labels)
+        )
         batch.save(temp_dir / _BATCH_FORMAT.format(idx=0))
 
         # Return BatchedActivations that will cycle through this single batch
@@ -178,7 +180,9 @@ def precompute_batches_for_ensemble(
     ).to(device)
 
     with torch.no_grad():
-        sample_acts: dict[str, Float[Tensor, "samples components"]] = component_activations(model, device, sample_batch)
+        sample_acts: dict[str, Float[Tensor, "samples components"]] = component_activations(
+            model, device, sample_batch
+        )
 
     # Count total components across all modules
     n_components: int = sum(act.shape[-1] for act in sample_acts.values())
@@ -223,7 +227,9 @@ def precompute_batches_for_ensemble(
 
             # Compute activations
             with torch.no_grad():
-                acts_dict: dict[str, Float[Tensor, "samples components"]] = component_activations(model, device, batch_data)
+                acts_dict: dict[str, Float[Tensor, "samples components"]] = component_activations(
+                    model, device, batch_data
+                )
 
             # Process (concat, NO FILTERING)
             processed: ProcessedActivations = process_activations(
