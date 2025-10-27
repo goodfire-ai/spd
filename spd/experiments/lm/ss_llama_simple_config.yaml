@@ -8,7 +8,7 @@ seed: 0
 C: 1200
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
-ci_fn_hidden_dims: [1000]
+ci_fn_hidden_dims: [100]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   [
@@ -38,9 +38,9 @@ loss_metric_configs:
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 256
-eval_batch_size: 64
-steps: 200000
+batch_size: 16
+eval_batch_size: 8
+steps: 20000
 lr: 0.0002
 lr_schedule: cosine
 lr_warmup_pct: 0.0
@@ -77,6 +77,11 @@ eval_metric_configs:
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
   - classname: "PGDReconSubsetLoss"
+    init: "random"
+    step_size: 0.01
+    n_steps: 20
+    mask_scope: "shared_across_batch"
+  - classname: "PGDReconLoss"
     init: "random"
     step_size: 0.01
     n_steps: 20
