@@ -16,6 +16,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
+from spd.clustering.batched_activations import batched_activations_from_tensor
 from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.dataset import load_dataset
 from spd.clustering.merge import merge_iteration
@@ -111,9 +112,13 @@ MERGE_CFG: MergeConfig = MergeConfig(
 ENSEMBLE_SIZE: int = 2
 HISTORIES: list[MergeHistory] = []
 for _i in range(ENSEMBLE_SIZE):
+    batched_acts = batched_activations_from_tensor(
+        activations=PROCESSED_ACTIVATIONS.activations,
+        labels=list(PROCESSED_ACTIVATIONS.labels),
+    )
     HISTORY: MergeHistory = merge_iteration(
         merge_config=MERGE_CFG,
-        activations=PROCESSED_ACTIVATIONS.activations,
+        batched_activations=batched_acts,
         component_labels=PROCESSED_ACTIVATIONS.labels,
         log_callback=None,
     )

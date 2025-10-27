@@ -51,9 +51,21 @@ def recompute_coacts_from_scratch(
         activations > activation_threshold if activation_threshold is not None else activations
     )
 
-    # Apply current merge to get group-level activations
-    # current_merge.matrix is [c_original, k_groups]
-    group_activations = activation_mask @ current_merge.matrix.to(activation_mask.device)
+    # Map component-level activations to group-level using scatter_add
+    # This is more efficient than materializing the full merge matrix
+    # current_merge.group_idxs: [n_components] with values 0 to k_groups-1
+    n_samples = activation_mask.shape[0]
+    group_activations = torch.zeros(
+        (n_samples, current_merge.k_groups),
+        dtype=activation_mask.dtype,
+        device=activation_mask.device,
+    )
+
+    # Expand group_idxs to match batch dimension and scatter-add activations by group
+    group_idxs_expanded = (
+        current_merge.group_idxs.unsqueeze(0).expand(n_samples, -1).to(activation_mask.device)
+    )
+    group_activations.scatter_add_(1, group_idxs_expanded, activation_mask)
 
     # Compute coactivations
     coact = group_activations.float().T @ group_activations.float()

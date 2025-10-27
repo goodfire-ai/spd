@@ -64,6 +64,36 @@ class BatchedActivations:
         return batch
 
 
+def batched_activations_from_tensor(
+    activations: Tensor,
+    labels: list[str],
+) -> BatchedActivations:
+    """
+    Create a BatchedActivations instance from a single activation tensor.
+
+    This is a helper for backward compatibility with tests and code that uses
+    single-batch mode. It creates a temporary directory with a single batch file.
+
+    Args:
+        activations: Activation tensor [samples, n_components]
+        labels: Component labels ["module:idx", ...]
+
+    Returns:
+        BatchedActivations instance that cycles through the single batch
+    """
+    import tempfile
+
+    # Create a temporary directory
+    temp_dir = Path(tempfile.mkdtemp(prefix="batch_temp_"))
+
+    # Save the single batch
+    batch = ActivationBatch(activations=activations, labels=labels)
+    batch.save(temp_dir / "batch_0.pt")
+
+    # Return BatchedActivations that will cycle through this single batch
+    return BatchedActivations(temp_dir)
+
+
 def precompute_batches_for_ensemble(
     clustering_run_config: "ClusteringRunConfig",
     n_runs: int,

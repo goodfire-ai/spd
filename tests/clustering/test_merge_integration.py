@@ -2,6 +2,7 @@
 
 import torch
 
+from spd.clustering.batched_activations import batched_activations_from_tensor
 from spd.clustering.consts import ComponentLabels
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
@@ -29,8 +30,13 @@ class TestMergeIntegration:
         )
 
         # Run merge iteration
+        batched_activations = batched_activations_from_tensor(
+            activations=activations, labels=list(component_labels)
+        )
         history = merge_iteration(
-            activations=activations, merge_config=config, component_labels=component_labels
+            batched_activations=batched_activations,
+            merge_config=config,
+            component_labels=component_labels,
         )
 
         # Check results
@@ -62,8 +68,13 @@ class TestMergeIntegration:
         )
 
         # Run merge iteration
+        batched_activations = batched_activations_from_tensor(
+            activations=activations, labels=list(component_labels)
+        )
         history = merge_iteration(
-            activations=activations, merge_config=config, component_labels=component_labels
+            batched_activations=batched_activations,
+            merge_config=config,
+            component_labels=component_labels,
         )
 
         # Check results
@@ -97,8 +108,11 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"threshold": 0.0},  # Always select minimum
         )
 
+        batched_activations_range = batched_activations_from_tensor(
+            activations=activations.clone(), labels=list(component_labels)
+        )
         history_range = merge_iteration(
-            activations=activations.clone(),
+            batched_activations=batched_activations_range,
             merge_config=config_range,
             component_labels=ComponentLabels(component_labels.copy()),
         )
@@ -112,8 +126,11 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"temperature": 0.01},  # Very low temp
         )
 
+        batched_activations_mcmc = batched_activations_from_tensor(
+            activations=activations.clone(), labels=list(component_labels)
+        )
         history_mcmc = merge_iteration(
-            activations=activations.clone(),
+            batched_activations=batched_activations_mcmc,
             merge_config=config_mcmc,
             component_labels=ComponentLabels(component_labels.copy()),
         )
@@ -140,8 +157,13 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"temperature": 2.0},
         )
 
+        batched_activations = batched_activations_from_tensor(
+            activations=activations, labels=list(component_labels)
+        )
         history = merge_iteration(
-            activations=activations, merge_config=config, component_labels=component_labels
+            batched_activations=batched_activations,
+            merge_config=config,
+            component_labels=component_labels,
         )
 
         # First entry is after first merge, so should be 3 - 1 = 2
