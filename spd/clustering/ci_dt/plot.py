@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jaxtyping import Bool, Float, Int
-from sklearn.tree import plot_tree
+from sklearn.tree import DecisionTreeClassifier, plot_tree
 
 from spd.clustering.ci_dt.core import LayerModel, MetricKey, get_estimator_for
 
@@ -452,6 +452,7 @@ def plot_ap_vs_prevalence(per_layer_stats: list[dict[str, Any]], models: list[La
                 ap_list.append(ap)
                 # Get tree depth for this target
                 estimator = model.model.estimators_[target_idx]
+                assert isinstance(estimator, DecisionTreeClassifier)
                 depth_list.append(int(estimator.tree_.max_depth))
 
     prevalence_arr: np.ndarray = np.array(prevalence_list)
@@ -640,6 +641,7 @@ def extract_tree_stats(
 
     for lm, stats in zip(models, per_layer_stats, strict=True):
         for i, estimator in enumerate(lm.model.estimators_):
+            assert isinstance(estimator, DecisionTreeClassifier)
             depths.append(int(estimator.tree_.max_depth))
             leaf_counts.append(int(estimator.tree_.n_leaves))
             accuracies.append(float(stats["acc"][i]))
