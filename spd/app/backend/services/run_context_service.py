@@ -1,11 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-<<<<<<< HEAD
-import torch
 from tokenizers import Tokenizer
-=======
->>>>>>> feature/app
 from torch.utils.data import DataLoader
 
 from spd.app.backend.schemas import Status, TrainRun
