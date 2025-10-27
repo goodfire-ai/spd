@@ -19,7 +19,11 @@ from jaxtyping import Float
 from torch import Tensor
 from tqdm import tqdm
 
-from spd.clustering.activations import component_activations, process_activations
+from spd.clustering.activations import (
+    ProcessedActivations,
+    component_activations,
+    process_activations,
+)
 from spd.clustering.consts import BatchTensor, ComponentLabels
 from spd.clustering.dataset import load_dataset
 from spd.log import logger
@@ -56,7 +60,7 @@ class ActivationBatch:
         zf: zipfile.ZipFile
         with zipfile.ZipFile(path, "r") as zf:
             with zf.open("activations.npy", "r") as f:
-                activations_np = np.load(f)
+                activations_np: Float[np.ndarray, "samples n_components"] = np.load(f)
             labels_raw: list[str] = zf.read("labels.txt").decode("utf-8").splitlines()
         return ActivationBatch(
             activations=torch.from_numpy(activations_np),
@@ -76,9 +80,10 @@ class BatchedActivations(Iterator[ActivationBatch]):
         self.current_idx: int = 0
 
         # Verify naming
+        i: int
         for i in range(len(self.batch_paths)):
-            expected_name = _BATCH_FORMAT.format(idx=i)
-            actual_name = self.batch_paths[i].name
+            expected_name: str = _BATCH_FORMAT.format(idx=i)
+            actual_name: str = self.batch_paths[i].name
             assert expected_name == actual_name, (
                 f"Expected batch file '{expected_name}', found '{actual_name}'"
             )
@@ -117,10 +122,10 @@ class BatchedActivations(Iterator[ActivationBatch]):
         import tempfile
 
         # Create a temporary directory
-        temp_dir = Path(tempfile.mkdtemp(prefix="batch_temp_"))
+        temp_dir: Path = Path(tempfile.mkdtemp(prefix="batch_temp_"))
 
         # Save the single batch
-        batch = ActivationBatch(activations=activations, labels=ComponentLabels(labels))
+        batch: ActivationBatch = ActivationBatch(activations=activations, labels=ComponentLabels(labels))
         batch.save(temp_dir / _BATCH_FORMAT.format(idx=0))
 
         # Return BatchedActivations that will cycle through this single batch
@@ -173,30 +178,32 @@ def precompute_batches_for_ensemble(
     ).to(device)
 
     with torch.no_grad():
-        sample_acts = component_activations(model, device, sample_batch)
+        sample_acts: dict[str, Float[Tensor, "samples components"]] = component_activations(model, device, sample_batch)
 
     # Count total components across all modules
-    n_components = sum(act.shape[-1] for act in sample_acts.values())
+    n_components: int = sum(act.shape[-1] for act in sample_acts.values())
 
     # Calculate number of iterations
-    n_iters = clustering_run_config.merge_config.get_num_iters(n_components)
+    n_iters: int = clustering_run_config.merge_config.get_num_iters(n_components)
 
     # Calculate batches needed per run
-    n_batches_needed = (n_iters + recompute_every - 1) // recompute_every
+    n_batches_needed: int = (n_iters + recompute_every - 1) // recompute_every
 
     logger.info(f"Precomputing {n_batches_needed} batches per run for {n_runs} runs")
     logger.info(f"Total: {n_batches_needed * n_runs} batches")
 
     # Create batches directory
-    batches_base_dir = output_dir / "precomputed_batches"
+    batches_base_dir: Path = output_dir / "precomputed_batches"
     batches_base_dir.mkdir(exist_ok=True, parents=True)
 
     # For each run in ensemble
+    run_idx: int
     for run_idx in tqdm(range(n_runs), desc="Ensemble runs"):
-        run_batch_dir = batches_base_dir / f"run_{run_idx}"
+        run_batch_dir: Path = batches_base_dir / f"run_{run_idx}"
         run_batch_dir.mkdir(exist_ok=True)
 
         # Generate batches for this run
+        batch_idx: int
         for batch_idx in tqdm(
             range(n_batches_needed),
             desc=f"  Run {run_idx} batches",
@@ -204,10 +211,10 @@ def precompute_batches_for_ensemble(
         ):
             # Use unique seed: base_seed + run_idx * 1000 + batch_idx
             # This ensures different data for each run and each batch
-            seed = clustering_run_config.dataset_seed + run_idx * 1000 + batch_idx
+            seed: int = clustering_run_config.dataset_seed + run_idx * 1000 + batch_idx
 
             # Load data
-            batch_data = load_dataset(
+            batch_data: BatchTensor = load_dataset(
                 model_path=clustering_run_config.model_path,
                 task_name=task_name,
                 batch_size=clustering_run_config.batch_size,
@@ -216,10 +223,10 @@ def precompute_batches_for_ensemble(
 
             # Compute activations
             with torch.no_grad():
-                acts_dict = component_activations(model, device, batch_data)
+                acts_dict: dict[str, Float[Tensor, "samples components"]] = component_activations(model, device, batch_data)
 
             # Process (concat, NO FILTERING)
-            processed = process_activations(
+            processed: ProcessedActivations = process_activations(
                 activations=acts_dict,
                 filter_dead_threshold=0.0,  # NO FILTERING
                 seq_mode="concat" if task_name == "lm" else None,
@@ -227,7 +234,7 @@ def precompute_batches_for_ensemble(
             )
 
             # Save as ActivationBatch
-            activation_batch = ActivationBatch(
+            activation_batch: ActivationBatch = ActivationBatch(
                 activations=processed.activations.cpu(),  # Move to CPU for storage
                 labels=list(processed.labels),
             )

@@ -219,16 +219,16 @@ def main(run_config: ClusteringRunConfig) -> Path:
     """
     # Create ExecutionStamp and storage
     # don't create git snapshot -- if we are part of an ensemble, the snapshot should be created by the pipeline
-    execution_stamp = ExecutionStamp.create(
+    execution_stamp: ExecutionStamp = ExecutionStamp.create(
         run_type="cluster",
         create_snapshot=False,
     )
-    storage = ClusteringRunStorage(execution_stamp)
-    clustering_run_id = execution_stamp.run_id
+    storage: ClusteringRunStorage = ClusteringRunStorage(execution_stamp)
+    clustering_run_id: str = execution_stamp.run_id
     logger.info(f"Clustering run ID: {clustering_run_id}")
 
     # Register with ensemble if this is part of a pipeline
-    assigned_idx: int | None
+    assigned_idx: int | None = None
     if run_config.ensemble_id:
         assigned_idx = register_clustering_run(
             pipeline_run_id=run_config.ensemble_id,
@@ -243,8 +243,6 @@ def main(run_config: ClusteringRunConfig) -> Path:
             run_config,
             {"dataset_seed": run_config.dataset_seed + assigned_idx},
         )
-    else:
-        assigned_idx = None
 
     # save config
     run_config.to_file(storage.config_path)
@@ -255,7 +253,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
     logger.info(f"Output directory: {storage.base_dir}")
     device = get_device()
 
-    spd_run = SPDRunInfo.from_path(run_config.model_path)
+    spd_run: SPDRunInfo = SPDRunInfo.from_path(run_config.model_path)
     task_name: TaskName = spd_run.config.task_config.task_name
 
     # Setup WandB for this run
@@ -287,7 +285,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
         batched_activations = BatchedActivations(run_config.precomputed_activations_dir)
 
         # Get labels from first batch
-        first_batch = batched_activations._get_next_batch()
+        first_batch: ActivationBatch = batched_activations._get_next_batch()
         component_labels = ComponentLabels(first_batch.labels)
 
         logger.info(f"Loaded {batched_activations.n_batches} precomputed batches")
@@ -298,7 +296,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
 
         # Load model
         logger.info("Loading model")
-        model = ComponentModel.from_run_info(spd_run).to(device)
+        model: ComponentModel = ComponentModel.from_run_info(spd_run).to(device)
 
         # Load data
         logger.info("Loading dataset")
@@ -338,10 +336,10 @@ def main(run_config: ClusteringRunConfig) -> Path:
         )
 
         # Save as single batch to temp dir
-        temp_batch_dir = storage.base_dir / "temp_batch"
+        temp_batch_dir: Path = storage.base_dir / "temp_batch"
         temp_batch_dir.mkdir(exist_ok=True)
 
-        single_batch = ActivationBatch(
+        single_batch: ActivationBatch = ActivationBatch(
             activations=processed.activations,
             labels=list(processed.labels),
         )

@@ -8,7 +8,7 @@ import warnings
 from typing import Protocol
 
 import torch
-from jaxtyping import Bool, Float
+from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from tqdm import tqdm
 
@@ -47,28 +47,28 @@ def recompute_coacts_from_scratch(
                                    mask [samples, k_groups] for current groups
     """
     # Apply threshold
-    activation_mask = (
+    activation_mask: Bool[Tensor, "samples n_components"] = (
         activations > activation_threshold if activation_threshold is not None else activations
     )
 
     # Map component-level activations to group-level using scatter_add
     # This is more efficient than materializing the full merge matrix
     # current_merge.group_idxs: [n_components] with values 0 to k_groups-1
-    n_samples = activation_mask.shape[0]
-    group_activations = torch.zeros(
+    n_samples: int = activation_mask.shape[0]
+    group_activations: Float[Tensor, "n_samples k_groups"] = torch.zeros(
         (n_samples, current_merge.k_groups),
         dtype=activation_mask.dtype,
         device=activation_mask.device,
     )
 
     # Expand group_idxs to match batch dimension and scatter-add activations by group
-    group_idxs_expanded = (
+    group_idxs_expanded: Int[Tensor, "n_samples n_components"] = (
         current_merge.group_idxs.unsqueeze(0).expand(n_samples, -1).to(activation_mask.device)
     )
     group_activations.scatter_add_(1, group_idxs_expanded, activation_mask)
 
     # Compute coactivations
-    coact = group_activations.float().T @ group_activations.float()
+    coact: ClusterCoactivationShaped = group_activations.float().T @ group_activations.float()
 
     return coact, group_activations
 
@@ -205,7 +205,7 @@ def merge_iteration(
 
         if should_recompute:
             new_batch: ActivationBatch = batched_activations._get_next_batch()
-            activations = new_batch.activations
+            activations: Float[Tensor, "samples n_components"] = new_batch.activations
 
             # Recompute fresh coacts with current merge groups
             current_coact, current_act_mask = recompute_coacts_from_scratch(

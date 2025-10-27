@@ -6,6 +6,7 @@ from spd.clustering.batched_activations import BatchedActivations
 from spd.clustering.consts import ComponentLabels
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
+from spd.clustering.merge_history import MergeHistory
 
 
 class TestMergeIntegration:
@@ -14,13 +15,13 @@ class TestMergeIntegration:
     def test_merge_with_range_sampler(self):
         """Test merge iteration with range sampler."""
         # Create test data
-        n_samples = 100
-        n_components = 10
-        activations = torch.rand(n_samples, n_components)
-        component_labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        n_samples: int = 100
+        n_components: int = 10
+        activations: torch.Tensor = torch.rand(n_samples, n_components)
+        component_labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
 
         # Configure with range sampler
-        config = MergeConfig(
+        config: MergeConfig = MergeConfig(
             activation_threshold=0.1,
             alpha=1.0,
             iters=5,
@@ -30,10 +31,10 @@ class TestMergeIntegration:
         )
 
         # Run merge iteration
-        batched_activations = BatchedActivations.from_tensor(
+        batched_activations: BatchedActivations = BatchedActivations.from_tensor(
             activations=activations, labels=list(component_labels)
         )
-        history = merge_iteration(
+        history: MergeHistory = merge_iteration(
             batched_activations=batched_activations,
             merge_config=config,
             component_labels=component_labels,
@@ -52,13 +53,13 @@ class TestMergeIntegration:
     def test_merge_with_mcmc_sampler(self):
         """Test merge iteration with MCMC sampler."""
         # Create test data
-        n_samples = 100
-        n_components = 10
-        activations = torch.rand(n_samples, n_components)
-        component_labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        n_samples: int = 100
+        n_components: int = 10
+        activations: torch.Tensor = torch.rand(n_samples, n_components)
+        component_labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
 
         # Configure with MCMC sampler
-        config = MergeConfig(
+        config: MergeConfig = MergeConfig(
             activation_threshold=0.1,
             alpha=1.0,
             iters=5,
@@ -68,10 +69,10 @@ class TestMergeIntegration:
         )
 
         # Run merge iteration
-        batched_activations = BatchedActivations.from_tensor(
+        batched_activations: BatchedActivations = BatchedActivations.from_tensor(
             activations=activations, labels=list(component_labels)
         )
-        history = merge_iteration(
+        history: MergeHistory = merge_iteration(
             batched_activations=batched_activations,
             merge_config=config,
             component_labels=component_labels,
@@ -89,18 +90,18 @@ class TestMergeIntegration:
     def test_merge_comparison_samplers(self):
         """Compare behavior of different samplers with same data."""
         # Create test data with clear structure
-        n_samples = 100
-        n_components = 8
-        activations = torch.rand(n_samples, n_components)
+        n_samples: int = 100
+        n_components: int = 8
+        activations: torch.Tensor = torch.rand(n_samples, n_components)
 
         # Make some components more active to create cost structure
         activations[:, 0] *= 2  # Component 0 is very active
         activations[:, 1] *= 0.1  # Component 1 is rarely active
 
-        component_labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        component_labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
 
         # Run with range sampler (threshold=0 for deterministic minimum selection)
-        config_range = MergeConfig(
+        config_range: MergeConfig = MergeConfig(
             activation_threshold=0.1,
             alpha=1.0,
             iters=3,
@@ -108,17 +109,17 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"threshold": 0.0},  # Always select minimum
         )
 
-        batched_activations_range = BatchedActivations.from_tensor(
+        batched_activations_range: BatchedActivations = BatchedActivations.from_tensor(
             activations=activations.clone(), labels=list(component_labels)
         )
-        history_range = merge_iteration(
+        history_range: MergeHistory = merge_iteration(
             batched_activations=batched_activations_range,
             merge_config=config_range,
             component_labels=ComponentLabels(component_labels.copy()),
         )
 
         # Run with MCMC sampler (low temperature for near-deterministic)
-        config_mcmc = MergeConfig(
+        config_mcmc: MergeConfig = MergeConfig(
             activation_threshold=0.1,
             alpha=1.0,
             iters=3,
@@ -126,10 +127,10 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"temperature": 0.01},  # Very low temp
         )
 
-        batched_activations_mcmc = BatchedActivations.from_tensor(
+        batched_activations_mcmc: BatchedActivations = BatchedActivations.from_tensor(
             activations=activations.clone(), labels=list(component_labels)
         )
-        history_mcmc = merge_iteration(
+        history_mcmc: MergeHistory = merge_iteration(
             batched_activations=batched_activations_mcmc,
             merge_config=config_mcmc,
             component_labels=ComponentLabels(component_labels.copy()),
@@ -144,12 +145,12 @@ class TestMergeIntegration:
     def test_merge_with_small_components(self):
         """Test merge with very few components."""
         # Edge case: only 3 components
-        n_samples = 50
-        n_components = 3
-        activations = torch.rand(n_samples, n_components)
-        component_labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        n_samples: int = 50
+        n_components: int = 3
+        activations: torch.Tensor = torch.rand(n_samples, n_components)
+        component_labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
 
-        config = MergeConfig(
+        config: MergeConfig = MergeConfig(
             activation_threshold=0.1,
             alpha=1.0,
             iters=1,  # Just one merge
@@ -157,10 +158,10 @@ class TestMergeIntegration:
             merge_pair_sampling_kwargs={"temperature": 2.0},
         )
 
-        batched_activations = BatchedActivations.from_tensor(
+        batched_activations: BatchedActivations = BatchedActivations.from_tensor(
             activations=activations, labels=list(component_labels)
         )
-        history = merge_iteration(
+        history: MergeHistory = merge_iteration(
             batched_activations=batched_activations,
             merge_config=config,
             component_labels=component_labels,

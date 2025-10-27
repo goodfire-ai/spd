@@ -18,12 +18,14 @@ from spd.clustering.activations import (
 )
 from spd.clustering.batched_activations import BatchedActivations
 from spd.clustering.clustering_run_config import ClusteringRunConfig
+from spd.clustering.consts import DistancesArray
 from spd.clustering.dataset import load_dataset
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_dists_distribution
+from spd.configs import Config
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -44,7 +46,7 @@ MODEL_PATH: str = "wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh"
 SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(MODEL_PATH)
 MODEL: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 MODEL.to(DEVICE)
-SPD_CONFIG = SPD_RUN.config
+SPD_CONFIG: Config = SPD_RUN.config
 
 # Use load_dataset with RunConfig to get real data
 CONFIG: ClusteringRunConfig = ClusteringRunConfig(
@@ -112,7 +114,7 @@ MERGE_CFG: MergeConfig = MergeConfig(
 ENSEMBLE_SIZE: int = 2
 HISTORIES: list[MergeHistory] = []
 for _i in range(ENSEMBLE_SIZE):
-    batched_acts = BatchedActivations.from_tensor(
+    batched_acts: BatchedActivations = BatchedActivations.from_tensor(
         activations=PROCESSED_ACTIVATIONS.activations,
         labels=list(PROCESSED_ACTIVATIONS.labels),
     )
@@ -130,7 +132,7 @@ ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=HISTORIES)
 # %%
 # Compute and plot distances
 # ============================================================
-DISTANCES = ENSEMBLE.get_distances()
+DISTANCES: DistancesArray = ENSEMBLE.get_distances()
 
 plot_dists_distribution(
     distances=DISTANCES,

@@ -261,7 +261,7 @@ def main(
     logger.info(f"Pipeline run ID: {pipeline_run_id}")
 
     # Initialize storage
-    storage = ClusteringPipelineStorage(execution_stamp)
+    storage: ClusteringPipelineStorage = ClusteringPipelineStorage(execution_stamp)
     logger.info(f"Pipeline output directory: {storage.base_dir}")
 
     # Save pipeline config
@@ -270,7 +270,7 @@ def main(
 
     # Create WandB workspace if requested
     if pipeline_config.wandb_project is not None:
-        workspace_url = create_clustering_workspace_view(
+        workspace_url: str = create_clustering_workspace_view(
             ensemble_id=pipeline_run_id,
             project=pipeline_config.wandb_project,
             entity=pipeline_config.wandb_entity,
@@ -278,17 +278,17 @@ def main(
         logger.info(f"WandB workspace: {workspace_url}")
 
     # Precompute batches if multi-batch mode
-    clustering_run_config = ClusteringRunConfig.from_file(
+    clustering_run_config: ClusteringRunConfig = ClusteringRunConfig.from_file(
         pipeline_config.clustering_run_config_path
     )
-    batches_base_dir = precompute_batches_for_ensemble(
+    batches_base_dir: Path | None = precompute_batches_for_ensemble(
         clustering_run_config=clustering_run_config,
         n_runs=pipeline_config.n_runs,
         output_dir=storage.base_dir,
     )
 
     # Generate commands for clustering runs
-    clustering_commands = generate_clustering_commands(
+    clustering_commands: list[str] = generate_clustering_commands(
         pipeline_config=pipeline_config,
         pipeline_run_id=pipeline_run_id,
         batches_base_dir=batches_base_dir,
@@ -296,7 +296,7 @@ def main(
     )
 
     # Generate commands for calculating distances
-    calc_distances_commands = generate_calc_distances_commands(
+    calc_distances_commands: list[str] = generate_calc_distances_commands(
         pipeline_run_id=pipeline_run_id,
         distances_methods=pipeline_config.distances_methods,
     )
