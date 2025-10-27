@@ -7,13 +7,13 @@ import torch
 from jaxtyping import Float, Int
 from tqdm import tqdm
 
-from spd.app.backend.schemas import (
+from app.backend.schemas import (
     ActivationContext,
     ModelActivationContexts,
     SubcomponentActivationContexts,
     TokenDensity,
 )
-from spd.app.backend.services.run_context_service import TrainRunContext
+from app.backend.services.run_context_service import TrainRunContext
 from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel

@@ -277,7 +277,7 @@
 
     .density-bar {
         height: 100%;
-        background: linear-gradient(90deg, #4dabf7, #228be6);
+        background: #4dabf7;
         transition: width 0.3s ease;
     }
 

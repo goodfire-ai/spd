@@ -4,7 +4,7 @@ from typing import Any
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizer
 
-from spd.app.backend.schemas import Status, TrainRun
+from app.backend.schemas import Status, TrainRun
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig

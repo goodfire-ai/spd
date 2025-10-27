@@ -11,21 +11,23 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from types import FrameType
 from typing import TextIO
 from urllib.error import URLError
 
-# ANSI color codes
-GREEN = "\033[0;32m"
-YELLOW = "\033[1;33m"
-RED = "\033[0;31m"
-DIM = "\033[2m"
-BOLD = "\033[1m"
-UNDERLINE = "\033[4m"
-RESET = "\033[0m"
 
-# Configuration
+class AnsiEsc(StrEnum):
+    GREEN = "\033[0;32m"
+    YELLOW = "\033[1;33m"
+    RED = "\033[0;31m"
+    DIM = "\033[2m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+    RESET = "\033[0m"
+
+
 APP_DIR = Path(__file__).parent.resolve()
 LOGS_DIR = APP_DIR / "logs"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -63,7 +65,7 @@ def find_available_port(start_port: int) -> int:
             return port
 
     print(
-        f"{RED}✗{RESET} Could not find available port after checking 100 ports from {start_port}",
+        f"{AnsiEsc.RED}✗{AnsiEsc.RESET} Could not find available port after checking 100 ports from {start_port}",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -82,17 +84,17 @@ def wait_for_service(url: str, timeout: int, service_name: str) -> None:
             elapsed = time.time() - start_time
             if elapsed >= timeout:
                 print(
-                    f"\r  {RED}✗{RESET} {service_name} failed to start within {timeout}s        ",
+                    f"\r  {AnsiEsc.RED}✗{AnsiEsc.RESET} {service_name} failed to start within {timeout}s        ",
                     file=sys.stderr,
                 )
-                print(f"{DIM}Check {LOGFILE} for details{RESET}", file=sys.stderr)
+                print(f"{AnsiEsc.DIM}Check {LOGFILE} for details{AnsiEsc.RESET}", file=sys.stderr)
                 sys.exit(1)
             time.sleep(0.5)
 
 
 def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
     """Start the backend server."""
-    print(f"{DIM}  ▸ Starting backend...{RESET}", end="", flush=True)
+    print(f"{AnsiEsc.DIM}  ▸ Starting backend...{AnsiEsc.RESET}", end="", flush=True)
 
     cmd = [
         "uv",
@@ -117,29 +119,14 @@ def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
 
     # Wait for backend to be healthy
     wait_for_service(f"http://localhost:{port}", STARTUP_TIMEOUT_SECONDS, "Backend")
-    print(f"\r  {GREEN}✓{RESET} Backend started (port {port})        ")
+    print(f"\r  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} Backend started (port {port})        ")
 
     return process
 
 
-def install_frontend_deps() -> None:
-    """Install frontend dependencies."""
-    print(f"{DIM}  ▸ Installing frontend dependencies...{RESET}", end="", flush=True)
-
-    frontend_dir = APP_DIR / "frontend"
-    result = subprocess.run(["npm", "ci"], cwd=frontend_dir, capture_output=True, text=True)
-
-    if result.returncode != 0:
-        print(result.stderr)
-        print(result.stdout)
-        raise subprocess.CalledProcessError(result.returncode, ["npm", "ci"], result.stderr)
-    
-    print(f"\r  {GREEN}✓{RESET} Frontend dependencies installed        ")
-
-
 def start_frontend(port: int, backend_port: int, logfile: TextIO) -> subprocess.Popen[str]:
     """Start the frontend server."""
-    print(f"{DIM}  ▸ Starting frontend...{RESET}", end="", flush=True)
+    print(f"{AnsiEsc.DIM}  ▸ Starting frontend...{AnsiEsc.RESET}", end="", flush=True)
 
     frontend_dir = APP_DIR / "frontend"
     env = os.environ.copy()
@@ -160,7 +147,7 @@ def start_frontend(port: int, backend_port: int, logfile: TextIO) -> subprocess.
 
     # Wait for frontend to be healthy
     wait_for_service(f"http://localhost:{port}", STARTUP_TIMEOUT_SECONDS, "Frontend")
-    print(f"\r  {GREEN}✓{RESET} Frontend started (port {port})        ")
+    print(f"\r  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} Frontend started (port {port})        ")
 
     return process
 
@@ -205,19 +192,20 @@ def main():
     atexit.register(cleanup)
     signal.signal(signal.SIGINT, exit)
     signal.signal(signal.SIGTERM, exit)
+    print(f"{AnsiEsc.DIM}logfile: {LOGFILE}{AnsiEsc.RESET}")
 
     # Find available ports
-    print(f"{DIM}Finding available ports...{RESET}")
+    print(f"{AnsiEsc.DIM}Finding available ports...{AnsiEsc.RESET}")
     backend_port = find_available_port(start_port=8000)
     frontend_port = find_available_port(start_port=5173)
 
-    print(f"{DIM}  Backend port: {backend_port}{RESET}")
-    print(f"{DIM}  Frontend port: {frontend_port}{RESET}")
+    print(f"{AnsiEsc.DIM}  Backend port: {backend_port}{AnsiEsc.RESET}")
+    print(f"{AnsiEsc.DIM}  Frontend port: {frontend_port}{AnsiEsc.RESET}")
     print()
 
     # Fancy header
-    print(f"{BOLD}🚀 Starting development servers{RESET}")
-    print(f"{DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
+    print(f"{AnsiEsc.BOLD}🚀 Starting development servers{AnsiEsc.RESET}")
+    print(f"{AnsiEsc.DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{AnsiEsc.RESET}")
 
     # Start services
     logfile.write(f"Backend started (port {backend_port})\n")
@@ -225,33 +213,40 @@ def main():
 
     backend_process = start_backend(backend_port, logfile)
     logfile.write(f"Backend started (pid {backend_process.pid})\n")
-    install_frontend_deps()
+
     frontend_process = start_frontend(frontend_port, backend_port, logfile)
     logfile.write(f"Frontend started (pid {frontend_process.pid})\n")
 
-    print(f"{DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
+    print(f"{AnsiEsc.DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{AnsiEsc.RESET}")
 
     # Success message
     print()
-    print(f"{GREEN}{BOLD}✓ Ready!{RESET}")
+    print(f"{AnsiEsc.GREEN}{AnsiEsc.BOLD}✓ Ready!{AnsiEsc.RESET}")
     print()
-    print(f"{DIM}Backend   http://localhost:{backend_port}/{RESET}")
-    print(f"{BOLD}Frontend  {GREEN}{BOLD}{UNDERLINE}http://localhost:{frontend_port}/{RESET}")
-    print(f"{BOLD}Logfile   {UNDERLINE}{LOGFILE}{RESET}")
+    print(f"{AnsiEsc.DIM}Backend   http://localhost:{backend_port}/{AnsiEsc.RESET}")
+    print(
+        f"{AnsiEsc.BOLD}Frontend  {AnsiEsc.GREEN}{AnsiEsc.BOLD}{AnsiEsc.UNDERLINE}http://localhost:{frontend_port}/{AnsiEsc.RESET}"
+    )
     print()
-    print(f"{DIM}  Press Ctrl+C to stop{RESET}")
+    print(f"{AnsiEsc.DIM}  Press Ctrl+C to stop{AnsiEsc.RESET}")
 
     # Wait indefinitely - cleanup will be handled by atexit/signal handlers
     try:
         while True:
             # Check if processes are still alive
             if backend_process.poll() is not None:
-                print(f"\n{RED}✗{RESET} Backend process died unexpectedly", file=sys.stderr)
-                print(f"{DIM}Check {LOGFILE} for details{RESET}", file=sys.stderr)
+                print(
+                    f"\n{AnsiEsc.RED}✗{AnsiEsc.RESET} Backend process died unexpectedly",
+                    file=sys.stderr,
+                )
+                print(f"{AnsiEsc.DIM}Check {LOGFILE} for details{AnsiEsc.RESET}", file=sys.stderr)
                 sys.exit(1)
             if frontend_process.poll() is not None:
-                print(f"\n{RED}✗{RESET} Frontend process died unexpectedly", file=sys.stderr)
-                print(f"{DIM}Check {LOGFILE} for details{RESET}", file=sys.stderr)
+                print(
+                    f"\n{AnsiEsc.RED}✗{AnsiEsc.RESET} Frontend process died unexpectedly",
+                    file=sys.stderr,
+                )
+                print(f"{AnsiEsc.DIM}Check {LOGFILE} for details{AnsiEsc.RESET}", file=sys.stderr)
                 sys.exit(1)
             time.sleep(1)
     except KeyboardInterrupt:

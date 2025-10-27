@@ -6,9 +6,9 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from spd.app.backend.lib.activation_contexts import get_subcomponents_activation_contexts
-from spd.app.backend.schemas import ModelActivationContexts, Status
-from spd.app.backend.services.run_context_service import RunContextService
+from app.backend.lib.activation_contexts import get_subcomponents_activation_contexts
+from app.backend.schemas import ModelActivationContexts, Status
+from app.backend.services.run_context_service import RunContextService
 
 run_context_service = RunContextService()
 
@@ -29,11 +29,11 @@ def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMi
 
 app = FastAPI(debug=True)
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],  # Don't host me publicly lol
+    # extremely permissive CORS policy for now as we're only running locally
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
