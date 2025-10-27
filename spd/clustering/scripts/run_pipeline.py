@@ -28,6 +28,7 @@ import wandb_workspaces.workspaces as ws
 from pydantic import Field, PositiveInt, field_validator, model_validator
 
 from spd.base_config import BaseConfig
+from spd.clustering.batched_activations import precompute_batches_for_ensemble
 from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.consts import DistancesMethod
 from spd.clustering.storage import StorageBase
@@ -151,6 +152,7 @@ def create_clustering_workspace_view(ensemble_id: str, project: str, entity: str
 def generate_clustering_commands(
     pipeline_config: ClusteringPipelineConfig,
     pipeline_run_id: str,
+    batches_base_dir: Path | None = None,
     dataset_streaming: bool = False,
 ) -> list[str]:
     """Generate commands for each clustering run.
@@ -158,6 +160,7 @@ def generate_clustering_commands(
     Args:
         pipeline_config: Pipeline configuration
         pipeline_run_id: Pipeline run ID (each run will create its own ExecutionStamp)
+        batches_base_dir: Path to precomputed batches directory, or None for single-batch mode
         dataset_streaming: Whether to use dataset streaming
 
     Returns:
@@ -180,6 +183,12 @@ def generate_clustering_commands(
             "--wandb-entity",
             pipeline_config.wandb_entity,
         ]
+
+        # Add precomputed batches path if available
+        if batches_base_dir is not None:
+            run_batch_dir = batches_base_dir / f"run_{idx}"
+            cmd_parts.extend(["--precomputed-activations-dir", str(run_batch_dir)])
+
         if dataset_streaming:
             cmd_parts.append("--dataset-streaming")
 
@@ -268,10 +277,21 @@ def main(
         )
         logger.info(f"WandB workspace: {workspace_url}")
 
+    # Precompute batches if multi-batch mode
+    clustering_run_config = ClusteringRunConfig.from_file(
+        pipeline_config.clustering_run_config_path
+    )
+    batches_base_dir = precompute_batches_for_ensemble(
+        clustering_run_config=clustering_run_config,
+        n_runs=pipeline_config.n_runs,
+        output_dir=storage.base_dir,
+    )
+
     # Generate commands for clustering runs
     clustering_commands = generate_clustering_commands(
         pipeline_config=pipeline_config,
         pipeline_run_id=pipeline_run_id,
+        batches_base_dir=batches_base_dir,
         dataset_streaming=dataset_streaming,
     )
 

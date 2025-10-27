@@ -72,10 +72,9 @@ class MergeConfig(BaseConfig):
         default=None,
         description="Filter for module names. Can be a string prefix, a set of names, or a callable that returns True for modules to include.",
     )
-    # TODO: unsure of this var name
     recompute_costs_every: PositiveInt = Field(
-        default=10,
-        description="How often to recompute the full cost matrix, replacing NaN values of merged components with their true value. Higher values mean less accurate merges but faster computation.",
+        default=1,
+        description="Number of merges before recomputing costs with new batch. Set to 1 for original behavior.",
     )
     batch_size: PositiveInt = Field(
         default=64,

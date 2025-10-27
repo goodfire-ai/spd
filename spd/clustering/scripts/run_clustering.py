@@ -31,6 +31,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
+from spd.clustering.batched_activations import ActivationBatch, BatchedActivations
 from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.consts import (
     ActivationsTensor,
@@ -258,25 +259,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
     spd_run = SPDRunInfo.from_path(run_config.model_path)
     task_name: TaskName = spd_run.config.task_config.task_name
 
-    # 1. Load dataset
-    logger.info(f"Loading dataset (seed={run_config.dataset_seed})")
-    load_dataset_kwargs: dict[str, Any] = dict()
-    if run_config.dataset_streaming:
-        logger.info("Using streaming dataset loading")
-        load_dataset_kwargs["config_kwargs"] = dict(streaming=True)
-        assert task_name == "lm", (
-            f"Streaming dataset loading only supported for 'lm' task, got '{task_name = }'. Remove dataset_streaming=True from config or use a different task."
-        )
-    batch: BatchTensor = load_dataset(
-        model_path=run_config.model_path,
-        task_name=task_name,
-        batch_size=run_config.batch_size,
-        seed=run_config.dataset_seed,
-        **load_dataset_kwargs,
-    )
-    batch = batch.to(device)
-
-    # 2. Setup WandB for this run
+    # Setup WandB for this run
     wandb_run: Run | None = None
     if run_config.wandb_project is not None:
         wandb_run = wandb.init(
@@ -293,58 +276,104 @@ def main(run_config: ClusteringRunConfig) -> Path:
                 f"assigned_idx:{assigned_idx}",
             ],
         )
-        # logger.info(f"WandB run: {wandb_run.url}")
 
-    # 3. Load model
-    logger.info("Loading model")
-    model = ComponentModel.from_run_info(spd_run).to(device)
+    # Load or compute activations
+    # =====================================
+    batched_activations: BatchedActivations
+    component_labels: ComponentLabels
 
-    # 4. Compute activations
-    logger.info("Computing activations")
-    activations_dict: (
-        dict[str, Float[Tensor, "batch seq C"]] | dict[str, Float[Tensor, "batch C"]]
-    ) = component_activations(
-        model=model,
-        batch=batch,
-        device=device,
-    )
+    if run_config.precomputed_activations_dir is not None:
+        # Case 1: Use precomputed batches from disk
+        logger.info(f"Loading precomputed batches from {run_config.precomputed_activations_dir}")
+        batched_activations = BatchedActivations(run_config.precomputed_activations_dir)
 
-    # 5. Process activations
-    logger.info("Processing activations")
-    processed_activations: ProcessedActivations = process_activations(
-        activations=activations_dict,
-        filter_dead_threshold=run_config.merge_config.filter_dead_threshold,
-        seq_mode="concat" if task_name == "lm" else None,
-        filter_modules=run_config.merge_config.filter_modules,
-    )
+        # Get labels from first batch
+        first_batch = batched_activations.get_next_batch()
+        component_labels = ComponentLabels(first_batch.labels)
 
-    # 6. Log activations (if WandB enabled)
-    if wandb_run is not None:
-        logger.info("Plotting activations")
-        plot_activations(
-            processed_activations=processed_activations,
-            save_dir=None,  # Don't save to disk, only WandB
-            n_samples_max=256,
-            wandb_run=wandb_run,
+        logger.info(f"Loaded {batched_activations.n_batches} precomputed batches")
+
+    else:
+        # Case 2: Compute single batch on-the-fly (original behavior)
+        logger.info(f"Computing single batch (seed={run_config.dataset_seed})")
+
+        # Load model
+        logger.info("Loading model")
+        model = ComponentModel.from_run_info(spd_run).to(device)
+
+        # Load data
+        logger.info("Loading dataset")
+        load_dataset_kwargs: dict[str, Any] = dict()
+        if run_config.dataset_streaming:
+            logger.info("Using streaming dataset loading")
+            load_dataset_kwargs["config_kwargs"] = dict(streaming=True)
+            assert task_name == "lm", (
+                f"Streaming dataset loading only supported for 'lm' task, got '{task_name = }'. Remove dataset_streaming=True from config or use a different task."
+            )
+
+        batch: BatchTensor = load_dataset(
+            model_path=run_config.model_path,
+            task_name=task_name,
+            batch_size=run_config.batch_size,
+            seed=run_config.dataset_seed,
+            **load_dataset_kwargs,
+        ).to(device)
+
+        # Compute activations
+        logger.info("Computing activations")
+        activations_dict: (
+            dict[str, Float[Tensor, "batch seq C"]] | dict[str, Float[Tensor, "batch C"]]
+        ) = component_activations(
+            model=model,
+            batch=batch,
+            device=device,
         )
-        wandb_log_tensor(
-            wandb_run,
-            processed_activations.activations,
-            "activations",
-            0,
-            single=True,
+
+        # Process (concat modules, with filtering)
+        logger.info("Processing activations")
+        processed: ProcessedActivations = process_activations(
+            activations=activations_dict,
+            filter_dead_threshold=run_config.merge_config.filter_dead_threshold,
+            seq_mode="concat" if task_name == "lm" else None,
+            filter_modules=run_config.merge_config.filter_modules,
         )
 
-    # Clean up memory
-    activations: ActivationsTensor = processed_activations.activations
-    component_labels: ComponentLabels = ComponentLabels(processed_activations.labels.copy())
-    del processed_activations
-    del activations_dict
-    del model
-    del batch
-    gc.collect()
+        # Save as single batch to temp dir
+        temp_batch_dir = storage.base_dir / "temp_batch"
+        temp_batch_dir.mkdir(exist_ok=True)
 
-    # 7. Run merge iteration
+        single_batch = ActivationBatch(
+            activations=processed.activations,
+            labels=list(processed.labels),
+        )
+        single_batch.save(temp_batch_dir / "batch_0.pt")
+
+        batched_activations = BatchedActivations(temp_batch_dir)
+        component_labels = processed.labels
+
+        # Log activations to WandB (if enabled)
+        if wandb_run is not None:
+            logger.info("Plotting activations")
+            plot_activations(
+                processed_activations=processed,
+                save_dir=None,
+                n_samples_max=256,
+                wandb_run=wandb_run,
+            )
+            wandb_log_tensor(
+                wandb_run,
+                processed.activations,
+                "activations",
+                0,
+                single=True,
+            )
+
+        # Clean up memory
+        del model, batch, activations_dict, processed
+        gc.collect()
+
+    # Run merge iteration
+    # =====================================
     logger.info("Starting merging")
     log_callback: LogCallback | None = (
         partial(_log_callback, run=wandb_run, run_config=run_config)
@@ -354,7 +383,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
 
     history: MergeHistory = merge_iteration(
         merge_config=run_config.merge_config,
-        activations=activations,
+        batched_activations=batched_activations,
         component_labels=component_labels,
         log_callback=log_callback,
     )
@@ -412,6 +441,12 @@ def cli() -> None:
         action="store_true",
         help="Whether to use streaming dataset loading (if supported by the dataset)",
     )
+    parser.add_argument(
+        "--precomputed-activations-dir",
+        type=Path,
+        default=None,
+        help="Path to directory containing precomputed activation batches",
+    )
 
     args: argparse.Namespace = parser.parse_args()
 
@@ -431,6 +466,8 @@ def cli() -> None:
         overrides["wandb_project"] = args.wandb_project
     if args.wandb_entity is not None:
         overrides["wandb_entity"] = args.wandb_entity
+    if args.precomputed_activations_dir is not None:
+        overrides["precomputed_activations_dir"] = args.precomputed_activations_dir
 
     run_config = replace_pydantic_model(run_config, overrides)
 
