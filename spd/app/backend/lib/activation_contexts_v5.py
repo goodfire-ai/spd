@@ -1,139 +1,48 @@
-import heapq
+"""V5: V2 without sorting and without nested tqdm."""
+
 from collections import defaultdict
-from collections.abc import Generator, Iterable, Mapping
-from dataclasses import dataclass
 
 import torch
 from jaxtyping import Float, Int
 from tqdm import tqdm
 
-from spd.app.backend.schemas import (
-    ActivationContext,
-    ModelActivationContexts,
-    SubcomponentActivationContexts,
-    TokenDensity,
+from spd.app.backend.lib.activation_contexts_common import (
+    TOPK_EXAMPLES,
+    ActivationsData,
+    SubcomponentExample,
+    _get_importances_by_module,
+    _TopKExamples,
+    roll_batch_size_1_into_x,
 )
 from spd.app.backend.services.run_context_service import TrainRunContext
-from spd.configs import Config
-from spd.log import logger
-from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
 
 
-def get_subcomponents_activation_contexts(
+def get_topk_by_subcomponent_v5(
     run_context: TrainRunContext,
     importance_threshold: float,
     n_batches: int,
     n_tokens_either_side: int,
     batch_size: int,
-    topk_examples: int,
-) -> ModelActivationContexts:
-    logger.info("Getting activation contexts")
-
-    activations_data = get_topk_by_subcomponent(
-        run_context,
-        importance_threshold,
-        n_batches,
-        n_tokens_either_side,
-        batch_size,
-        topk_examples,
-        str(run_context.cm.device),
-    )
-
-    return map_to_model_ctxs(run_context, activations_data)
-
-
-@dataclass
-class SubcomponentExample:
-    window_token_ids: list[int]
-    """Windowed tokens around the firing position"""
-    pos: int
-    """Absolute position within the original sequence"""
-    active_pos_in_window: int
-    """Position within window_token_ids corresponding to pos"""
-    token_ci_values: list[float]
-    """CI values aligned to window_token_ids"""
-    last_tok_importance: float
-    """CI value at the firing position"""
-
-
-class _TopKExamples:
-    def __init__(self, k: int):
-        self.k = k
-        # Min-heap of tuples (importance, counter, example)
-        self.heap: list[tuple[float, int, SubcomponentExample]] = []
-        self._counter: int = 0
-
-    def maybe_add(self, example: SubcomponentExample) -> None:
-        key = (example.last_tok_importance, self._counter, example)
-        self._counter += 1
-        if len(self.heap) < self.k:
-            heapq.heappush(self.heap, key)
-            return
-        # Heap full: replace min if better
-        if self.heap[0][0] < example.last_tok_importance:
-            heapq.heapreplace(self.heap, key)
-
-    def to_sorted_list_desc(self) -> list[SubcomponentExample]:
-        # Return examples sorted by importance descending
-        return [ex for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)]
-
-
-def roll_batch_size_1_into_x(
-    singleton_batches: Iterable[torch.Tensor],
-    batch_size: int,
-) -> Generator[torch.Tensor]:
-    examples = []
-    for batch in singleton_batches:
-        assert batch.shape[0] == 1, "Batch size must be 1"
-        examples.append(batch[0])
-        if len(examples) == batch_size:
-            yield torch.stack(examples)
-            examples = []
-    if examples:
-        yield torch.stack(examples)
-
-
-@dataclass
-class ActivationsData:
-    examples: Mapping[str, Mapping[int, _TopKExamples]]
-    component_token_densities: dict[str, dict[int, list[tuple[str, float]]]]
-    component_mean_cis: dict[str, Float[torch.Tensor, " C"]]
-
-
-LayerName = str
-ComponentIndex = int
-TokenId = int
-
-
-def get_topk_by_subcomponent(
-    run_context: TrainRunContext,
-    importance_threshold: float,
-    n_batches: int,
-    n_tokens_either_side: int,
-    batch_size: int,
-    topk_examples: int,
     device: str,
 ) -> ActivationsData:
     # for each (module_name, component_idx), track the top-k activations
-    examples = defaultdict[LayerName, defaultdict[ComponentIndex, _TopKExamples]](
-        lambda: defaultdict(lambda: _TopKExamples(k=topk_examples))
+    examples = defaultdict[str, defaultdict[int, _TopKExamples]](
+        lambda: defaultdict(lambda: _TopKExamples(k=TOPK_EXAMPLES))
     )
 
     # for each (module_name, component_idx):
     # the number of tokens seen
-    component_activation_counts = defaultdict[LayerName, dict[ComponentIndex, int]](
-        lambda: defaultdict(int)
-    )
+    component_activation_counts = defaultdict[str, defaultdict[int, int]](lambda: defaultdict(int))
     # and the number of activations for each token
-    component_activation_tokens = defaultdict[LayerName, dict[ComponentIndex, dict[TokenId, int]]](
+    component_activation_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
         lambda: defaultdict(lambda: defaultdict(int))
     )
 
     C = run_context.cm.C
 
     n_toks_seen = 0
-    component_sum_cis = defaultdict[LayerName, Float[torch.Tensor, " C"]](
+    component_sum_cis = defaultdict[str, Float[torch.Tensor, " C"]](
         lambda: torch.zeros(C, device=device, dtype=torch.float)
     )
 
@@ -244,7 +153,7 @@ def get_topk_by_subcomponent(
         for module_name in component_sum_cis
     }
 
-    component_token_densities = defaultdict[LayerName, dict[int, list[tuple[str, float]]]](dict)
+    component_token_densities = defaultdict[str, dict[int, list[tuple[str, float]]]](dict)
     for module_name, tokens_by_components in component_activation_tokens.items():
         for component_idx, component_token_acts in tokens_by_components.items():
             component_densities: list[tuple[str, float]] = []
@@ -263,68 +172,3 @@ def get_topk_by_subcomponent(
         component_token_densities=component_token_densities,
         component_mean_cis=component_mean_cis,
     )
-
-
-def _get_importances_by_module(
-    cm: ComponentModel, batch: torch.Tensor, config: Config
-) -> dict[str, Float[torch.Tensor, "B S C"]]:
-    """returns a dictionary of module names to causal importances, where the shape is (B, S, C)"""
-
-    with torch.no_grad():
-        pre_weight_acts = cm(
-            batch,
-            cache_type="input",
-            module_names=list(cm.components.keys()),
-        ).cache
-        importances_by_module = cm.calc_causal_importances(
-            pre_weight_acts=pre_weight_acts,
-            detach_inputs=True,
-            sampling=config.sampling,
-        ).lower_leaky
-    return importances_by_module
-
-
-def map_to_model_ctxs(
-    run_context: TrainRunContext, activations_data: ActivationsData
-) -> ModelActivationContexts:
-    model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
-
-    for module_name, module_examples_by_component in activations_data.examples.items():
-        module_subcomponent_ctxs = []
-        module_mean_cis = activations_data.component_mean_cis[module_name]
-
-        for subcomponent_idx, subcomponent_examples in module_examples_by_component.items():
-            activation_contexts = []
-            for example in subcomponent_examples.to_sorted_list_desc():
-                activation_context = ActivationContext(
-                    token_strings=run_context.tokenizer.convert_ids_to_tokens(  # pyright: ignore[reportAttributeAccessIssue]
-                        example.window_token_ids
-                    ),
-                    token_ci_values=example.token_ci_values,
-                    active_position=example.active_pos_in_window,
-                    ci_value=example.last_tok_importance,
-                )
-                activation_contexts.append(activation_context)
-
-            token_densities = [
-                TokenDensity(token=token, density=density)
-                for token, density in activations_data.component_token_densities[module_name][
-                    subcomponent_idx
-                ]
-            ]
-
-            mean_ci = float(module_mean_cis[subcomponent_idx].item())
-
-            subcomponent_ctx = SubcomponentActivationContexts(
-                subcomponent_idx=subcomponent_idx,
-                examples=activation_contexts,
-                token_densities=token_densities,
-                mean_ci=mean_ci,
-            )
-
-            module_subcomponent_ctxs.append(subcomponent_ctx)
-
-        module_subcomponent_ctxs.sort(key=lambda x: x.mean_ci, reverse=True)
-        model_ctxs[module_name] = module_subcomponent_ctxs
-
-    return ModelActivationContexts(layers=model_ctxs)

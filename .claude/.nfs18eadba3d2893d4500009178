@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source:*)",
+      "Bash(python -m pytest tests/test_identity_insertion.py -v)",
+      "Bash(tree:*)",
+      "Bash(npm create:*)",
+      "Bash(cp:*)",
+      "Bash(npm install)",
+      "Bash(npm run build:*)",
+      "Bash(grep:*)",
+      "Bash(git worktree:*)",
+      "Bash(git log:*)",
+      "Bash(rm:*)",
+      "Bash(netstat:*)",
+      "Bash(python:*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "ast-grep"
+  ]
+}
