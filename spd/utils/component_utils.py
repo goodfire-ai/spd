@@ -84,8 +84,6 @@ uniform_k-stochastic:
     `n_modules` modules
 all:
     use components for all positions
-given:
-    use the given routing masks
 """
 
 
@@ -131,12 +129,18 @@ def calc_stochastic_component_mask_info(
                 torch.rand(leading_dims, device=device, dtype=dtype),
             )
 
+    match routing:
+        case "all":
+            routing_masks = "all"
+        case "uniform_k-stochastic":
+            routing_masks = sample_uniform_k_subset_routing_masks(
+                mask_shape=leading_dims, module_names=list(causal_importances.keys()), device=device
+            )
+
     return make_mask_infos(
         component_masks=component_masks,
         weight_deltas_and_masks=weight_deltas_and_masks,
-        routing_masks=calc_routing_masks(
-            routing, leading_dims, list(causal_importances.keys()), device
-        ),
+        routing_masks=routing_masks,
     )
 
 

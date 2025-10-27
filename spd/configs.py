@@ -202,7 +202,7 @@ MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
 TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
-SamplingType = Literal["continuous"] | Literal["binomial"]
+SamplingType = Literal["continuous", "binomial"]
 
 
 class Config(BaseConfig):

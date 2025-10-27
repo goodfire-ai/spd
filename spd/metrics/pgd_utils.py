@@ -8,7 +8,10 @@ from torch.distributed import ReduceOp
 from spd.configs import PGDConfig, PGDInitStrategy
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
-from spd.utils.component_utils import RoutingType, calc_routing_masks
+from spd.utils.component_utils import (
+    RoutingType,
+    sample_uniform_k_subset_routing_masks,
+)
 from spd.utils.distributed_utils import all_reduce, gather_all_tensors, sync_across_processes
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
@@ -29,12 +32,15 @@ def pgd_masked_recon_loss_update(
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
     """
 
-    routing_masks = calc_routing_masks(
-        routing,
-        leading_dims=next(iter(ci.values())).shape[:-1],
-        module_names=list(ci.keys()),
-        device=batch.device,
-    )
+    match routing:
+        case "all":
+            routing_masks = "all"
+        case "uniform_k-stochastic":
+            routing_masks = sample_uniform_k_subset_routing_masks(
+                mask_shape=next(iter(ci.values())).shape[:-1],
+                module_names=list(ci.keys()),
+                device=batch.device,
+            )
 
     *batch_dims, C = next(iter(ci.values())).shape
     n_layers = len(ci)
@@ -94,9 +100,7 @@ def pgd_masked_recon_loss_update(
             adv_sources.clamp_(0.0, 1.0)
             assert_same_across_ranks(adv_sources)
 
-    adv_sources.detach_()
     assert not adv_sources.requires_grad
-
     total_loss, n_examples = objective_fn(adv_sources=adv_sources.expand(n_layers, *batch_dims, C2))
 
     # no need to all-reduce total_loss or n_examples bc consumers handle this
