@@ -1,11 +1,12 @@
 """Plotting functions for causal importance decision trees."""
 
+from collections.abc import Mapping
 from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Bool, Float, Int
 from sklearn.tree import plot_tree
 
 from spd.clustering.ci_dt.core import LayerModel, MetricKey, get_estimator_for
@@ -163,14 +164,13 @@ def greedy_sort(A: np.ndarray, axis: int) -> np.ndarray:
         Array of indices in sorted order
     """
     # Transpose if sorting columns
-    if axis == 1:
-        A = A.T
+    activations_normalized: Float[np.ndarray, "n d"] = A.T if axis == 1 else A
 
     # Compute cosine similarity
-    norms: Float[np.ndarray, "n 1"] = np.linalg.norm(A, axis=1, keepdims=True)
+    norms: Float[np.ndarray, "n 1"] = np.linalg.norm(activations_normalized, axis=1, keepdims=True)
     norms = np.where(norms > 1e-8, norms, 1.0)  # Avoid division by zero
-    A_normalized: Float[np.ndarray, "n d"] = A / norms
-    similarity: Float[np.ndarray, "n n"] = A_normalized @ A_normalized.T
+    activations_normalized = activations_normalized / norms
+    similarity: Float[np.ndarray, "n n"] = activations_normalized @ activations_normalized.T
 
     # Start from most central item (highest average similarity)
     n: int = similarity.shape[0]
@@ -298,6 +298,7 @@ def plot_activations(
     # Determine number of subplots
     n_plots: int = 3 if sample_order is not None else 2
     fig, axes = plt.subplots(n_plots, 1, figsize=(12, 6 * n_plots))
+    ax3: plt.Axes | None = None
     if n_plots == 2:
         ax1, ax2 = axes
     else:
@@ -361,18 +362,20 @@ def plot_covariance(
     )
 
     # Apply component ordering if provided
+    activations_concat: Float[np.ndarray, "n_samples n_components"]
     if component_order is not None:
-        A = A[:, component_order]
+        activations_concat = A[:, component_order]
         sorted_label: str = " (Sorted by Component Similarity)"
         xlabel: str = "Component index (sorted)"
         ylabel: str = "Component index (sorted)"
     else:
+        activations_concat = A
         sorted_label = ""
         xlabel = "Component index"
         ylabel = "Component index"
 
     # Compute covariance
-    C: Float[np.ndarray, "n_components n_components"] = np.cov(A, rowvar=False)
+    C: Float[np.ndarray, "n_components n_components"] = np.cov(activations_concat, rowvar=False)
 
     # Center colormap on 0
     vmax: float = float(np.abs(C).max())
@@ -501,7 +504,7 @@ def plot_ap_vs_prevalence(per_layer_stats: list[dict[str, Any]], models: list[La
 
 
 def plot_component_activity_breakdown(
-    component_acts: dict[str, np.ndarray | torch.Tensor],
+    component_acts: Mapping[str, np.ndarray | torch.Tensor],
     module_keys: list[str],
     activation_threshold: float,
     logy: bool = False,
@@ -521,23 +524,26 @@ def plot_component_activity_breakdown(
     n_always_alive_list: list[int] = []
 
     for module_key in module_keys:
-        acts: np.ndarray = component_acts[module_key]
+        acts_raw: np.ndarray | torch.Tensor = component_acts[module_key]
         # Convert to numpy if needed
-        if hasattr(acts, "cpu"):
-            acts = acts.cpu().numpy()
+        acts_np: Float[np.ndarray, "n_samples n_components"] = (
+            acts_raw.cpu().numpy() if isinstance(acts_raw, torch.Tensor) else acts_raw
+        )
 
         # Flatten if 3D (batch, seq_len, n_components) -> (batch*seq_len, n_components)
         # This treats each token position as a separate sample, consistent with decision tree training
-        if acts.ndim == 3:
-            acts = acts.reshape(-1, acts.shape[-1])
+        if acts_np.ndim == 3:
+            acts_np = acts_np.reshape(-1, acts_np.shape[-1])
 
         # Convert to boolean
-        acts_bool: np.ndarray = (acts >= activation_threshold).astype(bool)
+        acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
+            acts_np >= activation_threshold
+        ).astype(bool)
 
         # Count each category
-        always_dead: np.ndarray = ~acts_bool.any(axis=0)
-        always_alive: np.ndarray = acts_bool.all(axis=0)
-        varying: np.ndarray = ~(always_dead | always_alive)
+        always_dead: Bool[np.ndarray, " n_components"] = ~acts_bool.any(axis=0)
+        always_alive: Bool[np.ndarray, " n_components"] = acts_bool.all(axis=0)
+        varying: Bool[np.ndarray, " n_components"] = ~(always_dead | always_alive)
 
         n_always_dead_list.append(int(always_dead.sum()))
         n_always_alive_list.append(int(always_alive.sum()))
@@ -698,9 +704,9 @@ def plot_tree_statistics(models: list[LayerModel], per_layer_stats: list[dict[st
     ax4.set_ylabel("Accuracy")
     for i in range(len(depth_bins) - 1):
         for j in range(len(acc_bins) - 1):
-            count: int = int(heatmap_depth_acc[i, j])
-            if count > 0:
-                ax4.text(i, j, str(count), ha="center", va="center")
+            tree_count: int = int(heatmap_depth_acc[i, j])
+            if tree_count > 0:
+                ax4.text(i, j, str(tree_count), ha="center", va="center")
     plt.colorbar(im, ax=ax4, label="log10(count+1)")
 
     # Heatmap: leaf count vs accuracy
@@ -723,9 +729,9 @@ def plot_tree_statistics(models: list[LayerModel], per_layer_stats: list[dict[st
     ax5.set_ylabel("Accuracy")
     for i in range(len(leaf_bins) - 1):
         for j in range(len(acc_bins) - 1):
-            count: int = int(heatmap_leaf_acc[i, j])
-            if count > 0:
-                ax5.text(i, j, str(count), ha="center", va="center")
+            tree_count: int = int(heatmap_leaf_acc[i, j])
+            if tree_count > 0:
+                ax5.text(i, j, str(tree_count), ha="center", va="center")
     plt.colorbar(im, ax=ax5, label="log10(count+1)")
 
     # Heatmap: depth vs leaf count

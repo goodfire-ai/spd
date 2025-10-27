@@ -18,7 +18,7 @@ from spd.models.component_model import ComponentModel
 def compute_activations_multibatch(
     model: ComponentModel,
     device: torch.device | str,
-    dataloader: DataLoader,
+    dataloader: DataLoader[dict[str, Any]],
     n_batches: int,
 ) -> dict[str, Tensor]:
     """Compute activations over multiple batches, concatenate on CPU.
@@ -100,12 +100,10 @@ def convert_to_boolean_layers(
 
         # Flatten if 3D (batch, seq_len, n_components) -> (batch*seq_len, n_components)
         if module_acts_tensor.ndim == 3:
-            print(f"  {module_key}: original shape = {module_acts_tensor.shape}")
             # Keep last dimension (n_components) intact, flatten first two dimensions
             module_acts_np: Float[np.ndarray, "n_samples n_components"] = (
                 module_acts_tensor.reshape(-1, module_acts_tensor.shape[-1]).numpy()
             )
-            print(f"  {module_key}: flattened shape = {module_acts_np.shape}")
         else:
             module_acts_np = module_acts_tensor.numpy()
 
