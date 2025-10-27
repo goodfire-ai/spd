@@ -72,9 +72,9 @@ class MergeConfig(BaseConfig):
         default=None,
         description="Filter for module names. Can be a string prefix, a set of names, or a callable that returns True for modules to include.",
     )
-    recompute_costs_every: PositiveInt = Field(
-        default=1,
-        description="Number of merges before recomputing costs with new batch. Set to 1 for original behavior.",
+    recompute_costs_every: PositiveInt | None = Field(
+        default=None,
+        description="Number of merges before recomputing costs with new batch. Set to `None` to use a single batch throughout.",
     )
     batch_size: PositiveInt = Field(
         default=64,

@@ -117,8 +117,8 @@ def precompute_batches_for_ensemble(
     """
     # Check if multi-batch mode
     recompute_every = clustering_run_config.merge_config.recompute_costs_every
-    if recompute_every == 1:
-        logger.info("Single-batch mode (recompute_costs_every=1), skipping precomputation")
+    if recompute_every is None:
+        logger.info("Single-batch mode (recompute_costs_every=`None`), skipping precomputation")
         return None
 
     logger.info("Multi-batch mode detected, precomputing activation batches")
