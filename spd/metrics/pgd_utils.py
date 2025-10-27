@@ -1,4 +1,3 @@
-import uuid
 from typing import Literal
 
 import torch
@@ -10,14 +9,8 @@ from spd.configs import PGDConfig, PGDInitStrategy
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import RoutingType, calc_routing_masks
-from spd.utils.distributed_utils import (
-    all_reduce,
-    call_on_rank0_then_broadcast,
-    gather_all_tensors,
-    get_rank,
-    sync_across_processes,
-)
-from spd.utils.general_utils import calc_sum_recon_loss_lm, zip_dicts
+from spd.utils.distributed_utils import all_reduce, gather_all_tensors, sync_across_processes
+from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
 def pgd_masked_recon_loss_update(
@@ -43,131 +36,70 @@ def pgd_masked_recon_loss_update(
         device=batch.device,
     )
 
+    *batch_dims, C = next(iter(ci.values())).shape
+    n_layers = len(ci)
+    # C2 represents the total number of components including the optional weight delta
+    C2 = C if weight_deltas is None else C + 1
+
     def objective_fn(
-        component_sample_points: dict[str, Float[Tensor, "... C"]],
-        weight_delta_masks: dict[str, Float[Tensor, "..."]] | None,
+        adv_sources: Float[Tensor, "n_layers *batch_dims C2"],
     ) -> tuple[Float[Tensor, ""], int]:
-        match weight_deltas, weight_delta_masks:
-            case None, None:
+        adv_sources_components: Float[Tensor, "n_layers *batch_dims C"]
+        match weight_deltas:
+            case None:
                 weight_deltas_and_masks = None
-            case dict(), dict():
-                weight_deltas_and_masks = zip_dicts(weight_deltas, weight_delta_masks)
-            case _:
-                raise ValueError(
-                    "weight_deltas and weight_delta_mask must exist or not exist together"
-                )
-        rank = get_rank()
-        print(f"{rank} - making mask infos")
+                adv_sources_components = adv_sources
+            case dict():
+                assert adv_sources.shape[-1] == C + 1
+                weight_deltas_and_masks = {
+                    k: (weight_deltas[k], adv_sources[i, ..., -1])
+                    for i, k in enumerate(weight_deltas)
+                }
+                adv_sources_components = adv_sources[..., :-1]
+
         mask_infos = make_mask_infos(
-            component_masks=_interpolate_component_mask(ci, component_sample_points),
+            component_masks=_interpolate_component_mask(ci, adv_sources_components),
             weight_deltas_and_masks=weight_deltas_and_masks,
             routing_masks=routing_masks,
         )
-        print(f"{rank} - calling model")
         out = model(batch, mask_infos=mask_infos)
-        print(f"{rank} - calling calc_sum_recon_loss_lm")
         total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
         n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
-        print(f"{rank} - done")
         return total_loss, n_examples
 
-    *batch_dims, C = next(iter(ci.values())).shape
-
-    def maybe_repeat_to_batch_shape(
-        component_sample_points: dict[str, Float[Tensor, "... C"]],
-        weight_delta_mask: dict[str, Float[Tensor, "..."]] | None,
-    ) -> tuple[dict[str, Float[Tensor, "... C"]], dict[str, Float[Tensor, "..."]] | None]:
-        return (
-            {k: v.expand(*batch_dims, -1) for k, v in component_sample_points.items()},
-            {k: v.expand(*batch_dims) for k, v in weight_delta_mask.items()}
-            if weight_delta_mask is not None
-            else None,
-        )
-
+    # We create a single adv_source and index into it for each layer
     match pgd_config.mask_scope:
         case "unique_per_datapoint":
-            ci_mask_shape = torch.Size(batch_dims) + (C,)
-            weight_delta_mask_shape = torch.Size(batch_dims)
+            adv_source_shape = torch.Size([n_layers, *batch_dims, C2])
         case "shared_across_batch":
-            ci_mask_shape = torch.Size(1 for _ in batch_dims) + (C,)
-            weight_delta_mask_shape = torch.Size(1 for _ in batch_dims)
+            adv_source_shape = torch.Size([n_layers] + [1 for _ in batch_dims] + [C2])
 
-    adversarial_component_sample_points: dict[str, Float[Tensor, "... C"]] = {}
-    for layer in ci:
-        source = call_on_rank0_then_broadcast(
-            _get_pgd_init_tensor,
-            pgd_config.init,
-            ci_mask_shape,
-            batch.device,
-        ).requires_grad_(True)
-        assert_same_across_ranks(source)
-        adversarial_component_sample_points[layer] = source
+    adv_sources: Float[Tensor, "n_layers ... C2"] = _get_pgd_init_tensor(
+        pgd_config.init, adv_source_shape, batch.device
+    ).requires_grad_(True)
 
-    adversarial_weight_delta_masks: dict[str, Float[Tensor, " ..."]] | None = None
-    if weight_deltas is not None:
-        adversarial_weight_delta_masks = {}
-        for layer in ci:
-            source = call_on_rank0_then_broadcast(
-                _get_pgd_init_tensor,
-                pgd_config.init,
-                weight_delta_mask_shape,
-                batch.device,
-            ).requires_grad_(True)
-            assert_same_across_ranks(source)
-            adversarial_weight_delta_masks[layer] = source
+    assert_same_across_ranks(adv_sources)  # RNGs should be the same across ranks
 
     # PGD ascent
-    adv_sources = list(adversarial_component_sample_points.values())
-    if adversarial_weight_delta_masks is not None:
-        adv_sources.extend(list(adversarial_weight_delta_masks.values()))
-
-    for i in range(int(pgd_config.n_steps)):
-        assert all(v.requires_grad for v in adv_sources)
-        assert all(v.grad is None for v in adv_sources)
+    for _ in range(int(pgd_config.n_steps)):
+        assert adv_sources.grad is None
 
         with torch.enable_grad():
-            total_loss, _ = objective_fn(  # n_examples doesn't matter bc we're doing sign ascent
-                *maybe_repeat_to_batch_shape(
-                    adversarial_component_sample_points, adversarial_weight_delta_masks
-                )
-            )
-            grads = torch.autograd.grad(total_loss, adv_sources)
+            total_loss, _ = objective_fn(adv_sources=adv_sources.expand(n_layers, *batch_dims, C2))
+            adv_sources_grads = torch.autograd.grad(total_loss, adv_sources)[0]
 
-        reduced_grads = [all_reduce(grad.clone(), op=ReduceOp.SUM) for grad in grads]
-        for grad in reduced_grads:
-            assert_same_across_ranks(grad)
-
+        reduced_adv_sources_grads = all_reduce(adv_sources_grads.clone(), op=ReduceOp.SUM)
         with torch.no_grad():
-            for source, grad in zip(adv_sources, reduced_grads, strict=True):
-                source.add_(pgd_config.step_size * grad.sign())
-                source.clamp_(0.0, 1.0)
-                assert_same_across_ranks(source)
+            adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
+            adv_sources.clamp_(0.0, 1.0)
+            assert_same_across_ranks(adv_sources)
 
-    for source in adv_sources:
-        source.detach_()
+    adv_sources.detach_()
+    assert not adv_sources.requires_grad
 
-    adversarial_component_sample_points, adversarial_weight_delta_masks = (
-        maybe_repeat_to_batch_shape(
-            adversarial_component_sample_points, adversarial_weight_delta_masks
-        )
-    )
-
-    for source in adversarial_component_sample_points.values():
-        assert_same_across_ranks(source)
-    if adversarial_weight_delta_masks is not None:
-        for source in adversarial_weight_delta_masks.values():
-            assert_same_across_ranks(source)
-
-    assert all(not v.requires_grad for v in adversarial_component_sample_points.values())
-    if adversarial_weight_delta_masks is not None:
-        assert not any(v.requires_grad for v in adversarial_weight_delta_masks.values())
-
-    total_loss, n_examples = objective_fn(
-        adversarial_component_sample_points, adversarial_weight_delta_masks
-    )
+    total_loss, n_examples = objective_fn(adv_sources=adv_sources.expand(n_layers, *batch_dims, C2))
 
     # no need to all-reduce total_loss or n_examples bc consumers handle this
-
     return total_loss, n_examples
 
 
@@ -186,26 +118,22 @@ def _get_pgd_init_tensor(
 
 
 def _interpolate_component_mask(
-    ci: dict[str, Float[Tensor, "... C"]],
-    component_sample_points: dict[str, Float[Tensor, "... C"]],
-) -> dict[str, Float[Tensor, "... C"]]:
-    component_mask = {}
-    for module_name in ci:
-        assert torch.all(component_sample_points[module_name] <= 1.0)
-
-        scaled_noise_to_add = (1 - ci[module_name]) * component_sample_points[module_name]
-        assert torch.all(scaled_noise_to_add >= 0.0)
-        assert torch.all(scaled_noise_to_add <= 1.0 - ci[module_name])
-
-        component_mask[module_name] = ci[module_name] + scaled_noise_to_add
-        assert torch.all(component_mask[module_name] >= ci[module_name])
-        assert torch.all(component_mask[module_name] <= 1.0)
-    return component_mask
+    ci: dict[str, Float[Tensor, "*batch_dims C"]],
+    component_sample_points: Float[Tensor, "n_layers *batch_dims C"],
+) -> dict[str, Float[Tensor, "*batch_dims C"]]:
+    assert torch.all(component_sample_points <= 1.0) and torch.all(component_sample_points >= 0.0)
+    component_masks: dict[str, Float[Tensor, "*batch_dims C"]] = {}
+    for i, module_name in enumerate(ci):
+        scaled_noise_to_add = (1 - ci[module_name]) * component_sample_points[i]
+        component_masks[module_name] = ci[module_name] + scaled_noise_to_add
+    return component_masks
 
 
 def assert_same_across_ranks(tensor: Tensor) -> None:
     tensors = gather_all_tensors(tensor.clone())
-    for t in tensors:
-        assert t.shape == tensor.shape
-        assert torch.all(t == tensor)
-    sync_across_processes()
+    try:
+        for t in tensors:
+            assert t.shape == tensor.shape
+            assert torch.all(t == tensor)
+    finally:
+        sync_across_processes()
