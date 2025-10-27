@@ -729,9 +729,9 @@ def plot_tree_statistics(models: list[LayerModel], per_layer_stats: list[dict[st
     ax5.set_ylabel("Accuracy")
     for i in range(len(leaf_bins) - 1):
         for j in range(len(acc_bins) - 1):
-            tree_count: int = int(heatmap_leaf_acc[i, j])
-            if tree_count > 0:
-                ax5.text(i, j, str(tree_count), ha="center", va="center")
+            leaf_tree_count: int = int(heatmap_leaf_acc[i, j])
+            if leaf_tree_count > 0:
+                ax5.text(i, j, str(leaf_tree_count), ha="center", va="center")
     plt.colorbar(im, ax=ax5, label="log10(count+1)")
 
     # Heatmap: depth vs leaf count
@@ -751,9 +751,9 @@ def plot_tree_statistics(models: list[LayerModel], per_layer_stats: list[dict[st
     ax6.set_ylabel("Number of leaves")
     for i in range(len(depth_bins) - 1):
         for j in range(len(leaf_bins) - 1):
-            count: int = int(heatmap_depth_leaf[i, j])
-            if count > 0:
-                ax6.text(i, j, str(count), ha="center", va="center")
+            cell_count: int = int(heatmap_depth_leaf[i, j])
+            if cell_count > 0:
+                ax6.text(i, j, str(cell_count), ha="center", va="center")
     plt.colorbar(im, ax=ax6, label="log10(count+1)")
 
     # Heatmap: AP vs prevalence
@@ -807,9 +807,9 @@ def plot_tree_statistics(models: list[LayerModel], per_layer_stats: list[dict[st
     # Add counts to cells
     for i in range(len(prev_bins) - 1):
         for j in range(len(ap_bins_heatmap) - 1):
-            count = int(heatmap_prev_ap[i, j])
-            if count > 0:
-                ax7.text(i, j, str(count), ha="center", va="center", fontsize=8)
+            heatmap_count = int(heatmap_prev_ap[i, j])
+            if heatmap_count > 0:
+                ax7.text(i, j, str(heatmap_count), ha="center", va="center", fontsize=8)
 
     plt.colorbar(im, ax=ax7, label="log10(count+1)")
     fig7.tight_layout()
