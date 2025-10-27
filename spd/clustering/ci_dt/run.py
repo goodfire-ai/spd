@@ -46,7 +46,7 @@ config = CIDTConfig(
     random_state=42,
 )
 device: str = "cuda" if torch.cuda.is_available() else "cpu"
-
+print(f"Using {device=}")
 # %%
 # ----------------------- load model -----------------------
 
