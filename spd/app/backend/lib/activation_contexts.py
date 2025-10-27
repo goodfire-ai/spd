@@ -111,14 +111,6 @@ def get_topk_by_subcomponent(
     batch_size: int,
     device: str,
 ) -> ActivationsData:
-    """
-    Extract top-k activation contexts for each subcomponent.
-
-    This is an optimized version (~17x faster than the original) using:
-    - Vectorized window extraction with padding
-    - Batched GPU→CPU transfers
-    - No unnecessary sorting or nested progress bars
-    """
     # for each (module_name, component_idx), track the top-k activations
     examples = defaultdict[str, defaultdict[int, _TopKExamples]](
         lambda: defaultdict(lambda: _TopKExamples(k=TOPK_EXAMPLES))
@@ -198,17 +190,14 @@ def get_topk_by_subcomponent(
             )
 
             # Broadcast to get all window indices: (K, window_size)
-            window_indices = seq_idx_padded.unsqueeze(1) + window_offsets.unsqueeze(
-                0
-            )  # (K, window_size)
+            window_indices = seq_idx_padded.unsqueeze(1) + window_offsets.unsqueeze(0)
 
             # Extract windows for tokens using advanced indexing
-            # batch_padded[batch_idx, window_indices] - need to expand batch_idx
-            batch_idx_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)  # (K, window_size)
+            batch_idx_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)
             window_token_ids_tensor = batch_padded[batch_idx_expanded, window_indices]
 
             # Extract windows for causal importances
-            comp_idx_expanded = comp_idx.unsqueeze(1).expand(-1, window_size)  # (K, window_size)
+            comp_idx_expanded = comp_idx.unsqueeze(1).expand(-1, window_size)
             window_ci_values_tensor = causal_importances_padded[
                 batch_idx_expanded, window_indices, comp_idx_expanded
             ]
@@ -268,7 +257,6 @@ def get_topk_by_subcomponent(
         component_token_densities=component_token_densities,
         component_mean_cis=component_mean_cis,
     )
-
 
 def _get_importances_by_module(
     cm: ComponentModel, batch: torch.Tensor, config: Config
