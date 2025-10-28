@@ -4,10 +4,17 @@ A lightweight web app for visualizing SPD decomposition results. Built with Svel
 
 ## Quick Start
 
+**installation**
+
+```bash
+make install # install python project dependicies for backend
+make install-app # install frontend dependencies
+```
+
 **Option 1: All-in-one launcher (recommended)**
 
 ```bash
-uv run app/run_app.py
+make app
 ```
 
 This automatically starts both backend and frontend with health checks and port detection.
@@ -15,16 +22,13 @@ This automatically starts both backend and frontend with health checks and port 
 **Option 2: Manual startup**
 
 ```bash
-# Terminal 1: Start backend
-uv run app/run_backend.py
+# in one terminal (backend)
+uv run app/backend/server.py
 
-# Terminal 2: Start frontend
+# in another terminal (frontend)
 cd app/frontend
-npm install
 npm run dev
 ```
-
-Then open http://localhost:5173 in your browser.
 
 ## For ML Engineers/Researchers: Web Dev Basics
 
@@ -44,6 +48,8 @@ Then open http://localhost:5173 in your browser.
 npm install          # Install dependencies (like pip install -r requirements.txt)
 npm run dev          # Start development server
 npm run check        # Type check (like mypy or basedpyright)
+npm run lint         # Check code for errors/style issues with ESLint (like ruff lint)
+npm run format       # Auto-format code with Prettier (like ruff format)
 ```
 
 ### Svelte 5
@@ -61,22 +67,26 @@ npm run check        # Type check (like mypy or basedpyright)
 
 ### Data Flow (End-to-End Example)
 
-Let's trace how loading a W&B run works:
+As an example, let's trace how loading a W&B run works:
 
-1. **User Input** ([App.svelte:61-76](frontend/src/App.svelte#L61-L76))
+1. **User Input** ([App.svelte](frontend/src/App.svelte))
 
    - User enters W&B run path in input field
    - Clicks "Load Run" button
    - `loadRun()` function is called
-
-2. **Frontend API Call** ([api.ts](frontend/src/lib/api.ts))
+2. **Frontend API Call** ([api.ts:16-25](frontend/src/lib/api.ts))
 
    ```typescript
    export async function loadRun(wandbRunPath: string): Promise<void> {
-     const response = await fetch(`${API_URL}/runs/load`, {
-       method: "POST",
-       body: JSON.stringify({ wandb_run_path: wandbRunPath }),
-     });
+     const url = new URL(`${API_URL}/runs/load`);
+     // url-encode the wandb run path because it contains slashes
+     const encodedWandbRunPath = encodeURIComponent(wandbRunPath);
+     url.searchParams.set("wandb_run_path", encodedWandbRunPath);
+     const response = await fetch(url.toString(), { method: "POST" });
+     if (!response.ok) {
+       const error = await response.json();
+       throw new Error(error.detail || "Failed to load run");
+     }
    }
    ```
 
@@ -88,14 +98,14 @@ Let's trace how loading a W&B run works:
        run_context_service.load_run(unquote(wandb_run_path))
    ```
 
-4. **Service Layer** ([run_context_service.py](backend/services/run_context_service.py))
+4. **Service Layer** ([run_context_service.py::RunContextService.load_run](backend/services/run_context_service.py))
 
    - Downloads ComponentModel from W&B
    - Loads model onto GPU
    - Creates data loader with tokenizer
    - Stores in `RunContextService` singleton
 
-5. **State Update** ([App.svelte:48-52](frontend/src/App.svelte#L48-L52))
+5. **State Update** ([App.svelte](frontend/src/App.svelte))
 
    - Frontend polls `/status` endpoint every 5s using `$effect` rune
    - Receives updated status with loaded run info
@@ -111,7 +121,7 @@ Let's trace how loading a W&B run works:
    });
    ```
 
-6. **UI Renders** ([App.svelte:79-94](frontend/src/App.svelte#L79-L94))
+6. **UI Renders** ([App.svelte](frontend/src/App.svelte))
    - Sidebar shows config YAML
    - "Activation Contexts" tab becomes available
 

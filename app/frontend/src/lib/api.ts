@@ -15,6 +15,7 @@ export async function getStatus(): Promise<Status> {
 
 export async function loadRun(wandbRunPath: string): Promise<void> {
     const url = new URL(`${API_URL}/runs/load`);
+    // url-encode the wandb run path because it contains slashes
     const encodedWandbRunPath = encodeURIComponent(wandbRunPath);
     url.searchParams.set("wandb_run_path", encodedWandbRunPath);
     const response = await fetch(url.toString(), { method: "POST" });

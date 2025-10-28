@@ -48,6 +48,7 @@
     $effect(() => {
         loadStatus();
         const interval = setInterval(loadStatus, 5000);
+        // return cleanup function to stop the polling
         return () => clearInterval(interval);
     });
 
