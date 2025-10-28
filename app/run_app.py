@@ -22,6 +22,8 @@ from shutil import which
 from types import FrameType
 from typing import TextIO
 
+import requests
+
 
 class AnsiEsc(StrEnum):
     GREEN = "\033[0;32m"
@@ -107,6 +109,20 @@ def _spawn(
         sys.exit(1)
 
 
+def wait_to_serve(port: int) -> None:
+    for _ in range(10):
+        try:
+            response = requests.get(f"http://localhost:{port}")
+            if response.status_code == 200:
+                break
+        except requests.RequestException:
+            pass
+        time.sleep(1)
+    else:
+        print(f"{AnsiEsc.RED}✗{AnsiEsc.RESET} Healthcheck failed", file=sys.stderr)
+        sys.exit(1)
+
+
 def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
     print(f"{AnsiEsc.DIM}  ▸ Starting backend...{AnsiEsc.RESET}", end="", flush=True)
     project_root = APP_DIR.parent.parent
@@ -115,6 +131,7 @@ def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
     print(
         f"\r  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} Backend started (pid {proc.pid}, port {port})        "
     )
+    wait_to_serve(port)
     return proc
 
 
@@ -128,6 +145,7 @@ def start_frontend(port: int, backend_port: int, logfile: TextIO) -> subprocess.
     print(
         f"\r  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} Frontend started (pid {proc.pid}, port {port})        "
     )
+    wait_to_serve(port)
     return proc
 
 
