@@ -48,23 +48,6 @@
             <option value={layer}>{layer}</option>
         {/each}
     </select>
-
-    <div class="metric-toggle">
-        <label>Token Metric:</label>
-        <div class="toggle-buttons">
-            <button class:active={metricMode === "recall"} on:click={() => (metricMode = "recall")}>
-                Recall
-                <span class="math-notation"> P(token | firing) </span>
-            </button>
-            <button
-                class:active={metricMode === "precision"}
-                on:click={() => (metricMode = "precision")}
-            >
-                Precision
-                <span class="math-notation"> P(firing | token) </span>
-            </button>
-        </div>
-    </div>
 </div>
 
 <div class="pagination-controls">
@@ -83,12 +66,32 @@
         </h4>
         {#if densities != null}
             <div class="token-densities">
-                <h5>
-                    Token {metricMode === "recall" ? "Recall" : "Precision"}
-                    {currentItem.token_densities.length > LIMIT
-                        ? `(top ${LIMIT} of ${currentItem.token_densities.length})`
-                        : ""}
-                </h5>
+                <div class="token-densities-header">
+                    <h5>
+                        Tokens
+                        {currentItem.token_densities.length > LIMIT
+                            ? `(top ${LIMIT} of ${currentItem.token_densities.length})`
+                            : ""}
+                    </h5>
+                    <div class="metric-toggle">
+                        <div class="toggle-buttons">
+                            <button
+                                class:active={metricMode === "recall"}
+                                on:click={() => (metricMode = "recall")}
+                            >
+                                Recall
+                                <span class="math-notation">P(token | firing)</span>
+                            </button>
+                            <button
+                                class:active={metricMode === "precision"}
+                                on:click={() => (metricMode = "precision")}
+                            >
+                                Precision
+                                <span class="math-notation">P(firing | token)</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
                 <div class="densities-grid">
                     {#each densities as { token, recall, precision } (`${token}-${recall}-${precision}`)}
                         {@const value = metricMode === "recall" ? recall : precision}
@@ -143,18 +146,13 @@
         min-width: 200px;
     }
 
-    .metric-toggle {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
     .toggle-buttons {
         display: flex;
         gap: 0;
         border: 1px solid #dee2e6;
-        border-radius: 4px;
+        border-radius: 6px;
         overflow: hidden;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
     }
 
     .toggle-buttons button {
@@ -233,8 +231,17 @@
         border: 1px solid #dee2e6;
     }
 
+    .token-densities-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
     .token-densities h5 {
-        margin: 0 0 1rem 0;
+        margin: 0;
         font-size: 1rem;
         color: #495057;
     }
@@ -242,7 +249,9 @@
     .math-notation {
         font-family: "Georgia", "Times New Roman", serif;
         font-style: italic;
-        font-size: 0.9em;
+        font-size: 0.85em;
+        margin-left: 0.25rem;
+        opacity: 0.8;
     }
 
     .densities-grid {
