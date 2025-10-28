@@ -56,6 +56,7 @@ include = ["spd*", "app*"]
 [tool.ruff]
 line-length = 100
 fix = true
+extend-exclude = ["app/frontend"]
 
 [tool.ruff.lint]
 ignore = [
@@ -87,7 +88,7 @@ known-third-party = ["wandb"]
 
 [tool.pyright]
 include = ["spd", "app", "tests"]
-exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py"]
+exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py", "app/frontend"]
 stubPath = "typings" # Having type stubs for transformers shaves 10 seconds off basedpyright calls
 
 strictListInference = true

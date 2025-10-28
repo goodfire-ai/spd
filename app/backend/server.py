@@ -9,11 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from app.backend.lib.activation_contexts import (
-    ActivationsData,
-    get_activations_data_streaming,
-    map_to_model_activations_contexts,
-)
+from app.backend.lib.activation_contexts import get_activations_data_streaming
 from app.backend.schemas import Status
 from app.backend.services.run_context_service import RunContextService
 
@@ -81,13 +77,10 @@ def get_subcomponent_activation_contexts(
         ):
             match res:
                 case ("progress", data):
-                    assert isinstance(data, int)
                     progress_data = {"type": "progress", "current": data, "total": n_batches}
                     yield f"data: {json.dumps(progress_data)}\n\n"
                 case ("complete", data):
-                    assert isinstance(data, ActivationsData)
-                    result = map_to_model_activations_contexts(run_context.tokenizer, data)
-                    complete_data = {"type": "complete", "result": result.model_dump()}
+                    complete_data = {"type": "complete", "result": data.model_dump()}
                     yield f"data: {json.dumps(complete_data)}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
