@@ -6,12 +6,12 @@
     import ActivationContextsTab from "./lib/components/ActivationContextsTab.svelte";
     import { parseWandbRunPath } from "./lib";
 
-    let loadingTrainRun: boolean = false;
+    let loadingTrainRun = $state<boolean>(false);
 
     /** can be a wandb run path, or id. we sanitize this on sumbit */
-    let trainWandbRunEntry: string | null = null;
+    let trainWandbRunEntry = $state<string | null>(null);
 
-    let status: Status = { train_run: null };
+    let status = $state<Status>({ train_run: null });
 
     async function loadStatus() {
         if (loadingTrainRun) return;
@@ -49,19 +49,21 @@
         }
     }
 
+    // when the page loads, and every 5 seconds thereafter, load the status
     onMount(() => {
         loadStatus();
-        setInterval(loadStatus, 5000);
+        const interval = setInterval(loadStatus, 5000);
+        return () => clearInterval(interval);
     });
 
-    let activeTab: "activation-contexts" | null = null;
+    let activeTab = $state<"activation-contexts" | null>(null);
 </script>
 
 <div class="app-layout">
     <aside class="sidebar">
         <div class="run-selector">
             <label for="wandb-run-id">W&B Run ID</label>
-            <form on:submit|preventDefault={loadRun} class="input-group">
+            <form onsubmit={loadRun} class="input-group">
                 <input
                     type="text"
                     id="wandb-run-id"
@@ -70,7 +72,10 @@
                     disabled={loadingTrainRun}
                     placeholder="Select or enter run ID"
                 />
-                <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
+                <button
+                    type="submit"
+                    disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}
+                >
                     {loadingTrainRun ? "Loading..." : "Load Run"}
                 </button>
             </form>
@@ -80,7 +85,7 @@
                 <button
                     class="tab-button"
                     class:active={activeTab === "activation-contexts"}
-                    on:click={() => (activeTab = "activation-contexts")}
+                    onclick={() => (activeTab = "activation-contexts")}
                 >
                     Activation Contexts
                 </button>

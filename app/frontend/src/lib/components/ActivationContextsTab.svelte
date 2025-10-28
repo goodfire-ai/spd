@@ -2,15 +2,15 @@
     import * as api from "../api";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
 
-    let loading = false;
-    let allLayersData: api.ModelActivationContexts["layers"] | null = null;
+    let loading = $state(false);
+    let allLayersData: api.ModelActivationContexts["layers"] | null = $state(null);
 
     // Configuration parameters
-    let nBatches = 1;
-    let batchSize = 1;
-    let nTokensEitherSide = 10;
-    let importanceThreshold = 0.0;
-    let topkExamples = 40;
+    let nBatches = $state(1);
+    let batchSize = $state(1);
+    let nTokensEitherSide = $state(10);
+    let importanceThreshold = $state(0.0);
+    let topkExamples = $state(40);
 
     async function loadContexts() {
         loading = true;
@@ -51,7 +51,7 @@
                         step="1"
                         min="1"
                         bind:value={nBatches}
-                        on:keydown={handleKeydown}
+                        onkeydown={handleKeydown}
                     />
                 </div>
 
@@ -63,7 +63,7 @@
                         step="1"
                         min="1"
                         bind:value={batchSize}
-                        on:keydown={handleKeydown}
+                        onkeydown={handleKeydown}
                     />
                 </div>
 
@@ -75,7 +75,7 @@
                         step="1"
                         min="0"
                         bind:value={nTokensEitherSide}
-                        on:keydown={handleKeydown}
+                        onkeydown={handleKeydown}
                     />
                 </div>
 
@@ -88,7 +88,7 @@
                         min="0"
                         max="1"
                         bind:value={importanceThreshold}
-                        on:keydown={handleKeydown}
+                        onkeydown={handleKeydown}
                     />
                 </div>
 
@@ -100,11 +100,11 @@
                         step="1"
                         min="1"
                         bind:value={topkExamples}
-                        on:keydown={handleKeydown}
+                        onkeydown={handleKeydown}
                     />
                 </div>
             </div>
-            <button class="load-button" on:click={loadContexts} disabled={loading}>
+            <button class="load-button" onclick={loadContexts} disabled={loading}>
                 {loading ? "Loading..." : "Load Contexts"}
             </button>
         </div>

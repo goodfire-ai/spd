@@ -1,8 +1,17 @@
 <script lang="ts">
-    export let tokenStrings: string[];
-    export let tokenCiValues: number[];
-    export let activePosition: number = -1;
-    export let precision: number = 3;
+    interface Props {
+        tokenStrings: string[];
+        tokenCiValues: number[];
+        activePosition?: number;
+        precision?: number;
+    }
+
+    let {
+        tokenStrings,
+        tokenCiValues,
+        activePosition = -1,
+        precision = 3
+    }: Props = $props();
 
     const getHighlightColor = (importance: number): string => {
         return `rgba(0, 200, 0, ${importance * 0.5})`;

@@ -2,7 +2,11 @@
     import type { ActivationContext } from "../api";
     import TokenHighlights from "./TokenHighlights.svelte";
 
-    export let example: ActivationContext;
+    interface Props {
+        example: ActivationContext;
+    }
+
+    let { example }: Props = $props();
 </script>
 
 <div class="example-item">

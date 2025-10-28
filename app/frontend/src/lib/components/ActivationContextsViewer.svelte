@@ -1,29 +1,35 @@
 <script lang="ts">
+    import { run } from 'svelte/legacy';
+
     import type { SubcomponentActivationContexts, TokenDensity } from "../api";
     import ActivationContext from "./ActivationContext.svelte";
 
-    export let allLayersData: Record<string, SubcomponentActivationContexts[]>;
+    interface Props {
+        allLayersData: Record<string, SubcomponentActivationContexts[]>;
+    }
+
+    let { allLayersData }: Props = $props();
     if (Object.keys(allLayersData).length === 0) {
         throw new Error("No layers data");
     }
     const LIMIT = 20;
 
-    let currentPage = 0;
-    let selectedLayer: string = Object.keys(allLayersData)[0];
-    let metricMode: "recall" | "precision" = "recall";
+    let currentPage = $state(0);
+    let selectedLayer: string = $state(Object.keys(allLayersData)[0]);
+    let metricMode: "recall" | "precision" = $state("recall");
 
     // reset selectedLayer to first layer when allLayersData changes
-    $: {
+    run(() => {
         selectedLayer = Object.keys(allLayersData)[0];
-    }
+    });
 
     // Derive available layers from the data
-    $: availableComponentLayers = Object.keys(allLayersData);
+    let availableComponentLayers = $derived(Object.keys(allLayersData));
 
     // Derive current data from selections
-    $: currentLayerData = selectedLayer ? allLayersData[selectedLayer] : null;
-    $: totalPages = currentLayerData?.length ?? 0;
-    $: currentItem = currentLayerData?.[currentPage];
+    let currentLayerData = $derived(selectedLayer ? allLayersData[selectedLayer] : null);
+    let totalPages = $derived(currentLayerData?.length ?? 0);
+    let currentItem = $derived(currentLayerData?.[currentPage]);
 
     function previousPage() {
         if (currentPage > 0) currentPage--;
@@ -34,12 +40,14 @@
     }
 
     // Reset page when layer changes
-    $: if (selectedLayer) currentPage = 0;
+    run(() => {
+        if (selectedLayer) currentPage = 0;
+    });
 
-    $: densities = currentItem?.token_densities
+    let densities = $derived(currentItem?.token_densities
         ?.slice()
         .sort((a: TokenDensity, b: TokenDensity) => b[metricMode] - a[metricMode])
-        .slice(0, LIMIT);
+        .slice(0, LIMIT));
 </script>
 
 <div class="layer-select-section">
@@ -52,10 +60,10 @@
 </div>
 
 <div class="pagination-controls">
-    <button on:click={previousPage} disabled={currentPage === 0}>&lt;</button>
+    <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
     <input type="number" min="0" max={totalPages - 1} bind:value={currentPage} class="page-input" />
     <span>of {totalPages - 1}</span>
-    <button on:click={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
+    <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
 </div>
 
 {#if currentItem}
@@ -78,14 +86,14 @@
                         <div class="toggle-buttons">
                             <button
                                 class:active={metricMode === "recall"}
-                                on:click={() => (metricMode = "recall")}
+                                onclick={() => (metricMode = "recall")}
                             >
                                 Recall
                                 <span class="math-notation">P(token | firing)</span>
                             </button>
                             <button
                                 class:active={metricMode === "precision"}
-                                on:click={() => (metricMode = "precision")}
+                                onclick={() => (metricMode = "precision")}
                             >
                                 Precision
                                 <span class="math-notation">P(firing | token)</span>
