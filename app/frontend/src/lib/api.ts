@@ -57,8 +57,14 @@ export type ActivationContextsConfig = {
     n_tokens_either_side: number;
 };
 
+export type ProgressUpdate = {
+    current: number;
+    total: number;
+};
+
 export async function getSubcomponentActivationContexts(
-    config: ActivationContextsConfig
+    config: ActivationContextsConfig,
+    onProgress?: (progress: ProgressUpdate) => void
 ): Promise<ModelActivationContexts> {
     const url = new URL(`${API_URL}/activation_contexts/subcomponents`);
     for (const [key, value] of Object.entries(config)) {
@@ -69,13 +75,51 @@ export async function getSubcomponentActivationContexts(
         const error = await response.json();
         throw new Error(error.detail || "Failed to get layer activation contexts");
     }
-    const payload = (await response.json()) as unknown as ModelActivationContexts;
-    for (const layer of Object.keys(payload.layers)) {
-        for (const subcomponent of payload.layers[layer]) {
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error("Response body is not readable");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: ModelActivationContexts | null = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE messages (ending with \n\n)
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || ""; // Keep incomplete message in buffer
+
+        for (const line of lines) {
+            if (!line.trim() || !line.startsWith("data: ")) continue;
+
+            const data = JSON.parse(line.substring(6)); // Remove "data: " prefix
+
+            if (data.type === "progress" && onProgress) {
+                onProgress({ current: data.current, total: data.total });
+            } else if (data.type === "complete") {
+                result = data.result as ModelActivationContexts;
+            }
+        }
+    }
+
+    if (!result) {
+        throw new Error("No result received from stream");
+    }
+
+    // Add IDs to examples
+    for (const layer of Object.keys(result.layers)) {
+        for (const subcomponent of result.layers[layer]) {
             for (const example of subcomponent.examples) {
                 example.__id = crypto.randomUUID();
             }
         }
     }
-    return payload;
+
+    return result;
 }

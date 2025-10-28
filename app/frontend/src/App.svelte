@@ -1,7 +1,6 @@
 <script lang="ts">
     import type { Status } from "./lib/api";
     import * as api from "./lib/api";
-    import { onMount } from "svelte";
 
     import ActivationContextsTab from "./lib/components/ActivationContextsTab.svelte";
     import { parseWandbRunPath } from "./lib";
@@ -15,14 +14,10 @@
 
     async function loadStatus() {
         if (loadingTrainRun) return;
-
         console.log("getting status");
-
         try {
             status = await api.getStatus();
             loadingTrainRun = false;
-
-            console.log("status:", status);
             if (!status.train_run) return;
             trainWandbRunEntry = status.train_run.wandb_path;
         } catch (error) {
@@ -30,10 +25,10 @@
         }
     }
 
-    async function loadRun() {
+    async function loadRun(event: Event) {
+        event.preventDefault();
         const input = trainWandbRunEntry?.trim();
         if (!input) return;
-
         try {
             loadingTrainRun = true;
             status = { train_run: null };
@@ -50,7 +45,7 @@
     }
 
     // when the page loads, and every 5 seconds thereafter, load the status
-    onMount(() => {
+    $effect(() => {
         loadStatus();
         const interval = setInterval(loadStatus, 5000);
         return () => clearInterval(interval);
@@ -62,7 +57,7 @@
 <div class="app-layout">
     <aside class="sidebar">
         <div class="run-selector">
-            <label for="wandb-run-id">W&B Run ID</label>
+            <div class="section-heading">W&B Run ID</div>
             <form onsubmit={loadRun} class="input-group">
                 <input
                     type="text"
@@ -93,13 +88,12 @@
         </div>
         {#if status.train_run}
             <div class="config">
-                <h4>Config</h4>
+                <div class="section-heading">Config</div>
                 <pre>{status.train_run?.config_yaml}</pre>
             </div>
         {/if}
     </aside>
 
-    <!-- Main Content -->
     <div class="main-content">
         {#if status.train_run}
             <div class:hidden={activeTab !== "activation-contexts"}>
@@ -179,9 +173,8 @@
         margin-bottom: 1rem;
     }
 
-    .run-selector label {
-        display: block;
-        margin-bottom: 0.5rem;
+    .section-heading {
+        margin: 0 0 0.5rem 0;
         font-weight: 600;
         color: #333;
         font-size: 0.9rem;
@@ -228,10 +221,6 @@
 
     .config {
         margin-top: 1rem;
-    }
-
-    .config h4 {
-        margin: 0;
     }
 
     .config pre {

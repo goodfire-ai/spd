@@ -1,16 +1,20 @@
+import json
 import traceback
+from collections.abc import Generator
 from functools import wraps
 from urllib.parse import unquote
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from app.backend.lib.activation_contexts import (
-    get_activations_data,
+    ActivationsData,
+    get_activations_data_streaming,
     map_to_model_activations_contexts,
 )
-from app.backend.schemas import ModelActivationContexts, Status
+from app.backend.schemas import Status
 from app.backend.services.run_context_service import RunContextService
 
 run_context_service = RunContextService()
@@ -55,26 +59,38 @@ def load_run(wandb_run_path: str):
 
 
 @app.get("/activation_contexts/subcomponents")
-@handle_errors
 def get_subcomponent_activation_contexts(
     importance_threshold: float,
     n_batches: int,
     batch_size: int,
     n_tokens_either_side: int,
     topk_examples: int,
-) -> ModelActivationContexts:
-    assert (run_context := run_context_service.train_run_context) is not None
+) -> StreamingResponse:
+    run_context = run_context_service.train_run_context
+    if run_context is None:
+        raise HTTPException(status_code=400, detail="No training run loaded")
 
-    activations_data = get_activations_data(
-        run_context,
-        importance_threshold,
-        n_batches,
-        n_tokens_either_side,
-        batch_size,
-        topk_examples,
-    )
+    def generate() -> Generator[str]:
+        for res in get_activations_data_streaming(
+            run_context,
+            importance_threshold,
+            n_batches,
+            n_tokens_either_side,
+            batch_size,
+            topk_examples,
+        ):
+            match res:
+                case ("progress", data):
+                    assert isinstance(data, int)
+                    progress_data = {"type": "progress", "current": data, "total": n_batches}
+                    yield f"data: {json.dumps(progress_data)}\n\n"
+                case ("complete", data):
+                    assert isinstance(data, ActivationsData)
+                    result = map_to_model_activations_contexts(run_context.tokenizer, data)
+                    complete_data = {"type": "complete", "result": result.model_dump()}
+                    yield f"data: {json.dumps(complete_data)}\n\n"
 
-    return map_to_model_activations_contexts(run_context.tokenizer, activations_data)
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @app.get("/")

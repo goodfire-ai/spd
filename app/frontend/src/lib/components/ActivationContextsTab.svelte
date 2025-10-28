@@ -4,6 +4,7 @@
 
     let loading = $state(false);
     let allLayersData: api.ModelActivationContexts["layers"] | null = $state(null);
+    let progress = $state<api.ProgressUpdate | null>(null);
 
     // Configuration parameters
     let nBatches = $state(1);
@@ -15,19 +16,26 @@
     async function loadContexts() {
         loading = true;
         allLayersData = null;
+        progress = null;
         try {
-            const data = await api.getSubcomponentActivationContexts({
-                n_batches: nBatches,
-                batch_size: batchSize,
-                n_tokens_either_side: nTokensEitherSide,
-                importance_threshold: importanceThreshold,
-                topk_examples: topkExamples,
-            });
+            const data = await api.getSubcomponentActivationContexts(
+                {
+                    n_batches: nBatches,
+                    batch_size: batchSize,
+                    n_tokens_either_side: nTokensEitherSide,
+                    importance_threshold: importanceThreshold,
+                    topk_examples: topkExamples,
+                },
+                (p) => {
+                    progress = p;
+                }
+            );
             allLayersData = data.layers;
         } catch (error) {
             console.error("Error loading contexts", error);
         } finally {
             loading = false;
+            progress = null;
         }
     }
 
@@ -110,7 +118,19 @@
         </div>
     </div>
 
-    {#if loading}
+    {#if loading && progress}
+        <div class="progress-container">
+            <div class="progress-text">
+                Processing batch {progress.current + 1} of {progress.total}
+            </div>
+            <div class="progress-bar">
+                <div
+                    class="progress-fill"
+                    style="width: {((progress.current + 1) / progress.total) * 100}%"
+                ></div>
+            </div>
+        </div>
+    {:else if loading}
         <div class="loading">Loading...</div>
     {/if}
 
@@ -195,5 +215,46 @@
     .load-button:disabled {
         opacity: 0.6;
         cursor: not-allowed;
+    }
+
+    .progress-container {
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+
+    .progress-text {
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
+        color: #495057;
+        font-weight: 500;
+    }
+
+    .progress-bar {
+        width: 100%;
+        height: 24px;
+        background: #e9ecef;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #0d6efd 0%, #0b5ed7 100%);
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding-right: 0.5rem;
+        color: white;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+
+    .loading {
+        padding: 1rem;
+        text-align: center;
+        color: #6c757d;
     }
 </style>

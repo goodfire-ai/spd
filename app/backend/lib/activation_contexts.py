@@ -1,11 +1,12 @@
 import heapq
 from collections import defaultdict
-from collections.abc import Generator, Iterable, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 from jaxtyping import Float, Int
-from tokenizers import Tokenizer
+from transformers import PreTrainedTokenizer
 from tqdm import tqdm
 
 from app.backend.schemas import (
@@ -78,6 +79,172 @@ class ActivationsData:
     component_mean_cis: dict[str, Float[torch.Tensor, " C"]]
 
 
+def get_activations_data_streaming(
+    run_context: TrainRunContext,
+    importance_threshold: float,
+    n_batches: int,
+    n_tokens_either_side: int,
+    batch_size: int,
+    topk_examples: int,
+) -> Generator[tuple[Literal["progress"], int] | tuple[Literal["complete"], ActivationsData],]:
+    device = next(run_context.cm.parameters()).device
+
+    # for each (module_name, component_idx), track the top-k activations
+    examples = defaultdict[str, defaultdict[int, _TopKExamples]](
+        lambda: defaultdict(lambda: _TopKExamples(k=topk_examples))
+    )
+
+    # for each (module_name, component_idx):
+    # the number of tokens seen
+    component_activation_counts = defaultdict[str, defaultdict[int, int]](lambda: defaultdict(int))
+    # and the number of activations for each token
+    component_activation_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
+        lambda: defaultdict(lambda: defaultdict(int))
+    )
+    # track total occurrences of each token across all batches
+    total_token_counts = defaultdict[int, int](int)
+
+    C = run_context.cm.C
+
+    n_toks_seen = 0
+    component_sum_cis = defaultdict[str, Float[torch.Tensor, " C"]](
+        lambda: torch.zeros(C, device=device, dtype=torch.float)
+    )
+
+    batches = roll_batch_size_1_into_x(
+        singleton_batches=(extract_batch_data(b).to(device) for b in run_context.train_loader),
+        batch_size=batch_size,
+    )
+
+    for batch_idx in range(n_batches):
+        # Yield progress update
+        yield ("progress", batch_idx)
+
+        batch: Int[torch.Tensor, "B S"] = next(batches)
+        assert not batch.requires_grad, "Batch tensors with requires_grad are not supported"
+        assert isinstance(batch, torch.Tensor)
+        assert batch.ndim == 2, "Expected batch tensor of shape (B, S)"
+        B, S = batch.shape
+
+        n_toks_seen += B * S
+
+        # Count all token occurrences in batch for precision calculation
+        token_ids_in_batch, counts = batch.flatten().unique(return_counts=True)
+        for token_id, count in zip(token_ids_in_batch.tolist(), counts.tolist(), strict=True):
+            total_token_counts[token_id] += count
+
+        importances_by_module = _get_importances_by_module(
+            run_context.cm, batch, run_context.config
+        )
+
+        for module_name, causal_importances in importances_by_module.items():
+            assert causal_importances.shape == (B, S, C), "Expected (B,S,C) per module"
+
+            # Thresholding to find "firings"
+            mask = causal_importances > importance_threshold
+            if not mask.any():
+                continue
+
+            component_sum_cis[module_name] += causal_importances.sum(dim=(0, 1))
+
+            # (K,) indices of all firings
+            batch_idx_tensor, seq_idx, comp_idx = torch.where(mask)
+            (K,) = batch_idx_tensor.shape
+
+            # Pad batch and causal_importances to avoid boundary issues
+            batch_padded = torch.nn.functional.pad(
+                batch, (n_tokens_either_side, n_tokens_either_side), value=0
+            )
+            causal_importances_padded = torch.nn.functional.pad(
+                causal_importances, (0, 0, n_tokens_either_side, n_tokens_either_side), value=0.0
+            )
+
+            # Adjust sequence indices for padding
+            seq_idx_padded = seq_idx + n_tokens_either_side
+
+            # Extract importance values and token IDs for all firings at once
+            importance_vals = causal_importances[batch_idx_tensor, seq_idx, comp_idx]
+            token_ids = batch[batch_idx_tensor, seq_idx]
+
+            # Vectorized window extraction
+            window_size = 2 * n_tokens_either_side + 1
+            window_offsets = torch.arange(
+                -n_tokens_either_side, n_tokens_either_side + 1, device=batch.device
+            )
+
+            # Broadcast to get all window indices: (K, window_size)
+            window_indices = seq_idx_padded.unsqueeze(1) + window_offsets.unsqueeze(0)
+
+            # Extract windows for tokens using advanced indexing
+            batch_idx_expanded = batch_idx_tensor.unsqueeze(1).expand(-1, window_size)
+            window_token_ids_tensor = batch_padded[batch_idx_expanded, window_indices]
+
+            # Extract windows for causal importances
+            comp_idx_expanded = comp_idx.unsqueeze(1).expand(-1, window_size)
+            window_ci_values_tensor = causal_importances_padded[
+                batch_idx_expanded, window_indices, comp_idx_expanded
+            ]
+
+            # Move everything to CPU/numpy for final processing
+            window_token_ids_np = window_token_ids_tensor.cpu().numpy()
+            window_ci_values_np = window_ci_values_tensor.cpu().numpy()
+            seq_idx_np = seq_idx.cpu().numpy()
+            comp_idx_np = comp_idx.cpu().numpy()
+            token_ids_np = token_ids.cpu().numpy()
+            importance_vals_np = importance_vals.cpu().numpy()
+
+            # Active position is always at the center of the window
+            active_pos_in_window = n_tokens_either_side
+
+            # Now iterate to create examples
+            for j in range(K):
+                window_token_ids: list[int] = window_token_ids_np[j].tolist()
+                token_ci_values: list[float] = window_ci_values_np[j].tolist()
+
+                ex = SubcomponentExample(
+                    window_token_ids=window_token_ids,
+                    pos=int(seq_idx_np[j]),
+                    active_pos_in_window=active_pos_in_window,
+                    token_ci_values=token_ci_values,
+                    last_tok_importance=float(importance_vals_np[j]),
+                )
+
+                m = int(comp_idx_np[j])
+                token_id = int(token_ids_np[j])
+
+                examples[module_name][m].maybe_add(ex)
+                component_activation_counts[module_name][m] += 1
+                component_activation_tokens[module_name][m][token_id] += 1
+
+    component_mean_cis = {
+        module_name: component_sum_cis[module_name] / n_toks_seen
+        for module_name in component_sum_cis
+    }
+
+    component_token_densities = defaultdict[str, dict[int, list[tuple[str, float, float]]]](dict)
+    for module_name, tokens_by_components in component_activation_tokens.items():
+        for component_idx, component_token_acts in tokens_by_components.items():
+            component_densities: list[tuple[str, float, float]] = []
+            for token_id, count in component_token_acts.items():
+                recall = count / component_activation_counts[module_name][component_idx]
+                precision = count / total_token_counts[token_id]
+                tok_str = run_context.tokenizer.convert_ids_to_tokens(token_id)  # pyright: ignore[reportAttributeAccessIssue]
+                assert isinstance(tok_str, str), "Token id should convert to string"
+                component_densities.append((tok_str, recall, precision))
+
+            # sort by recall descending
+            component_densities.sort(key=lambda x: x[1], reverse=True)
+            component_token_densities[module_name][component_idx] = component_densities
+
+    result = ActivationsData(
+        examples=examples,
+        component_token_densities=component_token_densities,
+        component_mean_cis=component_mean_cis,
+    )
+
+    yield ("complete", result)
+
+
 def get_activations_data(
     run_context: TrainRunContext,
     importance_threshold: float,
@@ -115,7 +282,10 @@ def get_activations_data(
         batch_size=batch_size,
     )
 
-    for _ in tqdm(range(n_batches), desc="Harvesting activation contexts"):
+    for batch_idx in tqdm(range(n_batches), desc="Harvesting activation contexts"):
+        if progress_callback:
+            progress_callback(batch_idx, n_batches)
+
         batch: Int[torch.Tensor, "B S"] = next(batches)
         assert not batch.requires_grad, "Batch tensors with requires_grad are not supported"
         assert isinstance(batch, torch.Tensor)
@@ -264,7 +434,7 @@ def _get_importances_by_module(
 
 
 def map_to_model_activations_contexts(
-    tokenizer: Tokenizer, activations_data: ActivationsData
+    tokenizer: PreTrainedTokenizer, activations_data: ActivationsData
 ) -> ModelActivationContexts:
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
 
