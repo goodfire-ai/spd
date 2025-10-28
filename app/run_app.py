@@ -1,14 +1,11 @@
-#!/usr/bin/env python3
 """
-Development server launcher for SPD app (macOS/Linux).
+Development server launcher for SPD app.
 Starts backend and frontend with:
   - Automatic port detection (with --strictPort for Vite)
   - TCP-based health checks (no false negatives on 404)
   - Graceful shutdown of process groups
   - Clear logging & dependency checks
 """
-
-from __future__ import annotations
 
 import atexit
 import contextlib
