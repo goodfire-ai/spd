@@ -1,7 +1,7 @@
 <script lang="ts">
     import { run } from 'svelte/legacy';
 
-    import type { SubcomponentActivationContexts, TokenDensity } from "../api";
+    import type { SubcomponentActivationContexts, TokenDensity } from "../lib/api";
     import ActivationContext from "./ActivationContext.svelte";
 
     interface Props {

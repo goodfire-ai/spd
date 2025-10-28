@@ -110,15 +110,7 @@ def _spawn(
 def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
     print(f"{AnsiEsc.DIM}  ▸ Starting backend...{AnsiEsc.RESET}", end="", flush=True)
     project_root = APP_DIR.parent.parent
-    cmd = [
-        "uv",
-        "run",
-        "python",
-        "-u",
-        str(APP_DIR / "backend" / "server.py"),
-        "--port",
-        str(port),
-    ]
+    cmd = ["uv", "run", "python", "-u", str(APP_DIR / "backend" / "server.py"), "--port", str(port)]
     proc = _spawn(cmd, cwd=project_root, env=None, logfile=logfile)
     print(
         f"\r  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} Backend started (pid {proc.pid}, port {port})        "

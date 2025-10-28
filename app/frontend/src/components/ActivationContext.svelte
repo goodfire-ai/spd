@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { ActivationContext } from "../api";
+    import type { ActivationContext } from "../lib/api";
     import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {

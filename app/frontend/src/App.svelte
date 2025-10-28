@@ -2,7 +2,7 @@
     import type { Status } from "./lib/api";
     import * as api from "./lib/api";
 
-    import ActivationContextsTab from "./lib/components/ActivationContextsTab.svelte";
+    import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import { parseWandbRunPath } from "./lib";
 
     let loadingTrainRun = $state<boolean>(false);

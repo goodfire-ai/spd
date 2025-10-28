@@ -1,5 +1,5 @@
 <script lang="ts">
-    import * as api from "../api";
+    import * as api from "../lib/api";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
 
     let loading = $state(false);
