@@ -22,30 +22,11 @@ from spd.models.components import CiFnType
 from spd.spd_types import ModelPath, Probability
 
 
-#### Metrics that can be used in training (or eval) ####
-class LinearSchedule(BaseConfig):
-    type: Literal["linear"] = "linear"
-    start_value: float
-    end_value: float
-    start_frac: float
-    end_frac: float
-
-
-class CosineSchedule(BaseConfig):
-    type: Literal["cosine"] = "cosine"
-    start_value: float
-    end_value: float
-    start_frac: float
-    end_frac: float
-
-
-CoeffSchedule = Annotated[LinearSchedule | CosineSchedule, Field(discriminator="type")]
-
-
+#### Metrics that can be used as losses in training or eval ####
 class LossMetricConfig(BaseConfig):
-    coeff: float | CoeffSchedule | None = Field(
+    coeff: float | None = Field(
         default=None,
-        description="Loss coefficient or coefficient schedule. Used when metric is in loss_metric_configs.",
+        description="Loss coefficient. Used when metric is in loss_metric_configs.",
     )
 
 
