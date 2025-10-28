@@ -481,4 +481,13 @@ class Config(BaseConfig):
         for cfg in self.loss_metric_configs:
             assert cfg.coeff is not None, "All loss_metric_configs must have a coeff"
 
+        if any(
+            isinstance(cfg, PGDConfig) and cfg.mask_scope == "shared_across_batch"
+            for cfg in self.loss_metric_configs
+        ):
+            assert self.gradient_accumulation_steps == 1, (
+                "gradient_accumulation_steps must be 1 if we are using PGD losses with "
+                "mask_scope='shared_across_batch'"
+            )
+
         return self
