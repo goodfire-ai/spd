@@ -152,11 +152,11 @@
             }
         },
         {
-            "name": "ss_llama",
+            "name": "ss_llama_simple",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
-            "args": "${workspaceFolder}/spd/experiments/lm/ss_llama_config.yaml",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_llama_simple_config.yaml",
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,

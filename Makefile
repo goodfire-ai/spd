@@ -75,3 +75,11 @@ coverage:
 	mkdir -p $(COVERAGE_DIR)
 	uv run python -m coverage report -m > $(COVERAGE_DIR)/coverage.txt
 	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/
+
+.PHONY: app
+app:
+	@uv run python app/run_app.py
+
+.PHONY: install-app
+install-app:
+	(cd app/frontend && npm install)
