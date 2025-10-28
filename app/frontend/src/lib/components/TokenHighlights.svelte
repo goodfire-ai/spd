@@ -29,17 +29,13 @@
 
 <span class="token-highlights">
     {#each tokenStrings as tokenString, idx (idx)}
-        {#if tokenCiValues[idx] > 0}
-            <span
-                class="token-highlight"
-                class:active-token={idx === activePosition}
-                style={`background-color:${getHighlightColor(tokenCiValues[idx])};`}
-                data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}
-                >{fmtTokenString(tokenString)}</span
-            >
-        {:else}
-            {fmtTokenString(tokenString)}
-        {/if}
+        <span
+            class="token-highlight"
+            class:active-token={idx === activePosition}
+            style={`background-color:${getHighlightColor(tokenCiValues[idx])};`}
+            data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}
+            >{fmtTokenString(tokenString)}</span
+        >
     {/each}
 </span>
 
