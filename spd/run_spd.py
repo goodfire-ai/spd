@@ -16,14 +16,21 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from spd.configs import Config, LossMetricConfigType, MetricConfigType
+from spd.configs import (
+    Config,
+    LossMetricConfigType,
+    MetricConfigType,
+    PGDGlobalConfig,
+    PGDGlobalConfigType,
+)
 from spd.data import loop_dataloader
-from spd.eval import avg_eval_metrics_across_ranks, evaluate
+from spd.eval import evaluate
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
+from spd.metrics.pgd_utils import calc_global_pgd_metrics
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
@@ -90,15 +97,15 @@ def get_unique_metric_configs(
 ) -> list[MetricConfigType]:
     """If a metric appears in both loss and eval configs, only include the eval version."""
     eval_config_names = [type(cfg).__name__ for cfg in eval_configs]
-    metrics = eval_configs[:]
+    eval_metric_configs = eval_configs[:]
     for cfg in loss_configs:
         if type(cfg).__name__ not in eval_config_names:
-            metrics.append(cfg)
+            eval_metric_configs.append(cfg)
         else:
             logger.warning(
                 f"{type(cfg).__name__} is in both loss and eval configs, only including eval config"
             )
-    return metrics
+    return eval_metric_configs
 
 
 def optimize(
@@ -194,6 +201,18 @@ def optimize(
         loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
     )
 
+    global_pgd_loss_configs: list[PGDGlobalConfigType] = [
+        cfg for cfg in config.loss_metric_configs if isinstance(cfg, PGDGlobalConfig)
+    ]
+    global_pgd_eval_configs: list[PGDGlobalConfigType] = [
+        cfg for cfg in eval_metric_configs if isinstance(cfg, PGDGlobalConfig)
+    ]
+    loss_metric_configs = [
+        cfg for cfg in config.loss_metric_configs if cfg not in global_pgd_loss_configs
+    ]
+    eval_metric_configs = [cfg for cfg in eval_metric_configs if cfg not in global_pgd_eval_configs]
+    batch_dims: tuple[int, ...] | None = None
+
     # Track which components are alive based on firing frequency
     alive_tracker = AliveComponentsTracker(
         target_module_paths=model.target_module_paths,
@@ -234,11 +253,14 @@ def optimize(
                 detach_inputs=False,
                 sampling=config.sampling,
             )
+            ci_shape = next(iter(ci.lower_leaky.values())).shape
+            batch_dims = ci_shape[:-1]
 
             alive_tracker.update(ci=ci.lower_leaky)
 
+            # TODO: Handle global PGD loss
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metric_configs=config.loss_metric_configs,
+                loss_metric_configs=loss_metric_configs,
                 model=component_model,
                 batch=batch,
                 ci=ci,
@@ -301,6 +323,16 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
+                assert batch_dims is not None, "batch_dims is not set"
+                global_pgd_metrics = calc_global_pgd_metrics(
+                    global_pgd_eval_configs=global_pgd_eval_configs,
+                    model=component_model,
+                    dataloader=train_loader,
+                    config=config,
+                    n_layers=len(config.all_module_patterns),
+                    batch_dims=batch_dims,
+                )
+
                 metrics = evaluate(
                     eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
@@ -311,9 +343,7 @@ def optimize(
                     n_eval_steps=n_eval_steps,
                     current_frac_of_training=step / config.steps,
                 )
-
-                if is_distributed():
-                    metrics = avg_eval_metrics_across_ranks(metrics, device=device)
+                metrics.update(global_pgd_metrics)
 
                 if is_main_process():
                     for k, v in metrics.items():
