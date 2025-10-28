@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import torch
 from jaxtyping import Float, Int
+from tokenizers import Tokenizer
 from tqdm import tqdm
 
 from app.backend.schemas import (
@@ -15,31 +16,8 @@ from app.backend.schemas import (
 )
 from app.backend.services.run_context_service import TrainRunContext
 from spd.configs import Config
-from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
-
-
-def get_subcomponents_activation_contexts(
-    run_context: TrainRunContext,
-    importance_threshold: float,
-    n_batches: int,
-    n_tokens_either_side: int,
-    batch_size: int,
-    topk_examples: int,
-) -> ModelActivationContexts:
-    logger.info("Getting activation contexts")
-
-    activations_data = get_topk_by_subcomponent(
-        run_context,
-        importance_threshold,
-        n_batches,
-        n_tokens_either_side,
-        batch_size,
-        topk_examples,
-    )
-
-    return map_to_model_ctxs(run_context, activations_data)
 
 
 @dataclass
@@ -100,10 +78,7 @@ class ActivationsData:
     component_mean_cis: dict[str, Float[torch.Tensor, " C"]]
 
 
-TOPK_EXAMPLES = 100
-
-
-def get_topk_by_subcomponent(
+def get_activations_data(
     run_context: TrainRunContext,
     importance_threshold: float,
     n_batches: int,
@@ -115,7 +90,7 @@ def get_topk_by_subcomponent(
 
     # for each (module_name, component_idx), track the top-k activations
     examples = defaultdict[str, defaultdict[int, _TopKExamples]](
-        lambda: defaultdict(lambda: _TopKExamples(k=TOPK_EXAMPLES))
+        lambda: defaultdict(lambda: _TopKExamples(k=topk_examples))
     )
 
     # for each (module_name, component_idx):
@@ -268,6 +243,7 @@ def get_topk_by_subcomponent(
         component_mean_cis=component_mean_cis,
     )
 
+
 def _get_importances_by_module(
     cm: ComponentModel, batch: torch.Tensor, config: Config
 ) -> dict[str, Float[torch.Tensor, "B S C"]]:
@@ -287,8 +263,8 @@ def _get_importances_by_module(
     return importances_by_module
 
 
-def map_to_model_ctxs(
-    run_context: TrainRunContext, activations_data: ActivationsData
+def map_to_model_activations_contexts(
+    tokenizer: Tokenizer, activations_data: ActivationsData
 ) -> ModelActivationContexts:
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
 
@@ -300,7 +276,7 @@ def map_to_model_ctxs(
             activation_contexts = []
             for example in subcomponent_examples.to_sorted_list_desc():
                 activation_context = ActivationContext(
-                    token_strings=run_context.tokenizer.convert_ids_to_tokens(  # pyright: ignore[reportAttributeAccessIssue]
+                    token_strings=tokenizer.convert_ids_to_tokens(  # pyright: ignore[reportAttributeAccessIssue]
                         example.window_token_ids
                     ),
                     token_ci_values=example.token_ci_values,

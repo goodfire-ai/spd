@@ -6,7 +6,10 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.backend.lib.activation_contexts import get_subcomponents_activation_contexts
+from app.backend.lib.activation_contexts import (
+    get_activations_data,
+    map_to_model_activations_contexts,
+)
 from app.backend.schemas import ModelActivationContexts, Status
 from app.backend.services.run_context_service import RunContextService
 
@@ -61,14 +64,17 @@ def get_subcomponent_activation_contexts(
     topk_examples: int,
 ) -> ModelActivationContexts:
     assert (run_context := run_context_service.train_run_context) is not None
-    return get_subcomponents_activation_contexts(
+
+    activations_data = get_activations_data(
         run_context,
-        importance_threshold=importance_threshold,
-        n_batches=n_batches,
-        n_tokens_either_side=n_tokens_either_side,
-        batch_size=batch_size,
-        topk_examples=topk_examples,
+        importance_threshold,
+        n_batches,
+        n_tokens_either_side,
+        batch_size,
+        topk_examples,
     )
+
+    return map_to_model_activations_contexts(run_context.tokenizer, activations_data)
 
 
 @app.get("/")

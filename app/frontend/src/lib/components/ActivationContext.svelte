@@ -1,6 +1,6 @@
 <script lang="ts">
-    import type { ActivationContext } from "$lib/api";
-    import TokenHighlights from "$lib/components/TokenHighlights.svelte";
+    import type { ActivationContext } from "../api";
+    import TokenHighlights from "./TokenHighlights.svelte";
 
     export let example: ActivationContext;
 </script>

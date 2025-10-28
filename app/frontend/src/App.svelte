@@ -1,10 +1,10 @@
 <script lang="ts">
-    import type { Status } from "$lib/api";
-    import * as api from "$lib/api";
+    import type { Status } from "./lib/api";
+    import * as api from "./lib/api";
     import { onMount } from "svelte";
 
-    import ActivationContextsTab from "$lib/components/ActivationContextsTab.svelte";
-    import { parseWandbRunPath } from "$lib";
+    import ActivationContextsTab from "./lib/components/ActivationContextsTab.svelte";
+    import { parseWandbRunPath } from "./lib";
 
     let loadingTrainRun: boolean = false;
 

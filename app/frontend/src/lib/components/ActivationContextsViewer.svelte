@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { SubcomponentActivationContexts } from "$lib/api";
+    import type { SubcomponentActivationContexts, TokenDensity } from "../api";
     import ActivationContext from "./ActivationContext.svelte";
 
     export let allLayersData: Record<string, SubcomponentActivationContexts[]>;
@@ -37,7 +37,8 @@
     $: if (selectedLayer) currentPage = 0;
 
     $: densities = currentItem?.token_densities
-        ?.toSorted((a, b) => b[metricMode] - a[metricMode])
+        ?.slice()
+        .sort((a: TokenDensity, b: TokenDensity) => b[metricMode] - a[metricMode])
         .slice(0, LIMIT);
 </script>
 
