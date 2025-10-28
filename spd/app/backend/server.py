@@ -9,9 +9,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from app.backend.lib.activation_contexts import get_activations_data_streaming
-from app.backend.schemas import Status
-from app.backend.services.run_context_service import RunContextService
+from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
+from spd.app.backend.schemas import Status
+from spd.app.backend.services.run_context_service import RunContextService
 
 run_context_service = RunContextService()
 
