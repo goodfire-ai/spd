@@ -1,5 +1,3 @@
-from typing import Any
-
 from pydantic import BaseModel
 
 
@@ -29,7 +27,7 @@ class ModelActivationContexts(BaseModel):
 
 class TrainRun(BaseModel):
     wandb_path: str
-    config: dict[str, Any]
+    config_yaml: str
 
 
 class Status(BaseModel):

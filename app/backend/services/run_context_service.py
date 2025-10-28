@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+import yaml
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizer
 
@@ -34,9 +35,13 @@ class RunContextService:
         if (train_ctx := self.train_run_context) is None:
             return Status(train_run=None)
 
+        config_yaml = yaml.dump(
+            train_ctx.config.model_dump(), default_flow_style=False, sort_keys=False
+        )
+
         train_run = TrainRun(
             wandb_path=train_ctx.wandb_path,
-            config=train_ctx.config.model_dump(),
+            config_yaml=config_yaml,
         )
 
         return Status(train_run=train_run)

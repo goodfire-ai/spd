@@ -89,7 +89,7 @@
         {#if status.train_run}
             <div class="config">
                 <h4>Config</h4>
-                <pre>{JSON.stringify(status.train_run?.config, null, 2)}</pre>
+                <pre>{status.train_run?.config_yaml}</pre>
             </div>
         {/if}
     </aside>
