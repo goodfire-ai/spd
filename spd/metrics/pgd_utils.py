@@ -121,6 +121,16 @@ def _interpolate_component_mask(
     ci: dict[str, Float[Tensor, "*batch_dims C"]],
     adv_sources_components: Float[Tensor, "n_layers *batch_dims C"],
 ) -> dict[str, Float[Tensor, "*batch_dims C"]]:
+    """Set the mask value to ci + (1 - ci) * adv_sources_components.
+
+    NOTE: This is not ideal. Suppose ci is 0.2 and adv_sources_components is 0.8. Then the mask
+    value will be 0.2 + (1 - 0.2) * 0.8 = 0.84. It would make more sense to set the mask value to
+    0.8 directly, since this is the value output by PGD. If we wanted to instead use the more
+    natural setup of mask = max(ci, adv_sources_components), we would need to work out how to
+    maintain the gradient flow. We feel that this likely isn't a big problem as it is right now
+    since the change would just give PGD more optimization power, and we already get a very bad
+    loss value for it.
+    """
     assert torch.all(adv_sources_components <= 1.0) and torch.all(adv_sources_components >= 0.0)
     assert adv_sources_components.shape[0] == len(ci)
     assert all(ci[k].shape[-1] == adv_sources_components.shape[-1] for k in ci)
