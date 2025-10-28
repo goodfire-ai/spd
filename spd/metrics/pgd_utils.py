@@ -89,9 +89,10 @@ def pgd_masked_recon_loss_update(
 
         with torch.enable_grad():
             total_loss, _ = objective_fn(adv_sources=adv_sources.expand(n_layers, *batch_dims, C2))
-            adv_sources_grads = torch.autograd.grad(total_loss, adv_sources)[0]
+            adv_sources_grads = torch.autograd.grad(total_loss, adv_sources)
 
-        reduced_adv_sources_grads = all_reduce(adv_sources_grads.clone(), op=ReduceOp.SUM)
+        assert isinstance(adv_sources_grads, tuple) and len(adv_sources_grads) == 1
+        reduced_adv_sources_grads = all_reduce(adv_sources_grads[0].clone(), op=ReduceOp.SUM)
         with torch.no_grad():
             adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
             adv_sources.clamp_(0.0, 1.0)
@@ -118,13 +119,13 @@ def _get_pgd_init_tensor(
 
 def _interpolate_component_mask(
     ci: dict[str, Float[Tensor, "*batch_dims C"]],
-    component_sample_points: Float[Tensor, "n_layers *batch_dims C"],
+    adv_sources_components: Float[Tensor, "n_layers *batch_dims C"],
 ) -> dict[str, Float[Tensor, "*batch_dims C"]]:
-    assert torch.all(component_sample_points <= 1.0) and torch.all(component_sample_points >= 0.0)
-    assert component_sample_points.shape[0] == len(ci)
-    assert all(ci[k].shape[-1] == component_sample_points.shape[-1] for k in ci)
+    assert torch.all(adv_sources_components <= 1.0) and torch.all(adv_sources_components >= 0.0)
+    assert adv_sources_components.shape[0] == len(ci)
+    assert all(ci[k].shape[-1] == adv_sources_components.shape[-1] for k in ci)
     component_masks: dict[str, Float[Tensor, "*batch_dims C"]] = {}
     for i, module_name in enumerate(ci):
-        scaled_noise_to_add = (1 - ci[module_name]) * component_sample_points[i]
+        scaled_noise_to_add = (1 - ci[module_name]) * adv_sources_components[i]
         component_masks[module_name] = ci[module_name] + scaled_noise_to_add
     return component_masks
