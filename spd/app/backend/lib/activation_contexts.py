@@ -7,13 +7,13 @@ from typing import Literal
 import torch
 from jaxtyping import Float, Int
 
-from app.backend.schemas import (
+from spd.app.backend.schemas import (
     ActivationContext,
     ModelActivationContexts,
     SubcomponentActivationContexts,
     TokenDensity,
 )
-from app.backend.services.run_context_service import TrainRunContext
+from spd.app.backend.services.run_context_service import TrainRunContext
 from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
