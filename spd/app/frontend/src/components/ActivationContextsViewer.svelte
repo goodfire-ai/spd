@@ -1,7 +1,7 @@
 <script lang="ts">
     import { run } from 'svelte/legacy';
 
-    import type { SubcomponentActivationContexts, TokenDensity } from "../lib/api";
+    import type { SubcomponentActivationContexts, TokenPR } from "../lib/api";
     import ActivationContext from "./ActivationContext.svelte";
 
     interface Props {
@@ -44,9 +44,9 @@
         if (selectedLayer) currentPage = 0;
     });
 
-    let densities = $derived(currentItem?.token_densities
+    let densities = $derived(currentItem?.token_prs
         ?.slice()
-        .sort((a: TokenDensity, b: TokenDensity) => b[metricMode] - a[metricMode])
+        .sort((a: TokenPR, b: TokenPR) => b[metricMode] - a[metricMode])
         .slice(0, LIMIT));
 </script>
 
@@ -61,7 +61,7 @@
 
 <div class="pagination-controls">
     <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
-    <input type="number" min="0" max={totalPages - 1} bind:value={currentPage} class="page-input" />
+    <input type="number" min="0" max={totalPages - 1} bind:value={CurrentPage} class="page-input" />
     <span>of {totalPages - 1}</span>
     <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
 </div>
@@ -78,8 +78,8 @@
                 <div class="token-densities-header">
                     <h5>
                         Tokens
-                        {currentItem.token_densities.length > LIMIT
-                            ? `(top ${LIMIT} of ${currentItem.token_densities.length})`
+                        {currentItem.token_prs.length > LIMIT
+                            ? `(top ${LIMIT} of ${currentItem.token_prs.length})`
                             : ""}
                     </h5>
                     <div class="metric-toggle">
