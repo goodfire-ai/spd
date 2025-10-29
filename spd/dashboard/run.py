@@ -19,7 +19,7 @@ from tqdm import tqdm
 from zanj import ZANJ
 
 from spd.configs import Config
-from spd.dashboard.activations import component_activations, process_activations
+from spd.dashboard.core.activations import component_activations, process_activations
 from spd.dashboard.core.component_data import (
     ComponentDashboardData,
     GlobalMetrics,

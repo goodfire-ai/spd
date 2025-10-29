@@ -4,7 +4,6 @@ Stripped down version with only what's needed for component data generation.
 """
 
 from dataclasses import dataclass
-from typing import NamedTuple
 
 import torch
 from jaxtyping import Float, Int
