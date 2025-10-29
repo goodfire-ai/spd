@@ -36,7 +36,6 @@ def _compute_pgd_objective_loss(
     target_out: Float[Tensor, "... vocab"],
     model: ComponentModel,
     output_loss_type: Literal["mse", "kl"],
-    C: int,
 ) -> Float[Tensor, ""]:
     """Compute reconstruction loss for given adversarial sources.
 
@@ -49,7 +48,6 @@ def _compute_pgd_objective_loss(
         target_out: Target model output for comparison
         model: The ComponentModel to evaluate
         output_loss_type: Loss type ("mse" or "kl")
-        C: Number of components (excluding weight delta)
 
     Returns:
         Total reconstruction loss (summed over all examples)
@@ -60,7 +58,6 @@ def _compute_pgd_objective_loss(
             weight_deltas_and_masks = None
             adv_sources_components = adv_sources
         case dict():
-            assert adv_sources.shape[-1] == C + 1
             weight_deltas_and_masks = {
                 k: (weight_deltas[k], adv_sources[i, ..., -1]) for i, k in enumerate(weight_deltas)
             }
@@ -154,8 +151,9 @@ def pgd_masked_recon_loss_update(
         _get_pgd_init_tensor(pgd_config.init, adv_source_shape, batch.device).requires_grad_(True)
     )
 
+    total_loss: Float[Tensor, ""] | None = None
     # PGD ascent
-    for _ in range(int(pgd_config.n_steps)):
+    for i in range(pgd_config.n_steps + 1):  # +1 because we want to report the final loss
         assert adv_sources.grad is None
 
         with torch.enable_grad():
@@ -168,31 +166,102 @@ def pgd_masked_recon_loss_update(
                 target_out=target_out,
                 model=model,
                 output_loss_type=output_loss_type,
-                C=C,
             )
+        if i < pgd_config.n_steps:
+            # Update adv_sources for the next PGD step
             adv_sources_grads = torch.autograd.grad(total_loss, adv_sources)
 
-        assert isinstance(adv_sources_grads, tuple) and len(adv_sources_grads) == 1
-        reduced_adv_sources_grads = all_reduce(adv_sources_grads[0].clone(), op=ReduceOp.SUM)
-        with torch.no_grad():
-            adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
-            adv_sources.clamp_(0.0, 1.0)
+            assert isinstance(adv_sources_grads, tuple) and len(adv_sources_grads) == 1
+            reduced_adv_sources_grads = all_reduce(adv_sources_grads[0].clone(), op=ReduceOp.SUM)
+            with torch.no_grad():
+                adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
+                adv_sources.clamp_(0.0, 1.0)
 
-    total_loss = _compute_pgd_objective_loss(
-        adv_sources=adv_sources.expand(n_layers, *batch_dims, C2),
-        batch=batch,
-        ci=ci,
-        weight_deltas=weight_deltas,
-        routing_masks=routing_masks,
-        target_out=target_out,
-        model=model,
-        output_loss_type=output_loss_type,
-        C=C,
-    )
+    assert total_loss is not None
     n_examples = batch.shape.numel() if output_loss_type == "mse" else batch.shape[:-1].numel()
 
     # no need to all-reduce total_loss or n_examples bc consumers handle this
     return total_loss, n_examples
+
+
+def _global_pgd_step(
+    adv_sources: Float[Tensor, "n_layers *batch_dim_ones C2"],
+    pgd_config: PGDGlobalConfig,
+    model: ComponentModel,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    dataloader: DataLoader[Int[Tensor, "..."]]
+    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    device: torch.device | str,
+    output_loss_type: Literal["mse", "kl"],
+    routing: RoutingType,
+    sampling: SamplingType,
+    batch_dims: tuple[int, ...],
+    n_layers: int,
+) -> tuple[Float[Tensor, ""], int]:
+    """Perform a single PGD step with gradient accumulation over multiple batches.
+
+    Returns:
+        - The total loss for the PGD step (only used for the final step)
+        - The number of examples used in the PGD step
+    Also updates adv_sources in place.
+    """
+    assert adv_sources.grad is None
+    pgd_step_accum_loss = torch.tensor(0.0, device=device)
+    pgd_step_accum_grads = torch.zeros_like(adv_sources)
+
+    dataloader_iter = iter(dataloader)
+    n_examples = 0
+
+    # Accumulate gradients over n_batches batches
+    for batch_idx in range(pgd_config.n_batches):
+        try:
+            batch_item = next(dataloader_iter)
+        except StopIteration:
+            logger.warning(f"Dataloader exhausted after {batch_idx} batches, ending PGD step.")
+            break
+        batch = extract_batch_data(batch_item).to(device)
+
+        batch_target_model_output: OutputWithCache = model(batch, cache_type="input")
+        batch_ci = model.calc_causal_importances(
+            pre_weight_acts=batch_target_model_output.cache,
+            detach_inputs=False,
+            sampling=sampling,
+        ).lower_leaky
+
+        match routing:
+            case "all":
+                batch_routing_masks = "all"
+            case "uniform_k-stochastic":
+                batch_routing_masks = sample_uniform_k_subset_routing_masks(
+                    mask_shape=tuple(batch_dims),
+                    module_names=list(batch_ci.keys()),
+                    device=batch.device,
+                )
+
+        with torch.enable_grad():
+            total_loss = _compute_pgd_objective_loss(
+                adv_sources=adv_sources.expand(n_layers, *batch_dims, -1),
+                batch=batch,
+                ci=batch_ci,
+                weight_deltas=weight_deltas,
+                routing_masks=batch_routing_masks,
+                target_out=batch_target_model_output.output,
+                model=model,
+                output_loss_type=output_loss_type,
+            )
+        batch_grads = torch.autograd.grad(total_loss, adv_sources)
+
+        assert isinstance(batch_grads, tuple) and len(batch_grads) == 1
+        pgd_step_accum_grads += batch_grads[0].clone()
+        pgd_step_accum_loss += total_loss
+        n_examples += batch.shape.numel() if output_loss_type == "mse" else batch.shape[:-1].numel()
+
+    reduced_accumulated_grads = all_reduce(pgd_step_accum_grads, op=ReduceOp.SUM)
+    with torch.no_grad():
+        adv_sources.add_(pgd_config.step_size * reduced_accumulated_grads.sign())
+        adv_sources.clamp_(0.0, 1.0)
+
+    return pgd_step_accum_loss, n_examples
 
 
 def calc_pgd_global_masked_recon_loss(
@@ -227,111 +296,42 @@ def calc_pgd_global_masked_recon_loss(
     Returns:
         Final reconstruction loss after PGD optimization
     """
-    dataloader_iter = iter(dataloader)
 
     # C2 represents the total number of components including the optional weight delta
     C2 = C if not use_delta_component else C + 1
+    adv_source_shape = torch.Size([n_layers] + [1 for _ in batch_dims] + [C2])
     device = get_obj_device(model)
     weight_deltas = model.calc_weight_deltas() if use_delta_component else None
 
-    adv_sources: Float[Tensor, "n_layers *batch_dims C2"] = _get_pgd_init_tensor(
-        init=pgd_config.init, shape=torch.Size([n_layers, *batch_dims, C2]), device=device
+    adv_sources: Float[Tensor, "n_layers *batch_dim_ones C2"] = _get_pgd_init_tensor(
+        init=pgd_config.init, shape=adv_source_shape, device=device
     ).requires_grad_(True)
 
+    pgd_step_loss: Float[Tensor, ""] | None = None
+    n_examples: int | None = None
     # PGD ascent with gradient accumulation
-    for _ in range(pgd_config.n_steps):
-        assert adv_sources.grad is None
-        accumulated_grads = torch.zeros_like(adv_sources)
+    for _ in range(pgd_config.n_steps + 1):  # +1 because we want to report the final loss
+        pgd_step_loss, n_examples = _global_pgd_step(
+            adv_sources=adv_sources,
+            pgd_config=pgd_config,
+            model=model,
+            weight_deltas=weight_deltas,
+            dataloader=dataloader,
+            device=device,
+            output_loss_type=output_loss_type,
+            routing=routing,
+            sampling=sampling,
+            batch_dims=batch_dims,
+            n_layers=n_layers,
+        )
 
-        # Accumulate gradients over n_batches batches
-        for batch_idx in range(pgd_config.n_batches):
-            try:
-                batch_item = next(dataloader_iter)
-            except StopIteration:
-                logger.warning(f"Dataloader exhausted after {batch_idx} batches, ending PGD step.")
-                break
-            batch = extract_batch_data(batch_item).to(device)
+    assert pgd_step_loss is not None
+    assert n_examples is not None
+    final_loss_summed = all_reduce(pgd_step_loss, op=ReduceOp.SUM)
+    final_n_examples = all_reduce(torch.tensor(n_examples, device=device), op=ReduceOp.SUM)
+    final_loss = final_loss_summed / final_n_examples
 
-            batch_target_model_output: OutputWithCache = model(batch, cache_type="input")
-            batch_ci = model.calc_causal_importances(
-                pre_weight_acts=batch_target_model_output.cache,
-                detach_inputs=False,
-                sampling=sampling,
-            ).lower_leaky
-
-            match routing:
-                case "all":
-                    batch_routing_masks = "all"
-                case "uniform_k-stochastic":
-                    batch_routing_masks = sample_uniform_k_subset_routing_masks(
-                        mask_shape=tuple(batch_dims),
-                        module_names=list(batch_ci.keys()),
-                        device=batch.device,
-                    )
-
-            with torch.enable_grad():
-                total_loss = _compute_pgd_objective_loss(
-                    adv_sources=adv_sources,
-                    batch=batch,
-                    ci=batch_ci,
-                    weight_deltas=weight_deltas,
-                    routing_masks=batch_routing_masks,
-                    target_out=batch_target_model_output.output,
-                    model=model,
-                    output_loss_type=output_loss_type,
-                    C=C,
-                )
-                batch_grads = torch.autograd.grad(total_loss, adv_sources)
-
-            assert isinstance(batch_grads, tuple) and len(batch_grads) == 1
-            accumulated_grads += batch_grads[0].clone()
-
-        reduced_accumulated_grads = all_reduce(accumulated_grads, op=ReduceOp.SUM)
-        with torch.no_grad():
-            adv_sources.add_(pgd_config.step_size * reduced_accumulated_grads.sign())
-            adv_sources.clamp_(0.0, 1.0)
-
-    # Compute final loss with optimized adv_sources using a fresh batch
-    batch_item = next(iter(dataloader))
-    batch = extract_batch_data(batch_item).to(device)
-
-    weight_deltas = model.calc_weight_deltas() if use_delta_component else None
-    target_model_output = model(batch, cache_type="input")
-    batch_ci = model.calc_causal_importances(
-        pre_weight_acts=target_model_output.cache,
-        detach_inputs=False,
-        sampling=sampling,
-    ).lower_leaky
-
-    match routing:
-        case "all":
-            batch_routing_masks = "all"
-        case "uniform_k-stochastic":
-            batch_routing_masks = sample_uniform_k_subset_routing_masks(
-                mask_shape=tuple(batch_dims),
-                module_names=list(batch_ci.keys()),
-                device=batch.device,
-            )
-
-    final_total_loss = _compute_pgd_objective_loss(
-        adv_sources=adv_sources,
-        batch=batch,
-        ci=batch_ci,
-        weight_deltas=weight_deltas,
-        routing_masks=batch_routing_masks,
-        target_out=target_model_output.output,
-        model=model,
-        output_loss_type=output_loss_type,
-        C=C,
-    )
-    n_examples = batch.shape.numel() if output_loss_type == "mse" else batch.shape[:-1].numel()
-    final_loss = final_total_loss / n_examples
-
-    sum_loss = all_reduce(final_loss, op=ReduceOp.SUM)
-    sum_n_examples = all_reduce(torch.tensor(n_examples, device=batch.device), op=ReduceOp.SUM)
-    final_loss = (sum_loss / sum_n_examples).item()
-
-    return final_loss
+    return final_loss.item()
 
 
 def calc_global_pgd_metrics(
