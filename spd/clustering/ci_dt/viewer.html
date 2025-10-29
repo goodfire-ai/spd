@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decision Tree Viewer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 {
+            color: #4ec9b0;
+        }
+        .layer {
+            margin-bottom: 30px;
+            padding: 15px;
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+        }
+        .layer-header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #4ec9b0;
+        }
+        .metrics {
+            margin: 10px 0;
+            color: #ce9178;
+            font-family: monospace;
+        }
+        .tree-container {
+            margin: 15px 0;
+            padding: 15px;
+            background: #1e1e1e;
+            border: 1px solid #3e3e42;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+        .tree-header {
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #569cd6;
+            font-size: 14px;
+        }
+        .show-trees-btn {
+            margin-top: 10px;
+            padding: 5px 10px;
+            background: #0e639c;
+            border: none;
+            color: white;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .show-trees-btn:hover {
+            background: #1177bb;
+        }
+        .trees-hidden {
+            display: none;
+        }
+
+        /* Tree visualization */
+        svg {
+            display: block;
+        }
+        .tree-node {
+            cursor: pointer;
+        }
+        .tree-node rect {
+            stroke: #3e3e42;
+            stroke-width: 2;
+        }
+        .tree-node.split rect {
+            fill: #2d2d30;
+        }
+        .tree-node.leaf rect {
+            fill: #1a3a1a;
+        }
+        .tree-node text {
+            fill: #d4d4d4;
+            font-family: monospace;
+            font-size: 11px;
+            pointer-events: none;
+        }
+        .tree-node.split text.feature-name {
+            fill: #4ec9b0;
+            font-weight: bold;
+        }
+        .tree-node.leaf text {
+            fill: #b5cea8;
+        }
+        .tree-link {
+            fill: none;
+            stroke: #3e3e42;
+            stroke-width: 2;
+        }
+        .tree-link.true-branch {
+            stroke: #608b4e;
+        }
+        .tree-link.false-branch {
+            stroke: #d16969;
+        }
+        .feature-link {
+            fill: #569cd6;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        .feature-link:hover {
+            fill: #9cdcfe;
+        }
+    </style>
+</head>
+<body>
+    <h1>Decision Tree Viewer</h1>
+    <div id="content"></div>
+
+    <script>
+        // Load trees.json directly
+        fetch('trees.json')
+            .then(response => response.json())
+            .then(data => {
+                window.allData = data;
+                buildFeatureMap(data);
+                displayData(data);
+            })
+            .catch(error => {
+                document.getElementById('content').innerHTML =
+                    `<div style="color: #f48771;">Error loading trees.json: ${error.message}</div>`;
+            });
+
+        // Build a map of feature indices to feature names
+        let featureMap = {};
+        function buildFeatureMap(data) {
+            let offset = 0;
+            data.forEach(layer => {
+                const numComponents = layer.trees.length;
+                for (let i = 0; i < numComponents; i++) {
+                    featureMap[offset + i] = `${layer.module_key}:${i}`;
+                }
+                offset += numComponents;
+            });
+        }
+
+        function displayData(data) {
+            const content = document.getElementById('content');
+            content.innerHTML = '';
+
+            data.forEach((layer, layerIdx) => {
+                const layerDiv = document.createElement('div');
+                layerDiv.className = 'layer';
+                layerDiv.id = `layer-${layerIdx}`;
+
+                const header = document.createElement('div');
+                header.className = 'layer-header';
+                header.textContent = `Layer ${layer.layer_idx}: ${layer.module_key}`;
+                layerDiv.appendChild(header);
+
+                const metrics = document.createElement('div');
+                metrics.className = 'metrics';
+                metrics.innerHTML = `
+                    Mean AP: ${layer.mean_ap.toFixed(3)} |
+                    Mean Acc: ${layer.mean_acc.toFixed(3)} |
+                    Mean BAcc: ${layer.mean_bacc.toFixed(3)} |
+                    Components: ${layer.trees.length}
+                `;
+                layerDiv.appendChild(metrics);
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'show-trees-btn';
+                toggleBtn.textContent = 'Show Trees';
+
+                const treesContainer = document.createElement('div');
+                treesContainer.className = 'trees-hidden';
+
+                let treesRendered = false;
+                toggleBtn.addEventListener('click', () => {
+                    if (treesContainer.classList.contains('trees-hidden')) {
+                        if (!treesRendered) {
+                            renderTrees(layer, layerIdx, treesContainer);
+                            treesRendered = true;
+                        }
+                        treesContainer.classList.remove('trees-hidden');
+                        toggleBtn.textContent = 'Hide Trees';
+                    } else {
+                        treesContainer.classList.add('trees-hidden');
+                        toggleBtn.textContent = 'Show Trees';
+                    }
+                });
+
+                layerDiv.appendChild(toggleBtn);
+                layerDiv.appendChild(treesContainer);
+                content.appendChild(layerDiv);
+            });
+        }
+
+        function renderTrees(layer, layerIdx, container) {
+            layer.trees.forEach((tree, idx) => {
+                const treeDiv = document.createElement('div');
+                treeDiv.className = 'tree-container';
+                treeDiv.id = `tree-${layerIdx}-${idx}`;
+
+                const treeHeader = document.createElement('div');
+                treeHeader.className = 'tree-header';
+                const featureName = `${layer.module_key}:${idx}`;
+                treeHeader.textContent = `${featureName} — AP: ${layer.ap_scores[idx].toFixed(3)}, Acc: ${layer.acc_scores[idx].toFixed(3)}, BAcc: ${layer.bacc_scores[idx].toFixed(3)}`;
+                treeDiv.appendChild(treeHeader);
+
+                const svg = renderTreeSVG(tree, layerIdx, idx);
+                treeDiv.appendChild(svg);
+
+                container.appendChild(treeDiv);
+            });
+        }
+
+        function renderTreeSVG(tree, layerIdx, componentIdx) {
+            const nodeWidth = 180;
+            const nodeHeight = 70;
+            const levelHeight = 120;
+            const horizontalSpacing = 20;
+
+            // Calculate tree layout
+            const layout = calculateLayout(tree, 0, nodeWidth, levelHeight, horizontalSpacing);
+
+            const width = layout.bounds.maxX - layout.bounds.minX + nodeWidth + 40;
+            const height = layout.bounds.maxY + nodeHeight + 40;
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', width);
+            svg.setAttribute('height', height);
+
+            // Draw links first (so they appear behind nodes)
+            drawLinks(svg, tree, layout, nodeWidth, nodeHeight);
+
+            // Draw nodes
+            drawNodes(svg, tree, layout, nodeWidth, nodeHeight, layerIdx, componentIdx);
+
+            return svg;
+        }
+
+        function calculateLayout(tree, nodeId, nodeWidth, levelHeight, spacing) {
+            const positions = {};
+            const depths = {};
+            let bounds = { minX: Infinity, maxX: -Infinity, maxY: -Infinity };
+
+            function calcSubtreeWidth(id) {
+                const leftChild = tree.children_left[id];
+                const rightChild = tree.children_right[id];
+
+                if (leftChild === -1 && rightChild === -1) {
+                    return nodeWidth;
+                }
+
+                let width = 0;
+                if (leftChild !== -1) width += calcSubtreeWidth(leftChild);
+                if (rightChild !== -1) width += calcSubtreeWidth(rightChild);
+                if (leftChild !== -1 && rightChild !== -1) width += spacing;
+
+                return Math.max(width, nodeWidth);
+            }
+
+            function layout(id, x, y, depth) {
+                depths[id] = depth;
+                const leftChild = tree.children_left[id];
+                const rightChild = tree.children_right[id];
+
+                if (leftChild === -1 && rightChild === -1) {
+                    positions[id] = { x, y };
+                    bounds.minX = Math.min(bounds.minX, x);
+                    bounds.maxX = Math.max(bounds.maxX, x);
+                    bounds.maxY = Math.max(bounds.maxY, y);
+                    return;
+                }
+
+                const leftWidth = leftChild !== -1 ? calcSubtreeWidth(leftChild) : 0;
+                const rightWidth = rightChild !== -1 ? calcSubtreeWidth(rightChild) : 0;
+
+                let currentX = x;
+                if (leftChild !== -1) {
+                    layout(leftChild, currentX + leftWidth / 2, y + levelHeight, depth + 1);
+                    currentX += leftWidth + spacing;
+                }
+                if (rightChild !== -1) {
+                    layout(rightChild, currentX + rightWidth / 2, y + levelHeight, depth + 1);
+                }
+
+                const childCenterX = leftChild !== -1 && rightChild !== -1
+                    ? (positions[leftChild].x + positions[rightChild].x) / 2
+                    : leftChild !== -1 ? positions[leftChild].x : positions[rightChild].x;
+
+                positions[id] = { x: childCenterX, y };
+                bounds.minX = Math.min(bounds.minX, childCenterX);
+                bounds.maxX = Math.max(bounds.maxX, childCenterX);
+                bounds.maxY = Math.max(bounds.maxY, y);
+            }
+
+            const totalWidth = calcSubtreeWidth(0);
+            layout(0, totalWidth / 2, 20, 0);
+
+            return { positions, depths, bounds };
+        }
+
+        function drawLinks(svg, tree, layout, nodeWidth, nodeHeight) {
+            Object.keys(layout.positions).forEach(id => {
+                const nodeId = parseInt(id);
+                const leftChild = tree.children_left[nodeId];
+                const rightChild = tree.children_right[nodeId];
+
+                const pos = layout.positions[nodeId];
+
+                if (leftChild !== -1) {
+                    const childPos = layout.positions[leftChild];
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    const d = `M ${pos.x} ${pos.y + nodeHeight} L ${childPos.x} ${childPos.y}`;
+                    path.setAttribute('d', d);
+                    path.setAttribute('class', 'tree-link true-branch');
+                    svg.appendChild(path);
+                }
+
+                if (rightChild !== -1) {
+                    const childPos = layout.positions[rightChild];
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    const d = `M ${pos.x} ${pos.y + nodeHeight} L ${childPos.x} ${childPos.y}`;
+                    path.setAttribute('d', d);
+                    path.setAttribute('class', 'tree-link false-branch');
+                    svg.appendChild(path);
+                }
+            });
+        }
+
+        function drawNodes(svg, tree, layout, nodeWidth, nodeHeight, layerIdx, componentIdx) {
+            Object.keys(layout.positions).forEach(id => {
+                const nodeId = parseInt(id);
+                const pos = layout.positions[nodeId];
+                const feature = tree.feature[nodeId];
+                const threshold = tree.threshold[nodeId];
+                const samples = tree.n_node_samples[nodeId];
+                const value = tree.value[nodeId];
+
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                g.setAttribute('class', feature === -2 ? 'tree-node leaf' : 'tree-node split');
+                g.setAttribute('transform', `translate(${pos.x - nodeWidth/2}, ${pos.y})`);
+
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('width', nodeWidth);
+                rect.setAttribute('height', nodeHeight);
+                rect.setAttribute('rx', 4);
+                g.appendChild(rect);
+
+                if (feature === -2) {
+                    // Leaf node
+                    const pred = value[0][0] < value[0][1] ? 1 : 0;
+                    const conf = Math.max(value[0][0], value[0][1]) / (value[0][0] + value[0][1]);
+
+                    addText(g, `Predict: ${pred}`, nodeWidth/2, 25);
+                    addText(g, `Conf: ${conf.toFixed(3)}`, nodeWidth/2, 42);
+                    addText(g, `n=${samples}`, nodeWidth/2, 59);
+                } else {
+                    // Split node
+                    const featureName = featureMap[feature] || `f${feature}`;
+
+                    const featureText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    featureText.setAttribute('x', nodeWidth/2);
+                    featureText.setAttribute('y', 20);
+                    featureText.setAttribute('text-anchor', 'middle');
+                    featureText.setAttribute('class', 'feature-link');
+                    featureText.textContent = featureName;
+                    featureText.style.cursor = 'pointer';
+                    featureText.addEventListener('click', () => scrollToFeature(featureName));
+                    g.appendChild(featureText);
+
+                    addText(g, `<= ${threshold.toFixed(3)}`, nodeWidth/2, 38);
+                    addText(g, `n=${samples}`, nodeWidth/2, 55);
+                }
+
+                svg.appendChild(g);
+            });
+        }
+
+        function addText(parent, content, x, y) {
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', x);
+            text.setAttribute('y', y);
+            text.setAttribute('text-anchor', 'middle');
+            text.textContent = content;
+            parent.appendChild(text);
+        }
+
+        function scrollToFeature(featureName) {
+            const parts = featureName.split(':');
+            if (parts.length !== 2) return;
+
+            const moduleName = parts[0];
+            const componentIdx = parseInt(parts[1]);
+
+            // Find the layer with this module
+            const layerIdx = window.allData.findIndex(layer => layer.module_key === moduleName);
+            if (layerIdx === -1) return;
+
+            const treeId = `tree-${layerIdx}-${componentIdx}`;
+            const treeElement = document.getElementById(treeId);
+
+            if (treeElement) {
+                treeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                treeElement.style.border = '2px solid #4ec9b0';
+                setTimeout(() => {
+                    treeElement.style.border = '1px solid #3e3e42';
+                }, 2000);
+            } else {
+                // Need to expand the layer first
+                const layerDiv = document.getElementById(`layer-${layerIdx}`);
+                const toggleBtn = layerDiv.querySelector('.show-trees-btn');
+                toggleBtn.click();
+                setTimeout(() => {
+                    const tree = document.getElementById(treeId);
+                    if (tree) {
+                        tree.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        tree.style.border = '2px solid #4ec9b0';
+                        setTimeout(() => {
+                            tree.style.border = '1px solid #3e3e42';
+                        }, 2000);
+                    }
+                }, 300);
+            }
+        }
+    </script>
+</body>
+</html>
