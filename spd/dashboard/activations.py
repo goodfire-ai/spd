@@ -53,13 +53,11 @@ def component_activations(
             cache_type="input",
         )
 
-        causal_importances: dict[str, Float[Tensor, "steps C"]] = (
-            model.calc_causal_importances(
-                pre_weight_acts=model_output.cache,
-                sampling="continuous",
-                detach_inputs=False,
-            ).upper_leaky
-        )
+        causal_importances: dict[str, Float[Tensor, "steps C"]] = model.calc_causal_importances(
+            pre_weight_acts=model_output.cache,
+            sampling="continuous",
+            detach_inputs=False,
+        ).upper_leaky
 
     return causal_importances
 
@@ -77,8 +75,7 @@ class ProcessedActivations:
     def __post_init__(self) -> None:
         """Validate shape consistency."""
         assert self.activations.shape[1] == len(self.labels), (
-            f"Activations shape {self.activations.shape[1]} != "
-            f"labels length {len(self.labels)}"
+            f"Activations shape {self.activations.shape[1]} != labels length {len(self.labels)}"
         )
 
     @property

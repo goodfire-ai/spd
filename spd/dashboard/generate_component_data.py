@@ -33,7 +33,6 @@ from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.general_utils import extract_batch_data, get_obj_device
 
-
 # ============================================================================
 # PHASE 1: DATA GENERATION
 # ============================================================================
@@ -533,8 +532,7 @@ def main(
 
     logger.info(f"\nGenerated: {raw_data.n_samples} samples × {raw_data.n_ctx} context")
     logger.info(
-        f"Components: {len(raw_data.alive_components)} alive, "
-        f"{len(raw_data.dead_components)} dead"
+        f"Components: {len(raw_data.alive_components)} alive, {len(raw_data.dead_components)} dead"
     )
 
     # ========================================================================
