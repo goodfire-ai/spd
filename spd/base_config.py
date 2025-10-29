@@ -6,6 +6,14 @@ import yaml
 from pydantic import BaseModel, ConfigDict
 
 
+class FileTypeError(ValueError):
+    """Error raised when a file has an unsupported type/extension."""
+
+
+class ConfigValidationError(ValueError):
+    """Error raised when a config file fails pydantic validation."""
+
+
 class BaseConfig(BaseModel):
     """Pydantic BaseModel suited for configs.
 
@@ -14,6 +22,8 @@ class BaseConfig(BaseModel):
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
+
+    # TODO: add a "config_type" field, which is set to the class name, so that when loading a config we can check whether the config type matches the expected class
 
     @classmethod
     def from_file(cls, path: Path | str) -> Self:
@@ -27,9 +37,16 @@ class BaseConfig(BaseModel):
             case Path() if path.suffix in [".yaml", ".yml"]:
                 data = yaml.safe_load(path.read_text())
             case _:
-                raise ValueError(f"Only (.json, .yaml, .yml) files are supported, got {path}")
+                raise FileTypeError(f"Only (.json, .yaml, .yml) files are supported, got {path}")
 
-        return cls.model_validate(data)
+        try:
+            cfg = cls.model_validate(data)
+        except Exception as e:
+            raise ConfigValidationError(
+                f"Error validating config {cls=} from path `{path.as_posix()}`\n{data = }"
+            ) from e
+
+        return cfg
 
     def to_file(self, path: Path | str) -> None:
         """Save config to file (format inferred from extension)."""
@@ -43,4 +60,4 @@ class BaseConfig(BaseModel):
             case ".yaml" | ".yml":
                 path.write_text(yaml.dump(self.model_dump(mode="json")))
             case _:
-                raise ValueError(f"Only (.json, .yaml, .yml) files are supported, got {path}")
+                raise FileTypeError(f"Only (.json, .yaml, .yml) files are supported, got {path}")

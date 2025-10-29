@@ -36,7 +36,7 @@ class TestSPDRun:
             ("tms_5-2", True, 4, None),  # Command count depends on sweep params
         ],
     )
-    @patch("spd.scripts.run.submit_slurm_array")
+    @patch("spd.scripts.run.submit_slurm_script")
     @patch("spd.scripts.run.create_slurm_array_script")
     @patch("spd.scripts.run.load_sweep_params")
     def test_spd_run_not_local_no_sweep(
@@ -88,6 +88,7 @@ class TestSPDRun:
 
         # Verify command structure
         for cmd in commands:
+            assert isinstance(cmd, str)
             assert "python" in cmd
             assert "_decomposition.py" in cmd
             assert "json:" in cmd
@@ -109,7 +110,7 @@ class TestSPDRun:
             ("tms_5-2", True),
         ],
     )
-    @patch("spd.scripts.run.subprocess.run")
+    @patch("spd.scripts.run.run_script_array_local")
     @patch("spd.scripts.run.load_sweep_params")
     def test_spd_run_local_no_sweep(
         self,
@@ -133,30 +134,31 @@ class TestSPDRun:
             **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
         )
 
-        # Calculate expected number of subprocess calls
+        # Calculate expected number of commands
         num_experiments = len(experiments.split(","))
-        expected_calls = num_experiments * 2 if sweep else num_experiments
+        expected_num_commands = num_experiments * 2 if sweep else num_experiments
 
-        # Assert subprocess.run was called the expected number of times
-        assert mock_subprocess.call_count == expected_calls
+        # Assert run_script_array_local was called exactly once
+        assert mock_subprocess.call_count == 1
 
-        # Verify each subprocess call
-        for call in mock_subprocess.call_args_list:
-            args = call[0][0]  # Get the command list
+        # Get the commands list from the call
+        commands = mock_subprocess.call_args[0][0]
+        assert len(commands) == expected_num_commands
 
-            # Should be a list of arguments
-            assert isinstance(args, list)
-            assert args[0] == "python"
-            assert "_decomposition.py" in args[1]
+        # Verify each command
+        for cmd in commands:
+            # Should be a string
+            assert isinstance(cmd, str)
+            assert "python" in cmd
+            assert "_decomposition.py" in cmd
 
             # Check for required arguments in the command
-            cmd_str = " ".join(args)
-            assert "json:" in cmd_str
-            assert "--sweep_id" in cmd_str
-            assert "--evals_id" in cmd_str
+            assert "json:" in cmd
+            assert "--sweep_id" in cmd
+            assert "--evals_id" in cmd
 
             if sweep:
-                assert "--sweep_params_json" in cmd_str
+                assert "--sweep_params_json" in cmd
 
         # No wandb functions should be called since use_wandb=False
 
@@ -178,7 +180,7 @@ class TestSPDRun:
                 **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
             )
 
-    @patch("spd.scripts.run.subprocess.run")
+    @patch("spd.scripts.run.run_script_array_local")
     def test_sweep_params_integration(self, mock_subprocess):
         """Test that sweep parameters are correctly integrated into commands.
 
@@ -196,12 +198,17 @@ class TestSPDRun:
             **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
         )
 
+        # Assert run_script_array_local was called exactly once
+        assert mock_subprocess.call_count == 1
+
+        # Get the commands list
+        commands = mock_subprocess.call_args[0][0]
+
         # Verify multiple commands were generated (sweep should create multiple runs)
-        assert mock_subprocess.call_count > 1
+        assert len(commands) > 1
 
         # Check that sweep parameters are in the commands
-        for call in mock_subprocess.call_args_list:
-            args = call[0][0]
-            cmd_str = " ".join(args)
-            assert "--sweep_params_json" in cmd_str
-            assert "json:" in cmd_str
+        for cmd in commands:
+            assert isinstance(cmd, str)
+            assert "--sweep_params_json" in cmd
+            assert "json:" in cmd

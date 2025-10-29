@@ -42,12 +42,8 @@ def insert_identity_operations_(target_model: nn.Module, identity_patterns: list
         identity_patterns: Patterns matching modules to prepend identity ops to
     """
 
-    if is_main_process():
-        logger.info(f"Inserting identity operations before {len(identity_patterns)} modules")
-
     identity_module_paths = get_target_module_paths(target_model, identity_patterns)
 
-    # Add identity layers and hooks
     for module_path in identity_module_paths:
         module = target_model.get_submodule(module_path)
 
@@ -61,7 +57,7 @@ def insert_identity_operations_(target_model: nn.Module, identity_patterns: list
             case _:
                 raise ValueError(f"Module {module} not supported. type: {type(module)}")
 
-        module.pre_identity = Identity(d_in)  # type: ignore
+        module.pre_identity = Identity(d_in)
         module.register_forward_pre_hook(pre_id_hook, with_kwargs=True)
 
         if is_main_process():
