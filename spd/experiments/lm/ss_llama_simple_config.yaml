@@ -1,24 +1,24 @@
 # --- WandB ---
-wandb_project: spd
+# wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 1200
+C: 40
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
-ci_fn_hidden_dims: [1000]
+ci_fn_hidden_dims: [100]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   [
-    "h.*.mlp.gate_proj",
-    "h.*.mlp.up_proj",
-    "h.*.mlp.down_proj",
-    "h.*.attn.q_proj",
-    "h.*.attn.k_proj",
-    "h.*.attn.v_proj",
-    "h.*.attn.o_proj",
+    "h.1.mlp.gate_proj",
+    "h.1.mlp.up_proj",
+    "h.1.mlp.down_proj",
+    "h.1.attn.q_proj",
+    "h.1.attn.k_proj",
+    "h.1.attn.v_proj",
+    "h.1.attn.o_proj",
   ]
 identity_module_patterns: null
 sampling: "continuous"
@@ -38,9 +38,9 @@ loss_metric_configs:
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 256
-eval_batch_size: 64
-steps: 200000
+batch_size: 8
+eval_batch_size: 8
+steps: 20000
 lr: 0.0002
 lr_schedule: cosine
 lr_warmup_pct: 0.0
@@ -57,30 +57,35 @@ train_log_freq: 200
 eval_freq: 1000
 slow_eval_freq: 2000
 slow_eval_on_first_step: true
-n_eval_steps: 5
+n_eval_steps: 2
 save_freq: null
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
 eval_metric_configs:
-  - classname: "CIHistograms"
-    n_batches_accum: 5
+  # - classname: "CIHistograms"
+  #   n_batches_accum: 5
   - classname: "ComponentActivationDensity"
-  - classname: "CI_L0"
-    groups:
-      total: ["*"] # Sum of all L0 values
-      layer_0: ["h.0.*"]
-      layer_1: ["h.1.*"]
-      layer_2: ["h.2.*"]
-      layer_3: ["h.3.*"]
-  - classname: "CEandKLLosses"
-    rounding_threshold: 0.0
-  - classname: "CIMeanPerComponent"
-  - classname: "StochasticHiddenActsReconLoss"
-  - classname: "PGDReconSubsetLoss"
+  - classname: "PGDGlobalReconLoss"
     init: "random"
-    step_size: 0.01
+    step_size: 0.1
     n_steps: 20
-    mask_scope: "shared_across_batch"
+    n_batches: 20
+  # - classname: "CI_L0"
+  #   groups:
+  #     total: ["*"] # Sum of all L0 values
+  #     layer_0: ["h.0.*"]
+  #     layer_1: ["h.1.*"]
+  #     layer_2: ["h.2.*"]
+  #     layer_3: ["h.3.*"]
+  # - classname: "CEandKLLosses"
+  #   rounding_threshold: 0.0
+  # - classname: "CIMeanPerComponent"
+  - classname: "StochasticHiddenActsReconLoss"
+  # - classname: "PGDReconSubsetLoss"
+  #   init: "random"
+  #   step_size: 0.01
+  #   n_steps: 20
+  #   mask_scope: "shared_across_batch"
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
