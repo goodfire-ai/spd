@@ -278,11 +278,7 @@ def _get_importances_by_module(
     """returns a dictionary of module names to causal importances, where the shape is (B, S, C)"""
 
     with torch.no_grad():
-        pre_weight_acts = cm(
-            batch,
-            cache_type="input",
-            module_names=list(cm.components.keys()),
-        ).cache
+        pre_weight_acts = cm(batch, cache_type="input").cache
         importances_by_module = cm.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
             detach_inputs=True,
