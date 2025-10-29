@@ -237,8 +237,9 @@ def _generate_activation_batches(
         )
         activation_batch.save(output_dir / _BATCH_FORMAT.format(idx=batch_idx))
 
-        # Clean up
+        # Clean up immediately after saving to avoid memory accumulation
         del batch_data, batch_data_raw, acts_dict, processed, activation_batch
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
