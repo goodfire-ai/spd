@@ -6,9 +6,6 @@ from typing import Any
 import numpy as np
 import torch
 from jaxtyping import Float, Int
-from torch import Tensor
-from transformers import PreTrainedTokenizer
-
 from spd.clustering.activations import (
     ProcessedActivations,
     component_activations,
@@ -25,6 +22,9 @@ from spd.clustering.dashboard.core.compute_helpers import (
     compute_all_cluster_activations,
 )
 from spd.clustering.dashboard.core.tokenization import tokenize_and_create_text_samples
+from torch import Tensor
+from transformers import PreTrainedTokenizer
+
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
 

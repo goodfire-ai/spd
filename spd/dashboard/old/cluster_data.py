@@ -5,7 +5,6 @@ from typing import Any
 
 import numpy as np
 from jaxtyping import Float
-
 from spd.clustering.consts import SubComponentKey
 from spd.clustering.dashboard.core.base import (
     _SEPARATOR_1,

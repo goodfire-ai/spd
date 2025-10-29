@@ -6,10 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from muutils.spinner import SpinnerContext
-from torch.utils.data import DataLoader
-from transformers import PreTrainedTokenizer
-from zanj import ZANJ
-
 from spd.clustering.dashboard.core import (
     DashboardData,
 )
@@ -23,6 +19,10 @@ from spd.clustering.dashboard.core.dashboard_io import (
 from spd.clustering.dashboard.core.util import write_html_files
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_history import MergeHistory
+from torch.utils.data import DataLoader
+from transformers import PreTrainedTokenizer
+from zanj import ZANJ
+
 from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel

@@ -5,7 +5,6 @@ from typing import Any
 import numpy as np
 from jaxtyping import Float
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
-
 from spd.clustering.consts import SubComponentKey
 from spd.clustering.dashboard.core.base import (
     ActivationSampleBatch,

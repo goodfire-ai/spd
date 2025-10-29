@@ -4,10 +4,6 @@ from typing import Any
 
 import torch
 from muutils.spinner import SpinnerContext
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-from transformers import PreTrainedTokenizer
-
 from spd.clustering.dashboard.core import (
     BatchProcessingStorage,
     ClusterId,
@@ -17,6 +13,10 @@ from spd.clustering.dashboard.core import (
     compute_cluster_coactivations,
 )
 from spd.clustering.merge_history import MergeHistory
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from transformers import PreTrainedTokenizer
+
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import get_obj_device
 

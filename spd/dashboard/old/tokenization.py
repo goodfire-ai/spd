@@ -2,9 +2,8 @@
 
 import numpy as np
 from jaxtyping import Int
-from transformers import PreTrainedTokenizer
-
 from spd.clustering.dashboard.core.base import TextSample, TextSampleHash
+from transformers import PreTrainedTokenizer
 
 # TODO: pyright.... hates tokenizers???
 # pyright: reportAttributeAccessIssue=false, reportUnknownParameterType=false

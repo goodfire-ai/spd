@@ -6,9 +6,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import torch
 from jaxtyping import Float
-from torch import Tensor
-
 from spd.clustering.activations import ProcessedActivations
+from torch import Tensor
 
 if TYPE_CHECKING:
     from spd.models.component_model import ComponentModel
