@@ -1,0 +1,25 @@
+# Test configuration for component dashboard generation
+# Using actual model from wandb
+
+# Model and output
+model_path: "wandb:goodfire/spd/runs/lxs77xye"
+output_dir: "spd/dashboard/data/test_run"
+
+# Dataset configuration
+dataset_name: "SimpleStories/SimpleStories"
+dataset_split: "train"
+dataset_column: "story"
+dataset_streaming: false
+
+# Data generation parameters
+batch_size: 32
+n_batches: 5
+context_length: 64
+
+# Component filtering
+dead_threshold: 0.000001
+
+# Analysis parameters
+n_samples: 16
+embed_dim: 2
+hist_bins: 50
