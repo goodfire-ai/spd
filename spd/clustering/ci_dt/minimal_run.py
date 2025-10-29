@@ -118,8 +118,10 @@ print("\nTraining decision trees...")
 models: list[tuple[int, MultiOutputClassifier]] = []
 
 for k in tqdm(range(1, len(layers)), desc="Training"):
-    X = np.concatenate(layers[:k], axis=1) if k > 0 else np.zeros((layers[0].shape[0], 0), bool)
-    Y = layers[k]
+    X_prev_layers_cis = (
+        np.concatenate(layers[:k], axis=1) if k > 0 else np.zeros((layers[0].shape[0], 0), bool)
+    )
+    Y_current_layer_cis = layers[k]
 
     clf = MultiOutputClassifier(
         DecisionTreeClassifier(
@@ -128,7 +130,7 @@ for k in tqdm(range(1, len(layers)), desc="Training"):
             random_state=RANDOM_STATE,
         )
     )
-    clf.fit(X.astype(np.uint8), Y.astype(np.uint8))
+    clf.fit(X_prev_layers_cis.astype(np.uint8), Y_current_layer_cis.astype(np.uint8))
     models.append((k, clf))
 
 # %% ----------------------- Compute Metrics -----------------------
@@ -139,7 +141,7 @@ def extract_prob_class_1(proba_list: list[np.ndarray], clf: MultiOutputClassifie
     """Extract P(y=1) for each output."""
     result: list[np.ndarray] = []
     for i, p in enumerate(proba_list):
-        estimator = clf.estimators_[i]  # type: ignore
+        estimator = clf.estimators_[i]  # pyright: ignore[reportIndexIssue]
         assert isinstance(estimator, DecisionTreeClassifier)
         assert len(estimator.classes_) == 2
         result.append(p[:, 1])  # P(y=1)
@@ -165,11 +167,11 @@ results: list[dict[str, Any]] = []
 print("\nPer-layer metrics:")
 for layer_idx, clf in models:
     # Prepare X, Y for this layer
-    X = np.concatenate(layers[:layer_idx], axis=1)
-    Y = layers[layer_idx]
+    X_prev_layers_cis = np.concatenate(layers[:layer_idx], axis=1)
+    Y_current_layer_cis = layers[layer_idx]
 
     # Predict
-    proba_list = clf.predict_proba(X.astype(np.uint8))  # type: ignore
+    proba_list = clf.predict_proba(X_prev_layers_cis.astype(np.uint8))  # type: ignore
     P = extract_prob_class_1(proba_list, clf)
     Y_pred = P >= 0.5
 
@@ -178,12 +180,12 @@ for layer_idx, clf in models:
     acc_scores: list[float] = []
     bacc_scores: list[float] = []
 
-    for j in range(Y.shape[1]):
-        y_true = Y[:, j].astype(int)
+    for j in range(Y_current_layer_cis.shape[1]):
+        y_true = Y_current_layer_cis[:, j].astype(int)
         y_prob = P[:, j]
         y_pred = Y_pred[:, j].astype(int)
 
-        ap_scores.append(average_precision_score(y_true, y_prob))
+        ap_scores.append(average_precision_score(y_true, y_prob))  # pyright: ignore[reportArgumentType]
         acc_scores.append(accuracy_score(y_true, y_pred))
         bacc_scores.append(balanced_accuracy_score(y_true, y_pred))
 
@@ -194,7 +196,7 @@ for layer_idx, clf in models:
     print(f"    Mean BAcc: {np.mean(bacc_scores):.3f}")
 
     # Store results with tree structures
-    trees_data = [tree_to_dict(est) for est in clf.estimators_]  # type: ignore
+    trees_data = [tree_to_dict(est) for est in clf.estimators_]  # pyright: ignore[reportArgumentType]
 
     results.append(
         {
