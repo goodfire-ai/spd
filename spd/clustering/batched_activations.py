@@ -238,9 +238,14 @@ def _generate_activation_batches(
         activation_batch.save(output_dir / _BATCH_FORMAT.format(idx=batch_idx))
 
         # Clean up
-        del batch_data, acts_dict, processed, activation_batch
+        del batch_data, batch_data_raw, acts_dict, processed, activation_batch
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+    del dataloader, batch_iterator
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def precompute_batches_for_single_run(
