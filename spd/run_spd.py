@@ -329,7 +329,7 @@ def optimize(
                     model=component_model,
                     dataloader=train_loader,
                     config=config,
-                    n_layers=len(config.all_module_patterns),
+                    n_layers=len(model.target_module_paths),
                     batch_dims=batch_dims,
                 )
 
