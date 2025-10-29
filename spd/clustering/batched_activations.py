@@ -264,6 +264,9 @@ def precompute_batches_for_single_run(
         task_name=task_name,
         batch_size=clustering_run_config.batch_size,
         seed=0,
+        config_kwargs=dict(
+            steaming=clustering_run_config.dataset_streaming,
+        ),
     ).to(device)
 
     with torch.no_grad():
