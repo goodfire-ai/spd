@@ -265,7 +265,7 @@ def precompute_batches_for_single_run(
         batch_size=clustering_run_config.batch_size,
         seed=0,
         config_kwargs=dict(
-            steaming=clustering_run_config.dataset_streaming,
+            streaming=clustering_run_config.dataset_streaming,
         ),
     ).to(device)
 
