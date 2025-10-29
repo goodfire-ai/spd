@@ -8,7 +8,7 @@ from spd.base_config import BaseConfig
 from spd.settings import REPO_ROOT
 
 
-class ComponentDashboardConfig(BaseConfig):
+class DashboardConfig(BaseConfig):
     """Configuration for minimal component dashboard generation."""
 
     # Model and output

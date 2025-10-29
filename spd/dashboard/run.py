@@ -20,7 +20,7 @@ from tqdm import tqdm
 from zanj import ZANJ
 
 from spd.configs import Config
-from spd.dashboard.activations import component_activations, process_activations
+from spd.dashboard.core.activations import component_activations, process_activations
 from spd.dashboard.core.component_data import (
     ComponentDashboardData,
     GlobalMetrics,
@@ -605,9 +605,9 @@ def cli() -> None:
     args: argparse.Namespace = parser.parse_args()
 
     # Import config class (will be created next)
-    from spd.dashboard.core.component_dashboard_config import ComponentDashboardConfig
+    from spd.dashboard.core.dashboard_config import DashboardConfig
 
-    config: ComponentDashboardConfig = ComponentDashboardConfig.from_file(args.config)
+    config: DashboardConfig = DashboardConfig.from_file(args.config)
     logger.info(f"Loaded config from: {args.config}")
 
     # Load SPD config to get tokenizer name
