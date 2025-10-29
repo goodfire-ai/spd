@@ -25,6 +25,7 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 # ----------------------- configuration -----------------------
 
 config = CIDTConfig(
+    wandb_run_path="wandb:goodfire/spd/runs/lxs77xye",
     batch_size=16,
     n_batches=4,
     activation_threshold=0.01,
@@ -36,14 +37,12 @@ device: str = "cuda" if torch.cuda.is_available() else "cpu"
 # %%
 # ----------------------- load model -----------------------
 
-wandb_run_path: str = "wandb:goodfire/spd/runs/lxs77xye"
-
-spd_run: SPDRunInfo = SPDRunInfo.from_path(wandb_run_path)
+spd_run: SPDRunInfo = SPDRunInfo.from_path(config.wandb_run_path)
 model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
 model.to(device)
 cfg: Config = spd_run.config
 
-print(f"Loaded model from {wandb_run_path}")
+print(f"Loaded model from {config.wandb_run_path}")
 
 # %%
 # ----------------------- load dataset -----------------------
