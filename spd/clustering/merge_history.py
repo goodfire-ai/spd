@@ -11,6 +11,7 @@ from jaxtyping import Float, Int
 from muutils.dbg import dbg_tensor
 
 from spd.clustering.consts import (
+    ComponentIndexDtype,
     ComponentLabels,
     DistancesArray,
     DistancesMethod,
@@ -74,7 +75,7 @@ class MergeHistory(SaveableObject):
         return MergeHistory(
             labels=labels,
             n_iters_current=0,
-            selected_pairs=np.full((n_iters_target, 2), -1, dtype=np.int16),
+            selected_pairs=np.full((n_iters_target, 2), -1, dtype=ComponentIndexDtype),
             merges=BatchedGroupMerge.init_empty(
                 batch_size=n_iters_target, n_components=n_components
             ),
@@ -108,7 +109,7 @@ class MergeHistory(SaveableObject):
         current_merge: GroupMerge,
     ) -> None:
         """Add data for one iteration."""
-        self.selected_pairs[idx] = np.array(selected_pair, dtype=np.int16)
+        self.selected_pairs[idx] = np.array(selected_pair, dtype=ComponentIndexDtype)
         self.merges[idx] = current_merge
 
         assert self.n_iters_current == idx
@@ -339,9 +340,7 @@ class MergeHistoryEnsemble:
         output: MergesArray = np.full(
             (n_ens, n_iters, c_components),
             fill_value=-1,
-            dtype=np.int16,
-            # if you have more than 32k components, change this to np.int32
-            # if you have more than 2.1b components, rethink your life choices
+            dtype=ComponentIndexDtype,
         )
         for i_ens, history in enumerate(self.data):
             for i_iter, merge in enumerate(history.merges):
@@ -373,7 +372,7 @@ class MergeHistoryEnsemble:
             merges_array: MergesArray = np.full(
                 (self.n_ensemble, self.n_iters_min, c_components),
                 fill_value=-1,
-                dtype=np.int16,
+                dtype=ComponentIndexDtype,
             )
         except Exception as e:
             err_msg = (
@@ -418,7 +417,7 @@ class MergeHistoryEnsemble:
                 merges_array[i_ens, :, i_comp_new_relabel] = np.full(
                     self.n_iters_min,
                     fill_value=idx_missing + hist_n_components,
-                    dtype=np.int16,
+                    dtype=ComponentIndexDtype,
                 )
 
         # TODO: Consider logging overlap_stats to WandB if run is available
