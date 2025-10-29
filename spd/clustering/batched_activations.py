@@ -25,7 +25,8 @@ from spd.clustering.activations import (
     process_activations,
 )
 from spd.clustering.consts import ActivationsTensor, BatchTensor, ComponentLabels
-from spd.clustering.dataset import load_dataset
+from spd.clustering.dataset import create_dataset_loader
+from spd.data import loop_dataloader
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import TaskName
@@ -162,6 +163,7 @@ def _generate_activation_batches(
     n_batches: int,
     output_dir: Path,
     base_seed: int,
+    dataset_streaming: bool = False,
 ) -> None:
     """Core function to generate activation batches.
 
@@ -176,21 +178,36 @@ def _generate_activation_batches(
         batch_size: Batch size for dataset
         n_batches: Number of batches to generate
         output_dir: Directory to save batches
-        base_seed: Base seed for dataset loading (each batch gets base_seed + batch_idx)
+        base_seed: Base seed for dataset loading
+        dataset_streaming: Whether to use streaming for dataset loading
     """
+
+    # Create dataloader ONCE instead of reloading for each batch
+    dataloader = create_dataset_loader(
+        model_path=model_path,
+        task_name=task_name,
+        batch_size=batch_size,
+        seed=base_seed,
+        config_kwargs=dict(
+            streaming=dataset_streaming,
+        ),
+    )
+
+    # Use loop_dataloader for efficient iteration that handles exhaustion
+    batch_iterator = loop_dataloader(dataloader)
 
     batch_idx: int
     for batch_idx in tqdm(range(n_batches), desc="Generating batches", leave=False):
-        # Use unique seed for each batch
-        seed: int = base_seed + batch_idx
+        # Get next batch from iterator
+        batch_data_raw = next(batch_iterator)
 
-        # Load data
-        batch_data: BatchTensor = load_dataset(
-            model_path=model_path,
-            task_name=task_name,
-            batch_size=batch_size,
-            seed=seed,
-        ).to(device)
+        # Extract input based on task type
+        if task_name == "lm":
+            batch_data: BatchTensor = batch_data_raw["input_ids"].to(device)
+        elif task_name == "resid_mlp":
+            batch_data = batch_data_raw[0].to(device)  # (batch, labels) tuple
+        else:
+            raise ValueError(f"Unsupported task: {task_name}")
 
         # Compute activations
         with torch.no_grad():
@@ -244,7 +261,7 @@ def precompute_batches_for_single_run(
     Args:
         clustering_run_config: Configuration for clustering run
         output_dir: Directory to save batches (will contain batch_0000.zip, batch_0001.zip, etc.)
-        base_seed: Base seed for dataset loading (each batch gets base_seed + batch_idx)
+        base_seed: Base seed for dataset loading
 
     Returns:
         Number of batches generated
@@ -257,25 +274,8 @@ def precompute_batches_for_single_run(
     model: ComponentModel = ComponentModel.from_run_info(spd_run).to(device)
     task_name: TaskName = spd_run.config.task_config.task_name
 
-    # Load a sample batch to count components
-    logger.info("Loading sample batch to count components")
-    sample_batch: BatchTensor = load_dataset(
-        model_path=clustering_run_config.model_path,
-        task_name=task_name,
-        batch_size=clustering_run_config.batch_size,
-        seed=0,
-        config_kwargs=dict(
-            streaming=clustering_run_config.dataset_streaming,
-        ),
-    ).to(device)
-
-    with torch.no_grad():
-        sample_acts: dict[str, Float[Tensor, "samples components"]] = component_activations(
-            model, device, sample_batch
-        )
-
-    # Count total components across all modules
-    n_components: int = sum(act.shape[-1] for act in sample_acts.values())
+    # Count total components directly from model (sum C across all component modules)
+    n_components: int = sum(comp.C for comp in model.components.values())
 
     # Calculate number of iterations and batches needed
     n_iters: int = clustering_run_config.merge_config.get_num_iters(n_components)
@@ -303,10 +303,11 @@ def precompute_batches_for_single_run(
         n_batches=n_batches_needed,
         output_dir=output_dir,
         base_seed=base_seed,
+        dataset_streaming=clustering_run_config.dataset_streaming,
     )
 
     # Clean up model
-    del model, sample_batch, sample_acts
+    del model
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()

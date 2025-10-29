@@ -6,6 +6,8 @@ Each clustering run loads its own dataset batch, seeded by the run index.
 import warnings
 from typing import Any
 
+from torch.utils.data import DataLoader
+
 from spd.clustering.consts import BatchTensor
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -13,6 +15,46 @@ from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import TaskName
+
+
+def create_dataset_loader(
+    model_path: str,
+    task_name: TaskName,
+    batch_size: int,
+    seed: int,
+    **kwargs: Any,
+) -> DataLoader[Any]:
+    """Create a dataloader for clustering that can be iterated multiple times.
+
+    This is more efficient than load_dataset() when you need multiple batches,
+    as it creates the dataloader once and allows iteration through many batches.
+
+    Args:
+        model_path: Path to decomposed model
+        task_name: Task type
+        batch_size: Batch size
+        seed: Random seed for dataset
+
+    Returns:
+        DataLoader that can be iterated to get multiple batches
+    """
+    match task_name:
+        case "lm":
+            return _create_lm_dataloader(
+                model_path=model_path,
+                batch_size=batch_size,
+                seed=seed,
+                **kwargs,
+            )
+        case "resid_mlp":
+            return _create_resid_mlp_dataloader(
+                model_path=model_path,
+                batch_size=batch_size,
+                seed=seed,
+                **kwargs,
+            )
+        case _:
+            raise ValueError(f"Unsupported task: {task_name}")
 
 
 def load_dataset(
@@ -24,7 +66,9 @@ def load_dataset(
 ) -> BatchTensor:
     """Load a single batch for clustering.
 
-    Each run gets its own dataset batch, seeded by index in ensemble.
+    This is a convenience wrapper around create_dataset_loader() that extracts
+    just the first batch. Use create_dataset_loader() directly if you need
+    multiple batches for better efficiency.
 
     Args:
         model_path: Path to decomposed model
@@ -35,32 +79,31 @@ def load_dataset(
     Returns:
         Single batch of data
     """
-    match task_name:
-        case "lm":
-            return _load_lm_batch(
-                model_path=model_path,
-                batch_size=batch_size,
-                seed=seed,
-                **kwargs,
-            )
-        case "resid_mlp":
-            return _load_resid_mlp_batch(
-                model_path=model_path,
-                batch_size=batch_size,
-                seed=seed,
-                **kwargs,
-            )
-        case _:
-            raise ValueError(f"Unsupported task: {task_name}")
+    dataloader = create_dataset_loader(
+        model_path=model_path,
+        task_name=task_name,
+        batch_size=batch_size,
+        seed=seed,
+        **kwargs,
+    )
+
+    # Extract first batch based on task type
+    batch = next(iter(dataloader))
+    if task_name == "lm":
+        return batch["input_ids"]
+    elif task_name == "resid_mlp":
+        return batch[0]  # ResidMLP returns (batch, labels) tuple
+    else:
+        raise ValueError(f"Unsupported task: {task_name}")
 
 
-def _load_lm_batch(
+def _create_lm_dataloader(
     model_path: str,
     batch_size: int,
     seed: int,
     config_kwargs: dict[str, Any] | None = None,
-) -> BatchTensor:
-    """Load a batch for language model task."""
+) -> DataLoader[Any]:
+    """Create a dataloader for language model task."""
     spd_run = SPDRunInfo.from_path(model_path)
     cfg = spd_run.config
 
@@ -101,18 +144,16 @@ def _load_lm_batch(
         ddp_world_size=1,
     )
 
-    # Get first batch
-    batch = next(iter(dataloader))
-    return batch["input_ids"]
+    return dataloader
 
 
-def _load_resid_mlp_batch(
+def _create_resid_mlp_dataloader(
     model_path: str,
     batch_size: int,
     seed: int,
     config_kwargs: dict[str, Any] | None = None,
-) -> BatchTensor:
-    """Load a batch for ResidMLP task."""
+) -> DataLoader[Any]:
+    """Create a dataloader for ResidMLP task."""
     from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
     from spd.utils.data_utils import DatasetGeneratedDataLoader
 
@@ -152,7 +193,6 @@ def _load_resid_mlp_batch(
         data_generation_type=cfg.task_config.data_generation_type,
     )
 
-    # Generate batch
+    # Create dataloader
     dataloader = DatasetGeneratedDataLoader(dataset, batch_size=batch_size, shuffle=False)
-    batch, _ = next(iter(dataloader))
-    return batch
+    return dataloader
