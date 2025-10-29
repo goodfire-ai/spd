@@ -17,18 +17,17 @@ from spd.configs import (
     SamplingType,
 )
 from spd.log import logger
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import (
     RoutingType,
     sample_uniform_k_subset_routing_masks,
 )
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data
+from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data, get_obj_device
 
 
 def _compute_pgd_objective_loss(
-    *,
     adv_sources: Float[Tensor, "n_layers *batch_dims C2"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     ci: dict[str, Float[Tensor, "... C"]],
@@ -116,7 +115,6 @@ def _interpolate_component_mask(
 
 
 def pgd_masked_recon_loss_update(
-    *,
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     ci: dict[str, Float[Tensor, "... C"]],
@@ -198,7 +196,7 @@ def pgd_masked_recon_loss_update(
 
 
 def calc_pgd_global_masked_recon_loss(
-    *,
+    pgd_config: PGDGlobalConfig,
     model: ComponentModel,
     dataloader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
@@ -206,40 +204,38 @@ def calc_pgd_global_masked_recon_loss(
     routing: RoutingType,
     sampling: SamplingType,
     use_delta_component: bool,
-    pgd_config: PGDGlobalConfig,
     C: int,
     batch_dims: tuple[int, ...],
     n_layers: int,
 ) -> float:
     """PGD masked reconstruction loss with gradient accumulation over multiple batches.
 
-    This function optimizes adversarial masks by accumulating gradients over n_batches
-    batches before each PGD update step. This provides stronger adversarial evaluation
-    compared to single-batch PGD.
+    This function optimizes adversarial masks by accumulating gradients over pgd_config.n_batches
+    batches before each PGD update step.
 
     Args:
+        pgd_config: PGD global configuration
         model: The ComponentModel to evaluate
         dataloader: DataLoader or iterator yielding batches
         output_loss_type: Loss type for reconstruction ("mse" or "kl")
         routing: Routing strategy ("all" or "uniform_k-stochastic")
         sampling: Sampling mode for causal importance calculation
         use_delta_component: Whether to include weight delta component
-        pgd_config: PGD global configuration
         C: Number of components (excluding weight delta)
         batch_dims: Dimensions of batch (e.g., (batch_size,) or (batch_size, seq_len))
         n_layers: Number of layers/modules being decomposed
     Returns:
         Final reconstruction loss after PGD optimization
     """
-    # Convert DataLoader to iterator if needed
     dataloader_iter = iter(dataloader)
 
-    # Initialize adv_sources using passed shape information
+    # C2 represents the total number of components including the optional weight delta
     C2 = C if not use_delta_component else C + 1
-    adv_source_shape = torch.Size([n_layers, *batch_dims, C2])
-    device = next(model.parameters()).device
+    device = get_obj_device(model)
+    weight_deltas = model.calc_weight_deltas() if use_delta_component else None
+
     adv_sources: Float[Tensor, "n_layers *batch_dims C2"] = _get_pgd_init_tensor(
-        pgd_config.init, adv_source_shape, device
+        init=pgd_config.init, shape=torch.Size([n_layers, *batch_dims, C2]), device=device
     ).requires_grad_(True)
 
     # PGD ascent with gradient accumulation
@@ -252,15 +248,13 @@ def calc_pgd_global_masked_recon_loss(
             try:
                 batch_item = next(dataloader_iter)
             except StopIteration:
-                logger.warning(f"Dataloader exhausted after {batch_idx} batches")
+                logger.warning(f"Dataloader exhausted after {batch_idx} batches, ending PGD step.")
                 break
             batch = extract_batch_data(batch_item).to(device)
 
-            # Compute weight deltas and CI for this batch
-            batch_weight_deltas = model.calc_weight_deltas() if use_delta_component else None
-            target_model_output = model(batch, cache_type="input")
+            batch_target_model_output: OutputWithCache = model(batch, cache_type="input")
             batch_ci = model.calc_causal_importances(
-                pre_weight_acts=target_model_output.cache,
+                pre_weight_acts=batch_target_model_output.cache,
                 detach_inputs=False,
                 sampling=sampling,
             ).lower_leaky
@@ -275,16 +269,14 @@ def calc_pgd_global_masked_recon_loss(
                         device=batch.device,
                     )
 
-            batch_target_out = model(batch)
-
             with torch.enable_grad():
                 total_loss = _compute_pgd_objective_loss(
                     adv_sources=adv_sources,
                     batch=batch,
                     ci=batch_ci,
-                    weight_deltas=batch_weight_deltas,
+                    weight_deltas=weight_deltas,
                     routing_masks=batch_routing_masks,
-                    target_out=batch_target_out,
+                    target_out=batch_target_model_output.output,
                     model=model,
                     output_loss_type=output_loss_type,
                     C=C,
@@ -294,7 +286,6 @@ def calc_pgd_global_masked_recon_loss(
             assert isinstance(batch_grads, tuple) and len(batch_grads) == 1
             accumulated_grads += batch_grads[0].clone()
 
-        # Apply accumulated gradients
         reduced_accumulated_grads = all_reduce(accumulated_grads, op=ReduceOp.SUM)
         with torch.no_grad():
             adv_sources.add_(pgd_config.step_size * reduced_accumulated_grads.sign())
@@ -304,7 +295,7 @@ def calc_pgd_global_masked_recon_loss(
     batch_item = next(iter(dataloader))
     batch = extract_batch_data(batch_item).to(device)
 
-    batch_weight_deltas = model.calc_weight_deltas() if use_delta_component else None
+    weight_deltas = model.calc_weight_deltas() if use_delta_component else None
     target_model_output = model(batch, cache_type="input")
     batch_ci = model.calc_causal_importances(
         pre_weight_acts=target_model_output.cache,
@@ -326,7 +317,7 @@ def calc_pgd_global_masked_recon_loss(
         adv_sources=adv_sources,
         batch=batch,
         ci=batch_ci,
-        weight_deltas=batch_weight_deltas,
+        weight_deltas=weight_deltas,
         routing_masks=batch_routing_masks,
         target_out=target_model_output.output,
         model=model,
@@ -344,7 +335,6 @@ def calc_pgd_global_masked_recon_loss(
 
 
 def calc_global_pgd_metrics(
-    *,
     global_pgd_eval_configs: list[PGDGlobalConfigType],
     model: ComponentModel,
     dataloader: DataLoader[Int[Tensor, "..."]]
@@ -363,13 +353,13 @@ def calc_global_pgd_metrics(
                 routing = "uniform_k-stochastic"
 
         metrics[pgd_global_config.classname] = calc_pgd_global_masked_recon_loss(
+            pgd_config=pgd_global_config,
             model=model,
             dataloader=dataloader,
             output_loss_type=config.output_loss_type,
             routing=routing,
             sampling=config.sampling,
             use_delta_component=config.use_delta_component,
-            pgd_config=pgd_global_config,
             C=config.C,
             batch_dims=batch_dims,
             n_layers=n_layers,
