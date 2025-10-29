@@ -277,15 +277,27 @@ def main(
         )
         logger.info(f"WandB workspace: {workspace_url}")
 
-    # Precompute batches if multi-batch mode
     clustering_run_config: ClusteringRunConfig = ClusteringRunConfig.from_file(
         pipeline_config.clustering_run_config_path
     )
+
+    # Precompute batches if multi-batch mode
+    # ==========================================================================================
+
+    # pass streaming to the crc
+    clustering_run_config = replace_pydantic_model(
+        clustering_run_config,
+        {"dataset_streaming": dataset_streaming},
+    )
+
     batches_base_dir: Path | None = precompute_batches_for_ensemble(
         clustering_run_config=clustering_run_config,
         n_runs=pipeline_config.n_runs,
         output_dir=storage.base_dir,
     )
+
+    # run
+    # ==========================================================================================
 
     # Generate commands for clustering runs
     clustering_commands: list[str] = generate_clustering_commands(

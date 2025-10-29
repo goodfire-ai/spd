@@ -3,6 +3,7 @@
 Each clustering run loads its own dataset batch, seeded by the run index.
 """
 
+import warnings
 from typing import Any
 
 from spd.clustering.consts import BatchTensor
@@ -54,7 +55,10 @@ def load_dataset(
 
 
 def _load_lm_batch(
-    model_path: str, batch_size: int, seed: int, config_kwargs: dict[str, Any] | None = None
+    model_path: str,
+    batch_size: int,
+    seed: int,
+    config_kwargs: dict[str, Any] | None = None,
 ) -> BatchTensor:
     """Load a batch for language model task."""
     spd_run = SPDRunInfo.from_path(model_path)
@@ -102,7 +106,12 @@ def _load_lm_batch(
     return batch["input_ids"]
 
 
-def _load_resid_mlp_batch(model_path: str, batch_size: int, seed: int) -> BatchTensor:
+def _load_resid_mlp_batch(
+    model_path: str,
+    batch_size: int,
+    seed: int,
+    config_kwargs: dict[str, Any] | None = None,
+) -> BatchTensor:
     """Load a batch for ResidMLP task."""
     from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
     from spd.utils.data_utils import DatasetGeneratedDataLoader
@@ -117,6 +126,18 @@ def _load_resid_mlp_batch(model_path: str, batch_size: int, seed: int) -> BatchT
     assert isinstance(component_model.target_model, ResidMLP), (
         f"Expected target_model to be of type ResidMLP, but got {type(component_model.target_model) = }"
     )
+
+    if config_kwargs is not None:
+        if "streaming" in config_kwargs:
+            warnings.warn(
+                "The 'streaming' option is not supported for ResidMLPDataset and will be ignored.",
+                stacklevel=1,
+            )
+            config_kwargs.pop("streaming")
+
+        assert len(config_kwargs) == 0, (
+            f"Unsupported config_kwargs for ResidMLPDataset: {config_kwargs=}"
+        )
 
     # Create dataset with run-specific seed
     dataset = ResidMLPDataset(
