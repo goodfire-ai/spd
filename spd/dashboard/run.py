@@ -13,7 +13,6 @@ import numpy as np
 import torch
 from jaxtyping import Float, Int
 from muutils.spinner import SpinnerContext
-from sklearn.manifold import Isomap
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -153,90 +152,6 @@ def generate_activations(
 # ============================================================================
 
 
-def compute_coactivations(
-    activations: dict[str, Float[np.ndarray, "n_samples n_ctx"]],
-    component_labels: list[str],
-) -> Float[np.ndarray, "n_components n_components"]:
-    """Compute binary coactivation matrix.
-
-    Args:
-        activations: Dict mapping component labels to activation arrays
-        component_labels: Ordered list of components to include
-
-    Returns:
-        Coactivation matrix counting positions where both components activate
-    """
-    # Stack: [n_total_positions, n_components]
-    stacked: Float[np.ndarray, "n_total n_components"] = np.stack(
-        [activations[label].flatten() for label in component_labels], axis=1
-    )
-
-    # Binarize (1 if active, 0 otherwise)
-    binary: Float[np.ndarray, "n_total n_components"] = (stacked > 0).astype(np.float32)
-
-    # Coactivation matrix: binary.T @ binary
-    coact: Float[np.ndarray, "n_components n_components"] = binary.T @ binary
-
-    return coact
-
-
-def compute_correlations(
-    activations: dict[str, Float[np.ndarray, "n_samples n_ctx"]],
-    component_labels: list[str],
-) -> Float[np.ndarray, "n_components n_components"]:
-    """Compute Pearson correlation matrix.
-
-    Args:
-        activations: Dict mapping component labels to activation arrays
-        component_labels: Ordered list of components to include
-
-    Returns:
-        Correlation matrix
-    """
-    # Stack: [n_total_positions, n_components]
-    stacked: Float[np.ndarray, "n_total n_components"] = np.stack(
-        [activations[label].flatten() for label in component_labels], axis=1
-    )
-
-    # Pearson correlation
-    correlations: Float[np.ndarray, "n_components n_components"] = np.corrcoef(stacked.T)
-
-    return correlations
-
-
-def compute_embeddings(
-    coactivations: Float[np.ndarray, "n_components n_components"],
-    correlations: Float[np.ndarray, "n_components n_components"],
-    n_components: int,
-) -> Float[np.ndarray, "n_components embed_dim"]:
-    """Compute Isomap embeddings from affinity matrix.
-
-    Args:
-        coactivations: Coactivation count matrix
-        correlations: Correlation matrix
-        n_components: Embedding dimensionality
-
-    Returns:
-        Embedding coordinates for each component
-    """
-    # Combine coactivations and absolute correlations for affinity
-    affinity: Float[np.ndarray, "n_comp n_comp"] = coactivations + np.abs(correlations)
-
-    # Convert to distance (higher affinity = lower distance)
-    max_affinity: float = float(affinity.max())
-    distance: Float[np.ndarray, "n_comp n_comp"] = max_affinity - affinity
-
-    # Ensure diagonal is zero and matrix is symmetric
-    np.fill_diagonal(distance, 0.0)
-    distance = (distance + distance.T) / 2.0
-
-    # Isomap embedding with precomputed distances
-    isomap: Isomap = Isomap(n_components=n_components, metric="precomputed")
-    embeddings: Float[np.ndarray, "n_comp embed_dim"] = isomap.fit_transform(distance)
-
-    return embeddings
-
-
 def compute_global_metrics(
     raw_data: RawActivationData,
     embed_dim: int,
@@ -255,26 +170,11 @@ def compute_global_metrics(
         label: raw_data.activations[label] for label in raw_data.alive_components
     }
 
-    logger.info("Computing coactivations...")
-    coact: Float[np.ndarray, "n_alive n_alive"] = compute_coactivations(
-        alive_acts, raw_data.alive_components
-    )
-
-    logger.info("Computing correlations...")
-    corr: Float[np.ndarray, "n_alive n_alive"] = compute_correlations(
-        alive_acts, raw_data.alive_components
-    )
-
-    logger.info(f"Computing {embed_dim}D embeddings with Isomap...")
-    embeds: Float[np.ndarray, "n_alive embed_dim"] = compute_embeddings(
-        coact, corr, n_components=embed_dim
-    )
-
-    return GlobalMetrics(
-        coactivations=coact,
-        correlations=corr,
-        embeddings=embeds,
+    logger.info("Computing global metrics (coactivations, correlations, embeddings)...")
+    return GlobalMetrics.generate(
+        activations=alive_acts,
         component_labels=raw_data.alive_components,
+        embed_dim=embed_dim,
     )
 
 

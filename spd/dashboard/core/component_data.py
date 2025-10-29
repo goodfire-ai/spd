@@ -53,6 +53,54 @@ class GlobalMetrics(SerializableDataclass):
         idx: int = self.component_labels.index(label)
         return self.embeddings[idx]
 
+    @classmethod
+    def generate(
+        cls,
+        activations: dict[str, Float[np.ndarray, "n_samples n_ctx"]],
+        component_labels: list[str],
+        embed_dim: int,
+    ) -> "GlobalMetrics":
+        """Generate global metrics from component activations.
+
+        Args:
+            activations: Dict mapping component labels to activation arrays
+            component_labels: Ordered list of components to include
+            embed_dim: Dimensionality of embeddings
+
+        Returns:
+            GlobalMetrics with coactivations, correlations, and embeddings
+        """
+        # Stack and flatten: [n_total_positions, n_components]
+        stacked: Float[np.ndarray, "n_total n_components"] = np.stack(
+            [activations[label].flatten() for label in component_labels], axis=1
+        )
+
+        # Compute binary coactivations
+        binary: Float[np.ndarray, "n_total n_components"] = (stacked > 0).astype(np.float32)
+        coactivations: Float[np.ndarray, "n_components n_components"] = binary.T @ binary
+
+        # Compute Pearson correlations
+        correlations: Float[np.ndarray, "n_components n_components"] = np.corrcoef(stacked.T)
+
+        # Compute Isomap embeddings from affinity
+        affinity: Float[np.ndarray, "n_comp n_comp"] = coactivations + np.abs(correlations)
+        max_affinity: float = float(affinity.max())
+        distance: Float[np.ndarray, "n_comp n_comp"] = max_affinity - affinity
+        np.fill_diagonal(distance, 0.0)
+        distance = (distance + distance.T) / 2.0
+
+        from sklearn.manifold import Isomap
+
+        isomap: Isomap = Isomap(n_components=embed_dim, metric="precomputed")
+        embeddings: Float[np.ndarray, "n_comp embed_dim"] = isomap.fit_transform(distance)
+
+        return cls(  # pyright: ignore[reportCallIssue]
+            coactivations=coactivations,
+            correlations=correlations,
+            embeddings=embeddings,
+            component_labels=component_labels,
+        )
+
 
 @serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
 class TopKSample(SerializableDataclass):
