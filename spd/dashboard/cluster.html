@@ -2,10 +2,12 @@
 <html>
 <head>
     <title>Cluster Details</title>
+    <!-- mivanit js-dev-toolkit -->
+    <link rel="stylesheet" href="https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src//notif.css">
+    <link rel="stylesheet" href="https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src//token-display.css">
+    <!-- local -->
     <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="css/notif.css">
     <link rel="stylesheet" href="css/model-view.css">
-    <link rel="stylesheet" href="css/token-display.css">
 </head>
 <body>
     <div>
@@ -65,15 +67,20 @@
     <div id="loading">Loading cluster data...</div>
     <div id="tooltip" style="display: none; position: absolute; background: #333; color: white; padding: 8px; border-radius: 4px; white-space: pre; z-index: 1000; pointer-events: none;"></div>
 
-    <script src="js/util/notif.js"></script>
-    <script src="js/util/config.js"></script>
-    <script src="js/util/table.js"></script>
-    <script src="js/util/sparklines.js"></script>
-    <script src="js/util/histogram.js"></script>
-    <script src="js/util/array.js"></script>
-    <script src="js/util/zanj.js"></script>
-    <script src="js/pkg/jszip.min.js"></script>
-    <script src="js/util/ColorUtil.js"></script>
+    <!-- jszip lib -->
+    <script src="https://raw.githubusercontent.com/Stuk/jszip/refs/heads/main/dist/jszip.min.js"></script>
+
+    <!-- mivanit js-dev-toolkit -->
+    <script src="https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/notif.js"></script>
+    <script src="https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/config.js"></script>
+    <script src="https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/table.js"></script>
+    <script src="https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/sparklines.js"></script>
+    <script src="https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/histogram.js"></script>
+    <script src="https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/array.js"></script>
+    <script src="https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/zanj.js"></script>
+    <script src="https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/ColorUtil.js"></script>
+
+    <!-- local -->
     <script src="js/model-visualization.js"></script>
     <script src="js/token-display.js"></script>
     <script src="js/cluster-detail.js"></script>
