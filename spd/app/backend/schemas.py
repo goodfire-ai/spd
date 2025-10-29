@@ -8,16 +8,21 @@ class ActivationContext(BaseModel):
     ci_value: float
 
 
-class TokenDensity(BaseModel):
+class TokenPR(BaseModel):
+    """Token Precision and Recall for a given subcomponent"""
+
     token: str
+    """Token string"""
     recall: float
+    """Recall: P(token | subcomponent firing)"""
     precision: float
+    """Precision: P(subcomponent firing | token)"""
 
 
 class SubcomponentActivationContexts(BaseModel):
     subcomponent_idx: int
     examples: list[ActivationContext]
-    token_densities: list[TokenDensity]
+    token_prs: list[TokenPR]
     mean_ci: float
 
 

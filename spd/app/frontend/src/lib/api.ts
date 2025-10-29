@@ -36,7 +36,7 @@ export type ActivationContext = {
 export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     examples: ActivationContext[];
-    token_densities: TokenDensity[];
+    token_prs: TokenPR[];
     mean_ci: number;
 };
 
@@ -44,7 +44,7 @@ export type ModelActivationContexts = {
     layers: Record<string, SubcomponentActivationContexts[]>;
 };
 
-export type TokenDensity = {
+export type TokenPR = {
     token: string;
     recall: number;
     precision: number;

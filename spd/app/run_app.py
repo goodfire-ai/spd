@@ -88,8 +88,10 @@ def _spawn(
     env: dict[str, str] | None,
     logfile: TextIO,
 ) -> subprocess.Popen[str]:
-    """Spawn a process in its own session, streaming stdout/stderr to logfile."""
+    """Spawn a process in its own process group, streaming stdout/stderr to logfile."""
     try:
+        # Use preexec_fn to set process group on Unix systems
+        # This allows us to kill the entire process tree later
         return subprocess.Popen(
             cmd,
             cwd=str(cwd),
@@ -97,7 +99,7 @@ def _spawn(
             stderr=subprocess.STDOUT,
             bufsize=1,
             text=True,  # modern alias for universal_newlines=True
-            start_new_session=True,  # new process group for clean kill
+            preexec_fn=os.setpgrp,  # Create new process group
             env=env,
         )
     except FileNotFoundError as e:
@@ -110,48 +112,49 @@ def _spawn(
 
 
 def wait_to_serve(port: int) -> None:
-    for _ in range(10):
+    start = time.time()
+    while time.time() < (start + 20.0):
         try:
-            response = requests.get(f"http://localhost:{port}")
+            response = requests.get(f"http://localhost:{port}", timeout=1.0)
             if response.status_code == 200:
-                break
+                return
         except requests.RequestException:
             pass
-        time.sleep(1)
-    else:
-        print(f"{AnsiEsc.RED}✗{AnsiEsc.RESET} Healthcheck failed", file=sys.stderr)
-        sys.exit(1)
+        time.sleep(0.5)
+    print(f"{AnsiEsc.RED}✗{AnsiEsc.RESET} Healthcheck failed", file=sys.stderr)
+    sys.exit(1)
 
 
-def start_backend(port: int, logfile: TextIO) -> subprocess.Popen[str]:
-    print(f"{AnsiEsc.DIM}  ▸ Starting backend...{AnsiEsc.RESET}", end="", flush=True)
+def start_backend(port: int, logfile: TextIO, proc_ref: list[subprocess.Popen[str] | None]) -> subprocess.Popen[str]:
+    print(f"  {AnsiEsc.DIM}▸ Starting backend...{AnsiEsc.RESET}", end="", flush=True)
     project_root = APP_DIR.parent.parent
     cmd = ["uv", "run", "python", "-u", str(APP_DIR / "backend" / "server.py"), "--port", str(port)]
     proc = _spawn(cmd, cwd=project_root, env=None, logfile=logfile)
+    proc_ref[0] = proc  # Make visible to signal handler immediately
+    time.sleep(0.5)
+    print(f"\r  {AnsiEsc.DIM}▸ Waiting for backend to serve...{AnsiEsc.RESET}", end="", flush=True)
+    wait_to_serve(port)
     print(
         f"\r  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} Backend started (pid {proc.pid}, port {port})        "
     )
-    wait_to_serve(port)
     return proc
 
 
-def start_frontend(port: int, backend_port: int, logfile: TextIO) -> subprocess.Popen[str]:
-    print(f"{AnsiEsc.DIM}  ▸ Starting frontend...{AnsiEsc.RESET}", end="", flush=True)
+def start_frontend(port: int, backend_port: int, logfile: TextIO, proc_ref: list[subprocess.Popen[str] | None]) -> subprocess.Popen[str]:
+    print(f"  {AnsiEsc.DIM}▸ Starting frontend...{AnsiEsc.RESET}", end="", flush=True)
     env = os.environ.copy()
     env["VITE_API_URL"] = f"http://localhost:{backend_port}"
-    # strictPort = fail-fast if port is taken (so our “did it die?” check works)
+    # strictPort = fail-fast if port is taken (so our "did it die?" check works)
     cmd = ["npm", "run", "dev", "--", "--port", str(port), "--strictPort"]
     proc = _spawn(cmd, cwd=APP_DIR / "frontend", env=env, logfile=logfile)
+    proc_ref[0] = proc  # Make visible to signal handler immediately
+    time.sleep(0.5)
+    print(f"\r  {AnsiEsc.DIM}▸ Waiting for frontend to serve...{AnsiEsc.RESET}", end="", flush=True)
+    wait_to_serve(port)
     print(
         f"\r  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} Frontend started (pid {proc.pid}, port {port})        "
     )
-    wait_to_serve(port)
     return proc
-
-
-def _graceful_exit(_signum: int, _frame: FrameType | None) -> None:
-    """Signal handler: trigger atexit cleanup."""
-    sys.exit(0)
 
 
 def main() -> None:
@@ -168,33 +171,72 @@ def main() -> None:
     with open(LOGFILE, "w", encoding="utf-8") as lf:
         lf.write(f"Launcher started at {datetime.now().isoformat()}\n")
 
-    # Register cleanup and signals
-    backend_process: subprocess.Popen[str] | None = None
-    frontend_process: subprocess.Popen[str] | None = None
+    # Track processes - use lists so they can be mutated in nested functions before assignment
+    backend_process_ref: list[subprocess.Popen[str] | None] = [None]
+    frontend_process_ref: list[subprocess.Popen[str] | None] = [None]
+    cleanup_called = False
 
     def cleanup() -> None:
         """Cleanup all running processes (process groups)."""
-        print("\n👋 Shutting down...")
-        # Terminate process groups gracefully
-        for proc in (backend_process, frontend_process):
+        nonlocal cleanup_called
+        if cleanup_called:
+            print("[DEBUG] Cleanup already called, skipping", flush=True)
+            return
+        cleanup_called = True
+
+        backend_process = backend_process_ref[0]
+        frontend_process = frontend_process_ref[0]
+
+        print("\n👋 Shutting down...", flush=True)
+        print(f"[DEBUG] Backend process: {backend_process.pid if backend_process else 'None'}", flush=True)
+        print(f"[DEBUG] Frontend process: {frontend_process.pid if frontend_process else 'None'}", flush=True)
+
+        # Kill all process groups immediately with SIGKILL for reliability
+        # We skip SIGTERM since we need to be fast to avoid being killed ourselves
+        for name, proc in [("backend", backend_process), ("frontend", frontend_process)]:
             if proc and proc.poll() is None:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                try:
+                    pgid = os.getpgid(proc.pid)
+                    print(f"[DEBUG] Killing {name} process group {pgid}", flush=True)
+                    os.killpg(pgid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError) as e:
+                    print(f"[DEBUG] Failed to kill {name} group: {e}", flush=True)
 
-        time.sleep(1.0)  # give services time to exit cleanly
+                # Also kill the direct process as fallback
+                try:
+                    proc.kill()
+                    print(f"[DEBUG] Killed {name} process directly", flush=True)
+                except (ProcessLookupError, PermissionError, OSError) as e:
+                    print(f"[DEBUG] Failed to kill {name} directly: {e}", flush=True)
 
-        # Force kill if still alive
-        for proc in (backend_process, frontend_process):
-            if proc and proc.poll() is None:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        # Brief wait for processes to die
+        for name, proc in [("backend", backend_process), ("frontend", frontend_process)]:
+            if proc:
+                try:
+                    proc.wait(timeout=0.3)
+                    print(f"[DEBUG] {name} exited cleanly", flush=True)
+                except subprocess.TimeoutExpired:
+                    print(f"[DEBUG] {name} did not exit in time", flush=True)
 
+        print("[DEBUG] Cleanup complete", flush=True)
+
+    def signal_handler(signum: int, _frame: FrameType | None) -> None:
+        """Handle termination signals by cleaning up and exiting."""
+        print(f"\n[DEBUG] Signal {signum} received!", flush=True)
+        cleanup()
+        print("[DEBUG] About to exit", flush=True)
+        sys.exit(0)
+
+    # Register cleanup handlers
     atexit.register(cleanup)
+    print("[DEBUG] Registering signal handlers...", flush=True)
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        signal.signal(sig, _graceful_exit)
+        signal.signal(sig, signal_handler)
+        print(f"[DEBUG] Registered handler for signal {sig}", flush=True)
 
     print(f"{AnsiEsc.DIM}Logfile: {LOGFILE}{AnsiEsc.RESET}")
     print(f"{AnsiEsc.DIM}Finding available ports...{AnsiEsc.RESET}")
+    print()
 
     backend_port = find_available_port(BACKEND_DEFAULT_START)
     frontend_port = find_available_port(FRONTEND_DEFAULT_START)
@@ -204,8 +246,8 @@ def main() -> None:
 
     # Open logfile for streaming child output
     with open(LOGFILE, "a", buffering=1, encoding="utf-8") as logfile:
-        backend_process = start_backend(backend_port, logfile)
-        frontend_process = start_frontend(frontend_port, backend_port, logfile)
+        backend_process = start_backend(backend_port, logfile, backend_process_ref)
+        frontend_process = start_frontend(frontend_port, backend_port, logfile, frontend_process_ref)
 
         print(f"{AnsiEsc.DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{AnsiEsc.RESET}\n")
 

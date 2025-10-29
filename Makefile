@@ -78,8 +78,8 @@ coverage:
 
 .PHONY: app
 app:
-	@uv run python app/run_app.py
+	@uv run python spd/app/run_app.py
 
 .PHONY: install-app
 install-app:
-	(cd app/frontend && npm install)
+	(cd spd/app/frontend && npm install)
