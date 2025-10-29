@@ -1,7 +1,6 @@
 import fnmatch
 import io
 from collections.abc import Callable
-from typing import Literal
 
 import numpy as np
 import torch
@@ -10,6 +9,7 @@ from matplotlib import pyplot as plt
 from PIL import Image
 from torch import Tensor
 
+from spd.configs import SamplingType
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import Components
 from spd.utils.general_utils import get_obj_device
@@ -132,7 +132,13 @@ def plot_mean_component_cis_both_scales(
     # Create both figures
     images = []
     for log_y in [False, True]:
-        fig, axs = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height), dpi=200)
+        fig, axs = plt.subplots(
+            n_rows,
+            n_cols,
+            figsize=(fig_width, fig_height),
+            dpi=200,
+            squeeze=False,
+        )
         axs = np.array(axs)
 
         # Ensure axs is always 2D array for consistent indexing
@@ -179,7 +185,7 @@ def get_single_feature_causal_importances(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
     input_magnitude: float,
-    sampling: Literal["continuous", "binomial"],
+    sampling: SamplingType,
 ) -> CIOutputs:
     """Compute causal importance arrays for single active features.
 
@@ -213,7 +219,7 @@ def plot_causal_importance_vals(
     model: ComponentModel,
     batch_shape: tuple[int, ...],
     input_magnitude: float,
-    sampling: Literal["continuous", "binomial"],
+    sampling: SamplingType,
     identity_patterns: list[str] | None = None,
     dense_patterns: list[str] | None = None,
     plot_raw_cis: bool = True,
