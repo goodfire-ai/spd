@@ -50,17 +50,14 @@ class _TopKExamples:
             heapq.heapreplace(self.heap, key)
 
     def as_activation_contexts(self, tok: PreTrainedTokenizer) -> list[ActivationContext]:
-        examples_sorted_by_desc_importance = [
-            ex for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)
-        ]
         return [
             ActivationContext(
-                token_strings=tok.convert_ids_to_tokens(self.window_token_ids),  # pyright: ignore[reportAttributeAccessIssue]
-                token_ci_values=self.token_ci_values,
-                active_position=self.active_pos_in_window,
-                ci_value=self.active_pos_importance,
+                token_strings=tok.convert_ids_to_tokens(ex.window_token_ids),  # pyright: ignore[reportAttributeAccessIssue]
+                token_ci_values=ex.token_ci_values,
+                active_position=ex.active_pos_in_window,
+                ci_value=ex.active_pos_importance,
             )
-            for self in examples_sorted_by_desc_importance
+            for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)
         ]
 
 
