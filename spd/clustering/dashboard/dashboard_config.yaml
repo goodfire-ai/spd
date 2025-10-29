@@ -1,0 +1,28 @@
+# Dashboard Configuration
+# This config is used by the clustering dashboard to compute max-activating text samples
+
+# WandB clustering run path (format: entity/project/run_id or wandb:entity/project/runs/run_id)
+# wandb_run: "goodfire/spd-cluster/runs/e5gbybvn"
+wandb_run: "goodfire/spd-cluster/runs/c-c3623a67"
+
+# Merge iteration to analyze (negative indexes from end, -1 = latest)
+# iteration: 4600
+iteration: 4795
+
+# Number of top-activating samples to collect per cluster
+n_samples: 16
+
+# Number of data batches to process
+n_batches: 1
+
+# Batch size for data loading
+batch_size: 64
+
+# Context length for tokenization
+context_length: 64
+
+# Write bundled HTML files to output directory
+write_html: false
+
+# Base output directory (optional, defaults to REPO_ROOT/spd/clustering/dashboard/data/)
+# output_dir: "path/to/custom/output"

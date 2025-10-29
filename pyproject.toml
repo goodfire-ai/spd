@@ -30,6 +30,7 @@ dependencies = [
     "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
     "scipy>=1.14.1",
     "muutils",
+    "zanj", # for dashboard data saving/loading
     "fastapi",
     "uvicorn",
 ]
@@ -42,6 +43,7 @@ dev = [
     "ruff",
     "basedpyright<1.32.0", # pyright and wandb issues, see https://github.com/goodfire-ai/spd/pull/232
     "pre-commit",
+    "playwright", # for browser-based integration tests
 ]
 
 [project.scripts]

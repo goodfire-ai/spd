@@ -2,7 +2,7 @@
 
 import torch
 
-from spd.clustering.consts import ComponentLabels
+from spd.clustering.consts import SubComponentKey, SubComponentLabel
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 
@@ -16,7 +16,7 @@ class TestMergeIntegration:
         n_samples = 100
         n_components = 10
         activations = torch.rand(n_samples, n_components)
-        component_labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        subcomponent_keys = [SubComponentKey(module="comp", index=i) for i in range(n_components)]
 
         # Configure with range sampler
         config = MergeConfig(
@@ -30,7 +30,9 @@ class TestMergeIntegration:
 
         # Run merge iteration
         history = merge_iteration(
-            activations=activations, merge_config=config, component_labels=component_labels
+            activations=activations,
+            merge_config=config,
+            subcomponent_keys=subcomponent_keys,
         )
 
         # Check results
@@ -49,7 +51,7 @@ class TestMergeIntegration:
         n_samples = 100
         n_components = 10
         activations = torch.rand(n_samples, n_components)
-        component_labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        subcomponent_keys = [SubComponentKey(module="comp", index=i) for i in range(n_components)]
 
         # Configure with MCMC sampler
         config = MergeConfig(
@@ -63,7 +65,9 @@ class TestMergeIntegration:
 
         # Run merge iteration
         history = merge_iteration(
-            activations=activations, merge_config=config, component_labels=component_labels
+            activations=activations,
+            merge_config=config,
+            subcomponent_keys=subcomponent_keys,
         )
 
         # Check results
@@ -86,7 +90,8 @@ class TestMergeIntegration:
         activations[:, 0] *= 2  # Component 0 is very active
         activations[:, 1] *= 0.1  # Component 1 is rarely active
 
-        component_labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        subcomponent_keys = [SubComponentLabel(f"module:{i}") for i in range(n_components)]
+        component_info = [SubComponentKey.from_label(label) for label in subcomponent_keys]
 
         # Run with range sampler (threshold=0 for deterministic minimum selection)
         config_range = MergeConfig(
@@ -100,7 +105,7 @@ class TestMergeIntegration:
         history_range = merge_iteration(
             activations=activations.clone(),
             merge_config=config_range,
-            component_labels=ComponentLabels(component_labels.copy()),
+            subcomponent_keys=component_info.copy(),
         )
 
         # Run with MCMC sampler (low temperature for near-deterministic)
@@ -115,7 +120,7 @@ class TestMergeIntegration:
         history_mcmc = merge_iteration(
             activations=activations.clone(),
             merge_config=config_mcmc,
-            component_labels=ComponentLabels(component_labels.copy()),
+            subcomponent_keys=component_info.copy(),
         )
 
         # Both should reduce groups from initial count
@@ -130,7 +135,7 @@ class TestMergeIntegration:
         n_samples = 50
         n_components = 3
         activations = torch.rand(n_samples, n_components)
-        component_labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        subcomponent_keys = [SubComponentKey(module="comp", index=i) for i in range(n_components)]
 
         config = MergeConfig(
             activation_threshold=0.1,
@@ -141,7 +146,9 @@ class TestMergeIntegration:
         )
 
         history = merge_iteration(
-            activations=activations, merge_config=config, component_labels=component_labels
+            activations=activations,
+            merge_config=config,
+            subcomponent_keys=subcomponent_keys,
         )
 
         # First entry is after first merge, so should be 3 - 1 = 2

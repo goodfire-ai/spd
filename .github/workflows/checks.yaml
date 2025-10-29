@@ -40,6 +40,9 @@ jobs:
       - name: Print dependencies
         run: uv pip list
 
+      - name: Install Playwright
+        run: make install-playwright
+
       - name: Run basedpyright
         run: uv run basedpyright
 

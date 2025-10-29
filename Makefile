@@ -77,6 +77,50 @@ coverage:
 	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/
 
 
+BUNDLED_DASHBOARD_DIR=spd/clustering/dashboard/_bundled
+
+.PHONY: bundle-dashboard
+bundle-dashboard:
+	@mkdir -p $(BUNDLED_DASHBOARD_DIR)
+	uv run python -m muutils.web.bundle_html \
+		spd/clustering/dashboard/index.html \
+		--output $(BUNDLED_DASHBOARD_DIR)/index.html \
+		--source-dir spd/clustering/dashboard
+	uv run python -m muutils.web.bundle_html \
+		spd/clustering/dashboard/cluster.html \
+		--output $(BUNDLED_DASHBOARD_DIR)/cluster.html \
+		--source-dir spd/clustering/dashboard
+	@echo "Bundled HTML files to $(BUNDLED_DASHBOARD_DIR)/"
+
+.PHONY: clean-test-dashboard
+clean-test-dashboard:
+	rm -rf tests/.temp/dashboard-integration
+
+
+.PHONY: install-playwright
+install-playwright:
+	@echo "Install Playwright browsers, used for dashboard tests"
+	uv run playwright install chromium
+	uv run playwright install-deps
+
+.PHONY: test-dashboard
+test-dashboard: clean-test-dashboard bundle-dashboard
+	pytest tests/clustering/dashboard/test_dashboard_integration.py --runslow -v --durations 10
+
+
+.PHONY: clustering-dashboard
+clustering-dashboard: bundle-dashboard
+	uv run python spd/clustering/dashboard/run.py \
+		spd/clustering/dashboard/dashboard_config.yaml
+
+.PHONY: clustering-dashboard-profile
+clustering-dashboard-profile: bundle-dashboard
+	uv run python -m cProfile -o dashboard.prof spd/clustering/dashboard/run.py \
+		spd/clustering/dashboard/dashboard_config.yaml
+	@echo "\nProfile saved to dashboard.prof"
+	@echo "View with: python -m pstats dashboard.prof"
+	@echo "Or install snakeviz and run: snakeviz dashboard.prof"
+
 .PHONY: clean
 clean:
 	@echo "Cleaning Python cache and build artifacts..."

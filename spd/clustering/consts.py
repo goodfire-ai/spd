@@ -1,8 +1,10 @@
 """Constants and shared abstractions for clustering pipeline."""
 
+import hashlib
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, NewType
+from typing import Literal, NewType, override
 
 import numpy as np
 from jaxtyping import Bool, Float, Int
@@ -15,8 +17,39 @@ DistancesMethod = Literal["perm_invariant_hamming", "matching_dist", "matching_d
 DistancesArray = Float[np.ndarray, "n_iters n_ens n_ens"]
 
 # Component and label types (NewType for stronger type safety)
-ComponentLabel = NewType("ComponentLabel", str)  # Format: "module_name:component_index"
-ComponentLabels = NewType("ComponentLabels", list[str])
+SubComponentLabel = NewType("SubComponentLabel", str)  # Format: "module_name:component_index"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SubComponentKey:
+    """unique identifier of a subcomponent. indices can refer to dead components"""
+
+    module: str
+    index: int
+
+    @property
+    def label(self) -> SubComponentLabel:
+        """Component label as 'module:index'."""
+        return SubComponentLabel(f"{self.module}:{self.index}")
+
+    @classmethod
+    def from_label(cls, label: SubComponentLabel) -> "SubComponentKey":
+        """Create SubComponentInfo from a component label."""
+        assert label.count(":") == 1, (
+            "Invalid component label format, expected '{{module}}:{{index}}'"
+        )
+        module, index_str = label.rsplit(":", 1)
+        return cls(module=module, index=int(index_str))
+
+    @override
+    def __str__(self) -> str:
+        return self.label
+
+    @override
+    def __hash__(self) -> int:
+        return int(hashlib.md5(str(self).encode()).hexdigest(), 16)
+
+
 BatchId = NewType("BatchId", str)
 
 # Path types

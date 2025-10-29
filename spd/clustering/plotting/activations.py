@@ -14,7 +14,7 @@ from muutils.dbg import dbg_tensor
 from torch import Tensor
 
 from spd.clustering.activations import ProcessedActivations, compute_coactivatons
-from spd.clustering.consts import ActivationsTensor, ClusterCoactivationShaped, ComponentLabels
+from spd.clustering.consts import ActivationsTensor, ClusterCoactivationShaped, SubComponentKey
 
 
 def plot_activations(
@@ -52,8 +52,8 @@ def plot_activations(
     act_concat: ActivationsTensor = processed_activations.activations
     dbg_tensor(act_concat)
     coact: ClusterCoactivationShaped = compute_coactivatons(act_concat)
+    labels: list[SubComponentKey] = processed_activations.subcomponent_keys
     dbg_tensor(coact)
-    labels: ComponentLabels = ComponentLabels(processed_activations.labels)
     n_samples: int = act_concat.shape[0]
 
     # trim the activations if n_samples_max is specified
@@ -273,14 +273,14 @@ def plot_activations(
     common_bins: np.ndarray = np.linspace(all_min, all_max, hist_bins)
     common_centers: np.ndarray = (common_bins[:-1] + common_bins[1:]) / 2
 
-    # Get unique label prefixes and assign colors
-    label_prefixes: list[str] = [label.split(":")[0] for label in labels]
-    unique_prefixes: list[str] = list(dict.fromkeys(label_prefixes))  # Preserve order
+    # Get unique module names and assign colors
+    module_names: list[str] = [comp.module for comp in labels]
+    unique_modules: list[str] = list(dict.fromkeys(module_names))  # Preserve order
     colors: Sequence[tuple[int, int, int]] = mpl.colormaps["tab10"](
-        np.linspace(0, 1, len(unique_prefixes))
+        np.linspace(0, 1, len(unique_modules))
     )  # pyright: ignore[reportAssignmentType]
-    prefix_colors: dict[str, tuple[int, int, int]] = {
-        prefix: colors[i] for i, prefix in enumerate(unique_prefixes)
+    module_colors: dict[str, tuple[int, int, int]] = {
+        module: colors[i] for i, module in enumerate(unique_modules)
     }
 
     for comp_idx in range(n_components):
@@ -288,9 +288,9 @@ def plot_activations(
         comp_vals: np.ndarray = component_activations.cpu().numpy()
         hist_counts, _ = np.histogram(comp_vals, bins=common_bins, density=True)
 
-        # Get color based on label prefix
-        prefix: str = label_prefixes[comp_idx]
-        color: tuple[int, int, int] = prefix_colors[prefix]
+        # Get color based on module
+        module: str = module_names[comp_idx]
+        color: tuple[int, int, int] = module_colors[module]
 
         ax5b.plot(common_centers, hist_counts, color=color, alpha=0.1, linewidth=1)
 
@@ -334,25 +334,25 @@ def plot_activations(
 
 
 def add_component_labeling(
-    ax: plt.Axes, component_labels: ComponentLabels, axis: str = "x"
+    ax: plt.Axes, subcomponent_keys: list[SubComponentKey], axis: str = "x"
 ) -> None:
     """Add component labeling using major/minor ticks to show module boundaries.
 
     Args:
             ax: Matplotlib axis to modify
-            component_labels: List of component labels in format "module:index"
+            subcomponent_keys: List of SubComponentInfo objects
             axis: Which axis to label ('x' or 'y')
     """
-    if not component_labels:
+    if not subcomponent_keys:
         return
 
     # Extract module information
     module_changes: list[int] = []
-    current_module: str = component_labels[0].split(":")[0]
+    current_module: str = subcomponent_keys[0].module
     module_labels: list[str] = []
 
-    for i, label in enumerate(component_labels):
-        module: str = label.split(":")[0]
+    for i, comp in enumerate(subcomponent_keys):
+        module: str = comp.module
         if module != current_module:
             module_changes.append(i)
             module_labels.append(current_module)
@@ -361,7 +361,7 @@ def add_component_labeling(
 
     # Set up major and minor ticks
     # Minor ticks: every 10 components
-    minor_ticks: list[int] = list(range(0, len(component_labels), 10))
+    minor_ticks: list[int] = list(range(0, len(subcomponent_keys), 10))
 
     # Major ticks: module boundaries (start of each module)
     major_ticks: list[int] = [0] + module_changes
@@ -371,7 +371,7 @@ def add_component_labeling(
         ax.set_xticks(minor_ticks, minor=True)
         ax.set_xticks(major_ticks)
         ax.set_xticklabels(major_labels)
-        ax.set_xlim(-0.5, len(component_labels) - 0.5)
+        ax.set_xlim(-0.5, len(subcomponent_keys) - 0.5)
         # Style the ticks
         ax.tick_params(axis="x", which="minor", length=2, width=0.5)
         ax.tick_params(axis="x", which="major", length=6, width=1.5)
@@ -381,7 +381,7 @@ def add_component_labeling(
         ax.set_yticks(minor_ticks, minor=True)
         ax.set_yticks(major_ticks)
         ax.set_yticklabels(major_labels)
-        ax.set_ylim(-0.5, len(component_labels) - 0.5)
+        ax.set_ylim(-0.5, len(subcomponent_keys) - 0.5)
         # Style the ticks
         ax.tick_params(axis="y", which="minor", length=2, width=0.5)
         ax.tick_params(axis="y", which="major", length=6, width=1.5)

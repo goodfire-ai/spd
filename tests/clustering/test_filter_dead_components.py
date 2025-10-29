@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 
 from spd.clustering.activations import FilteredActivations, filter_dead_components
-from spd.clustering.consts import ComponentLabels
+from spd.clustering.consts import SubComponentKey
 
 
 @pytest.mark.parametrize(
@@ -37,22 +37,24 @@ def test_filter_dead_components_thresholds(
     n_components: int = len(max_values)
 
     activations: Tensor
-    labels: ComponentLabels
+    labels: list[SubComponentKey]
     if n_components == 0:
         activations = torch.zeros(n_steps, 0)
-        labels = ComponentLabels([])
+        labels = []
     else:
         activations = torch.zeros(n_steps, n_components)
         # Set max values in first row
         for i, val in enumerate(max_values):
             activations[0, i] = val
-        labels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+        labels = [SubComponentKey(module="comp", index=i) for i in range(n_components)]
 
     result: FilteredActivations = filter_dead_components(
-        activations=activations, labels=labels, filter_dead_threshold=threshold
+        activations=activations, subcomponent_keys=labels, filter_dead_threshold=threshold
     )
 
-    assert result.labels == [f"comp_{i}" for i in expected_alive_indices]
+    assert [comp.label for comp in result.subcomponent_keys] == [
+        f"comp:{i}" for i in expected_alive_indices
+    ]
     assert result.n_alive == len(expected_alive_indices)
     assert result.n_dead == n_components - len(expected_alive_indices)
     assert result.activations.shape == (n_steps, len(expected_alive_indices))
@@ -60,14 +62,16 @@ def test_filter_dead_components_thresholds(
     # Check dead components labels
     if threshold <= 0 or all(v >= threshold for v in max_values):
         # No filtering occurred
-        assert result.dead_components_labels is None or result.dead_components_labels == []
+        assert result.dead_subcomponent_keys is None or result.dead_subcomponent_keys == []
     else:
         dead_indices: list[int] = [
             i for i in range(n_components) if i not in expected_alive_indices
         ]
-        expected_dead: list[str] = [f"comp_{i}" for i in dead_indices]
-        assert result.dead_components_labels is not None
-        assert set(result.dead_components_labels) == set(expected_dead)
+        expected_dead: list[SubComponentKey] = [
+            SubComponentKey(module="comp", index=i) for i in dead_indices
+        ]
+        assert result.dead_subcomponent_keys is not None
+        assert set(result.dead_subcomponent_keys) == set(expected_dead)
 
 
 @pytest.mark.parametrize(
@@ -95,16 +99,18 @@ def test_max_across_steps(step_locations: list[int], threshold: float) -> None:
     for i, step in enumerate(step_locations):
         activations[step, i] = threshold + 0.01
 
-    labels: ComponentLabels = ComponentLabels([f"comp_{i}" for i in range(n_components)])
+    labels: list[SubComponentKey] = [
+        SubComponentKey(module="comp", index=i) for i in range(n_components)
+    ]
 
     result: FilteredActivations = filter_dead_components(
-        activations=activations, labels=labels, filter_dead_threshold=threshold
+        activations=activations, subcomponent_keys=labels, filter_dead_threshold=threshold
     )
 
     # All components should be alive since their max is above threshold
     assert result.n_alive == n_components
     assert result.n_dead == 0
-    assert result.labels == labels
+    assert result.subcomponent_keys == labels
 
 
 @pytest.mark.parametrize("threshold", [0.001, 0.01, 0.1, 0.5])
@@ -118,10 +124,12 @@ def test_linear_gradient_thresholds(threshold: float) -> None:
     for i in range(n_components):
         activations[0, i] = i * 0.1
 
-    labels: list[str] = [f"comp_{i}" for i in range(n_components)]
+    labels: list[SubComponentKey] = [
+        SubComponentKey(module="comp", index=i) for i in range(n_components)
+    ]
 
     result: FilteredActivations = filter_dead_components(
-        activations=activations, labels=ComponentLabels(labels), filter_dead_threshold=threshold
+        activations=activations, subcomponent_keys=labels, filter_dead_threshold=threshold
     )
 
     # Count how many components should be alive

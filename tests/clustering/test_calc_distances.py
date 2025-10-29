@@ -1,4 +1,4 @@
-from spd.clustering.consts import ComponentLabels
+# from spd.clustering.consts import ComponentLabels
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 
@@ -17,7 +17,7 @@ def test_merge_history_normalization_happy_path():
     for _idx in range(2):
         history = MergeHistory.from_config(
             merge_config=config,
-            labels=ComponentLabels([f"comp{j}" for j in range(4)]),
+            labels=[f"comp{j}" for j in range(4)],  # pyright: ignore[reportArgumentType]
         )
         histories.append(history)
 
