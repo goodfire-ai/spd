@@ -61,7 +61,7 @@
 
 <div class="pagination-controls">
     <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
-    <input type="number" min="0" max={totalPages - 1} bind:value={CurrentPage} class="page-input" />
+    <input type="number" min="0" max={totalPages - 1} bind:value={currentPage} class="page-input" />
     <span>of {totalPages - 1}</span>
     <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
 </div>
