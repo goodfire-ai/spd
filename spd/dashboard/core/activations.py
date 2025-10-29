@@ -13,7 +13,8 @@ from torch import Tensor
 from spd.models.component_model import ComponentModel, OutputWithCache
 
 
-class SubcomponentLabel(NamedTuple):
+@dataclass(frozen=True)
+class SubcomponentLabel:
     """Label for a single component: (module_name, component_index)."""
 
     module: str
@@ -26,8 +27,6 @@ class SubcomponentLabel(NamedTuple):
     @classmethod
     def from_string(cls, label: str) -> "SubcomponentLabel":
         """Parse from string format 'module:index'."""
-        module: str
-        index_str: str
         module, index_str = label.rsplit(":", 1)
         return cls(module=module, index=int(index_str))
 
@@ -53,6 +52,7 @@ def component_activations(
             cache_type="input",
         )
 
+        # TODO: is this the right way to get causal importances from `CIOutputs`?
         causal_importances: dict[str, Float[Tensor, "steps C"]] = model.calc_causal_importances(
             pre_weight_acts=model_output.cache,
             sampling="continuous",

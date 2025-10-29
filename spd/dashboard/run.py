@@ -20,7 +20,7 @@ from tqdm import tqdm
 from zanj import ZANJ
 
 from spd.configs import Config
-from spd.dashboard.core.activations import component_activations, process_activations
+from spd.dashboard.activations import component_activations, process_activations
 from spd.dashboard.core.component_data import (
     ComponentDashboardData,
     GlobalMetrics,
@@ -286,6 +286,7 @@ def compute_global_metrics(
 def find_top_k_samples(
     activations: Float[np.ndarray, "n_samples n_ctx"],
     tokens: Float[np.ndarray, "n_samples n_ctx"],
+    tokenizer: Any,
     k: int,
     criterion: str,
 ) -> list[TopKSample]:
@@ -294,6 +295,7 @@ def find_top_k_samples(
     Args:
         activations: Activation values for this component
         tokens: Token IDs for all samples
+        tokenizer: Tokenizer to decode token IDs to strings
         k: Number of top samples to return
         criterion: 'max' or 'mean'
 
@@ -316,12 +318,15 @@ def find_top_k_samples(
     samples: list[TopKSample] = []
     for idx in top_k_idx:
         idx_int: int = int(idx)
+        token_ids: list[int] = tokens[idx_int].tolist()
+
+        # Decode tokens to strings
+        token_strs: list[str] = [tokenizer.decode([tid]) for tid in token_ids]
+
         samples.append(
             TopKSample(  # pyright: ignore[reportCallIssue]
-                tokens=tokens[idx_int].tolist(),
+                token_strs=token_strs,
                 activations=activations[idx_int],
-                max_activation=float(activations[idx_int].max()),
-                mean_activation=float(activations[idx_int].mean()),
             )
         )
 
@@ -406,6 +411,7 @@ def compute_component_stats(
     label: str,
     activations: Float[np.ndarray, "n_samples n_ctx"],
     tokens: Float[np.ndarray, "n_samples n_ctx"],
+    tokenizer: Any,
     global_metrics: GlobalMetrics | None,
     k: int,
     hist_bins: int,
@@ -416,6 +422,7 @@ def compute_component_stats(
         label: Component label
         activations: Activation values
         tokens: Token IDs
+        tokenizer: Tokenizer to decode token IDs
         global_metrics: Global metrics (None if component is dead)
         k: Number of top samples to track
         hist_bins: Number of histogram bins
@@ -442,8 +449,8 @@ def compute_component_stats(
         label=label,
         is_dead=False,
         embedding=global_metrics.get_embedding(label),
-        top_max=find_top_k_samples(activations, tokens, k, "max"),
-        top_mean=find_top_k_samples(activations, tokens, k, "mean"),
+        top_max=find_top_k_samples(activations, tokens, tokenizer, k, "max"),
+        top_mean=find_top_k_samples(activations, tokens, tokenizer, k, "mean"),
         stats=compute_global_statistics(activations),
         histograms=compute_histograms(activations, bins=hist_bins),
     )
@@ -451,6 +458,7 @@ def compute_component_stats(
 
 def process_all_components(
     raw_data: RawActivationData,
+    tokenizer: Any,
     global_metrics: GlobalMetrics,
     k: int,
     hist_bins: int,
@@ -459,6 +467,7 @@ def process_all_components(
 
     Args:
         raw_data: Raw activation data
+        tokenizer: Tokenizer to decode token IDs
         global_metrics: Precomputed global metrics for alive components
         k: Number of top samples per component
         hist_bins: Number of histogram bins
@@ -475,6 +484,7 @@ def process_all_components(
             label=label,
             activations=raw_data.activations[label],
             tokens=raw_data.tokens,
+            tokenizer=tokenizer,
             global_metrics=global_metrics if is_alive else None,
             k=k,
             hist_bins=hist_bins,
@@ -493,6 +503,7 @@ def main(
     model_path: str,
     dataset_config: DatasetConfig,
     output_dir: Path,
+    tokenizer_name: str,
     batch_size: int,
     n_batches: int,
     k: int,
@@ -506,6 +517,7 @@ def main(
         model_path: Path to SPD model
         dataset_config: Dataset configuration
         output_dir: Output directory for results
+        tokenizer_name: Name of tokenizer to use for decoding
         batch_size: Batch size for data loading
         n_batches: Number of batches to process
         k: Number of top samples per component
@@ -513,7 +525,13 @@ def main(
         embed_dim: Embedding dimensionality
         hist_bins: Number of histogram bins
     """
+    from transformers import AutoTokenizer
+
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load tokenizer
+    logger.info(f"Loading tokenizer: {tokenizer_name}")
+    tokenizer: Any = AutoTokenizer.from_pretrained(tokenizer_name)
 
     # ========================================================================
     # PHASE 1: DATA GENERATION
@@ -565,6 +583,7 @@ def main(
 
     all_stats: list[SubcomponentStats] = process_all_components(
         raw_data=raw_data,
+        tokenizer=tokenizer,
         global_metrics=global_metrics,
         k=k,
         hist_bins=hist_bins,
@@ -584,9 +603,7 @@ def main(
         n_components=len(raw_data.component_labels),
         n_alive=len(raw_data.alive_components),
         n_dead=len(raw_data.dead_components),
-        coactivations=global_metrics.coactivations,
-        correlations=global_metrics.correlations,
-        alive_component_labels=global_metrics.component_labels,
+        global_metrics=global_metrics,
         components=all_stats,
     )
 
@@ -604,10 +621,10 @@ def cli() -> None:
     parser.add_argument("config", type=Path, help="Path to dashboard config file (JSON or YAML)")
     args: argparse.Namespace = parser.parse_args()
 
-    # Import config class (will be created next)
-    from spd.dashboard.core.dashboard_config import DashboardConfig
+    # Import config class
+    from spd.dashboard.core.component_dashboard_config import ComponentDashboardConfig
 
-    config: DashboardConfig = DashboardConfig.from_file(args.config)
+    config: ComponentDashboardConfig = ComponentDashboardConfig.from_file(args.config)
     logger.info(f"Loaded config from: {args.config}")
 
     # Load SPD config to get tokenizer name
@@ -631,6 +648,7 @@ def cli() -> None:
         model_path=config.model_path,
         dataset_config=dataset_config,
         output_dir=config.output_dir,
+        tokenizer_name=tokenizer_name,
         batch_size=config.batch_size,
         n_batches=config.n_batches,
         k=config.n_samples,

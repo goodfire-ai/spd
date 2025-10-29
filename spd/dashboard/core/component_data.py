@@ -36,8 +36,8 @@ class RawActivationData:
         return self.tokens.shape[1]
 
 
-@dataclass
-class GlobalMetrics:
+@serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
+class GlobalMetrics(SerializableDataclass):
     """Global metrics computed once across all alive components.
 
     All matrices are indexed by `component_labels` list.
@@ -58,10 +58,8 @@ class GlobalMetrics:
 class TopKSample(SerializableDataclass):
     """A single top-k activating sample with embedded tokens."""
 
-    tokens: list[int]  # Token IDs for this sample
+    token_strs: list[str]  # Token strings for this sample
     activations: Float[np.ndarray, " n_ctx"]  # Activation values across context
-    max_activation: float  # Max activation in this sample
-    mean_activation: float  # Mean activation in this sample
 
 
 @serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
@@ -105,9 +103,7 @@ class ComponentDashboardData(SerializableDataclass):
     n_dead: int
 
     # Global metrics (alive components only)
-    coactivations: Float[np.ndarray, "n_alive n_alive"]
-    correlations: Float[np.ndarray, "n_alive n_alive"]
-    alive_component_labels: list[str]  # Index for matrices
+    global_metrics: GlobalMetrics
 
     # Per-component stats (all components)
     components: list[SubcomponentStats]
