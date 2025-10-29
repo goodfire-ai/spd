@@ -148,23 +148,30 @@ def merge_iteration(
         total=num_iters,
     )
     for iter_idx in pbar:
-        # Recompute from new batch if it's time (do this BEFORE computing costs)
+        # Recompute from batch if needed (do this BEFORE computing costs)
         # --------------------------------------------------
-        if merge_config.recompute_costs_every is not None:
-            should_recompute: bool = (
-                iter_idx % merge_config.recompute_costs_every == 0
-            ) and (iter_idx > 0)
+        # With NaN masking, we must recompute before every iteration (except first)
+        # because the coact matrix is invalidated after each merge.
+        # When recompute_costs_every is set, we cycle through batches;
+        # otherwise we reuse the same batch.
+        if iter_idx > 0:
+            # Check if we should load a new batch
+            should_load_new_batch: bool = (
+                merge_config.recompute_costs_every is not None
+                and iter_idx % merge_config.recompute_costs_every == 0
+            )
 
-            if should_recompute:
+            if should_load_new_batch:
                 new_batch: ActivationBatch = batched_activations._get_next_batch()
                 activations = new_batch.activations
 
-                # Recompute fresh coacts with current merge groups
-                current_coact, current_act_mask = recompute_coacts_from_scratch(
-                    activations=activations,
-                    current_merge=current_merge,
-                    activation_threshold=merge_config.activation_threshold,
-                )
+            # Always recompute coacts from current activations after iteration 0
+            # (needed because NaN masking invalidates the matrix)
+            current_coact, current_act_mask = recompute_coacts_from_scratch(
+                activations=activations,
+                current_merge=current_merge,
+                activation_threshold=merge_config.activation_threshold,
+            )
 
         # compute costs, figure out what to merge
         # --------------------------------------------------
