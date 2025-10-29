@@ -99,6 +99,10 @@ See `spd/scripts/compare_models/README.md` for detailed usage instructions.
 Suggested extensions and settings for VSCode/Cursor are provided in `.vscode/`. To use the suggested
 settings, copy `.vscode/settings-example.json` to `.vscode/settings.json`.
 
+## App
+
+This project contains an app for visualising and interpreting SPD decompositions. See the [README](./app/README.md).
+
 ### Contributing
 
 Please read our [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to contribute to this project, including pull request requirements and review processes.
