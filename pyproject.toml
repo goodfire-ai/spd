@@ -30,6 +30,8 @@ dependencies = [
     "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
     "scipy>=1.14.1",
     "muutils",
+    "fastapi",
+    "uvicorn",
 ]
 
 [dependency-groups]
@@ -52,11 +54,12 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["spd*"]
+include = ["spd*", "app*"]
 
 [tool.ruff]
 line-length = 100
 fix = true
+extend-exclude = ["app/frontend"]
 
 [tool.ruff.lint]
 ignore = [
@@ -87,8 +90,8 @@ docstring-code-format = true
 known-third-party = ["wandb"]
 
 [tool.pyright]
-include = ["spd", "tests"]
-exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py"]
+include = ["spd", "app", "tests"]
+exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py", "app/frontend"]
 stubPath = "typings" # Having type stubs for transformers shaves 10 seconds off basedpyright calls
 
 strictListInference = true

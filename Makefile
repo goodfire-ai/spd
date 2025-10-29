@@ -89,3 +89,10 @@ clean:
 clustering-dev:
 	uv run spd-cluster --local --config spd/clustering/configs/pipeline-dev-simplestories.yaml
 
+.PHONY: app
+app:
+	@uv run python app/run_app.py
+
+.PHONY: install-app
+install-app:
+	(cd app/frontend && npm install)
