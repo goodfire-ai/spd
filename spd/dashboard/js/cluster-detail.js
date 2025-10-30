@@ -32,7 +32,7 @@ async function loadData() {
         const data = await loader.read();
 
         dashboardData = data;
-        allComponents = data.components || [];
+        allComponents = await data.components;
 
         // TODO: Re-enable explanations feature
         // Load explanations separately (not part of ZANJ)

@@ -119,7 +119,7 @@ class ZanjLoader {
 						};
 					}
 					// Before loaded: placeholder or Promise
-					throw new Error(`Accessing property '${prop}' before ${path} loaded; use 'await data.${path.split(".").pop()}' or wait a bit.`);
+					throw new Error(`Accessing property before ${path} loaded; use await`);
 				},
 			}
 		);

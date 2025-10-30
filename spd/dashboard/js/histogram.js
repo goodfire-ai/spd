@@ -18,18 +18,21 @@ function calculateBinCenters(binEdges) {
 
 /**
  * Calculate mean from histogram data
- * @param {Object} histData - Object with bin_counts and bin_edges
+ * @param {Object} histData - Object with counts and edges (or bin_counts and bin_edges for backwards compatibility)
  * @returns {number} Weighted mean
  */
 function calculateHistogramMean(histData) {
-    const { bin_counts, bin_edges } = histData;
+    // Support both old and new property names
+    const counts = histData.counts || histData.bin_counts;
+    const edges = histData.edges || histData.bin_edges;
+
     let sum = 0;
     let count = 0;
 
-    for (let i = 0; i < bin_counts.length; i++) {
-        const binCenter = (bin_edges[i] + bin_edges[i + 1]) / 2;
-        sum += binCenter * bin_counts[i];
-        count += bin_counts[i];
+    for (let i = 0; i < counts.length; i++) {
+        const binCenter = (edges[i] + edges[i + 1]) / 2;
+        sum += binCenter * counts[i];
+        count += counts[i];
     }
 
     return count > 0 ? sum / count : 0;
@@ -37,19 +40,22 @@ function calculateHistogramMean(histData) {
 
 /**
  * Calculate median from histogram data (approximate)
- * @param {Object} histData - Object with bin_counts and bin_edges
+ * @param {Object} histData - Object with counts and edges (or bin_counts and bin_edges for backwards compatibility)
  * @returns {number} Approximate median
  */
 function calculateHistogramMedian(histData) {
-    const { bin_counts, bin_edges } = histData;
-    const totalCount = bin_counts.reduce((a, b) => a + b, 0);
+    // Support both old and new property names
+    const counts = histData.counts || histData.bin_counts;
+    const edges = histData.edges || histData.bin_edges;
+
+    const totalCount = counts.reduce((a, b) => a + b, 0);
     const halfCount = totalCount / 2;
 
     let cumulativeCount = 0;
-    for (let i = 0; i < bin_counts.length; i++) {
-        cumulativeCount += bin_counts[i];
+    for (let i = 0; i < counts.length; i++) {
+        cumulativeCount += counts[i];
         if (cumulativeCount >= halfCount) {
-            return (bin_edges[i] + bin_edges[i + 1]) / 2;
+            return (edges[i] + edges[i + 1]) / 2;
         }
     }
 

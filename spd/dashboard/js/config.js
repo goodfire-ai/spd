@@ -25,7 +25,7 @@
 
 // Configuration constants
 const SEPARATOR = "."; // For nested paths in URL params
-const CONFIG_FILE_PATH = "config.json"; // Path to external config file
+const CONFIG_FILE_PATH = "frontend_config.json"; // Path to external config file
 const URL_UPDATE_DEBOUNCE_DELAY = 500; // ms
 const FLOAT_COMPARISON_EPSILON = 0.0001; // For float comparisons
 
@@ -63,20 +63,42 @@ let URL_UPDATE_TIMEOUT = null;
  * @returns {object} Default configuration
  */
 function getDefaultConfig() {
-	// the actual default configuration should be defined here
-	// Example configuration structure:
-	//   {
-	//     theme: "light",
-	//     ui: {
-	//       showToolbar: true,
-	//       fontSize: 14
-	//     },
-	//     data: {
-	//       sources: ["data.json"]
-	//     }
-	//   }
 	let default_cfg = {
-		// TODO[YOUR APP]: Define your config structure and default configuration here
+		// Data paths
+		data: {
+		dataDir: "data",
+		files: {
+			// DEPRECATED: ZANJ handles loading clusters, modelInfo, textSamples, activations automatically
+			// TODO: Re-enable explanations feature
+			// Only explanations is loaded separately (not part of ZANJ)
+			// explanations: "explanations.jsonl"
+		}
+		},
+
+		// Index page (cluster list) display settings
+		indexPage: {
+		pageSize: 25,
+		pageSizeOptions: [5, 10, 25, 50, 100],
+		showFilters: true
+		},
+
+		// Cluster detail page display settings
+		clusterPage: {
+		pageSize: 25,
+		maxSamplesPerCluster: 32,
+		showFilters: true
+		},
+
+		// Visualization settings
+		visualization: {
+		colormap: "blues",
+		histogramBins: 10,
+		sparklineWidth: 200,
+		sparklineHeight: 70,
+		sparklineYAxisMargin: 35,
+		modelViewCellSize: 16,  // Size of module cells in model visualization (default)
+		modelViewCellSizeTable: 12  // Size for table cells in index.html
+		},
 	};
 
 	if (INLINE_CONFIG) {

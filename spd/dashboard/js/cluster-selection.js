@@ -532,7 +532,7 @@ async function loadData() {
 
     // Extract data
     dashboardData = data;
-    componentData = data.components || [];
+    componentData = await data.components;
 
     // TODO: Re-enable explanations feature
     // Load explanations separately (not part of ZANJ)
