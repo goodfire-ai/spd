@@ -1,5 +1,5 @@
-let clusterData = {};
-let modelInfo = {};
+let componentData = [];
+let dashboardData = {};
 let dataTable = null;
 // TODO: Re-enable explanations feature
 // let explanations = {};
@@ -16,58 +16,33 @@ const modelInfoData = {
         return totalParams.toString();
     },
 
-    formatWandBLink(path) {
-        if (!path) return '-';
-
-        // Remove "wandb:" prefix if present
-        const cleanPath = path.replace(/^wandb:/, '');
-
-        // Convert to WandB URL
-        const url = `https://wandb.ai/${cleanPath}`;
-
-        // Show shortened path in link text
-        const displayText = cleanPath.length > 60
-            ? cleanPath.substring(0, 57) + '...'
-            : cleanPath;
-
-        return `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`;
-    }
 };
 
 // Custom column renderers
 const columnRenderers = {
-    modelView: function(value, row, col) {
+    componentLabel: function(value, row, col) {
         const container = document.createElement('div');
-        container.className = 'modelview-cell';
-
-        renderModelView(container, row.clusterHash, clusterData, modelInfo, CONFIG.visualization.colormap, CONFIG.visualization.modelViewCellSizeTable);
-
+        container.style.fontFamily = 'monospace';
+        container.style.fontSize = '11px';
+        container.textContent = value;
         return container;
     },
 
-    modulesSummary: function(value, row, col) {
-        const modules = row.modules;
+    moduleName: function(value, row, col) {
         const container = document.createElement('div');
         container.className = 'module-summary';
 
-        if (modules.length === 1) {
-            const parts = modules[0].split('.');
-            container.textContent = parts.length > 2 ? parts.slice(-2).join('.') : modules[0];
-        } else if (modules.length <= 3) {
-            container.textContent = modules.map(m => {
-                const parts = m.split('.');
-                return parts.length > 2 ? parts.slice(-2).join('.') : m;
-            }).join(', ');
-        } else {
-            container.textContent = `${modules.length} modules`;
-        }
+        // Extract module name from label (format: "module.name:index")
+        const parts = value.split('.');
+        const displayName = parts.length > 2 ? parts.slice(-2).join('.') : value;
 
-        container.title = modules.join('\n');
+        container.textContent = displayName;
+        container.title = value;
         return container;
     },
 
     activationHistogram: function(value, row, col) {
-        const histData = row.stats.all_activations;
+        const histData = row.histograms?.all_activations;
         if (!histData) {
             return '<span style="color: #999; font-size: 11px;">No data</span>';
         }
@@ -76,16 +51,16 @@ const columnRenderers = {
         container.className = 'sparkline-cell';
 
         // Calculate bin centers for x-axis
-        const binCenters = calculateBinCenters(histData.bin_edges);
+        const binCenters = calculateBinCenters(histData.edges);
 
-        const min = row.stats.min_activation;
-        const max = row.stats.max_activation;
+        const min = row.stats.min;
+        const max = row.stats.max;
 
         // Set x-axis limits to [0, 1] if data is in that range
         const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
 
         // Pass bin centers as x-values and counts as y-values
-        const svg = sparkbars(binCenters, histData.bin_counts, {
+        const svg = sparkbars(binCenters, histData.counts, {
             width: CONFIG.visualization.sparklineWidth,
             height: CONFIG.visualization.sparklineHeight,
             color: '#4169E1',
@@ -102,17 +77,17 @@ const columnRenderers = {
 
         container.innerHTML = svg;
 
-        const mean = row.stats.mean_activation;
-        const median = calculateHistogramMedian(histData);
-        const n = row.stats.n_tokens;
+        const mean = row.stats.mean;
+        const median = row.stats.median;
+        const totalCount = histData.counts.reduce((a, b) => a + b, 0);
 
-        container.title = `All Activations Histogram (n=${n})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
+        container.title = `All Activations Histogram (n=${totalCount})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
 
         return container;
     },
 
     maxActivationDistribution: function(value, row, col) {
-        const histData = row.stats['max_activation-max-16'];
+        const histData = row.histograms?.max_per_sample;
         if (!histData) {
             return '<span style="color: #999; font-size: 11px;">No data</span>';
         }
@@ -121,16 +96,16 @@ const columnRenderers = {
         container.className = 'sparkline-cell';
 
         // Calculate bin centers for x-axis
-        const binCenters = calculateBinCenters(histData.bin_edges);
+        const binCenters = calculateBinCenters(histData.edges);
 
-        const min = histData.bin_edges[0];
-        const max = histData.bin_edges[histData.bin_edges.length - 1];
+        const min = histData.edges[0];
+        const max = histData.edges[histData.edges.length - 1];
 
         // Set x-axis limits to [0, 1] if data is in that range
         const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
 
         // Pass bin centers as x-values and counts as y-values
-        const svg = sparkbars(binCenters, histData.bin_counts, {
+        const svg = sparkbars(binCenters, histData.counts, {
             width: CONFIG.visualization.sparklineWidth,
             height: CONFIG.visualization.sparklineHeight,
             color: '#DC143C',
@@ -147,17 +122,17 @@ const columnRenderers = {
 
         container.innerHTML = svg;
 
-        const n = row.stats.n_samples;
         const mean = calculateHistogramMean(histData);
         const median = calculateHistogramMedian(histData);
+        const totalCount = histData.counts.reduce((a, b) => a + b, 0);
 
-        container.title = `Max Activation Distribution (n=${n} samples)\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
+        container.title = `Max Activation Distribution (n=${totalCount} samples)\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
 
         return container;
     },
 
-    clusterLink: function(value, row, col) {
-        return `<a href="cluster.html?id=${row.clusterHash}">View →</a>`;
+    componentLink: function(value, row, col) {
+        return `<a href="component.html?label=${encodeURIComponent(row.label)}">View →</a>`;
     },
 
     // TODO: Re-enable explanations feature
@@ -244,11 +219,11 @@ const columnRenderers = {
         return container;
     },
 
-    // Generic histogram renderer for any BinnedData stat
-    genericHistogram: function(statKey, color, title) {
+    // Generic histogram renderer for any histogram in row.histograms
+    genericHistogram: function(histKey, color, title) {
         return function(value, row, col) {
-            const histData = row.stats[statKey];
-            if (!histData || !histData.bin_counts) {
+            const histData = row.histograms?.[histKey];
+            if (!histData || !histData.counts) {
                 return '<span style="color: #999; font-size: 11px;">No data</span>';
             }
 
@@ -256,17 +231,17 @@ const columnRenderers = {
             container.className = 'sparkline-cell';
 
             // Calculate bin centers for x-axis
-            const binCenters = calculateBinCenters(histData.bin_edges);
+            const binCenters = calculateBinCenters(histData.edges);
 
             // Calculate statistics of underlying data
-            const min = histData.bin_edges[0];
-            const max = histData.bin_edges[histData.bin_edges.length - 1];
+            const min = histData.edges[0];
+            const max = histData.edges[histData.edges.length - 1];
 
             // Set x-axis limits to [0, 1] if data is in that range
             const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
 
             // Pass bin centers as x-values and counts as y-values
-            const svg = sparkbars(binCenters, histData.bin_counts, {
+            const svg = sparkbars(binCenters, histData.counts, {
                 width: CONFIG.visualization.sparklineWidth,
                 height: CONFIG.visualization.sparklineHeight,
                 color: color,
@@ -285,7 +260,7 @@ const columnRenderers = {
 
             const mean = calculateHistogramMean(histData);
             const median = calculateHistogramMedian(histData);
-            const totalCount = histData.bin_counts.reduce((a, b) => a + b, 0);
+            const totalCount = histData.counts.reduce((a, b) => a + b, 0);
 
             container.title = `${title} (n=${totalCount})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
 
@@ -299,88 +274,24 @@ const columnRenderers = {
 // ============================================================================
 
 /**
- * Create a filter function for module arrays that supports wildcards, multiple patterns, and negation
- * @param {string} filterValue - The filter pattern (supports * wildcards, , for OR, & for AND, @ for all-match, ! for negation)
+ * Create a filter function for module name (string) with wildcards
+ * @param {string} filterValue - The filter pattern (supports * wildcards)
  * @returns {Function|null} Filter function or null if invalid
  */
 function createModuleFilter(filterValue) {
     if (!filterValue || !filterValue.trim()) return null;
 
-    // Split by comma for OR groups
-    const orGroups = filterValue.split(',').map(g => g.trim()).filter(g => g);
-
-    // Parse each OR group (which may contain & for AND)
-    const parsedOrGroups = orGroups.map(group => {
-        // Split by & for AND conditions within this OR group
-        const andConditions = group.split('&').map(c => c.trim()).filter(c => c);
-
-        return andConditions.map(condition => {
-            let mode = 'some'; // default: at least one module matches
-            let negate = false;
-            let pattern = condition.toLowerCase();
-
-            // Check for @ prefix (all modules must match)
-            if (pattern.startsWith('@')) {
-                mode = 'every';
-                pattern = pattern.substring(1);
-            }
-            // Check for ! prefix (no modules can match)
-            else if (pattern.startsWith('!')) {
-                negate = true;
-                pattern = pattern.substring(1);
-            }
-
-            const regex = pattern.includes('*')
-                ? new RegExp('^' + pattern.replace(/\*/g, '.*') + '$')
-                : null;
-
-            return { mode, negate, pattern, regex };
-        });
-    });
+    const pattern = filterValue.toLowerCase().trim();
+    const regex = pattern.includes('*')
+        ? new RegExp('^' + pattern.replace(/\*/g, '.*') + '$')
+        : null;
 
     return (cellValue) => {
-        // cellValue is the modules array
-        if (!Array.isArray(cellValue)) return false;
-
-        // OR logic across groups
-        return parsedOrGroups.some(andGroup => {
-            // AND logic within group
-            return andGroup.every(condition => {
-                const matchFn = (module) => {
-                    const moduleLower = module.toLowerCase();
-                    return condition.regex
-                        ? condition.regex.test(moduleLower)
-                        : moduleLower.includes(condition.pattern);
-                };
-
-                if (condition.mode === 'every') {
-                    // ALL modules must match
-                    const result = cellValue.every(matchFn);
-                    return condition.negate ? !result : result;
-                } else {
-                    // At least ONE module must match (or none if negated)
-                    const result = cellValue.some(matchFn);
-                    return condition.negate ? !result : result;
-                }
-            });
-        });
+        const moduleLower = cellValue.toLowerCase();
+        return regex
+            ? regex.test(moduleLower)
+            : moduleLower.includes(pattern);
     };
-}
-
-/**
- * Sort function for module arrays
- * Primary: number of modules (ascending)
- * Secondary: alphabetically by first module name
- * @param {Array} modules - Array of module names
- * @returns {string} Sortable string representation
- */
-function sortModules(modules) {
-    if (!Array.isArray(modules) || modules.length === 0) return '';
-
-    // Pad module count for proper numeric sorting, then add first module name
-    const count = modules.length.toString().padStart(5, '0');
-    const firstName = modules[0].toLowerCase();
-    return `${count}_${firstName}`;
 }
 
 /**
@@ -419,11 +330,11 @@ function parseHistogramFilter(filterValue) {
 /**
  * Create a filter function for histogram columns with extended syntax
  * Supports multiple comma-separated conditions (AND logic)
- * @param {string} statKey - The statistics key
+ * @param {string} histKey - The histogram key in row.histograms
  * @param {string} filterValue - The filter string (e.g., "mean>0.5, max<10")
  * @returns {Function|null} Filter function or null to use default
  */
-function createHistogramFilter(statKey, filterValue) {
+function createHistogramFilter(histKey, filterValue) {
     const parsedConditions = parseHistogramFilter(filterValue);
 
     if (!parsedConditions) {
@@ -436,35 +347,47 @@ function createHistogramFilter(statKey, filterValue) {
         // All conditions must be satisfied (AND logic)
         for (const condition of parsedConditions) {
             const { statType, operator, value } = condition;
-            const histData = row.stats[statKey];
+            const histData = row.histograms?.[histKey];
 
-            if (!histData || !histData.bin_counts || !histData.bin_edges) return false;
+            if (!histData || !histData.counts || !histData.edges) return false;
 
             // Calculate the requested statistic
             let statValue;
             switch (statType) {
                 case 'mean':
-                    // For all_activations, use precomputed mean
-                    if (statKey === 'all_activations' && row.stats.mean_activation !== undefined) {
-                        statValue = row.stats.mean_activation;
+                    // Use precomputed stats if available
+                    if (histKey === 'all_activations' && row.stats.mean !== undefined) {
+                        statValue = row.stats.mean;
                     } else {
                         statValue = calculateHistogramMean(histData);
                     }
                     break;
                 case 'median':
-                    statValue = calculateHistogramMedian(histData);
+                    if (histKey === 'all_activations' && row.stats.median !== undefined) {
+                        statValue = row.stats.median;
+                    } else {
+                        statValue = calculateHistogramMedian(histData);
+                    }
                     break;
                 case 'max':
-                    statValue = histData.bin_edges[histData.bin_edges.length - 1];
+                    if (histKey === 'all_activations' && row.stats.max !== undefined) {
+                        statValue = row.stats.max;
+                    } else {
+                        statValue = histData.edges[histData.edges.length - 1];
+                    }
                     break;
                 case 'min':
-                    statValue = histData.bin_edges[0];
+                    if (histKey === 'all_activations' && row.stats.min !== undefined) {
+                        statValue = row.stats.min;
+                    } else {
+                        statValue = histData.edges[0];
+                    }
                     break;
                 case 'range':
-                    statValue = histData.bin_edges[histData.bin_edges.length - 1] - histData.bin_edges[0];
+                    statValue = histData.edges[histData.edges.length - 1] - histData.edges[0];
                     break;
                 case 'sum':
-                    statValue = histData.bin_counts.reduce((a, b) => a + b, 0);
+                    statValue = histData.counts.reduce((a, b) => a + b, 0);
                     break;
                 default:
                     return false;
@@ -578,35 +501,22 @@ function createNumericFilter(filterValue, valueExtractor) {
     };
 }
 
-async function processClusterData() {
+async function processComponentData() {
     const tableData = [];
 
-    for (const [clusterHash, cluster] of Object.entries(clusterData)) {
-        // Await lazy-loaded components
-        const components = await cluster.components;
-
-        const modules = new Set();
-        components.forEach(comp => {
-            modules.add(comp.module);
-        });
-
-        const stats = cluster.stats;
-
-        // Extract cluster ID from hash (format: "runid-iteration-clusteridx")
-        const parts = clusterHash.split('-');
-        const clusterId = parseInt(parts[parts.length - 1]);
-
-        // TODO: Re-enable explanations feature
-        // Get explanation for this cluster
-        // const explanationData = explanations[clusterHash];
-        // const explanation = explanationData ? explanationData.explanation : null;
+    for (const component of componentData) {
+        // Extract module and index from label (format: "module.name:index")
+        const labelParts = component.label.split(':');
+        const moduleName = labelParts[0];
+        const componentIndex = labelParts.length > 1 ? parseInt(labelParts[1]) : 0;
 
         tableData.push({
-            id: clusterId,
-            clusterHash: clusterHash,
-            componentCount: components.length,
-            modules: Array.from(modules),
-            stats: stats,
+            label: component.label,
+            module: moduleName,
+            index: componentIndex,
+            stats: component.stats,
+            histograms: component.histograms,
+            embedding: component.embedding
             // TODO: Re-enable explanations feature
             // explanation: explanation
         });
@@ -621,102 +531,82 @@ async function loadData() {
     const data = await loader.read();
 
     // Extract data
-    clusterData = data.clusters;
-    modelInfo = data.model_info;
+    dashboardData = data;
+    componentData = data.components || [];
 
     // TODO: Re-enable explanations feature
     // Load explanations separately (not part of ZANJ)
-    // explanations = await loadJSONL(CONFIG.getDataPath('explanations'), 'cluster_id').catch(() => ({}));
+    // explanations = await loadJSONL(CONFIG.getDataPath('explanations'), 'component_label').catch(() => ({}));
 
-    const tableData = await processClusterData();
+    const tableData = await processComponentData();
 
-    // Discover histogram stats from first cluster
-    const firstCluster = Object.values(clusterData)[0];
+    // Discover histogram stats from first component
+    const firstComponent = componentData[0];
     const histogramStats = [];
-    if (firstCluster && firstCluster.stats) {
-        for (const [key, value] of Object.entries(firstCluster.stats)) {
-            if (value && typeof value === 'object' && 'bin_counts' in value && 'bin_edges' in value) {
-                histogramStats.push(key);
-            }
-        }
+    if (firstComponent && firstComponent.histograms) {
+        histogramStats.push(...Object.keys(firstComponent.histograms));
     }
 
     // Base columns
     const columns = [
         {
-            key: 'id',
-            label: 'ID',
-            type: 'number',
-            width: '10px',
-            align: 'center'
+            key: 'label',
+            label: 'Label',
+            type: 'string',
+            width: '200px',
+            renderer: columnRenderers.componentLabel
         },
         {
-            key: 'componentCount',
-            label: 'Comps',
+            key: 'module',
+            label: 'Module',
+            type: 'string',
+            width: '150px',
+            renderer: columnRenderers.moduleName,
+            filterFunction: (filterValue) => createModuleFilter(filterValue),
+            filterTooltip: 'Filter by module name. Use * for wildcards. Example: *mlp*, *attn*'
+        },
+        {
+            key: 'index',
+            label: 'Index',
             type: 'number',
-            width: '10px',
+            width: '80px',
             align: 'right'
-        },
-        {
-            key: 'modules',
-            label: 'Model View',
-            type: 'string',
-            width: '21px',
-            align: 'center',
-            renderer: columnRenderers.modelView,
-            sortFunction: (modules) => sortModules(modules),
-            filterFunction: (filterValue) => createModuleFilter(filterValue),
-            filterTooltip: 'Filter by module. Separate with , (OR) or & (AND). Use * for wildcards. Prefix @ for all-match, ! to exclude. Examples: *mlp*,*attn* (OR), *mlp*&*attn* (AND), @*proj* (all), !*o_proj* (exclude)'
-        },
-        {
-            key: 'modules',
-            label: 'Modules',
-            type: 'string',
-            width: '10px',
-            renderer: columnRenderers.modulesSummary,
-            sortFunction: (modules) => sortModules(modules),
-            filterFunction: (filterValue) => createModuleFilter(filterValue),
-            filterTooltip: 'Filter by module. Separate with , (OR) or & (AND). Use * for wildcards. Prefix @ for all-match, ! to exclude. Examples: *mlp*,*attn* (OR), *mlp*&*attn* (AND), @*proj* (all), !*o_proj* (exclude)'
         }
     ];
 
     // Add histogram columns dynamically
     const statColors = {
         'all_activations': '#4169E1',
-        'max_activation-max-16': '#DC143C',
-        'max_activation-max-32': '#DC143C',
-        'mean_activation-max-16': '#228B22',
-        'median_activation-max-16': '#FF8C00',
-        'min_activation-max-16': '#9370DB',
-        'max_activation_position': '#FF6347'
+        'max_per_sample': '#DC143C',
+        'mean_per_sample': '#228B22'
     };
 
-    histogramStats.forEach(statKey => {
-        const color = statColors[statKey] || '#808080';
-        const label = statKey.replace(/-/g, ' ').replace(/_/g, ' ')
+    histogramStats.forEach(histKey => {
+        const color = statColors[histKey] || '#808080';
+        const label = histKey.replace(/-/g, ' ').replace(/_/g, ' ')
             .split(' ')
             .map(word => word.charAt(0).toUpperCase() + word.slice(1))
             .join(' ');
 
         columns.push({
-            id: 'histogram_' + statKey,
-            key: 'stats',
+            id: 'histogram_' + histKey,
+            key: 'histograms',
             label: label,
             type: 'number',
             width: '200px',
             align: 'center',
-            renderer: columnRenderers.genericHistogram(statKey, color, label),
+            renderer: columnRenderers.genericHistogram(histKey, color, label),
             sortFunction: (value, row) => {
-                const histData = row.stats[statKey];
-                if (!histData || !histData.bin_counts || !histData.bin_edges) return -Infinity;
+                const histData = row.histograms?.[histKey];
+                if (!histData || !histData.counts || !histData.edges) return -Infinity;
                 // For all_activations, use precomputed mean
-                if (statKey === 'all_activations' && row.stats.mean_activation !== undefined) {
-                    return row.stats.mean_activation;
+                if (histKey === 'all_activations' && row.stats.mean !== undefined) {
+                    return row.stats.mean;
                 }
                 // Otherwise calculate mean from histogram
                 return calculateHistogramMean(histData);
             },
-            filterFunction: (filterValue) => createHistogramFilter(statKey, filterValue),
+            filterFunction: (filterValue) => createHistogramFilter(histKey, filterValue),
             filterTooltip: 'Filter by statistics. Use: mean>0.5, median<0.2, max>=1.0, min>-0.1, range<5, sum>100. Combine with commas (e.g., mean>0.5, max<10)'
         });
     });
@@ -787,12 +677,12 @@ async function loadData() {
 
     // Actions column
     columns.push({
-        key: 'id',
+        key: 'label',
         label: 'Actions',
         type: 'string',
         width: '20px',
         align: 'center',
-        renderer: columnRenderers.clusterLink,
+        renderer: columnRenderers.componentLink,
         filterable: false
     });
 
@@ -804,7 +694,7 @@ async function loadData() {
         showFilters: CONFIG.indexPage.showFilters
     };
 
-    dataTable = new DataTable('#clusterTableContainer', tableConfig);
+    dataTable = new DataTable('#componentTableContainer', tableConfig);
 
     const loading = document.getElementById('loading');
     if (!loading) {
@@ -826,13 +716,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error(msg);
     }
 
-    // Load cluster data and render table (includes model info from ZANJ)
+    // Load component data and render table (includes dashboard metadata from ZANJ)
     await loadData();
 
-    // Populate Alpine.js component with loaded model info
+    // Populate Alpine.js component with loaded dashboard metadata
     const modelInfoEl = document.getElementById('modelInfo');
     if (modelInfoEl && Alpine.$data(modelInfoEl)) {
-        Alpine.$data(modelInfoEl).data = modelInfo;
-        Alpine.$data(modelInfoEl).hasData = Object.keys(modelInfo).length > 0;
+        Alpine.$data(modelInfoEl).data = dashboardData;
+        Alpine.$data(modelInfoEl).hasData = Object.keys(dashboardData).length > 0;
     }
 });

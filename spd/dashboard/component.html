@@ -11,27 +11,20 @@
 </head>
 <body>
     <div>
-        <a href="index.html">← Back to cluster list</a>
-        <h1 id="clusterTitle">Cluster Details</h1>
+        <a href="index.html">← Back to component list</a>
+        <h1 id="componentTitle">Component Details</h1>
     </div>
 
     <div style="margin: 15px 0; padding: 10px; background-color: #f8f9fa; border-radius: 5px;">
-        <button id="copyTemplateBtn" style="padding: 5px 10px; cursor: pointer; margin-bottom: 10px;">📋 Copy Explanation Template</button>
-        <p style="margin: 5px 0;"><strong>Explanation:</strong> <span id="clusterExplanation" style="font-style: italic; color: #666;">No explanation</span></p>
+        <p style="margin: 5px 0;"><strong>Module:</strong> <span id="componentModule">-</span></p>
+        <p style="margin: 5px 0;"><strong>Index:</strong> <span id="componentIndex">-</span></p>
     </div>
 
-    <!-- Top row: Components table | Model view -->
-    <div style="display: flex; gap: 20px; align-items: start; margin-bottom: 30px;">
-        <div style="flex-shrink: 0;">
-            <h2>Components (<span id="componentCount">0</span>)</h2>
-            <div id="componentsTable"></div>
-        </div>
-
-        <div>
-            <h2>Model View</h2>
-            <div id="modelView" style="flex-shrink: 0;">
-                <!-- Model visualization will be inserted here -->
-            </div>
+    <!-- Model view -->
+    <div style="margin-bottom: 30px;">
+        <h2>Model View</h2>
+        <div id="modelView" style="flex-shrink: 0;">
+            <!-- Model visualization will be inserted here -->
         </div>
     </div>
 
@@ -49,38 +42,52 @@
         <div id="topTokensTable"></div>
     </div>
 
-    <!-- Third row: Top text samples (full width) -->
-    <div id="samples">
-        <h2>Top Text Samples</h2>
-        <table id="samplesTable">
+    <!-- Top activating samples -->
+    <div id="topMaxSamples" style="margin-bottom: 30px;">
+        <h2>Top Samples (by Max Activation)</h2>
+        <table id="topMaxTable">
             <thead>
                 <tr>
                     <th>#</th>
                     <th>Text</th>
                 </tr>
             </thead>
-            <tbody id="samplesTableBody">
+            <tbody id="topMaxTableBody">
             </tbody>
         </table>
     </div>
-    
-    <div id="loading">Loading cluster data...</div>
+
+    <div id="topMeanSamples">
+        <h2>Top Samples (by Mean Activation)</h2>
+        <table id="topMeanTable">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Text</th>
+                </tr>
+            </thead>
+            <tbody id="topMeanTableBody">
+            </tbody>
+        </table>
+    </div>
+
+    <div id="loading">Loading component data...</div>
     <div id="tooltip" style="display: none; position: absolute; background: #333; color: white; padding: 8px; border-radius: 4px; white-space: pre; z-index: 1000; pointer-events: none;"></div>
 
     <!-- jszip lib -->
-    <script src="https://raw.githubusercontent.com/Stuk/jszip/refs/heads/main/dist/jszip.min.js"></script>
+    <script src="js/lib/jszip.min.js"></script>
 
     <!-- mivanit js-dev-toolkit -->
-    <script src="js/libnotif.js"></script>
-    <script src="js/libconfig.js"></script>
-    <script src="js/libtable.js"></script>
-    <script src="js/libsparklines.js"></script>
-    <script src="js/libhistogram.js"></script>
-    <script src="js/libarray.js"></script>
-    <script src="js/libzanj.js"></script>
-    <script src="js/libColorUtil.js"></script>
-
+    <script src="js/lib/notif.js"></script>
+    <script src="js/lib/config.js"></script>
+    <script src="js/lib/table.js"></script>
+    <script src="js/lib/sparklines.js"></script>
+    <script src="js/lib/array.js"></script>
+    <script src="js/lib/zanj.js"></script>
+    <script src="js/lib/ColorUtil.js"></script>
+    
     <!-- local -->
+    <script src="js/histogram.js"></script>
     <script src="js/model-visualization.js"></script>
     <script src="js/token-display.js"></script>
     <script src="js/cluster-detail.js"></script>

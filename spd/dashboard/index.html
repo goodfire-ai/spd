@@ -70,76 +70,37 @@
     </style>
 </head>
 <body>
-    <h1>Cluster Selection Dashboard</h1>
+    <h1>Component Dashboard</h1>
 
     <div id="modelInfo" x-data="modelInfoData" x-show="hasData" style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px;">
         <h2 style="margin-top: 0;">Model Information</h2>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
             <div>
-                <strong>Total Modules:</strong> <span x-text="data.total_modules || '-'"></span>
+                <strong>Total Components:</strong> <span x-text="data.n_components || '-'"></span>
             </div>
             <div>
-                <strong>Total Components:</strong> <span x-text="data.total_components || '-'"></span>
+                <strong>Alive Components:</strong> <span x-text="data.n_alive || '-'"></span>
             </div>
             <div>
-                <strong>Total Clusters:</strong> <span x-text="data.total_clusters || '-'"></span>
+                <strong>Dead Components:</strong> <span x-text="data.n_dead || '-'"></span>
             </div>
             <div>
-                <strong>Model Parameters:</strong> <span x-text="formatParameters(data.total_parameters)"></span>
+                <strong>Samples:</strong> <span x-text="data.n_samples || '-'"></span>
             </div>
             <div>
-                <strong>Iteration:</strong> <span x-text="data.iteration !== undefined ? data.iteration : '-'"></span>
-            </div>
-            <div>
-                <strong>Component Size:</strong> <span x-text="data.component_size || '-'"></span>
+                <strong>Context Length:</strong> <span x-text="data.n_ctx || '-'"></span>
             </div>
             <div style="grid-column: 1 / -1;">
-                <strong>Source SPD Run:</strong> <span x-html="formatWandBLink(data.model_path)"></span>
+                <strong>Model Path:</strong> <span x-text="data.model_path || '-'"></span>
             </div>
-            <div style="grid-column: 1 / -1;">
-                <strong>Clustering Run:</strong> <span x-html="formatWandBLink(data.wandb_clustering_run)"></span>
-            </div>
-            <div style="grid-column: 1 / -1;">
-                <strong>Pretrained Model:</strong> <span x-text="data.config?.pretrained_model_name || '-'"></span>
-            </div>
-        </div>
-        <details style="margin-top: 15px;">
-            <summary style="cursor: pointer; font-weight: 600;">Configuration Details</summary>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; font-size: 13px;">
-                <div>
-                    <strong>Seed:</strong> <span x-text="data.config?.seed !== undefined ? data.config.seed : '-'"></span>
-                </div>
-                <div>
-                    <strong>Steps:</strong> <span x-text="data.config?.steps || '-'"></span>
-                </div>
-                <div>
-                    <strong>Learning Rate:</strong> <span x-text="data.config?.lr || '-'"></span>
-                </div>
-                <div>
-                    <strong>Batch Size:</strong> <span x-text="data.config?.batch_size || '-'"></span>
-                </div>
-                <div>
-                    <strong>Sigmoid Type:</strong> <span x-text="data.config?.sigmoid_type || '-'"></span>
-                </div>
-                <div>
-                    <strong>Sampling:</strong> <span x-text="data.config?.sampling || '-'"></span>
-                </div>
-                <div>
-                    <strong>LR Schedule:</strong> <span x-text="data.config?.lr_schedule || '-'"></span>
-                </div>
-                <div>
-                    <strong>Output Loss:</strong> <span x-text="data.config?.output_loss_type || '-'"></span>
-                </div>
-            </div>
-        </details>
     </div>
 
-    <div id="clusterTableContainer"></div>
+    <div id="componentTableContainer"></div>
     <div id="loading">Loading data...</div>
     <div id="tooltip"></div>
 
     <!-- jszip lib -->
-    <script src="https://raw.githubusercontent.com/Stuk/jszip/refs/heads/main/dist/jszip.min.js"></script>
+    <script src="js/lib/jszip.min.js"></script>
     
     <!-- mivanit js-dev-toolkit -->
     <script src="js/lib/config.js"></script>
@@ -148,10 +109,10 @@
     <script src="js/lib/notif.js"></script>
     <script src="js/lib/ColorUtil.js"></script>
     <script src="js/lib/sparklines.js"></script>
-    <script src="js/lib/histogram.js"></script>
     <script src="js/lib/table.js"></script>
-
+    
     <!-- local -->
+    <script src="js/histogram.js"></script>
     <script src="js/model-visualization.js"></script>
     <script src="js/cluster-selection.js"></script>
 </body>
