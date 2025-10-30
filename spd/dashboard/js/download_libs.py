@@ -130,21 +130,21 @@ def main() -> None:
         "--deps-file",
         type=Path,
         default=None,
-        help="Path to deps.json file (default: <lib-dir>/deps.json)",
+        help="Path to dependencies JSON file (default: deps.json relative to script)",
     )
     parser.add_argument(
         "--lib-dir",
         type=Path,
         default=None,
-        help="Path to library directory (default: js/lib/ relative to script)",
+        help="Path to library directory (default: lib/ relative to script)",
     )
 
     args: argparse.Namespace = parser.parse_args()
 
     # Determine paths
     script_dir: Path = Path(__file__).parent
-    lib_dir: Path = args.lib_dir if args.lib_dir else script_dir / "js" / "lib"
-    deps_file: Path = args.deps_file if args.deps_file else lib_dir / "deps.json"
+    lib_dir: Path = args.lib_dir if args.lib_dir else script_dir / "lib"
+    deps_file: Path = args.deps_file if args.deps_file else script_dir / "deps.json"
 
     process_dependencies(deps_file, lib_dir)
 
