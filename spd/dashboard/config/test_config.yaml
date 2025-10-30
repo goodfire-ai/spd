@@ -3,7 +3,7 @@
 
 # Model and output
 model_path: "wandb:goodfire/spd/runs/lxs77xye"
-output_dir: "spd/dashboard/data/test_run"
+output_dir: "spd/dashboard/data/"
 
 # Dataset configuration
 dataset_name: "SimpleStories/SimpleStories"
@@ -12,14 +12,14 @@ dataset_column: "story"
 dataset_streaming: false
 
 # Data generation parameters
-batch_size: 32
-n_batches: 5
-context_length: 64
+batch_size: 4
+n_batches: 2
+context_length: 16
 
 # Component filtering
-dead_threshold: 0.000001
+dead_threshold: 0.1
 
 # Analysis parameters
-n_samples: 16
+n_samples: 2
 embed_dim: 2
-hist_bins: 50
+hist_bins: 5

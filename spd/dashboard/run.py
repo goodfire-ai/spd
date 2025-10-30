@@ -12,25 +12,29 @@ from typing import Any
 import numpy as np
 import torch
 from jaxtyping import Float, Int
-from muutils.spinner import SpinnerContext
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from zanj import ZANJ
 
 from spd.configs import Config
-from spd.dashboard.core.activations import component_activations, process_activations
+from spd.dashboard.core.activations import (
+    ProcessedActivations,
+    SubcomponentLabel,
+    component_activations,
+    process_activations,
+)
 from spd.dashboard.core.component_data import (
     ComponentDashboardData,
     GlobalMetrics,
     RawActivationData,
     SubcomponentStats,
-    TopKSample,
 )
 from spd.data import DatasetConfig, create_data_loader
-from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.general_utils import extract_batch_data, get_obj_device
+
+from muutils.dbg import dbg_tensor, dbg, dbg_auto
 
 # ============================================================================
 # PHASE 1: DATA GENERATION
@@ -56,8 +60,6 @@ def generate_activations(
     Returns:
         RawActivationData with tokens, activations, and component info
     """
-    logger.info("Loading model and data...")
-
     # Load model
     spd_run: SPDRunInfo = SPDRunInfo.from_path(model_path)
     model: ComponentModel = ComponentModel.from_run_info(spd_run)
@@ -76,23 +78,28 @@ def generate_activations(
 
     # Accumulate activations
     all_tokens: list[Float[np.ndarray, "batch n_ctx"]] = []
-    all_activations: dict[str, list[Float[np.ndarray, "batch n_ctx"]]] = defaultdict(list)
+    all_activations: dict[SubcomponentLabel, list[Float[np.ndarray, "batch n_ctx"]]] = defaultdict(
+        list
+    )
 
-    logger.info(f"Processing {n_batches} batches...")
     for batch_idx, batch_data in enumerate(tqdm(dataloader, total=n_batches, desc="Batches")):
         if batch_idx >= n_batches:
             break
 
         # Extract tokens
-        batch: Int[Tensor, "batch n_ctx"] = extract_batch_data(batch_data).to(device)
+        batch: Int[Tensor, "batch n_ctx"] = extract_batch_data(batch_item=batch_data).to(device)
 
-        # Get component activations (already flattened to [batch*n_ctx, C])
-        acts_dict: dict[str, Float[Tensor, "batch*n_ctx C"]] = component_activations(
+        # Get component activations
+        acts_dict: dict[str, Float[Tensor, "batch n_ctx C"]] = component_activations(
             model, device, batch=batch
         )
+        acts_dict_concat: dict[str, Float[Tensor, "batch*n_ctx C"]] = {
+            module: acts.view(-1, acts.shape[-1])
+            for module, acts in acts_dict.items()
+        }
 
         # Process activations (concatenate all modules)
-        processed = process_activations(acts_dict)
+        processed: ProcessedActivations = process_activations(activations=acts_dict_concat)
 
         # Reshape to [batch, n_ctx, n_components]
         batch_size_actual: int = batch.shape[0]
@@ -106,37 +113,32 @@ def generate_activations(
         # Store tokens
         all_tokens.append(batch.cpu().numpy())
 
-        # Store activations per component (using string labels)
-        for comp_idx, comp_label_str in enumerate(processed.label_strings):
+        # Store activations per component (using SubcomponentLabel objects)
+        for comp_idx, comp_label in enumerate(processed.labels):
             comp_acts: Float[Tensor, "batch n_ctx"] = acts_3d[:, :, comp_idx]
-            all_activations[comp_label_str].append(comp_acts.cpu().numpy())
+            all_activations[comp_label].append(comp_acts.cpu().numpy())
 
     # CRITICAL: Delete model to free memory
-    logger.info("Deleting model to free memory...")
     del model
     del spd_run
     torch.cuda.empty_cache()
 
     # Concatenate all batches
-    logger.info("Concatenating batches...")
     tokens: Float[np.ndarray, "n_samples n_ctx"] = np.concatenate(all_tokens, axis=0)
-    activations: dict[str, Float[np.ndarray, "n_samples n_ctx"]] = {
+    activations: dict[SubcomponentLabel, Float[np.ndarray, "n_samples n_ctx"]] = {
         label: np.concatenate(acts_list, axis=0) for label, acts_list in all_activations.items()
     }
 
     # Filter dead components
-    component_labels: list[str] = sorted(activations.keys())
-    dead_components: set[str] = {
+    component_labels: list[SubcomponentLabel] = sorted(
+        activations.keys(), key=lambda x: x.to_string()
+    )
+    dead_components: set[SubcomponentLabel] = {
         label for label, acts in activations.items() if acts.max() <= dead_threshold
     }
-    alive_components: list[str] = [
+    alive_components: list[SubcomponentLabel] = [
         label for label in component_labels if label not in dead_components
     ]
-
-    logger.info(
-        f"Components: {len(alive_components)} alive, {len(dead_components)} dead "
-        f"(threshold={dead_threshold})"
-    )
 
     return RawActivationData(
         tokens=tokens,
@@ -165,14 +167,8 @@ def compute_global_metrics(
     Returns:
         GlobalMetrics with coactivations, correlations, and embeddings
     """
-    # Extract alive component activations
-    alive_acts: dict[str, Float[np.ndarray, "n_samples n_ctx"]] = {
-        label: raw_data.activations[label] for label in raw_data.alive_components
-    }
-
-    logger.info("Computing global metrics (coactivations, correlations, embeddings)...")
     return GlobalMetrics.generate(
-        activations=alive_acts,
+        activations=raw_data.activations,
         component_labels=raw_data.alive_components,
         embed_dim=embed_dim,
     )
@@ -183,179 +179,6 @@ def compute_global_metrics(
 # ============================================================================
 
 
-def find_top_k_samples(
-    activations: Float[np.ndarray, "n_samples n_ctx"],
-    tokens: Float[np.ndarray, "n_samples n_ctx"],
-    tokenizer: Any,
-    k: int,
-    criterion: str,
-) -> list[TopKSample]:
-    """Find top-k samples by specified criterion.
-
-    Args:
-        activations: Activation values for this component
-        tokens: Token IDs for all samples
-        tokenizer: Tokenizer to decode token IDs to strings
-        k: Number of top samples to return
-        criterion: 'max' or 'mean'
-
-    Returns:
-        List of TopKSample objects, sorted by score (highest first)
-    """
-    # Compute scores based on criterion
-    if criterion == "max":
-        scores: Float[np.ndarray, " n_samples"] = activations.max(axis=1)
-    elif criterion == "mean":
-        scores: Float[np.ndarray, " n_samples"] = activations.mean(axis=1)
-    else:
-        raise ValueError(f"Unknown criterion: {criterion}")
-
-    # Get top-k indices (sorted descending)
-    top_k_idx: Float[np.ndarray, " k"] = np.argpartition(scores, -k)[-k:]
-    top_k_idx = top_k_idx[np.argsort(scores[top_k_idx])][::-1]
-
-    # Build TopKSample objects
-    samples: list[TopKSample] = []
-    for idx in top_k_idx:
-        idx_int: int = int(idx)
-        token_ids: list[int] = tokens[idx_int].tolist()
-
-        # Decode tokens to strings
-        token_strs: list[str] = [tokenizer.decode([tid]) for tid in token_ids]
-
-        samples.append(
-            TopKSample(  # pyright: ignore[reportCallIssue]
-                token_strs=token_strs,
-                activations=activations[idx_int],
-            )
-        )
-
-    return samples
-
-
-def compute_global_statistics(
-    activations: Float[np.ndarray, "n_samples n_ctx"],
-) -> dict[str, float]:
-    """Compute global distribution statistics.
-
-    Args:
-        activations: Activation values for this component
-
-    Returns:
-        Dict with mean, std, min, max, median, and quantiles
-    """
-    flat: Float[np.ndarray, " n_total"] = activations.flatten()
-
-    return {
-        "mean": float(np.mean(flat)),
-        "std": float(np.std(flat)),
-        "min": float(np.min(flat)),
-        "max": float(np.max(flat)),
-        "median": float(np.median(flat)),
-        "q05": float(np.quantile(flat, 0.05)),
-        "q25": float(np.quantile(flat, 0.25)),
-        "q75": float(np.quantile(flat, 0.75)),
-        "q95": float(np.quantile(flat, 0.95)),
-    }
-
-
-def compute_histograms(
-    activations: Float[np.ndarray, "n_samples n_ctx"],
-    bins: int,
-) -> dict[str, dict[str, list]]:
-    """Compute multiple histograms for different views.
-
-    Args:
-        activations: Activation values for this component
-        bins: Number of bins for histograms
-
-    Returns:
-        Dict mapping histogram name to {counts, edges}
-    """
-    histograms: dict[str, dict[str, list]] = {}
-
-    # Histogram 1: All activation magnitudes
-    flat: Float[np.ndarray, " n_total"] = activations.flatten()
-    counts_all: Float[np.ndarray, " bins"]
-    edges_all: Float[np.ndarray, " bins_plus_1"]
-    counts_all, edges_all = np.histogram(flat, bins=bins)
-    histograms["all_activations"] = {
-        "counts": counts_all.tolist(),
-        "edges": edges_all.tolist(),
-    }
-
-    # Histogram 2: Max activation per sample
-    max_per_sample: Float[np.ndarray, " n_samples"] = activations.max(axis=1)
-    counts_max: Float[np.ndarray, " bins"]
-    edges_max: Float[np.ndarray, " bins_plus_1"]
-    counts_max, edges_max = np.histogram(max_per_sample, bins=bins)
-    histograms["max_per_sample"] = {
-        "counts": counts_max.tolist(),
-        "edges": edges_max.tolist(),
-    }
-
-    # Histogram 3: Mean activation per sample
-    mean_per_sample: Float[np.ndarray, " n_samples"] = activations.mean(axis=1)
-    counts_mean: Float[np.ndarray, " bins"]
-    edges_mean: Float[np.ndarray, " bins_plus_1"]
-    counts_mean, edges_mean = np.histogram(mean_per_sample, bins=bins)
-    histograms["mean_per_sample"] = {
-        "counts": counts_mean.tolist(),
-        "edges": edges_mean.tolist(),
-    }
-
-    return histograms
-
-
-def compute_component_stats(
-    label: str,
-    activations: Float[np.ndarray, "n_samples n_ctx"],
-    tokens: Float[np.ndarray, "n_samples n_ctx"],
-    tokenizer: Any,
-    global_metrics: GlobalMetrics | None,
-    k: int,
-    hist_bins: int,
-) -> SubcomponentStats:
-    """Compute all statistics for a single component.
-
-    Args:
-        label: Component label
-        activations: Activation values
-        tokens: Token IDs
-        tokenizer: Tokenizer to decode token IDs
-        global_metrics: Global metrics (None if component is dead)
-        k: Number of top samples to track
-        hist_bins: Number of histogram bins
-
-    Returns:
-        SubcomponentStats with all computed statistics
-    """
-    is_dead: bool = global_metrics is None
-
-    if is_dead:
-        # Dead component - minimal stats
-        return SubcomponentStats(  # pyright: ignore[reportCallIssue]
-            label=label,
-            is_dead=True,
-            embedding=None,
-            top_max=[],
-            top_mean=[],
-            stats={},
-            histograms={},
-        )
-
-    # Alive component - full stats
-    return SubcomponentStats(  # pyright: ignore[reportCallIssue]
-        label=label,
-        is_dead=False,
-        embedding=global_metrics.get_embedding(label),
-        top_max=find_top_k_samples(activations, tokens, tokenizer, k, "max"),
-        top_mean=find_top_k_samples(activations, tokens, tokenizer, k, "mean"),
-        stats=compute_global_statistics(activations),
-        histograms=compute_histograms(activations, bins=hist_bins),
-    )
-
-
 def process_all_components(
     raw_data: RawActivationData,
     tokenizer: Any,
@@ -363,7 +186,7 @@ def process_all_components(
     k: int,
     hist_bins: int,
 ) -> list[SubcomponentStats]:
-    """Compute stats for all components (alive and dead).
+    """Compute stats for alive components only.
 
     Args:
         raw_data: Raw activation data
@@ -373,19 +196,17 @@ def process_all_components(
         hist_bins: Number of histogram bins
 
     Returns:
-        List of SubcomponentStats for all components
+        List of SubcomponentStats for alive components
     """
     all_stats: list[SubcomponentStats] = []
 
-    for label in tqdm(raw_data.component_labels, desc="Processing components"):
-        is_alive: bool = label in raw_data.alive_components
-
-        stats: SubcomponentStats = compute_component_stats(
+    for label in tqdm(raw_data.alive_components, desc="Processing components"):
+        stats: SubcomponentStats = SubcomponentStats.generate(
             label=label,
             activations=raw_data.activations[label],
             tokens=raw_data.tokens,
             tokenizer=tokenizer,
-            global_metrics=global_metrics if is_alive else None,
+            global_metrics=global_metrics,
             k=k,
             hist_bins=hist_bins,
         )
@@ -427,19 +248,15 @@ def main(
     """
     from transformers import AutoTokenizer
 
+    from spd.dashboard.core.tokenization import attach_vocab_arr
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load tokenizer
-    logger.info(f"Loading tokenizer: {tokenizer_name}")
+    # Load tokenizer and attach vocab array for fast decoding
     tokenizer: Any = AutoTokenizer.from_pretrained(tokenizer_name)
+    attach_vocab_arr(tokenizer)
 
-    # ========================================================================
     # PHASE 1: DATA GENERATION
-    # ========================================================================
-    logger.info("=" * 70)
-    logger.info("PHASE 1: DATA GENERATION")
-    logger.info("=" * 70)
-
     raw_data: RawActivationData = generate_activations(
         model_path=model_path,
         dataset_config=dataset_config,
@@ -448,20 +265,8 @@ def main(
         dead_threshold=dead_threshold,
     )
 
-    logger.info(f"\nGenerated: {raw_data.n_samples} samples × {raw_data.n_ctx} context")
-    logger.info(
-        f"Components: {len(raw_data.alive_components)} alive, {len(raw_data.dead_components)} dead"
-    )
-
-    # ========================================================================
     # PHASE 2: PROCESSING - GLOBAL METRICS
-    # ========================================================================
-    logger.info("\n" + "=" * 70)
-    logger.info("PHASE 2: PROCESSING - GLOBAL METRICS")
-    logger.info("=" * 70)
-
-    with SpinnerContext(message="Computing global metrics"):
-        global_metrics: GlobalMetrics = compute_global_metrics(raw_data, embed_dim=embed_dim)
+    global_metrics: GlobalMetrics = compute_global_metrics(raw_data, embed_dim=embed_dim)
 
     # Save matrices separately for easy access
     metrics_path: Path = output_dir / "global_metrics.npz"
@@ -472,15 +277,8 @@ def main(
         embeddings=global_metrics.embeddings,
         labels=global_metrics.component_labels,
     )
-    logger.info(f"Saved {metrics_path}: {global_metrics.coactivations.shape}")
 
-    # ========================================================================
     # PHASE 2: PROCESSING - COMPONENT STATS
-    # ========================================================================
-    logger.info("\n" + "=" * 70)
-    logger.info("PHASE 2: PROCESSING - COMPONENT STATS")
-    logger.info("=" * 70)
-
     all_stats: list[SubcomponentStats] = process_all_components(
         raw_data=raw_data,
         tokenizer=tokenizer,
@@ -489,13 +287,7 @@ def main(
         hist_bins=hist_bins,
     )
 
-    # ========================================================================
     # SAVE EVERYTHING
-    # ========================================================================
-    logger.info("\n" + "=" * 70)
-    logger.info("SAVING DASHBOARD DATA")
-    logger.info("=" * 70)
-
     dashboard: ComponentDashboardData = ComponentDashboardData(  # pyright: ignore[reportCallIssue]
         model_path=model_path,
         n_samples=raw_data.n_samples,
@@ -508,10 +300,8 @@ def main(
     )
 
     zanj_path: Path = output_dir / "dashboard.zanj"
-    ZANJ().save(dashboard.serialize(), str(zanj_path))
-    logger.info(f"Saved {zanj_path}")
-    logger.info("Dashboard generation complete!")
-
+    ZANJ().save(dashboard, str(zanj_path))
+    print(f"Saved dashboard data to '{zanj_path}'")
 
 def cli() -> None:
     """CLI entry point with argument parsing."""
@@ -522,10 +312,9 @@ def cli() -> None:
     args: argparse.Namespace = parser.parse_args()
 
     # Import config class
-    from spd.dashboard.core.component_dashboard_config import ComponentDashboardConfig
+    from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 
     config: ComponentDashboardConfig = ComponentDashboardConfig.from_file(args.config)
-    logger.info(f"Loaded config from: {args.config}")
 
     # Load SPD config to get tokenizer name
     spd_run: SPDRunInfo = SPDRunInfo.from_path(config.model_path)

@@ -83,3 +83,8 @@ app:
 .PHONY: install-app
 install-app:
 	(cd app/frontend && npm install)
+
+
+.PHONY: dashboard-test
+dashboard-test:
+	uv run python spd/dashboard/run.py spd/dashboard/config/test_config.yaml

@@ -1,13 +1,33 @@
 """Text processing utilities for dashboard data generation."""
 
+from dataclasses import dataclass
+from functools import cached_property
+import hashlib
+from typing import NewType
 import numpy as np
 from jaxtyping import Int
-from spd.clustering.dashboard.core.base import TextSample, TextSampleHash
 from transformers import PreTrainedTokenizer
 
 # TODO: pyright.... hates tokenizers???
 # pyright: reportAttributeAccessIssue=false, reportUnknownParameterType=false
 
+TextSampleHash = NewType("TextSampleHash", str)
+
+@dataclass(frozen=True, kw_only=True)
+class TextSample:
+    """Text content, with a reference to the dataset. depends on tokenizer used."""
+
+    full_text: str
+    tokens: list[str]
+
+    @cached_property
+    def text_hash(self) -> TextSampleHash:
+        """Hash of full_text for deduplication."""
+        return TextSampleHash(hashlib.sha256(self.full_text.encode()).hexdigest()[:8])
+
+    def length(self) -> int:
+        """Return the number of tokens."""
+        return len(self.tokens)
 
 def attach_vocab_arr(tokenizer: PreTrainedTokenizer) -> None:
     """Attach a numpy array of token strings to the tokenizer for fast batch decoding.

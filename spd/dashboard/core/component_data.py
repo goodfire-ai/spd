@@ -9,7 +9,9 @@ from dataclasses import dataclass
 
 import numpy as np
 from jaxtyping import Float
-from muutils.json_serialize import SerializableDataclass, serializable_dataclass
+from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
+
+from spd.dashboard.core.activations import SubcomponentLabel
 
 
 @dataclass
@@ -20,10 +22,10 @@ class RawActivationData:
     """
 
     tokens: Float[np.ndarray, "n_samples n_ctx"]
-    activations: dict[str, Float[np.ndarray, "n_samples n_ctx"]]
-    component_labels: list[str]  # All components
-    alive_components: list[str]  # Filtered by dead_threshold
-    dead_components: set[str]  # Components with max activation <= threshold
+    activations: dict[SubcomponentLabel, Float[np.ndarray, "n_samples n_ctx"]]
+    component_labels: list[SubcomponentLabel]  # All components
+    alive_components: list[SubcomponentLabel]  # Filtered by dead_threshold
+    dead_components: set[SubcomponentLabel]  # Components with max activation <= threshold
 
     @property
     def n_samples(self) -> int:
@@ -46,18 +48,19 @@ class GlobalMetrics(SerializableDataclass):
     coactivations: Float[np.ndarray, "n_alive n_alive"]
     correlations: Float[np.ndarray, "n_alive n_alive"]
     embeddings: Float[np.ndarray, "n_alive embed_dim"]
-    component_labels: list[str]  # Ordering for indexing matrices
+    component_labels: list[str]  # Ordering for indexing matrices (as strings for serialization)
 
-    def get_embedding(self, label: str) -> Float[np.ndarray, " embed_dim"]:
+    def get_embedding(self, label: SubcomponentLabel | str) -> Float[np.ndarray, " embed_dim"]:
         """Get embedding vector for a specific component."""
-        idx: int = self.component_labels.index(label)
+        label_str: str = label.to_string() if isinstance(label, SubcomponentLabel) else label
+        idx: int = self.component_labels.index(label_str)
         return self.embeddings[idx]
 
     @classmethod
     def generate(
         cls,
-        activations: dict[str, Float[np.ndarray, "n_samples n_ctx"]],
-        component_labels: list[str],
+        activations: dict[SubcomponentLabel, Float[np.ndarray, "n_samples n_ctx"]],
+        component_labels: list[SubcomponentLabel],
         embed_dim: int,
     ) -> "GlobalMetrics":
         """Generate global metrics from component activations.
@@ -70,6 +73,9 @@ class GlobalMetrics(SerializableDataclass):
         Returns:
             GlobalMetrics with coactivations, correlations, and embeddings
         """
+        # Convert labels to strings for serialization
+        component_labels_str: list[str] = [label.to_string() for label in component_labels]
+
         # Stack and flatten: [n_total_positions, n_components]
         stacked: Float[np.ndarray, "n_total n_components"] = np.stack(
             [activations[label].flatten() for label in component_labels], axis=1
@@ -98,7 +104,7 @@ class GlobalMetrics(SerializableDataclass):
             coactivations=coactivations,
             correlations=correlations,
             embeddings=embeddings,
-            component_labels=component_labels,
+            component_labels=component_labels_str,
         )
 
 
@@ -112,27 +118,136 @@ class TopKSample(SerializableDataclass):
 
 @serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
 class SubcomponentStats(SerializableDataclass):
-    """Complete statistics for a single component.
+    """Complete statistics for a single alive component.
 
     Contains embedding, top samples, global stats, and histograms.
     """
 
     # Identity
     label: str
-    is_dead: bool
 
-    # Embedding (None if dead)
-    embedding: Float[np.ndarray, " embed_dim"] | None
+    # Embedding
+    embedding: Float[np.ndarray, " embed_dim"]
 
     # Top activating samples (by different criteria)
-    top_max: list[TopKSample]  # Top-k by max activation
-    top_mean: list[TopKSample]  # Top-k by mean activation
+    top_max: list[TopKSample] = serializable_field(
+        serialization_fn=lambda x: [s.serialize() for s in x],
+        deserialize_fn=lambda x: [TopKSample.load(s) for s in x],
+    )
+    top_mean: list[TopKSample] = serializable_field(
+        serialization_fn=lambda x: [s.serialize() for s in x],
+        deserialize_fn=lambda x: [TopKSample.load(s) for s in x],
+    )
 
     # Global statistics
     stats: dict[str, float]  # mean, std, min, max, median, q05, q25, q75, q95
 
     # Multiple histograms for different views
-    histograms: dict[str, dict[str, list[float]]]  # {histogram_name: {counts: [...], edges: [...]}}
+    histograms: dict[str, dict[str, list[float]]]  # {histogram_name: {counts: [...], edges: [...]}}}
+
+    @classmethod
+    def generate(
+        cls,
+        label: SubcomponentLabel,
+        activations: Float[np.ndarray, "n_samples n_ctx"],
+        tokens: Float[np.ndarray, "n_samples n_ctx"],
+        tokenizer: any,
+        global_metrics: "GlobalMetrics",
+        k: int,
+        hist_bins: int,
+    ) -> "SubcomponentStats":
+        """Generate complete statistics for a single alive component.
+
+        Args:
+            label: Component label
+            activations: Activation values
+            tokens: Token IDs
+            tokenizer: Tokenizer to decode token IDs
+            global_metrics: Precomputed global metrics
+            k: Number of top samples to track
+            hist_bins: Number of histogram bins
+
+        Returns:
+            SubcomponentStats with all computed statistics
+        """
+        from typing import Any
+
+        from spd.dashboard.core.tokenization import simple_batch_decode
+
+        # Compute top-k samples (max criterion)
+        scores_max: Float[np.ndarray, " n_samples"] = activations.max(axis=1)
+        top_k_idx_max: Float[np.ndarray, " k"] = np.argpartition(scores_max, -k)[-k:]
+        top_k_idx_max = top_k_idx_max[np.argsort(scores_max[top_k_idx_max])][::-1]
+
+        # Decode all top-k tokens at once using fast batch decode
+        top_k_tokens_max: Float[np.ndarray, "k n_ctx"] = tokens[top_k_idx_max.astype(int)]
+        top_k_strs_max: np.ndarray = simple_batch_decode(tokenizer, top_k_tokens_max)
+
+        top_max: list[TopKSample] = []
+        for i, idx in enumerate(top_k_idx_max):
+            idx_int: int = int(idx)
+            top_max.append(
+                TopKSample(  # pyright: ignore[reportCallIssue]
+                    token_strs=top_k_strs_max[i].tolist(),
+                    activations=activations[idx_int],
+                )
+            )
+
+        # Compute top-k samples (mean criterion)
+        scores_mean: Float[np.ndarray, " n_samples"] = activations.mean(axis=1)
+        top_k_idx_mean: Float[np.ndarray, " k"] = np.argpartition(scores_mean, -k)[-k:]
+        top_k_idx_mean = top_k_idx_mean[np.argsort(scores_mean[top_k_idx_mean])][::-1]
+
+        # Decode all top-k tokens at once using fast batch decode
+        top_k_tokens_mean: Float[np.ndarray, "k n_ctx"] = tokens[top_k_idx_mean.astype(int)]
+        top_k_strs_mean: np.ndarray = simple_batch_decode(tokenizer, top_k_tokens_mean)
+
+        top_mean: list[TopKSample] = []
+        for i, idx in enumerate(top_k_idx_mean):
+            idx_int: int = int(idx)
+            top_mean.append(
+                TopKSample(  # pyright: ignore[reportCallIssue]
+                    token_strs=top_k_strs_mean[i].tolist(),
+                    activations=activations[idx_int],
+                )
+            )
+
+        # Compute global statistics
+        flat: Float[np.ndarray, " n_total"] = activations.flatten()
+        stats: dict[str, float] = {
+            "mean": float(np.mean(flat)),
+            "std": float(np.std(flat)),
+            "min": float(np.min(flat)),
+            "max": float(np.max(flat)),
+            "median": float(np.median(flat)),
+            "q05": float(np.quantile(flat, 0.05)),
+            "q25": float(np.quantile(flat, 0.25)),
+            "q75": float(np.quantile(flat, 0.75)),
+            "q95": float(np.quantile(flat, 0.95)),
+        }
+
+        # Helper to create histogram dict
+        def _make_histogram(data: Float[np.ndarray, " n"], name: str) -> None:
+            counts, edges = np.histogram(data, bins=hist_bins)
+            histograms[name] = {
+                "counts": counts.tolist(),
+                "edges": edges.tolist(),
+            }
+
+        # Compute histograms
+        histograms: dict[str, dict[str, list[float]]] = {}
+        _make_histogram(flat, "all_activations")
+        _make_histogram(activations.max(axis=1), "max_per_sample")
+        _make_histogram(activations.mean(axis=1), "mean_per_sample")
+
+        return cls(  # pyright: ignore[reportCallIssue]
+            label=label.to_string(),
+            embedding=global_metrics.get_embedding(label),
+            top_max=top_max,
+            top_mean=top_mean,
+            stats=stats,
+            histograms=histograms,
+        )
 
 
 @serializable_dataclass(kw_only=True)  # pyright: ignore[reportUntypedClassDecorator]
@@ -154,4 +269,7 @@ class ComponentDashboardData(SerializableDataclass):
     global_metrics: GlobalMetrics
 
     # Per-component stats (all components)
-    components: list[SubcomponentStats]
+    components: list[SubcomponentStats] = serializable_field(
+        serialization_fn=lambda x: [c.serialize() for c in x],
+        deserialize_fn=lambda x: [SubcomponentStats.load(c) for c in x],
+    )

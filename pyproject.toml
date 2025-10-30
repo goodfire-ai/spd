@@ -30,6 +30,10 @@ dependencies = [
     "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
     "fastapi",
     "uvicorn",
+    "scikit-learn",
+    "scipy>=1.14.1",
+    "muutils",
+    "zanj", # for dashboard data saving/loading
 ]
 
 [dependency-groups]

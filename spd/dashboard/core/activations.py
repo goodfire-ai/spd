@@ -34,7 +34,7 @@ def component_activations(
     model: ComponentModel,
     device: torch.device | str,
     batch: Int[Tensor, "batch_size n_ctx"],
-) -> dict[str, Float[Tensor, "batch*n_ctx C"]]:
+) -> dict[str, Float[Tensor, "batch n_ctx C"]]:
     """Get component activations over a single batch.
 
     Args:
@@ -43,7 +43,7 @@ def component_activations(
         batch: Input token IDs
 
     Returns:
-        Dict mapping module names to activation tensors [batch*n_ctx, n_components]
+        Dict mapping module names to activation tensors [batch, n_ctx, n_components]
     """
     with torch.no_grad():
         model_output: OutputWithCache = model(
