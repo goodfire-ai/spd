@@ -99,6 +99,12 @@ function getDefaultConfig() {
 		modelViewCellSize: 16,  // Size of module cells in model visualization (default)
 		modelViewCellSizeTable: 12  // Size for table cells in index.html
 		},
+
+		// Token statistics settings
+		tokenStats: {
+		displayTopN: 5,  // Number of tokens to show in index.html table
+		detailTopN: 50   // Number of tokens to show in component.html detail view
+		},
 	};
 
 	if (INLINE_CONFIG) {

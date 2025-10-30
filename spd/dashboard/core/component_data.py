@@ -12,6 +12,7 @@ from jaxtyping import Float
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 
 from spd.dashboard.core.activations import SubcomponentLabel
+from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 
 
 @dataclass
@@ -117,7 +118,48 @@ class TopKSample(SerializableDataclass):
 
 
 @serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
-class SubcomponentStats(SerializableDataclass):
+class TokenStat(SerializableDataclass):
+    """Statistics for a single token's relationship with a component."""
+
+    token: str
+    token_id: int
+    p_token_given_active: float  # P(token=X | component active)
+    p_active_given_token: float  # P(component active | token=X)
+    count_when_active: int  # Co-occurrence count
+    count_token_total: int  # Total occurrences of token in dataset
+
+
+@serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
+class TokenActivationsSummary(SerializableDataclass):
+    """Summary statistics for token activations.
+
+    This structure matches what the dashboard JavaScript expects in stats.token_activations.
+    """
+
+    top_tokens: list[dict[str, str | int]]  # [{token: str, count: int}, ...]
+    total_unique_tokens: int
+    total_activations: int
+    entropy: float
+    concentration_ratio: float
+    activation_threshold: float
+
+
+@serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
+class SubcomponentSummary(SerializableDataclass):
+    """Lightweight summary for index.html table display.
+
+    Contains only the data needed by the main component table,
+    excluding large fields like top_max and top_mean samples.
+    """
+
+    label: str
+    embedding: Float[np.ndarray, " embed_dim"]
+    stats: dict[str, float | dict]  # Basic stats + token_activations
+    histograms: dict[str, dict[str, list[float]]]
+
+
+@serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
+class SubcomponentDetails(SerializableDataclass):
     """Complete statistics for a single alive component.
 
     Contains embedding, top samples, global stats, and histograms.
@@ -147,6 +189,21 @@ class SubcomponentStats(SerializableDataclass):
         str, dict[str, list[float]]
     ]  # {histogram_name: {counts: [...], edges: [...]}}}
 
+    # Token activation summary (for dashboard display)
+    token_activations: TokenActivationsSummary
+
+    # Token statistics (detailed, for component.html)
+    top_tokens_given_active: list[TokenStat] = serializable_field(
+        default_factory=list,
+        serialization_fn=lambda x: [s.serialize() for s in x],
+        deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
+    )
+    top_active_given_tokens: list[TokenStat] = serializable_field(
+        default_factory=list,
+        serialization_fn=lambda x: [s.serialize() for s in x],
+        deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
+    )
+
     @classmethod
     def generate(
         cls,
@@ -155,9 +212,8 @@ class SubcomponentStats(SerializableDataclass):
         tokens: Float[np.ndarray, "n_samples n_ctx"],
         tokenizer: any,
         global_metrics: "GlobalMetrics",
-        k: int,
-        hist_bins: int,
-    ) -> "SubcomponentStats":
+        config: "ComponentDashboardConfig",
+    ) -> "SubcomponentDetails":
         """Generate complete statistics for a single alive component.
 
         Args:
@@ -166,14 +222,15 @@ class SubcomponentStats(SerializableDataclass):
             tokens: Token IDs
             tokenizer: Tokenizer to decode token IDs
             global_metrics: Precomputed global metrics
-            k: Number of top samples to track
-            hist_bins: Number of histogram bins
+            config: Dashboard configuration with all parameters
 
         Returns:
             SubcomponentStats with all computed statistics
         """
 
         from spd.dashboard.core.tokenization import simple_batch_decode
+
+        k: int = config.n_samples
 
         # Compute top-k samples (max criterion)
         scores_max: Float[np.ndarray, " n_samples"] = activations.max(axis=1)
@@ -229,7 +286,7 @@ class SubcomponentStats(SerializableDataclass):
 
         # Helper to create histogram dict
         def _make_histogram(data: Float[np.ndarray, " n"], name: str) -> None:
-            counts, edges = np.histogram(data, bins=hist_bins)
+            counts, edges = np.histogram(data, bins=config.hist_bins)
             histograms[name] = {
                 "counts": counts.tolist(),
                 "edges": edges.tolist(),
@@ -241,6 +298,65 @@ class SubcomponentStats(SerializableDataclass):
         _make_histogram(activations.max(axis=1), "max_per_sample")
         _make_histogram(activations.mean(axis=1), "mean_per_sample")
 
+        # Compute token statistics
+        # Flatten activations and tokens to [n_total_positions]
+        flat_acts: Float[np.ndarray, " n_total"] = activations.flatten()
+        flat_tokens: Float[np.ndarray, " n_total"] = tokens.flatten().astype(int)
+
+        # Create binary mask for active positions
+        is_active: Float[np.ndarray, " n_total"] = flat_acts > config.token_active_threshold
+
+        # Count occurrences per token
+        unique_tokens: Float[np.ndarray, " n_unique"] = np.unique(flat_tokens)
+        token_counts: dict[int, int] = {}
+        token_active_counts: dict[int, int] = {}
+
+        for token_id in unique_tokens:
+            token_id_int: int = int(token_id)
+            token_mask: Float[np.ndarray, " n_total"] = flat_tokens == token_id_int
+            token_counts[token_id_int] = int(np.sum(token_mask))
+            token_active_counts[token_id_int] = int(np.sum(token_mask & is_active))
+
+        # Compute P(token | active) for each token
+        total_active: int = int(np.sum(is_active))
+        p_token_given_active: dict[int, float] = {}
+        if total_active > 0:
+            for token_id, active_count in token_active_counts.items():
+                p_token_given_active[token_id] = active_count / total_active
+
+        # Compute P(active | token) for each token
+        p_active_given_token: dict[int, float] = {}
+        for token_id, total_count in token_counts.items():
+            if total_count > 0:
+                p_active_given_token[token_id] = token_active_counts[token_id] / total_count
+
+        # Create TokenStat objects and sort
+        top_tokens_given_active: list[TokenStat] = []
+        top_active_given_tokens: list[TokenStat] = []
+
+        for token_id in unique_tokens:
+            token_id_int: int = int(token_id)
+            token_str: str = tokenizer.decode([token_id_int])
+
+            token_stat: TokenStat = TokenStat(  # pyright: ignore[reportCallIssue]
+                token=token_str,
+                token_id=token_id_int,
+                p_token_given_active=p_token_given_active.get(token_id_int, 0.0),
+                p_active_given_token=p_active_given_token.get(token_id_int, 0.0),
+                count_when_active=token_active_counts[token_id_int],
+                count_token_total=token_counts[token_id_int],
+            )
+
+            top_tokens_given_active.append(token_stat)
+            top_active_given_tokens.append(token_stat)
+
+        # Sort and take top N
+        top_tokens_given_active.sort(key=lambda x: x.p_token_given_active, reverse=True)
+        top_tokens_given_active = top_tokens_given_active[: config.token_stats_top_n]
+
+        top_active_given_tokens.sort(key=lambda x: x.p_active_given_token, reverse=True)
+        top_active_given_tokens = top_active_given_tokens[: config.token_stats_top_n]
+
         return cls(  # pyright: ignore[reportCallIssue]
             label=label.to_string(),
             embedding=global_metrics.get_embedding(label),
@@ -248,6 +364,8 @@ class SubcomponentStats(SerializableDataclass):
             top_mean=top_mean,
             stats=stats,
             histograms=histograms,
+            top_tokens_given_active=top_tokens_given_active,
+            top_active_given_tokens=top_active_given_tokens,
         )
 
 
@@ -270,7 +388,7 @@ class ComponentDashboardData(SerializableDataclass):
     global_metrics: GlobalMetrics
 
     # Per-component stats (all components)
-    components: list[SubcomponentStats] = serializable_field(
+    components: list[SubcomponentDetails] = serializable_field(
         serialization_fn=lambda x: [c.serialize() for c in x],
-        deserialize_fn=lambda x: [SubcomponentStats.load(c) for c in x],
+        deserialize_fn=lambda x: [SubcomponentDetails.load(c) for c in x],
     )

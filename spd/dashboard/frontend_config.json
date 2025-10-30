@@ -15,5 +15,9 @@
   "visualization": {
     "colormap": "blues",
     "histogramBins": 10
+  },
+  "tokenStats": {
+    "displayTopN": 5,
+    "detailTopN": 50
   }
 }

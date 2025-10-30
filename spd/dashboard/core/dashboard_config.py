@@ -69,3 +69,13 @@ class ComponentDashboardConfig(BaseConfig):
         default=50,
         description="Number of bins for histograms",
     )
+
+    # Token statistics parameters
+    token_stats_top_n: int = Field(
+        default=5,
+        description="Number of top tokens to store per component",
+    )
+    token_active_threshold: float = Field(
+        default=0.01,
+        description="Threshold above which a component is considered active",
+    )

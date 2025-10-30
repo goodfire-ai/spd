@@ -106,6 +106,9 @@ async function displayComponent() {
         displayTokenActivations();
     }
 
+    // Display token statistics
+    displayTokenStatistics();
+
     // Display top samples
     await displaySamples();
 }
@@ -291,12 +294,88 @@ function displayTokenActivations() {
     }
 }
 
+function displayTokenStatistics() {
+    const topN = CONFIG.tokenStats.detailTopN;
+
+    // Helper to create table config
+    const createTableConfig = (data, probabilityKey, probabilityLabel) => ({
+        data: data.slice(0, topN).map((item, idx) => ({
+            rank: idx + 1,
+            token: item.token,
+            probability: item[probabilityKey],
+            count_when_active: item.count_when_active,
+            count_token_total: item.count_token_total
+        })),
+        columns: [
+            {
+                key: 'rank',
+                label: '#',
+                type: 'number',
+                width: '40px',
+                align: 'right'
+            },
+            {
+                key: 'token',
+                label: 'Token',
+                type: 'string',
+                width: '120px',
+                renderer: (value) => `<code class="token-display">${formatTokenDisplay(value)}</code>`
+            },
+            {
+                key: 'probability',
+                label: probabilityLabel,
+                type: 'number',
+                width: '120px',
+                align: 'right',
+                renderer: (value) => (value * 100).toFixed(2) + '%'
+            },
+            {
+                key: 'count_when_active',
+                label: 'Count (active)',
+                type: 'number',
+                width: '100px',
+                align: 'right'
+            },
+            {
+                key: 'count_token_total',
+                label: 'Count (total)',
+                type: 'number',
+                width: '100px',
+                align: 'right'
+            }
+        ],
+        pageSize: 10,
+        showFilters: false,
+        showInfo: true
+    });
+
+    // Display P(token | active) table
+    if (componentData.top_tokens_given_active && componentData.top_tokens_given_active.length > 0) {
+        const tableConfig = createTableConfig(
+            componentData.top_tokens_given_active,
+            'p_token_given_active',
+            'P(token|active)'
+        );
+        new DataTable('#topTokensGivenActiveTable', tableConfig);
+    }
+
+    // Display P(active | token) table
+    if (componentData.top_active_given_tokens && componentData.top_active_given_tokens.length > 0) {
+        const tableConfig = createTableConfig(
+            componentData.top_active_given_tokens,
+            'p_active_given_token',
+            'P(active|token)'
+        );
+        new DataTable('#topActiveGivenTokensTable', tableConfig);
+    }
+}
+
 async function displaySamples() {
     // Display top_max samples
     const topMaxBody = document.getElementById('topMaxTableBody');
     if (topMaxBody) {
         topMaxBody.innerHTML = '';
-        const topMaxSamples = componentData.top_max || [];
+        const topMaxSamples = componentData.top_max;
 
         if (topMaxSamples.length === 0) {
             topMaxBody.innerHTML = '<tr><td colspan="2">No samples available</td></tr>';
@@ -334,7 +413,7 @@ async function displaySamples() {
     const topMeanBody = document.getElementById('topMeanTableBody');
     if (topMeanBody) {
         topMeanBody.innerHTML = '';
-        const topMeanSamples = componentData.top_mean || [];
+        const topMeanSamples = componentData.top_mean;
 
         if (topMeanSamples.length === 0) {
             topMeanBody.innerHTML = '<tr><td colspan="2">No samples available</td></tr>';

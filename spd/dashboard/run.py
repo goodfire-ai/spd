@@ -28,8 +28,9 @@ from spd.dashboard.core.component_data import (
     ComponentDashboardData,
     GlobalMetrics,
     RawActivationData,
-    SubcomponentStats,
+    SubcomponentDetails,
 )
+from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.general_utils import extract_batch_data, get_obj_device
@@ -180,32 +181,29 @@ def process_all_components(
     raw_data: RawActivationData,
     tokenizer: Any,
     global_metrics: GlobalMetrics,
-    k: int,
-    hist_bins: int,
-) -> list[SubcomponentStats]:
+    config: "ComponentDashboardConfig",
+) -> list[SubcomponentDetails]:
     """Compute stats for alive components only.
 
     Args:
         raw_data: Raw activation data
         tokenizer: Tokenizer to decode token IDs
         global_metrics: Precomputed global metrics for alive components
-        k: Number of top samples per component
-        hist_bins: Number of histogram bins
+        config: Dashboard configuration with all parameters
 
     Returns:
         List of SubcomponentStats for alive components
     """
-    all_stats: list[SubcomponentStats] = []
+    all_stats: list[SubcomponentDetails] = []
 
     for label in tqdm(raw_data.alive_components, desc="Processing components"):
-        stats: SubcomponentStats = SubcomponentStats.generate(
+        stats: SubcomponentDetails = SubcomponentDetails.generate(
             label=label,
             activations=raw_data.activations[label],
             tokens=raw_data.tokens,
             tokenizer=tokenizer,
             global_metrics=global_metrics,
-            k=k,
-            hist_bins=hist_bins,
+            config=config,
         )
         all_stats.append(stats)
 
@@ -218,36 +216,22 @@ def process_all_components(
 
 
 def main(
-    model_path: str,
+    config: "ComponentDashboardConfig",
     dataset_config: DatasetConfig,
-    output_dir: Path,
     tokenizer_name: str,
-    batch_size: int,
-    n_batches: int,
-    k: int,
-    dead_threshold: float,
-    embed_dim: int,
-    hist_bins: int,
 ) -> None:
     """Complete two-phase pipeline for component dashboard generation.
 
     Args:
-        model_path: Path to SPD model
+        config: Dashboard configuration
         dataset_config: Dataset configuration
-        output_dir: Output directory for results
         tokenizer_name: Name of tokenizer to use for decoding
-        batch_size: Batch size for data loading
-        n_batches: Number of batches to process
-        k: Number of top samples per component
-        dead_threshold: Threshold for considering components dead
-        embed_dim: Embedding dimensionality
-        hist_bins: Number of histogram bins
     """
     from transformers import AutoTokenizer
 
     from spd.dashboard.core.tokenization import attach_vocab_arr
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load tokenizer and attach vocab array for fast decoding
     tokenizer: Any = AutoTokenizer.from_pretrained(tokenizer_name)
@@ -255,38 +239,27 @@ def main(
 
     # PHASE 1: DATA GENERATION
     raw_data: RawActivationData = generate_activations(
-        model_path=model_path,
+        model_path=config.model_path,
         dataset_config=dataset_config,
-        batch_size=batch_size,
-        n_batches=n_batches,
-        dead_threshold=dead_threshold,
+        batch_size=config.batch_size,
+        n_batches=config.n_batches,
+        dead_threshold=config.dead_threshold,
     )
 
     # PHASE 2: PROCESSING - GLOBAL METRICS
-    global_metrics: GlobalMetrics = compute_global_metrics(raw_data, embed_dim=embed_dim)
-
-    # Save matrices separately for easy access
-    metrics_path: Path = output_dir / "global_metrics.npz"
-    np.savez(
-        metrics_path,
-        coactivations=global_metrics.coactivations,
-        correlations=global_metrics.correlations,
-        embeddings=global_metrics.embeddings,
-        labels=global_metrics.component_labels,
-    )
+    global_metrics: GlobalMetrics = compute_global_metrics(raw_data, embed_dim=config.embed_dim)
 
     # PHASE 2: PROCESSING - COMPONENT STATS
-    all_stats: list[SubcomponentStats] = process_all_components(
+    all_stats: list[SubcomponentDetails] = process_all_components(
         raw_data=raw_data,
         tokenizer=tokenizer,
         global_metrics=global_metrics,
-        k=k,
-        hist_bins=hist_bins,
+        config=config,
     )
 
     # SAVE EVERYTHING
     dashboard: ComponentDashboardData = ComponentDashboardData(  # pyright: ignore[reportCallIssue]
-        model_path=model_path,
+        model_path=config.model_path,
         n_samples=raw_data.n_samples,
         n_ctx=raw_data.n_ctx,
         n_components=len(raw_data.component_labels),
@@ -296,13 +269,13 @@ def main(
         components=all_stats,
     )
 
-    zanj_path: Path = output_dir / "dashboard.zanj"
+    zanj_path: Path = config.output_dir / "dashboard.zanj"
     ZANJ().save(dashboard, str(zanj_path))
 
     # Extract zanj zip file
     import zipfile
 
-    extract_dir: Path = output_dir / "dashboard_extracted"
+    extract_dir: Path = config.output_dir / "dashboard_extracted"
     extract_dir.mkdir(exist_ok=True)
     with zipfile.ZipFile(zanj_path, "r") as zip_ref:
         zip_ref.extractall(extract_dir)
@@ -318,9 +291,6 @@ def cli() -> None:
     )
     parser.add_argument("config", type=Path, help="Path to dashboard config file (JSON or YAML)")
     args: argparse.Namespace = parser.parse_args()
-
-    # Import config class
-    from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 
     config: ComponentDashboardConfig = ComponentDashboardConfig.from_file(args.config)
 
@@ -342,16 +312,9 @@ def cli() -> None:
 
     # Run main pipeline
     main(
-        model_path=config.model_path,
+        config=config,
         dataset_config=dataset_config,
-        output_dir=config.output_dir,
         tokenizer_name=tokenizer_name,
-        batch_size=config.batch_size,
-        n_batches=config.n_batches,
-        k=config.n_samples,
-        dead_threshold=config.dead_threshold,
-        embed_dim=config.embed_dim,
-        hist_bins=config.hist_bins,
     )
 
 

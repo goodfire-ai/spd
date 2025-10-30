@@ -219,6 +219,20 @@ const columnRenderers = {
         return container;
     },
 
+    tokensGivenActive: function(value, row, col) {
+        return createTokensGivenActiveCell(
+            row.top_tokens_given_active,
+            CONFIG.tokenStats.displayTopN
+        );
+    },
+
+    activeGivenTokens: function(value, row, col) {
+        return createActiveGivenTokensCell(
+            row.top_active_given_tokens,
+            CONFIG.tokenStats.displayTopN
+        );
+    },
+
     // Generic histogram renderer for any histogram in row.histograms
     genericHistogram: function(histKey, color, title) {
         return function(value, row, col) {
@@ -516,7 +530,9 @@ async function processComponentData() {
             index: componentIndex,
             stats: component.stats,
             histograms: component.histograms,
-            embedding: component.embedding
+            embedding: component.embedding,
+            top_tokens_given_active: component.top_tokens_given_active,
+            top_active_given_tokens: component.top_active_given_tokens
             // TODO: Re-enable explanations feature
             // explanation: explanation
         });
@@ -605,57 +621,63 @@ async function loadData() {
         });
     });
 
-    // Token activation columns
+    // Token statistics columns
     columns.push({
-        id: 'top_tokens',
-        key: 'stats',
-        label: 'Top Tokens',
+        id: 'tokens_given_active',
+        key: 'top_tokens_given_active',
+        label: 'P(token|active)',
         type: 'string',
         width: '150px',
         align: 'left',
-        renderer: columnRenderers.topToken,
-        sortFunction: (value, row) => sortTopToken(value, row),
-        filterFunction: (filterValue) => createTopTokenFilter(filterValue),
-        filterTooltip: 'Search for tokens (case-insensitive substring match)'
+        renderer: columnRenderers.tokensGivenActive
     });
 
     columns.push({
-        id: 'token_entropy',
-        key: 'stats',
-        label: 'Token Entropy',
-        type: 'number',
-        width: '60px',
-        align: 'right',
-        renderer: columnRenderers.tokenEntropy,
-        sortFunction: (value, row) => {
-            const tokenStats = row.stats.token_activations;
-            return tokenStats ? tokenStats.entropy : -Infinity;
-        },
-        filterFunction: (filterValue) => createNumericFilter(filterValue, (stats) => {
-            const tokenStats = stats?.token_activations;
-            return tokenStats ? tokenStats.entropy : null;
-        }),
-        filterTooltip: 'Filter by entropy. Use operators: >, <, >=, <=, ==, != (e.g., >2.5)'
+        id: 'active_given_tokens',
+        key: 'top_active_given_tokens',
+        label: 'P(active|token)',
+        type: 'string',
+        width: '150px',
+        align: 'left',
+        renderer: columnRenderers.activeGivenTokens
     });
+    // columns.push({
+    //     id: 'token_entropy',
+    //     key: 'stats',
+    //     label: 'Token Entropy',
+    //     type: 'number',
+    //     width: '60px',
+    //     align: 'right',
+    //     renderer: columnRenderers.tokenEntropy,
+    //     sortFunction: (value, row) => {
+    //         const tokenStats = row.stats.token_activations;
+    //         return tokenStats ? tokenStats.entropy : -Infinity;
+    //     },
+    //     filterFunction: (filterValue) => createNumericFilter(filterValue, (stats) => {
+    //         const tokenStats = stats?.token_activations;
+    //         return tokenStats ? tokenStats.entropy : null;
+    //     }),
+    //     filterTooltip: 'Filter by entropy. Use operators: >, <, >=, <=, ==, != (e.g., >2.5)'
+    // });
 
-    columns.push({
-        id: 'token_concentration',
-        key: 'stats',
-        label: 'Token Conc.',
-        type: 'number',
-        width: '60px',
-        align: 'right',
-        renderer: columnRenderers.tokenConcentration,
-        sortFunction: (value, row) => {
-            const tokenStats = row.stats.token_activations;
-            return tokenStats ? tokenStats.concentration_ratio : -Infinity;
-        },
-        filterFunction: (filterValue) => createNumericFilter(filterValue, (stats) => {
-            const tokenStats = stats?.token_activations;
-            return tokenStats ? tokenStats.concentration_ratio : null;
-        }),
-        filterTooltip: 'Filter by concentration (0-1). Use operators: >, <, >=, <=, ==, != (e.g., >0.5)'
-    });
+    // columns.push({
+    //     id: 'token_concentration',
+    //     key: 'stats',
+    //     label: 'Token Conc.',
+    //     type: 'number',
+    //     width: '60px',
+    //     align: 'right',
+    //     renderer: columnRenderers.tokenConcentration,
+    //     sortFunction: (value, row) => {
+    //         const tokenStats = row.stats.token_activations;
+    //         return tokenStats ? tokenStats.concentration_ratio : -Infinity;
+    //     },
+    //     filterFunction: (filterValue) => createNumericFilter(filterValue, (stats) => {
+    //         const tokenStats = stats?.token_activations;
+    //         return tokenStats ? tokenStats.concentration_ratio : null;
+    //     }),
+    //     filterTooltip: 'Filter by concentration (0-1). Use operators: >, <, >=, <=, ==, != (e.g., >0.5)'
+    // });
 
     // TODO: Re-enable explanations feature
     // Explanation column

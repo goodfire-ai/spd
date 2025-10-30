@@ -79,7 +79,7 @@ def process_dependencies(deps_file: Path, lib_dir: Path) -> None:
                     # Files differ - raise exception
                     temp_path.unlink()  # Clean up temp file
                     error_msg: str = (
-                        f"\n{'='*60}\n"
+                        f"\n{'=' * 60}\n"
                         f"ERROR: Local file differs from remote!\n"
                         f"File: {filename}\n"
                         f"Local: {target_path}\n"
@@ -88,7 +88,7 @@ def process_dependencies(deps_file: Path, lib_dir: Path) -> None:
                         f"Please review the differences and either:\n"
                         f"  - Delete the local file to download the new version\n"
                         f"  - Keep the local modifications (remote will not be downloaded)\n"
-                        f"{'='*60}\n"
+                        f"{'=' * 60}\n"
                     )
                     raise Exception(error_msg)
             else:
@@ -104,7 +104,7 @@ def process_dependencies(deps_file: Path, lib_dir: Path) -> None:
             raise
 
     # Print summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Summary:")
     print(f"  Downloaded: {len(downloaded)}")
     print(f"  Skipped (up to date): {len(skipped)}")
