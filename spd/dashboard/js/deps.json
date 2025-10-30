@@ -1,0 +1,37 @@
+{
+  "dependencies": [
+    {
+      "url": "https://raw.githubusercontent.com/Stuk/jszip/refs/heads/main/dist/jszip.min.js"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/config.js"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/array.js"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mivanit/zanj.js/refs/heads/main/src/zanj.js"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/notif.js"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/ColorUtil.js"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/sparklines.js"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/table.js"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/token-display.js"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/notif.css"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mivanit/js-dev-toolkit/refs/heads/main/src/token-display.css"
+    }
+  ]
+}
