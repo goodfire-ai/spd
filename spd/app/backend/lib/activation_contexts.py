@@ -28,8 +28,10 @@ class SubcomponentExample:
     """Position within window_token_ids corresponding to pos"""
     token_ci_values: list[float]
     """CI values aligned to window_token_ids"""
-    active_pos_importance: float
-    """CI value at the firing position"""
+
+    @property
+    def active_pos_ci(self) -> float:
+        return self.token_ci_values[self.active_pos_in_window]
 
 
 class _TopKExamples:
@@ -40,13 +42,13 @@ class _TopKExamples:
         self._counter: int = 0
 
     def maybe_add(self, example: SubcomponentExample) -> None:
-        key = (example.active_pos_importance, self._counter, example)
+        key = (example.active_pos_ci, self._counter, example)
         self._counter += 1
         if len(self.heap) < self.k:
             heapq.heappush(self.heap, key)
             return
         # Heap full: replace min if better
-        if self.heap[0][0] < example.active_pos_importance:
+        if self.heap[0][0] < example.active_pos_ci:
             heapq.heapreplace(self.heap, key)
 
     def as_activation_contexts(self, tok: PreTrainedTokenizer) -> list[ActivationContext]:
@@ -55,7 +57,7 @@ class _TopKExamples:
                 token_strings=tok.convert_ids_to_tokens(ex.window_token_ids),  # pyright: ignore[reportAttributeAccessIssue]
                 token_ci_values=ex.token_ci_values,
                 active_position=ex.active_pos_in_window,
-                ci_value=ex.active_pos_importance,
+                ci_value=ex.active_pos_ci,
             )
             for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)
         ]
@@ -76,7 +78,7 @@ def roll_batch_size_1_into_x(
         yield torch.stack(examples)
 
 
-PAD_VALUE = 0
+DEFAULT_PAD_TOKEN_ID = 0
 
 
 def get_activations_data_streaming(
@@ -112,7 +114,7 @@ def get_activations_data_streaming(
     total_token_counts = defaultdict[int, int](int)
     n_toks_seen = 0
 
-    pad_token_id = int(getattr(run_context.tokenizer, "pad_token_id", 0))
+    pad_token_id = int(getattr(run_context.tokenizer, "pad_token_id", None) or DEFAULT_PAD_TOKEN_ID)
 
     batches = roll_batch_size_1_into_x(
         singleton_batches=(extract_batch_data(b).to(device) for b in run_context.train_loader),
@@ -171,10 +173,6 @@ def get_activations_data_streaming(
             # Adjust sequence indices for padding
             seq_idx_padded = seq_idx + n_tokens_either_side
 
-            # Extract importance values and token IDs for all firings at once
-            importance_vals = ci[batch_idx, seq_idx, comp_idx]
-            token_ids = batch[batch_idx, seq_idx]
-
             # Vectorized window extraction
             window_size = 2 * n_tokens_either_side + 1
             window_offsets = torch.arange(
@@ -205,28 +203,31 @@ def get_activations_data_streaming(
             ]
 
             # Move everything to CPU for final processing
-            comp_idx_list = comp_idx.tolist()
-            token_ids_list = token_ids.tolist()
-            importance_vals_list = importance_vals.tolist()
-            window_token_ids_list = window_token_ids.tolist()
-            window_ci_values_list = window_ci_values.tolist()
+            comp_idx_list: list[int] = comp_idx.tolist()
+            window_token_ids_list: list[list[int]] = window_token_ids.tolist()
+            window_ci_values_list: list[list[float]] = window_ci_values.tolist()
 
             # Now iterate to create examples
             for firing_idx in range(n_firings):
+                # Get the actual start and end indices of the window, ignoring padding
+                start_idx, end_idx = get_pad_indices(
+                    window_token_ids_list[firing_idx], pad_token_id
+                )
+                this_window_token_ids = window_token_ids_list[firing_idx]
+                this_window_ci_vals = window_ci_values_list[firing_idx]
+
                 ex = SubcomponentExample(
-                    window_token_ids=window_token_ids_list[firing_idx],
-                    # Active position is always at the center of the window
-                    active_pos_in_window=n_tokens_either_side,
-                    token_ci_values=window_ci_values_list[firing_idx],
-                    active_pos_importance=importance_vals_list[firing_idx],
+                    active_pos_in_window=n_tokens_either_side - start_idx,
+                    window_token_ids=this_window_token_ids[start_idx:end_idx],
+                    token_ci_values=this_window_ci_vals[start_idx:end_idx],
                 )
 
-                m = comp_idx_list[firing_idx]
-                token_id = token_ids_list[firing_idx]
+                component_idx = comp_idx_list[firing_idx]
+                token_id = this_window_token_ids[n_tokens_either_side]
 
-                examples[module_name][m].maybe_add(ex)
-                component_activation_counts[module_name][m] += 1
-                component_activation_tokens[module_name][m][token_id] += 1
+                examples[module_name][component_idx].maybe_add(ex)
+                component_activation_counts[module_name][component_idx] += 1
+                component_activation_tokens[module_name][component_idx][token_id] += 1
 
         # Yield progress update
         yield ("progress", i)
@@ -295,3 +296,13 @@ def _get_component_token_pr(
     # sort by recall descending
     token_prs.sort(key=lambda x: x.recall, reverse=True)
     return token_prs
+
+
+def get_pad_indices(lst: list[int], pad_val: int) -> tuple[int, int]:
+    start_idx = 0
+    end_idx = len(lst) - 1
+    while start_idx <= end_idx and lst[start_idx] == pad_val:
+        start_idx += 1
+    while start_idx <= end_idx and lst[end_idx] == pad_val:
+        end_idx -= 1
+    return start_idx, end_idx + 1
