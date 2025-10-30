@@ -39,6 +39,8 @@ from spd.utils.wandb_utils import (
     fetch_wandb_run_dir,
 )
 
+HookType = Callable[[nn.Module, tuple[Any, ...], dict[Any, Any], Any], Any]
+
 
 @dataclass
 class SPDRunInfo(RunInfo[Config]):
@@ -599,6 +601,33 @@ class ComponentModel(LoadableModule):
         for comp_name, components in self.components.items():
             weight_deltas[comp_name] = self.target_weight(comp_name) - components.weight
         return weight_deltas
+
+    @contextmanager
+    def cache_inputs(self, module_paths: list[str]) -> Generator[dict[str, Tensor]]:
+        """Context manager to cache the inputs to the specified modules."""
+        cache: dict[str, Tensor] = {}
+
+        def _make_hook(module_path: str) -> HookType:
+            def _cache_input_hook(
+                module: nn.Module, args: tuple[Any, ...], kwargs: dict[Any, Any], output: Any
+            ) -> Any:
+                """Hook to cache the input to the module."""
+                assert len(args) == 1, "Expected 1 argument"
+                cache[module_path] = args[0]
+                return output
+
+            return _cache_input_hook
+
+        handles: list[RemovableHandle] = []
+        for module_path in module_paths:
+            module = self.target_model.get_submodule(module_path)
+            handle = module.register_forward_hook(_make_hook(module_path), with_kwargs=True)
+            handles.append(handle)
+        try:
+            yield cache
+        finally:
+            for handle in handles:
+                handle.remove()
 
 
 def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:

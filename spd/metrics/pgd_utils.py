@@ -120,7 +120,7 @@ def pgd_masked_recon_loss_update(
     output_loss_type: Literal["mse", "kl"],
     routing: RoutingType,
     pgd_config: PGDConfig,
-) -> tuple[Float[Tensor, ""], int]:
+) -> tuple[Float[Tensor, ""], int, Tensor]:
     """Central implementation of PGD masked reconstruction loss.
 
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
@@ -174,7 +174,13 @@ def pgd_masked_recon_loss_update(
             assert isinstance(adv_sources_grads, tuple) and len(adv_sources_grads) == 1
             reduced_adv_sources_grads = all_reduce(adv_sources_grads[0], op=ReduceOp.SUM)
             with torch.no_grad():
-                adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
+                match pgd_config.step_type:
+                    case "unit":
+                        norms = reduced_adv_sources_grads.norm(p=2, dim=-1, keepdim=True).clamp(min=1e-6)
+                        reduced_adv_sources_grads_unit = reduced_adv_sources_grads / norms
+                        adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads_unit)
+                    case "sign":
+                        adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
                 adv_sources.clamp_(0.0, 1.0)
 
     assert total_loss is not None
@@ -183,7 +189,7 @@ def pgd_masked_recon_loss_update(
     )
 
     # no need to all-reduce total_loss or n_examples bc consumers handle this
-    return total_loss, n_examples
+    return total_loss, n_examples, adv_sources
 
 
 def _global_pgd_step(

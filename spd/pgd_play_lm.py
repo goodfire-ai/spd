@@ -1,19 +1,34 @@
+# ruff: noqa: E402
+import math
 import warnings
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
+import numpy as np
+from torch import Tensor
+
+from spd.configs import Config, PGDReconLossConfig
+from spd.data import DatasetConfig, create_data_loader
+from spd.experiments.lm.configs import LMTaskConfig
+from spd.metrics.pgd_utils import (
+    _interpolate_component_mask,
+    pgd_masked_recon_loss_update,
+)
+from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
+from spd.models.components import make_mask_infos
+from spd.utils.distributed_utils import get_device
+from spd.utils.general_utils import (
+    calc_kl_divergence_lm,
+    extract_batch_data,
+    replace_pydantic_model,
+    set_seed,
+)
+from spd.utils.module_utils import get_target_module_paths
 
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
-from spd.configs import Config, MaskScope, PGDReconLossConfig
-from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
-from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
-from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import extract_batch_data, replace_pydantic_model, set_seed
 
 ModelType = Literal["lm1", "lm2", "lm3", "lm4"]
 
@@ -24,15 +39,15 @@ class ModelSetup:
     def __init__(
         self,
         model: ComponentModel,
-        config: Any,
-        device: Any,
+        config: Config,
+        device: str,
     ) -> None:
         self.model = model
         self.config = config
         self.device = device
 
 
-def load_model(model_type: ModelType, run_info_path: str) -> ModelSetup:
+def load_model(run_info_path: str) -> ModelSetup:
     """Load model. Call once per model type."""
     device = get_device()
 
@@ -51,223 +66,258 @@ def load_model(model_type: ModelType, run_info_path: str) -> ModelSetup:
     return ModelSetup(model, config, device)
 
 
+LOSS_TYPE = "kl"
+
+
 def run_experiment(
-    model_type: ModelType,
     model_setup: ModelSetup,
     seed: int,
-    mask_scope: MaskScope,
-    n_batches: int,
-    batch_sizes: list[int],
-    step_size: float,
-    n_steps: int,
+    pgd_config: PGDReconLossConfig,
     max_seq_len: int,
-) -> dict[str, float]:
+) -> tuple[Tensor, dict[str, Tensor]]:
     """Run PGD reconstruction loss experiment for a single seed using pre-loaded model."""
     model = model_setup.model
-    config: Config = model_setup.config
+    config = model_setup.config
     device = model_setup.device
 
     task_config = config.task_config
     assert isinstance(task_config, LMTaskConfig), "task_config not LMTaskConfig"
 
-    # Run experiments for each batch size
-    results: dict[str, float] = {}
+    set_seed(seed)
 
-    for batch_size in batch_sizes:
-        set_seed(seed)
+    # Update task config with desired max_seq_len
+    updated_task_config = replace_pydantic_model(
+        task_config, {"max_seq_len": max_seq_len, "train_data_split": "train"}
+    )
 
-        # Update task config with desired max_seq_len
-        updated_task_config = replace_pydantic_model(
-            task_config, {"max_seq_len": max_seq_len, "train_data_split": "train"}
-        )
+    train_data_config = DatasetConfig(
+        name=updated_task_config.dataset_name,
+        hf_tokenizer_path=config.tokenizer_name,
+        split=updated_task_config.train_data_split,
+        n_ctx=updated_task_config.max_seq_len,
+        is_tokenized=updated_task_config.is_tokenized,
+        streaming=updated_task_config.streaming,
+        column_name=updated_task_config.column_name,
+        shuffle_each_epoch=updated_task_config.shuffle_each_epoch,
+        seed=None,
+    )
 
-        train_data_config = DatasetConfig(
-            name=updated_task_config.dataset_name,
-            hf_tokenizer_path=config.tokenizer_name,
-            split=updated_task_config.train_data_split,
-            n_ctx=updated_task_config.max_seq_len,
-            is_tokenized=updated_task_config.is_tokenized,
-            streaming=updated_task_config.streaming,
-            column_name=updated_task_config.column_name,
-            shuffle_each_epoch=updated_task_config.shuffle_each_epoch,
-            seed=None,
-        )
+    set_seed(0)
 
-        set_seed(0)
-        data_loader, _tokenizer = create_data_loader(
-            dataset_config=train_data_config,
-            batch_size=batch_size,
-            buffer_size=updated_task_config.buffer_size,
-            global_seed=config.seed,
-            ddp_rank=0,
-            ddp_world_size=1,
-        )
+    data_loader, _tokenizer = create_data_loader(
+        dataset_config=train_data_config,
+        batch_size=1,
+        buffer_size=updated_task_config.buffer_size,
+        global_seed=config.seed,
+        ddp_rank=0,
+        ddp_world_size=1,
+    )
 
-        pgd_config = PGDReconLossConfig(
-            init="random",
-            step_size=step_size,
-            n_steps=n_steps,
-            mask_scope=mask_scope,
-        )
+    data_loader_iter = iter(data_loader)
+    weight_deltas = model.calc_weight_deltas()
 
-        pgd_recon = PGDReconLoss(
-            model=model,
-            device=device,
-            output_loss_type=config.output_loss_type,
-            pgd_config=pgd_config,
-            use_delta_component=config.use_delta_component,
-        )
+    batch = extract_batch_data(next(data_loader_iter)).to(device)
+    target_model_output: OutputWithCache = model(batch, cache_type="input")
 
-        data_loader_iter = iter(data_loader)
-        weight_deltas = model.calc_weight_deltas()
+    ci = model.calc_causal_importances(
+        pre_weight_acts=target_model_output.cache,
+        detach_inputs=False,
+        sampling=config.sampling,
+    )
 
-        for _ in range(n_batches):
-            batch = extract_batch_data(next(data_loader_iter)).to(device)
-            target_model_output: OutputWithCache = model(batch, cache_type="input")
-            ci = model.calc_causal_importances(
-                pre_weight_acts=target_model_output.cache,
-                detach_inputs=False,
-                sampling=config.sampling,
-            )
-            pgd_recon.update(
-                batch=batch,
-                target_out=target_model_output.output,
-                ci=ci,
-                weight_deltas=weight_deltas,
-            )
+    assert config.use_delta_component, "use_delta_component must be True"
 
-        loss = pgd_recon.compute().item()
-        results[f"batch_size_{batch_size}"] = loss
-        print(
-            f"{model_type}, {mask_scope}, seed={seed}, n_batches={n_batches}, batch_size={batch_size}, seq_len={max_seq_len}, loss={loss}"
-        )
+    tloss, n_ex, adv_sources = pgd_masked_recon_loss_update(
+        model=model,
+        output_loss_type=LOSS_TYPE,
+        routing="all",
+        pgd_config=pgd_config,
+        batch=batch,
+        target_out=target_model_output.output,
+        ci=ci.lower_leaky,
+        weight_deltas=weight_deltas,
+    )
 
-    return results
+    adv_sources = adv_sources.expand(len(model.target_module_paths), *batch.shape, model.C + 1)
+
+    adv_sources_components = adv_sources[..., :-1]
+
+    weight_deltas_and_masks = {
+        k: (weight_deltas[k], adv_sources[i, ..., -1]) for i, k in enumerate(weight_deltas)
+    }
+
+    mask_infos = make_mask_infos(
+        component_masks=_interpolate_component_mask(ci.lower_leaky, adv_sources_components),
+        weight_deltas_and_masks=weight_deltas_and_masks,
+        routing_masks="all",
+    )
+
+    norm_paths = get_target_module_paths(model.target_model, ["*norm"])
+    with model.cache_inputs(norm_paths) as cache:
+        out = model(batch, mask_infos=mask_infos)
+
+    loss = calc_kl_divergence_lm(pred=out, target=target_model_output.output, reduce=False)
+
+    # == Sanity check ==
+    total_observed_loss = loss.mean()
+    print(f"{total_observed_loss=} VS {tloss / n_ex=}")
+    # == EOF Sanity check ==
+
+    assert loss.shape == batch.shape, "what?"
+
+    norm_scales = {}
+    for module_path, input in cache.items():
+        variance = (input ** 2).mean(-1, keepdim=True)
+        norm_scales[module_path] = (variance + 1e-6).sqrt()
+
+    assert next(iter(norm_scales.values())).shape == batch.shape, "what 2?"
+
+    return loss, norm_scales
 
 
-def plot_results(
-    results: dict[ModelType, dict[str, dict[str, float]]],
-    output_path: Path,
-    log_scale: bool = True,
+def plot_norms_vs_pgd_loss_scatter(
+    results: tuple[Tensor, dict[str, Tensor]],
+    output_dir: Path,
 ) -> None:
-    """Plot results with subplots for each model."""
-    n_models = len(results)
-    if n_models == 0:
-        print("No results to plot")
-        return
+    """Scatter plots of input norm scales vs observed PGD loss per norm module.
 
-    # Determine grid size
-    n_cols = 2
-    n_rows = (n_models + 1) // 2
+    Args:
+        results: (loss, norm_scales) where loss has shape (batch, seq_len)
+                 and norm_scales maps layer_name -> (batch, seq_len)
+        output_dir: Directory to save the figure
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    _, axes = plt.subplots(n_rows, n_cols, figsize=(14, 5 * n_rows))
-    if n_rows == 1:
-        axes = axes.reshape(1, -1)
-    axes = axes.flatten()
+    loss_tensor, norm_scales = results
+    y = loss_tensor.flatten().detach().cpu().numpy()
 
-    model_names = list(results.keys())
-    colormap = cm.get_cmap("tab10")
-    colors = [colormap(i / 6.0) for i in range(6)]  # 6 seeds
+    n = len(norm_scales)
+    cols = 3 if n >= 3 else n
+    rows = int(math.ceil(n / cols)) if cols > 0 else 1
+    fig_width = max(18, 6 * cols)
+    fig_height = max(10, 5 * rows)
+    fig, axs = plt.subplots(rows, cols, figsize=(fig_width, fig_height), dpi=200, squeeze=False)
 
-    for idx, model_name in enumerate(model_names):
-        if idx >= len(axes):
-            break
+    # Ensure axs is 2D
+    for idx, (layer_name, vals) in enumerate(norm_scales.items()):
+        r = idx // cols
+        c = idx % cols
+        ax = axs[r, c]
 
-        ax = axes[idx]
-        model_data = results[model_name]
-
-        for seed in range(6):
-            seed_key = f"seed_{seed}"
-            if seed_key not in model_data:
-                continue
-
-            seed_data = model_data[seed_key]
-            # Extract batch sizes and losses
-            batch_sizes = sorted([int(k.split("_")[-1]) for k in seed_data])
-            losses = [seed_data[f"batch_size_{bs}"] for bs in batch_sizes]
-
-            ax.plot(
-                batch_sizes,
-                losses,
-                label=f"Seed {seed}",
-                color=colors[seed],
-                alpha=0.7,
-                marker="o",
-                markersize=4,
-            )
-
-        ax.set_xlabel("Batch Size")
-        ax.set_ylabel("Loss")
-        ax.set_title(model_name)
-        ax.legend(loc="best", fontsize=8)
+        x = vals.flatten().detach().cpu().numpy()
+        ax.scatter(x, y, s=10, alpha=0.6)
+        # Pearson correlation (sequence positions are the set of points)
+        assert np.std(x) > 0 and np.std(y) > 0, f"{np.std(x)=} {np.std(y)=}"
+        r = float(np.corrcoef(x, y)[0, 1])
+        ax.set_xlabel("Input norm scale")
+        ax.set_ylabel("Observed PGD loss")
+        ax.set_title(f"{layer_name} (r={r:.3f})")
         ax.grid(True, alpha=0.3)
 
-        if log_scale:
-            ax.set_xscale("log")
+    # Hide any unused subplots
+    for idx in range(n, rows * cols):
+        r = idx // cols
+        c = idx % cols
+        axs[r, c].set_visible(False)
 
-    # Hide unused subplots
-    for idx in range(len(model_names), len(axes)):
-        axes[idx].axis("off")
+    fig.tight_layout()
+    out_path = output_dir / "norm_vs_pgd_loss_scatter.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"Plot saved to {out_path}")
+    plt.close(fig)
 
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    print(f"Plot saved to {output_path}")
-    plt.close()
+
+def plot_norm_scales_and_pgd_loss(
+    results: tuple[Tensor, dict[str, Tensor]],
+    output_dir: Path,
+) -> None:
+    """Plot per-sequence norm scales and observed PGD loss.
+
+    Args:
+        results: tuple(loss, norm_scales), where
+            - loss: Tensor with shape (batch, seq_len)
+            - norm_scales: dict of {layer_name: Tensor(batch, seq_len)}
+        output_dir: Directory to save plots
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    colormap = cm.get_cmap("tab20")
+
+    loss_tensor, norm_scales = results
+    # Collapse batch dimension (batch size is 1)
+    loss_np = loss_tensor.flatten().detach().cpu().numpy()
+    seq_len = int(loss_np.shape[-1])
+    xs = list(range(seq_len))
+
+    # Make the figure very wide to visualize high-fidelity values across positions
+    width_inches = max(24, seq_len / 16)  # e.g., 512 -> 32 inches
+    height_inches = 6
+    fig, ax1 = plt.subplots(figsize=(width_inches, height_inches), dpi=200)
+
+    # Plot norm scales per layer on primary y-axis
+    for i, (layer_name, vals) in enumerate(norm_scales.items()):
+        ys = vals.flatten().detach().cpu().numpy()
+        ax1.plot(
+            xs,
+            ys,
+            label=layer_name,
+            color=colormap(i % colormap.N),
+            alpha=0.9,
+            linewidth=1.5,
+        )
+
+    ax1.set_xlabel("Sequence position")
+    ax1.set_ylabel("Input norm scale")
+    ax1.grid(True, alpha=0.3)
+
+    # Plot observed PGD loss on secondary y-axis for emphasis
+    ax2 = ax1.twinx()
+    ax2.plot(xs, loss_np, label="Observed PGD loss", color="red", linewidth=2.5)
+    ax2.set_ylabel("PGD loss")
+
+    # Combine legends from both axes
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc="best", fontsize=8)
+
+    plt.title("Norm scales and observed PGD loss")
+    fig.tight_layout()
+
+    out_path = output_dir / "norm_scales_vs_pgd_loss.png"
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    print(f"Plot saved to {out_path}")
+    plt.close(fig)
 
 
 def main() -> None:
     """Run experiments for all models and seeds, generate report."""
-    # Model configurations - update these with your LM run paths
-    model_configs: dict[ModelType, str] = {
-        "lm1": "wandb:goodfire/spd/runs/lxs77xye",  # Example: update with actual LM runs
-        # "lm2": "wandb:goodfire/spd/runs/...",
-        # "lm3": "wandb:goodfire/spd/runs/...",
-        # "lm4": "wandb:goodfire/spd/runs/...",
-    }
+    model_config = "wandb:goodfire/spd/runs/lxs77xye"
 
-    mask_scope: MaskScope = "shared_across_batch"
-    n_batches = 1
-    step_size = 0.001
-    n_steps = 100
-    seeds = list(range(6))  # 0-5
-    batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
-    max_seq_len = 8  # Adjust as needed
+    pdg_config = PGDReconLossConfig(
+        init="random",
+        step_size=0.04,
+        n_steps=100,
+        mask_scope="shared_across_batch",
+        step_type="sign",
+    )
 
-    # Collect results
-    results: dict[ModelType, dict[str, dict[str, float]]] = {}
+    max_seq_len = 512  # Adjust as needed
 
-    for model_type, run_info_path in model_configs.items():
-        print(f"\n{'=' * 60}")
-        print(f"Loading model for {model_type.upper()}")
-        print(f"{'=' * 60}\n")
+    print("Loading model")
+    # Load model once per model type
+    model_setup = load_model(model_config)
 
-        # Load model once per model type
-        model_setup = load_model(model_type, run_info_path)
+    print("Running experiments\n")
+    results = run_experiment(
+        model_setup=model_setup,
+        seed=0,
+        pgd_config=pdg_config,
+        max_seq_len=max_seq_len,
+    )
 
-        # Initialize results dict for this model
-        results[model_type] = {}
-
-        print(f"Running experiments for {model_type.upper()}\n")
-
-        for seed in seeds:
-            print(f"Processing seed {seed}...")
-            seed_results = run_experiment(
-                model_type=model_type,
-                model_setup=model_setup,
-                seed=seed,
-                mask_scope=mask_scope,
-                n_batches=n_batches,
-                batch_sizes=batch_sizes,
-                step_size=step_size,
-                n_steps=n_steps,
-                max_seq_len=max_seq_len,
-            )
-            results[model_type][f"seed_{seed}"] = seed_results
-
-    # Generate plot
-    output_path = Path(f"pgd_results_lm_{mask_scope}_{n_steps}_{step_size}.png")
-    plot_results(results, output_path, log_scale=True)
-    print(f"\nPlot saved to {output_path}")
+    # Plot and save figures
+    plot_norms_vs_pgd_loss_scatter(results, output_dir=Path("logs") / "pgd_lm_plots")
+    plot_norm_scales_and_pgd_loss(results, output_dir=Path("logs") / "pgd_lm_plots")
 
 
 if __name__ == "__main__":

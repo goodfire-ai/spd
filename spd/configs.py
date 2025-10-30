@@ -77,6 +77,7 @@ class PGDConfig(LossMetricConfig):
     step_size: float
     n_steps: int
     mask_scope: MaskScope
+    step_type: Literal["unit", "sign"]
 
 
 class PGDReconLossConfig(PGDConfig):

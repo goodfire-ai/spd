@@ -22,7 +22,7 @@ def pgd_recon_loss(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
 ) -> Float[Tensor, ""]:
-    sum_loss, n_examples = pgd_masked_recon_loss_update(
+    sum_loss, n_examples, _ = pgd_masked_recon_loss_update(
         model=model,
         batch=batch,
         ci=ci,
