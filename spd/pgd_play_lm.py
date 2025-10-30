@@ -1,3 +1,4 @@
+# %%
 # ruff: noqa: E402
 import math
 import warnings
@@ -73,6 +74,7 @@ def run_experiment(
     model_setup: ModelSetup,
     seed: int,
     pgd_config: PGDReconLossConfig,
+    batch_size: int,
     max_seq_len: int,
 ) -> tuple[Tensor, dict[str, Tensor]]:
     """Run PGD reconstruction loss experiment for a single seed using pre-loaded model."""
@@ -106,7 +108,7 @@ def run_experiment(
 
     data_loader, _tokenizer = create_data_loader(
         dataset_config=train_data_config,
-        batch_size=1,
+        batch_size=batch_size,
         buffer_size=updated_task_config.buffer_size,
         global_seed=config.seed,
         ddp_rank=0,
@@ -167,7 +169,7 @@ def run_experiment(
 
     norm_scales = {}
     for module_path, input in cache.items():
-        variance = (input ** 2).mean(-1, keepdim=True)
+        variance = (input**2).mean(-1)
         norm_scales[module_path] = (variance + 1e-6).sqrt()
 
     assert next(iter(norm_scales.values())).shape == batch.shape, "what 2?"
@@ -205,10 +207,14 @@ def plot_norms_vs_pgd_loss_scatter(
         ax = axs[r, c]
 
         x = vals.flatten().detach().cpu().numpy()
-        ax.scatter(x, y, s=10, alpha=0.6)
+        ax.scatter(x, y, s=10, alpha=0.01)
         # Pearson correlation (sequence positions are the set of points)
         assert np.std(x) > 0 and np.std(y) > 0, f"{np.std(x)=} {np.std(y)=}"
         r = float(np.corrcoef(x, y)[0, 1])
+        # Best fit line
+        m, b = np.polyfit(x, y, 1)
+        xx = np.linspace(float(np.min(x)), float(np.max(x)), 100)
+        ax.plot(xx, m * xx + b, color="black", linestyle="--", linewidth=1.5, zorder=3)
         ax.set_xlabel("Input norm scale")
         ax.set_ylabel("Observed PGD loss")
         ax.set_title(f"{layer_name} (r={r:.3f})")
@@ -241,10 +247,9 @@ def plot_norm_scales_and_pgd_loss(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    colormap = cm.get_cmap("tab20")
+    colormap = plt.colormaps["tab20"]
 
     loss_tensor, norm_scales = results
-    # Collapse batch dimension (batch size is 1)
     loss_np = loss_tensor.flatten().detach().cpu().numpy()
     seq_len = int(loss_np.shape[-1])
     xs = list(range(seq_len))
@@ -288,8 +293,9 @@ def plot_norm_scales_and_pgd_loss(
     print(f"Plot saved to {out_path}")
     plt.close(fig)
 
+# %%
 
-def main() -> None:
+if __name__ == "__main__":
     """Run experiments for all models and seeds, generate report."""
     model_config = "wandb:goodfire/spd/runs/lxs77xye"
 
@@ -301,6 +307,7 @@ def main() -> None:
         step_type="sign",
     )
 
+    batch_size = 32
     max_seq_len = 512  # Adjust as needed
 
     print("Loading model")
@@ -312,13 +319,17 @@ def main() -> None:
         model_setup=model_setup,
         seed=0,
         pgd_config=pdg_config,
+        batch_size=batch_size,
         max_seq_len=max_seq_len,
     )
 
+    # %%
+
     # Plot and save figures
     plot_norms_vs_pgd_loss_scatter(results, output_dir=Path("logs") / "pgd_lm_plots")
-    plot_norm_scales_and_pgd_loss(results, output_dir=Path("logs") / "pgd_lm_plots")
+    # plot_norm_scales_and_pgd_loss(results, output_dir=Path("logs") / "pgd_lm_plots")
 
 
-if __name__ == "__main__":
-    main()
+
+    # %%
+    list(results[1])
