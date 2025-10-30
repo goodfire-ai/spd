@@ -91,4 +91,4 @@ dashboard-setup:
 
 .PHONY: dashboard-test
 dashboard-test:
-	uv run python spd/dashboard/run.py spd/dashboard/config/test_config.yaml
+	uv run python spd/dashboard/run.py spd/dashboard/dashboard_config.yaml
