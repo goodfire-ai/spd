@@ -143,7 +143,9 @@ class SubcomponentStats(SerializableDataclass):
     stats: dict[str, float]  # mean, std, min, max, median, q05, q25, q75, q95
 
     # Multiple histograms for different views
-    histograms: dict[str, dict[str, list[float]]]  # {histogram_name: {counts: [...], edges: [...]}}}
+    histograms: dict[
+        str, dict[str, list[float]]
+    ]  # {histogram_name: {counts: [...], edges: [...]}}}
 
     @classmethod
     def generate(
@@ -170,7 +172,6 @@ class SubcomponentStats(SerializableDataclass):
         Returns:
             SubcomponentStats with all computed statistics
         """
-        from typing import Any
 
         from spd.dashboard.core.tokenization import simple_batch_decode
 

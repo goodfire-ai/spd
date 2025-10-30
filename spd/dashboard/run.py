@@ -34,8 +34,6 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.general_utils import extract_batch_data, get_obj_device
 
-from muutils.dbg import dbg_tensor, dbg, dbg_auto
-
 # ============================================================================
 # PHASE 1: DATA GENERATION
 # ============================================================================
@@ -94,8 +92,7 @@ def generate_activations(
             model, device, batch=batch
         )
         acts_dict_concat: dict[str, Float[Tensor, "batch*n_ctx C"]] = {
-            module: acts.view(-1, acts.shape[-1])
-            for module, acts in acts_dict.items()
+            module: acts.view(-1, acts.shape[-1]) for module, acts in acts_dict.items()
         }
 
         # Process activations (concatenate all modules)
@@ -302,6 +299,7 @@ def main(
     zanj_path: Path = output_dir / "dashboard.zanj"
     ZANJ().save(dashboard, str(zanj_path))
     print(f"Saved dashboard data to '{zanj_path}'")
+
 
 def cli() -> None:
     """CLI entry point with argument parsing."""

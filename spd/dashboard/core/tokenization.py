@@ -1,9 +1,10 @@
 """Text processing utilities for dashboard data generation."""
 
+import hashlib
 from dataclasses import dataclass
 from functools import cached_property
-import hashlib
 from typing import NewType
+
 import numpy as np
 from jaxtyping import Int
 from transformers import PreTrainedTokenizer
@@ -12,6 +13,7 @@ from transformers import PreTrainedTokenizer
 # pyright: reportAttributeAccessIssue=false, reportUnknownParameterType=false
 
 TextSampleHash = NewType("TextSampleHash", str)
+
 
 @dataclass(frozen=True, kw_only=True)
 class TextSample:
@@ -28,6 +30,7 @@ class TextSample:
     def length(self) -> int:
         """Return the number of tokens."""
         return len(self.tokens)
+
 
 def attach_vocab_arr(tokenizer: PreTrainedTokenizer) -> None:
     """Attach a numpy array of token strings to the tokenizer for fast batch decoding.
