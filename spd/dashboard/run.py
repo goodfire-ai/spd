@@ -298,7 +298,17 @@ def main(
 
     zanj_path: Path = output_dir / "dashboard.zanj"
     ZANJ().save(dashboard, str(zanj_path))
+
+    # Extract zanj zip file
+    import zipfile
+
+    extract_dir: Path = output_dir / "dashboard_extracted"
+    extract_dir.mkdir(exist_ok=True)
+    with zipfile.ZipFile(zanj_path, "r") as zip_ref:
+        zip_ref.extractall(extract_dir)
+
     print(f"Saved dashboard data to '{zanj_path}'")
+    print(f"Extracted dashboard data to '{extract_dir}'")
 
 
 def cli() -> None:
