@@ -56,8 +56,8 @@ const columnRenderers = {
         const min = row.stats.min;
         const max = row.stats.max;
 
-        // Set x-axis limits to [0, 1] if data is in that range
-        const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
+        // Always use [0, 1] for all_activations
+        const xlims = [0, 1];
 
         // Pass bin centers as x-values and counts as y-values
         const svg = sparkbars(binCenters, histData.counts, {
@@ -101,8 +101,8 @@ const columnRenderers = {
         const min = histData.edges[0];
         const max = histData.edges[histData.edges.length - 1];
 
-        // Set x-axis limits to [0, 1] if data is in that range
-        const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
+        // Always use [0, 1] for max_per_sample
+        const xlims = [0, 1];
 
         // Pass bin centers as x-values and counts as y-values
         const svg = sparkbars(binCenters, histData.counts, {
@@ -237,8 +237,8 @@ const columnRenderers = {
             const min = histData.edges[0];
             const max = histData.edges[histData.edges.length - 1];
 
-            // Set x-axis limits to [0, 1] if data is in that range
-            const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
+            // Force [0, 1] xlims for activation histograms, otherwise auto-scale
+            const xlims = (histKey === 'all_activations' || histKey === 'max_per_sample') ? [0, 1] : null;
 
             // Pass bin centers as x-values and counts as y-values
             const svg = sparkbars(binCenters, histData.counts, {
@@ -550,13 +550,6 @@ async function loadData() {
     // Base columns
     const columns = [
         {
-            key: 'label',
-            label: 'Label',
-            type: 'string',
-            width: '200px',
-            renderer: columnRenderers.componentLabel
-        },
-        {
             key: 'module',
             label: 'Module',
             type: 'string',
@@ -570,7 +563,8 @@ async function loadData() {
             label: 'Index',
             type: 'number',
             width: '80px',
-            align: 'right'
+            align: 'right',
+            renderer: (value) => value.toString()
         }
     ];
 

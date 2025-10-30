@@ -303,9 +303,18 @@ async function displaySamples() {
         } else {
             for (let i = 0; i < topMaxSamples.length; i++) {
                 const sample = topMaxSamples[i];
+
+                // Await activations in case it's a ZANJ lazy proxy
+                const activations = await sample.activations;
+
+                // Convert to array - handle both NDArray objects and plain arrays
+                const activationsArray = activations.data
+                    ? Array.from(activations.data)
+                    : (Array.isArray(activations) ? activations : Array.from(activations));
+
                 const tokenViz = createTokenVisualization(
                     sample.token_strs,
-                    Array.from(sample.activations)
+                    activationsArray
                 );
 
                 const tr = document.createElement('tr');
@@ -332,9 +341,18 @@ async function displaySamples() {
         } else {
             for (let i = 0; i < topMeanSamples.length; i++) {
                 const sample = topMeanSamples[i];
+
+                // Await activations in case it's a ZANJ lazy proxy
+                const activations = await sample.activations;
+
+                // Convert to array - handle both NDArray objects and plain arrays
+                const activationsArray = activations.data
+                    ? Array.from(activations.data)
+                    : (Array.isArray(activations) ? activations : Array.from(activations));
+
                 const tokenViz = createTokenVisualization(
                     sample.token_strs,
-                    Array.from(sample.activations)
+                    activationsArray
                 );
 
                 const tr = document.createElement('tr');
