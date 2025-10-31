@@ -18,13 +18,13 @@ from spd.configs import (
 )
 from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
-from spd.models.components import make_mask_infos
+from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.utils.component_utils import (
     RoutingType,
     sample_uniform_k_subset_routing_masks,
 )
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data, get_obj_device
+from spd.utils.general_utils import calc_kl_divergence_lm, calc_sum_recon_loss_lm, extract_batch_data, get_obj_device
 
 
 def _compute_pgd_objective_loss(
@@ -36,7 +36,7 @@ def _compute_pgd_objective_loss(
     target_out: Float[Tensor, "... vocab"],
     model: ComponentModel,
     output_loss_type: Literal["mse", "kl"],
-) -> Float[Tensor, ""]:
+) -> tuple[Float[Tensor, ""], Float[Tensor, "..."]]:
     """Compute reconstruction loss for given adversarial sources.
 
     Args:
@@ -70,7 +70,8 @@ def _compute_pgd_objective_loss(
     )
     out = model(batch, mask_infos=mask_infos)
     total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-    return total_loss
+    tw_loss = calc_kl_divergence_lm(pred=out, target=target_out, reduce=False)
+    return total_loss, tw_loss, mask_infos
 
 
 def _get_pgd_init_tensor(
@@ -120,7 +121,7 @@ def pgd_masked_recon_loss_update(
     output_loss_type: Literal["mse", "kl"],
     routing: RoutingType,
     pgd_config: PGDConfig,
-) -> tuple[Float[Tensor, ""], int]:
+) -> tuple[Float[Tensor, ""], int, Float[Tensor, "..."], dict[str, ComponentsMaskInfo]]:
     """Central implementation of PGD masked reconstruction loss.
 
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
@@ -157,7 +158,7 @@ def pgd_masked_recon_loss_update(
         assert adv_sources.grad is None
 
         with torch.enable_grad():
-            total_loss = _compute_pgd_objective_loss(
+            total_loss, tw_loss, mask_infos = _compute_pgd_objective_loss(
                 adv_sources=adv_sources.expand(n_layers, *batch_dims, C2),
                 batch=batch,
                 ci=ci,
@@ -183,7 +184,7 @@ def pgd_masked_recon_loss_update(
     )
 
     # no need to all-reduce total_loss or n_examples bc consumers handle this
-    return total_loss, n_examples
+    return total_loss, n_examples, tw_loss, mask_infos
 
 
 def _global_pgd_step(
@@ -199,7 +200,7 @@ def _global_pgd_step(
     sampling: SamplingType,
     batch_dims: tuple[int, ...],
     n_layers: int,
-) -> tuple[Float[Tensor, ""], int]:
+) -> tuple[Float[Tensor, ""], int, Float[Tensor, "..."]]:
     """Perform a single PGD step with gradient accumulation over multiple batches.
 
     Returns:
@@ -243,7 +244,7 @@ def _global_pgd_step(
                 )
 
         with torch.enable_grad():
-            total_loss = _compute_pgd_objective_loss(
+            total_loss, tw_loss = _compute_pgd_objective_loss(
                 adv_sources=adv_sources.expand(n_layers, *batch_dims, -1),
                 batch=batch,
                 ci=batch_ci,
@@ -271,7 +272,7 @@ def _global_pgd_step(
         adv_sources.add_(pgd_config.step_size * reduced_accumulated_grads.sign())
         adv_sources.clamp_(0.0, 1.0)
 
-    return pgd_step_accum_loss, n_examples
+    return pgd_step_accum_loss, n_examples, tw_loss
 
 
 def calc_pgd_global_masked_recon_loss(
@@ -318,7 +319,7 @@ def calc_pgd_global_masked_recon_loss(
     n_examples: int | None = None
     # PGD ascent with gradient accumulation
     for _ in range(pgd_config.n_steps + 1):  # +1 because we want to report the final loss
-        pgd_step_loss, n_examples = _global_pgd_step(
+        pgd_step_loss, n_examples, _ = _global_pgd_step(
             adv_sources=adv_sources,
             pgd_config=pgd_config,
             model=model,

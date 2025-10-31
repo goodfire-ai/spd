@@ -307,7 +307,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["input"],
+        cache_type: Literal["input", "output"],
         **kwargs: Any,
     ) -> OutputWithCache: ...
 
@@ -329,7 +329,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["input", "none"] = "none",
+        cache_type: Literal["input", "none", "output"] = "none",
         **kwargs: Any,
     ) -> Tensor | OutputWithCache:
         """Forward pass with optional component replacement and/or input caching.
@@ -386,6 +386,8 @@ class ComponentModel(LoadableModule):
                 return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
+            case "output":
+                return OutputWithCache(output=out, cache=cache)
 
     def _components_and_cache_hook(
         self,
@@ -396,7 +398,7 @@ class ComponentModel(LoadableModule):
         module_name: str,
         components: Components | None,
         mask_info: ComponentsMaskInfo | None,
-        cache_type: Literal["input", "none"],
+        cache_type: Literal["input", "none", "output"],
         cache: dict[str, Tensor],
     ) -> Any | None:
         """Unified hook function that handles both component replacement and caching.
@@ -420,10 +422,7 @@ class ComponentModel(LoadableModule):
         assert len(kwargs) == 0, "Expected no keyword arguments"
         x = args[0]
         assert isinstance(x, Tensor), "Expected input tensor"
-        assert cache_type in ["input", "none"], "Expected cache_type to be 'input' or 'none'"
-
-        if cache_type == "input":
-            cache[module_name] = x
+        assert cache_type in ["input", "none", "output"], "Expected cache_type to be 'input', 'none', or 'output'"
 
         if components is not None and mask_info is not None:
             assert isinstance(output, Tensor), (
@@ -437,12 +436,17 @@ class ComponentModel(LoadableModule):
             )
 
             if mask_info.routing_mask == "all":
-                return components_out
+                output = components_out
+            else:
+                output = torch.where(mask_info.routing_mask[..., None], components_out, output)
 
-            return torch.where(mask_info.routing_mask[..., None], components_out, output)
+        if cache_type == "input":
+            cache[module_name] = x
 
-        # No component replacement - keep original output
-        return None
+        if cache_type == "output":
+            cache[module_name] = output
+
+        return output
 
     @contextmanager
     def _attach_forward_hooks(self, hooks: dict[str, Callable[..., Any]]) -> Generator[None]:
@@ -479,7 +483,7 @@ class ComponentModel(LoadableModule):
 
     @classmethod
     @override
-    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel":
+    def from_run_info(cls, run_info: RunInfo[Config], module_patterns: list[str]) -> "ComponentModel":
         """Load a trained ComponentModel checkpoint from a run info object."""
         config = run_info.config
 
@@ -508,7 +512,7 @@ class ComponentModel(LoadableModule):
 
         comp_model = ComponentModel(
             target_model=target_model,
-            target_module_patterns=config.all_module_patterns,
+            target_module_patterns=module_patterns, # 🟥
             C=config.C,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
@@ -522,7 +526,7 @@ class ComponentModel(LoadableModule):
 
         handle_deprecated_state_dict_keys_(comp_model_weights)
 
-        comp_model.load_state_dict(comp_model_weights)
+        comp_model.load_state_dict(comp_model_weights, strict=False) # 🟥
         return comp_model
 
     @classmethod
@@ -599,6 +603,35 @@ class ComponentModel(LoadableModule):
         for comp_name, components in self.components.items():
             weight_deltas[comp_name] = self.target_weight(comp_name) - components.weight
         return weight_deltas
+
+    @contextmanager
+    def cache_modules(self, module_paths: list[str]) -> Generator[tuple[dict[str, Tensor], dict[str, Tensor]]]:
+        """Context manager to cache the inputs to the specified modules."""
+        input_cache: dict[str, Tensor] = {}
+        output_cache: dict[str, Tensor] = {}
+
+        def _make_hook(module_path: str) -> Callable[[nn.Module, tuple[Any, ...], dict[Any, Any], Any], Any]:
+            def _cache_hook(
+                module: nn.Module, args: tuple[Any, ...], kwargs: dict[Any, Any], output: Any
+            ) -> Any:
+                """Hook to cache the input to the module."""
+                input, = args
+                input_cache[module_path] = input
+                output_cache[module_path] = output
+                return output
+
+            return _cache_hook
+
+        handles: list[RemovableHandle] = []
+        for module_path in module_paths:
+            module = self.target_model.get_submodule(module_path)
+            handle = module.register_forward_hook(_make_hook(module_path), with_kwargs=True)
+            handles.append(handle)
+        try:
+            yield input_cache, output_cache
+        finally:
+            for handle in handles:
+                handle.remove()
 
 
 def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:

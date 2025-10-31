@@ -9,6 +9,7 @@ from spd.configs import PGDConfig
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
 from spd.models.component_model import CIOutputs, ComponentModel
+from spd.models.components import ComponentsMaskInfo
 from spd.utils.distributed_utils import all_reduce
 
 
@@ -21,8 +22,8 @@ def pgd_recon_loss(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
-) -> Float[Tensor, ""]:
-    sum_loss, n_examples = pgd_masked_recon_loss_update(
+) -> tuple[Float[Tensor, ""], Float[Tensor, "..."], dict[str, ComponentsMaskInfo]]:
+    sum_loss, n_examples, tw_loss, mask_infos = pgd_masked_recon_loss_update(
         model=model,
         batch=batch,
         ci=ci,
@@ -32,7 +33,7 @@ def pgd_recon_loss(
         routing="all",  # <- Key difference from pgd_masked_recon_subset_loss.py
         pgd_config=pgd_config,
     )
-    return sum_loss / n_examples
+    return sum_loss / n_examples, tw_loss, mask_infos
 
 
 class PGDReconLoss(Metric):
