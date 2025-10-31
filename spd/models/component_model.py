@@ -615,8 +615,8 @@ class ComponentModel(LoadableModule):
                 module: nn.Module, args: tuple[Any, ...], kwargs: dict[Any, Any], output: Any
             ) -> Any:
                 """Hook to cache the input to the module."""
-                input, = args
-                input_cache[module_path] = input
+                assert len(args) > 0, f"Expected at least 1 argument for module {module} path {module_path}"
+                input_cache[module_path] = args[0]
                 output_cache[module_path] = output
                 return output
 
