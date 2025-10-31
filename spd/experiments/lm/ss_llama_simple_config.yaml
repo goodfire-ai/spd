@@ -38,8 +38,8 @@ loss_metric_configs:
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 256
-eval_batch_size: 64
+batch_size: 8
+eval_batch_size: 8
 steps: 200000
 lr: 0.0002
 lr_schedule: cosine

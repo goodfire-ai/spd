@@ -1,3 +1,5 @@
+node_modules/
+.svelte-kit/
 spd/scripts/sweep_params.yaml
 spd/scripts/sweep_params.yaml
 docs/coverage/**
