@@ -351,6 +351,16 @@ function displayTokenStatistics() {
 
     // Display P(token | active) table
     if (componentData.top_tokens_given_active && componentData.top_tokens_given_active.length > 0) {
+        // Validate structure
+        const firstToken = componentData.top_tokens_given_active[0];
+        console.assert(
+            firstToken.token !== undefined &&
+            firstToken.p_token_given_active !== undefined &&
+            firstToken.count_when_active !== undefined &&
+            firstToken.count_token_total !== undefined,
+            'Token stat structure is invalid for top_tokens_given_active'
+        );
+
         const tableConfig = createTableConfig(
             componentData.top_tokens_given_active,
             'p_token_given_active',

@@ -189,10 +189,10 @@ class SubcomponentDetails(SerializableDataclass):
         str, dict[str, list[float]]
     ]  # {histogram_name: {counts: [...], edges: [...]}}}
 
-    # Token activation summary (for dashboard display)
+    # Token activation summary (for dashboard JS)
     token_activations: TokenActivationsSummary
 
-    # Token statistics (detailed, for component.html)
+    # Detailed token statistics (for component.html)
     top_tokens_given_active: list[TokenStat] = serializable_field(
         default_factory=list,
         serialization_fn=lambda x: [s.serialize() for s in x],

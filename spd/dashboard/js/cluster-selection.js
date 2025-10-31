@@ -470,6 +470,32 @@ function createTopTokenFilter(filterValue) {
 }
 
 /**
+ * Create filter function for token statistics columns
+ * @param {string} tokenStatsKey - The key in row object (e.g., 'top_tokens_given_active')
+ * @returns {Function} Filter function factory
+ */
+function createTokenStatsFilter(tokenStatsKey) {
+    return function(filterValue) {
+        if (!filterValue || !filterValue.trim()) return null;
+
+        const pattern = filterValue.toLowerCase().trim();
+
+        return (cellValue, row) => {
+            const tokenStats = row[tokenStatsKey];
+            if (!tokenStats || tokenStats.length === 0) return false;
+
+            // Search through all tokens in the array
+            for (const stat of tokenStats) {
+                if (stat.token.toLowerCase().includes(pattern)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+    };
+}
+
+/**
  * Create a filter function for numeric comparisons with operators
  * @param {string} filterValue - The filter string (e.g., ">2.5", "<=0.8")
  * @param {Function} valueExtractor - Function to extract numeric value from cellValue
