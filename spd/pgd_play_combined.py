@@ -1,13 +1,10 @@
-import warnings
 from pathlib import Path
 from typing import Any, Literal
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 
-warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
-
-from spd.configs import MaskScope, PGDReconLossConfig
+from spd.configs import Config, MaskScope, PGDReconLossConfig
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP, ResidMLPTargetRunInfo
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
@@ -114,7 +111,7 @@ def run_experiment(
     """Run PGD reconstruction loss experiment for a single seed using pre-loaded model."""
     model = model_setup.model
     dataset = model_setup.dataset
-    config = model_setup.config
+    config: Config = model_setup.config
     device = model_setup.device
 
     # Run experiments for each batch size
@@ -232,8 +229,8 @@ def main() -> None:
         "resid_mlp2": "wandb:goodfire/spd/runs/grevt2h2",  # resid_mlp2
     }
 
-    # mask_scope = "unique_per_datapoint"
-    mask_scope = "shared_across_batch"
+    mask_scope = "unique_per_datapoint"
+    # mask_scope = "shared_across_batch"
     n_batches = 1
     step_size = 0.1
     n_steps = 100

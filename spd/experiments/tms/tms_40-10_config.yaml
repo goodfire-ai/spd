@@ -64,6 +64,16 @@ eval_metric_configs:
     groups: null
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
+  - classname: "PGDReconLoss"
+    init: "random"
+    step_size: 0.01
+    n_steps: 2
+    mask_scope: "shared_across_batch"
+  - classname: "PGDGlobalReconLoss"
+    init: "random"
+    step_size: 0.01
+    n_steps: 2
+    n_batches: 20
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.tms.models.TMSModel"

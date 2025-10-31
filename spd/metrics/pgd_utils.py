@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from jaxtyping import Float, Int
@@ -24,7 +24,12 @@ from spd.utils.component_utils import (
     sample_uniform_k_subset_routing_masks,
 )
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data, get_obj_device
+from spd.utils.general_utils import (
+    calc_kl_divergence_lm,
+    calc_sum_recon_loss_lm,
+    extract_batch_data,
+    get_obj_device,
+)
 
 
 def _compute_pgd_objective_loss(
@@ -36,6 +41,9 @@ def _compute_pgd_objective_loss(
     target_out: Float[Tensor, "... vocab"],
     model: ComponentModel,
     output_loss_type: Literal["mse", "kl"],
+    pgd_info: dict[str, Any],
+    final_step: bool,
+    _tokenizer: Any,
 ) -> Float[Tensor, ""]:
     """Compute reconstruction loss for given adversarial sources.
 
@@ -70,6 +78,62 @@ def _compute_pgd_objective_loss(
     )
     out = model(batch, mask_infos=mask_infos)
     total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+    if final_step:
+        # Store the target_out, out, and the per-token loss (before reduction) in pgd_info
+        pgd_info["target_out"] = target_out
+        pgd_info["out"] = out
+        match output_loss_type:
+            case "mse":
+                pgd_info["per_token_loss"] = (out - target_out) ** 2
+            case "kl":
+                pgd_info["per_token_loss"] = calc_kl_divergence_lm(
+                    pred=out, target=target_out, reduce=False
+                )
+        # decode the batch and store the decoded output in pgd_info
+        # decoded_batch = _tokenizer.decode(batch[0])
+        pgd_info["decoded_batch"] = [_tokenizer.decode(batch[i]) for i in range(batch.shape[0])]
+        # Also decode individual tokens in the batch
+        pgd_info["decoded_tokens"] = []
+        for i in range(batch.shape[0]):
+            batch_tokens = []
+            for j in range(batch.shape[1]):
+                batch_tokens.append(_tokenizer.decode(batch[i][j]))
+            pgd_info["decoded_tokens"].append(batch_tokens)
+        # Get the top 5 logits and their corresponding tokens for target_out and model output
+        pgd_info["target_out_top_5_logits"] = [
+            [target_out[i][j].topk(5).values.tolist() for j in range(target_out[i].shape[0])]
+            for i in range(target_out.shape[0])
+        ]
+        pgd_info["target_out_top_5_tokens"] = [
+            [target_out[i][j].topk(5).indices.tolist() for j in range(target_out[i].shape[0])]
+            for i in range(target_out.shape[0])
+        ]
+        # Print out the top 5 tokens for each logit stored above. Use the pgd_info["target_out_top_5_tokens"] to get the tokens.
+        pgd_info["target_out_top_5_tokens_str"] = [
+            [
+                [_tokenizer.decode(pgd_info["target_out_top_5_tokens"][i][j][k]) for k in range(5)]
+                for j in range(len(pgd_info["target_out_top_5_tokens"][i]))
+            ]
+            for i in range(len(pgd_info["target_out_top_5_tokens"]))
+        ]
+        pgd_info["model_output_top_5_logits"] = [
+            [out[i][j].topk(5).values.tolist() for j in range(out[i].shape[0])]
+            for i in range(out.shape[0])
+        ]
+        pgd_info["model_output_top_5_tokens"] = [
+            [out[i][j].topk(5).indices.tolist() for j in range(out[i].shape[0])]
+            for i in range(out.shape[0])
+        ]
+        pgd_info["model_output_top_5_tokens_str"] = [
+            [
+                [
+                    _tokenizer.decode(pgd_info["model_output_top_5_tokens"][i][j][k])
+                    for k in range(5)
+                ]
+                for j in range(len(pgd_info["model_output_top_5_tokens"][i]))
+            ]
+            for i in range(len(pgd_info["model_output_top_5_tokens"]))
+        ]
     return total_loss
 
 
@@ -120,6 +184,8 @@ def pgd_masked_recon_loss_update(
     output_loss_type: Literal["mse", "kl"],
     routing: RoutingType,
     pgd_config: PGDConfig,
+    pgd_info: dict[str, Any],
+    _tokenizer: Any,
 ) -> tuple[Float[Tensor, ""], int]:
     """Central implementation of PGD masked reconstruction loss.
 
@@ -145,11 +211,16 @@ def pgd_masked_recon_loss_update(
         case "unique_per_datapoint":
             adv_source_shape = torch.Size([n_layers, *batch_dims, C2])
         case "shared_across_batch":
-            adv_source_shape = torch.Size([n_layers] + [1 for _ in batch_dims] + [C2])
+            # adv_source_shape = torch.Size([n_layers] + [1 for _ in batch_dims] + [C2])
+            # TODO: REmove this. Just testing whether initializing the same rand tensors as we would
+            # for unique_per_datapoint works.
+            adv_source_shape = torch.Size([n_layers, *batch_dims, C2])
 
     adv_sources: Float[Tensor, "n_layers *batch_dims C2"] | Float[Tensor, "n_layers *1 C2"] = (
         _get_pgd_init_tensor(pgd_config.init, adv_source_shape, batch.device).requires_grad_(True)
     )
+    if pgd_config.mask_scope == "shared_across_batch":
+        adv_sources = adv_sources[:, 0:1, 0:1, :].detach().clone().requires_grad_(True)
 
     total_loss: Float[Tensor, ""] | None = None
     # PGD ascent
@@ -166,6 +237,9 @@ def pgd_masked_recon_loss_update(
                 target_out=target_out,
                 model=model,
                 output_loss_type=output_loss_type,
+                pgd_info=pgd_info,
+                final_step=i == pgd_config.n_steps,
+                _tokenizer=_tokenizer,
             )
         if i < pgd_config.n_steps:
             # Update adv_sources for the next PGD step

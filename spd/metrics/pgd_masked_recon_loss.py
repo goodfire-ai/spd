@@ -64,8 +64,10 @@ class PGDReconLoss(Metric):
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+        _tokenizer: Any,
         **_: Any,
-    ) -> None:
+    ) -> dict[str, Any]:
+        pgd_info = {}
         sum_loss, n_examples = pgd_masked_recon_loss_update(
             model=self.model,
             batch=batch,
@@ -75,9 +77,12 @@ class PGDReconLoss(Metric):
             output_loss_type=self.output_loss_type,
             routing="all",
             pgd_config=self.pgd_config,
+            pgd_info=pgd_info,
+            _tokenizer=_tokenizer,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples
+        return pgd_info
 
     @override
     def compute(self) -> Float[Tensor, ""]:

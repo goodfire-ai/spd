@@ -1,11 +1,11 @@
-from spd.configs import PGDGlobalReconLossConfig
+from spd.configs import PGDReconLossConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.experiments.tms.models import TMSModel, TMSTargetRunInfo
-from spd.metrics.pgd_utils import calc_pgd_global_masked_recon_loss
-from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
+from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import set_seed
+from spd.utils.general_utils import extract_batch_data, set_seed
 
 device = get_device()
 # run_info = SPDRunInfo.from_path("wandb:goodfire/spd/runs/amyo423r")  # tms_40-10
@@ -14,7 +14,6 @@ config = run_info.config
 task_config = config.task_config
 assert isinstance(task_config, TMSTaskConfig), "task_config not TMSTaskConfig"
 
-# %%
 model = ComponentModel.from_run_info(run_info)
 model.to(device)
 target_model = model.target_model
@@ -24,6 +23,7 @@ target_model.requires_grad_(False)
 assert config.pretrained_model_path, "pretrained_model_path must be set"
 target_run_info = TMSTargetRunInfo.from_path(config.pretrained_model_path)
 
+set_seed(0)
 synced_inputs = target_run_info.config.synced_inputs
 dataset = SparseFeatureDataset(
     n_features=target_model.config.n_features,
@@ -35,27 +35,41 @@ dataset = SparseFeatureDataset(
 )
 
 n_batches = 1
-# for n_batches in [1, 2, 4, 8, 16, 32, 64]:
-# for batch_size in [1, 2, 4, 8, 16, 32, 64]:
-for batch_size in [1, 2, 4, 8, 16, 32, 64]:
-    set_seed(0)
+seed = 8
+mask_scope = "unique_per_datapoint"
+# mask_scope = "shared_across_batch"
+for batch_size in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]:
+    set_seed(seed)
     data_loader = DatasetGeneratedDataLoader(dataset, batch_size=batch_size, shuffle=False)
 
-    pgd_global_config = PGDGlobalReconLossConfig(
+    pgd_config = PGDReconLossConfig(
         init="random",
         step_size=0.1,
         n_steps=20,
-        n_batches=n_batches,
+        mask_scope=mask_scope,
     )
 
-    loss = calc_pgd_global_masked_recon_loss(
-        pgd_config=pgd_global_config,
+    pgd_recon = PGDReconLoss(
         model=model,
-        dataloader=data_loader,
+        device=device,
         output_loss_type=config.output_loss_type,
-        routing="all",
-        sampling=config.sampling,
+        pgd_config=pgd_config,
         use_delta_component=config.use_delta_component,
-        batch_dims=(batch_size,),
     )
+    data_loader_iter = iter(data_loader)
+    weight_deltas = model.calc_weight_deltas()
+    for _ in range(n_batches):
+        batch = extract_batch_data(next(data_loader_iter)).to(device)
+        target_model_output: OutputWithCache = model(batch, cache_type="input")
+        ci = model.calc_causal_importances(
+            pre_weight_acts=target_model_output.cache, detach_inputs=False, sampling=config.sampling
+        )
+        pgd_recon.update(
+            batch=batch,
+            target_out=target_model_output.output,
+            ci=ci,
+            weight_deltas=weight_deltas,
+            _tokenizer=None,
+        )
+    loss = pgd_recon.compute()
     print(f"n_batches: {n_batches}, batch_size: {batch_size}, Loss: {loss}")
