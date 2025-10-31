@@ -1,7 +1,7 @@
 <script lang="ts">
     import { run } from 'svelte/legacy';
 
-    import type { SubcomponentActivationContexts, TokenDensity } from "../lib/api";
+    import type { SubcomponentActivationContexts, TokenPR } from "../lib/api";
     import ActivationContext from "./ActivationContext.svelte";
 
     interface Props {
@@ -44,9 +44,9 @@
         if (selectedLayer) currentPage = 0;
     });
 
-    let densities = $derived(currentItem?.token_densities
+    let densities = $derived(currentItem?.token_prs
         ?.slice()
-        .sort((a: TokenDensity, b: TokenDensity) => b[metricMode] - a[metricMode])
+        .sort((a: TokenPR, b: TokenPR) => b[metricMode] - a[metricMode])
         .slice(0, LIMIT));
 </script>
 
@@ -78,8 +78,8 @@
                 <div class="token-densities-header">
                     <h5>
                         Tokens
-                        {currentItem.token_densities.length > LIMIT
-                            ? `(top ${LIMIT} of ${currentItem.token_densities.length})`
+                        {currentItem.token_prs.length > LIMIT
+                            ? `(top ${LIMIT} of ${currentItem.token_prs.length})`
                             : ""}
                     </h5>
                     <div class="metric-toggle">
