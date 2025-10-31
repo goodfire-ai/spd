@@ -255,6 +255,8 @@ def init_metric(
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
             )
+        case _:
+            raise ValueError(f"Unsupported metric config for eval: {cfg}")
     return metric
 
 

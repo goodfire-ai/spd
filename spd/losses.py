@@ -170,6 +170,8 @@ def compute_total_loss(
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
+            case _:
+                raise ValueError(f"Unsupported loss config: {cfg}")
 
         terms[f"loss/{cfg.classname}"] = loss.item()
 
