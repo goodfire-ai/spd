@@ -1,0 +1,9 @@
+clustering_run_config_path: "spd/clustering/configs/crc/test-simplestories.json"
+n_runs: 2
+distances_methods: ["matching_dist"]
+base_output_dir: "tests/.temp/clustering"
+slurm_job_name_prefix: null
+slurm_partition: null
+wandb_project: null # wandb fails in CI
+wandb_entity: "goodfire"
+create_git_snapshot: false
