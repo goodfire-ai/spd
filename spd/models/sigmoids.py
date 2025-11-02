@@ -51,11 +51,11 @@ def leaky_hard_sigmoid(x: Tensor, alpha: float = 0.01) -> Tensor:
     return torch.where(x > 0, torch.clamp(x, max=1), alpha * x)
 
 
-def upper_leaky_hard_sigmoid(x: Tensor, alpha: float = 0.01) -> Tensor:
+def upper_leaky_hard_sigmoid(x: Tensor, alpha: float = 1.0) -> Tensor:
     return torch.where(x > 1, 1 + alpha * (x - 1), torch.clamp(x, min=0, max=1))
 
 
-def lower_leaky_hard_sigmoid(x: Tensor, alpha: float = 0.01) -> Tensor:
+def lower_leaky_hard_sigmoid(x: Tensor, alpha: float = 1.0) -> Tensor:
     return LowerLeakyHardSigmoidFunction.apply(x, alpha)  # pyright: ignore[reportReturnType]
 
 
