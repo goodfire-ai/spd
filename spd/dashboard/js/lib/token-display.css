@@ -25,3 +25,9 @@
 	visibility: visible;
 	font-family: monospace;
 }
+
+/* Token highlighting when hovering over matching tokens */
+.token-highlighted {
+	border: 2px solid #FFD700;
+	box-shadow: 0 0 4px rgba(255, 215, 0, 0.6);
+}

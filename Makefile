@@ -85,8 +85,8 @@ install-app:
 	(cd app/frontend && npm install)
 
 
-.PHONY: dashboard-setup
-dashboard-setup:
+.PHONY: dashboard-dep
+dashboard-dep:
 	uv run python spd/dashboard/js/download_libs.py
 
 .PHONY: dashboard-test

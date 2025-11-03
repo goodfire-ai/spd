@@ -69,6 +69,10 @@ class ComponentDashboardConfig(BaseConfig):
         default=50,
         description="Number of bins for histograms",
     )
+    hist_range: tuple[float, float] | None = Field(
+        default=(0.0, 1.0),
+        description="force range for histogram bins (min, max). If None, auto-computed from data.",
+    )
 
     # Token statistics parameters
     token_stats_top_n: int = Field(

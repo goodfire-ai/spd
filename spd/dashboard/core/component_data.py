@@ -149,13 +149,25 @@ class SubcomponentSummary(SerializableDataclass):
     """Lightweight summary for index.html table display.
 
     Contains only the data needed by the main component table,
-    excluding large fields like top_max and top_mean samples.
+    excluding large fields like top_samples.
     """
 
     label: str
     embedding: Float[np.ndarray, " embed_dim"]
     stats: dict[str, float | dict]  # Basic stats + token_activations
     histograms: dict[str, dict[str, list[float]]]
+
+    # Token statistics needed for table display
+    top_tokens_given_active: list[TokenStat] = serializable_field(
+        default_factory=list,
+        serialization_fn=lambda x: [s.serialize() for s in x],
+        deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
+    )
+    top_active_given_tokens: list[TokenStat] = serializable_field(
+        default_factory=list,
+        serialization_fn=lambda x: [s.serialize() for s in x],
+        deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
+    )
 
 
 @serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
@@ -172,13 +184,10 @@ class SubcomponentDetails(SerializableDataclass):
     embedding: Float[np.ndarray, " embed_dim"]
 
     # Top activating samples (by different criteria)
-    top_max: list[TopKSample] = serializable_field(
-        serialization_fn=lambda x: [s.serialize() for s in x],
-        deserialize_fn=lambda x: [TopKSample.load(s) for s in x],
-    )
-    top_mean: list[TopKSample] = serializable_field(
-        serialization_fn=lambda x: [s.serialize() for s in x],
-        deserialize_fn=lambda x: [TopKSample.load(s) for s in x],
+    # Keys: "top_max", "top_mean", etc. - extensible for new criteria
+    top_samples: dict[str, list[TopKSample]] = serializable_field(
+        serialization_fn=lambda x: {k: [s.serialize() for s in v] for k, v in x.items()},
+        deserialize_fn=lambda x: {k: [TopKSample.load(s) for s in v] for k, v in x.items()},
     )
 
     # Global statistics
@@ -286,7 +295,7 @@ class SubcomponentDetails(SerializableDataclass):
 
         # Helper to create histogram dict
         def _make_histogram(data: Float[np.ndarray, " n"], name: str) -> None:
-            counts, edges = np.histogram(data, bins=config.hist_bins)
+            counts, edges = np.histogram(data, bins=config.hist_bins, range=config.hist_range)
             histograms[name] = {
                 "counts": counts.tolist(),
                 "edges": edges.tolist(),
@@ -357,15 +366,65 @@ class SubcomponentDetails(SerializableDataclass):
         top_active_given_tokens.sort(key=lambda x: x.p_active_given_token, reverse=True)
         top_active_given_tokens = top_active_given_tokens[: config.token_stats_top_n]
 
+        # Create TokenActivationsSummary
+        # Compute entropy of token distribution when active
+        entropy: float = 0.0
+        if total_active > 0:
+            for prob in p_token_given_active.values():
+                if prob > 0:
+                    entropy -= prob * np.log2(prob)
+
+        # Compute concentration ratio (proportion of activations from top 10 tokens)
+        top_10_active_count: int = sum(
+            sorted(token_active_counts.values(), reverse=True)[:10]
+        )
+        concentration_ratio: float = (
+            top_10_active_count / total_active if total_active > 0 else 0.0
+        )
+
+        # Format top tokens for summary
+        top_tokens_summary: list[dict[str, str | int]] = [
+            {"token": stat.token, "count": stat.count_when_active}
+            for stat in top_tokens_given_active[:10]
+        ]
+
+        token_activations_summary = TokenActivationsSummary(  # pyright: ignore[reportCallIssue]
+            top_tokens=top_tokens_summary,
+            total_unique_tokens=len(unique_tokens),
+            total_activations=total_active,
+            entropy=float(entropy),
+            concentration_ratio=float(concentration_ratio),
+            activation_threshold=config.token_active_threshold,
+        )
+
         return cls(  # pyright: ignore[reportCallIssue]
             label=label.to_string(),
             embedding=global_metrics.get_embedding(label),
-            top_max=top_max,
-            top_mean=top_mean,
+            top_samples={"top_max": top_max, "top_mean": top_mean},
             stats=stats,
             histograms=histograms,
+            token_activations=token_activations_summary,
             top_tokens_given_active=top_tokens_given_active,
             top_active_given_tokens=top_active_given_tokens,
+        )
+
+    def to_summary(self) -> SubcomponentSummary:
+        """Convert to lightweight summary for index.html table display.
+
+        Returns:
+            SubcomponentSummary with basic stats + token_activations, excluding heavy fields like top_samples
+        """
+        # Merge basic stats with token_activations summary
+        stats_with_tokens: dict[str, float | dict] = dict(self.stats)
+        stats_with_tokens["token_activations"] = self.token_activations.serialize()
+
+        return SubcomponentSummary(  # pyright: ignore[reportCallIssue]
+            label=self.label,
+            embedding=self.embedding,
+            stats=stats_with_tokens,
+            histograms=self.histograms,
+            top_tokens_given_active=self.top_tokens_given_active,
+            top_active_given_tokens=self.top_active_given_tokens,
         )
 
 
@@ -392,3 +451,30 @@ class ComponentDashboardData(SerializableDataclass):
         serialization_fn=lambda x: [c.serialize() for c in x],
         deserialize_fn=lambda x: [SubcomponentDetails.load(c) for c in x],
     )
+
+    @property
+    def subcomponent_summaries(self) -> list[SubcomponentSummary]:
+        """Lightweight summaries for index.html table display.
+
+        Returns:
+            List of SubcomponentSummary objects (excludes heavy fields like top_max, top_mean)
+        """
+        return [component.to_summary() for component in self.components]
+
+    @property
+    def subcomponent_details(self) -> dict[str, list[SubcomponentDetails]]:
+        """Component details grouped by module name for lazy loading.
+
+        Returns:
+            Dict mapping module names to their component lists
+        """
+        from collections import defaultdict
+
+        grouped: dict[str, list[SubcomponentDetails]] = defaultdict(list)
+
+        for component in self.components:
+            # Extract module name from label (format: "module.name:index")
+            module_name: str = component.label.rsplit(":", 1)[0]
+            grouped[module_name].append(component)
+
+        return dict(grouped)

@@ -31,8 +31,14 @@ async function loadData() {
         const loader = new ZanjLoader(CONFIG.data.dataDir);
         const data = await loader.read();
 
-        dashboardData = data;
-        allComponents = await data.components;
+        dashboardData = await data.metadata;
+
+        // Extract module name from component label (format: "module.name:index")
+        const moduleName = currentComponentLabel.split(':')[0];
+
+        // Load only the specific module's components (lazy loading)
+        const subcomponentDetails = await data.subcomponent_details;
+        allComponents = await subcomponentDetails[moduleName];
 
         // TODO: Re-enable explanations feature
         // Load explanations separately (not part of ZANJ)
@@ -381,81 +387,78 @@ function displayTokenStatistics() {
 }
 
 async function displaySamples() {
-    // Display top_max samples
-    const topMaxBody = document.getElementById('topMaxTableBody');
-    if (topMaxBody) {
-        topMaxBody.innerHTML = '';
-        const topMaxSamples = componentData.top_max;
+    const container = document.getElementById('topSamplesTable');
+    if (!container) return;
 
-        if (topMaxSamples.length === 0) {
-            topMaxBody.innerHTML = '<tr><td colspan="2">No samples available</td></tr>';
-        } else {
-            for (let i = 0; i < topMaxSamples.length; i++) {
-                const sample = topMaxSamples[i];
+    // Iterate over all sample types in the top_samples dict
+    const allSamples = [];
 
-                // Await activations in case it's a ZANJ lazy proxy
-                const activations = await sample.activations;
+    for (const [sampleType, samples] of Object.entries(componentData.top_samples)) {
+        for (let i = 0; i < samples.length; i++) {
+            const sample = samples[i];
+            const activations = await sample.activations;
+            const activationsArray = activations.data
+                ? Array.from(activations.data)
+                : (Array.isArray(activations) ? activations : Array.from(activations));
 
-                // Convert to array - handle both NDArray objects and plain arrays
-                const activationsArray = activations.data
-                    ? Array.from(activations.data)
-                    : (Array.isArray(activations) ? activations : Array.from(activations));
-
-                const tokenViz = createTokenVisualization(
-                    sample.token_strs,
-                    activationsArray
-                );
-
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${i + 1}</td>
-                    <td></td>
-                `;
-
-                // Add token visualization to last cell
-                tr.lastElementChild.appendChild(tokenViz);
-                topMaxBody.appendChild(tr);
-            }
+            allSamples.push({
+                type: sampleType.replace('top_', ''),  // "top_max" -> "max"
+                rank: i + 1,
+                max_act: Math.max(...activationsArray),
+                mean_act: activationsArray.reduce((a, b) => a + b, 0) / activationsArray.length,
+                token_strs: sample.token_strs,
+                activations: activationsArray
+            });
         }
     }
 
-    // Display top_mean samples
-    const topMeanBody = document.getElementById('topMeanTableBody');
-    if (topMeanBody) {
-        topMeanBody.innerHTML = '';
-        const topMeanSamples = componentData.top_mean;
-
-        if (topMeanSamples.length === 0) {
-            topMeanBody.innerHTML = '<tr><td colspan="2">No samples available</td></tr>';
-        } else {
-            for (let i = 0; i < topMeanSamples.length; i++) {
-                const sample = topMeanSamples[i];
-
-                // Await activations in case it's a ZANJ lazy proxy
-                const activations = await sample.activations;
-
-                // Convert to array - handle both NDArray objects and plain arrays
-                const activationsArray = activations.data
-                    ? Array.from(activations.data)
-                    : (Array.isArray(activations) ? activations : Array.from(activations));
-
-                const tokenViz = createTokenVisualization(
-                    sample.token_strs,
-                    activationsArray
-                );
-
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${i + 1}</td>
-                    <td></td>
-                `;
-
-                // Add token visualization to last cell
-                tr.lastElementChild.appendChild(tokenViz);
-                topMeanBody.appendChild(tr);
+    // Create DataTable with custom renderer for text column
+    new DataTable(container, {
+        data: allSamples,
+        columns: [
+            { key: 'type', label: 'Type', type: 'string', width: '80px' },
+            { key: 'rank', label: 'Rank', type: 'number', width: '80px' },
+            { key: 'max_act', label: 'Max Act', type: 'number', width: '100px',
+              renderer: (val) => val.toFixed(4) },
+            { key: 'mean_act', label: 'Mean Act', type: 'number', width: '100px',
+              renderer: (val) => val.toFixed(4) },
+            { key: 'token_strs', label: 'Text', type: 'string', filterable: false,
+              renderer: (val, row) => {
+                  return createTokenVisualization(row.token_strs, row.activations);
+              }
             }
-        }
-    }
+        ],
+        pageSize: 10,
+        showFilters: true
+    });
+
+    // Add token hover highlighting after table is rendered
+    setupTokenHighlighting();
+}
+
+/**
+ * Setup hover event listeners for token cross-highlighting
+ * When hovering over a token, all instances of that token are highlighted
+ */
+function setupTokenHighlighting() {
+    // Find all token elements across all tables
+    const allTokens = document.querySelectorAll('.token');
+
+    allTokens.forEach(tokenEl => {
+        tokenEl.addEventListener('mouseenter', function() {
+            const tokenText = this.getAttribute('data-token');
+            // Find and highlight all tokens with matching text
+            const matchingTokens = document.querySelectorAll(`.token[data-token="${CSS.escape(tokenText)}"]`);
+            matchingTokens.forEach(match => match.classList.add('token-highlighted'));
+        });
+
+        tokenEl.addEventListener('mouseleave', function() {
+            // Remove highlight from all tokens
+            document.querySelectorAll('.token-highlighted').forEach(el => {
+                el.classList.remove('token-highlighted');
+            });
+        });
+    });
 }
 
 

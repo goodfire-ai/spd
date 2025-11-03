@@ -106,6 +106,9 @@ function createTokenVisualization(
 		const tooltipText = `"${token.replace(/ /g, "\u00A0")}": ${activation.toFixed(6)}`;
 		span.setAttribute("data-tip", tooltipText);
 
+		// Set data-token attribute for cross-highlighting
+		span.setAttribute("data-token", token);
+
 		tokenContainer.appendChild(span);
 
 		// Add space after token based on tokenizer logic

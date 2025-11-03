@@ -269,10 +269,35 @@ def main(
         components=all_stats,
     )
 
-    zanj_path: Path = config.output_dir / "dashboard.zanj"
-    ZANJ().save(dashboard, str(zanj_path))
+    # Save split format (lightweight summaries + per-module details)
+    split_data: dict[str, Any] = {
+        # Metadata
+        "metadata": {
+            "model_path": dashboard.model_path,
+            "n_samples": dashboard.n_samples,
+            "n_ctx": dashboard.n_ctx,
+            "n_components": dashboard.n_components,
+            "n_alive": dashboard.n_alive,
+            "n_dead": dashboard.n_dead,
+        },
+        # Global metrics
+        "global_metrics": dashboard.global_metrics,
+        # Lightweight summaries for index.html
+        "subcomponent_summaries": [
+            x.serialize()
+            for x in dashboard.subcomponent_summaries
+        ],
+        # Per-module details for component.html (ZANJ auto-splits this dict)
+        "subcomponent_details": {
+            k: [x.serialize() for x in v]
+            for k, v in dashboard.subcomponent_details.items()
+        },
+    }
 
-    # Extract zanj zip file
+    zanj_path: Path = config.output_dir / "dashboard.zanj"
+    ZANJ().save(split_data, str(zanj_path))
+
+    # Extract zanj file
     import zipfile
 
     extract_dir: Path = config.output_dir / "dashboard_extracted"
