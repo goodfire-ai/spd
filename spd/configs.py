@@ -77,6 +77,8 @@ class PGDConfig(LossMetricConfig):
     step_size: float
     n_steps: int
     mask_scope: MaskScope
+    mask_sparsity_coeff: NonNegativeFloat | None = None
+    step_type: Literal["signed-gradient", "gradient"]
 
 
 class PGDReconLossConfig(PGDConfig):

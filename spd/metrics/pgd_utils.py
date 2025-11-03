@@ -24,7 +24,12 @@ from spd.utils.component_utils import (
     sample_uniform_k_subset_routing_masks,
 )
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_kl_divergence_lm, calc_sum_recon_loss_lm, extract_batch_data, get_obj_device
+from spd.utils.general_utils import (
+    calc_kl_divergence_lm,
+    calc_sum_recon_loss_lm,
+    extract_batch_data,
+    get_obj_device,
+)
 
 
 def _compute_pgd_objective_loss(
@@ -36,7 +41,9 @@ def _compute_pgd_objective_loss(
     target_out: Float[Tensor, "... vocab"],
     model: ComponentModel,
     output_loss_type: Literal["mse", "kl"],
-) -> tuple[Float[Tensor, ""], Float[Tensor, "..."]]:
+) -> tuple[
+    Float[Tensor, ""], Float[Tensor, "..."], dict[str, ComponentsMaskInfo]
+]:  # , dict[str, Float[Tensor, "... C"]]]:
     """Compute reconstruction loss for given adversarial sources.
 
     Args:
@@ -69,9 +76,10 @@ def _compute_pgd_objective_loss(
         routing_masks=routing_masks,
     )
     out = model(batch, mask_infos=mask_infos)
+    # inner_acts = {path: c.inner_acts for path, c in model.components.items()}
     total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
     tw_loss = calc_kl_divergence_lm(pred=out, target=target_out, reduce=False)
-    return total_loss, tw_loss, mask_infos
+    return total_loss, tw_loss, mask_infos  # , inner_acts
 
 
 def _get_pgd_init_tensor(
@@ -158,8 +166,11 @@ def pgd_masked_recon_loss_update(
         assert adv_sources.grad is None
 
         with torch.enable_grad():
-            total_loss, tw_loss, mask_infos = _compute_pgd_objective_loss(
-                adv_sources=adv_sources.expand(n_layers, *batch_dims, C2),
+            total_loss = torch.tensor(0.0, device=batch.device)
+
+            expanded_adv_sources = adv_sources.expand(n_layers, *batch_dims, C2)
+            pgd_loss, tw_loss, mask_infos = _compute_pgd_objective_loss(
+                adv_sources=expanded_adv_sources,
                 batch=batch,
                 ci=ci,
                 weight_deltas=weight_deltas,
@@ -168,6 +179,13 @@ def pgd_masked_recon_loss_update(
                 model=model,
                 output_loss_type=output_loss_type,
             )
+            total_loss += pgd_loss
+
+            if pgd_config.mask_sparsity_coeff is not None:
+                pct_through_optim = i / pgd_config.n_steps
+                source_l1 = expanded_adv_sources.sum(dim=-1).mean()
+                total_loss += (-1.0 * source_l1 * pgd_config.mask_sparsity_coeff * (pct_through_optim**2))
+
         if i < pgd_config.n_steps:
             # Update adv_sources for the next PGD step
             adv_sources_grads = torch.autograd.grad(total_loss, adv_sources)
@@ -175,7 +193,14 @@ def pgd_masked_recon_loss_update(
             assert isinstance(adv_sources_grads, tuple) and len(adv_sources_grads) == 1
             reduced_adv_sources_grads = all_reduce(adv_sources_grads[0], op=ReduceOp.SUM)
             with torch.no_grad():
-                adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
+                match pgd_config.step_type:
+                    case "signed-gradient":
+                        adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
+                    case "gradient":
+                        sqrt_c = torch.sqrt(torch.tensor(C, device=batch.device))
+                        normed_grad = reduced_adv_sources_grads * sqrt_c / (reduced_adv_sources_grads.norm(dim=-1, keepdim=True) + 1e-8)
+                        adv_sources.add_(pgd_config.step_size * normed_grad)
+
                 adv_sources.clamp_(0.0, 1.0)
 
     assert total_loss is not None
@@ -184,7 +209,7 @@ def pgd_masked_recon_loss_update(
     )
 
     # no need to all-reduce total_loss or n_examples bc consumers handle this
-    return total_loss, n_examples, tw_loss, mask_infos
+    return total_loss, n_examples, tw_loss, mask_infos  # pyright: ignore[reportPossiblyUnboundVariable]
 
 
 def _global_pgd_step(
