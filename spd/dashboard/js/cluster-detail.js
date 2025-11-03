@@ -185,10 +185,13 @@ function displayHistograms() {
         const binCenters = calculateBinCenters(histData.edges);
 
         // Use configured range when data fits, otherwise use actual edge range
+        // Use epsilon tolerance for floating point comparison
         const min = histData.edges[0];
         const max = histData.edges[histData.edges.length - 1];
         const configRange = CONFIG.visualization.histogramRange;
-        const xlims = configRange && (min >= configRange[0] && max <= configRange[1])
+        const epsilon = 1e-6;
+        const xlims = configRange &&
+                      (min >= configRange[0] - epsilon && max <= configRange[1] + epsilon)
             ? configRange
             : [min, max];
 
@@ -210,8 +213,6 @@ function displayHistograms() {
         sparklineContainer.innerHTML = svg;
 
         // Add tooltip with statistics
-        const min = histData.edges[0];
-        const max = histData.edges[histData.edges.length - 1];
         const mean = calculateHistogramMean(histData);
         const median = calculateHistogramMedian(histData);
         const totalCount = histData.counts.reduce((a, b) => a + b, 0);

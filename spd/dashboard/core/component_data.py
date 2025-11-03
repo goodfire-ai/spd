@@ -489,7 +489,7 @@ class ComponentDashboardData(SerializableDataclass):
         """Lightweight summaries for index.html table display.
 
         Returns:
-            List of SubcomponentSummary objects (excludes heavy fields like top_max, top_mean)
+            List of SubcomponentSummary objects (excludes heavy fields like top_samples)
         """
         return [
             component.to_summary(token_stats_top_n=self.config.token_stats_top_n)
