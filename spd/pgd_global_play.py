@@ -1,13 +1,8 @@
 # %%
-import warnings
-
-from spd.metrics.pgd_utils import calc_pgd_global_masked_recon_loss
-
-warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
-
 from spd.configs import PGDGlobalReconLossConfig
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
+from spd.metrics.pgd_utils import calc_pgd_global_masked_recon_loss
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import replace_pydantic_model, set_seed
