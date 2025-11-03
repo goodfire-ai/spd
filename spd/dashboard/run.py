@@ -283,14 +283,10 @@ def main(
         # Global metrics
         "global_metrics": dashboard.global_metrics,
         # Lightweight summaries for index.html
-        "subcomponent_summaries": [
-            x.serialize()
-            for x in dashboard.subcomponent_summaries
-        ],
+        "subcomponent_summaries": [x.serialize() for x in dashboard.subcomponent_summaries],
         # Per-module details for component.html (ZANJ auto-splits this dict)
         "subcomponent_details": {
-            k: [x.serialize() for x in v]
-            for k, v in dashboard.subcomponent_details.items()
+            k: [x.serialize() for x in v] for k, v in dashboard.subcomponent_details.items()
         },
     }
 

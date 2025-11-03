@@ -375,12 +375,8 @@ class SubcomponentDetails(SerializableDataclass):
                     entropy -= prob * np.log2(prob)
 
         # Compute concentration ratio (proportion of activations from top 10 tokens)
-        top_10_active_count: int = sum(
-            sorted(token_active_counts.values(), reverse=True)[:10]
-        )
-        concentration_ratio: float = (
-            top_10_active_count / total_active if total_active > 0 else 0.0
-        )
+        top_10_active_count: int = sum(sorted(token_active_counts.values(), reverse=True)[:10])
+        concentration_ratio: float = top_10_active_count / total_active if total_active > 0 else 0.0
 
         # Format top tokens for summary
         top_tokens_summary: list[dict[str, str | int]] = [
