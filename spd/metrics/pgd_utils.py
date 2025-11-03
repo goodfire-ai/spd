@@ -328,13 +328,12 @@ def calc_pgd_global_masked_recon_loss(
     )
 
     for _ in range(pgd_config.n_steps):
-        step()
+        _, _ = step()
 
-    pgd_step_loss, n_examples = step()
-    final_loss_summed = all_reduce(pgd_step_loss, op=ReduceOp.SUM)
+    loss, n_examples = step()
+    final_loss_summed = all_reduce(loss, op=ReduceOp.SUM)
     final_n_examples = all_reduce(torch.tensor(n_examples, device=device), op=ReduceOp.SUM)
-    final_loss = final_loss_summed / final_n_examples
-    return final_loss.item()
+    return (final_loss_summed / final_n_examples).item()
 
 
 def calc_global_pgd_metrics(
