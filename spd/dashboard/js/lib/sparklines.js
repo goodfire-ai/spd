@@ -168,25 +168,25 @@ function plot(values, yvalues = null, options = {}) {
 
 	// For axis limits, only use positive values in log scale
 	const positiveYvals = opts.logScale ? yvals.filter((v) => v > 0) : yvals;
-	const yminForScale =
+	let yminForScale =
 		opts.logScale && positiveYvals.length > 0
 			? Math.min(...positiveYvals)
 			: ymin;
-	const ymaxForScale =
+	let ymaxForScale =
 		opts.logScale && positiveYvals.length > 0
 			? Math.max(...positiveYvals)
 			: ymax;
-
-	let yminTransformed = transformY(yminForScale);
-	let ymaxTransformed = transformY(ymaxForScale);
 
 	// If all positive values are the same in log scale, expand the range
 	// to half an order of magnitude in each direction so bars are visible
 	if (opts.logScale && yminForScale === ymaxForScale && yminForScale > 0) {
 		const halfOOM = Math.sqrt(10); // 10^0.5 ≈ 3.162
-		yminTransformed = transformY(yminForScale / halfOOM);
-		ymaxTransformed = transformY(yminForScale * halfOOM);
+		yminForScale = yminForScale / halfOOM;
+		ymaxForScale = ymaxForScale * halfOOM;
 	}
+
+	const yminTransformed = transformY(yminForScale);
+	const ymaxTransformed = transformY(ymaxForScale);
 
 	const yrange = ymaxTransformed - yminTransformed || opts.min_range;
 

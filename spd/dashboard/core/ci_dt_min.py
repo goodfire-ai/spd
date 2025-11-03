@@ -15,7 +15,7 @@ from torch import Tensor
 from tqdm import tqdm
 
 from spd.configs import Config
-from spd.dashboard.matshow_sort import sort_by_similarity
+from spd.dashboard.core.matshow_sort import sort_by_similarity
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
@@ -23,8 +23,8 @@ from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunIn
 # %% ----------------------- Configuration -----------------------
 WANDB_RUN_PATH = "wandb:goodfire/spd/runs/lxs77xye"
 BATCH_SIZE = 8
-N_BATCHES = 4
-N_CTX = 16
+N_BATCHES = 8
+N_CTX = 32
 ACTIVATION_THRESHOLD = 0.01
 MAX_DEPTH = 3
 RANDOM_STATE = 42
@@ -84,6 +84,8 @@ acts_concat: dict[str, Tensor] = {
 # %% ----------------------- Convert to Boolean Layers -----------------------
 print("\nConverting to boolean and filtering constant components...")
 layers: list[Bool[np.ndarray, "n_samples n_components"]] = []
+# Track which components are varying (not constant) in each layer
+varying_component_indices: list[list[int]] = []
 
 for k in module_keys:
     # Flatten if 3D (batch, seq, components) -> (batch*seq, components)
@@ -110,6 +112,8 @@ for k in module_keys:
     varying_mask: Bool[np.ndarray, " n_components"] = acts_bool.var(axis=0) > 0
     acts_varying = acts_bool[:, varying_mask]
     layers.append(acts_varying)
+    # Store which original component indices were kept
+    varying_component_indices.append(np.where(varying_mask)[0].tolist())
     print(f"  {k}: {acts_varying.shape[1]} varying components")
 
 # %% ----------------------- Train Decision Trees -----------------------
@@ -161,6 +165,21 @@ def tree_to_dict(tree: DecisionTreeClassifier) -> dict[str, Any]:
     }
 
 
+def build_feature_map(layer_idx: int) -> list[dict[str, Any]]:
+    """Build feature map for layer k: maps feature index -> component identity."""
+    feature_map: list[dict[str, Any]] = []
+    for prev_layer_idx in range(layer_idx):
+        for comp_idx in varying_component_indices[prev_layer_idx]:
+            module_key = module_keys[prev_layer_idx]
+            feature_map.append({
+                "layer_idx": prev_layer_idx,
+                "module_key": module_key,
+                "component_idx": comp_idx,
+                "label": f"{module_key}:{comp_idx}",
+            })
+    return feature_map
+
+
 # Collect all results for saving
 results: list[dict[str, Any]] = []
 
@@ -198,10 +217,22 @@ for layer_idx, clf in models:
     # Store results with tree structures
     trees_data = [tree_to_dict(est) for est in clf.estimators_]  # pyright: ignore[reportArgumentType]
 
+    # Build feature map for this layer
+    feature_map = build_feature_map(layer_idx)
+
+    # Build labels for varying components in this layer
+    varying_labels = [
+        f"{module_keys[layer_idx]}:{idx}"
+        for idx in varying_component_indices[layer_idx]
+    ]
+
     results.append(
         {
             "layer_idx": layer_idx,
             "module_key": module_keys[layer_idx],
+            "feature_map": feature_map,
+            "varying_component_indices": varying_component_indices[layer_idx],
+            "varying_component_labels": varying_labels,
             "trees": trees_data,
             "ap_scores": ap_scores,
             "acc_scores": acc_scores,
@@ -213,7 +244,7 @@ for layer_idx, clf in models:
     )
 
 # %% ----------------------- Save Trees -----------------------
-output_path = "trees.json"
+output_path = "data/trees.json"
 with open(output_path, "w") as f:
     json.dump(results, f, indent=2)
 print(f"\nSaved {len(results)} layers with trees and metrics to {output_path}")
