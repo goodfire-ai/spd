@@ -22,11 +22,7 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 from spd.utils.component_utils import RoutingType, sample_uniform_k_subset_routing_masks
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import (
-    calc_sum_recon_loss_lm,
-    extract_batch_data,
-    extract_batch_data,
-)
+from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data
 
 
 def _compute_pgd_objective_loss(
