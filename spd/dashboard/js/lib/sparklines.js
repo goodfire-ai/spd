@@ -177,8 +177,17 @@ function plot(values, yvalues = null, options = {}) {
 			? Math.max(...positiveYvals)
 			: ymax;
 
-	const yminTransformed = transformY(yminForScale);
-	const ymaxTransformed = transformY(ymaxForScale);
+	let yminTransformed = transformY(yminForScale);
+	let ymaxTransformed = transformY(ymaxForScale);
+
+	// If all positive values are the same in log scale, expand the range
+	// to half an order of magnitude in each direction so bars are visible
+	if (opts.logScale && yminForScale === ymaxForScale && yminForScale > 0) {
+		const halfOOM = Math.sqrt(10); // 10^0.5 ≈ 3.162
+		yminTransformed = transformY(yminForScale / halfOOM);
+		ymaxTransformed = transformY(yminForScale * halfOOM);
+	}
+
 	const yrange = ymaxTransformed - yminTransformed || opts.min_range;
 
 	const dataXmin = Math.min(...xvalues);
