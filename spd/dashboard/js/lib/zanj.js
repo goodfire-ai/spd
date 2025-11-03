@@ -78,17 +78,20 @@ class ZanjLoader {
 			if (fmt === "npy") {
 				p = NDArray.load(joinUrl(this.path, path), undefined, this.fetchInit);
 			} else if (fmt === "json") {
-				p = fetch(joinUrl(this.path, path), this.fetchInit).then(r => {
-					if (!r.ok) throw new Error("Failed to fetch " + path + ": " + r.status);
-					return r.json();
-				});
+				p = fetch(joinUrl(this.path, path), this.fetchInit)
+					.then(r => {
+						if (!r.ok) throw new Error("Failed to fetch " + path + ": " + r.status);
+						return r.json();
+					})
+					.then(data => this._makeLazy(data));
 			} else if (fmt === "jsonl") {
 				p = fetch(joinUrl(this.path, path), this.fetchInit)
 					.then(r => {
 						if (!r.ok) throw new Error("Failed to fetch " + path + ": " + r.status);
 						return r.text();
 					})
-					.then(t => t.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)));
+					.then(t => t.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)))
+					.then(data => this._makeLazy(data));
 			} else {
 				throw new Error("Unsupported format: " + fmt);
 			}

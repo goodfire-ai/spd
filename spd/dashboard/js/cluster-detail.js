@@ -113,7 +113,7 @@ async function displayComponent() {
     }
 
     // Display token statistics
-    displayTokenStatistics();
+    await displayTokenStatistics();
 
     // Display top samples
     await displaySamples();
@@ -305,13 +305,27 @@ function displayTokenActivations() {
     }
 }
 
-function displayTokenStatistics() {
-    if (!componentData.token_stats || componentData.token_stats.length === 0) {
+async function displayTokenStatistics() {
+    // Try accessing synchronously first, then await if needed
+    let tokenStats;
+    try {
+        tokenStats = componentData.token_stats;
+        // Access a property to trigger the error if not loaded
+        const _check = tokenStats.length;
+    } catch (error) {
+        if (error.message && error.message.includes('use await')) {
+            tokenStats = await componentData.token_stats;
+        } else {
+            throw error;
+        }
+    }
+
+    if (!tokenStats || tokenStats.length === 0) {
         return;
     }
 
     // Validate structure
-    const firstToken = componentData.token_stats[0];
+    const firstToken = tokenStats[0];
     console.assert(
         firstToken.token !== undefined &&
         firstToken.p_token_given_active !== undefined &&
@@ -323,7 +337,7 @@ function displayTokenStatistics() {
 
     // Create table with both probability columns
     const tableConfig = {
-        data: componentData.token_stats,
+        data: tokenStats,
         columns: [
             {
                 key: 'token',
