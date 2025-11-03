@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="js/lib/token-display.css">
     <!-- local -->
     <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="css/model-view.css">
 </head>
 <body>
     <div>
@@ -45,18 +44,8 @@
     <!-- Token statistics -->
     <div id="tokenStatistics" style="margin-bottom: 30px;">
         <h2>Token Statistics</h2>
-
-        <div style="margin-bottom: 20px;">
-            <h3>Top Tokens Given Component Active: P(token | active)</h3>
-            <p style="font-size: 14px; color: #666;">When this component is active (above threshold), these are the most likely tokens.</p>
-            <div id="topTokensGivenActiveTable"></div>
-        </div>
-
-        <div style="margin-bottom: 20px;">
-            <h3>Top Tokens That Activate Component: P(active | token)</h3>
-            <p style="font-size: 14px; color: #666;">These tokens most strongly activate this component.</p>
-            <div id="topActiveGivenTokensTable"></div>
-        </div>
+        <p style="font-size: 14px; color: #666; margin-bottom: 15px;">Tokens with highest P(token|active) and P(active|token) probabilities for this component.</p>
+        <div id="tokenStatsTable"></div>
     </div>
 
     <!-- Top activating samples -->
@@ -84,7 +73,6 @@
     <script src="js/config.js"></script>
     <script src="js/histogram.js"></script>
     <script src="js/token-stats.js"></script>
-    <script src="js/model-visualization.js"></script>
     <script src="js/cluster-detail.js"></script>
 </body>
 </html>
