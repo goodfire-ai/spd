@@ -158,13 +158,8 @@ class SubcomponentSummary(SerializableDataclass):
     stats: dict[str, float | dict]  # Basic stats + token_activations
     histograms: dict[str, dict[str, list[float]]]
 
-    # Token statistics needed for table display
-    top_tokens_given_active: list[TokenStat] = serializable_field(
-        default_factory=list,
-        serialization_fn=lambda x: [s.serialize() for s in x],
-        deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
-    )
-    top_active_given_tokens: list[TokenStat] = serializable_field(
+    # Token statistics needed for table display (unified list with both probabilities)
+    token_stats: list[TokenStat] = serializable_field(
         default_factory=list,
         serialization_fn=lambda x: [s.serialize() for s in x],
         deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
@@ -184,11 +179,11 @@ class SubcomponentDetails(SerializableDataclass):
     # Embedding
     embedding: Float[np.ndarray, " embed_dim"]
 
-    # Top activating samples (by different criteria)
-    # Keys: "top_max", "top_mean", etc. - extensible for new criteria
-    top_samples: dict[str, list[TopKSample]] = serializable_field(
-        serialization_fn=lambda x: {k: [s.serialize() for s in v] for k, v in x.items()},
-        deserialize_fn=lambda x: {k: [TopKSample.load(s) for s in v] for k, v in x.items()},
+    # Top activating samples (unified deduplicated list)
+    # Union of samples that rank high by max OR mean activation
+    top_samples: list[TopKSample] = serializable_field(
+        serialization_fn=lambda x: [s.serialize() for s in x],
+        deserialize_fn=lambda x: [TopKSample.load(s) for s in x],
     )
 
     # Global statistics
@@ -202,13 +197,8 @@ class SubcomponentDetails(SerializableDataclass):
     # Token activation summary (for dashboard JS)
     token_activations: TokenActivationsSummary
 
-    # Detailed token statistics (for component.html)
-    top_tokens_given_active: list[TokenStat] = serializable_field(
-        default_factory=list,
-        serialization_fn=lambda x: [s.serialize() for s in x],
-        deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
-    )
-    top_active_given_tokens: list[TokenStat] = serializable_field(
+    # Detailed token statistics (unified list with both probabilities)
+    token_stats: list[TokenStat] = serializable_field(
         default_factory=list,
         serialization_fn=lambda x: [s.serialize() for s in x],
         deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
@@ -242,41 +232,35 @@ class SubcomponentDetails(SerializableDataclass):
 
         k: int = config.n_samples
 
-        # Compute top-k samples (max criterion)
+        # Find top K samples by max activation criterion
         scores_max: Float[np.ndarray, " n_samples"] = activations.max(axis=1)
         top_k_idx_max: Float[np.ndarray, " k"] = np.argpartition(scores_max, -k)[-k:]
         top_k_idx_max = top_k_idx_max[np.argsort(scores_max[top_k_idx_max])][::-1]
 
-        # Decode all top-k tokens at once using fast batch decode
-        top_k_tokens_max: Float[np.ndarray, "k n_ctx"] = tokens[top_k_idx_max.astype(int)]
-        top_k_strs_max: np.ndarray = simple_batch_decode(tokenizer, top_k_tokens_max)
-
-        top_max: list[TopKSample] = []
-        for i, idx in enumerate(top_k_idx_max):
-            idx_int: int = int(idx)
-            top_max.append(
-                TopKSample(  # pyright: ignore[reportCallIssue]
-                    token_strs=top_k_strs_max[i].tolist(),
-                    activations=activations[idx_int],
-                )
-            )
-
-        # Compute top-k samples (mean criterion)
+        # Find top K samples by mean activation criterion
         scores_mean: Float[np.ndarray, " n_samples"] = activations.mean(axis=1)
         top_k_idx_mean: Float[np.ndarray, " k"] = np.argpartition(scores_mean, -k)[-k:]
         top_k_idx_mean = top_k_idx_mean[np.argsort(scores_mean[top_k_idx_mean])][::-1]
 
-        # Decode all top-k tokens at once using fast batch decode
-        top_k_tokens_mean: Float[np.ndarray, "k n_ctx"] = tokens[top_k_idx_mean.astype(int)]
-        top_k_strs_mean: np.ndarray = simple_batch_decode(tokenizer, top_k_tokens_mean)
+        # Union and deduplicate: combine both lists, keeping unique samples only
+        # This gives us all samples that rank high by EITHER criterion
+        all_indices_set: set[int] = set(top_k_idx_max.astype(int).tolist()) | set(
+            top_k_idx_mean.astype(int).tolist()
+        )
+        all_unique_indices: list[int] = sorted(list(all_indices_set))
 
-        top_mean: list[TopKSample] = []
-        for i, idx in enumerate(top_k_idx_mean):
-            idx_int: int = int(idx)
-            top_mean.append(
+        # Batch decode all unique samples
+        all_unique_tokens: Float[np.ndarray, "n_unique n_ctx"] = tokens[all_unique_indices]
+        all_unique_strs: np.ndarray = simple_batch_decode(tokenizer, all_unique_tokens)
+
+        # Build unified list of all top samples (stored in SubcomponentDetails)
+        # Frontend or summary generation can later sort/filter by max or mean as needed
+        all_top_samples: list[TopKSample] = []
+        for i, idx in enumerate(all_unique_indices):
+            all_top_samples.append(
                 TopKSample(  # pyright: ignore[reportCallIssue]
-                    token_strs=top_k_strs_mean[i].tolist(),
-                    activations=activations[idx_int],
+                    token_strs=all_unique_strs[i].tolist(),
+                    activations=activations[idx],
                 )
             )
 
@@ -354,9 +338,8 @@ class SubcomponentDetails(SerializableDataclass):
             if total_count > 0:
                 p_active_given_token[token_id] = token_active_counts[token_id] / total_count
 
-        # Create TokenStat objects and sort
-        top_tokens_given_active: list[TokenStat] = []
-        top_active_given_tokens: list[TokenStat] = []
+        # Create TokenStat objects for all tokens
+        all_token_stats: list[TokenStat] = []
 
         for token_id in unique_tokens:
             token_id_int: int = int(token_id)
@@ -371,15 +354,28 @@ class SubcomponentDetails(SerializableDataclass):
                 count_token_total=token_counts[token_id_int],
             )
 
-            top_tokens_given_active.append(token_stat)
-            top_active_given_tokens.append(token_stat)
+            all_token_stats.append(token_stat)
 
-        # Sort and take top N
-        top_tokens_given_active.sort(key=lambda x: x.p_token_given_active, reverse=True)
-        top_tokens_given_active = top_tokens_given_active[: config.token_stats_top_n]
+        # Get top N by each metric and create union
+        top_by_token_given_active = sorted(
+            all_token_stats, key=lambda x: x.p_token_given_active, reverse=True
+        )[: config.token_stats_details_top_n]
 
-        top_active_given_tokens.sort(key=lambda x: x.p_active_given_token, reverse=True)
-        top_active_given_tokens = top_active_given_tokens[: config.token_stats_top_n]
+        top_by_active_given_token = sorted(
+            all_token_stats, key=lambda x: x.p_active_given_token, reverse=True
+        )[: config.token_stats_details_top_n]
+
+        # Create union using token_id as key
+        token_stats_dict: dict[int, TokenStat] = {}
+        for stat in top_by_token_given_active + top_by_active_given_token:
+            token_stats_dict[stat.token_id] = stat
+
+        # Convert to list and sort by max of the two probabilities
+        unified_token_stats: list[TokenStat] = sorted(
+            token_stats_dict.values(),
+            key=lambda x: max(x.p_token_given_active, x.p_active_given_token),
+            reverse=True,
+        )
 
         # Create TokenActivationsSummary
         # Compute entropy of token distribution when active
@@ -393,10 +389,12 @@ class SubcomponentDetails(SerializableDataclass):
         top_10_active_count: int = sum(sorted(token_active_counts.values(), reverse=True)[:10])
         concentration_ratio: float = top_10_active_count / total_active if total_active > 0 else 0.0
 
-        # Format top tokens for summary
+        # Format top tokens for summary (by P(token|active))
+        top_by_p_token_active = sorted(
+            unified_token_stats, key=lambda x: x.p_token_given_active, reverse=True
+        )[: config.token_activations_summary_top_n]
         top_tokens_summary: list[dict[str, str | int]] = [
-            {"token": stat.token, "count": stat.count_when_active}
-            for stat in top_tokens_given_active[:10]
+            {"token": stat.token, "count": stat.count_when_active} for stat in top_by_p_token_active
         ]
 
         token_activations_summary = TokenActivationsSummary(  # pyright: ignore[reportCallIssue]
@@ -411,16 +409,18 @@ class SubcomponentDetails(SerializableDataclass):
         return cls(  # pyright: ignore[reportCallIssue]
             label=label.to_string(),
             embedding=global_metrics.get_embedding(label),
-            top_samples={"top_max": top_max, "top_mean": top_mean},
+            top_samples=all_top_samples,  # Unified deduped list; frontend sorts by max/mean as needed
             stats=stats,
             histograms=histograms,
             token_activations=token_activations_summary,
-            top_tokens_given_active=top_tokens_given_active,
-            top_active_given_tokens=top_active_given_tokens,
+            token_stats=unified_token_stats,
         )
 
-    def to_summary(self) -> SubcomponentSummary:
+    def to_summary(self, token_stats_top_n: int = 5) -> SubcomponentSummary:
         """Convert to lightweight summary for index.html table display.
+
+        Args:
+            token_stats_top_n: Number of top tokens to include by each metric
 
         Returns:
             SubcomponentSummary with basic stats + token_activations, excluding heavy fields like top_samples
@@ -429,13 +429,33 @@ class SubcomponentDetails(SerializableDataclass):
         stats_with_tokens: dict[str, float | dict] = dict(self.stats)
         stats_with_tokens["token_activations"] = self.token_activations.serialize()
 
+        # Filter token_stats to union of top N by each metric
+        top_by_token_given_active = sorted(
+            self.token_stats, key=lambda x: x.p_token_given_active, reverse=True
+        )[:token_stats_top_n]
+
+        top_by_active_given_token = sorted(
+            self.token_stats, key=lambda x: x.p_active_given_token, reverse=True
+        )[:token_stats_top_n]
+
+        # Create union
+        token_stats_dict: dict[int, TokenStat] = {}
+        for stat in top_by_token_given_active + top_by_active_given_token:
+            token_stats_dict[stat.token_id] = stat
+
+        # Sort by max probability
+        summary_token_stats: list[TokenStat] = sorted(
+            token_stats_dict.values(),
+            key=lambda x: max(x.p_token_given_active, x.p_active_given_token),
+            reverse=True,
+        )
+
         return SubcomponentSummary(  # pyright: ignore[reportCallIssue]
             label=self.label,
             embedding=self.embedding,
             stats=stats_with_tokens,
             histograms=self.histograms,
-            top_tokens_given_active=self.top_tokens_given_active,
-            top_active_given_tokens=self.top_active_given_tokens,
+            token_stats=summary_token_stats,
         )
 
 
@@ -453,6 +473,7 @@ class ComponentDashboardData(SerializableDataclass):
     n_components: int
     n_alive: int
     n_dead: int
+    config: "ComponentDashboardConfig"  # For accessing configuration values
 
     # Global metrics (alive components only)
     global_metrics: GlobalMetrics
@@ -470,7 +491,10 @@ class ComponentDashboardData(SerializableDataclass):
         Returns:
             List of SubcomponentSummary objects (excludes heavy fields like top_max, top_mean)
         """
-        return [component.to_summary() for component in self.components]
+        return [
+            component.to_summary(token_stats_top_n=self.config.token_stats_top_n)
+            for component in self.components
+        ]
 
     @property
     def subcomponent_details(self) -> dict[str, list[SubcomponentDetails]]:

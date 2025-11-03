@@ -32,11 +32,8 @@ const columnRenderers = {
         const container = document.createElement('div');
         container.className = 'module-summary';
 
-        // Extract module name from label (format: "module.name:index")
-        const parts = value.split('.');
-        const displayName = parts.length > 2 ? parts.slice(-2).join('.') : value;
-
-        container.textContent = displayName;
+        // Keep full module name including model.layers.{i}. prefix
+        container.textContent = value;
         container.title = value;
         return container;
     },
@@ -130,17 +127,23 @@ const columnRenderers = {
     },
 
     tokensGivenActive: function(value, row, col) {
-        return createTokensGivenActiveCell(
-            row.top_tokens_given_active,
-            CONFIG.tokenStats.displayTopN
-        );
+        if (!row.token_stats) return '';
+        // Sort by P(token|active) and take top N
+        const topTokens = row.token_stats
+            .slice()
+            .sort((a, b) => b.p_token_given_active - a.p_token_given_active)
+            .slice(0, CONFIG.tokenStats.displayTopN);
+        return createTokensGivenActiveCell(topTokens, CONFIG.tokenStats.displayTopN);
     },
 
     activeGivenTokens: function(value, row, col) {
-        return createActiveGivenTokensCell(
-            row.top_active_given_tokens,
-            CONFIG.tokenStats.displayTopN
-        );
+        if (!row.token_stats) return '';
+        // Sort by P(active|token) and take top N
+        const topTokens = row.token_stats
+            .slice()
+            .sort((a, b) => b.p_active_given_token - a.p_active_given_token)
+            .slice(0, CONFIG.tokenStats.displayTopN);
+        return createActiveGivenTokensCell(topTokens, CONFIG.tokenStats.displayTopN);
     },
 
     // Generic histogram renderer for any histogram in row.histograms
@@ -161,7 +164,12 @@ const columnRenderers = {
             const min = histData.edges[0];
             const max = histData.edges[histData.edges.length - 1];
 
-            // Enforce [0, 1] bounds for clean x-axis labels (backend handles binning via config.hist_range)
+            // Use configured range when data fits, otherwise use actual edge range
+            const configRange = CONFIG.visualization.histogramRange;
+            const xlims = configRange && (min >= configRange[0] && max <= configRange[1])
+                ? configRange
+                : [min, max];
+
             const svg = sparkbars(binCenters, histData.counts, {
                 width: CONFIG.visualization.sparklineWidth,
                 height: CONFIG.visualization.sparklineHeight,
@@ -170,7 +178,7 @@ const columnRenderers = {
                 lineWidth: 0,
                 markers: '',
                 margin: 2,
-                xlims: [0, 1],
+                xlims: xlims,
                 ylims: [0, null],
                 logScale: true,
                 xAxis: {line: true, ticks: true, label_margin: 10},
@@ -183,7 +191,29 @@ const columnRenderers = {
             const median = calculateHistogramMedian(histData);
             const totalCount = histData.counts.reduce((a, b) => a + b, 0);
 
-            container.title = `${title} (n=${totalCount})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
+            container.title = `${title} (n=${totalCount})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}\n\nClick to view data as JSON`;
+
+            // Add click handler to open histogram data as JSON in new tab
+            container.style.cursor = 'pointer';
+            container.addEventListener('click', function() {
+                const jsonData = {
+                    histogram_type: histKey,
+                    component_label: row.label,
+                    counts: histData.counts,
+                    edges: histData.edges,
+                    statistics: {
+                        min: min,
+                        max: max,
+                        mean: mean,
+                        median: median,
+                        total_count: totalCount
+                    }
+                };
+                const jsonString = JSON.stringify(jsonData, null, 2);
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+            });
 
             return container;
         };
@@ -464,8 +494,7 @@ async function processComponentData() {
             stats: component.stats,
             histograms: component.histograms,
             embedding: component.embedding,
-            top_tokens_given_active: component.top_tokens_given_active,
-            top_active_given_tokens: component.top_active_given_tokens
+            token_stats: component.token_stats
             // TODO: Re-enable explanations feature
             // explanation: explanation
         });
@@ -557,7 +586,7 @@ async function loadData() {
     // Token statistics columns
     columns.push({
         id: 'tokens_given_active',
-        key: 'top_tokens_given_active',
+        key: 'token_stats',
         label: 'P(token|active)',
         type: 'string',
         width: '150px',
@@ -567,7 +596,7 @@ async function loadData() {
 
     columns.push({
         id: 'active_given_tokens',
-        key: 'top_active_given_tokens',
+        key: 'token_stats',
         label: 'P(active|token)',
         type: 'string',
         width: '150px',

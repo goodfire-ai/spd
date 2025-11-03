@@ -77,7 +77,15 @@ class ComponentDashboardConfig(BaseConfig):
     # Token statistics parameters
     token_stats_top_n: int = Field(
         default=5,
-        description="Number of top tokens to store per component",
+        description="Number of top tokens to store in SubcomponentSummary (for index.html)",
+    )
+    token_stats_details_top_n: int = Field(
+        default=50,
+        description="Number of top tokens to store in SubcomponentDetails (for component.html)",
+    )
+    token_activations_summary_top_n: int = Field(
+        default=10,
+        description="Number of top tokens to include in TokenActivationsSummary embedded in stats",
     )
     token_active_threshold: float = Field(
         default=0.01,

@@ -93,6 +93,7 @@ function getDefaultConfig() {
 		visualization: {
 		colormap: "blues",
 		histogramBins: 10,
+		histogramRange: [0, 1.1],  // Default x-axis range for histograms (null for auto)
 		sparklineWidth: 200,
 		sparklineHeight: 70,
 		sparklineYAxisMargin: 35,

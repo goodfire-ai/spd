@@ -265,6 +265,7 @@ def main(
         n_components=len(raw_data.component_labels),
         n_alive=len(raw_data.alive_components),
         n_dead=len(raw_data.dead_components),
+        config=config,
         global_metrics=global_metrics,
         components=all_stats,
     )
@@ -291,7 +292,7 @@ def main(
     }
 
     zanj_path: Path = config.output_dir / "dashboard.zanj"
-    ZANJ().save(split_data, str(zanj_path))
+    ZANJ(external_list_threshold=64).save(split_data, str(zanj_path))
 
     # Extract zanj file
     import zipfile

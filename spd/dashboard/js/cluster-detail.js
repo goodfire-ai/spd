@@ -184,7 +184,14 @@ function displayHistograms() {
         // Calculate bin centers for x-axis
         const binCenters = calculateBinCenters(histData.edges);
 
-        // Enforce [0, 1] bounds for clean x-axis labels (backend handles binning via config.hist_range)
+        // Use configured range when data fits, otherwise use actual edge range
+        const min = histData.edges[0];
+        const max = histData.edges[histData.edges.length - 1];
+        const configRange = CONFIG.visualization.histogramRange;
+        const xlims = configRange && (min >= configRange[0] && max <= configRange[1])
+            ? configRange
+            : [min, max];
+
         const svg = sparkbars(binCenters, histData.counts, {
             width: CONFIG.visualization.sparklineWidth || 200,
             height: CONFIG.visualization.sparklineHeight || 60,
@@ -193,7 +200,7 @@ function displayHistograms() {
             lineWidth: 0,
             markers: '',
             margin: 2,
-            xlims: [0, 1],
+            xlims: xlims,
             ylims: [0, null],
             logScale: true,
             xAxis: {line: true, ticks: true, label_margin: 10},
@@ -203,6 +210,8 @@ function displayHistograms() {
         sparklineContainer.innerHTML = svg;
 
         // Add tooltip with statistics
+        const min = histData.edges[0];
+        const max = histData.edges[histData.edges.length - 1];
         const mean = calculateHistogramMean(histData);
         const median = calculateHistogramMedian(histData);
         const totalCount = histData.counts.reduce((a, b) => a + b, 0);
@@ -296,25 +305,25 @@ function displayTokenActivations() {
 }
 
 function displayTokenStatistics() {
-    const topN = CONFIG.tokenStats.detailTopN;
+    if (!componentData.token_stats || componentData.token_stats.length === 0) {
+        return;
+    }
 
-    // Helper to create table config
-    const createTableConfig = (data, probabilityKey, probabilityLabel) => ({
-        data: data.slice(0, topN).map((item, idx) => ({
-            rank: idx + 1,
-            token: item.token,
-            probability: item[probabilityKey],
-            count_when_active: item.count_when_active,
-            count_token_total: item.count_token_total
-        })),
+    // Validate structure
+    const firstToken = componentData.token_stats[0];
+    console.assert(
+        firstToken.token !== undefined &&
+        firstToken.p_token_given_active !== undefined &&
+        firstToken.p_active_given_token !== undefined &&
+        firstToken.count_when_active !== undefined &&
+        firstToken.count_token_total !== undefined,
+        'Token stat structure is invalid'
+    );
+
+    // Create table with both probability columns
+    const tableConfig = {
+        data: componentData.token_stats,
         columns: [
-            {
-                key: 'rank',
-                label: '#',
-                type: 'number',
-                width: '40px',
-                align: 'right'
-            },
             {
                 key: 'token',
                 label: 'Token',
@@ -323,8 +332,16 @@ function displayTokenStatistics() {
                 renderer: (value) => `<code class="token-display">${formatTokenDisplay(value)}</code>`
             },
             {
-                key: 'probability',
-                label: probabilityLabel,
+                key: 'p_token_given_active',
+                label: 'P(token|active)',
+                type: 'number',
+                width: '120px',
+                align: 'right',
+                renderer: (value) => (value * 100).toFixed(2) + '%'
+            },
+            {
+                key: 'p_active_given_token',
+                label: 'P(active|token)',
                 type: 'number',
                 width: '120px',
                 align: 'right',
@@ -345,74 +362,39 @@ function displayTokenStatistics() {
                 align: 'right'
             }
         ],
-        pageSize: 10,
-        showFilters: false,
+        pageSize: 20,
+        showFilters: true,
         showInfo: true
-    });
+    };
 
-    // Display P(token | active) table
-    if (componentData.top_tokens_given_active && componentData.top_tokens_given_active.length > 0) {
-        // Validate structure
-        const firstToken = componentData.top_tokens_given_active[0];
-        console.assert(
-            firstToken.token !== undefined &&
-            firstToken.p_token_given_active !== undefined &&
-            firstToken.count_when_active !== undefined &&
-            firstToken.count_token_total !== undefined,
-            'Token stat structure is invalid for top_tokens_given_active'
-        );
-
-        const tableConfig = createTableConfig(
-            componentData.top_tokens_given_active,
-            'p_token_given_active',
-            'P(token|active)'
-        );
-        new DataTable('#topTokensGivenActiveTable', tableConfig);
-    }
-
-    // Display P(active | token) table
-    if (componentData.top_active_given_tokens && componentData.top_active_given_tokens.length > 0) {
-        const tableConfig = createTableConfig(
-            componentData.top_active_given_tokens,
-            'p_active_given_token',
-            'P(active|token)'
-        );
-        new DataTable('#topActiveGivenTokensTable', tableConfig);
-    }
+    new DataTable('#tokenStatsTable', tableConfig);
 }
 
 async function displaySamples() {
     const container = document.getElementById('topSamplesTable');
     if (!container) return;
 
-    // Iterate over all sample types in the top_samples dict
+    // Process unified top_samples list (already deduplicated on backend)
     const allSamples = [];
 
-    for (const [sampleType, samples] of Object.entries(componentData.top_samples)) {
-        for (let i = 0; i < samples.length; i++) {
-            const sample = samples[i];
-            const activations = await sample.activations;
-            const activationsArray = activations.data
-                ? Array.from(activations.data)
-                : (Array.isArray(activations) ? activations : Array.from(activations));
+    for (const sample of componentData.top_samples) {
+        const activations = await sample.activations;
+        const activationsArray = activations.data
+            ? Array.from(activations.data)
+            : (Array.isArray(activations) ? activations : Array.from(activations));
 
-            allSamples.push({
-                type: sampleType.replace('top_', ''),  // "top_max" -> "max"
-                rank: i + 1,
-                max_act: Math.max(...activationsArray),
-                mean_act: activationsArray.reduce((a, b) => a + b, 0) / activationsArray.length,
-                token_strs: sample.token_strs,
-                activations: activationsArray
-            });
-        }
+        allSamples.push({
+            max_act: Math.max(...activationsArray),
+            mean_act: activationsArray.reduce((a, b) => a + b, 0) / activationsArray.length,
+            token_strs: sample.token_strs,
+            activations: activationsArray
+        });
     }
 
     // Create DataTable with custom renderer for text column
     new DataTable(container, {
         data: allSamples,
         columns: [
-            { key: 'type', label: 'Type', type: 'string', width: '80px' },
-            { key: 'rank', label: 'Rank', type: 'number', width: '80px' },
             { key: 'max_act', label: 'Max Act', type: 'number', width: '100px',
               renderer: (val) => val.toFixed(4) },
             { key: 'mean_act', label: 'Mean Act', type: 'number', width: '100px',
