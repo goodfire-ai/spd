@@ -97,7 +97,7 @@ class PGDGlobalConfig(LossMetricConfig):
     init: PGDInitStrategy
     step_size: float
     n_steps: int
-    n_batches: int
+    gradient_accumulation_steps: int
 
 
 class PGDGlobalReconLossConfig(PGDGlobalConfig):

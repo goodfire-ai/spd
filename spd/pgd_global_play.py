@@ -47,7 +47,7 @@ for n_batches in [1, 2, 4, 8, 16, 32, 64]:
         init="random",
         step_size=0.1,
         n_steps=20,
-        n_batches=n_batches,
+        gradient_accumulation_steps=n_batches,
     )
 
     set_seed(0)

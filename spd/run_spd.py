@@ -210,6 +210,7 @@ def optimize(
     loss_metric_configs = [
         cfg for cfg in config.loss_metric_configs if cfg not in global_pgd_loss_configs
     ]
+
     eval_metric_configs = [cfg for cfg in eval_metric_configs if cfg not in global_pgd_eval_configs]
     batch_dims: tuple[int, ...] | None = None
 
@@ -330,6 +331,7 @@ def optimize(
                     dataloader=train_loader,
                     config=config,
                     batch_dims=batch_dims,
+                    device=device,
                 )
 
                 metrics = evaluate(
