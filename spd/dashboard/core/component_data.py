@@ -5,6 +5,7 @@ This module provides a clean two-phase architecture:
 2. Process activations to compute global metrics and per-component stats
 """
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -295,6 +296,20 @@ class SubcomponentDetails(SerializableDataclass):
 
         # Helper to create histogram dict
         def _make_histogram(data: Float[np.ndarray, " n"], name: str) -> None:
+            # Check for values outside range and warn if found
+            if config.hist_range is not None:
+                range_min, range_max = config.hist_range
+                outside_range = (data < range_min) | (data > range_max)
+                n_outside = int(np.sum(outside_range))
+                if n_outside > 0:
+                    data_min, data_max = float(np.min(data)), float(np.max(data))
+                    warnings.warn(
+                        f"Histogram '{name}': {n_outside}/{len(data)} values outside range "
+                        f"{config.hist_range} (data range: [{data_min:.6f}, {data_max:.6f}])",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+
             counts, edges = np.histogram(data, bins=config.hist_bins, range=config.hist_range)
             histograms[name] = {
                 "counts": counts.tolist(),

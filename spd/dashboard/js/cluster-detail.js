@@ -184,12 +184,7 @@ function displayHistograms() {
         // Calculate bin centers for x-axis
         const binCenters = calculateBinCenters(histData.edges);
 
-        const min = histData.edges[0];
-        const max = histData.edges[histData.edges.length - 1];
-
-        // Set x-axis limits to [0, 1] if data is in that range
-        const xlims = (min >= 0 && max <= 1) ? [0, 1] : null;
-
+        // Enforce [0, 1] bounds for clean x-axis labels (backend handles binning via config.hist_range)
         const svg = sparkbars(binCenters, histData.counts, {
             width: CONFIG.visualization.sparklineWidth || 200,
             height: CONFIG.visualization.sparklineHeight || 60,
@@ -198,7 +193,7 @@ function displayHistograms() {
             lineWidth: 0,
             markers: '',
             margin: 2,
-            xlims: xlims,
+            xlims: [0, 1],
             ylims: [0, null],
             logScale: true,
             xAxis: {line: true, ticks: true, label_margin: 10},

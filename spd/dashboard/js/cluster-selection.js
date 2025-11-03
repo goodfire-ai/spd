@@ -41,96 +41,6 @@ const columnRenderers = {
         return container;
     },
 
-    activationHistogram: function(value, row, col) {
-        const histData = row.histograms?.all_activations;
-        if (!histData) {
-            return '<span style="color: #999; font-size: 11px;">No data</span>';
-        }
-
-        const container = document.createElement('div');
-        container.className = 'sparkline-cell';
-
-        // Calculate bin centers for x-axis
-        const binCenters = calculateBinCenters(histData.edges);
-
-        const min = row.stats.min;
-        const max = row.stats.max;
-
-        // Always use [0, 1] for all_activations
-        const xlims = [0, 1];
-
-        // Pass bin centers as x-values and counts as y-values
-        const svg = sparkbars(binCenters, histData.counts, {
-            width: CONFIG.visualization.sparklineWidth,
-            height: CONFIG.visualization.sparklineHeight,
-            color: '#4169E1',
-            shading: true,
-            lineWidth: 0,
-            markers: '',
-            margin: 2,
-            xlims: xlims,
-            ylims: [0, null],
-            logScale: true,
-            xAxis: {line: true, ticks: true, label_margin: 10},
-            yAxis: {line: true, ticks: true, label_margin: CONFIG.visualization.sparklineYAxisMargin}
-        });
-
-        container.innerHTML = svg;
-
-        const mean = row.stats.mean;
-        const median = row.stats.median;
-        const totalCount = histData.counts.reduce((a, b) => a + b, 0);
-
-        container.title = `All Activations Histogram (n=${totalCount})\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
-
-        return container;
-    },
-
-    maxActivationDistribution: function(value, row, col) {
-        const histData = row.histograms?.max_per_sample;
-        if (!histData) {
-            return '<span style="color: #999; font-size: 11px;">No data</span>';
-        }
-
-        const container = document.createElement('div');
-        container.className = 'sparkline-cell';
-
-        // Calculate bin centers for x-axis
-        const binCenters = calculateBinCenters(histData.edges);
-
-        const min = histData.edges[0];
-        const max = histData.edges[histData.edges.length - 1];
-
-        // Always use [0, 1] for max_per_sample
-        const xlims = [0, 1];
-
-        // Pass bin centers as x-values and counts as y-values
-        const svg = sparkbars(binCenters, histData.counts, {
-            width: CONFIG.visualization.sparklineWidth,
-            height: CONFIG.visualization.sparklineHeight,
-            color: '#DC143C',
-            shading: true,
-            lineWidth: 0,
-            markers: '',
-            margin: 2,
-            xlims: xlims,
-            ylims: [0, null],
-            logScale: true,
-            xAxis: {line: true, ticks: true, label_margin: 10},
-            yAxis: {line: true, ticks: true, label_margin: CONFIG.visualization.sparklineYAxisMargin}
-        });
-
-        container.innerHTML = svg;
-
-        const mean = calculateHistogramMean(histData);
-        const median = calculateHistogramMedian(histData);
-        const totalCount = histData.counts.reduce((a, b) => a + b, 0);
-
-        container.title = `Max Activation Distribution (n=${totalCount} samples)\n\nMin: ${min.toFixed(4)}\nMax: ${max.toFixed(4)}\nMean: ${mean.toFixed(4)}\nMedian: ${median.toFixed(4)}`;
-
-        return container;
-    },
-
     componentLink: function(value, row, col) {
         return `<a href="component.html?label=${encodeURIComponent(row.label)}">View →</a>`;
     },
@@ -251,10 +161,7 @@ const columnRenderers = {
             const min = histData.edges[0];
             const max = histData.edges[histData.edges.length - 1];
 
-            // Force [0, 1] xlims for activation histograms, otherwise auto-scale
-            const xlims = (histKey === 'all_activations' || histKey === 'max_per_sample') ? [0, 1] : null;
-
-            // Pass bin centers as x-values and counts as y-values
+            // Enforce [0, 1] bounds for clean x-axis labels (backend handles binning via config.hist_range)
             const svg = sparkbars(binCenters, histData.counts, {
                 width: CONFIG.visualization.sparklineWidth,
                 height: CONFIG.visualization.sparklineHeight,
@@ -263,7 +170,7 @@ const columnRenderers = {
                 lineWidth: 0,
                 markers: '',
                 margin: 2,
-                xlims: xlims,
+                xlims: [0, 1],
                 ylims: [0, null],
                 logScale: true,
                 xAxis: {line: true, ticks: true, label_margin: 10},
