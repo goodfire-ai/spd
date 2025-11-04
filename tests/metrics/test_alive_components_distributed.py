@@ -1,6 +1,6 @@
 """Distributed tests for AliveComponentsTracker metric.
 
-Run with: mpirun -np 2 python tests/metrics/test_alive_components_distributed.py
+Run with: mpirun --bind-to none --map-by slot -np 2 python tests/metrics/test_alive_components_distributed.py
 Or via pytest (slower): pytest tests/metrics/test_alive_components_distributed.py --runslow
 """
 
