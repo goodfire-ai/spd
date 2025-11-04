@@ -422,7 +422,9 @@ class ComponentModel(LoadableModule):
         assert len(kwargs) == 0, "Expected no keyword arguments"
         x = args[0]
         assert isinstance(x, Tensor), "Expected input tensor"
-        assert cache_type in ["input", "none", "output"], "Expected cache_type to be 'input', 'none', or 'output'"
+        assert cache_type in ["input", "none", "output"], (
+            "Expected cache_type to be 'input', 'none', or 'output'"
+        )
 
         if components is not None and mask_info is not None:
             assert isinstance(output, Tensor), (
@@ -603,35 +605,6 @@ class ComponentModel(LoadableModule):
         for comp_name, components in self.components.items():
             weight_deltas[comp_name] = self.target_weight(comp_name) - components.weight
         return weight_deltas
-
-    @contextmanager
-    def cache_modules(self, module_paths: list[str]) -> Generator[tuple[dict[str, Tensor], dict[str, Tensor]]]:
-        """Context manager to cache the inputs to the specified modules."""
-        input_cache: dict[str, Tensor] = {}
-        output_cache: dict[str, Tensor] = {}
-
-        def _make_hook(module_path: str) -> Callable[[nn.Module, tuple[Any, ...], dict[Any, Any], Any], Any]:
-            def _cache_hook(
-                module: nn.Module, args: tuple[Any, ...], kwargs: dict[Any, Any], output: Any
-            ) -> Any:
-                """Hook to cache the input to the module."""
-                assert len(args) > 0, f"Expected at least 1 argument for module {module} path {module_path}"
-                input_cache[module_path] = args[0]
-                output_cache[module_path] = output
-                return output
-
-            return _cache_hook
-
-        handles: list[RemovableHandle] = []
-        for module_path in module_paths:
-            module = self.target_model.get_submodule(module_path)
-            handle = module.register_forward_hook(_make_hook(module_path), with_kwargs=True)
-            handles.append(handle)
-        try:
-            yield input_cache, output_cache
-        finally:
-            for handle in handles:
-                handle.remove()
 
 
 def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
