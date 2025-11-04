@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 from spd.configs import Config, LossMetricConfigType, MetricConfigType
 from spd.data import loop_dataloader
-from spd.eval import avg_eval_metrics_across_ranks, evaluate
+from spd.eval import evaluate
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_total_loss
@@ -311,9 +311,6 @@ def optimize(
                     n_eval_steps=n_eval_steps,
                     current_frac_of_training=step / config.steps,
                 )
-
-                if is_distributed():
-                    metrics = avg_eval_metrics_across_ranks(metrics, device=device)
 
                 if is_main_process():
                     for k, v in metrics.items():
