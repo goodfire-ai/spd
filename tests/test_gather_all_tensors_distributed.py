@@ -220,7 +220,17 @@ class TestGatherAllTensors:
             "OMP_NUM_THREADS": "1",
         }
 
-        cmd = ["mpirun", "-np", "2", sys.executable, str(script_path)]
+        cmd = [
+            "mpirun",
+            "--bind-to",
+            "none",
+            "--map-by",
+            "slot",
+            "-np",
+            "2",
+            sys.executable,
+            str(script_path),
+        ]
 
         result = subprocess.run(
             cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=120
