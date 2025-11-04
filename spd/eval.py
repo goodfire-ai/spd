@@ -58,7 +58,7 @@ from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
-from spd.utils.general_utils import extract_batch_data
+from spd.utils.general_utils import dict_safe_update_, extract_batch_data
 
 MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
 DistMetricOutType = dict[str, str | float | Image.Image | CustomChart]
@@ -311,6 +311,6 @@ def evaluate(
             metric_name=type(metric).__name__,
             computed_raw=computed_raw,
         )
-        outputs.update(computed)
+        dict_safe_update_(outputs, computed)
 
     return outputs

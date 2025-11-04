@@ -41,6 +41,7 @@ from spd.utils.distributed_utils import (
     sync_across_processes,
 )
 from spd.utils.general_utils import (
+    dict_safe_update_,
     extract_batch_data,
     get_lr_schedule_fn,
     get_lr_with_warmup,
@@ -301,7 +302,9 @@ def optimize(
                 microbatch_log_data[n_alive_key] = n_alive_count
 
             grad_norms = get_grad_norms_dict(component_model, device)
-            microbatch_log_data.update({f"train/grad_norms/{k}": v for k, v in grad_norms.items()})
+            dict_safe_update_(
+                microbatch_log_data, {f"train/grad_norms/{k}": v for k, v in grad_norms.items()}
+            )
 
             microbatch_log_data["train/schedules/lr"] = step_lr
 
@@ -344,7 +347,7 @@ def optimize(
                     n_eval_steps=n_eval_steps,
                     current_frac_of_training=step / config.steps,
                 )
-                metrics.update(global_pgd_metrics)
+                dict_safe_update_(metrics, global_pgd_metrics)
 
                 if is_main_process():
                     for k, v in metrics.items():
