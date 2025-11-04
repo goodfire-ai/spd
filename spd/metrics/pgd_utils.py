@@ -148,12 +148,12 @@ def pgd_masked_recon_loss_update(
     )
 
     total_loss: Float[Tensor, ""] | None = None
-    # PGD ascent
-    for i in range(pgd_config.n_steps + 1):  # +1 because we want to report the final loss
-        assert adv_sources.grad is None
 
+    # PGD ascent
+    for _ in range(pgd_config.n_steps):
+        assert adv_sources.grad is None
         with torch.enable_grad():
-            total_loss = _compute_pgd_objective_loss(
+            loss = _compute_pgd_objective_loss(
                 adv_sources=adv_sources.expand(n_layers, *batch_dims, C2),
                 batch=batch,
                 ci=ci,
@@ -163,15 +163,25 @@ def pgd_masked_recon_loss_update(
                 model=model,
                 output_loss_type=output_loss_type,
             )
-        if i < pgd_config.n_steps:
-            # Update adv_sources for the next PGD step
-            adv_sources_grads = torch.autograd.grad(total_loss, adv_sources)
 
-            assert isinstance(adv_sources_grads, tuple) and len(adv_sources_grads) == 1
-            reduced_adv_sources_grads = all_reduce(adv_sources_grads[0], op=ReduceOp.SUM)
-            with torch.no_grad():
-                adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
-                adv_sources.clamp_(0.0, 1.0)
+        adv_sources_grads = torch.autograd.grad(loss, adv_sources)
+        assert len(adv_sources_grads) == 1
+        reduced_adv_sources_grads = all_reduce(adv_sources_grads[0], op=ReduceOp.SUM)
+        with torch.no_grad():
+            adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
+            adv_sources.clamp_(0.0, 1.0)
+
+    with torch.enable_grad():
+        total_loss = _compute_pgd_objective_loss(
+            adv_sources=adv_sources.expand(n_layers, *batch_dims, C2),
+            batch=batch,
+            ci=ci,
+            weight_deltas=weight_deltas,
+            routing_masks=routing_masks,
+            target_out=target_out,
+            model=model,
+            output_loss_type=output_loss_type,
+        )
 
     assert total_loss is not None
     n_examples = (
