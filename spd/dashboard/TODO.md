@@ -3,6 +3,7 @@
 - [x] **[BUG]** fix issue with broken histograms
 - [ ] not just current token, but true next token and predicted next token when a given component is active
 - [ ] embeddings view
+- [ ] a view where we can see, for some selected components, their activations (both actual and DT predicted) on a random set of samples -- stacked vertically so that we can compare. kinda like https://attention-motifs.github.io/v1/vis/attnpedia/index.html
 
 # index.html
 

@@ -86,10 +86,13 @@ function convertToD3Tree(tree, featureMap, nodeIdx = 0, maxSamples = null) {
         node.isLeaf = true;
         const class0 = value[0][0];
         const class1 = value[0][1];
+        const total = class0 + class1;
+        const maxClass = Math.max(class0, class1);
         node.prediction = class1 > class0 ? 1 : 0;
         node.class0 = class0;
         node.class1 = class1;
-        node.displayLabel = `Leaf: ${node.prediction}`;
+        node.accuracy = total > 0 ? maxClass / total : 0;
+        node.displayLabel = `Predict ${node.prediction}`;
     } else {
         node.isLeaf = false;
         const componentInfo = featureMap[feature];
