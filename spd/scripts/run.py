@@ -117,7 +117,7 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
 def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
     """Build an MPI prefix for a command."""
     port: int = _choose_master_port(run_id, idx)
-    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} "
+    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} --bind-to none --map-by slot"
 
 
 def generate_commands(
@@ -161,7 +161,7 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
-                f"{mpi_prefix}python {exp_config.decomp_script} --config_json '{config_json}' "
+                f"{mpi_prefix} python {exp_config.decomp_script} --config_json '{config_json}' "
                 f"--sweep_id {run_id} --evals_id {experiment}"
             )
 
@@ -188,7 +188,7 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
-                    f"{mpi_prefix}python {exp_config.decomp_script} --config_json '{config_json}' "
+                    f"{mpi_prefix} python {exp_config.decomp_script} --config_json '{config_json}' "
                     f"--sweep_id {run_id} "
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
@@ -296,7 +296,7 @@ def main(
     create_report: bool = True,
     job_suffix: str | None = None,
     cpu: bool = False,
-    partition: str = "h100-reserved",
+    partition: str = "h200-reserved",
     dp: int = 1,
     project: str = "spd",
     local: bool = False,
@@ -317,7 +317,7 @@ def main(
         create_report: Create W&B report for aggregated view (default: True)
         job_suffix: Optional suffix for SLURM job names
         cpu: Use CPU instead of GPU (default: False)
-        partition: SLURM partition to use (default: "h100-reserved")
+        partition: SLURM partition to use (default: "h200-reserved")
         dp: Number of GPUs for data parallelism (1-8). Only supported for lm experiments.
             Cannot be used with local mode (default: 1)
         project: W&B project name (default: "spd"). Will be created if it doesn't exist.
@@ -597,8 +597,8 @@ def cli():
         "-p",
         "--partition",
         type=str,
-        default="h100-reserved",
-        help="SLURM partition to use (default: 'h100-reserved')",
+        default="h200-reserved",
+        help="SLURM partition to use (default: 'h200-reserved')",
     )
 
     args: argparse.Namespace = parser.parse_args()

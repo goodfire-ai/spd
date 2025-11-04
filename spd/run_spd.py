@@ -344,6 +344,7 @@ def optimize(
                     n_eval_steps=n_eval_steps,
                     current_frac_of_training=step / config.steps,
                 )
+
                 metrics.update(global_pgd_metrics)
 
                 if is_main_process():
