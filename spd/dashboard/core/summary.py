@@ -5,14 +5,7 @@ import numpy as np
 from jaxtyping import Float, Int
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 
-from spd.dashboard.core.acts import Activations, ComponentLabel
-from spd.dashboard.core.compute import (
-    ComponentEmbeddings,
-    FlatActivations,
-    _compute_activated_per_token,
-    _compute_P_active_given_token,
-    _compute_P_token_given_active,
-)
+from spd.dashboard.core.acts import ComponentLabel
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 from spd.dashboard.core.toks import TokenSequenceData
 
@@ -201,5 +194,3 @@ class SubcomponentSummary(SerializableDataclass):
             histograms=histograms,
             token_stats=token_stats_list,
         )
-
-
