@@ -1,12 +1,14 @@
 """Minimal single-script version of causal importance decision tree training."""
 
+import itertools
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any
+from functools import cached_property
+from typing import Any, NamedTuple
 
 import numpy as np
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Bool, Float, Int, Shaped
 from numpy import ndarray
 from torch import Tensor
 from tqdm import tqdm
@@ -18,50 +20,85 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
 
+ComponentLabel = NamedTuple( # noqa: UP014
+    "ComponentLabel",
+    [
+        ("module", str),
+        ("index", int),
+    ], 
+)
+
 
 @dataclass
-class LayerActivations:
+class FlatActivations:
+    component_labels: list[ComponentLabel]
+    activations: Float[np.ndarray, "n_samples n_components_total"]
+    tokens: Shaped[np.ndarray, " n_samples"]  # of string type `U{max_token_length}`
+
+@dataclass
+class Activations:
     """Container for layer-wise activations with ordered access."""
 
-    data: dict[str, Float[np.ndarray, "n_samples n_components"]]
+    data: dict[str, Float[np.ndarray, "n_sequences n_ctx n_components"]]
     layer_order: list[str]
     varying_component_indices: dict[str, list[int]]
     token_data: TokenSequenceData
+
+    @cached_property
+    def component_labels(self) -> dict[str, list[ComponentLabel]]:
+        """Map module name to list of ComponentLabels for its varying components."""
+        return {
+            module: [
+                ComponentLabel(module=module, index=comp_idx)
+                for comp_idx in self.varying_component_indices[module]
+            ]
+            for module in self.layer_order
+        }
+
+    @cached_property
+    def data_batch_concat(self) -> dict[str, Float[np.ndarray, "n_samples n_components"]]:
+        """Flattened version of data: (n_sequences * n_ctx, n_components)."""
+        return {k: v.reshape(-1, v.shape[-1]) for k, v in self.data.items()}
+
+    @cached_property
+    def as_flat(
+        self,
+    ) -> FlatActivations:
+        flattened: Float[Tensor, "n_samples n_components_total"] = torch.cat(
+            [torch.from_numpy(self.data_batch_concat[k]) for k in self.layer_order],
+            dim=1,
+        ).float()
+
+        component_labels: list[ComponentLabel] = list(
+            itertools.chain.from_iterable(
+                self.component_labels[module] for module in self.layer_order
+            )
+        )
+
+        tokens_flat: Shaped[np.ndarray, " n_samples"] = self.token_data.tokens.reshape(-1)
+
+        assert flattened.shape[1] == len(component_labels)
+        assert flattened.shape[0] == tokens_flat.shape[0]
+
+        return FlatActivations(
+            component_labels=component_labels,
+            activations=flattened.numpy(),
+            tokens=tokens_flat,
+        )
+
+        
 
     def get_concat_before(self, module_name: str) -> Float[ndarray, "n_samples n_features"]:
         """Get concatenated activations of all layers before the specified module."""
         idx: int = self.layer_order.index(module_name)
         if idx == 0:
             # No previous layers, return empty array with correct number of samples
-            n_samples: int = list(self.data.values())[0].shape[0]
+            n_samples: int = list(self.data_batch_concat.values())[0].shape[0]
             return np.zeros((n_samples, 0), dtype=float)
         prev_layers: list[Float[ndarray, "n_samples n_features"]] = [
-            self.data[self.layer_order[i]] for i in range(idx)
+            self.data_batch_concat[self.layer_order[i]] for i in range(idx)
         ]
         return np.concatenate(prev_layers, axis=1)
-
-    def __len__(self) -> int:
-        return len(self.layer_order)
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self.layer_order)
-
-    def build_feature_map(self, module_name: str) -> list[dict[str, Any]]:
-        """Build feature map for module: maps feature index -> component identity."""
-        feature_map: list[dict[str, Any]] = []
-        module_idx: int = self.layer_order.index(module_name)
-        for prev_idx in range(module_idx):
-            prev_module: str = self.layer_order[prev_idx]
-            for comp_idx in self.varying_component_indices[prev_module]:
-                feature_map.append(
-                    {
-                        "layer_idx": prev_idx,
-                        "module_key": prev_module,
-                        "component_idx": comp_idx,
-                        "label": f"{prev_module}:{comp_idx}",
-                    }
-                )
-        return feature_map
 
     @classmethod
     def generate(
@@ -71,7 +108,7 @@ class LayerActivations:
         n_ctx: int,
         device: str,
         activation_threshold: float,
-    ) -> "LayerActivations":
+    ) -> "Activations":
         # get model
         print(f"Loading model from {wandb_run_path}...")
         spd_run: SPDRunInfo = SPDRunInfo.from_path(path=wandb_run_path)
@@ -137,33 +174,60 @@ class LayerActivations:
 
         # Convert to boolean and filter constant components
         print("\nConverting to boolean and filtering constant components...")
-        layers: dict[str, Float[np.ndarray, "n_samples n_components"]] = {}
+        layers: dict[str, Float[np.ndarray, "n_batches n_ctx n_components"]] = {}
         varying_component_indices: dict[str, list[int]] = {}
 
         for module_name, acts_raw in acts_concat.items():
-            # Flatten if 3D (batch, seq, components) -> (batch*seq, components)
-            acts_float_np: Float[np.ndarray, "n_samples n_components"] = acts_raw.reshape(
-                -1, acts_raw.shape[-1]
-            ).numpy()
+            # Keep as 3D: (n_batches, n_ctx, n_components)
+            acts_3d: Float[np.ndarray, "n_batches n_ctx n_components"] = acts_raw.numpy()
+
+            # Flatten temporarily for filtering: (n_batches * n_ctx, n_components)
+            acts_flat: Float[np.ndarray, "n_samples n_components"] = acts_3d.reshape(
+                -1, acts_3d.shape[-1]
+            )
 
             # Threshold to boolean for filtering only
             acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
-                acts_float_np >= activation_threshold
+                acts_flat >= activation_threshold
             ).astype(bool)
 
             # Filter constant components (always 0 or always 1)
             varying_mask: Bool[np.ndarray, " n_components"] = acts_bool.var(axis=0) > 0
-            acts_varying = acts_float_np[:, varying_mask]  # Keep float values, not boolean
-            layers[module_name] = acts_varying
+            acts_varying_3d = acts_3d[:, :, varying_mask]  # Keep 3D structure, filter components
+            layers[module_name] = acts_varying_3d
 
             # Store which original component indices were kept
             varying_component_indices[module_name] = np.where(varying_mask)[0].tolist()
 
-            print(f"  {module_name}: {acts_varying.shape[1]} varying components")
+            print(
+                f"  {module_name}: {acts_varying_3d.shape[0]} batches, "
+                f"{acts_varying_3d.shape[1]} ctx, {acts_varying_3d.shape[2]} varying components"
+            )
 
-        return LayerActivations(
+        return Activations(
             data=layers,
             layer_order=module_keys,
             varying_component_indices=varying_component_indices,
             token_data=token_data,
         )
+
+
+@serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
+class SubcomponentSummary(SerializableDataclass):
+    """Lightweight summary for index.html table display.
+
+    Contains only the data needed by the main component table,
+    excluding large fields like top_samples.
+    """
+
+    label: str
+    embedding: Float[np.ndarray, " embed_dim"]
+    stats: dict[str, float | dict]  # Basic stats + token_activations
+    histograms: dict[str, dict[str, list[float]]]
+
+    # Token statistics needed for table display (unified list with both probabilities)
+    token_stats: list[TokenStat] = serializable_field(
+        default_factory=list,
+        serialization_fn=lambda x: [s.serialize() for s in x],
+        deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
+    )

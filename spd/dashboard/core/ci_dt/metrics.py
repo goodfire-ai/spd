@@ -1,19 +1,30 @@
-
 import json
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-import torch
 from sklearn.metrics import accuracy_score, average_precision_score, balanced_accuracy_score
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
 
-from spd.dashboard.core.ci_dt.acts import LayerActivations
+from spd.dashboard.core.ci_dt.acts import Activations
+
+
+def tree_to_dict(tree: DecisionTreeClassifier) -> dict[str, Any]:
+    """Convert sklearn DecisionTree to JSON-serializable dict."""
+    tree_ = tree.tree_
+    return {
+        "feature": tree_.feature.tolist(),
+        "threshold": tree_.threshold.tolist(),
+        "children_left": tree_.children_left.tolist(),
+        "children_right": tree_.children_right.tolist(),
+        "value": tree_.value.tolist(),
+        "n_node_samples": tree_.n_node_samples.tolist(),
+    }
+
 
 def compute_metrics_and_save(
     models: dict[str, MultiOutputClassifier],
-    layer_acts: LayerActivations,
+    layer_acts: Activations,
     output_path: str,
 ) -> list[dict[str, Any]]:
     """Compute metrics, serialize trees, and save to JSON."""
@@ -89,3 +100,14 @@ def compute_metrics_and_save(
     print("Done!")
 
     return results
+
+
+def extract_prob_class_1(proba_list: list[np.ndarray], clf: MultiOutputClassifier) -> np.ndarray:
+    """Extract P(y=1) for each output."""
+    result: list[np.ndarray] = []
+    for i, p in enumerate(proba_list):
+        estimator = clf.estimators_[i]  # pyright: ignore[reportIndexIssue]
+        assert isinstance(estimator, DecisionTreeClassifier)
+        assert len(estimator.classes_) == 2
+        result.append(p[:, 1])  # P(y=1)
+    return np.stack(result, axis=1)

@@ -31,7 +31,8 @@ class TextSample:
         """Return the number of tokens."""
         return len(self.tokens)
 
-TokenizerInfo = NamedTuple( # noqa: UP014
+
+TokenizerInfo = NamedTuple(  # noqa: UP014
     "TokenizerInfo",
     [
         ("vocab_list", list[str]),
@@ -40,6 +41,7 @@ TokenizerInfo = NamedTuple( # noqa: UP014
         ("token_arr_dtype", str),
     ],
 )
+
 
 def get_tokenizer_info(tokenizer: PreTrainedTokenizer) -> TokenizerInfo:
     """Get basic info about the tokenizer."""
@@ -52,7 +54,6 @@ def get_tokenizer_info(tokenizer: PreTrainedTokenizer) -> TokenizerInfo:
         max_token_length=max_token_length,
         token_arr_dtype=f"U{max_token_length}",  # Unicode strings of max_token_length
     )
-
 
 
 def attach_vocab_arr(tokenizer: PreTrainedTokenizer) -> None:

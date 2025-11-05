@@ -1,17 +1,15 @@
 # %%
 """Minimal single-script version of causal importance decision tree training."""
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import torch
-from sklearn.metrics import accuracy_score, average_precision_score, balanced_accuracy_score
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
 
-from spd.dashboard.core.ci_dt.acts import LayerActivations
+from spd.dashboard.core.ci_dt.acts import Activations
 
 # %% ----------------------- Configuration -----------------------
 
@@ -30,7 +28,7 @@ class TreeConfig:
 
 CONFIG: TreeConfig = TreeConfig()
 
-ACTIVATIONS: LayerActivations = LayerActivations.generate(
+ACTIVATIONS: Activations = Activations.generate(
     wandb_run_path=CONFIG.wandb_run_path,
     n_batches=CONFIG.n_batches,
     n_ctx=CONFIG.n_ctx,
@@ -41,7 +39,7 @@ ACTIVATIONS: LayerActivations = LayerActivations.generate(
 
 # %% ----------------------- Train Decision Trees -----------------------
 def train_decision_trees(
-    layer_acts: LayerActivations,
+    layer_acts: Activations,
     max_depth: int,
     random_state: int,
 ) -> dict[str, MultiOutputClassifier]:
@@ -77,17 +75,6 @@ LAYER_TREES: dict[str, MultiOutputClassifier] = train_decision_trees(
 # %% ----------------------- Compute Metrics -----------------------
 
 
-def extract_prob_class_1(proba_list: list[np.ndarray], clf: MultiOutputClassifier) -> np.ndarray:
-    """Extract P(y=1) for each output."""
-    result: list[np.ndarray] = []
-    for i, p in enumerate(proba_list):
-        estimator = clf.estimators_[i]  # pyright: ignore[reportIndexIssue]
-        assert isinstance(estimator, DecisionTreeClassifier)
-        assert len(estimator.classes_) == 2
-        result.append(p[:, 1])  # P(y=1)
-    return np.stack(result, axis=1)
-
-
 def tree_to_dict(tree: DecisionTreeClassifier) -> dict[str, Any]:
     """Convert sklearn DecisionTree to JSON-serializable dict."""
     tree_ = tree.tree_
@@ -99,10 +86,3 @@ def tree_to_dict(tree: DecisionTreeClassifier) -> dict[str, Any]:
         "value": tree_.value.tolist(),
         "n_node_samples": tree_.n_node_samples.tolist(),
     }
-
-
-results = compute_metrics_and_save(
-    models=LAYER_TREES,
-    layer_acts=ACTIVATIONS,
-    output_path="data/trees.json",
-)
