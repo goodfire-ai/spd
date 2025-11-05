@@ -1,8 +1,6 @@
 <script lang="ts">
-    import { run } from "svelte/legacy";
-
+    import type { ComponentDetail, HarvestMetadata, TokenPR } from "../lib/api";
     import * as api from "../lib/api";
-    import type { HarvestMetadata, TokenPR, ComponentDetail } from "../lib/api";
     import ActivationContext from "./ActivationContext.svelte";
 
     interface Props {
