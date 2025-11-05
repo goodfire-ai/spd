@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import cached_property
 
 import numpy as np
 import torch
@@ -31,3 +32,9 @@ class TokenSequenceData:
         )
 
         return cls(tokens=tokens_decoded)
+
+    @cached_property
+    def token_counts(self) -> dict[str, int]:
+        """Count occurrences of each token in the dataset."""
+        unique_tokens, counts = np.unique(self.tokens, return_counts=True)
+        return {token: int(count) for token, count in zip(unique_tokens, counts)}

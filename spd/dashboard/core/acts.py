@@ -14,18 +14,21 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from spd.configs import Config
-from spd.dashboard.core.ci_dt.toks import TokenSequenceData
+from spd.dashboard.core.toks import TokenSequenceData
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
 
-ComponentLabel = NamedTuple(  # noqa: UP014
-    "ComponentLabel",
-    [
-        ("module", str),
-        ("index", int),
-    ],
-)
+@dataclass(frozen=True)
+class ComponentLabel:
+    module: str
+    index: int
+
+    def as_str(self) -> str:
+        return f"{self.module}:{self.index}"
+
+    def __hash__(self) -> int:
+        return hash((self.module, self.index))
 
 
 @dataclass
@@ -33,6 +36,21 @@ class FlatActivations:
     component_labels: list[ComponentLabel]
     activations: Float[np.ndarray, "n_samples n_components_total"]
     tokens: Shaped[np.ndarray, " n_samples"]  # of string type `U{max_token_length}`
+
+    @cached_property
+    def component_label_inverse(self) -> dict[ComponentLabel, int]:
+        """Map from component label string to its index in activations."""
+        return {
+            label: idx for idx, label in enumerate(self.component_labels)
+        }
+
+    def get_component_activations(
+        self,
+        label: ComponentLabel,
+    ) -> Float[np.ndarray, "n_samples"]:
+        """Get activations for a specific component by label."""
+        idx: int = self.component_label_inverse[label]
+        return self.activations[:, idx]
 
 
 @dataclass
@@ -44,6 +62,13 @@ class Activations:
     varying_component_indices: dict[str, list[int]]
     token_data: TokenSequenceData
 
+    @property
+    def n_components_total(self) -> int:
+        """Total number of varying components across all layers."""
+        return sum(
+            acts.shape[2] for acts in self.data.values()
+        )
+
     @cached_property
     def component_labels(self) -> dict[str, list[ComponentLabel]]:
         """Map module name to list of ComponentLabels for its varying components."""
@@ -54,6 +79,15 @@ class Activations:
             ]
             for module in self.layer_order
         }
+
+    @cached_property
+    def component_labels_concat(self) -> list[ComponentLabel]:
+        """Concatenated list of all ComponentLabels in layer order."""
+        return list(
+            itertools.chain.from_iterable(
+                self.component_labels[module] for module in self.layer_order
+            )
+        )
 
     @cached_property
     def data_batch_concat(self) -> dict[str, Float[np.ndarray, "n_samples n_components"]]:
@@ -69,11 +103,7 @@ class Activations:
             dim=1,
         ).float()
 
-        component_labels: list[ComponentLabel] = list(
-            itertools.chain.from_iterable(
-                self.component_labels[module] for module in self.layer_order
-            )
-        )
+        component_labels: list[ComponentLabel] = self.component_labels_concat
 
         tokens_flat: Shaped[np.ndarray, " n_samples"] = self.token_data.tokens.reshape(-1)
 
