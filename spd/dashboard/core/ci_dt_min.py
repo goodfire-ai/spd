@@ -1,28 +1,20 @@
 # %%
 """Minimal single-script version of causal importance decision tree training."""
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import torch
-from jaxtyping import Bool, Float
-from matplotlib import pyplot as plt
 from sklearn.metrics import accuracy_score, average_precision_score, balanced_accuracy_score
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
-from torch import Tensor
-from tqdm import tqdm
 
-from spd.configs import Config
 from spd.dashboard.core.ci_dt.acts import LayerActivations
-from spd.dashboard.core.matshow_sort import sort_by_similarity
-from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
 
 # %% ----------------------- Configuration -----------------------
+
 
 @dataclass
 class TreeConfig:
@@ -45,6 +37,7 @@ ACTIVATIONS: LayerActivations = LayerActivations.generate(
     device=CONFIG.device,
     activation_threshold=CONFIG.activation_threshold,
 )
+
 
 # %% ----------------------- Train Decision Trees -----------------------
 def train_decision_trees(
@@ -74,7 +67,6 @@ def train_decision_trees(
     return layer_trees
 
 
-
 LAYER_TREES = train_decision_trees(
     layer_acts=ACTIVATIONS,
     max_depth=CONFIG.max_depth,
@@ -83,6 +75,7 @@ LAYER_TREES = train_decision_trees(
 
 
 # %% ----------------------- Compute Metrics -----------------------
+
 
 def extract_prob_class_1(proba_list: list[np.ndarray], clf: MultiOutputClassifier) -> np.ndarray:
     """Extract P(y=1) for each output."""
@@ -93,6 +86,7 @@ def extract_prob_class_1(proba_list: list[np.ndarray], clf: MultiOutputClassifie
         assert len(estimator.classes_) == 2
         result.append(p[:, 1])  # P(y=1)
     return np.stack(result, axis=1)
+
 
 def tree_to_dict(tree: DecisionTreeClassifier) -> dict[str, Any]:
     """Convert sklearn DecisionTree to JSON-serializable dict."""
@@ -105,6 +99,7 @@ def tree_to_dict(tree: DecisionTreeClassifier) -> dict[str, Any]:
         "value": tree_.value.tolist(),
         "n_node_samples": tree_.n_node_samples.tolist(),
     }
+
 
 def compute_metrics_and_save(
     models: dict[str, MultiOutputClassifier],
@@ -157,8 +152,7 @@ def compute_metrics_and_save(
 
         # Build labels for varying components in this layer
         varying_labels = [
-            f"{module_name}:{idx}"
-            for idx in layer_acts.varying_component_indices[module_name]
+            f"{module_name}:{idx}" for idx in layer_acts.varying_component_indices[module_name]
         ]
 
         results.append(
@@ -187,10 +181,8 @@ def compute_metrics_and_save(
     return results
 
 
-
-
 results = compute_metrics_and_save(
-    models=models,
-    layer_acts=layer_acts,
+    models=LAYER_TREES,
+    layer_acts=ACTIVATIONS,
     output_path="data/trees.json",
 )

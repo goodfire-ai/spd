@@ -1,16 +1,13 @@
 """Minimal single-script version of causal importance decision tree training."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-import json
-from typing import Any, Iterator
+from typing import Any
 
 import numpy as np
 import torch
 from jaxtyping import Bool, Float
 from matplotlib import pyplot as plt
-from sklearn.metrics import accuracy_score, average_precision_score, balanced_accuracy_score
-from sklearn.multioutput import MultiOutputClassifier
-from sklearn.tree import DecisionTreeClassifier
 from torch import Tensor
 from tqdm import tqdm
 
@@ -20,9 +17,11 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
 
+
 @dataclass
 class LayerActivations:
     """Container for layer-wise activations with ordered access."""
+
     data: dict[str, Bool[np.ndarray, "n_samples n_components"]]
     layer_order: list[str]
     varying_component_indices: dict[str, list[int]]
@@ -50,12 +49,14 @@ class LayerActivations:
         for prev_idx in range(module_idx):
             prev_module = self.layer_order[prev_idx]
             for comp_idx in self.varying_component_indices[prev_module]:
-                feature_map.append({
-                    "layer_idx": prev_idx,
-                    "module_key": prev_module,
-                    "component_idx": comp_idx,
-                    "label": f"{prev_module}:{comp_idx}",
-                })
+                feature_map.append(
+                    {
+                        "layer_idx": prev_idx,
+                        "module_key": prev_module,
+                        "component_idx": comp_idx,
+                        "label": f"{prev_module}:{comp_idx}",
+                    }
+                )
         return feature_map
 
     @classmethod
@@ -109,7 +110,7 @@ class LayerActivations:
                     pre_weight_acts=output.cache,
                     sampling="continuous",
                     detach_inputs=False,
-                ).upper_leaky # TODO
+                ).upper_leaky  # TODO
             all_acts.append({k: v.cpu() for k, v in acts.items()})
 
         # Concatenate batches
@@ -139,7 +140,9 @@ class LayerActivations:
 
             # plt.title(f"{module_name}")
             # sort by column similarity
-            acts_sorted = sort_by_similarity(sort_by_similarity(acts_bool.astype(float), axis=0), axis=1)
+            acts_sorted = sort_by_similarity(
+                sort_by_similarity(acts_bool.astype(float), axis=0), axis=1
+            )
             plt.matshow(acts_sorted[:, :600], aspect="auto")
             plt.show()
 
