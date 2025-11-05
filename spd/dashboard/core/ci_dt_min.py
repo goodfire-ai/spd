@@ -3,16 +3,13 @@
 
 from typing import Any
 
-import numpy as np
-from jaxtyping import Bool
-from numpy import ndarray
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
-from tqdm import tqdm
 
 from spd.dashboard.core.acts import Activations
 from spd.dashboard.core.compute import FlatActivations
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
+from spd.dashboard.core.trees import train_decision_trees
 
 # %% ----------------------- Configuration -----------------------
 
@@ -29,7 +26,6 @@ FLAT_ACTIVATIONS: FlatActivations = FlatActivations.create(Activations.generate(
 
 
 # %% ----------------------- Train Decision Trees -----------------------
-
 
 
 LAYER_TREES: dict[str, MultiOutputClassifier] = train_decision_trees(
@@ -55,4 +51,4 @@ def tree_to_dict(tree: DecisionTreeClassifier) -> dict[str, Any]:
     }
 
 
-tree_to_dict(LAYER_TREES[FLAT_ACTIVATIONS.layer_order[1]].estimators_[0])
+tree_to_dict(LAYER_TREES[FLAT_ACTIVATIONS.layer_order[5]].estimators_[10])

@@ -12,12 +12,12 @@ from spd.dashboard.core.acts import Activations, ComponentLabel
 from spd.dashboard.core.toks import TokenSequenceData
 
 
-@dataclass
+@dataclass(kw_only=True)
 class FlatActivations:
+    layer_order: list[str]
+    token_data: TokenSequenceData
     component_labels: list[ComponentLabel]
     activations: Float[np.ndarray, "n_samples C"]
-    token_data: TokenSequenceData
-    layer_order: list[str]
 
     @cached_property
     def tokens_flat(self) -> Shaped[np.ndarray, " n_samples"]:
