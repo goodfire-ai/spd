@@ -4,8 +4,7 @@
 from typing import Any
 
 import numpy as np
-import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Bool
 from numpy import ndarray
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
@@ -26,9 +25,7 @@ CONFIG = ComponentDashboardConfig(
 
 # %% ----------------------- get activations -----------------------
 
-FLAT_ACTIVATIONS: FlatActivations = FlatActivations.create(
-    Activations.generate(config=CONFIG)
-)
+FLAT_ACTIVATIONS: FlatActivations = FlatActivations.create(Activations.generate(config=CONFIG))
 
 
 # %% ----------------------- Train Decision Trees -----------------------
@@ -43,8 +40,12 @@ def train_decision_trees(
 
     # Skip first layer (no previous layers to predict from)
     for module_name in tqdm(list(flat_acts.layer_order)[1:]):
-        X_prev_layers_cis: Bool[ndarray, "n_samples n_features_before"] = flat_acts.get_concat_before_module(module_name) > CONFIG.activation_threshold
-        Y_current_layer_cis: Bool[ndarray, "n_samples n_features_this"] = flat_acts.get_concat_this_module(module_name) > CONFIG.activation_threshold
+        X_prev_layers_cis: Bool[ndarray, "n_samples n_features_before"] = (
+            flat_acts.get_concat_before_module(module_name) > CONFIG.activation_threshold
+        )
+        Y_current_layer_cis: Bool[ndarray, "n_samples n_features_this"] = (
+            flat_acts.get_concat_this_module(module_name) > CONFIG.activation_threshold
+        )
 
         clf: MultiOutputClassifier = MultiOutputClassifier(
             estimator=DecisionTreeClassifier(

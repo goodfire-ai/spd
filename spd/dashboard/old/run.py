@@ -12,12 +12,6 @@ from typing import Any
 import numpy as np
 import torch
 from jaxtyping import Float, Int
-from torch import Tensor
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-from zanj import ZANJ
-
-from spd.configs import Config
 from spd.dashboard.core.activations import (
     ProcessedActivations,
     SubcomponentLabel,
@@ -30,6 +24,12 @@ from spd.dashboard.core.component_data import (
     RawActivationData,
     SubcomponentDetails,
 )
+from torch import Tensor
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from zanj import ZANJ
+
+from spd.configs import Config
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 from spd.data import DatasetConfig, create_data_loader
 from spd.models.component_model import ComponentModel, SPDRunInfo
