@@ -15,6 +15,7 @@ class TokenSequenceData:
     """2D token storage aligned with 3D activation arrays."""
 
     tokens: Shaped[np.ndarray, "n_sequences n_ctx"]  # of type `U{max_token_length}`
+    token_ids: Int[np.ndarray, "n_sequences n_ctx"]  # integer token IDs
     vocab_arr: Shaped[np.ndarray, " d_vocab"]  # of type `U{max_token_length}`
 
     @cached_property
@@ -42,12 +43,19 @@ class TokenSequenceData:
         if not hasattr(tokenizer, "vocab_arr"):
             attach_vocab_arr(tokenizer)
 
+        token_ids: Int[np.ndarray, "n_sequences n_ctx"] = (
+            torch.cat(token_batches, dim=0).cpu().numpy()
+        )
         tokens_decoded: Shaped[np.ndarray, "n_sequences n_ctx"] = simple_batch_decode(
             tokenizer=tokenizer,
-            batch=torch.cat(token_batches, dim=0).cpu().numpy(),
+            batch=token_ids,
         )
 
-        return cls(tokens=tokens_decoded, vocab_arr=tokenizer.vocab_arr)  # pyright: ignore[reportAttributeAccessIssue]
+        return cls(
+            tokens=tokens_decoded,
+            token_ids=token_ids,
+            vocab_arr=tokenizer.vocab_arr,  # pyright: ignore[reportAttributeAccessIssue]
+        )
 
     @cached_property
     def token_counts(self) -> dict[str, int]:

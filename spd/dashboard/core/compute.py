@@ -34,6 +34,14 @@ class FlatActivations:
         """Map from component label string to its index in activations."""
         return {label: idx for idx, label in enumerate(self.component_labels)}
 
+    @cached_property
+    def coactivations(self) -> Float[np.ndarray, "n_components n_components"]:
+        """Binary coactivation matrix (how often components are active together)."""
+        binary: Float[np.ndarray, "n_samples n_components"] = (self.activations > 0).astype(
+            np.float32
+        )
+        return binary.T @ binary
+
     def get_component_activations(
         self,
         label: ComponentLabel,
@@ -105,12 +113,12 @@ class FlatActivations:
 
 
 def _compute_activated_per_token(
-    tsd: TokenSequenceData,
+    flat_acts: FlatActivations,
     activations: Bool[np.ndarray, "n_samples C"],
 ) -> tuple[
-        Int[np.ndarray, " n_samples"], # token ids
-        Float[np.ndarray, "d_vocab C"], # number of activations of this component per token
-    ]:
+    Int[np.ndarray, " n_samples"],  # token ids
+    Float[np.ndarray, "d_vocab C"],  # number of activations of this component per token
+]:
     """Compute co-occurrence matrix of tokens and activations.
 
     Returns:
@@ -119,17 +127,12 @@ def _compute_activated_per_token(
     """
     n_samples: int = activations.shape[0]
     C_components: int = activations.shape[1]
-    d_vocab: int = tsd.vocab_arr.shape[0]
+    d_vocab: int = flat_acts.token_data.vocab_arr.shape[0]
 
-    tokens_flat: Int[np.ndarray, " n_samples"] = tsd.tokens.reshape(-1)
-    assert tokens_flat.shape[0] == n_samples, (
+    token_idx: Int[np.ndarray, " n_samples"] = flat_acts.token_data.token_ids.reshape(-1)
+    assert token_idx.shape[0] == n_samples, (
         f"Tokens and activations must have same length: "
-        f"{tokens_flat.shape[0]} != {activations.shape[0]}"
-    )
-
-    # TODO: optimize -- we are going back to token idxs from strings here
-    token_idx: Int[np.ndarray, " n_samples"] = np.array(
-        [tsd.token_vocab_idx[t] for t in tokens_flat], dtype=np.int64
+        f"{token_idx.shape[0]} != {activations.shape[0]}"
     )
 
     assert np.all((token_idx >= 0) & (token_idx < d_vocab)), (
@@ -176,42 +179,38 @@ class ComponentEmbeddings:
     def n_components(self) -> int:
         return len(self.component_labels)
 
+    @classmethod
+    def create(
+        cls,
+        flat_acts: FlatActivations,
+        embed_dim: int = 2,
+    ) -> "ComponentEmbeddings":
+        """Compute component embeddings from activations using Isomap.
 
-def compute_component_embeddings(
-    flat_acts: FlatActivations,
-    embed_dim: int = 2,
-) -> ComponentEmbeddings:
-    """Compute component embeddings from activations using Isomap.
+        Computes embeddings based on correlation distance.
 
-    Computes embeddings based on coactivation and correlation affinity.
+        Args:
+            flat_acts: Flattened activations data
+            embed_dim: Target dimensionality for embeddings (typically 2 for visualization)
 
-    Args:
-        flat_acts: Flattened activations data
-        embed_dim: Target dimensionality for embeddings (typically 2 for visualization)
+        Returns:
+            ComponentEmbeddings with embeddings and component labels
+        """
+        # Compute Pearson correlations
+        correlations: Float[np.ndarray, "n_components n_components"] = np.corrcoef(
+            flat_acts.activations.T
+        )
 
-    Returns:
-        ComponentEmbeddings with embeddings and component labels
-    """
-    activations: Float[np.ndarray, "n_samples n_components"] = flat_acts.activations
+        # Convert correlation to distance
+        distance_matrix: Float[np.ndarray, "n_components n_components"] = np.abs(correlations)
+        max_distance: float = float(distance_matrix.max())
+        distance: Float[np.ndarray, "n_components n_components"] = max_distance - distance_matrix
+        distance = (distance + distance.T) / 2.0
 
-    # Compute binary coactivations
-    binary: Float[np.ndarray, "n_samples n_components"] = (activations > 0).astype(np.float32)
-    coactivations: Float[np.ndarray, "n_components n_components"] = binary.T @ binary
+        isomap: Isomap = Isomap(n_components=embed_dim, metric="precomputed")
+        embeddings: Float[np.ndarray, "n_components embed_dim"] = isomap.fit_transform(distance)
 
-    # Compute Pearson correlations
-    correlations: Float[np.ndarray, "n_components n_components"] = np.corrcoef(activations.T)
-
-    # Compute Isomap embeddings from affinity
-    affinity: Float[np.ndarray, "n_components n_components"] = coactivations + np.abs(correlations)
-    max_affinity: float = float(affinity.max())
-    distance: Float[np.ndarray, "n_components n_components"] = max_affinity - affinity
-    np.fill_diagonal(distance, 0.0)
-    distance = (distance + distance.T) / 2.0
-
-    isomap: Isomap = Isomap(n_components=embed_dim, metric="precomputed")
-    embeddings: Float[np.ndarray, "n_components embed_dim"] = isomap.fit_transform(distance)
-
-    return ComponentEmbeddings(
-        embeddings=embeddings,
-        component_labels=flat_acts.component_labels,
-    )
+        return cls(
+            embeddings=embeddings,
+            component_labels=flat_acts.component_labels,
+        )
