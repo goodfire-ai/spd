@@ -1,20 +1,120 @@
 """Minimal single-script version of causal importance decision tree training."""
 
+import hashlib
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import torch
-from jaxtyping import Bool, Float
+from jaxtyping import Bool, Float, Int
 from numpy import ndarray
 from torch import Tensor
 from tqdm import tqdm
+from transformers import AutoTokenizer
 
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
+
+
+@dataclass
+class TokenSequenceData:
+    """Token and sequence tracking data parallel to flattened activations."""
+
+    token_strs: ndarray  # [n_samples] - Decoded token strings (object dtype)
+    sequence_ids: Int[ndarray, " n_samples"]  # Which sequence (0 to n_sequences-1)
+    position_ids: Int[ndarray, " n_samples"]  # Position within sequence (0 to n_ctx-1)
+    token_hashes: ndarray  # [n_samples] - SHA256 hashes of tokens (object dtype, hex strings)
+
+    # Index: hash -> list of sample indices
+    _hash_index: dict[str, list[int]] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Build hash index for fast lookup by token hash."""
+        for idx, token_hash in enumerate(self.token_hashes):
+            if token_hash not in self._hash_index:
+                self._hash_index[token_hash] = []
+            self._hash_index[token_hash].append(idx)
+
+    def get_samples_for_token(self, token: str) -> Bool[ndarray, " n_samples"]:
+        """Return boolean mask of samples matching the given token string."""
+        return self.token_strs == token
+
+    def get_samples_for_hash(self, token_hash: str) -> Int[ndarray, " n_matches"]:
+        """Return array of sample indices matching the given token hash."""
+        return np.array(self._hash_index.get(token_hash, []), dtype=int)
+
+    def get_samples_for_position(self, position: int | range) -> Bool[ndarray, " n_samples"]:
+        """Return boolean mask of samples at the given position(s) in sequence."""
+        if isinstance(position, int):
+            return self.position_ids == position
+        # Handle range
+        mask: Bool[ndarray, " n_samples"] = self.position_ids >= position.start
+        if position.stop is not None:
+            mask = mask & (self.position_ids < position.stop)
+        return mask
+
+    def get_sequence(self, sequence_id: int) -> dict[str, Any]:
+        """Return all token data for a specific sequence.
+
+        Returns:
+            Dict with keys: 'tokens', 'positions', 'hashes'
+        """
+        mask: Bool[ndarray, " n_samples"] = self.sequence_ids == sequence_id
+        return {
+            "tokens": self.token_strs[mask],
+            "positions": self.position_ids[mask],
+            "hashes": self.token_hashes[mask],
+        }
+
+    @staticmethod
+    def compute_token_hash(token: str) -> str:
+        """Compute SHA256 hash of a token string."""
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def from_token_batches(
+        cls,
+        token_batches: list[Tensor],
+        tokenizer: Any,
+    ) -> "TokenSequenceData":
+        """Generate TokenSequenceData from batches of token IDs.
+
+        Args:
+            token_batches: List of token ID tensors [batch_size, n_ctx]
+            tokenizer: Tokenizer to decode token IDs
+
+        Returns:
+            TokenSequenceData with flattened parallel arrays
+        """
+        # Concatenate batches: [n_sequences, n_ctx]
+        tokens_concat: Tensor = torch.cat(token_batches, dim=0)
+        n_sequences: int = tokens_concat.shape[0]
+        n_ctx: int = tokens_concat.shape[1]
+
+        # Flatten to match activation samples: [n_samples]
+        tokens_flat: Int[ndarray, " n_samples"] = tokens_concat.reshape(-1).numpy()
+
+        # Create sequence and position IDs
+        sequence_ids: Int[ndarray, " n_samples"] = np.repeat(np.arange(n_sequences), n_ctx)
+        position_ids: Int[ndarray, " n_samples"] = np.tile(np.arange(n_ctx), n_sequences)
+
+        # Decode tokens and compute hashes
+        token_strs: ndarray = np.array(
+            [tokenizer.decode([int(token_id)]) for token_id in tokens_flat], dtype=object
+        )
+        token_hashes: ndarray = np.array(
+            [cls.compute_token_hash(token_str) for token_str in token_strs], dtype=object
+        )
+
+        return cls(
+            token_strs=token_strs,
+            sequence_ids=sequence_ids,
+            position_ids=position_ids,
+            token_hashes=token_hashes,
+        )
 
 
 @dataclass
@@ -24,6 +124,7 @@ class LayerActivations:
     data: dict[str, Bool[np.ndarray, "n_samples n_components"]]
     layer_order: list[str]
     varying_component_indices: dict[str, list[int]]
+    token_data: TokenSequenceData
 
     def get_concat_before(self, module_name: str) -> Bool[ndarray, "n_samples n_features"]:
         """Get concatenated activations of all layers before the specified module."""
@@ -76,7 +177,7 @@ class LayerActivations:
         model.to(device=device)
         spd_cfg: Config = spd_run.config
 
-        # get dataloader
+        # get dataloader and tokenizer
         assert isinstance(spd_cfg.task_config, LMTaskConfig)
         assert spd_cfg.pretrained_model_name is not None
 
@@ -99,20 +200,32 @@ class LayerActivations:
             ddp_world_size=1,
         )
 
-        # compute acts
+        # compute acts and collect tokens
         print(f"\nComputing activations for {n_batches} batches...")
         all_acts: list[dict[str, Tensor]] = []
+        all_tokens: list[Tensor] = []
 
         for _ in tqdm(range(n_batches), desc="Batches"):
             batch: Tensor = next(iter(dataloader))["input_ids"]
+            all_tokens.append(batch.cpu())
             with torch.no_grad():
                 output: OutputWithCache = model(batch.to(device), cache_type="input")
                 acts: dict[str, Tensor] = model.calc_causal_importances(
                     pre_weight_acts=output.cache,
                     sampling="continuous",
                     detach_inputs=False,
-                ).upper_leaky  # TODO
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                ).upper_leaky  # TODO: is this right?
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             all_acts.append({k: v.cpu() for k, v in acts.items()})
+
+        # Generate token sequence data
+        tokenizer = AutoTokenizer.from_pretrained(spd_cfg.pretrained_model_name)
+        print("\nProcessing token sequences...")
+        token_data: TokenSequenceData = TokenSequenceData.from_token_batches(
+            token_batches=all_tokens,
+            tokenizer=tokenizer,
+        )
 
         # Concatenate batches
         module_keys: list[str] = list(all_acts[0].keys())
@@ -148,4 +261,5 @@ class LayerActivations:
             data=layers,
             layer_order=module_keys,
             varying_component_indices=varying_component_indices,
+            token_data=token_data,
         )
