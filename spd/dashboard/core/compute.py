@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from jaxtyping import Bool, Float, Int, Shaped
 from numpy import ndarray
+from sklearn.manifold import Isomap
 from torch import Tensor
 
 from spd.dashboard.core.acts import Activations, ComponentLabel
@@ -162,3 +163,55 @@ def _compute_P_token_given_active(
     """Compute P(token | activation)."""
     total_acts: Float[np.ndarray, " C"] = activations.sum(axis=0)
     return activated_per_token / total_acts[None, :]
+
+
+@dataclass
+class ComponentEmbeddings:
+    """Component embeddings for visualization."""
+
+    embeddings: Float[np.ndarray, "n_components embed_dim"]
+    component_labels: list[ComponentLabel]
+
+    @property
+    def n_components(self) -> int:
+        return len(self.component_labels)
+
+
+def compute_component_embeddings(
+    flat_acts: FlatActivations,
+    embed_dim: int = 2,
+) -> ComponentEmbeddings:
+    """Compute component embeddings from activations using Isomap.
+
+    Computes embeddings based on coactivation and correlation affinity.
+
+    Args:
+        flat_acts: Flattened activations data
+        embed_dim: Target dimensionality for embeddings (typically 2 for visualization)
+
+    Returns:
+        ComponentEmbeddings with embeddings and component labels
+    """
+    activations: Float[np.ndarray, "n_samples n_components"] = flat_acts.activations
+
+    # Compute binary coactivations
+    binary: Float[np.ndarray, "n_samples n_components"] = (activations > 0).astype(np.float32)
+    coactivations: Float[np.ndarray, "n_components n_components"] = binary.T @ binary
+
+    # Compute Pearson correlations
+    correlations: Float[np.ndarray, "n_components n_components"] = np.corrcoef(activations.T)
+
+    # Compute Isomap embeddings from affinity
+    affinity: Float[np.ndarray, "n_components n_components"] = coactivations + np.abs(correlations)
+    max_affinity: float = float(affinity.max())
+    distance: Float[np.ndarray, "n_components n_components"] = max_affinity - affinity
+    np.fill_diagonal(distance, 0.0)
+    distance = (distance + distance.T) / 2.0
+
+    isomap: Isomap = Isomap(n_components=embed_dim, metric="precomputed")
+    embeddings: Float[np.ndarray, "n_components embed_dim"] = isomap.fit_transform(distance)
+
+    return ComponentEmbeddings(
+        embeddings=embeddings,
+        component_labels=flat_acts.component_labels,
+    )
