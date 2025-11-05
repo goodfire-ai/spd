@@ -140,23 +140,25 @@ class LayerActivations:
         layers: dict[str, Bool[np.ndarray, "n_samples n_components"]] = {}
         varying_component_indices: dict[str, list[int]] = {}
 
-        for module_name, acts_tensor in acts_concat.items():
+        for module_name, acts_raw in acts_concat.items():
             # Flatten if 3D (batch, seq, components) -> (batch*seq, components)
-            acts_np: Float[np.ndarray, "n_samples n_components"] = acts_tensor.reshape(
-                -1, acts_tensor.shape[-1]
+            acts_float_np: Float[np.ndarray, "n_samples n_components"] = acts_raw.reshape(
+                -1, acts_raw.shape[-1]
             ).numpy()
 
             # Threshold to boolean
             acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
-                acts_np >= activation_threshold
+                acts_float_np >= activation_threshold
             ).astype(bool)
 
             # Filter constant components (always 0 or always 1)
             varying_mask: Bool[np.ndarray, " n_components"] = acts_bool.var(axis=0) > 0
             acts_varying = acts_bool[:, varying_mask]
             layers[module_name] = acts_varying
+
             # Store which original component indices were kept
             varying_component_indices[module_name] = np.where(varying_mask)[0].tolist()
+
             print(f"  {module_name}: {acts_varying.shape[1]} varying components")
 
         return LayerActivations(
