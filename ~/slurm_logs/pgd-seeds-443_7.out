@@ -1,0 +1,29 @@
+wandb: Currently logged in as: olicg-gf (goodfire) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.22.2
+wandb: Run data is saved locally in /mnt/polished-lake/home/oli/spd/wandb/run-20251104_174147-ubudnmyz
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run varying_seed-base_seed_7
+wandb: ⭐️ View project at https://wandb.ai/goodfire/pgd-saturation
+wandb: 🚀 View run at https://wandb.ai/goodfire/pgd-saturation/runs/ubudnmyz
+wandb: updating run metadata
+wandb: 
+wandb: Run history:
+wandb: effective_batch_size ▁▁▁▁▁▁▁▁▁▁▁▂▃▄█
+wandb:     grad_accum_steps ▁▁▁▁▁▁▁▁▁▁▁▂▃▄█
+wandb:     micro_batch_size ▁▁▁▁▂▃▄████████
+wandb:        pgd_init_seed ▁▁▂▃▃▃▄▅▅▅▆▇▇▇█
+wandb:             pgd_loss ▆▇▁▂▂█▂▁▂▁███▄▄
+wandb:           time_taken ▁▁▁▁▁▁▁▁▁▁▁▂▃▄█
+wandb: 
+wandb: Run summary:
+wandb: effective_batch_size 16384
+wandb:     grad_accum_steps 128
+wandb:     micro_batch_size 128
+wandb:        pgd_init_seed 7014
+wandb:             pgd_loss 31.15536
+wandb:           time_taken 2359.60404
+wandb: 
+wandb: 🚀 View run varying_seed-base_seed_7 at: https://wandb.ai/goodfire/pgd-saturation/runs/ubudnmyz
+wandb: ⭐️ View project at: https://wandb.ai/goodfire/pgd-saturation
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20251104_174147-ubudnmyz/logs
