@@ -2,7 +2,8 @@
 
 import hashlib
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from functools import cached_property
 from typing import Any
 
 import numpy as np
@@ -11,74 +12,71 @@ from jaxtyping import Bool, Float, Int
 from numpy import ndarray
 from torch import Tensor
 from tqdm import tqdm
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
+import json
 
 from spd.configs import Config
+from spd.dashboard.core.tokenization import attach_vocab_arr, simple_batch_decode
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
 
 
+
+@dataclass(frozen=True)
+class TextSample:
+    """A sequence of tokens with its location in the flattened activation array."""
+
+    tokens: list[str]
+    dataset_idx: tuple[int, int]  # (start, end) slice into flattened n_samples array
+
+    def __hash__(self) -> int:
+        """Hash based on token tuple for Python dict/set compatibility."""
+        return hash(self.sequence_hash)
+
+    @cached_property
+    def sequence_hash(self) -> str:
+        """SHA256 hash of tokens for stable string keys."""
+        return hashlib.sha256(
+            json.dumps(self.tokens).encode()
+        ).digest().hex()
+
+
 @dataclass
 class TokenSequenceData:
-    """Token and sequence tracking data parallel to flattened activations."""
+    """Efficient storage for token sequences using flat array with range indexing."""
 
-    token_strs: ndarray  # [n_samples] - Decoded token strings (object dtype)
-    sequence_ids: Int[ndarray, " n_samples"]  # Which sequence (0 to n_sequences-1)
-    position_ids: Int[ndarray, " n_samples"]  # Position within sequence (0 to n_ctx-1)
-    token_hashes: ndarray  # [n_samples] - SHA256 hashes of tokens (object dtype, hex strings)
+    all_tokens: ndarray  # [total_tokens] flat string array with dtype U{max_token_length}
+    sequence_ranges: dict[str, tuple[int, int]]  # sequence_hash -> (start, end) into all_tokens
+    dataset_indices: dict[str, tuple[int, int]]  # sequence_hash -> (start, end) into n_samples
 
-    # Index: hash -> list of sample indices
-    _hash_index: dict[str, list[int]] = field(default_factory=dict, init=False, repr=False)
+    def get_sequence_tokens(self, sequence_hash: str) -> TextSample:
+        """Get TextSample for a specific sequence by its hash.
 
-    def __post_init__(self) -> None:
-        """Build hash index for fast lookup by token hash."""
-        for idx, token_hash in enumerate(self.token_hashes):
-            if token_hash not in self._hash_index:
-                self._hash_index[token_hash] = []
-            self._hash_index[token_hash].append(idx)
-
-    def get_samples_for_token(self, token: str) -> Bool[ndarray, " n_samples"]:
-        """Return boolean mask of samples matching the given token string."""
-        return self.token_strs == token
-
-    def get_samples_for_hash(self, token_hash: str) -> Int[ndarray, " n_matches"]:
-        """Return array of sample indices matching the given token hash."""
-        return np.array(self._hash_index.get(token_hash, []), dtype=int)
-
-    def get_samples_for_position(self, position: int | range) -> Bool[ndarray, " n_samples"]:
-        """Return boolean mask of samples at the given position(s) in sequence."""
-        if isinstance(position, int):
-            return self.position_ids == position
-        # Handle range
-        mask: Bool[ndarray, " n_samples"] = self.position_ids >= position.start
-        if position.stop is not None:
-            mask = mask & (self.position_ids < position.stop)
-        return mask
-
-    def get_sequence(self, sequence_id: int) -> dict[str, Any]:
-        """Return all token data for a specific sequence.
+        Args:
+            sequence_hash: SHA256 hash of the sequence
 
         Returns:
-            Dict with keys: 'tokens', 'positions', 'hashes'
+            TextSample with tokens and dataset_idx
         """
-        mask: Bool[ndarray, " n_samples"] = self.sequence_ids == sequence_id
-        return {
-            "tokens": self.token_strs[mask],
-            "positions": self.position_ids[mask],
-            "hashes": self.token_hashes[mask],
-        }
+        start, end = self.sequence_ranges[sequence_hash]
+        tokens: list[str] = self.all_tokens[start:end].tolist()
+        dataset_idx: tuple[int, int] = self.dataset_indices[sequence_hash]
+        return TextSample(tokens=tokens, dataset_idx=dataset_idx)
 
-    @staticmethod
-    def compute_token_hash(token: str) -> str:
-        """Compute SHA256 hash of a token string."""
-        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    def get_all_sequences(self) -> list[TextSample]:
+        """Get all sequences as TextSample objects.
+
+        Returns:
+            List of all TextSample objects
+        """
+        return [self.get_sequence_tokens(h) for h in self.sequence_ranges]
 
     @classmethod
     def from_token_batches(
         cls,
         token_batches: list[Tensor],
-        tokenizer: Any,
+        tokenizer: PreTrainedTokenizer,
     ) -> "TokenSequenceData":
         """Generate TokenSequenceData from batches of token IDs.
 
@@ -87,33 +85,48 @@ class TokenSequenceData:
             tokenizer: Tokenizer to decode token IDs
 
         Returns:
-            TokenSequenceData with flattened parallel arrays
+            TokenSequenceData with flat array storage
         """
+        # Ensure tokenizer has vocab array for fast batch decoding
+        if not hasattr(tokenizer, "vocab_arr"):
+            attach_vocab_arr(tokenizer)
+
         # Concatenate batches: [n_sequences, n_ctx]
         tokens_concat: Tensor = torch.cat(token_batches, dim=0)
         n_sequences: int = tokens_concat.shape[0]
         n_ctx: int = tokens_concat.shape[1]
 
-        # Flatten to match activation samples: [n_samples]
-        tokens_flat: Int[ndarray, " n_samples"] = tokens_concat.reshape(-1).numpy()
+        # Decode all tokens using efficient batch decode
+        tokens_decoded: ndarray = simple_batch_decode(
+            tokenizer, tokens_concat.numpy()
+        )  # [n_sequences, n_ctx]
 
-        # Create sequence and position IDs
-        sequence_ids: Int[ndarray, " n_samples"] = np.repeat(np.arange(n_sequences), n_ctx)
-        position_ids: Int[ndarray, " n_samples"] = np.tile(np.arange(n_ctx), n_sequences)
+        # Flatten to single array: [total_tokens]
+        all_tokens_flat: ndarray = tokens_decoded.reshape(-1)
 
-        # Decode tokens and compute hashes
-        token_strs: ndarray = np.array(
-            [tokenizer.decode([int(token_id)]) for token_id in tokens_flat], dtype=object
-        )
-        token_hashes: ndarray = np.array(
-            [cls.compute_token_hash(token_str) for token_str in token_strs], dtype=object
-        )
+        # Build sequence mappings
+        sequence_ranges: dict[str, tuple[int, int]] = {}
+        dataset_indices: dict[str, tuple[int, int]] = {}
+
+        for seq_idx in range(n_sequences):
+            # Extract tokens for this sequence
+            seq_tokens: list[str] = tokens_decoded[seq_idx].tolist()
+
+            # Compute stable hash
+            seq_hash: str = hashlib.sha256(str(tuple(seq_tokens)).encode()).hexdigest()
+
+            # Token range in all_tokens array
+            token_start: int = seq_idx * n_ctx
+            token_end: int = (seq_idx + 1) * n_ctx
+            sequence_ranges[seq_hash] = (token_start, token_end)
+
+            # Dataset index range in flattened n_samples array
+            dataset_indices[seq_hash] = (token_start, token_end)
 
         return cls(
-            token_strs=token_strs,
-            sequence_ids=sequence_ids,
-            position_ids=position_ids,
-            token_hashes=token_hashes,
+            all_tokens=all_tokens_flat,
+            sequence_ranges=sequence_ranges,
+            dataset_indices=dataset_indices,
         )
 
 
