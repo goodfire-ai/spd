@@ -1,7 +1,6 @@
 """Run SPD on a model."""
 
 import gc
-import os
 from collections import defaultdict
 from pathlib import Path
 from typing import cast
@@ -116,7 +115,6 @@ def optimize(
     ln_stds: dict[str, float] | None = None,
 ) -> None:
     """Run the optimization loop for LM decomposition."""
-    logger.info(f"running SPD on slurm job id: {os.getenv('SLURM_JOB_ID', None)}")
 
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
