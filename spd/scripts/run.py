@@ -193,6 +193,8 @@ def generate_commands(
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
                 )
+                print(command)
+                exit()
 
                 commands.append(command)
                 cmd_idx += 1
