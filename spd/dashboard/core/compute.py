@@ -92,9 +92,14 @@ class FlatActivations:
     def get_concat_this_module(self, module_name: str) -> Float[ndarray, "n_samples n_features"]:
         """Get concatenated activations of the specified module."""
         start_idx: int = self.start_of_module_index(module_name)
-        end_idx: int = self.start_of_module_index(
-            self.layer_order[self.layer_order.index(module_name) + 1]
-        )
+        end_idx: int
+        try:
+            next_module: str = self.layer_order.index(module_name) + 1
+            end_idx = self.start_of_module_index(
+                self.layer_order[next_module]
+            )
+        except (IndexError, ValueError):
+            end_idx = None
 
         # check all component labels are correct
         for idx, c_label in enumerate(self.component_labels):
