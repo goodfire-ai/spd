@@ -31,14 +31,14 @@ class ComponentLabel:
         return hash((self.module, self.index))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Activations:
     """Container for layer-wise activations with ordered access."""
 
-    data: dict[str, Float[np.ndarray, "n_sequences n_ctx n_components"]]
     layer_order: list[str]
-    varying_component_indices: dict[str, list[int]]
     token_data: TokenSequenceData
+    data: dict[str, Float[np.ndarray, "n_sequences n_ctx n_components"]]
+    varying_component_indices: dict[str, list[int]]
 
     @property
     def n_components_total(self) -> int:
