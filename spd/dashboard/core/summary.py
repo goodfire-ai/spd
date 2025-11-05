@@ -2,11 +2,12 @@ import warnings
 from typing import Literal
 
 import numpy as np
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 
 from spd.dashboard.core.acts import Activations, ComponentLabel, FlatActivations
 from spd.dashboard.core.compute import (
+    ComponentEmbeddings,
     _compute_activated_per_token,
     _compute_P_active_given_token,
     _compute_P_token_given_active,
@@ -99,7 +100,7 @@ class SubcomponentSummary(SerializableDataclass):
         """Create summary for a single component."""
 
         # Compute basic stats
-        stats = {
+        stats: dict[str, float] = {
             "mean": float(np.mean(activations)),
             "std": float(np.std(activations)),
             "min": float(np.min(activations)),
@@ -113,10 +114,12 @@ class SubcomponentSummary(SerializableDataclass):
 
         # Compute histograms
         # Reshape to (n_batches, n_ctx) for per-sample statistics
+        n_batches: int
+        n_ctx: int
         n_batches, n_ctx = tokens.tokens.shape
-        acts_2d = activations.reshape(n_batches, n_ctx)
+        acts_2d: Float[np.ndarray, "n_batches n_ctx"] = activations.reshape(n_batches, n_ctx)
 
-        histograms = {
+        histograms: dict[str, dict[str, list[float]]] = {
             "all_activations": _make_histogram(activations, config.hist_bins, config.hist_range),
             "max_per_sample": _make_histogram(
                 acts_2d.max(axis=1), config.hist_bins, config.hist_range
@@ -130,22 +133,27 @@ class SubcomponentSummary(SerializableDataclass):
         top_n: int = config.token_stats_top_n
 
         # Get top K indices by each probability metric
-        top_by_p_token_given_active = np.argsort(p_token_given_active)[-top_n:]
-        top_by_p_active_given_token = np.argsort(p_active_given_token)[-top_n:]
+        top_by_p_token_given_active: Int[np.ndarray, " top_n"] = np.argsort(p_token_given_active)[
+            -top_n:
+        ]
+        top_by_p_active_given_token: Int[np.ndarray, " top_n"] = np.argsort(p_active_given_token)[
+            -top_n:
+        ]
 
         # Union of both sets
-        token_indices = np.unique(
+        token_indices: Int[np.ndarray, " n_indices"] = np.unique(
             np.concatenate([top_by_p_token_given_active, top_by_p_active_given_token])
         )
 
         # Create TokenStat objects
-        token_stats_list = []
+        token_stats_list: list[TokenStat] = []
+        idx: int
         for idx in token_indices:
-            token_str = tokens.vocab_arr[idx]
+            token_str: str = tokens.vocab_arr[idx]
             # Count total occurrences of this token in the dataset
-            count_token_total = int(np.sum(tokens.tokens.reshape(-1) == idx))
+            count_token_total: int = int(np.sum(tokens.tokens.reshape(-1) == idx))
 
-            token_stat = TokenStat(
+            token_stat: TokenStat = TokenStat(
                 token=token_str,
                 token_id=int(idx),
                 p_token_given_active=float(p_token_given_active[idx]),
@@ -185,27 +193,31 @@ class ActivationsSummary(SerializableDataclass):
         cls, activations: Activations, config: ComponentDashboardConfig
     ) -> "ActivationsSummary":
         # Flatten activations
-        acts_flat = FlatActivations.create(activations)
+        acts_flat: FlatActivations = FlatActivations.create(activations)
         assert acts_flat.n_components
 
         # Compute embeddings
-        embeddings = compute_component_embeddings(acts_flat, config.embed_dim)
+        embeddings: ComponentEmbeddings = compute_component_embeddings(acts_flat, config.embed_dim)
 
         # Compute conditional probabilities for ALL components at once
+        token_idx: Int[np.ndarray, " n_samples"]
+        activated_per_token: Float[np.ndarray, "d_vocab C"]
         token_idx, activated_per_token = _compute_activated_per_token(
             acts_flat.token_data, acts_flat.activations > config.activation_threshold
         )
-        p_active_given_token = _compute_P_active_given_token(
+        p_active_given_token: Float[np.ndarray, "d_vocab C"] = _compute_P_active_given_token(
             activated_per_token, token_idx, acts_flat.token_data.vocab_arr.shape[0]
         )
-        p_token_given_active = _compute_P_token_given_active(
+        p_token_given_active: Float[np.ndarray, "d_vocab C"] = _compute_P_token_given_active(
             activated_per_token, acts_flat.activations > config.activation_threshold
         )
 
         # Create summary for each component
-        summaries = []
+        summaries: list[SubcomponentSummary] = []
+        i: int
+        label: ComponentLabel
         for i, label in enumerate(acts_flat.component_labels):
-            summary = SubcomponentSummary.create(
+            summary: SubcomponentSummary = SubcomponentSummary.create(
                 label=label,
                 tokens=acts_flat.token_data,
                 activations=acts_flat.activations[:, i],

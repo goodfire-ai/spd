@@ -94,12 +94,10 @@ class FlatActivations:
         start_idx: int = self.start_of_module_index(module_name)
         end_idx: int
         try:
-            next_module: str = self.layer_order.index(module_name) + 1
-            end_idx = self.start_of_module_index(
-                self.layer_order[next_module]
-            )
+            next_module: int = self.layer_order.index(module_name) + 1
+            end_idx = self.start_of_module_index(self.layer_order[next_module])
         except (IndexError, ValueError):
-            end_idx = None
+            end_idx = self.n_components
 
         # check all component labels are correct
         for idx, c_label in enumerate(self.component_labels):
@@ -188,7 +186,7 @@ class ComponentEmbeddings:
     def create(
         cls,
         flat_acts: FlatActivations,
-        embed_dim: int = 2,
+        embed_dim: int = 3,
     ) -> "ComponentEmbeddings":
         """Compute component embeddings from activations using Isomap.
 
