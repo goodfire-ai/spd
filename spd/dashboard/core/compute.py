@@ -103,16 +103,18 @@ class FlatActivations:
         return self.activations[:, start_idx:end_idx]
 
 
-def conditional_matrices(
+def _compute_activated_per_token(
     tsd: TokenSequenceData,
     activations: Bool[np.ndarray, "n_samples C"],
-    laplace: float = 0.0,
-) -> tuple[Float[np.ndarray, "d_vocab C"], Float[np.ndarray, "d_vocab C"]]:
-    """compute P(activation | token) and P(token | activation) as (d_vocab, C) arrays
+) -> tuple[
+        Int[np.ndarray, " n_samples"], # token ids
+        Float[np.ndarray, "d_vocab C"], # number of activations of this component per token
+    ]:
+    """Compute co-occurrence matrix of tokens and activations.
 
-    # Returns:
-     - `tuple[Float[np.ndarray, "d_vocab C"], Float[np.ndarray, "d_vocab C"]]`
-        (p_activation_given_token, p_token_given_activation)
+    Returns:
+        token_idx: Token indices for each sample
+        activated_per_token: Count matrix of activations per token (d_vocab, C)
     """
     n_samples: int = activations.shape[0]
     C_components: int = activations.shape[1]
@@ -138,27 +140,25 @@ def conditional_matrices(
     )
     np.add.at(activated_per_token, token_idx, activations)
 
+    return token_idx, activated_per_token
+
+
+def _compute_P_active_given_token(
+    activated_per_token: Float[np.ndarray, "d_vocab C"],
+    token_idx: Int[np.ndarray, " n_samples"],
+    d_vocab: int,
+) -> Float[np.ndarray, "d_vocab C"]:
+    """Compute P(activation | token)."""
     denom_act_given: Float[np.ndarray, "d_vocab 1"] = np.bincount(token_idx, minlength=d_vocab)[
         :, None
     ]
-    num_act_given: Float[np.ndarray, "d_vocab C"] = activated_per_token.copy()
-    if laplace:
-        num_act_given = num_act_given + laplace
-        denom_act_given = denom_act_given + 2.0 * laplace
+    return activated_per_token / denom_act_given
 
-    with np.errstate(divide="ignore", invalid="ignore"):
-        p_activation_given_token: Float[np.ndarray, "d_vocab C"] = np.divide(
-            num_act_given,
-            denom_act_given,
-            out=np.zeros_like(num_act_given, dtype=float),
-            where=denom_act_given > 0,
-        )
 
+def _compute_P_token_given_active(
+    activated_per_token: Float[np.ndarray, "d_vocab C"],
+    activations: Bool[np.ndarray, "n_samples C"],
+) -> Float[np.ndarray, "d_vocab C"]:
+    """Compute P(token | activation)."""
     total_acts: Float[np.ndarray, " C"] = activations.sum(axis=0)
-    safe_den: Float[np.ndarray, "1 C"] = np.where(total_acts > 0, total_acts, 1.0)[None, :]
-    p_token_given_activation: Float[np.ndarray, "d_vocab C"] = activated_per_token / safe_den
-    zero_cols: Bool[np.ndarray, " C"] = total_acts == 0
-    if np.any(zero_cols):
-        p_token_given_activation[:, zero_cols] = 0.0
-
-    return p_activation_given_token, p_token_given_activation
+    return activated_per_token / total_acts[None, :]
