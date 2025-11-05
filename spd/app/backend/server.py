@@ -109,14 +109,7 @@ def get_subcomponent_activation_contexts(
                     complete_data = {"type": "complete", "result": metadata.model_dump()}
                     yield f"data: {json.dumps(complete_data)}\n\n"
 
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering if behind proxy
-        },
-    )
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 # Cache for harvest results, keyed by UUID
 harvest_cache: dict[str, ModelActivationContexts] = {}

@@ -16,6 +16,7 @@ from spd.app.backend.schemas import (
 )
 from spd.app.backend.services.run_context_service import TrainRunContext
 from spd.configs import Config
+from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
 
@@ -230,6 +231,7 @@ def get_activations_data_streaming(
                 component_activation_tokens[module_name][component_idx][token_id] += 1
 
         # Yield progress update
+        logger.info(f"Processed batch {i+1}/{n_batches}")
         yield ("progress", i)
 
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
@@ -259,6 +261,7 @@ def get_activations_data_streaming(
         module_subcomponent_ctxs.sort(key=lambda x: x.mean_ci, reverse=True)
         model_ctxs[module_name] = module_subcomponent_ctxs
 
+    logger.info("Completed streaming activation contexts")
     yield ("complete", ModelActivationContexts(layers=model_ctxs))
 
 
