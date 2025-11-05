@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 import json
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 import torch
@@ -29,7 +29,7 @@ class LayerActivations:
 
     def get_concat_before(self, module_name: str) -> Bool[np.ndarray, "n_samples n_features"]:
         """Get concatenated activations of all layers before the specified module."""
-        idx = self.layer_order.index(module_name)
+        idx: int = self.layer_order.index(module_name)
         if idx == 0:
             # No previous layers, return empty array with correct number of samples
             n_samples = list(self.data.values())[0].shape[0]
@@ -40,8 +40,23 @@ class LayerActivations:
     def __len__(self) -> int:
         return len(self.layer_order)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return iter(self.layer_order)
+
+    def build_feature_map(self, module_name: str) -> list[dict[str, Any]]:
+        """Build feature map for module: maps feature index -> component identity."""
+        feature_map: list[dict[str, Any]] = []
+        module_idx = self.layer_order.index(module_name)
+        for prev_idx in range(module_idx):
+            prev_module = self.layer_order[prev_idx]
+            for comp_idx in self.varying_component_indices[prev_module]:
+                feature_map.append({
+                    "layer_idx": prev_idx,
+                    "module_key": prev_module,
+                    "component_idx": comp_idx,
+                    "label": f"{prev_module}:{comp_idx}",
+                })
+        return feature_map
 
     @classmethod
     def generate(

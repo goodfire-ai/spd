@@ -16,6 +16,7 @@ from torch import Tensor
 from tqdm import tqdm
 
 from spd.configs import Config
+from spd.dashboard.core.ci_dt.acts import LayerActivations
 from spd.dashboard.core.matshow_sort import sort_by_similarity
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -37,8 +38,13 @@ class TreeConfig:
 
 CONFIG: TreeConfig = TreeConfig()
 
-
-
+ACTIVATIONS: LayerActivations = LayerActivations.generate(
+    wandb_run_path=CONFIG.wandb_run_path,
+    n_batches=CONFIG.n_batches,
+    n_ctx=CONFIG.n_ctx,
+    device=CONFIG.device,
+    activation_threshold=CONFIG.activation_threshold,
+)
 
 # %% ----------------------- Train Decision Trees -----------------------
 def train_decision_trees(
@@ -48,27 +54,58 @@ def train_decision_trees(
 ) -> dict[str, MultiOutputClassifier]:
     """Train decision trees to predict each layer from previous layers."""
     print("\nTraining decision trees...")
-    models: dict[str, MultiOutputClassifier] = {}
+    layer_trees: dict[str, MultiOutputClassifier] = {}
 
     # Skip first layer (no previous layers to predict from)
     for module_name in list(layer_acts)[1:]:
         X_prev_layers_cis = layer_acts.get_concat_before(module_name)
         Y_current_layer_cis = layer_acts.data[module_name]
 
-        clf = MultiOutputClassifier(
-            DecisionTreeClassifier(
+        clf: MultiOutputClassifier = MultiOutputClassifier(
+            estimator=DecisionTreeClassifier(
                 max_depth=max_depth,
                 min_samples_leaf=1,
                 random_state=random_state,
             )
         )
-        clf.fit(X_prev_layers_cis.astype(np.uint8), Y_current_layer_cis.astype(np.uint8))
-        models[module_name] = clf
+        clf.fit(X=X_prev_layers_cis.astype(np.uint8), Y=Y_current_layer_cis.astype(np.uint8))
+        layer_trees[module_name] = clf
 
-    return models
+    return layer_trees
+
+
+
+LAYER_TREES = train_decision_trees(
+    layer_acts=ACTIVATIONS,
+    max_depth=CONFIG.max_depth,
+    random_state=CONFIG.random_state,
+)
 
 
 # %% ----------------------- Compute Metrics -----------------------
+
+def extract_prob_class_1(proba_list: list[np.ndarray], clf: MultiOutputClassifier) -> np.ndarray:
+    """Extract P(y=1) for each output."""
+    result: list[np.ndarray] = []
+    for i, p in enumerate(proba_list):
+        estimator = clf.estimators_[i]  # pyright: ignore[reportIndexIssue]
+        assert isinstance(estimator, DecisionTreeClassifier)
+        assert len(estimator.classes_) == 2
+        result.append(p[:, 1])  # P(y=1)
+    return np.stack(result, axis=1)
+
+def tree_to_dict(tree: DecisionTreeClassifier) -> dict[str, Any]:
+    """Convert sklearn DecisionTree to JSON-serializable dict."""
+    tree_ = tree.tree_
+    return {
+        "feature": tree_.feature.tolist(),
+        "threshold": tree_.threshold.tolist(),
+        "children_left": tree_.children_left.tolist(),
+        "children_right": tree_.children_right.tolist(),
+        "value": tree_.value.tolist(),
+        "n_node_samples": tree_.n_node_samples.tolist(),
+    }
+
 def compute_metrics_and_save(
     models: dict[str, MultiOutputClassifier],
     layer_acts: LayerActivations,
@@ -76,43 +113,6 @@ def compute_metrics_and_save(
 ) -> list[dict[str, Any]]:
     """Compute metrics, serialize trees, and save to JSON."""
     print("\nComputing metrics...")
-
-    def extract_prob_class_1(proba_list: list[np.ndarray], clf: MultiOutputClassifier) -> np.ndarray:
-        """Extract P(y=1) for each output."""
-        result: list[np.ndarray] = []
-        for i, p in enumerate(proba_list):
-            estimator = clf.estimators_[i]  # pyright: ignore[reportIndexIssue]
-            assert isinstance(estimator, DecisionTreeClassifier)
-            assert len(estimator.classes_) == 2
-            result.append(p[:, 1])  # P(y=1)
-        return np.stack(result, axis=1)
-
-    def tree_to_dict(tree: DecisionTreeClassifier) -> dict[str, Any]:
-        """Convert sklearn DecisionTree to JSON-serializable dict."""
-        tree_ = tree.tree_
-        return {
-            "feature": tree_.feature.tolist(),
-            "threshold": tree_.threshold.tolist(),
-            "children_left": tree_.children_left.tolist(),
-            "children_right": tree_.children_right.tolist(),
-            "value": tree_.value.tolist(),
-            "n_node_samples": tree_.n_node_samples.tolist(),
-        }
-
-    def build_feature_map(module_name: str) -> list[dict[str, Any]]:
-        """Build feature map for module: maps feature index -> component identity."""
-        feature_map: list[dict[str, Any]] = []
-        module_idx = layer_acts.layer_order.index(module_name)
-        for prev_idx in range(module_idx):
-            prev_module = layer_acts.layer_order[prev_idx]
-            for comp_idx in layer_acts.varying_component_indices[prev_module]:
-                feature_map.append({
-                    "layer_idx": prev_idx,
-                    "module_key": prev_module,
-                    "component_idx": comp_idx,
-                    "label": f"{prev_module}:{comp_idx}",
-                })
-        return feature_map
 
     # Collect all results for saving
     results: list[dict[str, Any]] = []
@@ -153,7 +153,7 @@ def compute_metrics_and_save(
         trees_data = [tree_to_dict(est) for est in clf.estimators_]  # pyright: ignore[reportArgumentType]
 
         # Build feature map for this layer
-        feature_map = build_feature_map(module_name)
+        feature_map = layer_acts.build_feature_map(module_name)
 
         # Build labels for varying components in this layer
         varying_labels = [
@@ -187,19 +187,7 @@ def compute_metrics_and_save(
     return results
 
 
-layer_acts = get_acts(
-    wandb_run_path=CONFIG.wandb_run_path,
-    n_batches=CONFIG.n_batches,
-    n_ctx=CONFIG.n_ctx,
-    device=CONFIG.device,
-    activation_threshold=CONFIG.activation_threshold,
-)
 
-models = train_decision_trees(
-    layer_acts=layer_acts,
-    max_depth=CONFIG.max_depth,
-    random_state=CONFIG.random_state,
-)
 
 results = compute_metrics_and_save(
     models=models,
