@@ -67,7 +67,7 @@ def train_decision_trees(
     return layer_trees
 
 
-LAYER_TREES = train_decision_trees(
+LAYER_TREES: dict[str, MultiOutputClassifier] = train_decision_trees(
     layer_acts=ACTIVATIONS,
     max_depth=CONFIG.max_depth,
     random_state=CONFIG.random_state,

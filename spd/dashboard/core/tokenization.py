@@ -3,7 +3,7 @@
 import hashlib
 from dataclasses import dataclass
 from functools import cached_property
-from typing import NewType
+from typing import NamedTuple, NewType
 
 import numpy as np
 from jaxtyping import Int
@@ -31,22 +31,46 @@ class TextSample:
         """Return the number of tokens."""
         return len(self.tokens)
 
+TokenizerInfo = NamedTuple( # noqa: UP014
+    "TokenizerInfo",
+    [
+        ("vocab_list", list[str]),
+        ("vocab_size", int),
+        ("max_token_length", int),
+        ("token_arr_dtype", str),
+    ],
+)
+
+def get_tokenizer_info(tokenizer: PreTrainedTokenizer) -> TokenizerInfo:
+    """Get basic info about the tokenizer."""
+    vocab_size: int = tokenizer.vocab_size
+    vocab_list: list[str] = [tokenizer.convert_ids_to_tokens(i) for i in range(vocab_size)]
+    max_token_length: int = max(len(token) for token in vocab_list)
+    return TokenizerInfo(
+        vocab_list=vocab_list,
+        vocab_size=vocab_size,
+        max_token_length=max_token_length,
+        token_arr_dtype=f"U{max_token_length}",  # Unicode strings of max_token_length
+    )
+
+
 
 def attach_vocab_arr(tokenizer: PreTrainedTokenizer) -> None:
     """Attach a numpy array of token strings to the tokenizer for fast batch decoding.
 
     Creates a vocab_arr attribute containing all tokens as unicode strings,
     enabling O(1) array indexing instead of repeated convert_ids_to_tokens calls.
+
+    also attaches tokenizer_info attribute with basic info about the tokenizer.
     """
-    vocab_size: int = tokenizer.vocab_size
-    vocab_list: list[str] = [tokenizer.convert_ids_to_tokens(i) for i in range(vocab_size)]
-    max_token_length: int = max(len(token) for token in vocab_list)
-    print(f"{max_token_length = }")
+    tokenizer_info: TokenizerInfo = get_tokenizer_info(tokenizer)
     vocab_arr: np.ndarray = np.array(
-        vocab_list,
-        dtype=f"U{max_token_length}",  # Unicode strings, not bytes
+        tokenizer_info.vocab_list,
+        # Unicode strings, not bytes
+        dtype=tokenizer_info.token_arr_dtype,
     )
     tokenizer.vocab_arr = vocab_arr  # type: ignore[attr-defined]
+    tokenizer.tokenizer_info = tokenizer_info  # type: ignore[attr-defined]
 
 
 def simple_batch_decode(

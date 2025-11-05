@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 import torch
-from jaxtyping import Bool, Float
+from jaxtyping import Bool, Float, Int
 from numpy import ndarray
 from torch import Tensor
 from tqdm import tqdm
@@ -23,19 +23,19 @@ from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunIn
 class LayerActivations:
     """Container for layer-wise activations with ordered access."""
 
-    data: dict[str, Bool[np.ndarray, "n_samples n_components"]]
+    data: dict[str, Float[np.ndarray, "n_samples n_components"]]
     layer_order: list[str]
     varying_component_indices: dict[str, list[int]]
     token_data: TokenSequenceData
 
-    def get_concat_before(self, module_name: str) -> Bool[ndarray, "n_samples n_features"]:
+    def get_concat_before(self, module_name: str) -> Float[ndarray, "n_samples n_features"]:
         """Get concatenated activations of all layers before the specified module."""
         idx: int = self.layer_order.index(module_name)
         if idx == 0:
             # No previous layers, return empty array with correct number of samples
             n_samples: int = list(self.data.values())[0].shape[0]
-            return np.zeros((n_samples, 0), dtype=bool)
-        prev_layers: list[Bool[ndarray, "n_samples n_features"]] = [
+            return np.zeros((n_samples, 0), dtype=float)
+        prev_layers: list[Float[ndarray, "n_samples n_features"]] = [
             self.data[self.layer_order[i]] for i in range(idx)
         ]
         return np.concatenate(prev_layers, axis=1)
@@ -104,8 +104,8 @@ class LayerActivations:
 
         # compute acts and collect tokens
         print(f"\nComputing activations for {n_batches} batches...")
-        all_acts: list[dict[str, Tensor]] = []
-        all_tokens: list[Tensor] = []
+        all_acts: list[dict[str, Float[Tensor, "batch n_ctx C"]]] = []
+        all_tokens: list[Int[Tensor, "batch n_ctx"]] = []
 
         for _ in tqdm(range(n_batches), desc="Batches"):
             batch: Tensor = next(iter(dataloader))["input_ids"]
@@ -137,7 +137,7 @@ class LayerActivations:
 
         # Convert to boolean and filter constant components
         print("\nConverting to boolean and filtering constant components...")
-        layers: dict[str, Bool[np.ndarray, "n_samples n_components"]] = {}
+        layers: dict[str, Float[np.ndarray, "n_samples n_components"]] = {}
         varying_component_indices: dict[str, list[int]] = {}
 
         for module_name, acts_raw in acts_concat.items():
@@ -146,14 +146,14 @@ class LayerActivations:
                 -1, acts_raw.shape[-1]
             ).numpy()
 
-            # Threshold to boolean
+            # Threshold to boolean for filtering only
             acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
                 acts_float_np >= activation_threshold
             ).astype(bool)
 
             # Filter constant components (always 0 or always 1)
             varying_mask: Bool[np.ndarray, " n_components"] = acts_bool.var(axis=0) > 0
-            acts_varying = acts_bool[:, varying_mask]
+            acts_varying = acts_float_np[:, varying_mask]  # Keep float values, not boolean
             layers[module_name] = acts_varying
 
             # Store which original component indices were kept

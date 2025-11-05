@@ -8,7 +8,7 @@ from numpy import ndarray
 from torch import Tensor
 from transformers import PreTrainedTokenizer
 
-from spd.dashboard.core.tokenization import attach_vocab_arr, simple_batch_decode
+from spd.dashboard.core.tokenization import attach_vocab_arr, simple_batch_decode, get_tokenizer_info, TokenizerInfo
 
 
 @dataclass(frozen=True)
@@ -37,25 +37,14 @@ class TokenSequenceData:
     dataset_indices: dict[str, tuple[int, int]]  # sequence_hash -> (start, end) into n_samples
 
     def get_sequence_tokens(self, sequence_hash: str) -> TextSample:
-        """Get TextSample for a specific sequence by its hash.
-
-        Args:
-            sequence_hash: SHA256 hash of the sequence
-
-        Returns:
-            TextSample with tokens and dataset_idx
-        """
+        """Get TextSample for a specific sequence by its hash"""
         start, end = self.sequence_ranges[sequence_hash]
         tokens: list[str] = self.all_tokens[start:end].tolist()
         dataset_idx: tuple[int, int] = self.dataset_indices[sequence_hash]
         return TextSample(tokens=tokens, dataset_idx=dataset_idx)
 
     def get_all_sequences(self) -> list[TextSample]:
-        """Get all sequences as TextSample objects.
-
-        Returns:
-            List of all TextSample objects
-        """
+        """Get all sequences as TextSample objects"""
         return [self.get_sequence_tokens(h) for h in self.sequence_ranges]
 
     @classmethod
@@ -64,15 +53,7 @@ class TokenSequenceData:
         token_batches: list[Tensor],
         tokenizer: PreTrainedTokenizer,
     ) -> "TokenSequenceData":
-        """Generate TokenSequenceData from batches of token IDs.
-
-        Args:
-            token_batches: List of token ID tensors [batch_size, n_ctx]
-            tokenizer: Tokenizer to decode token IDs
-
-        Returns:
-            TokenSequenceData with flat array storage
-        """
+        """Generate TokenSequenceData from batches of token IDs"""
         # Ensure tokenizer has vocab array for fast batch decoding
         if not hasattr(tokenizer, "vocab_arr"):
             attach_vocab_arr(tokenizer)
