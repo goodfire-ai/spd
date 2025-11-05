@@ -382,8 +382,18 @@ class TreeVisualization {
             this.nodeHeight
         );
 
-        // Draw border
-        this.ctx.strokeStyle = '#333';
+        // Draw border - for leaf nodes, scale color by accuracy
+        if (data.isLeaf && data.accuracy !== undefined) {
+            // Scale from red (0.5 accuracy) to black (1.0 accuracy)
+            const acc = data.accuracy;
+            const t = Math.max(0, Math.min(1, (acc - 0.5) / 0.5)); // Normalize 0.5-1.0 to 0-1
+            const red = Math.floor(255 * (1 - t));
+            const green = 0;
+            const blue = 0;
+            this.ctx.strokeStyle = `rgb(${red}, ${green}, ${blue})`;
+        } else {
+            this.ctx.strokeStyle = '#333';
+        }
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(
             x - this.nodeWidth / 2,
@@ -397,26 +407,37 @@ class TreeVisualization {
         this.ctx.font = '12px monospace';
         this.ctx.textAlign = 'center';
 
-        // Split label into multiple lines if needed
-        const label = data.displayLabel;
-        const maxWidth = this.nodeWidth - 10;
-        const lines = this.wrapText(label, maxWidth);
+        if (data.isLeaf) {
+            // For leaf nodes, show prediction, accuracy, and mass
+            const acc = (data.accuracy * 100).toFixed(1);
+            const mass = data.nSamples;
 
-        const lineHeight = 14;
-        const startY = y - (lines.length - 1) * lineHeight / 2;
+            this.ctx.fillText(data.displayLabel, x, y - 10);
+            this.ctx.font = 'bold 11px monospace';
+            this.ctx.fillText(`Acc: ${acc}%`, x, y + 5);
+            this.ctx.fillText(`Mass: ${mass}`, x, y + 18);
+        } else {
+            // For split nodes, show label and samples
+            const label = data.displayLabel;
+            const maxWidth = this.nodeWidth - 10;
+            const lines = this.wrapText(label, maxWidth);
 
-        lines.forEach((line, i) => {
-            this.ctx.fillText(line, x, startY + i * lineHeight);
-        });
+            const lineHeight = 14;
+            const startY = y - (lines.length - 1) * lineHeight / 2;
 
-        // Draw sample count
-        this.ctx.font = 'bold 11px monospace';
-        this.ctx.fillStyle = '#000';
-        this.ctx.fillText(
-            `${data.nSamples} samples`,
-            x,
-            y + this.nodeHeight / 2 - 5
-        );
+            lines.forEach((line, i) => {
+                this.ctx.fillText(line, x, startY + i * lineHeight);
+            });
+
+            // Draw sample count
+            this.ctx.font = 'bold 11px monospace';
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillText(
+                `${data.nSamples} samples`,
+                x,
+                y + this.nodeHeight / 2 - 5
+            );
+        }
     }
 
     wrapText(text, maxWidth) {
