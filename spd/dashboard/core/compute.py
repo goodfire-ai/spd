@@ -70,7 +70,7 @@ class FlatActivations:
 
         raise ValueError(f"Module {module_name} not found in component labels.")
 
-    def get_concat_before(self, module_name: str) -> Float[ndarray, "n_samples n_features"]:
+    def get_concat_before_module(self, module_name: str) -> Float[ndarray, "n_samples n_features"]:
         """Get concatenated activations of all layers before the specified module."""
         idx: int = self.start_of_module_index(module_name)
         if idx == 0:
@@ -79,6 +79,28 @@ class FlatActivations:
             )
 
         return self.activations[:, :idx]
+
+    def get_concat_this_module(self, module_name: str) -> Float[ndarray, "n_samples n_features"]:
+        """Get concatenated activations of the specified module."""
+        start_idx: int = self.start_of_module_index(module_name)
+        end_idx: int = self.start_of_module_index(
+            self.layer_order[self.layer_order.index(module_name) + 1]
+        )
+
+        # check all component labels are correct
+        for idx, c_label in enumerate(self.component_labels):
+            if start_idx <= idx < end_idx:
+                assert c_label.module == module_name, (
+                    f"Component label mismatch at index {idx}: "
+                    f"expected module {module_name}, got {c_label.module}"
+                )
+            else:
+                assert c_label.module != module_name, (
+                    f"Component label mismatch at index {idx}: "
+                    f"expected **NOT** module {module_name}, got {c_label.module}"
+                )
+
+        return self.activations[:, start_idx:end_idx]
 
 
 def conditional_matrices(

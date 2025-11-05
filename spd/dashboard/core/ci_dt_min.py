@@ -5,11 +5,15 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from numpy import ndarray
+from jaxtyping import Float, Int, Bool
 import torch
+from tqdm import tqdm
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
 
 from spd.dashboard.core.acts import Activations
+from spd.dashboard.core.compute import FlatActivations
 
 # %% ----------------------- Configuration -----------------------
 
@@ -17,9 +21,9 @@ from spd.dashboard.core.acts import Activations
 @dataclass
 class TreeConfig:
     wandb_run_path: str = "wandb:goodfire/spd/runs/lxs77xye"
-    batch_size: int = 8
-    n_batches: int = 8
-    n_ctx: int = 32
+    batch_size: int = 4
+    n_batches: int = 4
+    n_ctx: int = 16
     activation_threshold: float = 0.01
     max_depth: int = 3
     random_state: int = 42
@@ -28,18 +32,22 @@ class TreeConfig:
 
 CONFIG: TreeConfig = TreeConfig()
 
-ACTIVATIONS: Activations = Activations.generate(
-    wandb_run_path=CONFIG.wandb_run_path,
-    n_batches=CONFIG.n_batches,
-    n_ctx=CONFIG.n_ctx,
-    device=CONFIG.device,
-    activation_threshold=CONFIG.activation_threshold,
+# %% ----------------------- get activations -----------------------
+
+FLAT_ACTIVATIONS: FlatActivations = FlatActivations.create(
+	Activations.generate(
+		wandb_run_path=CONFIG.wandb_run_path,
+		n_batches=CONFIG.n_batches,
+		n_ctx=CONFIG.n_ctx,
+		device=CONFIG.device,
+		activation_threshold=CONFIG.activation_threshold,
+	)
 )
 
 
 # %% ----------------------- Train Decision Trees -----------------------
 def train_decision_trees(
-    layer_acts: Activations,
+    flat_acts: FlatActivations,
     max_depth: int,
     random_state: int,
 ) -> dict[str, MultiOutputClassifier]:
@@ -48,9 +56,9 @@ def train_decision_trees(
     layer_trees: dict[str, MultiOutputClassifier] = {}
 
     # Skip first layer (no previous layers to predict from)
-    for module_name in list(layer_acts)[1:]:
-        X_prev_layers_cis = layer_acts.get_concat_before(module_name)
-        Y_current_layer_cis = layer_acts.data[module_name]
+    for module_name in tqdm(list(flat_acts.layer_order)[1:]):
+        X_prev_layers_cis: Bool[ndarray, "n_samples n_features_before"] = flat_acts.get_concat_before_module(module_name) > CONFIG.activation_threshold
+        Y_current_layer_cis: Bool[ndarray, "n_samples n_features_this"] = flat_acts.get_concat_this_module(module_name) > CONFIG.activation_threshold
 
         clf: MultiOutputClassifier = MultiOutputClassifier(
             estimator=DecisionTreeClassifier(
@@ -66,7 +74,7 @@ def train_decision_trees(
 
 
 LAYER_TREES: dict[str, MultiOutputClassifier] = train_decision_trees(
-    layer_acts=ACTIVATIONS,
+    flat_acts=FLAT_ACTIVATIONS,
     max_depth=CONFIG.max_depth,
     random_state=CONFIG.random_state,
 )
