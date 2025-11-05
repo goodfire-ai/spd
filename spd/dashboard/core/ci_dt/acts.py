@@ -7,12 +7,11 @@ from typing import Any
 import numpy as np
 import torch
 from jaxtyping import Bool, Float
-from matplotlib import pyplot as plt
+from numpy import ndarray
 from torch import Tensor
 from tqdm import tqdm
 
 from spd.configs import Config
-from spd.dashboard.core.matshow_sort import sort_by_similarity
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
@@ -26,14 +25,16 @@ class LayerActivations:
     layer_order: list[str]
     varying_component_indices: dict[str, list[int]]
 
-    def get_concat_before(self, module_name: str) -> Bool[np.ndarray, "n_samples n_features"]:
+    def get_concat_before(self, module_name: str) -> Bool[ndarray, "n_samples n_features"]:
         """Get concatenated activations of all layers before the specified module."""
         idx: int = self.layer_order.index(module_name)
         if idx == 0:
             # No previous layers, return empty array with correct number of samples
-            n_samples = list(self.data.values())[0].shape[0]
+            n_samples: int = list(self.data.values())[0].shape[0]
             return np.zeros((n_samples, 0), dtype=bool)
-        prev_layers = [self.data[self.layer_order[i]] for i in range(idx)]
+        prev_layers: list[Bool[ndarray, "n_samples n_features"]] = [
+            self.data[self.layer_order[i]] for i in range(idx)
+        ]
         return np.concatenate(prev_layers, axis=1)
 
     def __len__(self) -> int:
@@ -45,9 +46,9 @@ class LayerActivations:
     def build_feature_map(self, module_name: str) -> list[dict[str, Any]]:
         """Build feature map for module: maps feature index -> component identity."""
         feature_map: list[dict[str, Any]] = []
-        module_idx = self.layer_order.index(module_name)
+        module_idx: int = self.layer_order.index(module_name)
         for prev_idx in range(module_idx):
-            prev_module = self.layer_order[prev_idx]
+            prev_module: str = self.layer_order[prev_idx]
             for comp_idx in self.varying_component_indices[prev_module]:
                 feature_map.append(
                     {
@@ -70,16 +71,16 @@ class LayerActivations:
     ) -> "LayerActivations":
         # get model
         print(f"Loading model from {wandb_run_path}...")
-        spd_run: SPDRunInfo = SPDRunInfo.from_path(wandb_run_path)
-        model: ComponentModel = ComponentModel.from_pretrained(spd_run.checkpoint_path)
-        model.to(device)
+        spd_run: SPDRunInfo = SPDRunInfo.from_path(path=wandb_run_path)
+        model: ComponentModel = ComponentModel.from_pretrained(path=spd_run.checkpoint_path)
+        model.to(device=device)
         spd_cfg: Config = spd_run.config
 
         # get dataloader
         assert isinstance(spd_cfg.task_config, LMTaskConfig)
         assert spd_cfg.pretrained_model_name is not None
 
-        dataset_config = DatasetConfig(
+        dataset_config: DatasetConfig = DatasetConfig(
             name=spd_cfg.task_config.dataset_name,
             hf_tokenizer_path=spd_cfg.pretrained_model_name,
             split=spd_cfg.task_config.train_data_split,
@@ -114,7 +115,7 @@ class LayerActivations:
             all_acts.append({k: v.cpu() for k, v in acts.items()})
 
         # Concatenate batches
-        module_keys = list(all_acts[0].keys())
+        module_keys: list[str] = list(all_acts[0].keys())
         acts_concat: dict[str, Tensor] = {
             k: torch.cat([b[k] for b in all_acts], dim=0) for k in module_keys
         }
@@ -126,25 +127,14 @@ class LayerActivations:
 
         for module_name, acts_tensor in acts_concat.items():
             # Flatten if 3D (batch, seq, components) -> (batch*seq, components)
-            if acts_tensor.ndim == 3:
-                acts_np: Float[np.ndarray, "n_samples n_components"] = acts_tensor.reshape(
-                    -1, acts_tensor.shape[-1]
-                ).numpy()
-            else:
-                acts_np = acts_tensor.numpy()
+            acts_np: Float[np.ndarray, "n_samples n_components"] = acts_tensor.reshape(
+                -1, acts_tensor.shape[-1]
+            ).numpy()
 
             # Threshold to boolean
             acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
                 acts_np >= activation_threshold
             ).astype(bool)
-
-            # plt.title(f"{module_name}")
-            # sort by column similarity
-            acts_sorted = sort_by_similarity(
-                sort_by_similarity(acts_bool.astype(float), axis=0), axis=1
-            )
-            plt.matshow(acts_sorted[:, :600], aspect="auto")
-            plt.show()
 
             # Filter constant components (always 0 or always 1)
             varying_mask: Bool[np.ndarray, " n_components"] = acts_bool.var(axis=0) > 0
