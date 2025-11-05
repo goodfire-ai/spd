@@ -75,7 +75,9 @@ export type HarvestMetadata = {
     layers: Record<string, SubcomponentMetadata[]>;
 };
 
+// Full component detail (matches SubcomponentActivationContexts on backend)
 export type ComponentDetail = {
+    subcomponent_idx: number;
     examples: ActivationContext[];
     token_prs: TokenPR[];
     mean_ci: number;

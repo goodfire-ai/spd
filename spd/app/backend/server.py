@@ -8,17 +8,19 @@ from urllib.parse import unquote
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
-from spd.app.backend.schemas import ModelActivationContexts, Status
+from spd.app.backend.schemas import (
+    HarvestMetadata,
+    ModelActivationContexts,
+    Status,
+    SubcomponentActivationContexts,
+    SubcomponentMetadata,
+)
 from spd.app.backend.services.run_context_service import RunContextService
 
 run_context_service = RunContextService()
-
-# Cache for harvest results, keyed by UUID
-harvest_cache: dict[str, ModelActivationContexts] = {}
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
@@ -37,7 +39,6 @@ def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMi
 
 app = FastAPI(debug=True)
 
-app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -90,22 +91,22 @@ def get_subcomponent_activation_contexts(
                     harvest_id = str(uuid.uuid4())
                     harvest_cache[harvest_id] = data
 
-                    # Build lightweight metadata response
-                    metadata = {
-                        "harvest_id": harvest_id,
-                        "layers": {
+                    # Build lightweight metadata response using Pydantic
+                    metadata = HarvestMetadata(
+                        harvest_id=harvest_id,
+                        layers={
                             layer_name: [
-                                {
-                                    "subcomponent_idx": subcomp.subcomponent_idx,
-                                    "mean_ci": subcomp.mean_ci,
-                                }
+                                SubcomponentMetadata(
+                                    subcomponent_idx=subcomp.subcomponent_idx,
+                                    mean_ci=subcomp.mean_ci,
+                                )
                                 for subcomp in subcomponents
                             ]
                             for layer_name, subcomponents in data.layers.items()
                         },
-                    }
+                    )
 
-                    complete_data = {"type": "complete", "result": metadata}
+                    complete_data = {"type": "complete", "result": metadata.model_dump()}
                     yield f"data: {json.dumps(complete_data)}\n\n"
 
     return StreamingResponse(
@@ -117,10 +118,14 @@ def get_subcomponent_activation_contexts(
         },
     )
 
+# Cache for harvest results, keyed by UUID
+harvest_cache: dict[str, ModelActivationContexts] = {}
 
 @app.get("/activation_contexts/{harvest_id}/{layer}/{component_idx}")
 @handle_errors
-def get_component_detail(harvest_id: str, layer: str, component_idx: int) -> JSONResponse:
+def get_component_detail(
+    harvest_id: str, layer: str, component_idx: int
+) -> SubcomponentActivationContexts:
     """Lazy-load endpoint for single component data"""
     if harvest_id not in harvest_cache:
         raise HTTPException(status_code=404, detail="Harvest ID not found")
@@ -144,8 +149,8 @@ def get_component_detail(harvest_id: str, layer: str, component_idx: int) -> JSO
             status_code=404, detail=f"Component {component_idx} not found in layer '{layer}'"
         )
 
-    # Return full component data
-    return JSONResponse(content=component.model_dump())
+    # Return full component data (FastAPI automatically serializes Pydantic models)
+    return component
 
 
 @app.get("/")

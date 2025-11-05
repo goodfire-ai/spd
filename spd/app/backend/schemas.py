@@ -37,3 +37,17 @@ class TrainRun(BaseModel):
 
 class Status(BaseModel):
     train_run: TrainRun | None
+
+
+class SubcomponentMetadata(BaseModel):
+    """Lightweight metadata for a subcomponent (without examples/token_prs)"""
+
+    subcomponent_idx: int
+    mean_ci: float
+
+
+class HarvestMetadata(BaseModel):
+    """Lightweight metadata returned after harvest, containing only indices and mean_ci values"""
+
+    harvest_id: str
+    layers: dict[str, list[SubcomponentMetadata]]
