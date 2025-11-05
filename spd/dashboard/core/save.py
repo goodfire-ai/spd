@@ -86,11 +86,10 @@ class IndexSummaries(SerializableDataclass):
 class DashboardData:
     """Container for all dashboard data with serialization and saving logic."""
 
+    config: ComponentDashboardConfig
     metadata: dict[str, Any]
     activations: Activations
-    index_summaries: IndexSummaries
-    embeddings: ComponentEmbeddings
-    trees: DecisionTreesData | None = None
+    trees: DecisionTreesData
 
     def serialize(self) -> dict[str, Any]:
         """Serialize all dashboard data by calling serialize() on components.
