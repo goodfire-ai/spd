@@ -28,6 +28,7 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
+    ensure_cached_and_call,
     get_world_size,
     is_distributed,
     is_main_process,
@@ -137,7 +138,9 @@ def optimize(
     #     sigmoid_type=config.sigmoid_type,
     # )
     # Load a model from pretrained run
-    model = ComponentModel.from_pretrained("wandb:goodfire/spd/runs/pwghbtr2")
+    model = ensure_cached_and_call(
+        ComponentModel.from_pretrained, "wandb:goodfire/spd/runs/pwghbtr2"
+    )
     target_model = model.target_model
     target_model.requires_grad_(False)
     if ln_stds is not None:
