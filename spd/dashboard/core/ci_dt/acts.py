@@ -210,24 +210,3 @@ class Activations:
             varying_component_indices=varying_component_indices,
             token_data=token_data,
         )
-
-
-@serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
-class SubcomponentSummary(SerializableDataclass):
-    """Lightweight summary for index.html table display.
-
-    Contains only the data needed by the main component table,
-    excluding large fields like top_samples.
-    """
-
-    label: str
-    embedding: Float[np.ndarray, " embed_dim"]
-    stats: dict[str, float | dict]  # Basic stats + token_activations
-    histograms: dict[str, dict[str, list[float]]]
-
-    # Token statistics needed for table display (unified list with both probabilities)
-    token_stats: list[TokenStat] = serializable_field(
-        default_factory=list,
-        serialization_fn=lambda x: [s.serialize() for s in x],
-        deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
-    )
