@@ -111,8 +111,10 @@ def get_subcomponent_activation_contexts(
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
+
 # Cache for harvest results, keyed by UUID
 harvest_cache: dict[str, ModelActivationContexts] = {}
+
 
 @app.get("/activation_contexts/{harvest_id}/{layer}/{component_idx}")
 @handle_errors
@@ -120,15 +122,11 @@ def get_component_detail(
     harvest_id: str, layer: str, component_idx: int
 ) -> SubcomponentActivationContexts:
     """Lazy-load endpoint for single component data"""
-    if harvest_id not in harvest_cache:
+    if (cached_data := harvest_cache.get(harvest_id)) is None:
         raise HTTPException(status_code=404, detail="Harvest ID not found")
 
-    cached_data = harvest_cache[harvest_id]
-
-    if layer not in cached_data.layers:
+    if (layer_data := cached_data.layers.get(layer)) is None:
         raise HTTPException(status_code=404, detail=f"Layer '{layer}' not found")
-
-    layer_data = cached_data.layers[layer]
 
     # Find the component by index
     component = None
@@ -142,7 +140,6 @@ def get_component_detail(
             status_code=404, detail=f"Component {component_idx} not found in layer '{layer}'"
         )
 
-    # Return full component data (FastAPI automatically serializes Pydantic models)
     return component
 
 
