@@ -3,12 +3,10 @@
 import itertools
 from dataclasses import dataclass
 from functools import cached_property
-from typing import NamedTuple
 
 import numpy as np
 import torch
-from jaxtyping import Bool, Float, Int, Shaped
-from numpy import ndarray
+from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from tqdm import tqdm
 from transformers import AutoTokenizer
@@ -18,6 +16,7 @@ from spd.dashboard.core.toks import TokenSequenceData
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
+
 
 @dataclass(frozen=True)
 class ComponentLabel:
@@ -32,28 +31,6 @@ class ComponentLabel:
 
 
 @dataclass
-class FlatActivations:
-    component_labels: list[ComponentLabel]
-    activations: Float[np.ndarray, "n_samples n_components_total"]
-    tokens: Shaped[np.ndarray, " n_samples"]  # of string type `U{max_token_length}`
-
-    @cached_property
-    def component_label_inverse(self) -> dict[ComponentLabel, int]:
-        """Map from component label string to its index in activations."""
-        return {
-            label: idx for idx, label in enumerate(self.component_labels)
-        }
-
-    def get_component_activations(
-        self,
-        label: ComponentLabel,
-    ) -> Float[np.ndarray, "n_samples"]:
-        """Get activations for a specific component by label."""
-        idx: int = self.component_label_inverse[label]
-        return self.activations[:, idx]
-
-
-@dataclass
 class Activations:
     """Container for layer-wise activations with ordered access."""
 
@@ -65,9 +42,7 @@ class Activations:
     @property
     def n_components_total(self) -> int:
         """Total number of varying components across all layers."""
-        return sum(
-            acts.shape[2] for acts in self.data.values()
-        )
+        return sum(acts.shape[2] for acts in self.data.values())
 
     @cached_property
     def component_labels(self) -> dict[str, list[ComponentLabel]]:
@@ -93,40 +68,6 @@ class Activations:
     def data_batch_concat(self) -> dict[str, Float[np.ndarray, "n_samples n_components"]]:
         """Flattened version of data: (n_sequences * n_ctx, n_components)."""
         return {k: v.reshape(-1, v.shape[-1]) for k, v in self.data.items()}
-
-    @cached_property
-    def as_flat(
-        self,
-    ) -> FlatActivations:
-        flattened: Float[Tensor, "n_samples n_components_total"] = torch.cat(
-            [torch.from_numpy(self.data_batch_concat[k]) for k in self.layer_order],
-            dim=1,
-        ).float()
-
-        component_labels: list[ComponentLabel] = self.component_labels_concat
-
-        tokens_flat: Shaped[np.ndarray, " n_samples"] = self.token_data.tokens.reshape(-1)
-
-        assert flattened.shape[1] == len(component_labels)
-        assert flattened.shape[0] == tokens_flat.shape[0]
-
-        return FlatActivations(
-            component_labels=component_labels,
-            activations=flattened.numpy(),
-            tokens=tokens_flat,
-        )
-
-    def get_concat_before(self, module_name: str) -> Float[ndarray, "n_samples n_features"]:
-        """Get concatenated activations of all layers before the specified module."""
-        idx: int = self.layer_order.index(module_name)
-        if idx == 0:
-            # No previous layers, return empty array with correct number of samples
-            n_samples: int = list(self.data_batch_concat.values())[0].shape[0]
-            return np.zeros((n_samples, 0), dtype=float)
-        prev_layers: list[Float[ndarray, "n_samples n_features"]] = [
-            self.data_batch_concat[self.layer_order[i]] for i in range(idx)
-        ]
-        return np.concatenate(prev_layers, axis=1)
 
     @classmethod
     def generate(

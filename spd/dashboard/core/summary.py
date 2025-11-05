@@ -1,5 +1,6 @@
-from typing import Literal
 import warnings
+from typing import Literal
+
 import numpy as np
 from jaxtyping import Float
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
@@ -12,7 +13,7 @@ def _make_histogram(
     data: Float[np.ndarray, " n"],
     hist_bins: int = 10,
     hist_range: tuple[float, float] | None = None,
-    round_bins: int|None = 1,
+    round_bins: int | None = 1,
 ) -> dict[Literal["counts", "edges"], list[float]]:
     # Check for values outside range and warn if found
     hist_range_: tuple[float, float]
@@ -31,19 +32,18 @@ def _make_histogram(
     else:
         hist_range_ = (float(np.min(data)), float(np.max(data)))
 
-
     if round_bins is not None:
         hist_range_ = (
-            round(hist_range_[0], round_bins) - (0.1 ** round_bins),
-            round(hist_range_[1], round_bins) + (0.1 ** round_bins),
+            round(hist_range_[0], round_bins) - (0.1**round_bins),
+            round(hist_range_[1], round_bins) + (0.1**round_bins),
         )
-        
 
     counts, edges = np.histogram(data, bins=hist_bins, range=hist_range)
     return {
         "counts": counts.tolist(),
         "edges": edges.tolist(),
     }
+
 
 @serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
 class TokenStat(SerializableDataclass):
@@ -77,7 +77,6 @@ class SubcomponentSummary(SerializableDataclass):
         deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
     )
 
-
     @classmethod
     def create(
         cls,
@@ -96,8 +95,6 @@ class SubcomponentSummary(SerializableDataclass):
             token_stats=[],
         )
 
-    
-
 
 @serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
 class ActivationsSummary(SerializableDataclass):
@@ -111,10 +108,6 @@ class ActivationsSummary(SerializableDataclass):
 
     @classmethod
     def from_activations(cls, activations: Activations) -> "ActivationsSummary":
-        acts_flat: FlatActivations = activations.as_flat
-
-
-
+        acts_flat: FlatActivations = FlatActivations.create(activations)
+        assert acts_flat.n_components
         return ActivationsSummary([])
-
-

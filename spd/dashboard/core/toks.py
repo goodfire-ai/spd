@@ -15,6 +15,22 @@ class TokenSequenceData:
     """2D token storage aligned with 3D activation arrays."""
 
     tokens: Shaped[np.ndarray, "n_sequences n_ctx"]  # of type `U{max_token_length}`
+    vocab_arr: Shaped[np.ndarray, " d_vocab"]  # of type `U{max_token_length}`
+
+    @cached_property
+    def token_vocab_idx(self) -> dict[str, int]:
+        """Map from token string to its vocabulary index."""
+        return {token: idx for idx, token in enumerate(self.vocab_arr)}
+
+    @property
+    def d_vocab(self) -> int:
+        """Size of the vocabulary."""
+        return self.vocab_arr.shape[0]
+
+    @property
+    def n_sequences(self) -> int:
+        """Number of sequences in the dataset."""
+        return self.tokens.shape[0]
 
     @classmethod
     def from_token_batches(
@@ -31,10 +47,10 @@ class TokenSequenceData:
             batch=torch.cat(token_batches, dim=0).cpu().numpy(),
         )
 
-        return cls(tokens=tokens_decoded)
+        return cls(tokens=tokens_decoded, vocab_arr=tokenizer.vocab_arr)  # pyright: ignore[reportAttributeAccessIssue]
 
     @cached_property
     def token_counts(self) -> dict[str, int]:
         """Count occurrences of each token in the dataset."""
         unique_tokens, counts = np.unique(self.tokens, return_counts=True)
-        return {token: int(count) for token, count in zip(unique_tokens, counts)}
+        return {token: int(count) for token, count in zip(unique_tokens, counts, strict=True)}
