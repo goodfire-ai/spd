@@ -1,9 +1,9 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 from jaxtyping import Bool, Int
-from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 from numpy import ndarray
 from sklearn.metrics import balanced_accuracy_score
 from sklearn.multioutput import MultiOutputClassifier
@@ -24,9 +24,18 @@ class ComponentTreeData:
     tree_dict: dict[str, Any]
     balanced_accuracy: float
 
+    def serialize(self) -> dict[str, Any]:
+        """Serialize component tree data for ZANJ storage."""
+        return {
+            "component_label": self.component_label.serialize(),
+            "component_index": self.component_index,
+            "tree_dict": self.tree_dict,
+            "balanced_accuracy": self.balanced_accuracy,
+        }
+
 
 @dataclass
-class LayerTreeData:
+class ModuleTreeData:
     """Decision tree data for a single layer."""
 
     module_name: str
@@ -39,8 +48,14 @@ class LayerTreeData:
 class DecisionTreesData:
     """Decision tree data for all layers."""
 
-    layers: list[LayerTreeData]
+    module_trees: list[ModuleTreeData]
     overall_mean_balanced_accuracy: float
+
+    @property
+    def all_trees(self) -> Iterable[ComponentTreeData]:
+        """Iterator over all component trees across all layers."""
+        for module in self.module_trees:
+            yield from module.component_trees
 
     @classmethod
     def create(
@@ -64,7 +79,7 @@ class DecisionTreesData:
             random_state=config.random_state,
         )
 
-        layers: list[LayerTreeData] = []
+        layers: list[ModuleTreeData] = []
         all_bacc_scores: list[float] = []
 
         # Process each layer
@@ -114,7 +129,7 @@ class DecisionTreesData:
                 )
 
             # Create layer data
-            layer_data: LayerTreeData = LayerTreeData(
+            layer_data: ModuleTreeData = ModuleTreeData(
                 module_name=module_name,
                 layer_index=layer_idx,
                 component_trees=component_trees,
@@ -176,9 +191,7 @@ def train_decision_trees(
 
         # Attach feature labels to the MultiOutputClassifier
         start_idx: int = flat_acts.start_of_module_index(module_name)
-        feature_labels: list[str] = [
-            c.to_string() for c in flat_acts.component_labels[:start_idx]
-        ]
+        feature_labels: list[str] = [c.as_str() for c in flat_acts.component_labels[:start_idx]]
         clf.feature_labels_ = feature_labels  # type: ignore
 
         # Store model along with the data for later evaluation
@@ -210,18 +223,18 @@ def moc_to_dicts(clf: MultiOutputClassifier) -> list[dict[str, Any]]:
         used_features: set[int] = set(features_array[features_array >= 0].tolist())
 
         # Create mapping for only the used features
-        feature_labels_map: dict[int, str] = {
-            idx: all_feature_labels[idx] for idx in used_features
-        }
+        feature_labels_map: dict[int, str] = {idx: all_feature_labels[idx] for idx in used_features}
 
-        tree_dicts.append({
-            "feature": tree_.feature.tolist(),
-            "threshold": tree_.threshold.tolist(),
-            "children_left": tree_.children_left.tolist(),
-            "children_right": tree_.children_right.tolist(),
-            "value": tree_.value.tolist(),
-            "n_node_samples": tree_.n_node_samples.tolist(),
-            "feature_labels": feature_labels_map,  # dict[int, str] mapping index -> label
-        })
+        tree_dicts.append(
+            {
+                "feature": tree_.feature.tolist(),
+                "threshold": tree_.threshold.tolist(),
+                "children_left": tree_.children_left.tolist(),
+                "children_right": tree_.children_right.tolist(),
+                "value": tree_.value.tolist(),
+                "n_node_samples": tree_.n_node_samples.tolist(),
+                "feature_labels": feature_labels_map,  # dict[int, str] mapping index -> label
+            }
+        )
 
     return tree_dicts

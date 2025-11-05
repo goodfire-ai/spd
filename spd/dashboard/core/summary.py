@@ -5,13 +5,13 @@ import numpy as np
 from jaxtyping import Float, Int
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
 
-from spd.dashboard.core.acts import Activations, ComponentLabel, FlatActivations
+from spd.dashboard.core.acts import Activations, ComponentLabel
 from spd.dashboard.core.compute import (
     ComponentEmbeddings,
+    FlatActivations,
     _compute_activated_per_token,
     _compute_P_active_given_token,
     _compute_P_token_given_active,
-    compute_component_embeddings,
 )
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 from spd.dashboard.core.toks import TokenSequenceData
@@ -78,7 +78,10 @@ class SubcomponentSummary(SerializableDataclass):
     excluding large fields like top_samples.
     """
 
-    label: ComponentLabel
+    label: ComponentLabel = serializable_field(
+        serialization_fn=lambda x: x.serialize(),
+        deserialize_fn=lambda x: ComponentLabel(module=x.split(":")[0], index=int(x.split(":")[1])),
+    )
     embedding: Float[np.ndarray, " embed_dim"]
     stats: dict[str, float]
     histograms: dict[str, dict[str, list[float]]]
@@ -208,7 +211,10 @@ class IndexSummaries(SerializableDataclass):
     excluding large fields like full activations.
     """
 
-    summaries: list[SubcomponentSummary]
+    summaries: list[SubcomponentSummary] = serializable_field(
+        serialization_fn=lambda x: [s.serialize() for s in x],
+        deserialize_fn=lambda x: [SubcomponentSummary.load(s) for s in x],
+    )
 
     @classmethod
     def from_activations(
@@ -219,13 +225,15 @@ class IndexSummaries(SerializableDataclass):
         assert acts_flat.n_components
 
         # Compute embeddings
-        embeddings: ComponentEmbeddings = compute_component_embeddings(acts_flat, config.embed_dim)
+        embeddings: ComponentEmbeddings = ComponentEmbeddings.create(
+            flat_acts=acts_flat, embed_dim=config.embed_dim
+        )
 
         # Compute conditional probabilities for ALL components at once
         token_idx: Int[np.ndarray, " n_samples"]
         activated_per_token: Float[np.ndarray, "d_vocab C"]
         token_idx, activated_per_token = _compute_activated_per_token(
-            acts_flat.token_data, acts_flat.activations > config.activation_threshold
+            acts_flat, activation_threshold=config.activation_threshold
         )
         p_active_given_token: Float[np.ndarray, "d_vocab C"] = _compute_P_active_given_token(
             activated_per_token, token_idx, acts_flat.token_data.vocab_arr.shape[0]

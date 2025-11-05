@@ -62,3 +62,12 @@ class TokenSequenceData:
         """Count occurrences of each token in the dataset."""
         unique_tokens, counts = np.unique(self.tokens, return_counts=True)
         return {token: int(count) for token, count in zip(unique_tokens, counts, strict=True)}
+
+    def serialize(self) -> dict[str, int | list[str]]:
+        """Serialize token data for ZANJ storage."""
+        return {
+            "tokens": self.tokens.tolist(),
+            "vocab_arr": self.vocab_arr.tolist(),
+            "n_sequences": self.n_sequences,
+            "d_vocab": self.d_vocab,
+        }

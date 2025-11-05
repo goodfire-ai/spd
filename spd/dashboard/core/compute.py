@@ -117,7 +117,7 @@ class FlatActivations:
 
 def _compute_activated_per_token(
     flat_acts: FlatActivations,
-    activations: Bool[np.ndarray, "n_samples C"],
+    activation_threshold: float,
 ) -> tuple[
     Int[np.ndarray, " n_samples"],  # token ids
     Float[np.ndarray, "d_vocab C"],  # number of activations of this component per token
@@ -128,6 +128,7 @@ def _compute_activated_per_token(
         token_idx: Token indices for each sample
         activated_per_token: Count matrix of activations per token (d_vocab, C)
     """
+    activations: Bool[np.ndarray, " n_samples C"] = flat_acts.activations > activation_threshold
     n_samples: int = activations.shape[0]
     C_components: int = activations.shape[1]
     d_vocab: int = flat_acts.token_data.vocab_arr.shape[0]

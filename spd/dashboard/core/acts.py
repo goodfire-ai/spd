@@ -3,6 +3,7 @@
 import itertools
 from dataclasses import dataclass
 from functools import cached_property
+from typing import Any, Final
 
 import numpy as np
 import torch
@@ -18,6 +19,8 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
 
+_COMPONENT_LABEL_SEP: Final[str] = ":"
+
 
 @dataclass(frozen=True)
 class ComponentLabel:
@@ -25,10 +28,20 @@ class ComponentLabel:
     index: int
 
     def as_str(self) -> str:
-        return f"{self.module}:{self.index}"
+        return f"{self.module}{_COMPONENT_LABEL_SEP}{self.index}"
+
+    def serialize(self) -> str:
+        """Serialize to string format for JSON compatibility."""
+        return self.as_str()
 
     def __hash__(self) -> int:
         return hash((self.module, self.index))
+
+    @classmethod
+    def from_str(cls, label_str: str) -> "ComponentLabel":
+        """Deserialize from string format."""
+        module, index_str = label_str.split(_COMPONENT_LABEL_SEP)
+        return cls(module=module, index=int(index_str))
 
 
 @dataclass(kw_only=True)
@@ -69,6 +82,24 @@ class Activations:
     def data_batch_concat(self) -> dict[str, Float[np.ndarray, "n_samples n_components"]]:
         """Flattened version of data: (n_sequences * n_ctx, n_components)."""
         return {k: v.reshape(-1, v.shape[-1]) for k, v in self.data.items()}
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize activations for ZANJ storage.
+
+        Returns dict with module-grouped data for efficient lazy loading.
+        """
+        return {
+            "layer_order": self.layer_order,
+            "token_data": self.token_data.serialize(),
+            "data": self.data,  # dict[module_name, ndarray] - ZANJ will externalize
+            "varying_component_indices": self.varying_component_indices,
+            "n_components_total": self.n_components_total,
+            "component_labels": {
+                module: [label.as_str() for label in labels]
+                for module, labels in self.component_labels.items()
+            },
+            "component_labels_concat": [label.as_str() for label in self.component_labels_concat],
+        }
 
     @classmethod
     def generate(
