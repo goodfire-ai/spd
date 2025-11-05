@@ -1,0 +1,7 @@
+wandb: Currently logged in as: olicg-gf (goodfire) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.22.2
+wandb: Run data is saved locally in /mnt/polished-lake/home/oli/spd/wandb/run-20251105_140350-jsdt4bq3
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run seed_15
+wandb: ⭐️ View project at https://wandb.ai/goodfire/pgd-saturation
+wandb: 🚀 View run at https://wandb.ai/goodfire/pgd-saturation/runs/jsdt4bq3

@@ -1,0 +1,28 @@
+wandb: Currently logged in as: olicg-gf (goodfire) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run jtey2gc9
+wandb: Tracking run with wandb version 0.22.2
+wandb: Run data is saved locally in /mnt/polished-lake/home/oli/spd/wandb/run-20251104_172953-jtey2gc9
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run seed_3
+wandb: ⭐️ View project at https://wandb.ai/goodfire/pgd-saturation
+wandb: 🚀 View run at https://wandb.ai/goodfire/pgd-saturation/runs/jtey2gc9
+wandb: updating run metadata
+wandb: 
+wandb: Run history:
+wandb: effective_batch_size ▁▁▁▁▁▁▁▁▁▁▁▂▃▄█
+wandb:     grad_accum_steps ▁▁▁▁▁▁▁▁▁▁▁▂▃▄█
+wandb:     micro_batch_size ▁▁▁▁▂▃▄████████
+wandb:             pgd_loss ▁▅▆▇▆▇▇▇▇█▇▇▇▇▇
+wandb:           time_taken ▁▁▁▁▁▁▁▁▁▁▁▂▃▄█
+wandb: 
+wandb: Run summary:
+wandb: effective_batch_size 16384
+wandb:     grad_accum_steps 128
+wandb:     micro_batch_size 128
+wandb:             pgd_loss 49.23047
+wandb:           time_taken 2358.97373
+wandb: 
+wandb: 🚀 View run seed_3 at: https://wandb.ai/goodfire/pgd-saturation/runs/jtey2gc9
+wandb: ⭐️ View project at: https://wandb.ai/goodfire/pgd-saturation
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20251104_172953-jtey2gc9/logs

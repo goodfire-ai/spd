@@ -1,0 +1,8 @@
+wandb: Currently logged in as: olicg-gf (goodfire) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.22.2
+wandb: Run data is saved locally in /mnt/polished-lake/home/oli/spd/wandb/run-20251105_124518-8hti3qj8
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run seed_13
+wandb: ⭐️ View project at https://wandb.ai/goodfire/pgd-saturation
+wandb: 🚀 View run at https://wandb.ai/goodfire/pgd-saturation/runs/8hti3qj8
+slurmstepd: error: *** JOB 2681 ON h200-reserved-145-005 CANCELLED AT 2025-11-05T14:00:33 ***
