@@ -164,6 +164,8 @@ def generate_commands(
                 f"{mpi_prefix} python {exp_config.decomp_script} --config_json '{config_json}' "
                 f"--sweep_id {run_id} --evals_id {experiment}"
             )
+            print(command)
+            exit()
 
             commands.append(command)
             task_breakdown[experiment] = "1 task"
@@ -193,6 +195,8 @@ def generate_commands(
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
                 )
+                print(command)
+                exit()
 
                 commands.append(command)
                 cmd_idx += 1
