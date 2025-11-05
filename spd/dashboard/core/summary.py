@@ -1,5 +1,5 @@
 import warnings
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from jaxtyping import Float, Int
@@ -65,6 +65,10 @@ class TokenStat(SerializableDataclass):
     count_token_total: int  # Total occurrences of token in dataset
 
 
+def _prefix_dict(d: dict[str, Any], prefix: str, sep: str = ".") -> dict[str, Any]:
+	"""Prefix all keys in a dict with a given string."""
+	return {f"{prefix}{sep}{k}": v for k, v in d.items()}
+
 @serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
 class SubcomponentSummary(SerializableDataclass):
     """Lightweight summary for index.html table display.
@@ -84,6 +88,25 @@ class SubcomponentSummary(SerializableDataclass):
         serialization_fn=lambda x: [s.serialize() for s in x],
         deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
     )
+
+    def to_embed_row(self) -> dict[str, Any]:
+        """Convert to dict row for embedding visualization page"""
+        return {
+            **_prefix_dict(
+				{
+					"module": self.label.module,
+					"component_index": self.label.index,
+					"label": self.label.as_str(),
+					"layer": int(self.label.module.split('.')[2]),  # assuming module names like 'model.layers.{i}.*'
+				},
+				prefix="meta",
+			),
+            **_prefix_dict(self.stats, prefix="stats"),
+			**_prefix_dict(
+				{str(i): float(self.embedding[i]) for i in range(self.embedding.shape[0])},
+				prefix="embed.d3",
+			),
+        }
 
     @classmethod
     def create(
@@ -106,10 +129,6 @@ class SubcomponentSummary(SerializableDataclass):
             "min": float(np.min(activations)),
             "max": float(np.max(activations)),
             "median": float(np.median(activations)),
-            "q05": float(np.quantile(activations, 0.05)),
-            "q25": float(np.quantile(activations, 0.25)),
-            "q75": float(np.quantile(activations, 0.75)),
-            "q95": float(np.quantile(activations, 0.95)),
         }
 
         # Compute histograms
@@ -179,7 +198,7 @@ class SubcomponentSummary(SerializableDataclass):
 
 
 @serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
-class ActivationsSummary(SerializableDataclass):
+class IndexSummaries(SerializableDataclass):
     """Lightweight summary for index.html display.
 
     Contains only the data needed by the main page,
@@ -191,7 +210,7 @@ class ActivationsSummary(SerializableDataclass):
     @classmethod
     def from_activations(
         cls, activations: Activations, config: ComponentDashboardConfig
-    ) -> "ActivationsSummary":
+    ) -> "IndexSummaries":
         # Flatten activations
         acts_flat: FlatActivations = FlatActivations.create(activations)
         assert acts_flat.n_components
