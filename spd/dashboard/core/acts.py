@@ -12,6 +12,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from spd.configs import Config
+from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 from spd.dashboard.core.toks import TokenSequenceData
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -72,17 +73,13 @@ class Activations:
     @classmethod
     def generate(
         cls,
-        wandb_run_path: str,
-        n_batches: int,
-        n_ctx: int,
-        device: str,
-        activation_threshold: float,
+        config: ComponentDashboardConfig,
     ) -> "Activations":
         # get model
-        print(f"Loading model from {wandb_run_path}...")
-        spd_run: SPDRunInfo = SPDRunInfo.from_path(path=wandb_run_path)
+        print(f"Loading model from {config.model_path}...")
+        spd_run: SPDRunInfo = SPDRunInfo.from_path(path=config.model_path)
         model: ComponentModel = ComponentModel.from_pretrained(path=spd_run.checkpoint_path)
-        model.to(device=device)
+        model.to(device=config.device)
         spd_cfg: Config = spd_run.config
 
         # get dataloader and tokenizer
@@ -90,18 +87,18 @@ class Activations:
         assert spd_cfg.pretrained_model_name is not None
 
         dataset_config: DatasetConfig = DatasetConfig(
-            name=spd_cfg.task_config.dataset_name,
+            name=config.dataset_name,
             hf_tokenizer_path=spd_cfg.pretrained_model_name,
-            split=spd_cfg.task_config.train_data_split,
-            n_ctx=n_ctx,
-            column_name=spd_cfg.task_config.column_name,
+            split=config.dataset_split,
+            n_ctx=config.context_length,
+            column_name=config.dataset_column,
             is_tokenized=False,
-            streaming=False,
+            streaming=config.dataset_streaming,
             seed=0,
         )
         dataloader, _ = create_data_loader(
             dataset_config=dataset_config,
-            batch_size=spd_cfg.batch_size,
+            batch_size=config.batch_size,
             buffer_size=spd_cfg.task_config.buffer_size,
             global_seed=spd_cfg.seed,
             ddp_rank=0,
@@ -109,15 +106,15 @@ class Activations:
         )
 
         # compute acts and collect tokens
-        print(f"\nComputing activations for {n_batches} batches...")
+        print(f"\nComputing activations for {config.n_batches} batches...")
         all_acts: list[dict[str, Float[Tensor, "batch n_ctx C"]]] = []
         all_tokens: list[Int[Tensor, "batch n_ctx"]] = []
 
-        for _ in tqdm(range(n_batches), desc="Batches"):
+        for _ in tqdm(range(config.n_batches), desc="Batches"):
             batch: Tensor = next(iter(dataloader))["input_ids"]
             all_tokens.append(batch.cpu())
             with torch.no_grad():
-                output: OutputWithCache = model(batch.to(device), cache_type="input")
+                output: OutputWithCache = model(batch.to(config.device), cache_type="input")
                 acts: dict[str, Tensor] = model.calc_causal_importances(
                     pre_weight_acts=output.cache,
                     sampling="continuous",
@@ -157,7 +154,7 @@ class Activations:
 
             # Threshold to boolean for filtering only
             acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
-                acts_flat >= activation_threshold
+                acts_flat >= config.activation_threshold
             ).astype(bool)
 
             # Filter constant components (always 0 or always 1)

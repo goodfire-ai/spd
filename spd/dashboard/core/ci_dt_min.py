@@ -1,47 +1,33 @@
 # %%
 """Minimal single-script version of causal importance decision tree training."""
 
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from numpy import ndarray
-from jaxtyping import Float, Int, Bool
 import torch
-from tqdm import tqdm
+from jaxtyping import Bool, Float, Int
+from numpy import ndarray
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
+from tqdm import tqdm
 
 from spd.dashboard.core.acts import Activations
 from spd.dashboard.core.compute import FlatActivations
+from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 
 # %% ----------------------- Configuration -----------------------
 
-
-@dataclass
-class TreeConfig:
-    wandb_run_path: str = "wandb:goodfire/spd/runs/lxs77xye"
-    batch_size: int = 4
-    n_batches: int = 4
-    n_ctx: int = 16
-    activation_threshold: float = 0.01
-    max_depth: int = 3
-    random_state: int = 42
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
-
-
-CONFIG: TreeConfig = TreeConfig()
+CONFIG = ComponentDashboardConfig(
+    model_path="wandb:goodfire/spd/runs/lxs77xye",
+    batch_size=4,
+    n_batches=4,
+    context_length=16,
+)
 
 # %% ----------------------- get activations -----------------------
 
 FLAT_ACTIVATIONS: FlatActivations = FlatActivations.create(
-	Activations.generate(
-		wandb_run_path=CONFIG.wandb_run_path,
-		n_batches=CONFIG.n_batches,
-		n_ctx=CONFIG.n_ctx,
-		device=CONFIG.device,
-		activation_threshold=CONFIG.activation_threshold,
-	)
+    Activations.generate(config=CONFIG)
 )
 
 

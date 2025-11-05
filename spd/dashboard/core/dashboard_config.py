@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import torch
 from pydantic import Field
 
 from spd.base_config import BaseConfig
@@ -16,6 +17,12 @@ class ComponentDashboardConfig(BaseConfig):
     output_dir: Path = Field(
         default=REPO_ROOT / "spd/dashboard/data",
         description="Output directory for dashboard data",
+    )
+
+    # Compute device
+    device: str = Field(
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        description="Device for model inference",
     )
 
     # Dataset configuration
@@ -51,6 +58,10 @@ class ComponentDashboardConfig(BaseConfig):
     )
 
     # Component filtering
+    activation_threshold: float = Field(
+        default=0.01,
+        description="Threshold for component activation (used in causal importance computation)",
+    )
     dead_threshold: float = Field(
         default=1e-6,
         description="Components with max activation <= this are considered dead",
@@ -90,4 +101,14 @@ class ComponentDashboardConfig(BaseConfig):
     token_active_threshold: float = Field(
         default=0.01,
         description="Threshold above which a component is considered active",
+    )
+
+    # Decision tree parameters
+    max_depth: int = Field(
+        default=3,
+        description="Maximum depth for decision trees",
+    )
+    random_state: int = Field(
+        default=42,
+        description="Random state for decision tree training",
     )
