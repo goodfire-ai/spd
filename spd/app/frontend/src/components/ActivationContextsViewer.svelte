@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { run } from 'svelte/legacy';
+    import { run } from "svelte/legacy";
 
     import * as api from "../lib/api";
     import type { HarvestMetadata, TokenPR, ComponentDetail } from "../lib/api";
@@ -24,15 +24,19 @@
     let loadingComponent = $state(false);
 
     // reset selectedLayer to first layer when harvestMetadata changes
-    run(() => {
+    $effect(() => {
         selectedLayer = Object.keys(harvestMetadata.layers)[0];
     });
 
     // Derive available layers from the data
-    let availableComponentLayers = $derived(Object.keys(harvestMetadata.layers));
+    let availableComponentLayers = $derived(
+        Object.keys(harvestMetadata.layers),
+    );
 
     // Derive current metadata from selections
-    let currentLayerMetadata = $derived(selectedLayer ? harvestMetadata.layers[selectedLayer] : null);
+    let currentLayerMetadata = $derived(
+        selectedLayer ? harvestMetadata.layers[selectedLayer] : null,
+    );
     let totalPages = $derived(currentLayerMetadata?.length ?? 0);
     let currentMetadata = $derived(currentLayerMetadata?.[currentPage]);
 
@@ -52,40 +56,58 @@
     }
 
     // Reset page when layer changes
-    run(() => {
+    $effect(() => {
         if (selectedLayer) currentPage = 0;
     });
 
     // Lazy-load component data when page or layer changes
-    run(async () => {
-        if (!currentMetadata) return;
+    $effect(() => {
+        // establish dependencies by reading them
+        const meta = currentMetadata;
+        const layer = selectedLayer;
 
-        const cacheKey = `${selectedLayer}:${currentMetadata.subcomponent_idx}`;
+        if (!meta) return;
 
-        // Skip if already cached
+        const cacheKey = `${layer}:${meta.subcomponent_idx}`;
+
+        // skip if already cached
         if (componentCache[cacheKey]) return;
 
+        let cancelled = false;
         loadingComponent = true;
-        try {
-            const detail = await api.getComponentDetail(
-                harvestMetadata.harvest_id,
-                selectedLayer,
-                currentMetadata.subcomponent_idx
-            );
 
-            // Add to cache
-            componentCache[cacheKey] = detail;
-        } catch (error) {
-            console.error("Failed to load component:", error);
-        } finally {
-            loadingComponent = false;
-        }
+        const load = async () => {
+            try {
+                const detail = await api.getComponentDetail(
+                    harvestMetadata.harvest_id,
+                    layer,
+                    meta.subcomponent_idx,
+                );
+
+                if (cancelled) return;
+                componentCache[cacheKey] = detail; // writes to $state
+            } catch (error) {
+                if (!cancelled)
+                    console.error("Failed to load component:", error);
+            } finally {
+                if (!cancelled) loadingComponent = false;
+            }
+        };
+
+        load();
+
+        // cleanup if deps change before the async work finishes
+        return () => {
+            cancelled = true;
+        };
     });
 
-    let densities = $derived(currentItem?.token_prs
-        ?.slice()
-        .sort((a: TokenPR, b: TokenPR) => b[metricMode] - a[metricMode])
-        .slice(0, LIMIT));
+    let densities = $derived(
+        currentItem?.token_prs
+            ?.slice()
+            .sort((a: TokenPR, b: TokenPR) => b[metricMode] - a[metricMode])
+            .slice(0, LIMIT),
+    );
 </script>
 
 <div class="layer-select-section">
@@ -99,9 +121,17 @@
 
 <div class="pagination-controls">
     <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
-    <input type="number" min="0" max={totalPages - 1} bind:value={currentPage} class="page-input" />
+    <input
+        type="number"
+        min="0"
+        max={totalPages - 1}
+        bind:value={currentPage}
+        class="page-input"
+    />
     <span>of {totalPages - 1}</span>
-    <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
+    <button onclick={nextPage} disabled={currentPage === totalPages - 1}
+        >&gt;</button
+    >
 </div>
 
 {#if loadingComponent}
@@ -109,7 +139,8 @@
 {:else if currentItem && currentMetadata}
     <div class="subcomponent-section-header">
         <h4>
-            Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci < 0.001
+            Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci <
+            0.001
                 ? currentMetadata.mean_ci.toExponential(2)
                 : currentMetadata.mean_ci.toFixed(3)})
         </h4>
@@ -129,27 +160,37 @@
                                 onclick={() => (metricMode = "recall")}
                             >
                                 Recall
-                                <span class="math-notation">P(token | firing)</span>
+                                <span class="math-notation"
+                                    >P(token | firing)</span
+                                >
                             </button>
                             <button
                                 class:active={metricMode === "precision"}
                                 onclick={() => (metricMode = "precision")}
                             >
                                 Precision
-                                <span class="math-notation">P(firing | token)</span>
+                                <span class="math-notation"
+                                    >P(firing | token)</span
+                                >
                             </button>
                         </div>
                     </div>
                 </div>
                 <div class="densities-grid">
                     {#each densities as { token, recall, precision } (`${token}-${recall}-${precision}`)}
-                        {@const value = metricMode === "recall" ? recall : precision}
+                        {@const value =
+                            metricMode === "recall" ? recall : precision}
                         <div class="density-item">
                             <span class="token">{token}</span>
                             <div class="density-bar-container">
-                                <div class="density-bar" style="width: {value * 100}%"></div>
+                                <div
+                                    class="density-bar"
+                                    style="width: {value * 100}%"
+                                ></div>
                             </div>
-                            <span class="density-value">{(value * 100).toFixed(1)}%</span>
+                            <span class="density-value"
+                                >{(value * 100).toFixed(1)}%</span
+                            >
                         </div>
                     {/each}
                 </div>
