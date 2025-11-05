@@ -81,3 +81,6 @@ def tree_to_dict(tree: DecisionTreeClassifier) -> dict[str, Any]:
         "value": tree_.value.tolist(),
         "n_node_samples": tree_.n_node_samples.tolist(),
     }
+
+
+tree_to_dict(LAYER_TREES[FLAT_ACTIVATIONS.layer_order[1]].estimators_[0])
