@@ -9,7 +9,7 @@ import torch
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.tree import DecisionTreeClassifier
 
-from spd.dashboard.core.ci_dt.acts import Activations
+from spd.dashboard.core.acts import Activations
 
 # %% ----------------------- Configuration -----------------------
 
