@@ -1,10 +1,9 @@
 """Minimal single-script version of causal importance decision tree training."""
 
 import itertools
-from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -20,12 +19,12 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
 
-ComponentLabel = NamedTuple( # noqa: UP014
+ComponentLabel = NamedTuple(  # noqa: UP014
     "ComponentLabel",
     [
         ("module", str),
         ("index", int),
-    ], 
+    ],
 )
 
 
@@ -34,6 +33,7 @@ class FlatActivations:
     component_labels: list[ComponentLabel]
     activations: Float[np.ndarray, "n_samples n_components_total"]
     tokens: Shaped[np.ndarray, " n_samples"]  # of string type `U{max_token_length}`
+
 
 @dataclass
 class Activations:
@@ -85,8 +85,6 @@ class Activations:
             activations=flattened.numpy(),
             tokens=tokens_flat,
         )
-
-        
 
     def get_concat_before(self, module_name: str) -> Float[ndarray, "n_samples n_features"]:
         """Get concatenated activations of all layers before the specified module."""

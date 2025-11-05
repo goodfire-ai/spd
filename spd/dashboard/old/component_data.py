@@ -11,8 +11,8 @@ from dataclasses import dataclass
 import numpy as np
 from jaxtyping import Float
 from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
-
 from spd.dashboard.core.activations import SubcomponentLabel
+
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 
 
