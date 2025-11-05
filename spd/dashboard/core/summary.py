@@ -66,8 +66,9 @@ class TokenStat(SerializableDataclass):
 
 
 def _prefix_dict(d: dict[str, Any], prefix: str, sep: str = ".") -> dict[str, Any]:
-	"""Prefix all keys in a dict with a given string."""
-	return {f"{prefix}{sep}{k}": v for k, v in d.items()}
+    """Prefix all keys in a dict with a given string."""
+    return {f"{prefix}{sep}{k}": v for k, v in d.items()}
+
 
 @serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
 class SubcomponentSummary(SerializableDataclass):
@@ -93,19 +94,21 @@ class SubcomponentSummary(SerializableDataclass):
         """Convert to dict row for embedding visualization page"""
         return {
             **_prefix_dict(
-				{
-					"module": self.label.module,
-					"component_index": self.label.index,
-					"label": self.label.as_str(),
-					"layer": int(self.label.module.split('.')[2]),  # assuming module names like 'model.layers.{i}.*'
-				},
-				prefix="meta",
-			),
+                {
+                    "module": self.label.module,
+                    "component_index": self.label.index,
+                    "label": self.label.as_str(),
+                    "layer": int(
+                        self.label.module.split(".")[2]
+                    ),  # assuming module names like 'model.layers.{i}.*'
+                },
+                prefix="meta",
+            ),
             **_prefix_dict(self.stats, prefix="stats"),
-			**_prefix_dict(
-				{str(i): float(self.embedding[i]) for i in range(self.embedding.shape[0])},
-				prefix="embed.d3",
-			),
+            **_prefix_dict(
+                {str(i): float(self.embedding[i]) for i in range(self.embedding.shape[0])},
+                prefix="embed.d3",
+            ),
         }
 
     @classmethod
