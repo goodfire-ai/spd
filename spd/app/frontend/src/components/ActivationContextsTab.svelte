@@ -3,7 +3,7 @@
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
 
     let loading = $state(false);
-    let allLayersData: api.ModelActivationContexts["layers"] | null = $state(null);
+    let harvestMetadata: api.HarvestMetadata | null = $state(null);
     let progress = $state<api.ProgressUpdate | null>(null);
 
     // Configuration parameters
@@ -15,7 +15,7 @@
 
     async function loadContexts() {
         loading = true;
-        allLayersData = null;
+        harvestMetadata = null;
         progress = null;
         try {
             const data = await api.getSubcomponentActivationContexts(
@@ -30,7 +30,7 @@
                     progress = p;
                 }
             );
-            allLayersData = data.layers;
+            harvestMetadata = data;
         } catch (error) {
             console.error("Error loading contexts", error);
         } finally {
@@ -134,8 +134,8 @@
         <div class="loading">Loading...</div>
     {/if}
 
-    {#if allLayersData}
-        <ActivationContextsViewer {allLayersData} />
+    {#if harvestMetadata}
+        <ActivationContextsViewer {harvestMetadata} />
     {/if}
 </div>
 

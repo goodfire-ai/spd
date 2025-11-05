@@ -1,35 +1,47 @@
 <script lang="ts">
     import { run } from 'svelte/legacy';
 
-    import type { SubcomponentActivationContexts, TokenPR } from "../lib/api";
+    import * as api from "../lib/api";
+    import type { HarvestMetadata, TokenPR, ComponentDetail } from "../lib/api";
     import ActivationContext from "./ActivationContext.svelte";
 
     interface Props {
-        allLayersData: Record<string, SubcomponentActivationContexts[]>;
+        harvestMetadata: HarvestMetadata;
     }
 
-    let { allLayersData }: Props = $props();
-    if (Object.keys(allLayersData).length === 0) {
+    let { harvestMetadata }: Props = $props();
+    if (Object.keys(harvestMetadata.layers).length === 0) {
         throw new Error("No layers data");
     }
     const LIMIT = 20;
 
     let currentPage = $state(0);
-    let selectedLayer: string = $state(Object.keys(allLayersData)[0]);
+    let selectedLayer: string = $state(Object.keys(harvestMetadata.layers)[0]);
     let metricMode: "recall" | "precision" = $state("recall");
 
-    // reset selectedLayer to first layer when allLayersData changes
+    // Component data cache: key is `${layer}:${componentIdx}`
+    let componentCache = $state<Record<string, ComponentDetail>>({});
+    let loadingComponent = $state(false);
+
+    // reset selectedLayer to first layer when harvestMetadata changes
     run(() => {
-        selectedLayer = Object.keys(allLayersData)[0];
+        selectedLayer = Object.keys(harvestMetadata.layers)[0];
     });
 
     // Derive available layers from the data
-    let availableComponentLayers = $derived(Object.keys(allLayersData));
+    let availableComponentLayers = $derived(Object.keys(harvestMetadata.layers));
 
-    // Derive current data from selections
-    let currentLayerData = $derived(selectedLayer ? allLayersData[selectedLayer] : null);
-    let totalPages = $derived(currentLayerData?.length ?? 0);
-    let currentItem = $derived(currentLayerData?.[currentPage]);
+    // Derive current metadata from selections
+    let currentLayerMetadata = $derived(selectedLayer ? harvestMetadata.layers[selectedLayer] : null);
+    let totalPages = $derived(currentLayerMetadata?.length ?? 0);
+    let currentMetadata = $derived(currentLayerMetadata?.[currentPage]);
+
+    // Get current component data from cache
+    let currentItem = $derived.by(() => {
+        if (!currentMetadata) return null;
+        const cacheKey = `${selectedLayer}:${currentMetadata.subcomponent_idx}`;
+        return componentCache[cacheKey] ?? null;
+    });
 
     function previousPage() {
         if (currentPage > 0) currentPage--;
@@ -42,6 +54,32 @@
     // Reset page when layer changes
     run(() => {
         if (selectedLayer) currentPage = 0;
+    });
+
+    // Lazy-load component data when page or layer changes
+    run(async () => {
+        if (!currentMetadata) return;
+
+        const cacheKey = `${selectedLayer}:${currentMetadata.subcomponent_idx}`;
+
+        // Skip if already cached
+        if (componentCache[cacheKey]) return;
+
+        loadingComponent = true;
+        try {
+            const detail = await api.getComponentDetail(
+                harvestMetadata.harvest_id,
+                selectedLayer,
+                currentMetadata.subcomponent_idx
+            );
+
+            // Add to cache
+            componentCache[cacheKey] = detail;
+        } catch (error) {
+            console.error("Failed to load component:", error);
+        } finally {
+            loadingComponent = false;
+        }
     });
 
     let densities = $derived(currentItem?.token_prs
@@ -66,12 +104,14 @@
     <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
 </div>
 
-{#if currentItem}
+{#if loadingComponent}
+    <div class="loading">Loading component data...</div>
+{:else if currentItem && currentMetadata}
     <div class="subcomponent-section-header">
         <h4>
-            Subcomponent {currentItem.subcomponent_idx} (Mean CI: {currentItem.mean_ci < 0.001
-                ? currentItem.mean_ci.toExponential(2)
-                : currentItem.mean_ci.toFixed(3)})
+            Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci < 0.001
+                ? currentMetadata.mean_ci.toExponential(2)
+                : currentMetadata.mean_ci.toFixed(3)})
         </h4>
         {#if densities != null}
             <div class="token-densities">
@@ -303,5 +343,12 @@
         text-align: right;
         color: #495057;
         font-weight: 500;
+    }
+
+    .loading {
+        padding: 2rem;
+        text-align: center;
+        color: #6c757d;
+        font-size: 1rem;
     }
 </style>

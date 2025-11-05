@@ -1,5 +1,6 @@
 import json
 import traceback
+import uuid
 from collections.abc import Generator
 from functools import wraps
 from urllib.parse import unquote
@@ -7,13 +8,17 @@ from urllib.parse import unquote
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
-from spd.app.backend.schemas import Status
+from spd.app.backend.schemas import ModelActivationContexts, Status
 from spd.app.backend.services.run_context_service import RunContextService
 
 run_context_service = RunContextService()
+
+# Cache for harvest results, keyed by UUID
+harvest_cache: dict[str, ModelActivationContexts] = {}
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
@@ -32,6 +37,7 @@ def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMi
 
 app = FastAPI(debug=True)
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -80,10 +86,66 @@ def get_subcomponent_activation_contexts(
                     progress_data = {"type": "progress", "current": data, "total": n_batches}
                     yield f"data: {json.dumps(progress_data)}\n\n"
                 case ("complete", data):
-                    complete_data = {"type": "complete", "result": data.model_dump()}
+                    # Generate harvest ID and cache the full result
+                    harvest_id = str(uuid.uuid4())
+                    harvest_cache[harvest_id] = data
+
+                    # Build lightweight metadata response
+                    metadata = {
+                        "harvest_id": harvest_id,
+                        "layers": {
+                            layer_name: [
+                                {
+                                    "subcomponent_idx": subcomp.subcomponent_idx,
+                                    "mean_ci": subcomp.mean_ci,
+                                }
+                                for subcomp in subcomponents
+                            ]
+                            for layer_name, subcomponents in data.layers.items()
+                        },
+                    }
+
+                    complete_data = {"type": "complete", "result": metadata}
                     yield f"data: {json.dumps(complete_data)}\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering if behind proxy
+        },
+    )
+
+
+@app.get("/activation_contexts/{harvest_id}/{layer}/{component_idx}")
+@handle_errors
+def get_component_detail(harvest_id: str, layer: str, component_idx: int) -> JSONResponse:
+    """Lazy-load endpoint for single component data"""
+    if harvest_id not in harvest_cache:
+        raise HTTPException(status_code=404, detail="Harvest ID not found")
+
+    cached_data = harvest_cache[harvest_id]
+
+    if layer not in cached_data.layers:
+        raise HTTPException(status_code=404, detail=f"Layer '{layer}' not found")
+
+    layer_data = cached_data.layers[layer]
+
+    # Find the component by index
+    component = None
+    for subcomp in layer_data:
+        if subcomp.subcomponent_idx == component_idx:
+            component = subcomp
+            break
+
+    if component is None:
+        raise HTTPException(
+            status_code=404, detail=f"Component {component_idx} not found in layer '{layer}'"
+        )
+
+    # Return full component data
+    return JSONResponse(content=component.model_dump())
 
 
 @app.get("/")
