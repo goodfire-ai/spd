@@ -41,9 +41,9 @@ def main(seed: int, name: str, tags: list[str]):
         (4, 1, 512),  # 2048
         (8, 1, 512),  # 4096
         (16, 1, 512),  # 8192
-        (32, 1, 512), # 16384
-        (64, 1, 512), # 32768
-        (128, 1, 512), # 65536
+        (32, 1, 512),  # 16384
+        (64, 1, 512),  # 32768
+        (128, 1, 512),  # 65536
         # (128, 2, 512), # 131072
         # (128, 4, 512), # 262144
         # (128, 8, 512), # 524288
@@ -125,12 +125,14 @@ def main(seed: int, name: str, tags: list[str]):
 
 def slurm_entrypoint():
     import os
+
     array_job_id = int(os.environ["SLURM_ARRAY_JOB_ID"])
     array_idx = int(os.environ["SLURM_ARRAY_TASK_ID"])
     seed = array_idx
     name = f"seed_{seed}"
     tags = ["fixed-seed", "varying_ctx", f"sweep_{array_job_id}"]
     main(seed=seed, name=name, tags=tags)
+
 
 if __name__ == "__main__":
     slurm_entrypoint()

@@ -149,7 +149,6 @@ def test_sparse_pgd():
         l1s.append(sparsity_l1s)
         losses.append(sparsity_losses)
 
-
     # plot each sparsity coeff as a colored scatter group
     plt.scatter(
         [sum(l1s_) / len(l1s_) for l1s_ in l1s],
@@ -160,10 +159,10 @@ def test_sparse_pgd():
     plt.title("PGD loss vs L1 norm")
     plt.show()
 
+
 # %%
 test_sparse_pgd()
 # %%
-
 
 
 def get_mask_infos_by_seed():
