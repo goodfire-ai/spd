@@ -77,41 +77,41 @@ function getDefaultConfig() {
 
 		// Index page (cluster list) display settings
 		indexPage: {
-		pageSize: 25,
-		pageSizeOptions: [5, 10, 25, 50, 100],
-		showFilters: true
+			pageSize: 25,
+			pageSizeOptions: [5, 10, 25, 50, 100],
+			showFilters: true
 		},
 
 		// Cluster detail page display settings
 		clusterPage: {
-		pageSize: 25,
-		maxSamplesPerCluster: 32,
-		showFilters: true
+			pageSize: 25,
+			maxSamplesPerCluster: 32,
+			showFilters: true
 		},
 
 		// Tree detail page display settings
 		treePage: {
-		numSampleColumns: 3,  // Number of activating sample columns to display
-		dagWidth: 450,        // Width of tree visualization
-		rowHeight: 60         // Height of each row in tree visualization
+			numSampleColumns: 5,  // Number of activating sample columns to display
+			dagWidth: 450,        // Width of tree visualization
+			rowHeight: 60         // Height of each row in tree visualization
 		},
 
 		// Visualization settings
 		visualization: {
-		colormap: "blues",
-		histogramBins: 10,
-		histogramRange: [0, 1.1],  // Default x-axis range for histograms (null for auto)
-		sparklineWidth: 200,
-		sparklineHeight: 70,
-		sparklineYAxisMargin: 35,
-		modelViewCellSize: 16,  // Size of module cells in model visualization (default)
-		modelViewCellSizeTable: 12  // Size for table cells in index.html
+			colormap: "blues",
+			histogramBins: 10,
+			histogramRange: [0, 1.1],  // Default x-axis range for histograms (null for auto)
+			sparklineWidth: 200,
+			sparklineHeight: 70,
+			sparklineYAxisMargin: 35,
+			modelViewCellSize: 16,  // Size of module cells in model visualization (default)
+			modelViewCellSizeTable: 12  // Size for table cells in index.html
 		},
 
 		// Token statistics settings
 		tokenStats: {
-		displayTopN: 5,  // Number of tokens to show in index.html table
-		detailTopN: 50   // Number of tokens to show in component.html detail view
+			displayTopN: 5,  // Number of tokens to show in index.html table
+			detailTopN: 50   // Number of tokens to show in component.html detail view
 		},
 	};
 
