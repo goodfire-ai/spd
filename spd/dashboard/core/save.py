@@ -1,5 +1,6 @@
 """Data saving functionality for dashboard core."""
 
+from functools import cached_property
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,17 +25,14 @@ from spd.dashboard.core.trees import DecisionTreesData
 
 
 @dataclass
-class IndexSummaries(SerializableDataclass):
+class IndexSummaries:
     """Lightweight summary for index.html display.
 
     Contains only the data needed by the main page,
     excluding large fields like full activations.
     """
 
-    summaries: list[SubcomponentSummary] = serializable_field(
-        serialization_fn=lambda x: [s.serialize() for s in x],
-        deserialize_fn=lambda x: [SubcomponentSummary.load(s) for s in x],
-    )
+    summaries: list[SubcomponentSummary]
 
     @classmethod
     def from_activations(
@@ -81,15 +79,31 @@ class IndexSummaries(SerializableDataclass):
 
         return cls(summaries=summaries)
 
+    def serialize(self) -> dict[str, Any]:
+        """Serialize all index summaries for ZANJ storage."""
+        return {
+            "summaries": [summary.serialize() for summary in self.summaries],
+        }
+
+    def embed_table(self) -> list[dict[str, Any]]:
+        """Convert all summaries to rows for embedding visualization page."""
+        return [summary.to_embed_row() for summary in self.summaries]
+
 
 @dataclass
 class DashboardData:
     """Container for all dashboard data with serialization and saving logic."""
 
     config: ComponentDashboardConfig
-    metadata: dict[str, Any]
     activations: Activations
     trees: DecisionTreesData
+    metadata: dict[str, Any]
+
+
+    @cached_property
+    def index_summaries(self) -> IndexSummaries:
+        """Generate index summaries from activations."""
+        return IndexSummaries.from_activations(self.activations, self.config)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize all dashboard data by calling serialize() on components.
@@ -100,15 +114,15 @@ class DashboardData:
             "metadata": self.metadata,
             "activations": self.activations.serialize(),
             "index_summaries": self.index_summaries.serialize(),
-            "embeddings": self.embeddings.serialize(),
+            "embed_table": self.index_summaries.embed_table(),
+            "trees": {
+                "all_trees": [tree.serialize() for tree in self.trees.all_trees],
+            }
         }
-
-        if self.trees is not None:
-            data["trees"] = self.trees.serialize()
 
         return data
 
-    def save(self, output_path: Path, extract: bool = True) -> None:
+    def save(self, extract: bool = True, z: ZANJ|None = None) -> None:
         """Save dashboard data to ZANJ file and optionally extract.
 
         Args:
@@ -116,22 +130,26 @@ class DashboardData:
             extract: Whether to extract the ZANJ file to a directory (default: True)
         """
         # Ensure output directory exists
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        self.config.output_dir.mkdir(parents=True, exist_ok=True)
+        fname: Path = self.config.output_dir / f"{self.config.fname}"
+        fname_str: str = fname.as_posix()
+
+        z_ = z or ZANJ()
 
         # Serialize data
         serialized_data: dict[str, Any] = self.serialize()
 
         # Save to ZANJ with threshold for externalization
-        ZANJ(external_list_threshold=64).save(serialized_data, str(output_path))
+        z_.save(serialized_data, f"{fname_str}.zanj")
 
-        print(f"Saved dashboard data to '{output_path}'")
+        print(f"Saved dashboard data to '{fname_str}'")
 
         # Extract if requested
         if extract:
-            extract_dir: Path = output_path.parent / f"{output_path.stem}_extracted"
+            extract_dir: Path = output_dir.parent / f"{fname_str}"
             extract_dir.mkdir(exist_ok=True)
 
-            with zipfile.ZipFile(output_path, "r") as zip_ref:
+            with zipfile.ZipFile(output_dir, "r") as zip_ref:
                 zip_ref.extractall(extract_dir)
 
             print(f"Extracted dashboard data to '{extract_dir}'")

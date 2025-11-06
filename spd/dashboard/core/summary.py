@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import warnings
 from typing import Any, Literal
 
@@ -63,28 +64,31 @@ def _prefix_dict(d: dict[str, Any], prefix: str, sep: str = ".") -> dict[str, An
     return {f"{prefix}{sep}{k}": v for k, v in d.items()}
 
 
-@serializable_dataclass  # pyright: ignore[reportUntypedClassDecorator]
-class SubcomponentSummary(SerializableDataclass):
+@dataclass
+class SubcomponentSummary:
     """Lightweight summary for index.html table display.
 
     Contains only the data needed by the main component table,
     excluding large fields like top_samples.
     """
 
-    label: ComponentLabel = serializable_field(
-        serialization_fn=lambda x: x.serialize(),
-        deserialize_fn=lambda x: ComponentLabel(module=x.split(":")[0], index=int(x.split(":")[1])),
-    )
+    label: ComponentLabel
     embedding: Float[np.ndarray, " embed_dim"]
     stats: dict[str, float]
     histograms: dict[str, dict[str, list[float]]]
 
     # Token statistics needed for table display (unified list with both probabilities)
-    token_stats: list[TokenStat] = serializable_field(
-        default_factory=list,
-        serialization_fn=lambda x: [s.serialize() for s in x],
-        deserialize_fn=lambda x: [TokenStat.load(s) for s in x],
-    )
+    token_stats: list[TokenStat]
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize summary for ZANJ storage."""
+        return {
+            "label": self.label.serialize(),
+            "embedding": self.embedding.tolist(),
+            "stats": self.stats,
+            "histograms": self.histograms,
+            "token_stats": [ts.serialize() for ts in self.token_stats],
+        }
 
     def to_embed_row(self) -> dict[str, Any]:
         """Convert to dict row for embedding visualization page"""

@@ -1,5 +1,6 @@
 """Configuration for component dashboard generation."""
 
+import hashlib
 from pathlib import Path
 
 import torch
@@ -14,6 +15,12 @@ class ComponentDashboardConfig(BaseConfig):
 
     # Model and output
     model_path: str = Field(description="Path to SPD model (wandb: or local path)")
+
+    @property
+    def model_id(self) -> str:
+        """Extract model ID from model path."""
+        return self.model_path.split("/")[-1]
+
     output_dir: Path = Field(
         default=REPO_ROOT / "spd/dashboard/data",
         description="Output directory for dashboard data",
@@ -112,3 +119,16 @@ class ComponentDashboardConfig(BaseConfig):
         default=42,
         description="Random state for decision tree training",
     )
+
+
+    @property
+    def stable_hash(self) -> str:
+        # model dump to json
+        json_data: str = self.model_dump_json()
+        # stable hash with sha256
+        return hashlib.sha256(json_data.encode("utf-8")).hexdigest()
+
+    @property
+    def fname(self) -> str:
+        """Filename for dashboard data based on model ID and config hash."""
+        return f"{self.model_id}-{self.stable_hash[:8]}"
