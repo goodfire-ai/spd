@@ -12,8 +12,6 @@
     let pageSize = $state(100);
     let tokenFilter = $state("");
 
-    // Display page (1-indexed)
-    let displayPage = $derived(currentPage + 1);
 
     // Update currentPage when page input changes
     function handlePageInput(event: Event) {
@@ -21,8 +19,10 @@
         const value = parseInt(target.value);
         if (!isNaN(value) && value >= 1 && value <= totalPages) {
             currentPage = value - 1;
+        } else {
+            alert("something went wrong");
+            currentPage = 0;
         }
-        // If invalid, the derived displayPage will show the correct value
     }
 
     // Get unique tokens from all examples
@@ -81,7 +81,7 @@
                 type="number"
                 min="1"
                 max={totalPages}
-                value={displayPage}
+                value={currentPage + 1}
                 oninput={handlePageInput}
                 class="page-input"
             />

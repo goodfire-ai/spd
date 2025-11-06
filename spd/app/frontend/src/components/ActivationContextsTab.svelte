@@ -11,7 +11,7 @@
     let batchSize = $state(1);
     let nTokensEitherSide = $state(10);
     let importanceThreshold = $state(0.0);
-    let topkExamples = $state(40);
+    let topkExamples = $state(1000);
 
     async function loadContexts() {
         loading = true;
