@@ -228,6 +228,7 @@ def create_data_loader(
         )
     else:
         to_lower = "SimpleStories" in dataset_config.name
+        logger.info("Tokenizing and concatenating dataset")
         torch_dataset = tokenize_and_concatenate(
             dataset,  # pyright: ignore[reportArgumentType]
             tokenizer,
@@ -236,6 +237,7 @@ def create_data_loader(
             add_bos_token=False,
             to_lower=to_lower,
         )
+        logger.info("Tokenization complete")
 
     sampler = None
     if not dataset_config.streaming and is_ddp:
