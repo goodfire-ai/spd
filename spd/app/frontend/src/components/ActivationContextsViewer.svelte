@@ -192,10 +192,7 @@
         {/if}
 
         <div class="subcomponent-section">
-            {currentItem.examples.length > 200
-                ? `Showing top 200 examples of ${currentItem.examples.length} examples`
-                : ""}
-            {#each currentItem.examples.slice(0, 200) as example (example.__id)}
+            {#each currentItem.examples as example (example.__id)}
                 <ActivationContext {example} />
             {/each}
         </div>
