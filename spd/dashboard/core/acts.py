@@ -8,7 +8,6 @@ from typing import Any, Final
 import numpy as np
 import torch
 from jaxtyping import Bool, Float, Int
-from muutils.json_serialize import json_serialize
 from torch import Tensor
 from tqdm import tqdm
 from transformers import AutoTokenizer
