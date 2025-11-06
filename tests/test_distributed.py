@@ -161,10 +161,6 @@ class TestDistributedDeterminicity:
 
         cmd = [
             "mpirun",
-            "--bind-to",
-            "none",
-            "--map-by",
-            "slot",
             "-np",
             str(n_processes),
             "python",
