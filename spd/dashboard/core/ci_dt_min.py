@@ -19,7 +19,9 @@ CONFIG = ComponentDashboardConfig(
 # %% ----------------------- get activations -----------------------
 
 ACTIVATIONS: Activations = Activations.generate(config=CONFIG)
-FLAT_ACTIVATIONS: FlatActivations = FlatActivations.create(ACTIVATIONS)
+FLAT_ACTIVATIONS: FlatActivations = FlatActivations.create(
+    ACTIVATIONS, activation_threshold=CONFIG.activation_threshold
+)
 
 
 # %% ----------------------- Train Decision Trees -----------------------

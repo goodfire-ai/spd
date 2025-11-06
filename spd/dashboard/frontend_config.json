@@ -1,4 +1,10 @@
 {
+  "dataFile": "data/lxs77xye-6c1f8a28/embed_table.jsonl",
+  "numericalPrefix": "embed.d3.",
+  "defaultColorColumn": "meta.module",
+  "defaultSelectionColumn": "meta.module",
+  "hoverColumns": ["meta.label", "stats.mean", "stats.std", "stats.median"],
+
   "data": {
     "dataDir": "data/dashboard_extracted"
   },

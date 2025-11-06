@@ -784,7 +784,7 @@
 	/*$$$INLINE_CONFIG$$$*/
 	
 	
-	/* global, mutable CONFIG + helper to merge an optional config.json */
+	/* global, mutable CONFIG + helper to merge an optional frontend_config.json */
 	function getDefaultConfig() {
 		let default_cfg = {
 			// Data loading
@@ -955,33 +955,33 @@
 	
 	
 	/**
-	 * Load config.json (if present) and merge into CONFIG.
+	 * Load frontend_config.json (if present) and merge into CONFIG.
 	 * Also parse URL parameters and apply them to CONFIG.
-	 * Priority: URL params > config.json > defaults
+	 * Priority: URL params > frontend_config.json > defaults
 	 * @returns {Promise<object>} resolved CONFIG object
 	 */
 	async function getConfig() {
 		try {
-			// First, try to load config.json
-			const r = await fetch("config.json");
+			// First, try to load frontend_config.json
+			const r = await fetch("frontend_config.json");
 			if (r.ok) {
 				const loaded = await r.json();
 				// Deep merge loaded config into CONFIG
 				deepMerge(CONFIG, loaded);
 				// Store a deep copy of the loaded config for URL comparison
 				LOADED_CONFIG = JSON.parse(JSON.stringify(CONFIG));
-				console.log("Loaded config.json");
+				console.log("Loaded frontend_config.json");
 			} else {
-				console.warn("config.json not found, using defaults");
-				// If no config.json, use defaults for comparison
+				console.warn("frontend_config.json not found, using defaults");
+				// If no frontend_config.json, use defaults for comparison
 				LOADED_CONFIG = JSON.parse(JSON.stringify(CONFIG));
 			}
 		} catch (e) {
-			// if the inline config is null, then failing to find config.json is fine
+			// if the inline config is null, then failing to find frontend_config.json is fine
 			if (!INLINE_CONFIG) {
 				console.error("Config load error:", e);
 			} else {
-				console.warn("Failed to load config.json, but it's fine because an inline config was provided");
+				console.warn("Failed to load frontend_config.json, but it's fine because an inline config was provided");
 			}
 			// On error, use defaults for comparison
 			LOADED_CONFIG = JSON.parse(JSON.stringify(CONFIG));
@@ -1199,7 +1199,7 @@
 	
 	
 	/**
-	 * Reset CONFIG to the loaded config.json state and clear URL parameters
+	 * Reset CONFIG to the loaded frontend_config.json state and clear URL parameters
 	 */
 	function resetConfigToLoaded() {
 		if (!LOADED_CONFIG) {
@@ -4041,7 +4041,7 @@
 				<h3>Configuration</h3>
 				<p>All settings are automatically saved to URL</p>
 				<p>Use "Export Current Config" button to get JSON file</p>
-				<p>URL parameters override config.json settings</p>
+				<p>URL parameters override frontend_config.json settings</p>
 				<p>Use "Reset Config" to return to loaded defaults</p>
 			</div>
 			<div class="help-section">

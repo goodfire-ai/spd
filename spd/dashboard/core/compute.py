@@ -18,6 +18,7 @@ class FlatActivations:
     token_data: TokenSequenceData
     component_labels: list[ComponentLabel]
     activations: Float[np.ndarray, "n_samples C"]
+    activation_threshold: float
 
     @cached_property
     def tokens_flat(self) -> Shaped[np.ndarray, " n_samples"]:
@@ -37,9 +38,9 @@ class FlatActivations:
     @cached_property
     def coactivations(self) -> Float[np.ndarray, "n_components n_components"]:
         """Binary coactivation matrix (how often components are active together)."""
-        binary: Float[np.ndarray, "n_samples n_components"] = (self.activations > 0).astype(
-            np.float32
-        )
+        binary: Float[np.ndarray, "n_samples n_components"] = (
+            self.activations > self.activation_threshold
+        ).astype(np.float32)
         return binary.T @ binary
 
     def get_component_activations(
@@ -54,6 +55,7 @@ class FlatActivations:
     def create(
         cls,
         activations: Activations,
+        activation_threshold: float,
     ) -> "FlatActivations":
         flattened: Float[Tensor, "n_samples n_components_total"] = torch.cat(
             [torch.from_numpy(activations.data_batch_concat[k]) for k in activations.module_order],
@@ -69,6 +71,7 @@ class FlatActivations:
             activations=flattened.numpy(),
             token_data=activations.token_data,
             module_order=activations.module_order,
+            activation_threshold=activation_threshold,
         )
 
     def start_of_module_index(self, module_name: str) -> int:

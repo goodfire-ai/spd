@@ -37,7 +37,9 @@ class IndexSummaries:
         cls, activations: Activations, config: ComponentDashboardConfig
     ) -> "IndexSummaries":
         # Flatten activations
-        acts_flat: FlatActivations = FlatActivations.create(activations)
+        acts_flat: FlatActivations = FlatActivations.create(
+            activations, activation_threshold=config.activation_threshold
+        )
         assert acts_flat.n_components
 
         # Compute embeddings
