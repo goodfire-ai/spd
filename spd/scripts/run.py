@@ -161,7 +161,7 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
-                f"export NCCL_DEBUG=WARN; "
+                f"NCCL_DEBUG=WARN "
                 f"{mpi_prefix}"
                 f"python {exp_config.decomp_script} "
                 f"--config_json '{config_json}' "
@@ -192,7 +192,7 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
-                    f"export NCCL_DEBUG=WARN; "
+                    f"NCCL_DEBUG=WARN "
                     f"{mpi_prefix}"
                     f"python {exp_config.decomp_script} "
                     f"--config_json '{config_json}' "
