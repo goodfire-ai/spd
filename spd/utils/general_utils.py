@@ -345,6 +345,7 @@ def get_obj_device(d: CanGetDevice) -> torch.device:
     assert len(devices) == 1, f"Object parameters are on multiple devices: {devices}"
     return devices.pop()
 
+
 def dict_safe_update_(d1: dict[str, Any], d2: dict[str, Any]) -> None:
     """Update a dictionary with another dictionary, but only if the key is not already present in
     the first dictionary."""
