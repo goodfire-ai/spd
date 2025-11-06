@@ -2,6 +2,7 @@ let componentData = null;
 let allComponents = [];
 let currentComponentLabel = null;
 let dashboardData = {};
+let fullData = null;  // Store full ZANJ data for accessing activations
 // TODO: Re-enable explanations feature
 // let explanations = {};
 
@@ -30,6 +31,7 @@ async function loadData() {
         // Load all data via ZANJ
         const loader = new ZanjLoader(CONFIG.data.dataDir);
         const data = await loader.read();
+        fullData = data;  // Store for accessing activations later
 
         dashboardData = await data.metadata;
 
@@ -390,43 +392,80 @@ async function displaySamples() {
     const container = document.getElementById('topSamplesTable');
     if (!container) return;
 
-    // Process unified top_samples list (already deduplicated on backend)
-    const allSamples = [];
+    try {
+        // Parse component label: "module.name:123"
+        const [moduleName, componentIndexStr] = currentComponentLabel.split(':');
+        const componentIndex = parseInt(componentIndexStr);
 
-    for (const sample of componentData.top_samples) {
-        const activations = await sample.activations;
-        const activationsArray = activations.data
-            ? Array.from(activations.data)
-            : (Array.isArray(activations) ? activations : Array.from(activations));
+        // Load activations data
+        const activations = await fullData.activations;
+        const moduleData = await activations.data[moduleName];  // (n_seqs, n_ctx, n_components)
+        const componentLabels = await activations.component_labels[moduleName];  // list[str]
+        const tokenData = await activations.token_data;
+        const tokens = await tokenData.tokens;  // (n_seqs, n_ctx) of strings
 
-        allSamples.push({
-            max_act: Math.max(...activationsArray),
-            mean_act: activationsArray.reduce((a, b) => a + b, 0) / activationsArray.length,
-            token_strs: sample.token_strs,
-            activations: activationsArray
-        });
-    }
+        // Find component position in module's component array
+        const componentLabel = `${moduleName}:${componentIndex}`;
+        const componentPos = componentLabels.indexOf(componentLabel);
 
-    // Create DataTable with custom renderer for text column
-    new DataTable(container, {
-        data: allSamples,
-        columns: [
-            { key: 'max_act', label: 'Max Act', type: 'number', width: '100px',
-              renderer: (val) => val.toFixed(4) },
-            { key: 'mean_act', label: 'Mean Act', type: 'number', width: '100px',
-              renderer: (val) => val.toFixed(4) },
-            { key: 'token_strs', label: 'Text', type: 'string', filterable: false,
-              renderer: (val, row) => {
-                  return createTokenVisualization(row.token_strs, row.activations);
-              }
+        if (componentPos === -1) {
+            console.error(`Component ${componentLabel} not found in module. Available:`, componentLabels);
+            container.innerHTML = '<p>Error: Component not found in activation data</p>';
+            return;
+        }
+
+        console.log(`Found component ${componentLabel} at position ${componentPos}/${componentLabels.length}`);
+
+        // Extract this component's activations: (n_seqs, n_ctx)
+        const allSamples = [];
+        const nSeqs = moduleData.length;
+
+        for (let seq = 0; seq < nSeqs; seq++) {
+            const seqActivations = [];
+            const seqTokens = tokens[seq];
+
+            // Extract activations for this sequence and component
+            for (let pos = 0; pos < moduleData[seq].length; pos++) {
+                seqActivations.push(moduleData[seq][pos][componentPos]);
             }
-        ],
-        pageSize: 10,
-        showFilters: true
-    });
 
-    // Add token hover highlighting after table is rendered
-    setupTokenHighlighting();
+            const maxAct = Math.max(...seqActivations);
+            const meanAct = seqActivations.reduce((a, b) => a + b, 0) / seqActivations.length;
+
+            allSamples.push({
+                sequence_index: seq,
+                max_act: maxAct,
+                mean_act: meanAct,
+                token_strs: seqTokens,
+                activations: seqActivations
+            });
+        }
+
+        console.log(`Loaded ${allSamples.length} samples`);
+
+        // Create sortable DataTable
+        new DataTable(container, {
+            data: allSamples,
+            columns: [
+                { key: 'max_act', label: 'Max Act', type: 'number', width: '100px',
+                  renderer: (val) => val.toFixed(4) },
+                { key: 'mean_act', label: 'Mean Act', type: 'number', width: '100px',
+                  renderer: (val) => val.toFixed(4) },
+                { key: 'token_strs', label: 'Text', type: 'string', filterable: false,
+                  renderer: (val, row) => createTokenVisualization(row.token_strs, row.activations) }
+            ],
+            pageSize: 20,
+            showFilters: true,
+            defaultSort: { key: 'max_act', direction: 'desc' }
+        });
+
+        // Add token hover highlighting after table is rendered
+        setupTokenHighlighting();
+    } catch (error) {
+        console.error('Error in displaySamples:', error);
+        console.error('Stack:', error.stack);
+        container.innerHTML = '<p>Error loading samples: ' + error.message + '</p>';
+    }
 }
 
 /**

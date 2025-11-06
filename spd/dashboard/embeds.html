@@ -926,8 +926,8 @@
 	
 				// For content mode - creates a new tab with plain text content
 				content: {
-					title: "Point Data: {activation.cls}",
-					template: "Point Information\n===================\n\nClass: {activation.cls}\nModel: {activation.model}\nPrompt: {activation.prompt}\nCoordinates:\n  X ({axis.x.name}): {coord.x}\n  Y ({axis.y.name}): {coord.y}\n  Z ({axis.z.name}): {coord.z}\nConfiguration:\n  Data File: {config.dataFile}\n  Color By: {config.defaultColorColumn}\n  Select By: {config.defaultSelectionColumn}"
+					title: "Point Data: {meta.label}",
+					template: "Point Information\n===================\n\nLabel: {meta.label}\nCoordinates:\n  X ({axis.x.name}): {coord.x}\n  Y ({axis.y.name}): {coord.y}\n  Z ({axis.z.name}): {coord.z}\nConfiguration:\n  Data File: {config.dataFile}\n  Color By: {config.defaultColorColumn}\n  Select By: {config.defaultSelectionColumn}"
 				},
 				// For URL mode - opens a URL constructed from template
 				url: {

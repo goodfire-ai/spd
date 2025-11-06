@@ -6,7 +6,7 @@
   "hoverColumns": ["meta.label", "stats.mean", "stats.std", "stats.median"],
 
   "data": {
-    "dataDir": "data/dashboard_extracted"
+    "dataDir": "data/lxs77xye-e280d990"
   },
   "indexPage": {
     "pageSize": 25,

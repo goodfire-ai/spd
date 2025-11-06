@@ -30,7 +30,8 @@ async function loadData() {
         dashboardData = await data.metadata;
 
         // Load tree data from all_trees
-        const allTrees = await data.trees;
+        const treesData = await data.trees;
+        const allTrees = await treesData.all_trees;
 
         // Find the tree for our target component
         treeData = allTrees.find(tree => tree.component_label === targetComponentLabel);
@@ -274,7 +275,7 @@ async function displayFeaturesTable() {
         };
 
         // Add sample data for each column
-        for (let i = 0; i < NUM_SAMPLE_COLUMNS; i++) {
+        for (let i = 0; i < CONFIG.treePage.numSampleColumns; i++) {
             rowData[`sample_${i}`] = {
                 sampleIdx: sampleIndices[featureLabel][i],
                 component: component
@@ -302,7 +303,7 @@ async function displayFeaturesTable() {
     ];
 
     // Add sample columns
-    for (let i = 0; i < NUM_SAMPLE_COLUMNS; i++) {
+    for (let i = 0; i < CONFIG.treePage.numSampleColumns; i++) {
         columns.push({
             key: `sample_${i}`,
             label: `Sample ${i + 1}`,
