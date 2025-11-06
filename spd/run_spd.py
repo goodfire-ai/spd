@@ -202,14 +202,8 @@ def optimize(
         loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
     )
 
-    multibatch_pgd_loss_configs: list[PGDMultiBatchConfigType] = [
-        cfg for cfg in config.loss_metric_configs if isinstance(cfg, PGDMultiBatchConfig)
-    ]
     multibatch_pgd_eval_configs: list[PGDMultiBatchConfigType] = [
         cfg for cfg in eval_metric_configs if isinstance(cfg, PGDMultiBatchConfig)
-    ]
-    loss_metric_configs = [
-        cfg for cfg in config.loss_metric_configs if cfg not in multibatch_pgd_loss_configs
     ]
 
     eval_metric_configs = [
@@ -263,7 +257,7 @@ def optimize(
             alive_tracker.update(ci=ci.lower_leaky)
 
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metric_configs=loss_metric_configs,
+                loss_metric_configs=config.loss_metric_configs,
                 model=component_model,
                 batch=batch,
                 ci=ci,

@@ -263,6 +263,7 @@ def _multibatch_pgd_fwd_bwd(
 def calc_multibatch_pgd_masked_recon_loss(
     pgd_config: PGDMultiBatchConfig,
     model: ComponentModel,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     dataloader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     output_loss_type: Literal["mse", "kl"],
@@ -294,7 +295,6 @@ def calc_multibatch_pgd_masked_recon_loss(
     C2 = model.C if not use_delta_component else model.C + 1
     n_layers = len(model.target_module_paths)
     adv_source_shape = torch.Size([n_layers] + [1 for _ in batch_dims] + [C2])
-    weight_deltas = model.calc_weight_deltas() if use_delta_component else None
 
     adv_sources: Float[Tensor, "n_layers *batch_dim_or_ones C2"] = _get_pgd_init_tensor(
         init=pgd_config.init, shape=adv_source_shape, device=device
@@ -338,6 +338,8 @@ def calc_multibatch_pgd_metrics(
     device: str,
 ) -> dict[str, float]:
     """Calculate multibatch PGD metrics."""
+    weight_deltas = model.calc_weight_deltas() if config.use_delta_component else None
+
     metrics: dict[str, float] = {}
     for multibatch_pgd_config in multibatch_pgd_eval_configs:
         match multibatch_pgd_config:
@@ -353,6 +355,7 @@ def calc_multibatch_pgd_metrics(
         metrics[multibatch_pgd_config.classname] = calc_multibatch_pgd_masked_recon_loss(
             pgd_config=multibatch_pgd_config,
             model=model,
+            weight_deltas=weight_deltas,
             dataloader=dataloader,
             output_loss_type=config.output_loss_type,
             routing=routing,

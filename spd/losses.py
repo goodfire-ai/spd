@@ -186,6 +186,7 @@ def compute_total_loss(
                 loss = calc_multibatch_pgd_masked_recon_loss(
                     pgd_config=cfg,
                     model=model,
+                    weight_deltas=weight_deltas if use_delta_component else None,
                     dataloader=multibatch_pgd_dataloader,
                     output_loss_type=output_loss_type,
                     routing=routing,
