@@ -23,7 +23,7 @@ import yaml
 from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
-from spd.settings import REPO_ROOT
+from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
@@ -161,8 +161,12 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
-                f"{mpi_prefix} python {exp_config.decomp_script} --config_json '{config_json}' "
-                f"--sweep_id {run_id} --evals_id {experiment}"
+                f"NCCL_DEBUG=WARN "
+                f"{mpi_prefix}"
+                f"python {exp_config.decomp_script} "
+                f"--config_json '{config_json}' "
+                f"--sweep_id {run_id} "
+                f"--evals_id {experiment}"
             )
 
             commands.append(command)
@@ -188,7 +192,10 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
-                    f"{mpi_prefix} python {exp_config.decomp_script} --config_json '{config_json}' "
+                    f"NCCL_DEBUG=WARN "
+                    f"{mpi_prefix}"
+                    f"python {exp_config.decomp_script} "
+                    f"--config_json '{config_json}' "
                     f"--sweep_id {run_id} "
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
@@ -296,7 +303,7 @@ def main(
     create_report: bool = True,
     job_suffix: str | None = None,
     cpu: bool = False,
-    partition: str = "h200-reserved",
+    partition: str = DEFAULT_PARTITION_NAME,
     dp: int = 1,
     project: str = "spd",
     local: bool = False,
@@ -597,8 +604,8 @@ def cli():
         "-p",
         "--partition",
         type=str,
-        default="h200-reserved",
-        help="SLURM partition to use (default: 'h200-reserved')",
+        default=DEFAULT_PARTITION_NAME,
+        help=f"SLURM partition to use (default: {DEFAULT_PARTITION_NAME})",
     )
 
     args: argparse.Namespace = parser.parse_args()

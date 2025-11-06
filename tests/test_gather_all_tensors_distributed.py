@@ -222,10 +222,6 @@ class TestGatherAllTensors:
 
         cmd = [
             "mpirun",
-            "--bind-to",
-            "none",
-            "--map-by",
-            "slot",
             "-np",
             "2",
             sys.executable,
