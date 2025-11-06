@@ -256,6 +256,8 @@ def init_metric(
                 dense_patterns=cfg.dense_patterns,
             )
         case _:
+            # We shouldn't handle **all** cases because PGDGlobal metrics should be handled in the
+            # main train loop, not here.
             raise ValueError(f"Unsupported metric config for eval: {cfg}")
     return metric
 
