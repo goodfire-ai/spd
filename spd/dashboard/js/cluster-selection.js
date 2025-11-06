@@ -39,7 +39,7 @@ const columnRenderers = {
     },
 
     componentLink: function(value, row, col) {
-        return `<a href="component.html?label=${encodeURIComponent(row.label)}">View →</a>`;
+        return `<a href="component.html?label=${encodeURIComponent(row.label)}">View</a> | <a href="trees.html?label=${encodeURIComponent(row.label)}">Tree</a>`;
     },
 
     // TODO: Re-enable explanations feature
@@ -513,7 +513,8 @@ async function loadData() {
 
     // Extract data
     dashboardData = await data.metadata;
-    componentData = await data.subcomponent_summaries;
+    const indexSummaries = await data.index_summaries;
+    componentData = await indexSummaries.summaries;
 
     // TODO: Re-enable explanations feature
     // Load explanations separately (not part of ZANJ)

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Decision Tree Viewer</title>
+    <!-- mivanit js-dev-toolkit -->
+    <link rel="stylesheet" href="js/lib/notif.css">
+    <link rel="stylesheet" href="js/lib/token-display.css">
+    <!-- local -->
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        /* Layout */
+        #mainContainer {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+            min-height: 600px;
+        }
+
+        #treeContainer {
+            flex-shrink: 0;
+            width: 500px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 5px;
+            padding: 15px;
+        }
+
+        #tableContainer {
+            flex: 1;
+            overflow-x: auto;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 5px;
+            padding: 15px;
+        }
+
+        /* Tree controls */
+        #treeControls {
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        #treeControls button {
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            background: #fff;
+            border: 1px solid #d1d5db;
+            border-radius: 3px;
+        }
+
+        #treeControls button:hover {
+            background: #f3f4f6;
+        }
+
+        #legend {
+            font-size: 11px;
+            color: #666;
+            margin-left: auto;
+        }
+
+        /* Tree styles */
+        .dt-viewer {
+            font-family: 'Courier New', monospace;
+        }
+
+        .dt-dag-container {
+            background: white;
+        }
+
+        .dt-node {
+            cursor: move;
+        }
+
+        .dt-node.highlighted rect {
+            fill: #fbbf24 !important;
+        }
+
+        .dt-edge.highlighted {
+            filter: drop-shadow(0 0 4px #fbbf24);
+        }
+
+        .dt-connector.highlighted {
+            stroke: #fbbf24 !important;
+            stroke-width: 3 !important;
+        }
+
+        /* Table row highlighting */
+        .feature-row.highlighted {
+            background-color: #fef3c7 !important;
+        }
+
+        /* Component info */
+        #componentInfo {
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        #componentInfo p {
+            margin: 5px 0;
+        }
+
+        /* Sample column styles */
+        .sample-cell {
+            font-size: 11px;
+            max-width: 300px;
+        }
+
+        .sample-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .reroll-btn {
+            font-size: 10px;
+            padding: 2px 6px;
+            cursor: pointer;
+            background: #fff;
+            border: 1px solid #d1d5db;
+            border-radius: 3px;
+        }
+
+        .reroll-btn:hover {
+            background: #f3f4f6;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <a href="index.html">← Back to component list</a>
+        <h1 id="pageTitle">Decision Tree Viewer</h1>
+    </div>
+
+    <div id="componentInfo">
+        <p><strong>Target Component:</strong> <span id="targetLabel">-</span></p>
+        <p><strong>Tree Accuracy:</strong> <span id="treeAccuracy">-</span></p>
+        <p><strong>Features Used:</strong> <span id="featuresCount">-</span></p>
+    </div>
+
+    <div id="mainContainer">
+        <!-- Left: Tree visualization -->
+        <div id="treeContainer">
+            <div id="treeControls">
+                <button onclick="minimizeCrossings()">Minimize Crossings</button>
+                <div id="legend">
+                    <span style="color:#22c55e;">━ True</span>
+                    <span style="color:#ef4444;">━ False</span>
+                </div>
+            </div>
+            <div id="treeVisualization"></div>
+        </div>
+
+        <!-- Right: Features table -->
+        <div id="tableContainer">
+            <h3>Features Used in Tree</h3>
+            <div id="featuresTable"></div>
+        </div>
+    </div>
+
+    <div id="loading">Loading tree data...</div>
+    <div id="tooltip" style="display: none; position: absolute; background: #333; color: white; padding: 8px; border-radius: 4px; white-space: pre; z-index: 1000; pointer-events: none;"></div>
+
+    <!-- jszip lib -->
+    <script src="js/lib/jszip.min.js"></script>
+
+    <!-- mivanit js-dev-toolkit -->
+    <script src="js/lib/notif.js"></script>
+    <script src="js/lib/table.js"></script>
+    <script src="js/lib/sparklines.js"></script>
+    <script src="js/lib/array.js"></script>
+    <script src="js/lib/zanj.js"></script>
+    <script src="js/lib/ColorUtil.js"></script>
+    <script src="js/lib/token-display.js"></script>
+
+    <!-- local -->
+    <script src="js/config.js"></script>
+    <script src="js/tree.js"></script>
+    <script src="js/tree-detail.js"></script>
+</body>
+</html>

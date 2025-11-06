@@ -89,6 +89,13 @@ function getDefaultConfig() {
 		showFilters: true
 		},
 
+		// Tree detail page display settings
+		treePage: {
+		numSampleColumns: 3,  // Number of activating sample columns to display
+		dagWidth: 450,        // Width of tree visualization
+		rowHeight: 60         // Height of each row in tree visualization
+		},
+
 		// Visualization settings
 		visualization: {
 		colormap: "blues",

@@ -36,9 +36,10 @@ async function loadData() {
         // Extract module name from component label (format: "module.name:index")
         const moduleName = currentComponentLabel.split(':')[0];
 
-        // Load only the specific module's components (lazy loading)
-        const subcomponentDetails = await data.subcomponent_details;
-        allComponents = await subcomponentDetails[moduleName];
+        // Load components from index_summaries and filter by module
+        const indexSummaries = await data.index_summaries;
+        const allSummaries = await indexSummaries.summaries;
+        allComponents = allSummaries.filter(comp => comp.label.split(':')[0] === moduleName);
 
         // TODO: Re-enable explanations feature
         // Load explanations separately (not part of ZANJ)
