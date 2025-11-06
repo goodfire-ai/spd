@@ -117,7 +117,7 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
 def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
     """Build an MPI prefix for a command."""
     port: int = _choose_master_port(run_id, idx)
-    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} --bind-to none --map-by slot"
+    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} "
 
 
 def generate_commands(
@@ -161,7 +161,7 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
-                f"export NCCL_DEBUG=WARN; {mpi_prefix} python {exp_config.decomp_script} --config_json '{config_json}' "
+                f"export NCCL_DEBUG=WARN; {mpi_prefix}python {exp_config.decomp_script} --config_json '{config_json}' "
                 f"--sweep_id {run_id} --evals_id {experiment}"
             )
 
@@ -188,7 +188,7 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
-                    f"export NCCL_DEBUG=WARN; {mpi_prefix} python {exp_config.decomp_script} --config_json '{config_json}' "
+                    f"export NCCL_DEBUG=WARN; {mpi_prefix}python {exp_config.decomp_script} --config_json '{config_json}' "
                     f"--sweep_id {run_id} "
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
