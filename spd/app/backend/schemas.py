@@ -23,6 +23,7 @@ class SubcomponentActivationContexts(BaseModel):
     subcomponent_idx: int
     examples: list[ActivationContext]
     token_prs: list[TokenPR]
+    next_token_prs: list[TokenPR]
     mean_ci: float
 
 

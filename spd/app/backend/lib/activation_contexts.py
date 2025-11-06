@@ -105,6 +105,10 @@ def get_activations_data_streaming(
     component_activation_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
         lambda: defaultdict(lambda: defaultdict(int))
     )
+    # - and the number of times each next token appears after a component activation
+    component_next_token_activations = defaultdict[str, defaultdict[int, dict[int, int]]](
+        lambda: defaultdict(lambda: defaultdict(int))
+    )
     # - the sum of causal importances
     C = run_context.cm.C
     component_sum_cis = defaultdict[str, Float[torch.Tensor, " C"]](
@@ -113,6 +117,8 @@ def get_activations_data_streaming(
 
     # also track total occurrences of each token across all batches
     total_token_counts = defaultdict[int, int](int)
+    # track total occurrences of each token as a "next token" (at position i+1 when i exists)
+    total_next_token_counts = defaultdict[int, int](int)
     n_toks_seen = 0
 
     pad_token_id = int(getattr(run_context.tokenizer, "pad_token_id", None) or DEFAULT_PAD_TOKEN_ID)
@@ -135,6 +141,16 @@ def get_activations_data_streaming(
         token_ids_in_batch, counts = batch.flatten().unique(return_counts=True)
         for token_id, count in zip(token_ids_in_batch.tolist(), counts.tolist(), strict=True):
             total_token_counts[token_id] += count
+
+        # Count tokens that appear as "next tokens" (at position i+1 when position i exists and is not padding)
+        # This excludes the first token of each sequence and padding tokens
+        for b_idx in range(B):
+            for s_idx in range(S - 1):  # S-1 because we're looking at next tokens
+                current_token_id = int(batch[b_idx, s_idx].item())
+                if current_token_id != pad_token_id:  # Current position is not padding
+                    next_token_id = int(batch[b_idx, s_idx + 1].item())
+                    if next_token_id != pad_token_id:  # Next token is not padding
+                        total_next_token_counts[next_token_id] += 1
 
         importances_by_module = _get_importances_by_module(
             run_context.cm, batch, run_context.config
@@ -230,13 +246,25 @@ def get_activations_data_streaming(
                 component_activation_counts[module_name][component_idx] += 1
                 component_activation_tokens[module_name][component_idx][token_id] += 1
 
+                # Track next token if it exists (not at end of sequence and not padding)
+                seq_pos = int(seq_idx[firing_idx].item())
+                if seq_pos + 1 < S:  # Check if next position is within sequence
+                    next_token_id = int(
+                        batch[int(batch_idx[firing_idx].item()), seq_pos + 1].item()
+                    )
+                    if next_token_id != pad_token_id:  # Ignore padding tokens
+                        component_next_token_activations[module_name][component_idx][
+                            next_token_id
+                        ] += 1
+
         # Yield progress update
-        logger.info(f"Processed batch {i+1}/{n_batches}")
+        logger.info(f"Processed batch {i + 1}/{n_batches}")
         yield ("progress", i)
 
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
     for module_name in component_activation_tokens:
         module_acts = component_activation_tokens[module_name]
+        module_next_token_acts = component_next_token_activations[module_name]
         module_examples = examples[module_name]
         module_activation_counts = component_activation_counts[module_name]
         module_mean_cis = (component_sum_cis[module_name] / n_toks_seen).tolist()
@@ -248,6 +276,13 @@ def get_activations_data_streaming(
                 run_context=run_context,
                 component_activation_count=module_activation_counts[component_idx],
             )
+            # Compute next token PRs using total_next_token_counts for precision
+            component_next_token_prs = _get_component_token_pr(
+                component_token_acts=module_next_token_acts.get(component_idx, {}),
+                total_token_counts=total_next_token_counts,
+                run_context=run_context,
+                component_activation_count=module_activation_counts[component_idx],
+            )
             activation_contexts = module_examples[component_idx].as_activation_contexts(
                 run_context.tokenizer
             )
@@ -255,6 +290,7 @@ def get_activations_data_streaming(
                 subcomponent_idx=component_idx,
                 examples=activation_contexts,
                 token_prs=component_token_prs,
+                next_token_prs=component_next_token_prs,
                 mean_ci=module_mean_cis[component_idx],
             )
             module_subcomponent_ctxs.append(subcomponent_ctx)

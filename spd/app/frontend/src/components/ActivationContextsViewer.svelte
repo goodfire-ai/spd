@@ -108,6 +108,13 @@
             .sort((a, b) => b[metricMode] - a[metricMode])
             .slice(0, LIMIT),
     );
+
+    let nextTokenDensities = $derived(
+        currentItem?.next_token_prs
+            ?.slice()
+            .sort((a, b) => b[metricMode] - a[metricMode])
+            .slice(0, LIMIT),
+    );
 </script>
 
 <div class="layer-select-section">
@@ -162,6 +169,45 @@
                 </div>
                 <div class="densities-grid">
                     {#each densities as { token, recall, precision } (`${token}-${recall}-${precision}`)}
+                        {@const value = metricMode === "recall" ? recall : precision}
+                        <div class="density-item">
+                            <span class="token">{token}</span>
+                            <div class="density-bar-container">
+                                <div class="density-bar" style="width: {value * 100}%"></div>
+                            </div>
+                            <span class="density-value">{(value * 100).toFixed(1)}%</span>
+                        </div>
+                    {/each}
+                </div>
+            </div>
+        {/if}
+        {#if nextTokenDensities != null && nextTokenDensities.length > 0}
+            <div class="token-densities">
+                <div class="token-densities-header">
+                    <h5>
+                        Next Tokens
+                        {currentItem.next_token_prs.length > LIMIT
+                            ? `(top ${LIMIT} of ${currentItem.next_token_prs.length})`
+                            : ""}
+                    </h5>
+                    <div class="metric-toggle">
+                        <div class="toggle-buttons">
+                            <button class:active={metricMode === "recall"} onclick={() => (metricMode = "recall")}>
+                                Recall
+                                <span class="math-notation">P(next token | firing)</span>
+                            </button>
+                            <button
+                                class:active={metricMode === "precision"}
+                                onclick={() => (metricMode = "precision")}
+                            >
+                                Precision
+                                <span class="math-notation">P(firing | next token)</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="densities-grid">
+                    {#each nextTokenDensities as { token, recall, precision } (`${token}-${recall}-${precision}`)}
                         {@const value = metricMode === "recall" ? recall : precision}
                         <div class="density-item">
                             <span class="token">{token}</span>

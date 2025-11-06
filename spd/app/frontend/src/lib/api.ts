@@ -38,6 +38,7 @@ export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     examples: ActivationContext[];
     token_prs: TokenPR[];
+    next_token_prs: TokenPR[];
     mean_ci: number;
 };
 
@@ -80,6 +81,7 @@ export type ComponentDetail = {
     subcomponent_idx: number;
     examples: ActivationContext[];
     token_prs: TokenPR[];
+    next_token_prs: TokenPR[];
     mean_ci: number;
 };
 
