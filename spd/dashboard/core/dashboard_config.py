@@ -120,7 +120,6 @@ class ComponentDashboardConfig(BaseConfig):
         description="Random state for decision tree training",
     )
 
-
     @property
     def stable_hash(self) -> str:
         # model dump to json

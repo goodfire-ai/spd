@@ -1,10 +1,10 @@
-from dataclasses import dataclass
 import warnings
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
 from jaxtyping import Float, Int
-from muutils.json_serialize import SerializableDataclass, serializable_dataclass, serializable_field
+from muutils.json_serialize import SerializableDataclass, serializable_dataclass
 
 from spd.dashboard.core.acts import ComponentLabel
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig

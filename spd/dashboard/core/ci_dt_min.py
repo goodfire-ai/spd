@@ -1,16 +1,11 @@
 # %%
 """Minimal single-script version of causal importance decision tree training."""
 
-from typing import Any
-
-from sklearn.multioutput import MultiOutputClassifier
-from sklearn.tree import DecisionTreeClassifier
-
 from spd.dashboard.core.acts import Activations
 from spd.dashboard.core.compute import FlatActivations
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
 from spd.dashboard.core.save import DashboardData
-from spd.dashboard.core.trees import DecisionTreesData, train_decision_trees
+from spd.dashboard.core.trees import DecisionTreesData
 
 # %% ----------------------- Configuration -----------------------
 

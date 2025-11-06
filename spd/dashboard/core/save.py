@@ -1,14 +1,13 @@
 """Data saving functionality for dashboard core."""
 
-from functools import cached_property
 import zipfile
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from jaxtyping import Float, Int
-from muutils.json_serialize import SerializableDataclass, serializable_field
 from zanj import ZANJ
 
 from spd.dashboard.core.acts import Activations, ComponentLabel
@@ -99,7 +98,6 @@ class DashboardData:
     trees: DecisionTreesData
     metadata: dict[str, Any]
 
-
     @cached_property
     def index_summaries(self) -> IndexSummaries:
         """Generate index summaries from activations."""
@@ -117,12 +115,12 @@ class DashboardData:
             "embed_table": self.index_summaries.embed_table(),
             "trees": {
                 "all_trees": [tree.serialize() for tree in self.trees.all_trees],
-            }
+            },
         }
 
         return data
 
-    def save(self, extract: bool = True, z: ZANJ|None = None) -> None:
+    def save(self, extract: bool = True, z: ZANJ | None = None) -> None:
         """Save dashboard data to ZANJ file and optionally extract.
 
         Args:
@@ -130,8 +128,9 @@ class DashboardData:
             extract: Whether to extract the ZANJ file to a directory (default: True)
         """
         # Ensure output directory exists
-        self.config.output_dir.mkdir(parents=True, exist_ok=True)
-        fname: Path = self.config.output_dir / f"{self.config.fname}"
+        output_dir: Path = self.config.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        fname: Path = output_dir / f"{self.config.fname}"
         fname_str: str = fname.as_posix()
 
         z_ = z or ZANJ()
