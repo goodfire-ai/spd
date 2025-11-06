@@ -48,21 +48,19 @@ async function loadData() {
         // Extract unique feature labels from the tree
         const featureLabels = Object.values(treeData.tree_dict.feature_labels);
 
-        // Load component details for all features
-        const subcomponentDetails = await data.subcomponent_details;
+        // Load component details from index_summaries
+        const indexSummaries = await data.index_summaries;
+        const allSummaries = await indexSummaries.summaries;
 
+        // Create a map of all components by label for quick lookup
+        const componentsByLabel = {};
+        for (const component of allSummaries) {
+            componentsByLabel[component.label] = component;
+        }
+
+        // Load components for each feature
         for (const featureLabel of featureLabels) {
-            // Extract module name from feature label (format: "module.name:index")
-            const moduleName = featureLabel.split(':')[0];
-
-            // Load module components if not already loaded
-            if (!subcomponentDetails[moduleName]) {
-                console.warn(`Module not found: ${moduleName}`);
-                continue;
-            }
-
-            const moduleComponents = await subcomponentDetails[moduleName];
-            const component = moduleComponents.find(comp => comp.label === featureLabel);
+            const component = componentsByLabel[featureLabel];
 
             if (component) {
                 featureComponents[featureLabel] = component;
