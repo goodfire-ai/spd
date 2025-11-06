@@ -67,11 +67,12 @@ class DecisionTreeViewer {
     }
 
     getNodeType(node) {
+        if (node.isTarget) return 'target';
         const hasIncoming = this.allNodes.some(n => n.edges.some(e => e.target === node.id));
         const hasTrue = node.edges.some(e => e.type === 'true');
         const hasFalse = node.edges.some(e => e.type === 'false');
         const hasDepends = node.edges.some(e => e.type === 'depends');
-        
+
         if (!hasIncoming && node.edges.length === 0) return 'isolated';
         if (hasIncoming && node.edges.length === 0) return 'leaf';
         if (hasTrue || hasFalse) return 'branch';
@@ -307,11 +308,11 @@ class DecisionTreeViewer {
             rect.setAttribute('height', '16');
             rect.setAttribute('rx', '3');
             
-            const fill = type === 'branch' ? '#3b82f6' : type === 'root' ? '#8b5cf6' :
-                        type === 'leaf' ? '#10b981' : '#9ca3af';
+            const fill = type === 'target' ? '#f59e0b' : type === 'branch' ? '#3b82f6' :
+                        type === 'root' ? '#8b5cf6' : type === 'leaf' ? '#10b981' : '#9ca3af';
             rect.setAttribute('fill', fill);
             rect.setAttribute('stroke', '#1f2937');
-            rect.setAttribute('stroke-width', type === 'branch' ? '2' : '1');
+            rect.setAttribute('stroke-width', (type === 'branch' || type === 'target') ? '2' : '1');
             g.appendChild(rect);
 
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');

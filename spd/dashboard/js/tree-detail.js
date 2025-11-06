@@ -62,7 +62,6 @@ async function loadData() {
         const targetComponent = componentsByLabel[targetComponentLabel];
         if (targetComponent) {
             featureComponents[targetComponentLabel] = targetComponent;
-            sampleIndices[targetComponentLabel] = Array(CONFIG.treePage.numSampleColumns).fill(0).map((_, i) => i);
         }
 
         // Extract unique feature labels from the tree
@@ -74,11 +73,35 @@ async function loadData() {
 
             if (component) {
                 featureComponents[featureLabel] = component;
-                // Initialize sample index for this feature
-                sampleIndices[featureLabel] = Array(CONFIG.treePage.numSampleColumns).fill(0).map((_, i) => i);
             } else {
                 console.warn(`Component not found: ${featureLabel}`);
             }
+        }
+
+        // Load all samples from activations data
+        console.log('Loading sample data...');
+        const tokenData = await fullData.activations.token_data;
+        const tokens = await tokenData.tokens;
+        const nSeqs = tokens.length;
+        console.log(`Found ${nSeqs} sequences`);
+
+        // Pick random sample indices
+        const numSamples = Math.min(CONFIG.treePage.numSampleColumns * 10, nSeqs);
+        const sampleIndices = [];
+        for (let i = 0; i < numSamples; i++) {
+            sampleIndices.push(Math.floor(Math.random() * nSeqs));
+        }
+
+        // Store sample info (token strings and index)
+        allSamples = sampleIndices.map(idx => ({
+            index: idx,
+            token_strs: tokens[idx]
+        }));
+        console.log(`Loaded ${allSamples.length} samples`);
+
+        // Initialize column samples (one sample index per column, shared across all rows)
+        for (let i = 0; i < CONFIG.treePage.numSampleColumns; i++) {
+            columnSamples[i] = i % allSamples.length;
         }
 
         displayTree();
@@ -328,7 +351,7 @@ async function displayFeaturesTable() {
         // Add sample data for each column
         for (let i = 0; i < CONFIG.treePage.numSampleColumns; i++) {
             rowData[`sample_${i}`] = {
-                sampleIdx: sampleIndices[targetComponentLabel][i],
+                sampleIdx: columnSamples[i],
                 component: targetComponent
             };
         }
@@ -341,9 +364,9 @@ async function displayFeaturesTable() {
     const tree = treeData.tree_dict;
     const sortedFeatures = Object.entries(tree.feature_labels)
         .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))  // Sort by feature index
-        .map(([featIdx, label]) => ({ featIdx: parseInt(featIdx), label }));
+        .map(([_featIdx, label]) => label);
 
-    for (const { featIdx, label: featureLabel } of sortedFeatures) {
+    for (const featureLabel of sortedFeatures) {
         const component = featureComponents[featureLabel];
         if (!component) {
             console.warn(`Component not found: ${featureLabel}`);
@@ -360,7 +383,7 @@ async function displayFeaturesTable() {
         // Add sample data for each column
         for (let i = 0; i < CONFIG.treePage.numSampleColumns; i++) {
             rowData[`sample_${i}`] = {
-                sampleIdx: sampleIndices[featureLabel][i],
+                sampleIdx: columnSamples[i],
                 component: component
             };
         }
@@ -371,7 +394,7 @@ async function displayFeaturesTable() {
     // Define columns
     const columns = [
         {
-            key: 'featureLabel',
+            key: 'displayLabel',
             label: 'Feature',
             type: 'string',
             width: '200px',
@@ -390,11 +413,13 @@ async function displayFeaturesTable() {
         columns.push({
             key: `sample_${i}`,
             label: `Sample ${i + 1}`,
+            columnIdx: i,  // Store column index for re-roll button
             type: 'custom',
             width: '300px',
             filterable: false,
-            renderer: (value, row) => {
-                return createSampleCell(value.component, value.sampleIdx, i, row.featureLabel);
+            renderer: async (value, row) => {
+                // Call async createSampleCell with featureLabel and global sampleIdx
+                return await createSampleCell(row.featureLabel, value.sampleIdx);
             }
         });
     }
@@ -410,7 +435,30 @@ async function displayFeaturesTable() {
     const headerRow = document.createElement('tr');
     columns.forEach(col => {
         const th = document.createElement('th');
-        th.textContent = col.label;
+
+        // For sample columns, add re-roll button in header
+        if (col.columnIdx !== undefined) {
+            const headerContainer = document.createElement('div');
+            headerContainer.style.display = 'flex';
+            headerContainer.style.justifyContent = 'space-between';
+            headerContainer.style.alignItems = 'center';
+
+            const label = document.createElement('span');
+            label.textContent = col.label;
+
+            const rerollBtn = document.createElement('button');
+            rerollBtn.className = 'reroll-btn';
+            rerollBtn.textContent = '↻';
+            rerollBtn.title = 'Re-roll sample for this column';
+            rerollBtn.onclick = () => rerollSample(col.columnIdx);
+
+            headerContainer.appendChild(label);
+            headerContainer.appendChild(rerollBtn);
+            th.appendChild(headerContainer);
+        } else {
+            th.textContent = col.label;
+        }
+
         th.style.padding = '10px';
         th.style.borderBottom = '2px solid #e5e7eb';
         th.style.textAlign = 'left';
@@ -436,20 +484,35 @@ async function displayFeaturesTable() {
             highlightTreeNodes(rowData.featureLabel, false);
         });
 
-        columns.forEach(col => {
+        columns.forEach(async (col) => {
             const td = document.createElement('td');
             td.style.padding = '10px';
             td.style.verticalAlign = 'top';
 
             const value = rowData[col.key];
-            const rendered = col.renderer ? col.renderer(value, rowData) : value;
 
-            if (typeof rendered === 'string') {
-                td.innerHTML = rendered;
-            } else if (rendered instanceof HTMLElement) {
-                td.appendChild(rendered);
+            if (col.renderer) {
+                // Handle async renderer for sample cells
+                const rendered = await col.renderer(value, rowData);
+
+                if (typeof rendered === 'string') {
+                    td.innerHTML = rendered;
+                } else if (rendered instanceof HTMLElement) {
+                    td.appendChild(rendered);
+                } else if (rendered instanceof Promise) {
+                    // If still a promise, wait for it
+                    rendered.then(r => {
+                        if (r instanceof HTMLElement) {
+                            td.appendChild(r);
+                        } else {
+                            td.textContent = String(r);
+                        }
+                    });
+                } else {
+                    td.textContent = rendered;
+                }
             } else {
-                td.textContent = rendered;
+                td.textContent = value;
             }
 
             tr.appendChild(td);
@@ -463,115 +526,58 @@ async function displayFeaturesTable() {
 }
 
 /**
- * Load sample activations for a specific component from the full activations data.
- * Returns array of {token_strs, activations} objects.
+ * Create a sample cell showing activations for a specific feature on a shared sample.
+ * @param {string} featureLabel - Label of the feature component (e.g., "model.layers.0.mlp:5")
+ * @param {number} sampleIdx - Index into allSamples array
+ * @returns {HTMLElement} Container with token visualization
  */
-async function loadComponentSamples(componentLabel, maxSamples = 10) {
-    try {
-        // Parse component label
-        const [moduleName, componentIndexStr] = componentLabel.split(':');
-        const componentIndex = parseInt(componentIndexStr);
-
-        // Load activations
-        const activations = await fullData.activations;
-        const moduleData = await activations.data[moduleName];
-        const componentLabels = await activations.component_labels[moduleName];
-        const tokenData = await activations.token_data;
-        const tokens = await tokenData.tokens;
-
-        // Find component position
-        const componentPos = componentLabels.indexOf(componentLabel);
-        if (componentPos === -1) {
-            console.warn(`Component ${componentLabel} not found in module`);
-            return [];
-        }
-
-        // Extract activations (same pattern as cluster-detail.js)
-        const actualData = moduleData.data || moduleData;
-        const [nSeqs, nCtx, nComponents] = moduleData.shape;
-
-        const samples = [];
-        for (let seq = 0; seq < Math.min(nSeqs, maxSamples); seq++) {
-            const seqActivations = [];
-            for (let pos = 0; pos < nCtx; pos++) {
-                const flatIdx = seq * (nCtx * nComponents) + pos * nComponents + componentPos;
-                seqActivations.push(actualData[flatIdx]);
-            }
-            samples.push({
-                token_strs: tokens[seq],
-                activations: seqActivations
-            });
-        }
-        return samples;
-    } catch (error) {
-        console.error(`Error loading samples for ${componentLabel}:`, error);
-        return [];
-    }
-}
-
-function createSampleCell(component, sampleIdx, columnIdx, featureLabel) {
+async function createSampleCell(featureLabel, sampleIdx) {
     const container = document.createElement('div');
     container.className = 'sample-cell';
 
-    // Create header with re-roll button
-    const header = document.createElement('div');
-    header.className = 'sample-header';
-
-    const label = document.createElement('span');
-    label.textContent = `#${sampleIdx + 1}`;
-    label.style.fontSize = '10px';
-    label.style.color = '#666';
-
-    const rerollBtn = document.createElement('button');
-    rerollBtn.className = 'reroll-btn';
-    rerollBtn.textContent = '↻';
-    rerollBtn.title = 'Re-roll sample';
-    rerollBtn.onclick = () => rerollSample(featureLabel, columnIdx);
-
-    header.appendChild(label);
-    header.appendChild(rerollBtn);
-    container.appendChild(header);
-
-    // Get the sample
-    if (!component.top_samples || component.top_samples.length === 0) {
+    if (sampleIdx >= allSamples.length || sampleIdx < 0) {
         const noData = document.createElement('span');
-        noData.textContent = 'No samples available';
+        noData.textContent = 'Invalid sample index';
         noData.style.color = '#999';
         noData.style.fontSize = '11px';
         container.appendChild(noData);
         return container;
     }
 
-    const actualSampleIdx = sampleIdx % component.top_samples.length;
-    const sample = component.top_samples[actualSampleIdx];
+    const globalSample = allSamples[sampleIdx];
 
-    // Create token visualization
-    // Note: activations need to be awaited if they're lazy-loaded
-    Promise.resolve(sample.activations).then(activations => {
-        const activationsArray = activations.data
-            ? Array.from(activations.data)
-            : (Array.isArray(activations) ? activations : Array.from(activations));
+    // Load activations for THIS feature on THIS sample
+    // We need to load enough samples to get to the one we want
+    const samples = await loadComponentSamples(fullData, featureLabel, globalSample.index + 1);
 
-        const tokenViz = createTokenVisualization(sample.token_strs, activationsArray);
-        container.appendChild(tokenViz);
-    }).catch(err => {
-        console.error('Error loading activations:', err);
-        const errorMsg = document.createElement('span');
-        errorMsg.textContent = 'Error loading sample';
-        errorMsg.style.color = '#f00';
-        container.appendChild(errorMsg);
-    });
+    if (!samples || samples.length === 0 || globalSample.index >= samples.length) {
+        const noData = document.createElement('span');
+        noData.textContent = 'No activations';
+        noData.style.color = '#999';
+        noData.style.fontSize = '11px';
+        container.appendChild(noData);
+        return container;
+    }
+
+    const featureSample = samples[globalSample.index];
+
+    // Create token visualization with this feature's activations
+    const tokenViz = createTokenVisualization(featureSample.token_strs, featureSample.activations);
+    container.appendChild(tokenViz);
 
     return container;
 }
 
-async function rerollSample(featureLabel, columnIdx) {
-    const component = featureComponents[featureLabel];
-    if (!component || !component.top_samples) return;
+/**
+ * Re-roll (change) the sample displayed in a specific column.
+ * This affects ALL rows in that column (they all show the same sample).
+ * @param {number} columnIdx - Index of the column to re-roll
+ */
+async function rerollSample(columnIdx) {
+    if (allSamples.length === 0) return;
 
-    // Increment sample index for this column
-    sampleIndices[featureLabel][columnIdx] =
-        (sampleIndices[featureLabel][columnIdx] + 1) % component.top_samples.length;
+    // Pick a new random sample for this column
+    columnSamples[columnIdx] = Math.floor(Math.random() * allSamples.length);
 
     // Redisplay the table
     document.getElementById('featuresTable').innerHTML = '';
