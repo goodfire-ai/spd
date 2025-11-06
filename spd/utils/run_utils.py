@@ -382,8 +382,8 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PGDReconLoss": "PGDRecon",
     "PGDReconSubsetLoss": "PGDReconSub",
     "PGDReconLayerwiseLoss": "PGDReconLayer",
-    "PGDGlobalReconLoss": "PGDGlobalRecon",
-    "PGDGlobalReconSubsetLoss": "PGDGlobalReconSub",
+    "PGDMultiBatchReconLoss": "PGDMultiBatchRecon",
+    "PGDMultiBatchReconSubsetLoss": "PGDMultiBatchReconSub",
     "StochasticHiddenActsReconLoss": "StochHiddenRecon",
     # Eval metrics
     "CEandKLLosses": "CEandKL",

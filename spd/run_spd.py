@@ -20,8 +20,8 @@ from spd.configs import (
     Config,
     LossMetricConfigType,
     MetricConfigType,
-    PGDGlobalConfig,
-    PGDGlobalConfigType,
+    PGDMultiBatchConfig,
+    PGDMultiBatchConfigType,
 )
 from spd.data import loop_dataloader
 from spd.eval import evaluate
@@ -30,7 +30,7 @@ from spd.log import logger
 from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
-from spd.metrics.pgd_utils import calc_global_pgd_metrics
+from spd.metrics.pgd_utils import calc_multibatch_pgd_metrics
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
@@ -202,17 +202,19 @@ def optimize(
         loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
     )
 
-    global_pgd_loss_configs: list[PGDGlobalConfigType] = [
-        cfg for cfg in config.loss_metric_configs if isinstance(cfg, PGDGlobalConfig)
+    multibatch_pgd_loss_configs: list[PGDMultiBatchConfigType] = [
+        cfg for cfg in config.loss_metric_configs if isinstance(cfg, PGDMultiBatchConfig)
     ]
-    global_pgd_eval_configs: list[PGDGlobalConfigType] = [
-        cfg for cfg in eval_metric_configs if isinstance(cfg, PGDGlobalConfig)
+    multibatch_pgd_eval_configs: list[PGDMultiBatchConfigType] = [
+        cfg for cfg in eval_metric_configs if isinstance(cfg, PGDMultiBatchConfig)
     ]
     loss_metric_configs = [
-        cfg for cfg in config.loss_metric_configs if cfg not in global_pgd_loss_configs
+        cfg for cfg in config.loss_metric_configs if cfg not in multibatch_pgd_loss_configs
     ]
 
-    eval_metric_configs = [cfg for cfg in eval_metric_configs if cfg not in global_pgd_eval_configs]
+    eval_metric_configs = [
+        cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
+    ]
     batch_dims: tuple[int, ...] | None = None
 
     # Track which components are alive based on firing frequency
@@ -260,7 +262,6 @@ def optimize(
 
             alive_tracker.update(ci=ci.lower_leaky)
 
-            # TODO: Handle global PGD loss
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
                 loss_metric_configs=loss_metric_configs,
                 model=component_model,
@@ -274,6 +275,8 @@ def optimize(
                 use_delta_component=config.use_delta_component,
                 n_mask_samples=config.n_mask_samples,
                 output_loss_type=config.output_loss_type,
+                multibatch_pgd_dataloader=train_loader,
+                batch_dims=batch_dims,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
@@ -328,8 +331,8 @@ def optimize(
                 )
 
                 assert batch_dims is not None, "batch_dims is not set"
-                global_pgd_metrics = calc_global_pgd_metrics(
-                    global_pgd_eval_configs=global_pgd_eval_configs,
+                multibatch_pgd_metrics = calc_multibatch_pgd_metrics(
+                    multibatch_pgd_eval_configs=multibatch_pgd_eval_configs,
                     model=component_model,
                     dataloader=train_loader,
                     config=config,
@@ -348,7 +351,7 @@ def optimize(
                     current_frac_of_training=step / config.steps,
                 )
 
-                dict_safe_update_(metrics, global_pgd_metrics)
+                dict_safe_update_(metrics, multibatch_pgd_metrics)
 
                 if is_main_process():
                     for k, v in metrics.items():

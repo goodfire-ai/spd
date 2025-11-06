@@ -10,11 +10,11 @@ from torch.utils.data import DataLoader
 from spd.configs import (
     Config,
     PGDConfig,
-    PGDGlobalConfig,
-    PGDGlobalConfigType,
-    PGDGlobalReconLossConfig,
-    PGDGlobalReconSubsetLossConfig,
     PGDInitStrategy,
+    PGDMultiBatchConfig,
+    PGDMultiBatchConfigType,
+    PGDMultiBatchReconLossConfig,
+    PGDMultiBatchReconSubsetLossConfig,
     SamplingType,
 )
 from spd.log import logger
@@ -182,9 +182,9 @@ def pgd_masked_recon_loss_update(
     return final_loss, n_examples
 
 
-def _global_pgd_fwd_bwd(
+def _multibatch_pgd_fwd_bwd(
     adv_sources: Float[Tensor, "n_layers *batch_dim_or_ones C2"],
-    pgd_config: PGDGlobalConfig,
+    pgd_config: PGDMultiBatchConfig,
     model: ComponentModel,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     dataloader: DataLoader[Int[Tensor, "..."]]
@@ -260,8 +260,8 @@ def _global_pgd_fwd_bwd(
     return pgd_step_accum_loss, n_examples, pgd_step_accum_grads
 
 
-def calc_pgd_global_masked_recon_loss(
-    pgd_config: PGDGlobalConfig,
+def calc_multibatch_pgd_masked_recon_loss(
+    pgd_config: PGDMultiBatchConfig,
     model: ComponentModel,
     dataloader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
@@ -271,14 +271,14 @@ def calc_pgd_global_masked_recon_loss(
     use_delta_component: bool,
     batch_dims: tuple[int, ...],
     device: str,
-) -> float:
+) -> Float[Tensor, ""]:
     """PGD masked reconstruction loss with gradient accumulation over multiple batches.
 
     This function optimizes adversarial masks by accumulating gradients over pgd_config.n_batches
     batches before each PGD update step.
 
     Args:
-        pgd_config: PGD global configuration
+        pgd_config: Multibatch PGD configuration
         model: The ComponentModel to evaluate
         dataloader: DataLoader or iterator yielding batches
         output_loss_type: Loss type for reconstruction ("mse" or "kl")
@@ -301,7 +301,7 @@ def calc_pgd_global_masked_recon_loss(
     ).requires_grad_(True)
 
     forward_backward = partial(
-        _global_pgd_fwd_bwd,
+        _multibatch_pgd_fwd_bwd,
         adv_sources=adv_sources,
         pgd_config=pgd_config,
         model=model,
@@ -325,11 +325,11 @@ def calc_pgd_global_masked_recon_loss(
     loss, n_examples, _ = forward_backward()
     final_loss_summed = all_reduce(loss, op=ReduceOp.SUM)
     final_n_examples = all_reduce(torch.tensor(n_examples, device=device), op=ReduceOp.SUM)
-    return (final_loss_summed / final_n_examples).item()
+    return final_loss_summed / final_n_examples
 
 
-def calc_global_pgd_metrics(
-    global_pgd_eval_configs: list[PGDGlobalConfigType],
+def calc_multibatch_pgd_metrics(
+    multibatch_pgd_eval_configs: list[PGDMultiBatchConfigType],
     model: ComponentModel,
     dataloader: DataLoader[Int[Tensor, "..."]]
     | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
@@ -337,21 +337,21 @@ def calc_global_pgd_metrics(
     batch_dims: tuple[int, ...],
     device: str,
 ) -> dict[str, float]:
-    """Calculate global PGD metrics."""
+    """Calculate multibatch PGD metrics."""
     metrics: dict[str, float] = {}
-    for pgd_global_config in global_pgd_eval_configs:
-        match pgd_global_config:
-            case PGDGlobalReconLossConfig():
+    for multibatch_pgd_config in multibatch_pgd_eval_configs:
+        match multibatch_pgd_config:
+            case PGDMultiBatchReconLossConfig():
                 routing = "all"
-            case PGDGlobalReconSubsetLossConfig():
+            case PGDMultiBatchReconSubsetLossConfig():
                 routing = "uniform_k-stochastic"
 
-        assert pgd_global_config.classname not in metrics, (
-            f"Metric {pgd_global_config.classname} already exists"
+        assert multibatch_pgd_config.classname not in metrics, (
+            f"Metric {multibatch_pgd_config.classname} already exists"
         )
 
-        metrics[pgd_global_config.classname] = calc_pgd_global_masked_recon_loss(
-            pgd_config=pgd_global_config,
+        metrics[multibatch_pgd_config.classname] = calc_multibatch_pgd_masked_recon_loss(
+            pgd_config=multibatch_pgd_config,
             model=model,
             dataloader=dataloader,
             output_loss_type=config.output_loss_type,
@@ -360,5 +360,5 @@ def calc_global_pgd_metrics(
             use_delta_component=config.use_delta_component,
             batch_dims=batch_dims,
             device=device,
-        )
+        ).item()
     return metrics

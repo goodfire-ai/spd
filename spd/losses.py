@@ -3,6 +3,7 @@ from typing import Literal
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
+from torch.utils.data import DataLoader
 
 from spd.configs import (
     CIMaskedReconLayerwiseLossConfig,
@@ -11,6 +12,8 @@ from spd.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     LossMetricConfigType,
+    PGDMultiBatchReconLossConfig,
+    PGDMultiBatchReconSubsetLossConfig,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
@@ -34,6 +37,7 @@ from spd.metrics import (
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
 )
+from spd.metrics.pgd_utils import calc_multibatch_pgd_masked_recon_loss
 from spd.models.component_model import CIOutputs, ComponentModel
 
 
@@ -50,6 +54,9 @@ def compute_total_loss(
     use_delta_component: bool,
     n_mask_samples: int,
     output_loss_type: Literal["mse", "kl"],
+    multibatch_pgd_dataloader: DataLoader[Int[Tensor, "..."]]
+    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    batch_dims: tuple[int, ...],
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 
@@ -170,8 +177,23 @@ def compute_total_loss(
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
-            case _:
-                raise ValueError(f"Unsupported loss config: {cfg}")
+            case PGDMultiBatchReconLossConfig() | PGDMultiBatchReconSubsetLossConfig():
+                match cfg:
+                    case PGDMultiBatchReconLossConfig():
+                        routing = "all"
+                    case PGDMultiBatchReconSubsetLossConfig():
+                        routing = "uniform_k-stochastic"
+                loss = calc_multibatch_pgd_masked_recon_loss(
+                    pgd_config=cfg,
+                    model=model,
+                    dataloader=multibatch_pgd_dataloader,
+                    output_loss_type=output_loss_type,
+                    routing=routing,
+                    sampling=sampling,
+                    use_delta_component=use_delta_component,
+                    batch_dims=batch_dims,
+                    device=str(batch.device),
+                )
 
         terms[f"loss/{cfg.classname}"] = loss.item()
 
