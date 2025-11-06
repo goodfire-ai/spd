@@ -44,6 +44,8 @@ def main(
         config = Config(**json.loads(config_json.removeprefix("json:")))
 
     dist_state = init_distributed()
+    print(f"dist_state: {dist_state}")
+    return
 
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
