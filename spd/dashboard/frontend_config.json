@@ -1,12 +1,12 @@
 {
-  "dataFile": "data/lxs77xye-7c55abf4/embed_table.jsonl",
+  "dataFile": "data/lxs77xye-bf211f67/embed_table.jsonl",
   "numericalPrefix": "embed.d3.",
   "defaultColorColumn": "meta.module",
   "defaultSelectionColumn": "meta.module",
   "hoverColumns": ["meta.label", "stats.mean", "stats.std", "stats.median"],
 
   "data": {
-    "dataDir": "data/lxs77xye-7c55abf4"
+    "dataDir": "data/lxs77xye-bf211f67"
   },
   "indexPage": {
     "pageSize": 25,

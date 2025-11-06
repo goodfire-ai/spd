@@ -1,6 +1,8 @@
 # %%
 """Minimal single-script version of causal importance decision tree training."""
 
+from zanj import ZANJ
+
 from spd.dashboard.core.acts import Activations
 from spd.dashboard.core.compute import FlatActivations
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
@@ -11,8 +13,8 @@ from spd.dashboard.core.trees import DecisionTreesData
 
 CONFIG = ComponentDashboardConfig(
     model_path="wandb:goodfire/spd/runs/lxs77xye",
-    batch_size=16,
-    n_batches=64,
+    batch_size=8,
+    n_batches=8,
     context_length=32,
 )
 
@@ -46,5 +48,5 @@ DASHBOARD_DATA: DashboardData = DashboardData(
     trees=TREES,
     metadata={"description": "Minimal CI DT example"},
 )
-
+zanj: ZANJ = ZANJ(external_array_threshold=1)
 DASHBOARD_DATA.save()

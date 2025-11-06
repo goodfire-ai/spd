@@ -8,6 +8,7 @@ from typing import Any, Final
 import numpy as np
 import torch
 from jaxtyping import Bool, Float, Int
+from muutils.json_serialize import json_serialize
 from torch import Tensor
 from tqdm import tqdm
 from transformers import AutoTokenizer
@@ -91,7 +92,10 @@ class Activations:
         return {
             "layer_order": self.module_order,
             "token_data": self.token_data.serialize(),
-            "data": self.data,  # dict[module_name, ndarray] - ZANJ will externalize
+            # dict[module_name, ndarray] - ZANJ will externalize
+            # TODO: this is horribly broken. we serialize without externalizing if we call json_serialize which blows up the size, but if we dont call it then some arrays get serialized as strings? like literally str(array) and then we cant read it :(
+            # "data": json_serialize(self.data),
+            "data": self.data,
             "varying_component_indices": self.varying_component_indices,
             "n_components_total": self.n_components_total,
             "component_labels": {
