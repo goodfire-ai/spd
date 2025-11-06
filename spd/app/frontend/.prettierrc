@@ -1,12 +1,13 @@
 {
-  "plugins": ["prettier-plugin-svelte"],
-  "tabWidth": 4,
-  "overrides": [
-    {
-      "files": "*.svelte",
-      "options": {
-        "parser": "svelte"
-      }
-    }
-  ]
+    "plugins": ["prettier-plugin-svelte"],
+    "tabWidth": 4,
+    "lineWidth": 200,
+    "overrides": [
+        {
+            "files": "*.svelte",
+            "options": {
+                "parser": "svelte"
+            }
+        }
+    ]
 }

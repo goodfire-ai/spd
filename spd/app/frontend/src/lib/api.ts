@@ -86,7 +86,7 @@ export type ComponentDetail = {
 // Streaming version with lazy-loading support
 export async function getSubcomponentActivationContexts(
     config: ActivationContextsConfig,
-    onProgress?: (progress: ProgressUpdate) => void
+    onProgress?: (progress: ProgressUpdate) => void,
 ): Promise<HarvestMetadata> {
     const url = new URL(`${API_URL}/activation_contexts/subcomponents`);
     for (const [key, value] of Object.entries(config)) {
@@ -95,7 +95,9 @@ export async function getSubcomponentActivationContexts(
     const response = await fetch(url.toString(), { method: "GET" });
     if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || "Failed to get layer activation contexts");
+        throw new Error(
+            error.detail || "Failed to get layer activation contexts",
+        );
     }
 
     const reader = response.body?.getReader();
@@ -147,13 +149,16 @@ export async function getSubcomponentActivationContexts(
 export async function getComponentDetail(
     harvestId: string,
     layer: string,
-    componentIdx: number
+    componentIdx: number,
 ): Promise<ComponentDetail> {
     const url = `${API_URL}/activation_contexts/${encodeURIComponent(harvestId)}/${encodeURIComponent(layer)}/${componentIdx}`;
     const response = await fetch(url, { method: "GET" });
     if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || `Failed to get component ${componentIdx} for layer ${layer}`);
+        throw new Error(
+            error.detail ||
+                `Failed to get component ${componentIdx} for layer ${layer}`,
+        );
     }
 
     const detail = (await response.json()) as ComponentDetail;

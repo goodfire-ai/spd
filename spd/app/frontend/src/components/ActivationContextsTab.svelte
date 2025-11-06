@@ -3,7 +3,7 @@
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
 
     let loading = $state(false);
-    let harvestMetadata: api.HarvestMetadata | null = $state(null);
+    let harvestMetadata = $state<api.HarvestMetadata | null>(null);
     let progress = $state<api.ProgressUpdate | null>(null);
 
     // Configuration parameters
@@ -28,7 +28,7 @@
                 },
                 (p) => {
                     progress = p;
-                }
+                },
             );
             harvestMetadata = data;
         } catch (error) {
@@ -88,7 +88,9 @@
                 </div>
 
                 <div class="config-item">
-                    <label for="importance-threshold">Importance Threshold:</label>
+                    <label for="importance-threshold"
+                        >Importance Threshold:</label
+                    >
                     <input
                         id="importance-threshold"
                         type="number"
@@ -112,7 +114,11 @@
                     />
                 </div>
             </div>
-            <button class="load-button" onclick={loadContexts} disabled={loading}>
+            <button
+                class="load-button"
+                onclick={loadContexts}
+                disabled={loading}
+            >
                 {loading ? "Loading..." : "Load Contexts"}
             </button>
         </div>
@@ -126,7 +132,8 @@
             <div class="progress-bar">
                 <div
                     class="progress-fill"
-                    style="width: {((progress.current + 1) / progress.total) * 100}%"
+                    style="width: {((progress.current + 1) / progress.total) *
+                        100}%"
                 ></div>
             </div>
         </div>

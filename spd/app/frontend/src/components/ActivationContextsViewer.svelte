@@ -14,17 +14,12 @@
     const LIMIT = 20;
 
     let currentPage = $state(0);
-    let selectedLayer: string = $state(Object.keys(harvestMetadata.layers)[0]);
-    let metricMode: "recall" | "precision" = $state("recall");
+    let selectedLayer = $derived(Object.keys(harvestMetadata.layers)[0]);
+    let metricMode = $state<"recall" | "precision">("recall");
 
     // Component data cache: key is `${layer}:${componentIdx}`
     let componentCache = $state<Record<string, ComponentDetail>>({});
     let loadingComponent = $state(false);
-
-    // reset selectedLayer to first layer when harvestMetadata changes
-    $effect(() => {
-        selectedLayer = Object.keys(harvestMetadata.layers)[0];
-    });
 
     // Derive available layers from the data
     let availableComponentLayers = $derived(
@@ -32,11 +27,12 @@
     );
 
     // Derive current metadata from selections
-    let currentLayerMetadata = $derived(
-        selectedLayer ? harvestMetadata.layers[selectedLayer] : null,
-    );
-    let totalPages = $derived(currentLayerMetadata?.length ?? 0);
-    let currentMetadata = $derived(currentLayerMetadata?.[currentPage]);
+    let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
+    let totalPages = $derived(currentLayerMetadata.length);
+
+    // current page isn't reset to 0 instantly when layer changes, so we must handle the case when,
+    // for a brief moment, the current page is out of bounds.
+    let currentMetadata = $derived<api.SubcomponentMetadata | null>(currentLayerMetadata.at(currentPage) ?? null);
 
     // Get current component data from cache
     let currentItem = $derived.by(() => {

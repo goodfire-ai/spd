@@ -10,7 +10,7 @@
         tokenStrings,
         tokenCiValues,
         activePosition = -1,
-        precision = 3
+        precision = 3,
     }: Props = $props();
 
     const getHighlightColor = (importance: number): string => {
