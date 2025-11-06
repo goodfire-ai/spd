@@ -110,7 +110,7 @@ def _spawn(
 
 
 def wait_to_serve(port: int) -> None:
-    for _ in range(25):
+    for _ in range(10):
         try:
             response = requests.get(f"http://localhost:{port}")
             if response.status_code == 200:
