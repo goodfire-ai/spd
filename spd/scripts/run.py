@@ -117,7 +117,7 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
 def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
     """Build an MPI prefix for a command."""
     port: int = _choose_master_port(run_id, idx)
-    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp}"
+    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} "
 
 
 def generate_commands(
@@ -168,6 +168,8 @@ def generate_commands(
                 f"--sweep_id {run_id} "
                 f"--evals_id {experiment}"
             )
+            print(command)
+            exit()
 
             commands.append(command)
             task_breakdown[experiment] = "1 task"
