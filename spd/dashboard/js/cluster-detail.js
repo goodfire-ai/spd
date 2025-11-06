@@ -416,16 +416,36 @@ async function displaySamples() {
 
         console.log(`Found component ${componentLabel} at position ${componentPos}/${componentLabels.length}`);
 
+        // Debug: Check data structure
+        console.log('moduleData type:', typeof moduleData);
+        console.log('moduleData length:', moduleData.length);
+        console.log('moduleData shape:', moduleData.shape);
+        console.log('moduleData keys:', Object.keys(moduleData));
+        console.log('moduleData.data:', moduleData.data);
+        console.log('moduleData constructor:', moduleData.constructor?.name);
+        console.log('tokens length:', tokens.length);
+        console.log('tokens shape:', tokens.shape);
+
         // Extract this component's activations: (n_seqs, n_ctx)
         const allSamples = [];
-        const nSeqs = moduleData.length;
+        // NumPy arrays use .shape instead of .length
+        const nSeqs = moduleData.shape ? moduleData.shape[0] : moduleData.length;
+        const nCtx = moduleData.shape ? moduleData.shape[1] : (moduleData[0]?.length || 0);
+        const nComponents = moduleData.shape ? moduleData.shape[2] : 0;
+
+        console.log(`Processing ${nSeqs} sequences with ${nCtx} context length and ${nComponents} components`);
+
+        // Get the actual data array - NumPy arrays from ZANJ store data in .data property
+        const actualData = moduleData.data || moduleData;
+        console.log('actualData type:', typeof actualData);
+        console.log('actualData length:', actualData?.length);
 
         for (let seq = 0; seq < nSeqs; seq++) {
             const seqActivations = [];
             const seqTokens = tokens[seq];
 
             // Extract activations for this sequence and component
-            for (let pos = 0; pos < moduleData[seq].length; pos++) {
+            for (let pos = 0; pos < nCtx; pos++) {
                 seqActivations.push(moduleData[seq][pos][componentPos]);
             }
 

@@ -141,9 +141,12 @@
     </div>
 
     <div id="componentInfo">
-        <p><strong>Target Component:</strong> <span id="targetLabel">-</span></p>
+        <p><strong>Predicting Component:</strong> <span id="targetLabel">-</span></p>
         <p><strong>Tree Accuracy:</strong> <span id="treeAccuracy">-</span></p>
-        <p><strong>Features Used:</strong> <span id="featuresCount">-</span></p>
+        <p><strong>Features Used (from previous layers):</strong> <span id="featuresCount">-</span></p>
+        <p style="font-size: 12px; color: #666; margin-top: 10px;">
+            This decision tree predicts whether the target component will be active based on the activation states of components from earlier layers.
+        </p>
     </div>
 
     <div id="mainContainer">
@@ -159,15 +162,21 @@
             <div id="treeVisualization"></div>
         </div>
 
-        <!-- Right: Features table -->
+        <!-- Right: Components table -->
         <div id="tableContainer">
-            <h3>Features Used in Tree</h3>
+            <h3>Components</h3>
             <div id="featuresTable"></div>
         </div>
     </div>
 
     <div id="loading">Loading tree data...</div>
     <div id="tooltip" style="display: none; position: absolute; background: #333; color: white; padding: 8px; border-radius: 4px; white-space: pre; z-index: 1000; pointer-events: none;"></div>
+
+    <!-- Debug box -->
+    <div id="debugBox" style="margin: 30px 0; padding: 15px; background-color: #f8f9fa; border: 1px solid #d1d5db; border-radius: 5px; display: none;">
+        <h3 style="margin-top: 0;">Debug: Tree JSON</h3>
+        <pre id="treeJson" style="background: white; padding: 10px; border-radius: 3px; overflow-x: auto; font-size: 11px; max-height: 400px; overflow-y: auto;"></pre>
+    </div>
 
     <!-- jszip lib -->
     <script src="js/lib/jszip.min.js"></script>

@@ -45,9 +45,6 @@ async function loadData() {
             return;
         }
 
-        // Extract unique feature labels from the tree
-        const featureLabels = Object.values(treeData.tree_dict.feature_labels);
-
         // Load component details from index_summaries
         const indexSummaries = await data.index_summaries;
         const allSummaries = await indexSummaries.summaries;
@@ -58,7 +55,17 @@ async function loadData() {
             componentsByLabel[component.label] = component;
         }
 
-        // Load components for each feature
+        // Load the target component (what we're predicting)
+        const targetComponent = componentsByLabel[targetComponentLabel];
+        if (targetComponent) {
+            featureComponents[targetComponentLabel] = targetComponent;
+            sampleIndices[targetComponentLabel] = Array(CONFIG.treePage.numSampleColumns).fill(0).map((_, i) => i);
+        }
+
+        // Extract unique feature labels from the tree
+        const featureLabels = Object.values(treeData.tree_dict.feature_labels);
+
+        // Load components for each feature used in the tree
         for (const featureLabel of featureLabels) {
             const component = componentsByLabel[featureLabel];
 
@@ -74,6 +81,7 @@ async function loadData() {
         displayTree();
         displayInfo();
         displayFeaturesTable();
+        displayDebugInfo();
 
         document.getElementById('loading').style.display = 'none';
     } catch (error) {
@@ -106,11 +114,21 @@ function convertSklearnTreeToViewerFormat() {
         featureIndexToRowIdx[featIdx] = rowIdx;
     });
 
-    // Create rows
-    const rows = uniqueFeatures.map(featIdx => ({
-        feature: featureLabels[featIdx],
+    // Add a row for root node (always first)
+    const rows = [{
+        feature: 'Root',
         nodeIds: []
-    }));
+    }];
+    const rootRowIdx = 0;
+
+    // Create rows for each feature
+    uniqueFeatures.forEach((featIdx, idx) => {
+        rows.push({
+            feature: featureLabels[featIdx],
+            nodeIds: []
+        });
+        featureIndexToRowIdx[featIdx] = idx + 1;  // Offset by 1 for root row
+    });
 
     // Add a row for leaf nodes
     rows.push({
@@ -129,7 +147,16 @@ function convertSklearnTreeToViewerFormat() {
 
         const featIdx = tree.feature[i];
         const isLeaf = featIdx === -2;
-        const rowIdx = isLeaf ? leafRowIdx : featureIndexToRowIdx[featIdx];
+        const isRoot = i === 0;
+
+        let rowIdx;
+        if (isRoot) {
+            rowIdx = rootRowIdx;
+        } else if (isLeaf) {
+            rowIdx = leafRowIdx;
+        } else {
+            rowIdx = featureIndexToRowIdx[featIdx];
+        }
 
         // Calculate initial position
         const x = Math.random() * (CONFIG.treePage.dagWidth - 30) + 10;
@@ -143,6 +170,7 @@ function convertSklearnTreeToViewerFormat() {
             edges: [],
             treeNodeIdx: i,  // Store original tree node index
             isLeaf: isLeaf,
+            isRoot: isRoot,
             threshold: tree.threshold[i],
             nSamples: tree.n_node_samples[i]
         };
@@ -268,7 +296,40 @@ async function displayFeaturesTable() {
     // Prepare table data
     const tableData = [];
 
-    for (const [featureLabel, component] of Object.entries(featureComponents)) {
+    // First, add the target component (root - what we're predicting)
+    const targetComponent = featureComponents[targetComponentLabel];
+    if (targetComponent) {
+        const rowData = {
+            featureLabel: `[Target] ${targetComponentLabel}`,
+            component: targetComponent,
+            isTarget: true
+        };
+
+        // Add sample data for each column
+        for (let i = 0; i < CONFIG.treePage.numSampleColumns; i++) {
+            rowData[`sample_${i}`] = {
+                sampleIdx: sampleIndices[targetComponentLabel][i],
+                component: targetComponent
+            };
+        }
+
+        tableData.push(rowData);
+    }
+
+    // Add all feature components used in the tree
+    // Sort by feature index for consistent ordering
+    const tree = treeData.tree_dict;
+    const sortedFeatures = Object.entries(tree.feature_labels)
+        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))  // Sort by feature index
+        .map(([_, label]) => label);
+
+    for (const featureLabel of sortedFeatures) {
+        const component = featureComponents[featureLabel];
+        if (!component) {
+            console.warn(`Component not found: ${featureLabel}`);
+            continue;
+        }
+
         const rowData = {
             featureLabel: featureLabel,
             component: component
@@ -446,6 +507,25 @@ async function rerollSample(featureLabel, columnIdx) {
     // Redisplay the table
     document.getElementById('featuresTable').innerHTML = '';
     await displayFeaturesTable();
+}
+
+function displayDebugInfo() {
+    const debugBox = document.getElementById('debugBox');
+    const treeJsonPre = document.getElementById('treeJson');
+
+    if (debugBox && treeJsonPre && treeData) {
+        // Show the debug box
+        debugBox.style.display = 'block';
+
+        // Format and display the tree JSON
+        const treeJson = {
+            component_label: treeData.component_label,
+            balanced_accuracy: treeData.balanced_accuracy,
+            tree_dict: treeData.tree_dict
+        };
+
+        treeJsonPre.textContent = JSON.stringify(treeJson, null, 2);
+    }
 }
 
 // Global function for minimize crossings button
