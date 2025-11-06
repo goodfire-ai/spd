@@ -54,7 +54,7 @@ class TokenStat(SerializableDataclass):
     token: str
     token_id: int
     p_token_given_active: float  # P(token=X | component active)
-    p_active_given_token: float  # P(component active | token=X)
+    p_active_given_token: float | None  # P(component active | token=X), None if token never appears
     count_when_active: int  # Co-occurrence count
     count_token_total: int  # Total occurrences of token in dataset
 
@@ -183,15 +183,22 @@ class SubcomponentSummary:
                 token=token_str,
                 token_id=int(idx),
                 p_token_given_active=float(p_token_given_active[idx]),
-                p_active_given_token=float(p_active_given_token[idx]),
+                p_active_given_token=(
+                    float(p_active_given_token[idx])
+                    if np.isfinite(p_active_given_token[idx])
+                    else None
+                ),
                 count_when_active=int(activated_per_token[idx]),
                 count_token_total=count_token_total,
             )
             token_stats_list.append(token_stat)
 
-        # Sort by max of the two probabilities
+        # Sort by max of the two probabilities (treat None as 0)
         token_stats_list.sort(
-            key=lambda ts: max(ts.p_token_given_active, ts.p_active_given_token),
+            key=lambda ts: max(
+                ts.p_token_given_active,
+                ts.p_active_given_token if ts.p_active_given_token is not None else 0.0,
+            ),
             reverse=True,
         )
 

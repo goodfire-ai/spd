@@ -30,8 +30,10 @@ async function loadData() {
         dashboardData = await data.metadata;
 
         // Load tree data from all_trees
-        const treesData = await data.trees;
-        const allTrees = await treesData.all_trees;
+        // Try direct access first
+        console.log('Loading trees data...');
+        const allTrees = await data.trees.all_trees;
+        console.log('Trees loaded, count:', allTrees.length);
 
         // Find the tree for our target component
         treeData = allTrees.find(tree => tree.component_label === targetComponentLabel);

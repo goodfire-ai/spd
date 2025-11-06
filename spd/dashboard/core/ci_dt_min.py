@@ -11,9 +11,9 @@ from spd.dashboard.core.trees import DecisionTreesData
 
 CONFIG = ComponentDashboardConfig(
     model_path="wandb:goodfire/spd/runs/lxs77xye",
-    batch_size=8,
-    n_batches=8,
-    context_length=16,
+    batch_size=4,
+    n_batches=4,
+    context_length=32,
 )
 
 # %% ----------------------- get activations -----------------------
