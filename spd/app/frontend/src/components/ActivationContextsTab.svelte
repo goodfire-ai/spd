@@ -1,4 +1,4 @@
-<script lang="ts">
+<script lang="ts">    
     import * as api from "../lib/api";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
 
@@ -150,14 +150,13 @@
     .tab-content {
         display: flex;
         flex-direction: column;
-        gap: 1rem;
-        padding: 1rem;
+        gap: 0.5rem;
     }
 
     .controls {
         display: flex;
-        gap: 1rem;
-        padding: 1rem;
+        gap: 0.5rem;
+        padding: 0.5rem;
         background: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #dee2e6;
@@ -167,7 +166,7 @@
     .config-section {
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.5rem;
     }
 
     .config-section h4 {
@@ -179,7 +178,7 @@
     .config-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-        gap: 1rem;
+        gap: 0.5rem;
     }
 
     .config-item {
@@ -225,7 +224,7 @@
     }
 
     .progress-container {
-        padding: 1rem;
+        padding: 0.5rem;
         background: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #dee2e6;
@@ -260,7 +259,7 @@
     }
 
     .loading {
-        padding: 1rem;
+        padding: 0.5rem;
         text-align: center;
         color: #6c757d;
     }

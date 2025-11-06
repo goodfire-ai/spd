@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { ComponentDetail, HarvestMetadata, TokenPR } from "../lib/api";
     import * as api from "../lib/api";
-    import ActivationContext from "./ActivationContext.svelte";
+    import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
 
     interface Props {
         harvestMetadata: HarvestMetadata;
@@ -16,6 +16,26 @@
     let currentPage = $state(0);
     let selectedLayer = $derived(Object.keys(harvestMetadata.layers)[0]);
     let metricMode = $state<"recall" | "precision">("recall");
+
+    // Display page (1-indexed)
+    let displayPage = $state(1);
+
+    // Sync displayPage with currentPage
+    $effect(() => {
+        displayPage = currentPage + 1;
+    });
+
+    // Update currentPage when displayPage changes
+    function handlePageInput(event: Event) {
+        const target = event.target as HTMLInputElement;
+        const value = parseInt(target.value);
+        if (!isNaN(value) && value >= 1 && value <= totalPages) {
+            currentPage = value - 1;
+        } else {
+            // Reset to current valid page if invalid
+            displayPage = currentPage + 1;
+        }
+    }
 
     // Component data cache: key is `${layer}:${componentIdx}`
     let componentCache = $state<Record<string, ComponentDetail>>({});
@@ -99,7 +119,7 @@
     let densities = $derived(
         currentItem?.token_prs
             ?.slice()
-            .sort((a: TokenPR, b: TokenPR) => b[metricMode] - a[metricMode])
+            .sort((a, b) => b[metricMode] - a[metricMode])
             .slice(0, LIMIT),
     );
 </script>
@@ -117,12 +137,13 @@
     <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
     <input
         type="number"
-        min="0"
-        max={totalPages - 1}
-        bind:value={currentPage}
+        min="1"
+        max={totalPages}
+        value={displayPage}
+        oninput={handlePageInput}
         class="page-input"
     />
-    <span>of {totalPages - 1}</span>
+    <span>of {totalPages}</span>
     <button onclick={nextPage} disabled={currentPage === totalPages - 1}
         >&gt;</button
     >
@@ -191,11 +212,7 @@
             </div>
         {/if}
 
-        <div class="subcomponent-section">
-            {#each currentItem.examples as example (example.__id)}
-                <ActivationContext {example} />
-            {/each}
-        </div>
+        <ActivationContextsPagedTable examples={currentItem.examples} />
     </div>
 {/if}
 
@@ -203,8 +220,8 @@
     .layer-select-section {
         display: flex;
         align-items: center;
-        gap: 1rem;
-        padding: 1rem;
+        gap: 0.5rem;
+        padding: 0.5rem;
         background: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #dee2e6;
@@ -237,7 +254,7 @@
     }
 
     .toggle-buttons button {
-        padding: 0.5rem 1rem;
+        padding: 0.5rem 0.5rem;
         border: none;
         background: white;
         cursor: pointer;
@@ -266,17 +283,17 @@
         gap: 0.5rem;
         padding: 0.5rem;
         background: #f8f9fa;
-        border-radius: 8px;
+        border-radius: 6px;
         border: 1px solid #dee2e6;
     }
 
     .pagination-controls button {
-        padding: 0.5rem 1rem;
+        padding: 0.25rem 0.75rem;
         border: 1px solid #dee2e6;
         border-radius: 4px;
         background: white;
         cursor: pointer;
-        font-size: 1rem;
+        font-size: 0.9rem;
     }
 
     .pagination-controls button:disabled {
@@ -284,12 +301,26 @@
         cursor: not-allowed;
     }
 
+    .pagination-controls span {
+        font-size: 0.9rem;
+        color: #495057;
+        white-space: nowrap;
+    }
+
     .page-input {
         width: 60px;
-        padding: 0.5rem;
+        padding: 0.25rem 0.5rem;
         border: 1px solid #dee2e6;
         border-radius: 4px;
         text-align: center;
+        font-size: 0.9rem;
+        appearance: textfield;
+    }
+
+    .page-input::-webkit-inner-spin-button,
+    .page-input::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
     }
 
     .subcomponent-section-header {
@@ -298,15 +329,14 @@
         gap: 0.4rem;
     }
 
-    .subcomponent-section {
-        border-radius: 8px;
-        overflow: visible;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    .subcomponent-section-header h4 {
+        margin: 0;
+        font-size: 1rem;
+        color: #495057;
     }
 
     .token-densities {
-        margin: 1rem 0;
-        padding: 1rem;
+        padding: 0.5rem;
         background: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #dee2e6;
@@ -316,8 +346,8 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 1rem;
-        gap: 1rem;
+        margin-bottom: 0.5rem;
+        gap: 0.5rem;
         flex-wrap: wrap;
     }
 

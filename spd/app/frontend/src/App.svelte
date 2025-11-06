@@ -57,25 +57,23 @@
 
 <div class="app-layout">
     <aside class="sidebar">
-        <div class="run-selector">
-            <div class="section-heading">W&B Run ID</div>
-            <form onsubmit={loadRun} class="input-group">
-                <input
-                    type="text"
-                    id="wandb-run-id"
-                    list="run-options"
-                    bind:value={trainWandbRunEntry}
-                    disabled={loadingTrainRun}
-                    placeholder="Select or enter run ID"
-                />
-                <button
-                    type="submit"
-                    disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}
-                >
-                    {loadingTrainRun ? "Loading..." : "Load Run"}
-                </button>
-            </form>
-        </div>
+        <div class="section-heading">W&B Run ID</div>
+        <form onsubmit={loadRun} class="input-group">
+            <input
+                type="text"
+                id="wandb-run-id"
+                list="run-options"
+                bind:value={trainWandbRunEntry}
+                disabled={loadingTrainRun}
+                placeholder="Select or enter run ID"
+            />
+            <button
+                type="submit"
+                disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}
+            >
+                {loadingTrainRun ? "Loading..." : "Load Run"}
+            </button>
+        </form>
         <div class="tab-navigation">
             {#if status.train_run}
                 <button
@@ -116,6 +114,7 @@
         border-right: 1px solid #dee2e6;
         padding: 1.5rem;
         display: flex;
+        gap: 0.5rem;
         flex-direction: column;
         position: sticky;
         top: 0;
@@ -126,10 +125,10 @@
     .main-content {
         flex: 1;
         min-width: 0;
-        padding: 2rem;
+        padding: 1rem;
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.5rem;
     }
 
     .tab-navigation {
@@ -139,7 +138,7 @@
     }
 
     .tab-button {
-        padding: 0.75rem 1rem;
+        padding: 0.75rem 0.5rem;
         background: white;
         border: 1px solid #dee2e6;
         border-radius: 6px;
@@ -171,12 +170,7 @@
         box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
     }
 
-    .run-selector {
-        margin-bottom: 1rem;
-    }
-
     .section-heading {
-        margin: 0 0 0.5rem 0;
         font-weight: 600;
         color: #333;
         font-size: 0.9rem;
@@ -202,7 +196,7 @@
     }
 
     .input-group button {
-        padding: 0.5rem 1rem;
+        padding: 0.5rem 0.5rem;
         background-color: #4a90e2;
         color: white;
         border: none;
@@ -222,7 +216,7 @@
     }
 
     .config {
-        margin-top: 1rem;
+        margin-top: 0.5rem;
     }
 
     .config pre {
