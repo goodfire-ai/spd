@@ -48,7 +48,7 @@ class ComponentLabel:
 class Activations:
     """Container for layer-wise activations with ordered access."""
 
-    layer_order: list[str]
+    module_order: list[str]
     token_data: TokenSequenceData
     data: dict[str, Float[np.ndarray, "n_sequences n_ctx n_components"]]
     varying_component_indices: dict[str, list[int]]
@@ -66,7 +66,7 @@ class Activations:
                 ComponentLabel(module=module, index=comp_idx)
                 for comp_idx in self.varying_component_indices[module]
             ]
-            for module in self.layer_order
+            for module in self.module_order
         }
 
     @cached_property
@@ -74,7 +74,7 @@ class Activations:
         """Concatenated list of all ComponentLabels in layer order."""
         return list(
             itertools.chain.from_iterable(
-                self.component_labels[module] for module in self.layer_order
+                self.component_labels[module] for module in self.module_order
             )
         )
 
@@ -89,7 +89,7 @@ class Activations:
         Returns dict with module-grouped data for efficient lazy loading.
         """
         return {
-            "layer_order": self.layer_order,
+            "layer_order": self.module_order,
             "token_data": self.token_data.serialize(),
             "data": self.data,  # dict[module_name, ndarray] - ZANJ will externalize
             "varying_component_indices": self.varying_component_indices,
@@ -203,7 +203,7 @@ class Activations:
 
         return Activations(
             data=layers,
-            layer_order=module_keys,
+            module_order=module_keys,
             varying_component_indices=varying_component_indices,
             token_data=token_data,
         )

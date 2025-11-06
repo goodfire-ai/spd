@@ -39,7 +39,6 @@ class ModuleTreeData:
     """Decision tree data for a single layer."""
 
     module_name: str
-    layer_index: int
     component_trees: list[ComponentTreeData]
     mean_balanced_accuracy: float
 
@@ -49,7 +48,7 @@ class DecisionTreesData:
     """Decision tree data for all layers."""
 
     module_trees: list[ModuleTreeData]
-    overall_mean_balanced_accuracy: float
+    stats: dict[str, Any]
 
     @property
     def all_trees(self) -> Iterable[ComponentTreeData]:
@@ -79,13 +78,12 @@ class DecisionTreesData:
             random_state=config.random_state,
         )
 
-        layers: list[ModuleTreeData] = []
+        module_trees: list[ModuleTreeData] = []
         all_bacc_scores: list[float] = []
 
         # Process each layer
-        layer_idx: int
         module_name: str
-        for layer_idx, module_name in enumerate(list(flat_acts.layer_order)[1:], start=1):
+        for module_name in list(flat_acts.module_order)[1:]:
             clf: MultiOutputClassifier
             X_bool: Bool[ndarray, "n_samples n_features_before"]
             Y_bool: Bool[ndarray, "n_samples n_features_this"]
@@ -131,16 +129,20 @@ class DecisionTreesData:
             # Create layer data
             layer_data: ModuleTreeData = ModuleTreeData(
                 module_name=module_name,
-                layer_index=layer_idx,
                 component_trees=component_trees,
                 mean_balanced_accuracy=float(np.mean(layer_bacc_scores)),
             )
-            layers.append(layer_data)
+            module_trees.append(layer_data)
 
         # Compute overall mean
-        overall_mean: float = float(np.mean(all_bacc_scores)) if all_bacc_scores else 0.0
+        stats: dict[str, Any] = dict(
+            mean_balanced_accuracy=float(np.mean(all_bacc_scores)) if all_bacc_scores else 0.0,
+        )
 
-        return cls(layers=layers, overall_mean_balanced_accuracy=overall_mean)
+        return cls(
+            module_trees=module_trees,
+            stats=stats,
+        )
 
 
 def train_decision_trees(
@@ -172,7 +174,7 @@ def train_decision_trees(
     ] = {}
 
     # Skip first layer (no previous layers to predict from)
-    for module_name in tqdm(list(flat_acts.layer_order)[1:]):
+    for module_name in tqdm(list(flat_acts.module_order)[1:]):
         X_prev_layers_cis: Bool[ndarray, "n_samples n_features_before"] = (
             flat_acts.get_concat_before_module(module_name) > activation_threshold
         )

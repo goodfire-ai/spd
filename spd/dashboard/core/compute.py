@@ -14,7 +14,7 @@ from spd.dashboard.core.toks import TokenSequenceData
 
 @dataclass(kw_only=True)
 class FlatActivations:
-    layer_order: list[str]
+    module_order: list[str]
     token_data: TokenSequenceData
     component_labels: list[ComponentLabel]
     activations: Float[np.ndarray, "n_samples C"]
@@ -56,7 +56,7 @@ class FlatActivations:
         activations: Activations,
     ) -> "FlatActivations":
         flattened: Float[Tensor, "n_samples n_components_total"] = torch.cat(
-            [torch.from_numpy(activations.data_batch_concat[k]) for k in activations.layer_order],
+            [torch.from_numpy(activations.data_batch_concat[k]) for k in activations.module_order],
             dim=1,
         ).float()
 
@@ -68,7 +68,7 @@ class FlatActivations:
             component_labels=component_labels,
             activations=flattened.numpy(),
             token_data=activations.token_data,
-            layer_order=activations.layer_order,
+            module_order=activations.module_order,
         )
 
     def start_of_module_index(self, module_name: str) -> int:
@@ -84,7 +84,7 @@ class FlatActivations:
         idx: int = self.start_of_module_index(module_name)
         if idx == 0:
             raise ValueError(
-                f"No previous layers to concatenate before the first layer: {module_name=},{self.layer_order=}"
+                f"No previous layers to concatenate before the first layer: {module_name=},{self.module_order=}"
             )
 
         return self.activations[:, :idx]
@@ -94,8 +94,8 @@ class FlatActivations:
         start_idx: int = self.start_of_module_index(module_name)
         end_idx: int
         try:
-            next_module: int = self.layer_order.index(module_name) + 1
-            end_idx = self.start_of_module_index(self.layer_order[next_module])
+            next_module: int = self.module_order.index(module_name) + 1
+            end_idx = self.start_of_module_index(self.module_order[next_module])
         except (IndexError, ValueError):
             end_idx = self.n_components
 
