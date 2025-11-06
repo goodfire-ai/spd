@@ -186,7 +186,7 @@ def pgd_masked_recon_loss_update(
     return final_loss, n_examples
 
 
-def _global_pgd_step(
+def _global_pgd_fwd_bwd(
     adv_sources: Float[Tensor, "n_layers *batch_dim_or_ones C2"],
     pgd_config: PGDGlobalConfig,
     model: ComponentModel,
@@ -198,15 +198,14 @@ def _global_pgd_step(
     routing: RoutingType,
     sampling: SamplingType,
     batch_dims: tuple[int, ...],
-) -> tuple[Float[Tensor, ""], int]:
-    """Perform a single PGD step with gradient accumulation over multiple batches.
+) -> tuple[Float[Tensor, ""], int, Float[Tensor, "n_layers *batch_dim_or_ones C2"]]:
+    """Perform a forward and backward pass over multiple batches with gradient accumulation.
 
     Returns:
         - The total loss for the PGD step (only used for the final step)
         - The number of examples used in the PGD step
-    Also updates adv_sources in place.
+        - The gradients of the adv_sources
     """
-    assert adv_sources.grad is None
     pgd_step_accum_loss = torch.tensor(0.0, device=device)
     pgd_step_accum_grads = torch.zeros_like(adv_sources)
 
@@ -222,14 +221,11 @@ def _global_pgd_step(
             break
         batch = extract_batch_data(batch_item).to(device)
 
-        # TODO: Verify that we want no_grad. Using this in training?
-        with torch.no_grad():
-            batch_target_model_output: OutputWithCache = model(batch, cache_type="input")
-            batch_ci = model.calc_causal_importances(
-                pre_weight_acts=batch_target_model_output.cache,
-                detach_inputs=True,
-                sampling=sampling,
-            ).lower_leaky
+        batch_target_model_output: OutputWithCache = model(batch, cache_type="input")
+        batch_ci = model.calc_causal_importances(
+            pre_weight_acts=batch_target_model_output.cache,
+            sampling=sampling,
+        ).lower_leaky
 
         match routing:
             case "all":
@@ -265,12 +261,7 @@ def _global_pgd_step(
 
         del batch_target_model_output, batch_ci
 
-    reduced_accumulated_grads = all_reduce(pgd_step_accum_grads, op=ReduceOp.SUM)
-    with torch.no_grad():
-        adv_sources.add_(pgd_config.step_size * reduced_accumulated_grads.sign())
-        adv_sources.clamp_(0.0, 1.0)
-
-    return pgd_step_accum_loss, n_examples
+    return pgd_step_accum_loss, n_examples, pgd_step_accum_grads
 
 
 def calc_pgd_global_masked_recon_loss(
@@ -313,8 +304,8 @@ def calc_pgd_global_masked_recon_loss(
         init=pgd_config.init, shape=adv_source_shape, device=device
     ).requires_grad_(True)
 
-    step = partial(
-        _global_pgd_step,
+    forward_backward = partial(
+        _global_pgd_fwd_bwd,
         adv_sources=adv_sources,
         pgd_config=pgd_config,
         model=model,
@@ -328,9 +319,14 @@ def calc_pgd_global_masked_recon_loss(
     )
 
     for _ in range(pgd_config.n_steps):
-        _, _ = step()
+        assert adv_sources.grad is None
+        _, _, adv_source_grads = forward_backward()
+        adv_source_grads = all_reduce(adv_source_grads, op=ReduceOp.SUM)
+        with torch.no_grad():
+            adv_sources.add_(pgd_config.step_size * adv_source_grads.sign())
+            adv_sources.clamp_(0.0, 1.0)
 
-    loss, n_examples = step()
+    loss, n_examples, _ = forward_backward()
     final_loss_summed = all_reduce(loss, op=ReduceOp.SUM)
     final_n_examples = all_reduce(torch.tensor(n_examples, device=device), op=ReduceOp.SUM)
     return (final_loss_summed / final_n_examples).item()
