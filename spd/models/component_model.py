@@ -307,7 +307,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["input", "output"],
+        cache_type: Literal["input"],
         **kwargs: Any,
     ) -> OutputWithCache: ...
 
@@ -329,7 +329,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["input", "none", "output"] = "none",
+        cache_type: Literal["input", "none"] = "none",
         **kwargs: Any,
     ) -> Tensor | OutputWithCache:
         """Forward pass with optional component replacement and/or input caching.
@@ -386,8 +386,6 @@ class ComponentModel(LoadableModule):
                 return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
-            case "output":
-                return OutputWithCache(output=out, cache=cache)
 
     def _components_and_cache_hook(
         self,
@@ -398,7 +396,7 @@ class ComponentModel(LoadableModule):
         module_name: str,
         components: Components | None,
         mask_info: ComponentsMaskInfo | None,
-        cache_type: Literal["input", "none", "output"],
+        cache_type: Literal["input", "none"],
         cache: dict[str, Tensor],
     ) -> Any | None:
         """Unified hook function that handles both component replacement and caching.
@@ -422,9 +420,10 @@ class ComponentModel(LoadableModule):
         assert len(kwargs) == 0, "Expected no keyword arguments"
         x = args[0]
         assert isinstance(x, Tensor), "Expected input tensor"
-        assert cache_type in ["input", "none", "output"], (
-            "Expected cache_type to be 'input', 'none', or 'output'"
-        )
+        assert cache_type in ["input", "none"], "Expected cache_type to be 'input' or 'none'"
+
+        if cache_type == "input":
+            cache[module_name] = x
 
         if components is not None and mask_info is not None:
             assert isinstance(output, Tensor), (
@@ -438,17 +437,12 @@ class ComponentModel(LoadableModule):
             )
 
             if mask_info.routing_mask == "all":
-                output = components_out
-            else:
-                output = torch.where(mask_info.routing_mask[..., None], components_out, output)
+                return components_out
 
-        if cache_type == "input":
-            cache[module_name] = x
+            return torch.where(mask_info.routing_mask[..., None], components_out, output)
 
-        if cache_type == "output":
-            cache[module_name] = output
-
-        return output
+        # No component replacement - keep original output
+        return None
 
     @contextmanager
     def _attach_forward_hooks(self, hooks: dict[str, Callable[..., Any]]) -> Generator[None]:
