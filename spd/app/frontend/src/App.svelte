@@ -67,10 +67,7 @@
                 disabled={loadingTrainRun}
                 placeholder="Select or enter run ID"
             />
-            <button
-                type="submit"
-                disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}
-            >
+            <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
                 {loadingTrainRun ? "Loading..." : "Load Run"}
             </button>
         </form>

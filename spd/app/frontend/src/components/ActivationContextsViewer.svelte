@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { ComponentDetail, HarvestMetadata, TokenPR } from "../lib/api";
+    import type { ComponentDetail, HarvestMetadata } from "../lib/api";
     import * as api from "../lib/api";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
 
@@ -18,23 +18,16 @@
     let metricMode = $state<"recall" | "precision">("recall");
 
     // Display page (1-indexed)
-    let displayPage = $state(1);
+    let displayPage = $derived(currentPage + 1);
 
-    // Sync displayPage with currentPage
-    $effect(() => {
-        displayPage = currentPage + 1;
-    });
-
-    // Update currentPage when displayPage changes
+    // Update currentPage when page input changes
     function handlePageInput(event: Event) {
         const target = event.target as HTMLInputElement;
         const value = parseInt(target.value);
         if (!isNaN(value) && value >= 1 && value <= totalPages) {
             currentPage = value - 1;
-        } else {
-            // Reset to current valid page if invalid
-            displayPage = currentPage + 1;
         }
+        // If invalid, the derived displayPage will show the correct value
     }
 
     // Component data cache: key is `${layer}:${componentIdx}`
@@ -42,9 +35,7 @@
     let loadingComponent = $state(false);
 
     // Derive available layers from the data
-    let availableComponentLayers = $derived(
-        Object.keys(harvestMetadata.layers),
-    );
+    let availableComponentLayers = $derived(Object.keys(harvestMetadata.layers));
 
     // Derive current metadata from selections
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
@@ -92,17 +83,12 @@
 
         const load = async () => {
             try {
-                const detail = await api.getComponentDetail(
-                    harvestMetadata.harvest_id,
-                    layer,
-                    meta.subcomponent_idx,
-                );
+                const detail = await api.getComponentDetail(harvestMetadata.harvest_id, layer, meta.subcomponent_idx);
 
                 if (cancelled) return;
                 componentCache[cacheKey] = detail; // writes to $state
             } catch (error) {
-                if (!cancelled)
-                    console.error("Failed to load component:", error);
+                if (!cancelled) console.error("Failed to load component:", error);
             } finally {
                 if (!cancelled) loadingComponent = false;
             }
@@ -135,18 +121,9 @@
 
 <div class="pagination-controls">
     <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
-    <input
-        type="number"
-        min="1"
-        max={totalPages}
-        value={displayPage}
-        oninput={handlePageInput}
-        class="page-input"
-    />
+    <input type="number" min="1" max={totalPages} value={displayPage} oninput={handlePageInput} class="page-input" />
     <span>of {totalPages}</span>
-    <button onclick={nextPage} disabled={currentPage === totalPages - 1}
-        >&gt;</button
-    >
+    <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
 </div>
 
 {#if loadingComponent}
@@ -154,8 +131,7 @@
 {:else if currentItem && currentMetadata}
     <div class="subcomponent-section-header">
         <h4>
-            Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci <
-            0.001
+            Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci < 0.001
                 ? currentMetadata.mean_ci.toExponential(2)
                 : currentMetadata.mean_ci.toFixed(3)})
         </h4>
@@ -170,42 +146,29 @@
                     </h5>
                     <div class="metric-toggle">
                         <div class="toggle-buttons">
-                            <button
-                                class:active={metricMode === "recall"}
-                                onclick={() => (metricMode = "recall")}
-                            >
+                            <button class:active={metricMode === "recall"} onclick={() => (metricMode = "recall")}>
                                 Recall
-                                <span class="math-notation"
-                                    >P(token | firing)</span
-                                >
+                                <span class="math-notation">P(token | firing)</span>
                             </button>
                             <button
                                 class:active={metricMode === "precision"}
                                 onclick={() => (metricMode = "precision")}
                             >
                                 Precision
-                                <span class="math-notation"
-                                    >P(firing | token)</span
-                                >
+                                <span class="math-notation">P(firing | token)</span>
                             </button>
                         </div>
                     </div>
                 </div>
                 <div class="densities-grid">
                     {#each densities as { token, recall, precision } (`${token}-${recall}-${precision}`)}
-                        {@const value =
-                            metricMode === "recall" ? recall : precision}
+                        {@const value = metricMode === "recall" ? recall : precision}
                         <div class="density-item">
                             <span class="token">{token}</span>
                             <div class="density-bar-container">
-                                <div
-                                    class="density-bar"
-                                    style="width: {value * 100}%"
-                                ></div>
+                                <div class="density-bar" style="width: {value * 100}%"></div>
                             </div>
-                            <span class="density-value"
-                                >{(value * 100).toFixed(1)}%</span
-                            >
+                            <span class="density-value">{(value * 100).toFixed(1)}%</span>
                         </div>
                     {/each}
                 </div>

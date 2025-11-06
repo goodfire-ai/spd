@@ -1,4 +1,4 @@
-<script lang="ts">    
+<script lang="ts">
     import * as api from "../lib/api";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
 
@@ -88,9 +88,7 @@
                 </div>
 
                 <div class="config-item">
-                    <label for="importance-threshold"
-                        >Importance Threshold:</label
-                    >
+                    <label for="importance-threshold">Importance Threshold:</label>
                     <input
                         id="importance-threshold"
                         type="number"
@@ -114,11 +112,7 @@
                     />
                 </div>
             </div>
-            <button
-                class="load-button"
-                onclick={loadContexts}
-                disabled={loading}
-            >
+            <button class="load-button" onclick={loadContexts} disabled={loading}>
                 {loading ? "Loading..." : "Load Contexts"}
             </button>
         </div>
@@ -130,11 +124,7 @@
                 Processing batch {progress.current + 1} of {progress.total}
             </div>
             <div class="progress-bar">
-                <div
-                    class="progress-fill"
-                    style="width: {((progress.current + 1) / progress.total) *
-                        100}%"
-                ></div>
+                <div class="progress-fill" style="width: {((progress.current + 1) / progress.total) * 100}%"></div>
             </div>
         </div>
     {:else if loading}

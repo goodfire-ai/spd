@@ -13,32 +13,23 @@
     let tokenFilter = $state("");
 
     // Display page (1-indexed)
-    let displayPage = $state(1);
+    let displayPage = $derived(currentPage + 1);
 
-    // Sync displayPage with currentPage
-    $effect(() => {
-        displayPage = currentPage + 1;
-    });
-
-    // Update currentPage when displayPage changes
+    // Update currentPage when page input changes
     function handlePageInput(event: Event) {
         const target = event.target as HTMLInputElement;
         const value = parseInt(target.value);
         if (!isNaN(value) && value >= 1 && value <= totalPages) {
             currentPage = value - 1;
-        } else {
-            // Reset to current valid page if invalid
-            displayPage = currentPage + 1;
         }
+        // If invalid, the derived displayPage will show the correct value
     }
 
     // Get unique tokens from all examples
     let allActivatingTokens = $derived.by(() => {
         const tokenSet = new Set<string>(
             examples.flatMap((example) =>
-                example.token_strings.filter(
-                    (_, idx) => example.token_ci_values[idx] > 0.01,
-                ),
+                example.token_strings.filter((_, idx) => example.token_ci_values[idx] > 0.01),
             ),
         );
         return Array.from(tokenSet).sort();
@@ -48,10 +39,7 @@
     let filteredExamples = $derived.by(() => {
         if (!tokenFilter) return examples;
         return examples.filter((example) =>
-            example.token_strings.some(
-                (token, idx) =>
-                    token === tokenFilter && example.token_ci_values[idx] > 0,
-            ),
+            example.token_strings.some((token, idx) => token === tokenFilter && example.token_ci_values[idx] > 0),
         );
     });
 
@@ -88,9 +76,7 @@
 <div class="container">
     <div class="controls">
         <div class="pagination">
-            <button onclick={previousPage} disabled={currentPage === 0}
-                >&lt;</button
-            >
+            <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
             <input
                 type="number"
                 min="1"
@@ -100,9 +86,7 @@
                 class="page-input"
             />
             <span>of {totalPages}</span>
-            <button onclick={nextPage} disabled={currentPage === totalPages - 1}
-                >&gt;</button
-            >
+            <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
         </div>
         <div class="page-size-control">
             <label for="page-size">Per page:</label>

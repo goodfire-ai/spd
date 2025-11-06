@@ -95,9 +95,7 @@ export async function getSubcomponentActivationContexts(
     const response = await fetch(url.toString(), { method: "GET" });
     if (!response.ok) {
         const error = await response.json();
-        throw new Error(
-            error.detail || "Failed to get layer activation contexts",
-        );
+        throw new Error(error.detail || "Failed to get layer activation contexts");
     }
 
     const reader = response.body?.getReader();
@@ -155,10 +153,7 @@ export async function getComponentDetail(
     const response = await fetch(url, { method: "GET" });
     if (!response.ok) {
         const error = await response.json();
-        throw new Error(
-            error.detail ||
-                `Failed to get component ${componentIdx} for layer ${layer}`,
-        );
+        throw new Error(error.detail || `Failed to get component ${componentIdx} for layer ${layer}`);
     }
 
     const detail = (await response.json()) as ComponentDetail;

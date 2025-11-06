@@ -83,3 +83,7 @@ app:
 .PHONY: install-app
 install-app:
 	(cd spd/app/frontend && npm install)
+
+.PHONY: check-app
+check-app:
+	(cd spd/app/frontend && npm run format && npm run check && npm run lint)

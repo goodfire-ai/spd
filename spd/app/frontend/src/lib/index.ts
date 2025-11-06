@@ -6,8 +6,7 @@ const WAND_PATH_RE = /^([^/\s]+)\/([^/\s]+)\/([a-z0-9]{8})$/;
 
 // Full W&B run URL like:
 // https://wandb.ai/<entity>/<project>/runs/<runId>[/path][?query]
-const WAND_URL_RE =
-    /^https:\/\/wandb\.ai\/([^/]+)\/([^/]+)\/runs\/([a-z0-9]{8})(?:\/[^?]*)?(?:\?.*)?$/;
+const WAND_URL_RE = /^https:\/\/wandb\.ai\/([^/]+)\/([^/]+)\/runs\/([a-z0-9]{8})(?:\/[^?]*)?(?:\?.*)?$/;
 
 export function parseWandbRunPath(input: string): string {
     const s = input.trim();

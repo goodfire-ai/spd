@@ -1,7 +1,7 @@
 {
     "plugins": ["prettier-plugin-svelte"],
     "tabWidth": 4,
-    "lineWidth": 200,
+    "printWidth": 120,
     "overrides": [
         {
             "files": "*.svelte",
