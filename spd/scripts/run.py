@@ -161,8 +161,12 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
-                f"export NCCL_DEBUG=WARN; {mpi_prefix}python {exp_config.decomp_script} --config_json '{config_json}' "
-                f"--sweep_id {run_id} --evals_id {experiment}"
+                f"export NCCL_DEBUG=WARN; "
+                f"{mpi_prefix}"
+                f"python {exp_config.decomp_script} "
+                f"--config_json '{config_json}' "
+                f"--sweep_id {run_id} "
+                f"--evals_id {experiment}"
             )
 
             commands.append(command)
@@ -188,7 +192,10 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
-                    f"export NCCL_DEBUG=WARN; {mpi_prefix}python {exp_config.decomp_script} --config_json '{config_json}' "
+                    f"export NCCL_DEBUG=WARN; "
+                    f"{mpi_prefix}"
+                    f"python {exp_config.decomp_script} "
+                    f"--config_json '{config_json}' "
                     f"--sweep_id {run_id} "
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
