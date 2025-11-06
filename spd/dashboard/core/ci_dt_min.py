@@ -4,15 +4,15 @@
 from spd.dashboard.core.acts import Activations
 from spd.dashboard.core.compute import FlatActivations
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
-from spd.dashboard.core.save import DashboardData
+from spd.dashboard.core.save import DashboardData, IndexSummaries
 from spd.dashboard.core.trees import DecisionTreesData
 
 # %% ----------------------- Configuration -----------------------
 
 CONFIG = ComponentDashboardConfig(
     model_path="wandb:goodfire/spd/runs/lxs77xye",
-    batch_size=4,
-    n_batches=4,
+    batch_size=8,
+    n_batches=8,
     context_length=16,
 )
 
@@ -30,11 +30,17 @@ TREES: DecisionTreesData = DecisionTreesData.create(
 )
 
 
+# %% index summaries and embeds
+INDEX_SUMMARIES: IndexSummaries = IndexSummaries.from_activations(
+    activations=ACTIVATIONS, config=CONFIG
+)
+
 # %% ----------------------- save -----------------------
 
 DASHBOARD_DATA: DashboardData = DashboardData(
     config=CONFIG,
     activations=ACTIVATIONS,
+    index_summaries=INDEX_SUMMARIES,
     trees=TREES,
     metadata={"description": "Minimal CI DT example"},
 )

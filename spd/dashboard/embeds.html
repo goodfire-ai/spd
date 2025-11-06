@@ -1,0 +1,4231 @@
+<!DOCTYPE html>
+<!-- source repo: https://github.com/mivanit/js-embedding-vis -->
+<!-- version: v0.1.0 -->
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+	<title>Embedding Explorer</title>
+	<!-- favicon -->
+		<!-- begin 'favicon.svg' -->
+	<link rel="icon" type="image/svg" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij4KICA8IS0tIEJhY2tncm91bmQgLS0+CiAgPHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjMDAwMDExIi8+CiAgCiAgPCEtLSAzRCBjb29yZGluYXRlIGF4ZXMgLS0+CiAgPGxpbmUgeDE9IjgiIHkxPSI4IiB4Mj0iNCIgeTI9IjEyIiBzdHJva2U9IiM0NDQ0ZmYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxsaW5lIHgxPSI4IiB5MT0iOCIgeDI9IjgiIHkyPSIxIiBzdHJva2U9IiM0NGZmNDQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPiAgCiAgPGxpbmUgeDE9IjgiIHkxPSI4IiB4Mj0iMTUiIHkyPSI4IiBzdHJva2U9IiNmZjQ0NDQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIAogIDwhLS0gRGF0YSBwb2ludHMgc2NhdHRlcmVkIGluIDNEIHNwYWNlIC0tPgogIDxjaXJjbGUgY3g9IjExIiBjeT0iMyIgcj0iMS4yIiBmaWxsPSIjMDBmZjAwIi8+CiAgPGNpcmNsZSBjeD0iOCIgY3k9IjEzIiByPSIxIiBmaWxsPSIjMDBmZjAwIi8+CiAgPGNpcmNsZSBjeD0iMTIiIGN5PSIxMSIgcj0iMS4yIiBmaWxsPSIjMDBmZjAwIi8+CiAgPGNpcmNsZSBjeD0iNCIgY3k9IjkiIHI9IjAuOCIgZmlsbD0iIzAwZmYwMCIvPgogIDxjaXJjbGUgY3g9IjMiIGN5PSIzIiByPSIxIiBmaWxsPSIjMDBmZjAwIi8+CiAgPGNpcmNsZSBjeD0iMTIiIGN5PSI2IiByPSIwLjgiIGZpbGw9IiMwMGZmMDAiLz4KPC9zdmc+">
+	<!-- end 'favicon.svg' -->
+	<!-- libraries -->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+	<!-- styles -->
+		<!-- begin 'style.css' -->
+	<style>
+	/* Base styles */
+	body {
+		margin: 0;
+		padding: 0;
+		background: #000;
+		font-family: 'Courier New', monospace;
+		overflow: hidden;
+	}
+	
+	#container {
+		position: relative;
+		width: 100vw;
+		height: 100vh;
+	}
+	
+	/* Shortcuts panel (top-right) */
+	#shortcuts {
+		position: absolute;
+		top: 20px;
+		right: 20px;
+		background: rgba(0, 0, 0, 0.7);
+		padding: 10px;
+		border-radius: 8px;
+		color: #00ff00;
+		z-index: 100;
+		font-size: 12px;
+		line-height: 1.4;
+	}
+	
+	#shortcuts div {
+		margin-bottom: 2px;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	
+	#shortcuts div:last-child {
+		margin-bottom: 0;
+	}
+	
+	/* Menu base styles */
+	.menu {
+		position: absolute;
+		background: rgba(0, 0, 0, 0.8);
+		padding: 15px;
+		border-radius: 8px;
+		color: #00ff00;
+		z-index: 100;
+		display: none;
+	}
+	
+	/* Specific menu positions */
+	#helpMenu {
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		min-width: 350px;
+	}
+	
+	#controlsMenu {
+		top: 20px;
+		left: 20px;
+	}
+	
+	#statsMenu {
+		top: 50%;
+		right: 20px;
+		transform: translateY(-50%);
+		min-width: 200px;
+	}
+	
+	#infoMenu {
+		bottom: 20px;
+		left: 50%;
+		transform: translateX(-50%);
+		min-width: 300px;
+		max-width: 400px;
+		max-height: 40vh;
+		overflow-y: auto;
+	}
+	
+	#legendMenu {
+		bottom: 20px;
+		left: 20px;
+		min-width: 300px;
+		max-height: 60vh;
+		overflow-y: auto;
+	}
+	
+	#navbar {
+		bottom: 20px;
+		right: 20px;
+		padding: 12px 15px;
+		font-size: 11px;
+		min-width: 160px;
+		line-height: 1.3;
+	}
+	
+	/* Navball styles */
+	#navball-container {
+		width: 150px;
+		height: 150px;
+		border: 2px solid #00ff00;
+		border-radius: 50%;
+		position: relative;
+		background: radial-gradient(circle, #001122 0%, #000000 100%);
+		margin: 0 auto 10px auto;
+	}
+	
+	#navball-canvas {
+		border-radius: 50%;
+	}
+	
+	.navball-crosshair {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		width: 12px;
+		height: 12px;
+		pointer-events: none;
+		z-index: 10;
+	}
+	
+	.navball-crosshair::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 0;
+		width: 100%;
+		height: 1px;
+		background: #ffff00;
+		transform: translateY(-50%);
+	}
+	
+	.navball-crosshair::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 0;
+		width: 1px;
+		height: 100%;
+		background: #ffff00;
+		transform: translateX(-50%);
+	}
+	
+	/* New layout helpers for side-by-side sections */
+	.control-section {
+		margin-bottom: 15px;
+	}
+	
+	.control-section h4 {
+		margin: 0 0 10px 0;
+		color: #00ccff;
+		font-size: 12px;
+		font-weight: bold;
+	}
+	
+	.side-by-side {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 15px;
+	}
+	
+	.side-by-side-triple {
+		display: grid;
+		grid-template-columns: 1fr 1fr 1fr;
+		gap: 12px;
+	}
+	
+	/* Column selection side-by-side layout */
+	.column-selection {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 15px;
+	}
+	
+	.column-item {
+		display: flex;
+		flex-direction: column;
+	}
+	
+	.column-item label {
+		margin-bottom: 5px;
+		font-size: 12px;
+		color: #00ccff;
+	}
+	
+	.column-item select {
+		width: 100%;
+		background: #333;
+		color: #00ff00;
+		border: 1px solid #555;
+		padding: 5px;
+		border-radius: 3px;
+		margin-bottom: 5px;
+	}
+	
+	/* Point configuration sections */
+	.point-config {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	
+	.point-config h5 {
+		margin: 0 0 8px 0;
+		color: #00ccff;
+		font-size: 11px;
+		font-weight: bold;
+		text-align: center;
+	}
+	
+	/* Axis selection layout */
+	.axis-selection {
+		display: grid;
+		grid-template-columns: 1fr 1fr 1fr;
+		gap: 12px;
+	}
+	
+	.axis-item {
+		display: flex;
+		flex-direction: column;
+	}
+	
+	.axis-item label {
+		margin-bottom: 5px;
+		font-size: 11px;
+		color: #00ccff;
+		text-align: center;
+	}
+	
+	.axis-item select {
+		width: 100%;
+		background: #333;
+		color: #00ff00;
+		border: 1px solid #555;
+		padding: 4px;
+		border-radius: 3px;
+		margin-bottom: 5px;
+		font-size: 11px;
+	}
+	
+	/* Control groups and sections */
+	.control-group {
+		margin-bottom: 10px;
+	}
+	
+	.control-row {
+		display: flex;
+		align-items: center;
+		margin-bottom: 8px;
+		gap: 10px;
+	}
+	
+	.control-row label {
+		flex: 0 0 80px;
+		font-size: 11px;
+		margin: 0;
+	}
+	
+	.control-row input[type="range"] {
+		flex: 1;
+		margin: 0 5px;
+	}
+	
+	.control-row .value-display {
+		flex: 0 0 40px;
+		text-align: center;
+		font-size: 11px;
+	}
+	
+	.control-row input[type="color"] {
+		width: 30px;
+		height: 20px;
+		padding: 0;
+		border: none;
+		border-radius: 3px;
+	}
+	
+	.help-section,
+	.stats-group,
+	.nav-section {
+		margin-bottom: 15px;
+	}
+	
+	.help-section:last-child,
+	.stats-group:last-child,
+	.nav-section:last-child {
+		margin-bottom: 0;
+	}
+	
+	.help-section h3,
+	.stats-group h3 {
+		margin: 0 0 8px 0;
+		color: #00ccff;
+		font-size: 12px;
+	}
+	
+	.nav-section h4 {
+		margin: 0 0 3px 0;
+		color: #00ccff;
+		font-size: 10px;
+		font-weight: bold;
+	}
+	
+	.help-section p,
+	.stats-group p {
+		margin: 0 0 5px 0;
+		font-size: 12px;
+	}
+	
+	.stats-group p {
+		font-size: 11px;
+	}
+	
+	/* Navigation rows */
+	.nav-row {
+		display: flex;
+		justify-content: space-between;
+		margin-bottom: 2px;
+	}
+	
+	.nav-row:last-child {
+		margin-bottom: 0;
+	}
+	
+	/* Form elements */
+	label {
+		display: block;
+		margin-bottom: 5px;
+		font-size: 12px;
+	}
+	
+	input[type="range"] {
+		width: 100%;
+		background: #333;
+		color: #00ff00;
+		border: 1px solid #555;
+		padding: 5px;
+		height: 20px;
+	}
+	
+	.dropdown-container {
+		position: relative;
+		margin-bottom: 10px;
+	}
+	
+	.dropdown-container label {
+		display: block;
+		margin-bottom: 5px;
+		font-size: 12px;
+		color: #00ccff;
+	}
+	
+	.dropdown-container select {
+		width: 100%;
+		background: #333;
+		color: #00ff00;
+		border: 1px solid #555;
+		padding: 5px;
+		border-radius: 3px;
+	}
+	
+	/* Updated button styling to match theme better */
+	button {
+		margin-top: 5px;
+		padding: 6px 12px;
+		background: #2a4a2a;
+		color: #00ff00;
+		border: 1px solid #00ff00;
+		border-radius: 4px;
+		cursor: pointer;
+		font-family: 'Courier New', monospace;
+		font-size: 11px;
+		transition: all 0.2s;
+	}
+	
+	button:hover {
+		background: #00ff00;
+		color: #000;
+	}
+	
+	/* Special button for randomize colors */
+	.randomize-btn {
+		background: #2a2a4a;
+		border-color: #4444ff;
+		color: #4444ff;
+	}
+	
+	.randomize-btn:hover {
+		background: #4444ff;
+		color: #fff;
+	}
+	
+	/* Export config button styling */
+	.export-btn {
+		background: #4a2a4a;
+		border-color: #ff4444;
+		color: #ff4444;
+		width: 100%;
+		padding: 8px;
+	}
+	
+	.export-btn:hover {
+		background: #ff4444;
+		color: #fff;
+	}
+	
+	/* Legacy button class for compatibility */
+	.color-randomize-btn {
+		background: #2a4a2a;
+		border: 1px solid #00ff00;
+		color: #00ff00;
+		padding: 6px 12px;
+		border-radius: 4px;
+		font-size: 11px;
+		cursor: pointer;
+		margin-top: 5px;
+		font-family: 'Courier New', monospace;
+		transition: all 0.2s;
+	}
+	
+	.color-randomize-btn:hover {
+		background: #00ff00;
+		color: #000;
+	}
+	
+	/* Display elements */
+	.value-display {
+		display: inline-block;
+		float: right;
+		font-weight: bold;
+	}
+	
+	.close-hint {
+		text-align: center;
+		margin-top: 15px;
+		font-size: 11px;
+		color: #888;
+	}
+	
+	/* Interactive elements */
+	.shortcut-link {
+		cursor: pointer;
+		transition: color 0.2s;
+	}
+	
+	.shortcut-link:hover {
+		color: #00ccff;
+	}
+	
+	.status-indicator {
+		font-size: 10px;
+		margin-left: 8px;
+	}
+	
+	.status-enabled {
+		color: #00ff00;
+	}
+	
+	.status-disabled {
+		color: #ff4444;
+	}
+	
+	/* Hover panel */
+	.hover-panel {
+		position: absolute;
+		display: none;
+		min-width: 250px;
+		max-width: 350px;
+		font-size: 12px;
+		pointer-events: none;
+		padding: 6px;
+		color: #ffffff;
+		background: rgba(0, 0, 0, .8);
+		border: 1px solid #555;
+	}
+	
+	/* Legend and value grid items */
+	.legend-item {
+		display: flex;
+		align-items: center;
+		margin-bottom: 4px;
+		font-size: 11px;
+	}
+	
+	.legend-color {
+		width: 12px;
+		height: 12px;
+		border-radius: 2px;
+		margin-right: 6px;
+		flex-shrink: 0;
+	}
+	
+	.value-grid-item {
+		display: flex;
+		align-items: center;
+		padding: 2px 4px;
+		border-radius: 2px;
+		font-size: 10px;
+		color: white;
+		cursor: pointer;
+		margin: 1px 0;
+		transition: background-color 0.2s;
+		position: relative;
+	}
+	
+	.value-grid-item:hover {
+		filter: brightness(1.2);
+	}
+	
+	.value-grid-item.selected {
+		box-shadow: 0 0 3px #ffff00;
+	}
+	
+	.value-grid-color {
+		width: 8px;
+		height: 8px;
+		border-radius: 1px;
+		margin-right: 4px;
+		flex-shrink: 0;
+	}
+	
+	.legend-item-clickable {
+		cursor: pointer;
+	}
+	
+	.legend-item-clickable:hover {
+		filter: brightness(1.3);
+	}
+	
+	.remove-btn {
+		margin-left: auto;
+		color: #ff4444;
+		cursor: pointer;
+		font-weight: bold;
+		padding: 2px 6px;
+		font-size: 14px;
+		line-height: 1;
+		border-radius: 2px;
+		transition: all 0.2s;
+		min-width: 20px;
+		text-align: center;
+		flex-shrink: 0;
+	}
+	
+	.remove-btn:hover {
+		background-color: #ff4444;
+		color: white;
+		transform: scale(1.1);
+	}
+	
+	/* Colorbar styles */
+	.colorbar {
+		height: 20px;
+		width: 100%;
+		background: linear-gradient(to right, #440154, #31688e, #35b779, #fde725);
+		border-radius: 3px;
+		margin: 5px 0;
+	}
+	
+	.colorbar-labels {
+		display: flex;
+		justify-content: space-between;
+		font-size: 10px;
+		margin-top: 2px;
+	}
+	
+	/* New control row layout for sliders */
+	.control-row-new {
+		display: flex;
+		flex-direction: column;
+		margin-bottom: 8px;
+		gap: 5px;
+	}
+	
+	.control-row-new label {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: 11px;
+		margin: 0;
+	}
+	
+	.value-display-right {
+		font-weight: bold;
+		color: #00ff00;
+		min-width: 40px;
+		text-align: right;
+	}
+	
+	.slider-container {
+		width: 80%;
+		margin: 0 auto;
+	}
+	
+	.slider-container input[type="range"] {
+		width: 100%;
+		margin: 0;
+	}
+	
+	/* Loading indicator */
+	.loading-indicator {
+		position: fixed;
+		top: 20px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: rgba(0, 34, 68, 0.95);
+		color: #00ff00;
+		padding: 12px 24px;
+		border-radius: 8px;
+		font-family: 'Courier New', monospace;
+		font-size: 12px;
+		font-weight: bold;
+		z-index: 1001;
+		display: none;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+		border: 1px solid #00ff00;
+		min-width: 200px;
+		text-align: center;
+	}
+	
+	.loading-indicator.visible {
+		display: block;
+	}
+	
+	.loading-spinner {
+		display: inline-block;
+		width: 12px;
+		height: 12px;
+		border: 2px solid #004400;
+		border-radius: 50%;
+		border-top-color: #00ff00;
+		animation: spin 1s ease-in-out infinite;
+		margin-right: 8px;
+		vertical-align: middle;
+	}
+	
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	
+	.loading-progress {
+		margin-top: 4px;
+		font-size: 10px;
+		color: #00ccff;
+	}
+	</style>
+	<!-- end 'style.css' -->
+		<!-- begin 'notif.css' -->
+	<style>
+	/* Notification system styling */
+	.notification-container {
+	    position: fixed;
+	    top: 0;
+	    left: 50%;
+	    transform: translateX(-50%);
+	    z-index: 1001;
+	    pointer-events: none;
+	}
+	
+	.notification-indicator {
+	    position: absolute;
+	    left: 50%;
+	    transform: translateX(-50%);
+	    background: rgba(0, 34, 68, 0.95);
+	    color: #00ff00;
+	    padding: 12px 24px;
+	    border-radius: 8px;
+	    font-family: 'Courier New', monospace;
+	    font-size: 12px;
+	    font-weight: bold;
+	    display: block;
+	    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+	    border: 1px solid #00ff00;
+	    min-width: 200px;
+	    text-align: center;
+	    transition: all 0.3s ease;
+	    opacity: 1;
+	    margin-bottom: 10px;
+	}
+	
+	/* Success styling */
+	.notification-indicator.success {
+	    background: rgba(0, 68, 34, 0.95);
+	    border-color: #00ff88;
+	    color: #00ff88;
+	}
+	
+	/* Error styling */
+	.notification-indicator.error {
+	    background: rgba(68, 0, 0, 0.95);
+	    border-color: #ff4444;
+	    color: #ff4444;
+	}
+	
+	/* Loading spinner */
+	.notification-spinner {
+	    display: inline-block;
+	    width: 12px;
+	    height: 12px;
+	    border: 2px solid #004400;
+	    border-radius: 50%;
+	    border-top-color: #00ff00;
+	    animation: spin 1s ease-in-out infinite;
+	    margin-right: 8px;
+	    vertical-align: middle;
+	}
+	
+	.notification-indicator.success .notification-spinner {
+	    border-color: #004400;
+	    border-top-color: #00ff88;
+	}
+	
+	.notification-indicator.error .notification-spinner {
+	    display: none;
+	    /* No spinner for errors */
+	}
+	
+	/* Progress bar components */
+	.notification-progress-container {
+	    width: 100%;
+	    height: 6px;
+	    background: rgba(255, 255, 255, 0.1);
+	    border-radius: 3px;
+	    margin-top: 8px;
+	    overflow: hidden;
+	}
+	
+	.notification-progress-bar {
+	    height: 100%;
+	    background: #00ff00;
+	    border-radius: 3px;
+	    transition: width 0.3s ease;
+	    width: 0%;
+	}
+	
+	.notification-indicator.success .notification-progress-bar {
+	    background: #00ff88;
+	}
+	
+	.notification-indicator.error .notification-progress-bar {
+	    background: #ff4444;
+	}
+	
+	@keyframes spin {
+	    to {
+	        transform: rotate(360deg);
+	    }
+	}
+	
+	/* Hide spinner when not in spinner mode */
+	.notification-indicator:not(.spinner) .notification-spinner {
+	    display: none;
+	}
+	</style>
+	<!-- end 'notif.css' -->
+	<!-- code -->
+		<!-- begin 'config.js' -->
+	<script>
+	var INLINE_CONFIG = null; // For inline config overrides
+	
+	/*$$$INLINE_CONFIG$$$*/
+	
+	
+	/* global, mutable CONFIG + helper to merge an optional config.json */
+	function getDefaultConfig() {
+		let default_cfg = {
+			// Data loading
+			dataFile: "data/lxs77xye-6c1f8a28/embed_table.jsonl",
+			numericalPrefix: "embed.d3.",
+			defaultColorColumn: "meta.module",
+			defaultSelectionColumn: "meta.module",
+			hoverColumns: ["meta.label", "stats.mean", "stats.std", "stats.median"],
+	
+			// Selected values
+			selectedValues: [],
+	
+			// UI panel visibility
+			panels: {
+				help: false,
+				menu: false,
+				info: false,
+				legend: true,
+				navbar: true,
+				stats: false
+			},
+	
+			// Default axis configuration
+			axes: {
+				x: 0,
+				y: 1,
+				z: 2
+			},
+	
+			// Point appearance - selected points
+			selectedPoints: {
+				size: 6,
+				sizeMin: 1,
+				sizeMax: 20,
+				sizeStep: 1,
+				opacity: 1.0,
+				opacityMin: 0.1,
+				opacityMax: 1.0,
+				opacityStep: 0.1
+			},
+	
+			// Point appearance - non-selected points
+			nonSelectedPoints: {
+				size: 4,
+				sizeMin: 1,
+				sizeMax: 20,
+				sizeStep: 1,
+				opacity: 0.25,
+				opacityMin: 0.01,
+				opacityMax: 1.0,
+				opacityStep: 0.01,
+				color: "#666666"
+			},
+	
+			// Movement settings
+			movement: {
+				speed: 50,
+				speedMin: 1,
+				speedMax: 200,
+				speedStep: 1,
+				rollSpeed: 0.02,
+				mouseSensitivity: 0.002,
+				sprintMultiplier: 3
+			},
+	
+			// Interaction settings
+			interaction: {
+				hoverActive: true,
+				selectOnClick: true,
+				rightClickActive: true,
+				raycastThreshold: 0.15,
+				raycastThresholdMultiplier: 3
+			},
+	
+			// Performance settings
+			performance: {
+				fpsThreshold: 15,
+				performanceCheckInterval: 2000,
+				performanceWarningDuration: 4000,
+				performanceOptimizationCooldown: 30000
+			},
+	
+			// Rendering settings
+			rendering: {
+				clearColor: 0x000011,
+				cameraFov: 75,
+				cameraNear: 0.1,
+				cameraFar: 2000,
+				antialiasing: true
+			},
+	
+			// Camera settings
+			camera: {
+				position: { x: 0, y: 0, z: 0 },
+				rotation: { pitch: 0, yaw: 0, roll: 0 }
+			},
+	
+			// Cross-hair settings
+			crosshair: {
+				color: 0xffff00,
+				opacity: 0.4,
+				length: 1000
+			},
+	
+			// Navball settings
+			navball: {
+				size: 150,
+				sensitivity: 0.01,
+				sphereDetail: { widthSegments: 12, heightSegments: 8 },
+				axisLength: 1.3,
+				arrowLength: 0.1,
+				arrowRadius: 0.02,
+				labelScale: 0.3
+			},
+	
+			// Color palette settings
+			colors: {
+				paletteSize: 128,
+				nullValueColor: "#4d4d4d", // Dark gray for null values
+				viridisColors: {
+					// Viridis colormap coefficients for better performance
+					r: [0.267004, 0.105010, 0.330010, 2.437600, -5.179800, 2.066100],
+					g: [0.004874, 0.406910, 1.193600, -1.375200, 0.813500, -0.073200],
+					b: [0.329415, 0.718080, -0.724400, 0.063300, 0.016700, 0.000000]
+				}
+			},
+	
+			// Legend and info panel settings
+			ui: {
+				maxCategoricalDisplay: 15,
+				maxSelectedDisplay: 20,
+				hoverOffset: { x: 15, y: 15 },
+				shortcutStatusUpdateDelay: 100,
+				menuWidth: 350
+			},
+			// Right-click behavior configuration
+			rightClick: {
+				mode: "content", // "content" or "url"
+	
+				// For content mode - creates a new tab with plain text content
+				content: {
+					title: "Point Data: {activation.cls}",
+					template: "Point Information\n===================\n\nClass: {activation.cls}\nModel: {activation.model}\nPrompt: {activation.prompt}\nCoordinates:\n  X ({axis.x.name}): {coord.x}\n  Y ({axis.y.name}): {coord.y}\n  Z ({axis.z.name}): {coord.z}\nConfiguration:\n  Data File: {config.dataFile}\n  Color By: {config.defaultColorColumn}\n  Select By: {config.defaultSelectionColumn}"
+				},
+				// For URL mode - opens a URL constructed from template
+				url: {
+					template: "https://example.com/{activation.cls}/{activation.model}?prompt={activation.prompt}&x={coord.x}&y={coord.y}&z={coord.z}"
+				}
+			},
+	
+			info: {
+				title: "Embedding Explorer",
+				help: "This tool lets you visualize high-dimensional data in 3D space."
+			},
+		}
+	
+		if (INLINE_CONFIG) {
+			// If INLINE_CONFIG is set, merge it into the default config
+			deepMerge(default_cfg, INLINE_CONFIG);
+			console.log("Merged inline config overrides");
+		}
+		return default_cfg;
+	}
+	
+	let CONFIG = getDefaultConfig();
+	let LOADED_CONFIG = null; // Store the config as loaded from file for comparison
+	let URL_UPDATE_TIMEOUT = null;
+	
+	
+	/**
+	 * Load config.json (if present) and merge into CONFIG.
+	 * Also parse URL parameters and apply them to CONFIG.
+	 * Priority: URL params > config.json > defaults
+	 * @returns {Promise<object>} resolved CONFIG object
+	 */
+	async function getConfig() {
+		try {
+			// First, try to load config.json
+			const r = await fetch("config.json");
+			if (r.ok) {
+				const loaded = await r.json();
+				// Deep merge loaded config into CONFIG
+				deepMerge(CONFIG, loaded);
+				// Store a deep copy of the loaded config for URL comparison
+				LOADED_CONFIG = JSON.parse(JSON.stringify(CONFIG));
+				console.log("Loaded config.json");
+			} else {
+				console.warn("config.json not found, using defaults");
+				// If no config.json, use defaults for comparison
+				LOADED_CONFIG = JSON.parse(JSON.stringify(CONFIG));
+			}
+		} catch (e) {
+			// if the inline config is null, then failing to find config.json is fine
+			if (!INLINE_CONFIG) {
+				console.error("Config load error:", e);
+			} else {
+				console.warn("Failed to load config.json, but it's fine because an inline config was provided");
+			}
+			// On error, use defaults for comparison
+			LOADED_CONFIG = JSON.parse(JSON.stringify(CONFIG));
+		}
+	
+		// Parse URL parameters and override CONFIG values (highest priority)
+		parseURLParams();
+	
+		return CONFIG;
+	}
+	
+	/**
+	 * Deep merge source object into target object
+	 */
+	function deepMerge(target, source) {
+		for (const key in source) {
+			if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+				if (!target[key]) target[key] = {};
+				deepMerge(target[key], source[key]);
+			} else {
+				target[key] = source[key];
+			}
+		}
+	}
+	
+	/**
+	 * Parse URL parameters and update CONFIG
+	 * Supports nested paths like: ?axes.x=2&selectedPoints.size=8&panels.menu=true
+	 * Also supports arrays like: ?selectedValues=value1,value2,value3
+	 */
+	function parseURLParams() {
+		const params = new URLSearchParams(window.location.search);
+	
+		for (const [key, value] of params) {
+			setNestedConfigValue(CONFIG, key, parseConfigValue(value));
+		}
+	}
+	
+	/**
+	 * Set a nested configuration value using dot notation
+	 * Example: setNestedConfigValue(CONFIG, "axes.x", 2)
+	 */
+	function setNestedConfigValue(obj, path, value) {
+		const keys = path.split('.');
+		let current = obj;
+	
+		for (let i = 0; i < keys.length - 1; i++) {
+			const key = keys[i];
+			if (!(key in current) || typeof current[key] !== 'object') {
+				current[key] = {};
+			}
+			current = current[key];
+		}
+	
+		const finalKey = keys[keys.length - 1];
+		current[finalKey] = value;
+		console.log(`URL param override: ${path} = ${value}`);
+	}
+	
+	/**
+	 * Parse a string value from URL params into appropriate type
+	 * Handles arrays (comma-separated values)
+	 */
+	function parseConfigValue(value) {
+		// Boolean
+		if (value === 'true') return true;
+		if (value === 'false') return false;
+	
+		// Array (comma-separated) - but handle single values too
+		if (value.includes(',')) {
+			return value.split(',').map(v => v.trim()).filter(v => v.length > 0);
+		}
+	
+		// Number
+		if (!isNaN(value) && !isNaN(parseFloat(value))) {
+			return parseFloat(value);
+		}
+	
+		// String (including hex colors) - treat single values as arrays for selectedValues
+		return value;
+	}
+	
+	/**
+	 * Update the URL with current CONFIG state
+	 * Debounced to avoid excessive URL updates
+	 */
+	function updateURL() {
+		if (URL_UPDATE_TIMEOUT) {
+			clearTimeout(URL_UPDATE_TIMEOUT);
+		}
+	
+		URL_UPDATE_TIMEOUT = setTimeout(() => {
+			const params = generateURLParams();
+			const newURL = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+			window.history.replaceState({}, '', newURL);
+			URL_UPDATE_TIMEOUT = null;
+		}, 500); // 500ms debounce
+	}
+	
+	/**
+	 * Generate URL search params from current CONFIG state
+	 * Only includes values that differ from the loaded config (not defaults)
+	 */
+	function generateURLParams() {
+		if (!LOADED_CONFIG) {
+			// Fallback to default config if loaded config not available
+			return new URLSearchParams();
+		}
+	
+		const params = new URLSearchParams();
+		const differences = findConfigDifferences(CONFIG, LOADED_CONFIG);
+	
+		for (const [path, value] of differences) {
+			// Skip the data field to prevent huge URLs
+			if (path === 'data') {
+				continue;
+			}
+	
+			// Special handling for arrays
+			if (Array.isArray(value)) {
+				if (value.length > 0) {
+					params.set(path, value.join(','));
+				}
+			} else {
+				params.set(path, value.toString());
+			}
+		}
+	
+		return params;
+	}
+	
+	/**
+	 * Find differences between current config and loaded config
+	 * Returns array of [path, value] tuples
+	 * Uses epsilon comparison for floats
+	 */
+	function findConfigDifferences(current, base, prefix = '') {
+		const differences = [];
+		const EPSILON = 0.001;
+	
+		for (const key in current) {
+			if (key === "data") {
+				// Skip the data field to prevent huge URLs
+				continue;
+			}
+			const currentPath = prefix ? `${prefix}.${key}` : key;
+			const currentValue = current[key];
+			const baseValue = base[key];
+	
+			if (Array.isArray(currentValue)) {
+				// Special handling for arrays
+				if (!Array.isArray(baseValue) || !arraysEqual(currentValue, baseValue)) {
+					differences.push([currentPath, currentValue]);
+				}
+			} else if (typeof currentValue === 'object' && currentValue !== null) {
+				if (typeof baseValue === 'object' && !Array.isArray(baseValue) && baseValue !== null) {
+					differences.push(...findConfigDifferences(currentValue, baseValue, currentPath));
+				} else {
+					// Base doesn't have this object, include all of current
+					differences.push([currentPath, JSON.stringify(currentValue)]);
+				}
+			} else {
+				// Compare primitive values with epsilon for floats
+				let valuesEqual = false;
+	
+				if (typeof currentValue === 'number' && typeof baseValue === 'number') {
+					// Use epsilon comparison for floats
+					valuesEqual = Math.abs(currentValue - baseValue) < EPSILON;
+				} else {
+					// Direct comparison for other types
+					valuesEqual = currentValue === baseValue;
+				}
+	
+				if (!valuesEqual) {
+					differences.push([currentPath, currentValue]);
+				}
+			}
+		}
+	
+		return differences;
+	}
+	
+	/**
+	 * Helper function to compare arrays
+	 */
+	function arraysEqual(arr1, arr2) {
+		if (arr1.length !== arr2.length) return false;
+		for (let i = 0; i < arr1.length; i++) {
+			if (arr1[i] !== arr2[i]) return false;
+		}
+		return true;
+	}
+	
+	/**
+	 * Get the current configuration as a formatted JSON string
+	 */
+	function getConfigAsJSON() {
+		return JSON.stringify(CONFIG, null, 2);
+	}
+	
+	/**
+	 * Open a new tab with the current configuration
+	 */
+	function exportConfigToNewTab() {
+		const configText = getConfigAsJSON();
+		const blob = new Blob([configText], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const newWindow = window.open(url, '_blank');
+	
+		// Clean up the object URL after a delay
+		setTimeout(() => {
+			URL.revokeObjectURL(url);
+		}, 1000);
+	}
+	
+	
+	/**
+	 * Reset CONFIG to the loaded config.json state and clear URL parameters
+	 */
+	function resetConfigToLoaded() {
+		if (!LOADED_CONFIG) {
+			console.warn("No loaded config available, resetting to defaults");
+			CONFIG = getDefaultConfig();
+		} else {
+			// Deep copy the loaded config back to CONFIG
+			CONFIG = JSON.parse(JSON.stringify(LOADED_CONFIG));
+		}
+	
+		// Clear URL parameters by navigating to clean URL
+		const cleanURL = window.location.pathname;
+		window.history.replaceState({}, '', cleanURL);
+	
+		// Clear the URL update timeout if it exists
+		if (URL_UPDATE_TIMEOUT) {
+			clearTimeout(URL_UPDATE_TIMEOUT);
+			URL_UPDATE_TIMEOUT = null;
+		}
+	
+		console.log("Config reset to loaded state and URL cleared");
+	}
+	</script>
+	<!-- end 'config.js' -->
+		<!-- begin 'notif.js' -->
+	<script>
+	/* notif.js - Standalone notification system */
+	class NotificationManager {
+	    constructor(options = {}) {
+	        // Timeout settings
+	        this.defaultTimeout = options.defaultTimeout || 4000;
+	        this.successTimeout = options.successTimeout || 2000;
+	        this.fadeTimeout = options.fadeTimeout || 300;
+	
+	        // Layout settings
+	        this.topOffset = options.topOffset || 20;
+	        this.spacing = options.spacing || 60;
+	        this.slideOffset = options.slideOffset || -20;
+	
+	        this.notifications = new Map(); // Map of id -> notification data
+	        this.nextId = 0;
+	        this.container = null;
+	        this.isReady = false;
+	
+	        // Initialize when DOM is ready
+	        this._initWhenReady();
+	    }
+	
+	    _initWhenReady() {
+	        if (document.body) {
+	            this._createContainer();
+	            this.isReady = true;
+	        } else if (document.readyState === 'loading') {
+	            document.addEventListener('DOMContentLoaded', () => {
+	                this._createContainer();
+	                this.isReady = true;
+	            });
+	        } else {
+	            // DOM is ready but body might not be parsed yet
+	            setTimeout(() => this._initWhenReady(), 10);
+	        }
+	    }
+	
+	    _createContainer() {
+	        if (this.container) return; // Already created
+	
+	        this.container = document.createElement('div');
+	        this.container.className = 'notification-container';
+	        document.body.appendChild(this.container);
+	    }
+	
+	    _ensureReady() {
+	        if (!this.isReady) {
+	            console.warn('NotificationManager not ready yet, initializing synchronously');
+	            this._createContainer();
+	            this.isReady = true;
+	        }
+	    }
+	
+	    _createNotificationElement(id, type, message) {
+	        this._ensureReady();
+	
+	        const element = document.createElement('div');
+	        element.className = `notification-indicator visible ${type}`;
+	        element.dataset.id = id;
+	
+	        if (type === 'spinner') {
+	            element.innerHTML = `
+	                <span class="notification-spinner"></span>
+	                <span class="notification-text">${message}</span>
+	            `;
+	        } else if (type === 'pbar') {
+	            element.innerHTML = `
+	                <div class="notification-text">${message}</div>
+	                <div class="notification-progress-container">
+	                    <div class="notification-progress-bar" style="width: 0%"></div>
+	                </div>
+	            `;
+	        } else {
+	            element.innerHTML = `
+	                <span class="notification-text">${message}</span>
+	            `;
+	        }
+	
+	        this.container.appendChild(element);
+	        this._updatePositions();
+	        return element;
+	    }
+	
+	    _updatePositions() {
+	        if (!this.container) return;
+	
+	        const notifications = Array.from(this.container.children);
+	        notifications.forEach((el, index) => {
+	            el.style.top = `${this.topOffset + index * this.spacing}px`;
+	        });
+	    }
+	
+	    _removeNotification(id) {
+	        const notifData = this.notifications.get(id);
+	        if (!notifData) return;
+	
+	        // Clear timeout if exists
+	        if (notifData.timeout) {
+	            clearTimeout(notifData.timeout);
+	        }
+	
+	        // Remove element with fade animation
+	        notifData.element.style.opacity = '0';
+	        notifData.element.style.transform = `translateX(-50%) translateY(${this.slideOffset}px)`;
+	
+	        setTimeout(() => {
+	            if (notifData.element.parentNode) {
+	                notifData.element.parentNode.removeChild(notifData.element);
+	            }
+	            this.notifications.delete(id);
+	            this._updatePositions();
+	        }, this.fadeTimeout);
+	    }
+	
+	    /**
+	     * Show a regular notification message
+	     * @param {string} message - Message to display
+	     * @param {number} timeout - Auto-hide timeout in ms (default from constructor)
+	     */
+	    show(message, timeout = null) {
+	        console.log(message);
+	
+	        const id = this.nextId++;
+	        const element = this._createNotificationElement(id, 'show', message);
+	
+	        const hideTimeout = timeout || this.defaultTimeout;
+	        const timeoutId = setTimeout(() => {
+	            this._removeNotification(id);
+	        }, hideTimeout);
+	
+	        this.notifications.set(id, {
+	            element,
+	            type: 'show',
+	            timeout: timeoutId
+	        });
+	    }
+	
+	    /**
+	     * Show a persistent spinner with message
+	     * @param {string} message - Loading message to display
+	     * @returns {object} Spinner control object with .complete() method
+	     */
+	    spinner(message) {
+	        console.log(message);
+	
+	        const id = this.nextId++;
+	        const element = this._createNotificationElement(id, 'spinner', message);
+	
+	        this.notifications.set(id, {
+	            element,
+	            type: 'spinner',
+	            timeout: null
+	        });
+	
+	        return {
+	            complete: () => {
+	                this._removeNotification(id);
+	            }
+	        };
+	    }
+	
+	    /**
+	     * Show a persistent progress bar with message
+	     * @param {string} message - Loading message to display
+	     * @returns {object} Progress bar control object with .progress(value) method
+	     */
+	    pbar(message) {
+	        console.log(message);
+	
+	        const id = this.nextId++;
+	        const element = this._createNotificationElement(id, 'pbar', message);
+	
+	        this.notifications.set(id, {
+	            element,
+	            type: 'pbar',
+	            timeout: null
+	        });
+	
+	        return {
+	            progress: (value) => {
+	                const progressBar = element.querySelector('.notification-progress-bar');
+	                if (progressBar) {
+	                    const percentage = Math.max(0, Math.min(100, value * 100));
+	                    progressBar.style.width = `${percentage}%`;
+	                }
+	            },
+	            complete: () => {
+	                this._removeNotification(id);
+	            }
+	        };
+	    }
+	
+	    /**
+	     * Show success message
+	     * @param {string} message - Success message
+	     * @param {number} timeout - Auto-hide timeout in ms (default from constructor)
+	     */
+	    success(message, timeout = null) {
+	        console.log(message);
+	
+	        const id = this.nextId++;
+	        const element = this._createNotificationElement(id, 'success', message);
+	
+	        const hideTimeout = timeout || this.successTimeout;
+	        const timeoutId = setTimeout(() => {
+	            this._removeNotification(id);
+	        }, hideTimeout);
+	
+	        this.notifications.set(id, {
+	            element,
+	            type: 'success',
+	            timeout: timeoutId
+	        });
+	    }
+	
+	    /**
+	     * Show error message
+	     * @param {string} message - Error message
+	     * @param {Error} err - Error object to log
+	     * @param {number} timeout - Auto-hide timeout in ms (default from constructor)
+	     */
+	    error(message, err = null, timeout = null) {
+	        if (err) {
+	            console.error(err);
+	        } else {
+	            console.error(message);
+	        }
+	
+	        const id = this.nextId++;
+	        const element = this._createNotificationElement(id, 'error', message);
+	
+	        const hideTimeout = timeout || this.defaultTimeout;
+	        const timeoutId = setTimeout(() => {
+	            this._removeNotification(id);
+	        }, hideTimeout);
+	
+	        this.notifications.set(id, {
+	            element,
+	            type: 'error',
+	            timeout: timeoutId
+	        });
+	    }
+	
+	    /**
+	     * Hide all notifications
+	     */
+	    clear() {
+	        for (const [id] of this.notifications) {
+	            this._removeNotification(id);
+	        }
+	    }
+	}
+	
+	// Initialize global instance when DOM is ready
+	let NOTIF;
+	
+	// Initialize immediately if DOM is already ready, otherwise wait
+	if (document.readyState === 'loading') {
+	    document.addEventListener('DOMContentLoaded', () => {
+	        NOTIF = new NotificationManager();
+	    });
+	} else {
+	    // DOM already loaded
+	    NOTIF = new NotificationManager();
+	}
+	</script>
+	<!-- end 'notif.js' -->
+		<!-- begin 'ColorUtil.js' -->
+	<script>
+	function hslToHex(h, s, l) {
+		s /= 100; l /= 100;
+		const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+		let r, g, b;
+		if (h < 60) [r, g, b] = [c, x, 0];
+		else if (h < 120) [r, g, b] = [x, c, 0];
+		else if (h < 180) [r, g, b] = [0, c, x];
+		else if (h < 240) [r, g, b] = [0, x, c];
+		else if (h < 300) [r, g, b] = [x, 0, c];
+		else[r, g, b] = [c, 0, x];
+		const toHex = v => { const h = Math.round((v + m) * 255).toString(16); return h.length === 1 ? '0' + h : h };
+		return '#' + toHex(r) + toHex(g) + toHex(b);
+	}
+	
+	function generateDistinctColors(n) {
+		const out = [];
+		for (let i = 0; i < n; i++) {
+			const h = Math.floor(Math.random() * 360),
+				s = Math.floor(50 + Math.random() * 50),
+				l = Math.floor(40 + Math.random() * 20);
+			out.push(hslToHex(h, s, l));
+		}
+		return out;
+	}
+	
+	</script>
+	<!-- end 'ColorUtil.js' -->
+		<!-- begin 'DataFrame.js' -->
+	<script>
+	class DataFrame {
+		/**
+		 * Creates a DataFrame from a list of row objects
+		 * 
+		 * @param {Array<Object>} data - Array of row objects
+		 * @param {Array<string>} [columns] - Optional column names (will be inferred from data if not provided)
+		 */
+		constructor(data = [], columns = null) {
+			this.data = data;
+	
+			// Infer columns from data if not provided
+			if (!columns && data.length > 0) {
+				this.columns = Object.keys(data[0]);
+			} else {
+				this.columns = columns || [];
+			}
+		}
+	
+		/**
+		 * Returns the values for a specific column
+		 * 
+		 * @param {string} name - Column name
+		 * @returns {Array} - Values in the column
+		 */
+		col(name) {
+			if (!this.columns.includes(name)) {
+				throw new Error(`Column '${name}' not found in columns: ${this.columns.join(', ')}`);
+			}
+	
+			return this.data.map(row => row[name]);
+		}
+	
+		/**
+		 * Returns the values for a specific cell
+		 * @param {row_idx} row_idx - Row index
+		 * @param {col_name} col_name - Column name
+		 * @returns {any} - Value in the cell
+		 * @throws {Error} - If row index or column name is invalid
+		 */
+		get(row_idx, col_name) {
+			if (row_idx < 0 || row_idx >= this.data.length) {
+				throw new Error(`Row index ${row_idx} out of bounds (0 to ${this.data.length - 1})`);
+			}
+	
+			if (!this.columns.includes(col_name)) {
+				throw new Error(`Column '${col_name}' not found in columns: ${this.columns.join(', ')}`);
+			}
+	
+			return this.data[row_idx][col_name];
+		}
+	
+		/**
+		 * Returns a specific row as an object
+		 * 
+		 * @param {number} rowIdx - Row index
+		 * @returns {Object} - Row as an object
+		 */
+		row(rowIdx) {
+			if (rowIdx < 0 || rowIdx >= this.data.length) {
+				throw new Error(`Row index ${rowIdx} out of bounds (0 to ${this.data.length - 1})`);
+			}
+	
+			return this.data[rowIdx];
+		}
+	
+		/**
+		 * Returns unique values in a specific column
+		 * @param {string} name - Column name
+		 * @returns {Set} - Unique values in the column
+		 */
+		col_unique(name) {
+			return new Set(this.col(name));
+		}
+	
+		/**
+		 * Parses a CSV string into a DataFrame
+		 * 
+		 * @param {string} text - CSV text content
+		 * @returns {DataFrame} - New DataFrame instance
+		 */
+		static from_csv(text) {
+			// Split text into lines and filter out empty lines
+			const lines = text.split('\n').filter(line => line.trim().length > 0);
+	
+			if (lines.length === 0) {
+				return new DataFrame();
+			}
+	
+			// First line is the header
+			const header = lines[0].split(',').map(col => col.trim());
+	
+			// Parse each line into a row object
+			const data = [];
+			for (let i = 1; i < lines.length; i++) {
+				const values = lines[i].split(',').map(val => val.trim());
+	
+				// Create row object mapping column names to values
+				const row = {};
+				for (let j = 0; j < header.length; j++) {
+					// Try to convert to number if possible
+					const value = values[j];
+					if (value === undefined) continue;
+	
+					// Handle quoted strings
+					if (value.startsWith('"') && value.endsWith('"')) {
+						row[header[j]] = value.slice(1, -1);
+					}
+					// Handle null values
+					else if (value === '' || value.toLowerCase() === 'null') {
+						row[header[j]] = null;
+					}
+					// Try converting to number
+					else if (!isNaN(value)) {
+						row[header[j]] = Number(value);
+					}
+					// Otherwise keep as string
+					else {
+						row[header[j]] = value;
+					}
+				}
+	
+				data.push(row);
+			}
+	
+			return new DataFrame(data, header);
+		}
+	
+		/**
+		 * Converts DataFrame to CSV string
+		 * 
+		 * @returns {string} - CSV representation of the DataFrame
+		 */
+		to_csv() {
+			if (this.data.length === 0) {
+				return this.columns.join(',');
+			}
+	
+			// Start with the header
+			const lines = [this.columns.join(',')];
+	
+			// Add each row
+			for (const row of this.data) {
+				const values = this.columns.map(col => {
+					const val = row[col];
+	
+					if (val === null || val === undefined) {
+						return '';
+					} else if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) {
+						// Escape quotes and wrap in quotes
+						return `"${val.replace(/"/g, '""')}"`;
+					} else {
+						return String(val);
+					}
+				});
+	
+				lines.push(values.join(','));
+			}
+	
+			return lines.join('\n');
+		}
+	
+		/**
+		 * Parses a JSONL string into a DataFrame
+		 * 
+		 * @param {string} text - JSONL text content
+		 * @returns {DataFrame} - New DataFrame instance
+		 */
+		static from_jsonl(text) {
+			// Parse each line as JSON
+			const data = text.trim().split('\n').map(line => JSON.parse(line));
+	
+			// Extract all unique column names from all rows
+			const allColumns = new Set();
+			for (const row of data) {
+				Object.keys(row).forEach(key => allColumns.add(key));
+			}
+	
+			return new DataFrame(data, Array.from(allColumns));
+		}
+	
+		/**
+		 * Converts DataFrame to JSONL string
+		 * 
+		 * @returns {string} - JSONL representation of the DataFrame
+		 */
+		to_jsonl() {
+			return this.data.map(row => JSON.stringify(row)).join('\n');
+		}
+	
+		/**
+		 * Returns the number of rows in the DataFrame
+		 * 
+		 * @returns {number} - Number of rows
+		 */
+		get length() {
+			return this.data.length;
+		}
+	
+		/**
+		 * Returns a string representation of the DataFrame
+		 * 
+		 * @returns {string} - String representation
+		 */
+		toString() {
+			if (this.data.length === 0) {
+				return 'Empty DataFrame';
+			}
+	
+			return `DataFrame with ${this.data.length} rows and ${this.columns.length} columns: ${this.columns.join(', ')}`;
+		}
+	}
+	
+	</script>
+	<!-- end 'DataFrame.js' -->
+		<!-- begin 'DataModel.js' -->
+	<script>
+	class DataModel {
+		constructor(df, numericCols) {
+			this.df = df;
+			this.numericCols = numericCols;                // ordered ["pc.0", …]
+			this.rowCount = df.data.length;
+			this._pcaFlat = this._buildFlatArray();        // Float32Array row-major
+		}
+	
+		_buildFlatArray() {
+			const out = new Float32Array(this.rowCount * this.numericCols.length);
+			for (let i = 0; i < this.rowCount; i++) {
+				const row = this.df.data[i];
+				for (let j = 0; j < this.numericCols.length; j++) {
+					out[i * this.numericCols.length + j] = row[this.numericCols[j]];
+				}
+			}
+			return out;
+		}
+	
+		/** fast accessor */
+		getCoord(rowIdx, axisIdx) {
+			return this._pcaFlat[rowIdx * this.numericCols.length + axisIdx];
+		}
+	
+		row(idx) { return this.df.data[idx]; }
+	
+		static async load(filename, numericalPrefix) {
+			const spinner = NOTIF.spinner('Processing data...');
+	
+			try {
+				let df;
+	
+				// Check if dataFile is null - use embedded data
+				if (filename === null || filename === undefined) {
+					if (!CONFIG.data || !Array.isArray(CONFIG.data)) {
+						const errorMsg = 'No dataFile specified and no embedded data found in CONFIG.data';
+						spinner.complete();
+						NOTIF.error(errorMsg, new Error(errorMsg));
+						throw new Error(errorMsg);
+					}
+	
+					// Use embedded data directly
+					const pbar = NOTIF.pbar('Processing embedded data...');
+					pbar.progress(0.2);
+	
+					// Extract all unique column names from all rows
+					const allColumns = new Set();
+					for (const row of CONFIG.data) {
+						Object.keys(row).forEach(key => allColumns.add(key));
+					}
+	
+					pbar.progress(0.6);
+					df = new DataFrame(CONFIG.data, Array.from(allColumns));
+					pbar.progress(0.9);
+	
+				} else {
+					// Original file loading logic
+					spinner.complete();
+					const downloadSpinner = NOTIF.spinner('Downloading data...');
+	
+					const resp = await fetch(filename);
+					if (!resp.ok) {
+						const errorMsg = `Failed to load data: ${resp.status} ${resp.statusText}`;
+						downloadSpinner.complete();
+						NOTIF.error(errorMsg, new Error(errorMsg));
+						throw new Error(errorMsg);
+					}
+	
+					downloadSpinner.complete();
+					const pbar = NOTIF.pbar('Processing data...');
+	
+					pbar.progress(0.1);
+					const text = await resp.text();
+	
+					pbar.progress(0.3);
+					df = DataFrame.from_jsonl(text);
+					pbar.progress(0.6);
+				}
+	
+				const numeric = df.columns
+					.filter(c => c.startsWith(numericalPrefix))
+					.sort((a, b) => {
+						// Extract the part after the prefix
+						const aSuffix = a.substring(numericalPrefix.length);
+						const bSuffix = b.substring(numericalPrefix.length);
+	
+						// Check if both suffixes are integers
+						const aNum = parseInt(aSuffix, 10);
+						const bNum = parseInt(bSuffix, 10);
+	
+						// If both are valid integers, sort numerically
+						if (!isNaN(aNum) && !isNaN(bNum) &&
+							aNum.toString() === aSuffix && bNum.toString() === bSuffix) {
+							return aNum - bNum;
+						}
+	
+						// Otherwise, sort lexicographically
+						return a.localeCompare(b);
+					});
+	
+				const result = new DataModel(df, numeric);
+	
+				if (filename === null || filename === undefined) {
+					spinner.complete();
+					NOTIF.success(`Loaded ${df.data.length} embedded data points with ${numeric.length} dimensions`);
+				} else {
+					const pbar = NOTIF.pbar('Processing data...');
+					pbar.progress(1.0);
+					pbar.complete();
+					NOTIF.success(`Loaded ${df.data.length} data points with ${numeric.length} dimensions`);
+				}
+	
+				return result;
+			} catch (error) {
+				spinner.complete();
+				NOTIF.error('Failed to load data', error, 99999999999);
+				console.error("DataModel load error:", error);
+				throw error;
+			}
+		}
+	}
+	</script>
+	<!-- end 'DataModel.js' -->
+		<!-- begin 'SelectionManager.js' -->
+	<script>
+	/* SelectionManager.js  -- optimized version using CONFIG */
+	class SelectionManager {
+		constructor(model, state) {
+			this.model = model;
+			this.state = state;
+			this.palette = generateDistinctColors(CONFIG.colors.paletteSize);
+	
+			// Cache for expensive computations
+			this._colorCache = new Map();
+			this._numericRangeCache = new Map();
+		}
+	
+		/** colour & selection attributes for a given row id */
+		attrs(rowId) {
+			const row = this.model.row(rowId);
+	
+			// Check if this point should be treated as selected
+			const selectValue = row[this.state.selectBy];
+			const isExplicitlySelected = this.state.selection.has(selectValue);
+			const isValidValue = selectValue !== null && selectValue !== 'null' && selectValue !== 'unknown';
+	
+			// If no explicit selection, treat all valid points as selected
+			const treatAsSelected = isExplicitlySelected || (this.state.selection.size === 0 && isValidValue);
+	
+			// Get base color from colorBy column (with caching)
+			const colorValue = row[this.state.colorBy];
+			const baseColor = this._getColorCached(colorValue);
+	
+			// Apply selection highlighting
+			if (treatAsSelected) {
+				return {
+					r: baseColor.r,
+					g: baseColor.g,
+					b: baseColor.b,
+					size: this.state.selSize,
+					opacity: this.state.selOp
+				};
+			} else {
+				// Non-selected styling
+				const nonSelColor = new THREE.Color(this.state.nonSelColor);
+				return {
+					r: nonSelColor.r,
+					g: nonSelColor.g,
+					b: nonSelColor.b,
+					size: this.state.nonSelSize,
+					opacity: this.state.nonSelOp
+				};
+			}
+		}
+	
+		_getColorCached(value) {
+			const cacheKey = `${this.state.colorBy}:${value}`;
+	
+			if (!this._colorCache.has(cacheKey)) {
+				let color;
+				if (this.state.isNumericColumn(this.state.colorBy)) {
+					color = this._getViridisColor(value, this.state.colorBy);
+				} else {
+					color = this._getCategoricalColor(value);
+				}
+				this._colorCache.set(cacheKey, color);
+			}
+	
+			return this._colorCache.get(cacheKey);
+		}
+	
+		_getViridisColor(value, column) {
+			if (value === null || value === undefined || isNaN(value)) {
+				return new THREE.Color(CONFIG.colors.nullValueColor);
+			}
+	
+			// Get cached min/max for the column
+			if (!this._numericRangeCache.has(column)) {
+				const values = this.model.df.col(column).filter(v => typeof v === 'number' && !isNaN(v));
+				const min = Math.min(...values);
+				const max = Math.max(...values);
+				this._numericRangeCache.set(column, { min, max });
+			}
+	
+			const { min, max } = this._numericRangeCache.get(column);
+	
+			// Normalize to 0-1
+			const t = max > min ? (value - min) / (max - min) : 0;
+	
+			// Viridis colormap approximation using CONFIG coefficients
+			return this._viridis(t);
+		}
+	
+		_getCategoricalColor(value) {
+			if (value === null || value === 'null' || value === 'unknown') {
+				return new THREE.Color(CONFIG.colors.nullValueColor);
+			}
+	
+			// Use a simple hash for categorical values to avoid expensive sorting
+			const hash = typeof value === 'string'
+				? [...value].reduce((s, c) => s + c.charCodeAt(0), 0)
+				: (value | 0);
+	
+			return new THREE.Color(this.palette[hash % this.palette.length]);
+		}
+	
+		_viridis(t) {
+			// Viridis colormap approximation using CONFIG coefficients
+			t = Math.max(0, Math.min(1, t));
+	
+			const { r: rCoeff, g: gCoeff, b: bCoeff } = CONFIG.colors.viridisColors;
+	
+			const r = rCoeff[0] + t * (rCoeff[1] + t * (rCoeff[2] + t * (rCoeff[3] + t * (rCoeff[4] + t * rCoeff[5]))));
+			const g = gCoeff[0] + t * (gCoeff[1] + t * (gCoeff[2] + t * (gCoeff[3] + t * (gCoeff[4] + t * gCoeff[5]))));
+			const b = bCoeff[0] + t * (bCoeff[1] + t * (bCoeff[2] + t * (bCoeff[3] + t * (bCoeff[4] + t * bCoeff[5]))));
+	
+			return new THREE.Color(r, g, b);
+		}
+	
+		randomizeColors() {
+			this.palette = generateDistinctColors(CONFIG.colors.paletteSize);
+			// Clear color cache when palette changes
+			this._colorCache.clear();
+		}
+	
+		// Clear caches when column changes
+		clearCaches() {
+			this._colorCache.clear();
+			this._numericRangeCache.clear();
+		}
+	}
+	</script>
+	<!-- end 'SelectionManager.js' -->
+		<!-- begin 'VisState.js' -->
+	<script>
+	/* VisState.js  -- replaces previous version with URL sync */
+	class VisState extends EventTarget {
+		constructor(model) {
+			super();
+			this.model = model;
+	
+			/* view / meta options - use CONFIG defaults */
+			this.axis = { ...CONFIG.axes };
+	
+			/* run-time configurable keys */
+			this.colorBy = CONFIG.defaultColorColumn;
+			this.selectBy = CONFIG.defaultSelectionColumn;
+	
+			/* appearance - use CONFIG defaults */
+			this.nonSelSize = CONFIG.nonSelectedPoints.size;
+			this.selSize = CONFIG.selectedPoints.size;
+			this.nonSelOp = CONFIG.nonSelectedPoints.opacity;
+			this.selOp = CONFIG.selectedPoints.opacity;
+			this.nonSelColor = CONFIG.nonSelectedPoints.color;
+	
+			/* store *values* (categories) now, not row indices */
+			this.selection = new Set();
+	
+			// Initialize selection from CONFIG if specified
+			// Handle both array and single value cases from URL parsing
+			if (CONFIG.selectedValues) {
+				if (Array.isArray(CONFIG.selectedValues)) {
+					CONFIG.selectedValues.forEach(value => this.selection.add(value));
+				} else if (typeof CONFIG.selectedValues === 'string') {
+					// Single value from URL (not comma-separated)
+					this.selection.add(CONFIG.selectedValues);
+					// Update CONFIG to be consistent array format
+					CONFIG.selectedValues = [CONFIG.selectedValues];
+				}
+			}
+		}
+	
+		isNumericColumn(column) {
+			if (!this.model.df.columns.includes(column)) return false;
+	
+			const values = this.model.df.col(column);
+			// Check if most values are numbers
+			const numericCount = values.filter(v => typeof v === 'number' && !isNaN(v)).length;
+			return numericCount > values.length * 0.8; // 80% threshold
+		}
+	
+		/* ---------- helpers ---------- */
+		setAxis(dim, val) {
+			this.axis[dim] = val;
+			// Update CONFIG to keep it in sync
+			CONFIG.axes[dim] = val;
+			this._syncToURL();
+			this._fire('axis');
+		}
+	
+		setColorBy(col) {
+			this.colorBy = col;
+			CONFIG.defaultColorColumn = col;
+			this._syncToURL();
+			this._fire('vis');
+		}
+	
+		setSelectBy(col) {
+			this.selectBy = col;
+			CONFIG.defaultSelectionColumn = col;
+			this.clearSel();
+			this._syncToURL();
+			this._fire('vis');
+		}
+	
+		setVisParam(k, v) {
+			this[k] = v;
+	
+			// Update CONFIG to keep it in sync
+			switch (k) {
+				case 'selSize':
+					CONFIG.selectedPoints.size = v;
+					break;
+				case 'selOp':
+					CONFIG.selectedPoints.opacity = v;
+					break;
+				case 'nonSelSize':
+					CONFIG.nonSelectedPoints.size = v;
+					break;
+				case 'nonSelOp':
+					CONFIG.nonSelectedPoints.opacity = v;
+					break;
+				case 'nonSelColor':
+					CONFIG.nonSelectedPoints.color = v;
+					break;
+			}
+	
+			this._syncToURL();
+			this._fire('vis');
+		}
+	
+		/** toggle category value */
+		toggleValue(v) {
+			if (v == null) return;
+			this.selection.has(v) ? this.selection.delete(v)
+				: this.selection.add(v);
+	
+			// Update CONFIG with current selection
+			CONFIG.selectedValues = Array.from(this.selection);
+			this._syncToURL();
+			this._fire('selection');
+		}
+	
+		clearSel() {
+			this.selection.clear();
+			CONFIG.selectedValues = [];
+			this._syncToURL();
+			this._fire('selection');
+		}
+	
+		/**
+		 * Sync current state to URL parameters
+		 */
+		_syncToURL() {
+			updateURL();
+		}
+	
+		_fire(type) { this.dispatchEvent(new Event(type)); }
+	}
+	</script>
+	<!-- end 'VisState.js' -->
+		<!-- begin 'ui.js' -->
+	<script>
+	/* ui.js - Updated to use CONFIG values and add export button */
+	class UIManager {
+	    constructor(pointCloud) {
+	        this.pointCloud = pointCloud;
+	
+	        /* panel metadata - now uses CONFIG -------------------------------- */
+	        this.uiConfig = {
+	            help: { key: 'KeyH', elementId: 'helpMenu', shortcutText: 'h – help', visible: CONFIG.panels.help },
+	            menu: { key: 'KeyM', elementId: 'controlsMenu', shortcutText: 'm – menu', visible: CONFIG.panels.menu },
+	            info: { key: 'KeyI', elementId: 'infoMenu', shortcutText: 'i – info', visible: CONFIG.panels.info },
+	            legend: { key: 'KeyL', elementId: 'legendMenu', shortcutText: 'l – legend', visible: CONFIG.panels.legend },
+	            navbar: { key: 'KeyN', elementId: 'navbar', shortcutText: 'n – navball', visible: CONFIG.panels.navbar },
+	            stats: { key: 'KeyJ', elementId: 'statsMenu', shortcutText: 'j – stats', visible: CONFIG.panels.stats }
+	        };
+	
+	        /* categorical columns for c / v cycling ------------------------ */
+	        this.cats = this.pointCloud.model.df.columns
+	            .filter(c => !c.startsWith(CONFIG.numericalPrefix));
+	        this.colorIdx = Math.max(0, this.cats.indexOf(this.pointCloud.state.colorBy));
+	        this.selectIdx = Math.max(0, this.cats.indexOf(this.pointCloud.state.selectBy));
+	
+	        /* FPS counters -------------------------------------------------- */
+	        this.frameCount = 0;
+	        this.lastTime = performance.now();
+	        this.fps = 60;
+	
+	        /* Performance safeguard - now uses CONFIG ---------------------- */
+	        this.performanceCheckInterval = CONFIG.performance.performanceCheckInterval;
+	        this.lastPerformanceCheck = performance.now();
+	        this.fpsThreshold = CONFIG.performance.fpsThreshold;
+	        this.performanceWarningShown = false;
+	
+	        /* build static UI */
+	        this._init();
+	    }
+	
+	    /* ========================================================= */
+	    _init() {
+	        this._buildShortcutsLegend();
+	        this._setupControlSliders();
+	        this._bindKeys();
+	        this._setupNavball();
+	
+	        /* hover tooltip */
+	        this.hoverPanel = document.createElement('div');
+	        this.hoverPanel.className = 'hover-panel';
+	        document.body.appendChild(this.hoverPanel);
+	
+	        /* attach once‑only grid listeners for selected values & legend */
+	        this._attachGridListeners();
+	
+	
+	        // Apply initial panel visibility from CONFIG
+	        this._applyInitialPanelVisibility();
+	
+	        // for changes in columns, color, or selection
+	        this._updateLegendDisplay()
+	        this._updateSelectedValuesDisplay();
+	        this.pointCloud.state.addEventListener('vis', () => {
+	            this._updateLegendDisplay();
+	            this._updateSelectedValuesDisplay();
+	        });
+	        this.pointCloud.state.addEventListener('selection', () => {
+	            this._updateLegendDisplay();
+	            this._updateSelectedValuesDisplay();
+	        });
+	    }
+	
+	    _applyInitialPanelVisibility() {
+	        for (const [name, cfg] of Object.entries(this.uiConfig)) {
+	            document.getElementById(cfg.elementId).style.display = cfg.visible ? 'block' : 'none';
+	        }
+	    }
+	
+	    /* ... (keeping _attachGridListeners unchanged) ... */
+	    _attachGridListeners() {
+	        /* Selected-values grid (the info panel) */
+	        const selGrid = document.getElementById('selectedValuesGrid');
+	        if (selGrid) {
+	            selGrid.addEventListener('click', (e) => {
+	                console.log('[UIManager] selected-values grid clicked');
+	                console.log(e)
+	                // We look for a .remove-btn in the event's ancestry
+	                const btn = e.target.closest('.remove-btn');
+	                if (!btn) return;
+	                e.stopPropagation();
+	
+	                const valueToRemove = btn.getAttribute('data-value');
+	                console.log('[UIManager] remove-btn clicked ->', valueToRemove);
+	                this.pointCloud.state.toggleValue(valueToRemove);
+	            });
+	        }
+	
+	        /* Legend grid */
+	        const legendGrid = document.getElementById('legendGrid');
+	        if (legendGrid) {
+	            legendGrid.addEventListener('click', (e) => {
+	                // We look for a .legend-item-clickable
+	                const item = e.target.closest('.legend-item-clickable');
+	                if (!item) return;
+	                e.stopPropagation();
+	
+	                const value = item.getAttribute('data-value');
+	                this.pointCloud.state.toggleValue(value);
+	            });
+	        }
+	    }
+	
+	    _setupNavball() {
+	        this.navball = new Navball('navball-container', CONFIG.navball.size);
+	        // Apply initial visibility from CONFIG
+	        document.getElementById('navbar').style.display = CONFIG.panels.navbar ? 'block' : 'none';
+	        document.getElementById('legendMenu').style.display = CONFIG.panels.legend ? 'block' : 'none';
+	    }
+	
+	    /* ---------- shortcuts legend (top-right) - using CONFIG ---------- */
+	    _buildShortcutsLegend() {
+	        const sc = document.getElementById('shortcuts');
+	        sc.innerHTML = '<div>wasd – move</div><div>mouse + Q/E – roll</div>';
+	
+	        Object.values(this.uiConfig).forEach(cfg => {
+	            const d = document.createElement('div');
+	            d.className = 'shortcut-link';
+	            d.dataset.action = cfg.elementId;
+	            d.innerHTML = `${cfg.shortcutText} <span class="status-indicator ${cfg.visible ? 'status-enabled' : 'status-disabled'}">(${cfg.visible ? 'enabled' : 'disabled'})</span>`;
+	            sc.appendChild(d);
+	        });
+	
+	        // Add hover, click-select, and right-click shortcuts with status indicators from CONFIG
+	        sc.insertAdjacentHTML('beforeend', `
+	        <div class="shortcut-link" data-action="hover-toggle">k – hover UI <span class="status-indicator ${CONFIG.interaction.hoverActive ? 'status-enabled' : 'status-disabled'}" id="hover-status">(${CONFIG.interaction.hoverActive ? 'enabled' : 'disabled'})</span></div>
+	        <div class="shortcut-link" data-action="click-select-toggle">b – click-select <span class="status-indicator ${CONFIG.interaction.selectOnClick ? 'status-enabled' : 'status-disabled'}" id="click-select-status">(${CONFIG.interaction.selectOnClick ? 'enabled' : 'disabled'})</span></div>
+	        <div class="shortcut-link" data-action="right-click-toggle">o – right-click <span class="status-indicator ${CONFIG.interaction.rightClickActive ? 'status-enabled' : 'status-disabled'}" id="right-click-status">(${CONFIG.interaction.rightClickActive ? 'enabled' : 'disabled'})</span></div>`);
+	
+	        sc.addEventListener('click', e => {
+	            const target = e.target.closest('[data-action]');
+	            if (!target) return;
+	
+	            const action = target.dataset.action;
+	
+	            if (action === 'hover-toggle') {
+	                CONFIG.interaction.hoverActive = !CONFIG.interaction.hoverActive;
+	                this.pointCloud.hoverActive = CONFIG.interaction.hoverActive;
+	                this._updateStatusIndicator('hover-status', CONFIG.interaction.hoverActive);
+	                if (!CONFIG.interaction.hoverActive) this.hoverPanel.style.display = 'none';
+	                updateURL(); // Sync to URL
+	            } else if (action === 'click-select-toggle') {
+	                CONFIG.interaction.selectOnClick = !CONFIG.interaction.selectOnClick;
+	                this.pointCloud.selectOnClick = CONFIG.interaction.selectOnClick;
+	                this._updateStatusIndicator('click-select-status', CONFIG.interaction.selectOnClick);
+	                updateURL(); // Sync to URL
+	            } else if (action === 'right-click-toggle') {
+	                CONFIG.interaction.rightClickActive = !CONFIG.interaction.rightClickActive;
+	                this.pointCloud.rightClickActive = CONFIG.interaction.rightClickActive;
+	                this._updateStatusIndicator('right-click-status', CONFIG.interaction.rightClickActive);
+	                updateURL(); // Sync to URL
+	            } else {
+	                const entry = Object.entries(this.uiConfig)
+	                    .find(([, cfg]) => cfg.elementId === action);
+	                if (entry) {
+	                    this._togglePanel(entry[0]);
+	                    this._updatePanelStatusIndicator(target, this.uiConfig[entry[0]].visible);
+	                }
+	            }
+	        });
+	    }
+	
+	    /* ---------- sliders for size / opacity / speed - using CONFIG ---------- */
+	    _setupControlSliders() {
+	        // Point size controls - using CONFIG bounds
+	        const pointSizeSlider = document.getElementById('pointSize');
+	        const pointSizeValue = document.getElementById('pointSizeValue');
+	        const nonSelPointSizeSlider = document.getElementById('nonSelPointSize');
+	        const nonSelPointSizeValue = document.getElementById('nonSelPointSizeValue');
+	
+	        // Opacity controls - using CONFIG bounds
+	        const opacitySlider = document.getElementById('opacity');
+	        const opacityValue = document.getElementById('opacityValue');
+	        const nonSelOpacitySlider = document.getElementById('nonSelOpacity');
+	        const nonSelOpacityValue = document.getElementById('nonSelOpacityValue');
+	
+	        // Speed control - using CONFIG bounds
+	        const speedSlider = document.getElementById('speed');
+	        const speedValue = document.getElementById('speedValue');
+	
+	        // Color controls
+	        const nonSelColorPicker = document.getElementById('nonSelColor');
+	        const randomizeColorsBtn = document.getElementById('randomizeColors');
+	
+	        // Set up slider attributes from CONFIG
+	        if (pointSizeSlider) {
+	            pointSizeSlider.min = CONFIG.selectedPoints.sizeMin;
+	            pointSizeSlider.max = CONFIG.selectedPoints.sizeMax;
+	            pointSizeSlider.step = CONFIG.selectedPoints.sizeStep;
+	            pointSizeSlider.value = CONFIG.selectedPoints.size;
+	            if (pointSizeValue) pointSizeValue.textContent = CONFIG.selectedPoints.size;
+	        }
+	
+	        if (nonSelPointSizeSlider) {
+	            nonSelPointSizeSlider.min = CONFIG.nonSelectedPoints.sizeMin;
+	            nonSelPointSizeSlider.max = CONFIG.nonSelectedPoints.sizeMax;
+	            nonSelPointSizeSlider.step = CONFIG.nonSelectedPoints.sizeStep;
+	            nonSelPointSizeSlider.value = CONFIG.nonSelectedPoints.size;
+	            if (nonSelPointSizeValue) nonSelPointSizeValue.textContent = CONFIG.nonSelectedPoints.size;
+	        }
+	
+	        if (opacitySlider) {
+	            opacitySlider.min = CONFIG.selectedPoints.opacityMin;
+	            opacitySlider.max = CONFIG.selectedPoints.opacityMax;
+	            opacitySlider.step = CONFIG.selectedPoints.opacityStep;
+	            opacitySlider.value = CONFIG.selectedPoints.opacity;
+	            if (opacityValue) opacityValue.textContent = CONFIG.selectedPoints.opacity.toFixed(2);
+	        }
+	
+	        if (nonSelOpacitySlider) {
+	            nonSelOpacitySlider.min = CONFIG.nonSelectedPoints.opacityMin;
+	            nonSelOpacitySlider.max = CONFIG.nonSelectedPoints.opacityMax;
+	            nonSelOpacitySlider.step = CONFIG.nonSelectedPoints.opacityStep;
+	            nonSelOpacitySlider.value = CONFIG.nonSelectedPoints.opacity;
+	            if (nonSelOpacityValue) nonSelOpacityValue.textContent = CONFIG.nonSelectedPoints.opacity.toFixed(2);
+	        }
+	
+	        if (speedSlider) {
+	            speedSlider.min = CONFIG.movement.speedMin;
+	            speedSlider.max = CONFIG.movement.speedMax;
+	            speedSlider.step = CONFIG.movement.speedStep;
+	            speedSlider.value = CONFIG.movement.speed;
+	            if (speedValue) speedValue.textContent = CONFIG.movement.speed;
+	        }
+	
+	        if (nonSelColorPicker) {
+	            nonSelColorPicker.value = CONFIG.nonSelectedPoints.color;
+	        }
+	
+	        // Selected point size
+	        if (pointSizeSlider && pointSizeValue) {
+	            pointSizeSlider.addEventListener('input', () => {
+	                const v = parseFloat(pointSizeSlider.value);
+	                pointSizeValue.textContent = v.toFixed(0);
+	                this.pointCloud.state.setVisParam('selSize', v);
+	            });
+	        }
+	
+	        // Non-selected point size
+	        if (nonSelPointSizeSlider && nonSelPointSizeValue) {
+	            nonSelPointSizeSlider.addEventListener('input', () => {
+	                const v = parseFloat(nonSelPointSizeSlider.value);
+	                nonSelPointSizeValue.textContent = v.toFixed(0);
+	                this.pointCloud.state.setVisParam('nonSelSize', v);
+	            });
+	        }
+	
+	        // Selected opacity
+	        if (opacitySlider && opacityValue) {
+	            opacitySlider.addEventListener('input', () => {
+	                const v = parseFloat(opacitySlider.value);
+	                opacityValue.textContent = v.toFixed(2);
+	                this.pointCloud.state.setVisParam('selOp', v);
+	            });
+	        }
+	
+	        // Non-selected opacity
+	        if (nonSelOpacitySlider && nonSelOpacityValue) {
+	            nonSelOpacitySlider.addEventListener('input', () => {
+	                const v = parseFloat(nonSelOpacitySlider.value);
+	                nonSelOpacityValue.textContent = v.toFixed(2);
+	                this.pointCloud.state.setVisParam('nonSelOp', v);
+	            });
+	        }
+	
+	        // Speed
+	        if (speedSlider && speedValue) {
+	            speedSlider.addEventListener('input', () => {
+	                const v = parseFloat(speedSlider.value);
+	                speedValue.textContent = v;
+	                CONFIG.movement.speed = v;
+	                this.pointCloud.settings.speed = v;
+	                updateURL(); // Sync to URL
+	            });
+	        }
+	
+	        // Non-selected color
+	        if (nonSelColorPicker) {
+	            nonSelColorPicker.addEventListener('input', () => {
+	                this.pointCloud.state.setVisParam('nonSelColor', nonSelColorPicker.value);
+	            });
+	        }
+	
+	        // Randomize colors button
+	        if (randomizeColorsBtn) {
+	            randomizeColorsBtn.addEventListener('click', () => {
+	                this.pointCloud.selMgr.randomizeColors();
+	                this.pointCloud.state._fire('vis');
+	            });
+	        }
+	
+	        // Setup dropdowns
+	        this._setupDropdowns();
+	
+	        /* keep renderer sized */
+	        window.addEventListener('resize', () => {
+	            this.pointCloud.camera.aspect = window.innerWidth / window.innerHeight;
+	            this.pointCloud.camera.updateProjectionMatrix();
+	            this.pointCloud.renderer.setSize(window.innerWidth, window.innerHeight);
+	        });
+	    }
+	
+	    _setupDropdowns() {
+	        // Apply menu width from CONFIG
+	        const controlsMenu = document.getElementById('controlsMenu');
+	        if (controlsMenu) {
+	            controlsMenu.style.minWidth = `${CONFIG.ui.menuWidth}px`;
+	            controlsMenu.style.width = `${CONFIG.ui.menuWidth}px`;
+	        }
+	
+	        const colorBySelect = document.getElementById('colorBySelect');
+	        const selectBySelect = document.getElementById('selectBySelect');
+	        const applyColumns = document.getElementById('applyColumns');
+	
+	        if (colorBySelect) {
+	            // Clear existing options
+	            colorBySelect.innerHTML = '';
+	
+	            // Populate color by dropdown
+	            this.cats.forEach(col => {
+	                const option = document.createElement('option');
+	                option.value = col;
+	                option.textContent = col;
+	                colorBySelect.appendChild(option);
+	            });
+	
+	            colorBySelect.value = this.pointCloud.state.colorBy;
+	        }
+	
+	        if (selectBySelect) {
+	            // Clear existing options
+	            selectBySelect.innerHTML = '';
+	
+	            // Populate select by dropdown
+	            this.cats.forEach(col => {
+	                const option = document.createElement('option');
+	                option.value = col;
+	                option.textContent = col;
+	                selectBySelect.appendChild(option);
+	            });
+	
+	            selectBySelect.value = this.pointCloud.state.selectBy;
+	        }
+	
+	        // Single Apply button for columns with loading notifications
+	        if (applyColumns) {
+	            applyColumns.addEventListener('click', async () => {
+	                const sp = NOTIF.spinner('Updating columns...');
+	
+	                const newColorBy = colorBySelect.value;
+	                const newSelectBy = selectBySelect.value;
+	
+	                // Check if changes are needed
+	                const colorChanged = newColorBy !== this.pointCloud.state.colorBy;
+	                const selectChanged = newSelectBy !== this.pointCloud.state.selectBy;
+	
+	                if (!colorChanged && !selectChanged) {
+	                    sp.complete();
+	                    NOTIF.show('No changes to apply', 2000);
+	                    return;
+	                }
+	
+	                try {
+	                    // Give the UI time to render the spinner
+	                    await new Promise(resolve => setTimeout(resolve, 50));
+	
+	                    // Clear caches first
+	                    this.pointCloud.selMgr.clearCaches();
+	
+	                    // Apply color column change
+	                    if (colorChanged) {
+	                        this.pointCloud.state.setColorBy(newColorBy);
+	                        this.colorIdx = Math.max(0, this.cats.indexOf(newColorBy));
+	                    }
+	
+	                    // Apply selection column change
+	                    if (selectChanged) {
+	                        this.pointCloud.state.setSelectBy(newSelectBy);
+	                        this.selectIdx = Math.max(0, this.cats.indexOf(newSelectBy));
+	                    }
+	
+	                    // Give the UI another frame to update if needed
+	                    await new Promise(resolve => setTimeout(resolve, 100));
+	
+	                    sp.complete();
+	                    const changes = [];
+	                    if (colorChanged) changes.push(`color: ${newColorBy}`);
+	                    if (selectChanged) changes.push(`selection: ${newSelectBy}`);
+	                    NOTIF.success(`Updated ${changes.join(', ')}`);
+	
+	                } catch (error) {
+	                    sp.complete();
+	                    NOTIF.error('Failed to update columns', error);
+	                }
+	            });
+	        }
+	
+	        // Setup axis dropdowns
+	        const xAxisSelect = document.getElementById('xAxisSelect');
+	        const yAxisSelect = document.getElementById('yAxisSelect');
+	        const zAxisSelect = document.getElementById('zAxisSelect');
+	        const applyAxes = document.getElementById('applyAxes');
+	
+	        if (xAxisSelect && yAxisSelect && zAxisSelect) {
+	            // Populate axis dropdowns with available PCA components
+	            const numComponents = this.pointCloud.model.numericCols.length;
+	            [xAxisSelect, yAxisSelect, zAxisSelect].forEach(select => {
+	                select.innerHTML = '';
+	                for (let i = 0; i < numComponents; i++) {
+	                    const option = document.createElement('option');
+	                    option.value = i;
+	                    option.textContent = this.pointCloud.model.numericCols[i] || `PC${i}`;
+	                    select.appendChild(option);
+	                }
+	            });
+	
+	            // Set current values from CONFIG
+	            xAxisSelect.value = CONFIG.axes.x;
+	            yAxisSelect.value = CONFIG.axes.y;
+	            zAxisSelect.value = CONFIG.axes.z;
+	        }
+	
+	        // Single Apply button for axes with notifications
+	        if (applyAxes) {
+	            applyAxes.addEventListener('click', async () => {
+	                const newX = parseInt(xAxisSelect.value);
+	                const newY = parseInt(yAxisSelect.value);
+	                const newZ = parseInt(zAxisSelect.value);
+	
+	                // Check if changes are needed
+	                const xChanged = newX !== CONFIG.axes.x;
+	                const yChanged = newY !== CONFIG.axes.y;
+	                const zChanged = newZ !== CONFIG.axes.z;
+	
+	                if (!xChanged && !yChanged && !zChanged) {
+	                    NOTIF.show('No axis changes to apply', 2000);
+	                    return;
+	                }
+	
+	                const spinner = NOTIF.spinner('Updating visualization axes...');
+	
+	                try {
+	                    // Give the UI time to render the spinner
+	                    await new Promise(resolve => setTimeout(resolve, 50));
+	
+	                    // Apply axis changes
+	                    this.pointCloud.state.setAxis('x', newX);
+	                    this.pointCloud.state.setAxis('y', newY);
+	                    this.pointCloud.state.setAxis('z', newZ);
+	
+	                    // Give UI another frame before the heavy _buildGeometry operation
+	                    await new Promise(resolve => setTimeout(resolve, 10));
+	
+	                    this.pointCloud._buildGeometry();
+	
+	                    spinner.complete();
+	
+	                    const changes = [];
+	                    if (xChanged) changes.push(`X: ${this.pointCloud.model.numericCols[newX]}`);
+	                    if (yChanged) changes.push(`Y: ${this.pointCloud.model.numericCols[newY]}`);
+	                    if (zChanged) changes.push(`Z: ${this.pointCloud.model.numericCols[newZ]}`);
+	
+	                    NOTIF.success(`Updated axes - ${changes.join(', ')}`);
+	
+	                } catch (error) {
+	                    spinner.complete();
+	                    NOTIF.error('Failed to update axes', error);
+	                }
+	            });
+	        }
+	
+	        // Setup export config button
+	        const exportBtn = document.getElementById('exportConfigBtn');
+	        if (exportBtn) {
+	            exportBtn.addEventListener('click', () => {
+	                exportConfigToNewTab();
+	                NOTIF.success('Configuration exported to new tab');
+	            });
+	        }
+	
+	        // Setup reset config button
+	        const resetBtn = document.getElementById('resetConfigBtn');
+	        if (resetBtn) {
+	            resetBtn.addEventListener('click', async () => {
+	                const spinner = NOTIF.spinner('Resetting configuration...');
+	
+	                try {
+	                    // Give UI time to show spinner
+	                    await new Promise(resolve => setTimeout(resolve, 50));
+	
+	                    // Reset config to loaded state and clear URL
+	                    resetConfigToLoaded();
+	
+	                    // Trigger a page reload to apply the reset config
+	                    // This is the cleanest way to ensure all state is properly reset
+	                    window.location.reload();
+	
+	                } catch (error) {
+	                    spinner.complete();
+	                    NOTIF.error('Failed to reset configuration', error);
+	                }
+	            });
+	        }
+	    }
+	
+	
+	    _updateColumnInfo() {
+	        const colorByEl = document.getElementById('currentColorBy');
+	        const selectByEl = document.getElementById('currentSelectBy');
+	
+	        if (colorByEl) colorByEl.textContent = this.pointCloud.state.colorBy;
+	        if (selectByEl) selectByEl.textContent = this.pointCloud.state.selectBy;
+	    }
+	
+	    _updateSelectedValuesDisplay() {
+	        const container = document.getElementById('selectedValuesGrid');
+	        const header = document.getElementById('selectedValuesHeader');
+	        const metadata = document.getElementById('selectedValuesMetadata');
+	
+	        if (!container) return;
+	
+	        container.innerHTML = '';
+	
+	        const hasSelection = this.pointCloud.state.selection.size > 0;
+	
+	        if (hasSelection) {
+	            // Show selected values
+	            header.textContent = 'Selected Values:';
+	
+	            const selectedValues = Array.from(this.pointCloud.state.selection);
+	
+	            if (selectedValues.length <= CONFIG.ui.maxSelectedDisplay) {
+	                selectedValues.forEach((value, index) => {
+	                    const div = document.createElement('div');
+	                    div.className = 'value-grid-item selected';
+	
+	                    const color = this.pointCloud.selMgr._getCategoricalColor(value);
+	                    div.innerHTML = `
+	                        <div class="value-grid-color" style="background-color: rgb(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)})"></div>
+	                        <span style="flex: 1;">${value}</span>
+	                        <span class="remove-btn" data-value="${value}">×</span>
+	                    `;
+	
+	                    container.appendChild(div);
+	                });
+	
+	                metadata.textContent = `${selectedValues.length} selected`;
+	            } else {
+	                metadata.innerHTML = `${selectedValues.length} values selected<br>Too many to display individually`;
+	            }
+	        } else {
+	            // Show message when no selection
+	            header.textContent = 'No Selection';
+	            metadata.textContent = 'Click items in the legend to select categories';
+	        }
+	    }
+	
+	    _updateLegendDisplay() {
+	        const container = document.getElementById('legendGrid');
+	        const header = document.getElementById('legendHeader');
+	        const metadata = document.getElementById('legendMetadata');
+	
+	        if (!container) return;
+	
+	        container.innerHTML = '';
+	
+	        // Show legend
+	        header.textContent = 'Legend:';
+	
+	        const colorColumn = this.pointCloud.state.colorBy;
+	
+	        if (this.pointCloud.state.isNumericColumn(colorColumn)) {
+	            // Show colorbar info
+	            const values = this.pointCloud.model.df.col(colorColumn).filter(v => typeof v === 'number' && !isNaN(v));
+	            const min = Math.min(...values);
+	            const max = Math.max(...values);
+	
+	            container.innerHTML = `
+	                <div style="grid-column: 1 / -1;">
+	                    <div style="font-size: 10px; margin-bottom: 4px;">${colorColumn}</div>
+	                    <div class="colorbar"></div>
+	                    <div class="colorbar-labels">
+	                        <span>${min.toFixed(2)}</span>
+	                        <span>${max.toFixed(2)}</span>
+	                    </div>
+	                </div>
+	            `;
+	            metadata.textContent = `Continuous scale: ${min.toFixed(2)} to ${max.toFixed(2)}`;
+	        } else {
+	            // Show categorical legend
+	            const uniqueValues = [...this.pointCloud.model.df.col_unique(colorColumn)]
+	                .filter(v => v !== null && v !== 'null' && v !== 'unknown')
+	                .sort();
+	
+	            if (uniqueValues.length <= CONFIG.ui.maxCategoricalDisplay) {
+	                uniqueValues.forEach(value => {
+	                    const color = this.pointCloud.selMgr._getCategoricalColor(value);
+	                    const div = document.createElement('div');
+	                    div.className = 'value-grid-item legend-item-clickable';
+	                    div.style.backgroundColor = `rgba(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)}, 0.3)`;
+	                    div.dataset.value = value;
+	
+	                    // Check if this value is currently selected
+	                    const isSelected = this.pointCloud.state.selection.has(value);
+	                    if (isSelected) {
+	                        div.classList.add('selected');
+	                    }
+	
+	                    div.innerHTML = `
+	                        <div class="value-grid-color" style="background-color: rgb(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)})"></div>
+	                        <span>${value}</span>
+	                    `;
+	
+	                    container.appendChild(div);
+	                });
+	
+	                metadata.textContent = `${uniqueValues.length} categories (click to select/deselect)`;
+	            } else {
+	                metadata.innerHTML = `${uniqueValues.length} categories<br>Too many to display individually`;
+	            }
+	        }
+	    }
+	
+	    /* ---------- key bindings ---------------------------------- */
+	    _bindKeys() {
+	        document.addEventListener('keydown', e => {
+	            /* panel toggles */
+	            for (const [name, cfg] of Object.entries(this.uiConfig)) {
+	                if (e.code === cfg.key) {
+	                    e.preventDefault();
+	                    this._togglePanel(name);
+	                    // Update the corresponding shortcut status
+	                    const shortcutEl = document.querySelector(`[data-action="${cfg.elementId}"]`);
+	                    if (shortcutEl) {
+	                        this._updatePanelStatusIndicator(shortcutEl, cfg.visible);
+	                    }
+	                }
+	            }
+	
+	            /* colour / selection cycling */
+	            if (e.code === 'KeyC') {
+	                this.colorIdx = (this.colorIdx + 1) % this.cats.length;
+	                this.pointCloud.state.setColorBy(this.cats[this.colorIdx]);
+	                // Update dropdown
+	                const colorBySelect = document.getElementById('colorBySelect');
+	                if (colorBySelect) colorBySelect.value = this.cats[this.colorIdx];
+	            }
+	            if (e.code === 'KeyV') {
+	                this.selectIdx = (this.selectIdx + 1) % this.cats.length;
+	                this.pointCloud.state.setSelectBy(this.cats[this.selectIdx]);
+	                // Update dropdown
+	                const selectBySelect = document.getElementById('selectBySelect');
+	                if (selectBySelect) selectBySelect.value = this.cats[this.selectIdx];
+	            }
+	
+	            /* hover UI toggle */
+	            if (e.code === 'KeyK') {
+	                CONFIG.interaction.hoverActive = !CONFIG.interaction.hoverActive;
+	                this.pointCloud.hoverActive = CONFIG.interaction.hoverActive;
+	                this._updateStatusIndicator('hover-status', CONFIG.interaction.hoverActive);
+	                if (!CONFIG.interaction.hoverActive) this.hoverPanel.style.display = 'none';
+	                updateURL(); // Sync to URL
+	            }
+	
+	            /* click-select toggle */
+	            if (e.code === 'KeyB') {
+	                CONFIG.interaction.selectOnClick = !CONFIG.interaction.selectOnClick;
+	                this.pointCloud.selectOnClick = CONFIG.interaction.selectOnClick;
+	                this._updateStatusIndicator('click-select-status', CONFIG.interaction.selectOnClick);
+	                updateURL(); // Sync to URL
+	            }
+	
+	            /* right-click toggle */
+	            if (e.code === 'KeyO') {
+	                CONFIG.interaction.rightClickActive = !CONFIG.interaction.rightClickActive;
+	                this.pointCloud.rightClickActive = CONFIG.interaction.rightClickActive;
+	                this._updateStatusIndicator('right-click-status', CONFIG.interaction.rightClickActive);
+	                updateURL(); // Sync to URL
+	            }
+	        });
+	    }
+	
+	    _togglePanel(name) {
+	        const cfg = this.uiConfig[name];
+	        cfg.visible = !cfg.visible;
+	
+	        // Update CONFIG to keep it in sync
+	        CONFIG.panels[name] = cfg.visible;
+	        updateURL(); // Sync to URL
+	
+	        document.getElementById(cfg.elementId).style.display = cfg.visible ? 'block' : 'none';
+	    }
+	
+	    _updateStatusIndicator(elementId, enabled) {
+	        const statusEl = document.getElementById(elementId);
+	        statusEl.textContent = enabled ? '(enabled)' : '(disabled)';
+	        statusEl.className = `status-indicator ${enabled ? 'status-enabled' : 'status-disabled'}`;
+	    }
+	
+	    _updatePanelStatusIndicator(element, visible) {
+	        const statusEl = element.querySelector('.status-indicator');
+	        statusEl.textContent = visible ? '(enabled)' : '(disabled)';
+	        statusEl.className = `status-indicator ${visible ? 'status-enabled' : 'status-disabled'}`;
+	    }
+	
+	    /* ---------- per-frame UI refresh ------------------------------ */
+	    updateUI() {
+	        /* navbar + navball */
+	        if (this.uiConfig.navbar.visible) {
+	            const p = this.pointCloud.camera.position;
+	            ['posX', 'posY', 'posZ'].forEach((id, i) =>
+	                document.getElementById(id).textContent =
+	                p[['x', 'y', 'z'][i]].toFixed(1));
+	            this.navball.syncWithCameraQuaternion(
+	                this.pointCloud.camera.quaternion);
+	        }
+	
+	        /* stats */
+	        if (this.uiConfig.stats.visible) this._updateStats();
+	
+	        /* hover tooltip */
+	        this._showHover(this.pointCloud.hoverId);
+	
+	        /* current "Color by / Select by" labels */
+	        this._updateColumnInfo();
+	
+	        /* performance monitoring */
+	        this._checkPerformance();
+	    }
+	
+	    /* ---------- FPS / stats ----------------------------------- */
+	    _updateStats() {
+	        this._tickFPS();
+	        const ms = (1000 / Math.max(this.fps, 1)).toFixed(1) + ' ms';
+	
+	        document.getElementById('fps').textContent = this.fps;
+	        document.getElementById('frameTime').textContent = ms;
+	        document.getElementById('renderedCount').textContent =
+	            this.pointCloud.points.geometry.getAttribute('position').count;
+	
+	        const p = this.pointCloud.camera.position;
+	        document.getElementById('statsPosX').textContent = p.x.toFixed(3);
+	        document.getElementById('statsPosY').textContent = p.y.toFixed(3);
+	        document.getElementById('statsPosZ').textContent = p.z.toFixed(3);
+	    }
+	
+	    _tickFPS() {
+	        this.frameCount++;
+	        const now = performance.now();
+	        if (now - this.lastTime >= 1000) {
+	            this.fps = Math.round(this.frameCount * 1000 / (now - this.lastTime));
+	            this.frameCount = 0;
+	            this.lastTime = now;
+	        }
+	    }
+	
+	    onPointsRegenerated() {
+	        if (this.uiConfig.stats.visible)
+	            document.getElementById('renderedCount').textContent =
+	                this.pointCloud.points.geometry.getAttribute('position').count;
+	    }
+	
+	    /* ---------- hover tooltip --------------------------------- */
+	    _showHover(id) {
+	        if (!CONFIG.interaction.hoverActive || id == null) {
+	            this.hoverPanel.style.display = 'none';
+	            return;
+	        }
+	
+	        const row = this.pointCloud.model.row(id);
+	        const a = this.pointCloud.state.axis;
+	        const xyz = [
+	            this.pointCloud.model.getCoord(id, a.x).toFixed(2),
+	            this.pointCloud.model.getCoord(id, a.y).toFixed(2),
+	            this.pointCloud.model.getCoord(id, a.z).toFixed(2)
+	        ];
+	        const html = CONFIG.hoverColumns
+	            .map(c => `<b>${c}</b>: ${row[c]}`)
+	            .concat([`<b>coord</b>: [${xyz.join(', ')}]`])
+	            .join('<br>');
+	
+	        this.hoverPanel.innerHTML = html;
+	        const { x, y } = this.pointCloud.pointerScreen;
+	        this.hoverPanel.style.left = (x + CONFIG.ui.hoverOffset.x) + 'px';
+	        this.hoverPanel.style.top = (y + CONFIG.ui.hoverOffset.y) + 'px';
+	        this.hoverPanel.style.display = 'block';
+	    }
+	
+	    _checkPerformance() {
+	        const now = performance.now();
+	
+	        // Only check every interval from CONFIG
+	        if (now - this.lastPerformanceCheck < this.performanceCheckInterval) {
+	            return;
+	        }
+	
+	        this.lastPerformanceCheck = now;
+	
+	        // Check if FPS is consistently low
+	        if (this.fps < this.fpsThreshold && !this.performanceWarningShown) {
+	            this.performanceWarningShown = true;
+	            this._optimizeForPerformance();
+	
+	            // Reset the flag after cooldown from CONFIG
+	            setTimeout(() => {
+	                this.performanceWarningShown = false;
+	            }, CONFIG.performance.performanceOptimizationCooldown);
+	        }
+	    }
+	
+	    _optimizeForPerformance() {
+	        let changesApplied = [];
+	
+	        // Force full opacity
+	        const opacitySlider = document.getElementById('opacity');
+	        const nonSelOpacitySlider = document.getElementById('nonSelOpacity');
+	        const opacityValue = document.getElementById('opacityValue');
+	        const nonSelOpacityValue = document.getElementById('nonSelOpacityValue');
+	
+	        if (opacitySlider && parseFloat(opacitySlider.value) < 1.0) {
+	            opacitySlider.value = '1.0';
+	            opacityValue.textContent = '1.00';
+	            this.pointCloud.state.setVisParam('selOp', 1.0);
+	            changesApplied.push('selected opacity to 100%');
+	        }
+	
+	        if (nonSelOpacitySlider && parseFloat(nonSelOpacitySlider.value) < 1.0) {
+	            nonSelOpacitySlider.value = '1.0';
+	            nonSelOpacityValue.textContent = '1.00';
+	            this.pointCloud.state.setVisParam('nonSelOp', 1.0);
+	            changesApplied.push('non-selected opacity to 100%');
+	        }
+	
+	        // Limit point sizes to max 5
+	        const pointSizeSlider = document.getElementById('pointSize');
+	        const nonSelPointSizeSlider = document.getElementById('nonSelPointSize');
+	        const pointSizeValue = document.getElementById('pointSizeValue');
+	        const nonSelPointSizeValue = document.getElementById('nonSelPointSizeValue');
+	
+	        if (pointSizeSlider && parseFloat(pointSizeSlider.value) > 5) {
+	            pointSizeSlider.value = '5';
+	            pointSizeValue.textContent = '5';
+	            this.pointCloud.state.setVisParam('selSize', 5);
+	            changesApplied.push('selected point size to 5');
+	        }
+	
+	        if (nonSelPointSizeSlider && parseFloat(nonSelPointSizeSlider.value) > 5) {
+	            nonSelPointSizeSlider.value = '5';
+	            nonSelPointSizeValue.textContent = '5';
+	            this.pointCloud.state.setVisParam('nonSelSize', 5);
+	            changesApplied.push('non-selected point size to 5');
+	        }
+	
+	        // Show error notification using NOTIF system
+	        if (changesApplied.length > 0) {
+	            const message = `Performance warning: Low FPS detected (${this.fps}). Adjusted: ${changesApplied.join(', ')}.`;
+	            NOTIF.error(message, null, CONFIG.performance.performanceWarningDuration);
+	        }
+	    }
+	}
+	</script>
+	<!-- end 'ui.js' -->
+		<!-- begin 'PointCloud.js' -->
+	<script>
+	/* PointCloud.js – Enhanced with mobile touch controls for pinch zoom, pan, tap, and hold */
+	
+	class PointCloud {
+	    /** @param {DataModel} model */
+	    constructor(model) {
+	        this.model = model;
+	
+	        /* ── THREE basics - using CONFIG values ──────────────────── */
+	        this.scene = new THREE.Scene();
+	        this.camera = new THREE.PerspectiveCamera(
+	            CONFIG.rendering.cameraFov,
+	            window.innerWidth / window.innerHeight,
+	            CONFIG.rendering.cameraNear,
+	            CONFIG.rendering.cameraFar
+	        );
+	        this.renderer = new THREE.WebGLRenderer({ antialias: CONFIG.rendering.antialiasing });
+	
+	        /* ── picking helpers ──────────────────────────────────── */
+	        this.raycaster = new THREE.Raycaster();
+	        this.raycaster.params.Points = { threshold: CONFIG.interaction.raycastThreshold };
+	        this.pointerNDC = new THREE.Vector2();
+	        this.pointerScreen = { x: 0, y: 0 };
+	
+	        this.hoverId = null;
+	        this.prevHoverId = null;
+	
+	        /* ── behaviour flags (from CONFIG) ────────────────────── */
+	        this.hoverActive = CONFIG.interaction.hoverActive;
+	        this.selectOnClick = CONFIG.interaction.selectOnClick;
+	        this.rightClickActive = CONFIG.interaction.rightClickActive;
+	
+	        /* ── mobile touch state ─────────────────────────────── */
+	        this.touchState = {
+	            touching: false,
+	            touches: new Map(), // trackingId -> {x, y, startTime}
+	            lastDistance: 0,
+	            isPinching: false,
+	            isPanning: false,
+	            panDisablesInteraction: false,
+	            singleTapTimer: null,
+	            holdTimer: null,
+	            lastTapTime: 0,
+	            tapThreshold: 200, // ms for tap vs hold
+	            doubleTapThreshold: 300, // ms for double tap detection
+	            holdThreshold: 500, // ms for hold detection
+	            moveThreshold: 10, // pixels before it's considered a drag
+	            zoomSensitivity: 0.01,
+	            panSensitivity: 0.002
+	        };
+	
+	        /* ── colour / selection state ─────────────────────────── */
+	        this.state = new VisState(model);
+	        this.selMgr = new SelectionManager(model, this.state);
+	        this.state.addEventListener('selection', () => this._updateColors());
+	        this.state.addEventListener('vis', () => this._updateColors());
+	
+	        /* ── viewer settings - using CONFIG ──────────────────── */
+	        this.settings = {
+	            pointSize: 0.1,
+	            opacity: 0.8,
+	            speed: CONFIG.movement.speed
+	        };
+	
+	        /* ── movement bookkeeping ──────────────────────────────── */
+	        this.keys = {};
+	        this.pitch = CONFIG.camera.rotation.pitch; // Initialize from CONFIG
+	        this.mouseDX = 0;
+	        this.mouseDY = 0;
+	        this.rollSpeed = CONFIG.movement.rollSpeed;
+	        this.velocity = new THREE.Vector3();
+	
+	        /* camera sync debouncing */
+	        this.cameraSyncTimeout = null;
+	        this.cameraSyncDelay = 1000; // Sync camera to URL after 1 second of no movement
+	
+	        /* ── cross-hair objects ───────────────────────────────── */
+	        this.crossH = null;
+	        this.crossV = null;
+	        this._createCrosshairs();
+	
+	        /* bootstrap */
+	        this._init();
+	    }
+	
+	    /* ---------- input & interaction -------------------------- */
+	    _setupInput() {
+	        /* keyboard state */
+	        document.addEventListener('keydown', e => this.keys[e.code] = true);
+	        document.addEventListener('keyup', e => this.keys[e.code] = false);
+	
+	        /* mouse movement */
+	        document.addEventListener('mousemove', e => {
+	            if (document.pointerLockElement === document.body) {
+	                this.mouseDX += e.movementX;
+	                this.mouseDY += e.movementY;
+	            }
+	            this._updatePointerPosition(e.clientX, e.clientY);
+	        });
+	
+	        /* click-to-select (can be disabled) */
+	        window.addEventListener('click', (e) => {
+	            // Don't process clicks during touch interactions
+	            if (this.touchState.panDisablesInteraction) return;
+	
+	            if (!this.selectOnClick || this.hoverId == null) return;
+	            const v = this.model.row(this.hoverId)[this.state.selectBy];
+	            this.state.toggleValue(v);
+	        });
+	
+	        /* right-click handler */
+	        window.addEventListener('contextmenu', (e) => {
+	            if (!this.rightClickActive || this.hoverId == null) return;
+	            e.preventDefault(); // Prevent default context menu
+	
+	            const row = this.model.row(this.hoverId);
+	            this._handleRightClick(row, this.hoverId);
+	        });
+	
+	        /* ── Touch event handlers ─────────────────────────────── */
+	        this._setupTouchEvents();
+	
+	        /* pointer-lock helpers */
+	        document.addEventListener('dblclick', () => {
+	            (document.pointerLockElement === document.body)
+	                ? document.exitPointerLock()
+	                : document.body.requestPointerLock();
+	        });
+	        document.addEventListener('keydown', e => {
+	            if (e.code === 'Escape' && document.pointerLockElement === document.body)
+	                document.exitPointerLock();
+	        });
+	
+	        /* resize */
+	        window.addEventListener('resize', () => {
+	            this.camera.aspect = window.innerWidth / window.innerHeight;
+	            this.camera.updateProjectionMatrix();
+	            this.renderer.setSize(window.innerWidth, window.innerHeight);
+	        });
+	    }
+	
+	    _setupTouchEvents() {
+	        const canvas = this.renderer.domElement;
+	
+	        // Prevent default touch behaviors that interfere with our controls
+	        canvas.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+	        canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+	        canvas.addEventListener('touchend', e => e.preventDefault(), { passive: false });
+	
+	        canvas.addEventListener('touchstart', this._onTouchStart.bind(this));
+	        canvas.addEventListener('touchmove', this._onTouchMove.bind(this));
+	        canvas.addEventListener('touchend', this._onTouchEnd.bind(this));
+	        canvas.addEventListener('touchcancel', this._onTouchEnd.bind(this));
+	    }
+	
+	    _onTouchStart(event) {
+	        const now = performance.now();
+	        this.touchState.touching = true;
+	
+	        // Update touch tracking
+	        for (const touch of event.touches) {
+	            this.touchState.touches.set(touch.identifier, {
+	                x: touch.clientX,
+	                y: touch.clientY,
+	                startX: touch.clientX,
+	                startY: touch.clientY,
+	                startTime: now
+	            });
+	        }
+	
+	        const touchCount = event.touches.length;
+	
+	        if (touchCount === 1) {
+	            // Single touch - potential tap, hold, or pan start
+	            const touch = event.touches[0];
+	            this._updatePointerPosition(touch.clientX, touch.clientY);
+	
+	            // Set up hold timer
+	            this.touchState.holdTimer = setTimeout(() => {
+	                this._onTouchHold(touch);
+	            }, this.touchState.holdThreshold);
+	
+	            // Check for double tap
+	            const timeSinceLastTap = now - this.touchState.lastTapTime;
+	            if (timeSinceLastTap < this.touchState.doubleTapThreshold) {
+	                this._onDoubleTap(touch);
+	                this.touchState.lastTapTime = 0; // Reset to prevent triple tap
+	            }
+	
+	        } else if (touchCount === 2) {
+	            // Two touches - pinch zoom setup
+	            this._clearTouchTimers();
+	            this.touchState.isPinching = true;
+	            this.touchState.panDisablesInteraction = true;
+	
+	            const touch1 = event.touches[0];
+	            const touch2 = event.touches[1];
+	            this.touchState.lastDistance = this._getTouchDistance(touch1, touch2);
+	        }
+	    }
+	
+	    _onTouchMove(event) {
+	        if (!this.touchState.touching) return;
+	
+	        const touchCount = event.touches.length;
+	
+	        if (touchCount === 1 && !this.touchState.isPinching) {
+	            // Single touch movement - pan or cancel tap
+	            const touch = event.touches[0];
+	            const stored = this.touchState.touches.get(touch.identifier);
+	
+	            if (stored) {
+	                const moveDistance = Math.sqrt(
+	                    Math.pow(touch.clientX - stored.startX, 2) +
+	                    Math.pow(touch.clientY - stored.startY, 2)
+	                );
+	
+	                // If moved beyond threshold, start panning
+	                if (moveDistance > this.touchState.moveThreshold) {
+	                    this._clearTouchTimers(); // Cancel tap/hold
+	                    this.touchState.isPanning = true;
+	                    this.touchState.panDisablesInteraction = true;
+	
+	                    // Apply pan rotation
+	                    const deltaX = touch.clientX - stored.x;
+	                    const deltaY = touch.clientY - stored.y;
+	
+	                    this._applyTouchPan(deltaX, deltaY);
+	                }
+	
+	                // Update stored position
+	                stored.x = touch.clientX;
+	                stored.y = touch.clientY;
+	                this._updatePointerPosition(touch.clientX, touch.clientY);
+	            }
+	
+	        } else if (touchCount === 2 && this.touchState.isPinching) {
+	            // Two finger pinch zoom
+	            const touch1 = event.touches[0];
+	            const touch2 = event.touches[1];
+	            const distance = this._getTouchDistance(touch1, touch2);
+	
+	            if (this.touchState.lastDistance > 0) {
+	                const deltaDistance = distance - this.touchState.lastDistance;
+	                this._applyTouchZoom(deltaDistance);
+	            }
+	
+	            this.touchState.lastDistance = distance;
+	
+	            // Update touch positions
+	            this.touchState.touches.set(touch1.identifier, {
+	                ...this.touchState.touches.get(touch1.identifier),
+	                x: touch1.clientX,
+	                y: touch1.clientY
+	            });
+	            this.touchState.touches.set(touch2.identifier, {
+	                ...this.touchState.touches.get(touch2.identifier),
+	                x: touch2.clientX,
+	                y: touch2.clientY
+	            });
+	        }
+	    }
+	
+	    _onTouchEnd(event) {
+	        const now = performance.now();
+	
+	        // Remove ended touches from tracking
+	        const activeTouchIds = new Set(Array.from(event.touches).map(t => t.identifier));
+	        for (const [id] of this.touchState.touches) {
+	            if (!activeTouchIds.has(id)) {
+	                const stored = this.touchState.touches.get(id);
+	
+	                // Check if this was a quick tap (not moved, not held)
+	                if (stored && !this.touchState.isPanning && !this.touchState.isPinching) {
+	                    const duration = now - stored.startTime;
+	                    const moveDistance = Math.sqrt(
+	                        Math.pow(stored.x - stored.startX, 2) +
+	                        Math.pow(stored.y - stored.startY, 2)
+	                    );
+	
+	                    if (duration < this.touchState.tapThreshold &&
+	                        moveDistance < this.touchState.moveThreshold) {
+	                        this._onSingleTap(stored);
+	                    }
+	                }
+	
+	                this.touchState.touches.delete(id);
+	            }
+	        }
+	
+	        // Reset states when no touches remain
+	        if (event.touches.length === 0) {
+	            this.touchState.touching = false;
+	            this.touchState.isPinching = false;
+	
+	            // Re-enable interaction after a short delay to prevent accidental clicks
+	            setTimeout(() => {
+	                this.touchState.isPanning = false;
+	                this.touchState.panDisablesInteraction = false;
+	            }, 100);
+	
+	            this._clearTouchTimers();
+	        }
+	    }
+	
+	    _onSingleTap(touchData) {
+	        // Single tap acts like hover - update pointer and show hover info
+	        this._updatePointerPosition(touchData.x, touchData.y);
+	        this.touchState.lastTapTime = performance.now();
+	
+	        // Briefly show hover for touch devices
+	        if (this.hoverActive && this.hoverId !== null) {
+	            // Force a hover update
+	            this._updateCrosshairs(this.hoverId);
+	        }
+	    }
+	
+	    _onDoubleTap(touch) {
+	        // Double tap acts like click-to-select
+	        this._clearTouchTimers();
+	
+	        if (this.selectOnClick && this.hoverId !== null) {
+	            const v = this.model.row(this.hoverId)[this.state.selectBy];
+	            this.state.toggleValue(v);
+	        }
+	    }
+	
+	    _onTouchHold(touch) {
+	        // Hold acts like right-click
+	        if (this.rightClickActive && this.hoverId !== null) {
+	            const row = this.model.row(this.hoverId);
+	            this._handleRightClick(row, this.hoverId);
+	        }
+	    }
+	
+	    _applyTouchPan(deltaX, deltaY) {
+	        const sens = this.touchState.panSensitivity;
+	        const yaw = -deltaX * sens;
+	        const pitchDelta = -deltaY * sens;
+	
+	        if (yaw) {
+	            this.camera.rotateY(yaw);
+	            CONFIG.camera.rotation.yaw += yaw;
+	            this._debounceCameraSync();
+	        }
+	        if (pitchDelta) {
+	            const newPitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch + pitchDelta));
+	            this.camera.rotateX(newPitch - this.pitch);
+	            this.pitch = newPitch;
+	            CONFIG.camera.rotation.pitch = this.pitch;
+	            this._debounceCameraSync();
+	        }
+	    }
+	
+	    _applyTouchZoom(deltaDistance) {
+	        // Convert pinch distance to forward/backward movement
+	        const zoomAmount = deltaDistance * this.touchState.zoomSensitivity;
+	
+	        // Move camera forward/backward along its local Z axis
+	        const zoomVector = new THREE.Vector3(0, 0, -zoomAmount);
+	        zoomVector.applyQuaternion(this.camera.quaternion);
+	        this.camera.position.add(zoomVector);
+	
+	        // Update CONFIG to sync position to URL
+	        CONFIG.camera.position.x = this.camera.position.x;
+	        CONFIG.camera.position.y = this.camera.position.y;
+	        CONFIG.camera.position.z = this.camera.position.z;
+	        this._debounceCameraSync();
+	    }
+	
+	    _getTouchDistance(touch1, touch2) {
+	        const dx = touch1.clientX - touch2.clientX;
+	        const dy = touch1.clientY - touch2.clientY;
+	        return Math.sqrt(dx * dx + dy * dy);
+	    }
+	
+	    _updatePointerPosition(x, y) {
+	        this.pointerScreen.x = x;
+	        this.pointerScreen.y = y;
+	        this.pointerNDC.x = (x / window.innerWidth) * 2 - 1;
+	        this.pointerNDC.y = -(y / window.innerHeight) * 2 + 1;
+	    }
+	
+	    _clearTouchTimers() {
+	        if (this.touchState.singleTapTimer) {
+	            clearTimeout(this.touchState.singleTapTimer);
+	            this.touchState.singleTapTimer = null;
+	        }
+	        if (this.touchState.holdTimer) {
+	            clearTimeout(this.touchState.holdTimer);
+	            this.touchState.holdTimer = null;
+	        }
+	    }
+	
+	    /* ---------- right-click handling and template system ----- */
+	    _handleRightClick(row, pointId) {
+	        const templateData = this._buildTemplateData(row, pointId);
+	
+	        if (CONFIG.rightClick.mode === "content") {
+	            this._openContentTab(templateData);
+	        } else if (CONFIG.rightClick.mode === "url") {
+	            this._openUrlTab(templateData);
+	        }
+	    }
+	
+	    _buildTemplateData(row, pointId) {
+	        const a = this.state.axis;
+	        const coords = {
+	            x: this.model.getCoord(pointId, a.x).toFixed(3),
+	            y: this.model.getCoord(pointId, a.y).toFixed(3),
+	            z: this.model.getCoord(pointId, a.z).toFixed(3)
+	        };
+	
+	        return {
+	            // All row data (flattened with dot notation for nested objects)
+	            ...this._flattenObject(row),
+	
+	            // Coordinate data
+	            'coord.x': coords.x,
+	            'coord.y': coords.y,
+	            'coord.z': coords.z,
+	
+	            // Axis information
+	            'axis.x.name': this.model.numericCols[a.x],
+	            'axis.x.index': a.x,
+	            'axis.y.name': this.model.numericCols[a.y],
+	            'axis.y.index': a.y,
+	            'axis.z.name': this.model.numericCols[a.z],
+	            'axis.z.index': a.z,
+	
+	            // Config data (flattened)
+	            ...this._flattenObject(CONFIG, 'config.')
+	        };
+	    }
+	
+	    _flattenObject(obj, prefix = '') {
+	        const flattened = {};
+	
+	        for (const key in obj) {
+	            const value = obj[key];
+	            const newKey = prefix + key;
+	
+	            if (value && typeof value === 'object' && !Array.isArray(value)) {
+	                Object.assign(flattened, this._flattenObject(value, newKey + '.'));
+	            } else {
+	                flattened[newKey] = value;
+	            }
+	        }
+	
+	        return flattened;
+	    }
+	
+	    _replaceTemplate(template, data) {
+	        return template.replace(/\{([^}]+)\}/g, (match, key) => {
+	            const value = data[key];
+	            if (value !== undefined && value !== null) {
+	                return String(value);
+	            }
+	            return match; // Keep original if no replacement found
+	        });
+	    }
+	
+	    _openContentTab(templateData) {
+	        const title = this._replaceTemplate(CONFIG.rightClick.content.title, templateData);
+	        const content = this._replaceTemplate(CONFIG.rightClick.content.template, templateData);
+	
+	        // Create HTML content with monospace styling
+	        const htmlContent = `<!DOCTYPE html>
+	<html>
+	<head>
+		<title>${this._escapeHtml(title)}</title>
+		<style>
+			body {
+				font-family: 'Courier New', monospace;
+				background: #000;
+				color: #00ff00;
+				padding: 20px;
+				margin: 0;
+				white-space: pre-wrap;
+				line-height: 1.4;
+			}
+		</style>
+	</head>
+	<body>${this._escapeHtml(content)}</body>
+	</html>`;
+	
+	        const blob = new Blob([htmlContent], { type: 'text/html' });
+	        const url = URL.createObjectURL(blob);
+	        const newWindow = window.open(url, '_blank');
+	
+	        // Clean up after a delay
+	        setTimeout(() => URL.revokeObjectURL(url), 1000);
+	    }
+	
+	    _openUrlTab(templateData) {
+	        const url = this._replaceTemplate(CONFIG.rightClick.url.template, templateData);
+	
+	        // URL encode the final URL to handle special characters
+	        try {
+	            window.open(url, '_blank');
+	        } catch (error) {
+	            console.error('Failed to open URL:', url, error);
+	            NOTIF.error(`Failed to open URL: ${url}`);
+	        }
+	    }
+	
+	    _escapeHtml(text) {
+	        const div = document.createElement('div');
+	        div.textContent = text;
+	        return div.innerHTML;
+	    }
+	
+	    /* ========================================================= */
+	    _init() {
+	        this._setupRenderer();
+	        this._setupInput();
+	        this._buildGeometry();
+	        this._animate();
+	    }
+	
+	    _setupRenderer() {
+	        this.renderer.setSize(window.innerWidth, window.innerHeight);
+	        this.renderer.setClearColor(CONFIG.rendering.clearColor);
+	        document.getElementById('container').appendChild(this.renderer.domElement);
+	
+	        // Set camera position and rotation from CONFIG
+	        this.camera.position.set(
+	            CONFIG.camera.position.x,
+	            CONFIG.camera.position.y,
+	            CONFIG.camera.position.z
+	        );
+	
+	        // Apply rotation (yaw, pitch, roll)
+	        this.camera.rotation.set(0, 0, 0); // Reset first
+	        this.camera.rotateY(CONFIG.camera.rotation.yaw);
+	        this.camera.rotateX(CONFIG.camera.rotation.pitch);
+	        this.camera.rotateZ(CONFIG.camera.rotation.roll);
+	
+	        // Set internal pitch tracking to match config
+	        this.pitch = CONFIG.camera.rotation.pitch;
+	    }
+	
+	    /* ---------- in-scene cross-hair - using CONFIG ----------- */
+	    _createCrosshairs() {
+	        const mat = new THREE.LineBasicMaterial({
+	            color: CONFIG.crosshair.color,
+	            transparent: true,
+	            opacity: CONFIG.crosshair.opacity,
+	            depthTest: false
+	        });
+	
+	        /* horizontal (X-axis) */
+	        const gH = new THREE.BufferGeometry().setFromPoints([
+	            new THREE.Vector3(-CONFIG.crosshair.length, 0, 0),
+	            new THREE.Vector3(CONFIG.crosshair.length, 0, 0)
+	        ]);
+	        this.crossH = new THREE.Line(gH, mat);
+	        this.crossH.visible = false;
+	        this.scene.add(this.crossH);
+	
+	        /* vertical (Y-axis) */
+	        const gV = new THREE.BufferGeometry().setFromPoints([
+	            new THREE.Vector3(0, -CONFIG.crosshair.length, 0),
+	            new THREE.Vector3(0, CONFIG.crosshair.length, 0)
+	        ]);
+	        this.crossV = new THREE.Line(gV, mat);
+	        this.crossV.visible = false;
+	        this.scene.add(this.crossV);
+	    }
+	
+	    _updateCrosshairs(id) {
+	        if (!this.hoverActive || id == null) {
+	            this.crossH.visible = this.crossV.visible = false;
+	            return;
+	        }
+	        const a = this.state.axis;
+	        const x = this.model.getCoord(id, a.x);
+	        const y = this.model.getCoord(id, a.y);
+	        const z = this.model.getCoord(id, a.z);
+	
+	        this.crossH.position.set(0, y, z);
+	        this.crossV.position.set(x, 0, z);
+	        this.crossH.visible = this.crossV.visible = true;
+	    }
+	
+	    /* ---------- build / rebuild point geometry --------------- */
+	    _buildGeometry() {
+	        if (this.points) {
+	            this.scene.remove(this.points);
+	            this.points.geometry.dispose();
+	            this.points.material.dispose();
+	        }
+	
+	        const pos = [];
+	        const col = [];
+	        const sizes = [];
+	        const opacities = [];
+	
+	        const a = this.state.axis;
+	        for (let i = 0; i < this.model.rowCount; ++i) {
+	            pos.push(
+	                this.model.getCoord(i, a.x),
+	                this.model.getCoord(i, a.y),
+	                this.model.getCoord(i, a.z)
+	            );
+	            col.push(0.6, 0.6, 0.6);
+	            sizes.push(1.0); // Default size, will be updated in _updateColors
+	            opacities.push(1.0); // Default opacity, will be updated in _updateColors
+	        }
+	
+	        const geom = new THREE.BufferGeometry();
+	        geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+	        geom.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+	        geom.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+	        geom.setAttribute('opacity', new THREE.Float32BufferAttribute(opacities, 1));
+	
+	        // Use shader material for per-point sizes
+	        const mat = new THREE.ShaderMaterial({
+	            uniforms: {
+	                baseSize: { value: 0.1 }
+	            },
+	            vertexShader: `
+	                attribute float size;
+	                attribute vec3 color;
+	                attribute float opacity;
+	                uniform float baseSize;
+	                varying vec3 vColor;
+	                varying float vOpacity;
+	                
+	                void main() {
+	                    vColor = color;
+	                    vOpacity = opacity;
+	                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+	                    gl_PointSize = size * baseSize * (300.0 / -mvPosition.z);
+	                    gl_Position = projectionMatrix * mvPosition;
+	                }
+	            `,
+	            fragmentShader: `
+	                varying vec3 vColor;
+	                varying float vOpacity;
+	                
+	                void main() {
+	                    // Optimized circle calculation - avoid expensive sqrt
+	                    vec2 center = gl_PointCoord - 0.5;
+	                    float dist2 = dot(center, center);
+	                    if (dist2 > 0.25) discard; // 0.25 = 0.5^2
+	                    
+	                    gl_FragColor = vec4(vColor, vOpacity);
+	                }
+	            `,
+	            transparent: false, // Will be dynamically set based on opacity values
+	            depthWrite: true   // Will be set to false when transparent
+	        });
+	
+	        this.points = new THREE.Points(geom, mat);
+	        this.colorAttr = geom.getAttribute('color');
+	        this.sizeAttr = geom.getAttribute('size');
+	        this.opacityAttr = geom.getAttribute('opacity');
+	        this.scene.add(this.points);
+	
+	        if (this.uiManager) this.uiManager.onPointsRegenerated();
+	        this._updateColors();
+	    }
+	
+	    handleSettingChange(prop) {
+	        if (prop === 'pointSize' || prop === 'opacity') {
+	            this.points.material.uniforms.baseSize.value = this.settings.pointSize;
+	            this.points.material.needsUpdate = true;
+	
+	            /* update picking tolerance to roughly match size - using CONFIG */
+	            this.raycaster.params.Points.threshold = this.settings.pointSize * CONFIG.interaction.raycastThresholdMultiplier;
+	        }
+	    }
+	
+	    /* ---------- recolour all points --------------------------- */
+	    _updateColors() {
+	        const colorArray = this.colorAttr.array;
+	        const sizeArray = this.sizeAttr.array;
+	        const opacityArray = this.opacityAttr.array;
+	
+	        // Check if we need transparency for any points
+	        let needsTransparency = false;
+	
+	        for (let i = 0; i < this.colorAttr.count; ++i) {
+	            const attrs = this.selMgr.attrs(i);
+	            // Set RGB color values (don't multiply by opacity)
+	            colorArray[i * 3] = attrs.r;
+	            colorArray[i * 3 + 1] = attrs.g;
+	            colorArray[i * 3 + 2] = attrs.b;
+	
+	            // Set per-point size and opacity
+	            sizeArray[i] = attrs.size;
+	            opacityArray[i] = attrs.opacity;
+	
+	            // Check if we need transparency
+	            if (attrs.opacity < 0.95) {
+	                needsTransparency = true;
+	            }
+	        }
+	
+	        // Update material transparency setting
+	        if (this.points.material.transparent !== needsTransparency) {
+	            this.points.material.transparent = needsTransparency;
+	            this.points.material.depthWrite = !needsTransparency; // Disable depth write for transparency
+	            this.points.material.needsUpdate = true;
+	        }
+	
+	        this.colorAttr.needsUpdate = true;
+	        this.sizeAttr.needsUpdate = true;
+	        this.opacityAttr.needsUpdate = true;
+	    }
+	
+	    /* ---------- camera motion - using CONFIG values ---------- */
+	    _moveCamera() {
+	        const sens = CONFIG.movement.mouseSensitivity;
+	        const yaw = -this.mouseDX * sens;
+	        const dp = -this.mouseDY * sens;
+	
+	        if (yaw) {
+	            this.camera.rotateY(yaw);
+	            // Update CONFIG and debounce URL sync
+	            CONFIG.camera.rotation.yaw += yaw;
+	            this._debounceCameraSync();
+	        }
+	        if (dp) {
+	            const np = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch + dp));
+	            this.camera.rotateX(np - this.pitch);
+	            this.pitch = np;
+	            // Update CONFIG and debounce URL sync
+	            CONFIG.camera.rotation.pitch = this.pitch;
+	            this._debounceCameraSync();
+	        }
+	        this.mouseDX = this.mouseDY = 0;
+	
+	        if (this.keys['KeyQ']) {
+	            this.camera.rotateZ(this.rollSpeed);
+	            CONFIG.camera.rotation.roll += this.rollSpeed;
+	            this._debounceCameraSync();
+	        }
+	        if (this.keys['KeyE']) {
+	            this.camera.rotateZ(-this.rollSpeed);
+	            CONFIG.camera.rotation.roll -= this.rollSpeed;
+	            this._debounceCameraSync();
+	        }
+	
+	        this.velocity.set(0, 0, 0);
+	        if (this.keys['KeyW']) this.velocity.z -= 1;
+	        if (this.keys['KeyS']) this.velocity.z += 1;
+	        if (this.keys['KeyA']) this.velocity.x -= 1;
+	        if (this.keys['KeyD']) this.velocity.x += 1;
+	
+	        if (this.velocity.lengthSq()) {
+	            const speed = this.settings.speed *
+	                (this.keys['ShiftLeft'] ? CONFIG.movement.sprintMultiplier : 1) * 0.016;
+	            this.velocity.normalize().multiplyScalar(speed)
+	                .applyQuaternion(this.camera.quaternion);
+	            this.camera.position.add(this.velocity);
+	
+	            // Update CONFIG and debounce URL sync
+	            CONFIG.camera.position.x = this.camera.position.x;
+	            CONFIG.camera.position.y = this.camera.position.y;
+	            CONFIG.camera.position.z = this.camera.position.z;
+	            this._debounceCameraSync();
+	        }
+	    }
+	
+	    /* ---------- render loop ----------------------------------- */
+	    _animate() {
+	        requestAnimationFrame(() => this._animate());
+	
+	        this._moveCamera();
+	
+	        /* picking - skip during touch interactions to improve performance */
+	        if (!this.touchState.panDisablesInteraction) {
+	            this.raycaster.setFromCamera(this.pointerNDC, this.camera);
+	            const hit = this.raycaster.intersectObject(this.points, false)[0];
+	            this.hoverId = hit ? hit.index : null;
+	
+	            if (this.hoverId !== this.prevHoverId) {
+	                this.prevHoverId = this.hoverId;
+	                this._updateCrosshairs(this.hoverId);
+	            }
+	        }
+	
+	        if (this.uiManager) this.uiManager.updateUI();
+	        this.renderer.render(this.scene, this.camera);
+	    }
+	
+	    /* ---------- debounced camera sync to URL ----------------- */
+	    _debounceCameraSync() {
+	        if (this.cameraSyncTimeout) {
+	            clearTimeout(this.cameraSyncTimeout);
+	        }
+	        this.cameraSyncTimeout = setTimeout(() => {
+	            updateURL();
+	            this.cameraSyncTimeout = null;
+	        }, this.cameraSyncDelay);
+	    }
+	
+	    /* ---------- allow UIManager to attach --------------------- */
+	    setUIManager(ui) { this.uiManager = ui; }
+	}
+	</script>
+	<!-- end 'PointCloud.js' -->
+		<!-- begin 'navball.js' -->
+	<script>
+	class Navball {
+		constructor(containerId, size = null) {
+			this.container = document.getElementById(containerId);
+			this.size = size || CONFIG.navball.size;
+	
+			this.yaw = 0;
+			this.pitch = 0;
+			this.isDragging = false;
+			this.lastMouseX = 0;
+			this.lastMouseY = 0;
+			this.sensitivity = CONFIG.navball.sensitivity;
+	
+			this.init();
+		}
+	
+		init() {
+			this.setupThreeJS();
+			this.createNavball();
+			this.setupControls();
+			this.animate();
+		}
+	
+		setupThreeJS() {
+			this.scene = new THREE.Scene();
+			this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+			this.camera.position.z = 3;
+	
+			this.renderer = new THREE.WebGLRenderer({
+				antialias: true,
+				alpha: true
+			});
+			this.renderer.setSize(this.size, this.size);
+			this.renderer.setClearColor(0x000000, 0);
+			this.renderer.domElement.id = 'navball-canvas';
+			this.container.appendChild(this.renderer.domElement);
+		}
+	
+		createNavball() {
+			// Low-density wireframe sphere - using CONFIG values
+			const geometry = new THREE.SphereGeometry(
+				1,
+				CONFIG.navball.sphereDetail.widthSegments,
+				CONFIG.navball.sphereDetail.heightSegments
+			);
+			const material = new THREE.MeshBasicMaterial({
+				color: 0x004400,
+				wireframe: true,
+				transparent: true,
+				opacity: 0.3
+			});
+	
+			this.navballMesh = new THREE.Mesh(geometry, material);
+			this.scene.add(this.navballMesh);
+	
+			// Axis group
+			this.axisGroup = new THREE.Group();
+			this.scene.add(this.axisGroup);
+	
+			this.createAxes();
+		}
+	
+		createAxes() {
+			const axisLength = CONFIG.navball.axisLength;
+			const arrowLength = CONFIG.navball.arrowLength;
+			const arrowRadius = CONFIG.navball.arrowRadius;
+	
+			const axes = [
+				{ name: 'X', color: 0xff4444, direction: [1, 0, 0], rotation: [0, 0, -Math.PI / 2] },
+				{ name: 'Y', color: 0x44ff44, direction: [0, 1, 0], rotation: [0, 0, 0] },
+				{ name: 'Z', color: 0x4444ff, direction: [0, 0, 1], rotation: [Math.PI / 2, 0, 0] }
+			];
+	
+			this.axisLabels = [];
+	
+			for (const axis of axes) {
+				const [x, y, z] = axis.direction;
+	
+				// Create axis line
+				const line = new THREE.Line(
+					new THREE.BufferGeometry().setFromPoints([
+						new THREE.Vector3(0, 0, 0),
+						new THREE.Vector3(x * axisLength, y * axisLength, z * axisLength)
+					]),
+					new THREE.LineBasicMaterial({ color: axis.color })
+				);
+				this.axisGroup.add(line);
+	
+				// Create arrow head
+				const arrow = new THREE.Mesh(
+					new THREE.ConeGeometry(arrowRadius, arrowLength, 8),
+					new THREE.MeshBasicMaterial({ color: axis.color })
+				);
+				arrow.position.set(x * axisLength, y * axisLength, z * axisLength);
+				arrow.rotation.set(...axis.rotation);
+				this.axisGroup.add(arrow);
+	
+				// Create label
+				const midAxisPos = 0.65;
+				const label = new THREE.Sprite(
+					new THREE.SpriteMaterial({
+						map: this.createTextTexture(`+${axis.name}`, `#${axis.color.toString(16).padStart(6, '0')}`),
+						transparent: true,
+						alphaTest: 0.1
+					})
+				);
+				label.position.set(x * midAxisPos, y * midAxisPos, z * midAxisPos);
+				label.scale.set(CONFIG.navball.labelScale, CONFIG.navball.labelScale, 1);
+				this.axisGroup.add(label);
+				this.axisLabels.push(label);
+			}
+		}
+	
+		createTextTexture(text, color) {
+			const canvas = document.createElement('canvas');
+			canvas.width = 128;
+			canvas.height = 128;
+			const ctx = canvas.getContext('2d');
+	
+			ctx.fillStyle = color;
+			ctx.font = 'bold 64px Arial';
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillText(text, 64, 64);
+	
+			return new THREE.CanvasTexture(canvas);
+		}
+	
+		setupControls() {
+			this.renderer.domElement.addEventListener('mousedown', (e) => {
+				this.isDragging = true;
+				this.lastMouseX = e.clientX;
+				this.lastMouseY = e.clientY;
+				this.renderer.domElement.style.cursor = 'grabbing';
+			});
+	
+			document.addEventListener('mousemove', (e) => {
+				if (!this.isDragging) return;
+	
+				const deltaX = e.clientX - this.lastMouseX;
+				const deltaY = e.clientY - this.lastMouseY;
+	
+				this.yaw += deltaX * this.sensitivity;
+				this.pitch += deltaY * this.sensitivity;
+				this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch));
+	
+				this.lastMouseX = e.clientX;
+				this.lastMouseY = e.clientY;
+	
+				this.updateRotation();
+			});
+	
+			document.addEventListener('mouseup', () => {
+				this.isDragging = false;
+				this.renderer.domElement.style.cursor = 'grab';
+			});
+	
+			this.renderer.domElement.style.cursor = 'grab';
+		}
+	
+		updateRotation() {
+			this.navballMesh.rotation.set(0, 0, 0);
+			this.navballMesh.rotateY(this.yaw);
+			this.navballMesh.rotateX(this.pitch);
+	
+			this.axisGroup.rotation.set(0, 0, 0);
+			this.axisGroup.rotateY(this.yaw);
+			this.axisGroup.rotateX(this.pitch);
+		}
+	
+		animate() {
+			requestAnimationFrame(() => this.animate());
+			this.renderer.render(this.scene, this.camera);
+		}
+	
+		// API methods for external control
+		setRotation(yaw, pitch) {
+			this.yaw = yaw;
+			this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+			this.updateRotation();
+		}
+	
+		getRotation() {
+			return { yaw: this.yaw, pitch: this.pitch };
+		}
+	
+		// Apply inverted camera quaternion to show world orientation from camera perspective
+		syncWithCameraQuaternion(quaternion) {
+			// Invert the quaternion: q* = (w, -x, -y, -z) for unit quaternions
+			const invertedQuaternion = new THREE.Quaternion(
+				-quaternion.x,
+				-quaternion.y,
+				-quaternion.z,
+				quaternion.w
+			);
+	
+			// Apply inverted quaternion to show world axes as seen from camera
+			this.navballMesh.quaternion.copy(invertedQuaternion);
+			this.axisGroup.quaternion.copy(invertedQuaternion);
+		}
+	}
+	</script>
+	<!-- end 'navball.js' -->
+</head>
+
+<body>
+	<div id="container"><!-- single outer container -->
+		<div id="shortcuts"></div>
+		<!-- ---------- Help menu ---------- -->
+		<div id="helpMenu" class="menu">
+			<div class="help-section" id="helpInfo">
+				<!-- This will be populated from CONFIG.info.help -->
+			</div>
+			<div class="help-section">
+				<h3>Movement</h3>
+				<p>WASD - Move around the 3D space</p>
+				<p>Mouse - Look around (double-click to lock cursor)</p>
+				<p>Q / E - Roll camera left/right</p>
+				<p>Shift - Sprint (faster movement)</p>
+				<p>ESC - Exit mouse-look mode</p>
+			</div>
+			<div class="help-section">
+				<h3>Panels (press key to toggle)</h3>
+				<p>H - This help menu with controls and tips</p>
+				<p>M - Main controls menu for adjusting visualization</p>
+				<p>I - Info panel showing currently selected data points</p>
+				<p>L - Legend panel with color scheme and categories</p>
+				<p>N - Navigation panel with 3D compass and position</p>
+				<p>J - Performance stats (FPS, render info, camera position)</p>
+				<p>K - Toggle hover tooltips when pointing at data points</p>
+				<p>B - Toggle click-to-select functionality</p>
+				<p>O - Toggle right-click actions for point details</p>
+			</div>
+			<div class="help-section">
+				<h3>Data Interaction</h3>
+				<p>C - Cycle through available color-by columns</p>
+				<p>V - Cycle through available selection columns</p>
+				<p>Click - Select/deselect point (when click-select enabled)</p>
+				<p>Right-click - Open point data/URL (when right-click enabled)</p>
+				<p>Hover - Show point details tooltip (when hover enabled)</p>
+			</div>
+			<div class="help-section">
+				<h3>Configuration</h3>
+				<p>All settings are automatically saved to URL</p>
+				<p>Use "Export Current Config" button to get JSON file</p>
+				<p>URL parameters override config.json settings</p>
+				<p>Use "Reset Config" to return to loaded defaults</p>
+			</div>
+			<div class="help-section">
+				<h3>Source code / report issues:</h3>
+				<p><a href="https://github.com/mivanit/js-embedding-vis" style="color: #ffbb00"> github.com/mivanit/js-embedding-vis</a>
+			</div>
+			<div class="close-hint">Press H to close</div>
+		</div>
+		<!-- ---------- Enhanced Controls menu ---------- -->
+		<div id="controlsMenu" class="menu">
+			<!-- Column Selection - Side by Side -->
+			<div class="control-section">
+				<h4>Column Selection</h4>
+				<div class="column-selection">
+					<div class="column-item">
+						<label>Color by:</label>
+						<select id="colorBySelect"></select>
+					</div>
+					<div class="column-item">
+						<label>Select by:</label>
+						<select id="selectBySelect"></select>
+					</div>
+				</div>
+				<button id="applyColumns" style="width: 100%; margin-top: 10px;">Apply Column Choice</button>
+			</div>
+			<!-- Point Configuration - Side by Side -->
+			<div class="control-section">
+				<h4>Point Configuration</h4>
+				<div class="side-by-side">
+					<div class="point-config">
+						<h5>Selected Points</h5>
+						<div class="control-row-new">
+							<label>Size: <span class="value-display-right" id="pointSizeValue">6</span></label>
+							<div class="slider-container">
+								<input id="pointSize" type="range" min="1" max="20" step="1" value="6">
+							</div>
+						</div>
+						<div class="control-row-new">
+							<label>Opacity: <span class="value-display-right" id="opacityValue">1.0</span></label>
+							<div class="slider-container">
+								<input id="opacity" type="range" min="0.1" max="1" step="0.1" value="1.0">
+							</div>
+						</div>
+						<button id="randomizeColors" class="randomize-btn">Randomize Colors</button>
+					</div>
+					<div class="point-config">
+						<h5>Non-Selected Points</h5>
+						<div class="control-row-new">
+							<label>Size: <span class="value-display-right" id="nonSelPointSizeValue">4</span></label>
+							<div class="slider-container">
+								<input id="nonSelPointSize" type="range" min="1" max="20" step="1" value="4">
+							</div>
+						</div>
+						<div class="control-row-new">
+							<label>Opacity: <span class="value-display-right" id="nonSelOpacityValue">0.25</span></label>
+							<div class="slider-container">
+								<input id="nonSelOpacity" type="range" min="0.01" max="1" step="0.01" value="0.25">
+							</div>
+						</div>
+						<div class="control-row">
+							<label>Color:</label>
+							<input id="nonSelColor" type="color" value="#666666">
+						</div>
+					</div>
+				</div>
+			</div>
+			<!-- Movement -->
+			<div class="control-section">
+				<h4>Movement</h4>
+				<div class="control-row-new">
+					<label>Speed: <div class="slider-container">
+							<input id="speed" type="range" min="1" max="200" step="1" value="50">
+						</div>
+						<span class="value-display-right" id="speedValue">50</span></label>
+					</di v>
+				</div>
+				<!-- Axis Selection - Three Columns -->
+				<div class="control-section">
+					<h4>Axis Selection</h4>
+					<div class="axis-selection">
+						<div class="axis-item">
+							<label>X-Axis:</label>
+							<select id="xAxisSelect"></select>
+						</div>
+						<div class="axis-item">
+							<label>Y-Axis:</label>
+							<select id="yAxisSelect"></select>
+						</div>
+						<div class="axis-item">
+							<label>Z-Axis:</label>
+							<select id="zAxisSelect"></select>
+						</div>
+					</div>
+					<button id="applyAxes" style="width: 100%; margin-top: 10px;">Apply Axes</button>
+				</div>
+				<!-- Configuration -->
+				<div class="control-section">
+					<h4>Configuration</h4>
+					<div class="side-by-side">
+						<button id="exportConfigBtn" class="export-btn">Export Current Config</button>
+						<button id="resetConfigBtn" class="export-btn">Reset Config</button>
+					</div>
+				</div>
+				<div class="close-hint">Press M to close</div>
+			</div>
+		</div><!-- /#container -->
+		<!-- ---------- Info panel (center bottom) - for selected values only ---------- -->
+		<div id="infoMenu" class="menu">
+			<div id="selectedValuesContainer">
+				<h4 style="margin: 0 0 8px 0; color: #00ccff;" id="selectedValuesHeader">Selected Values:</h4>
+				<div id="selectedValuesGrid" style="display: grid; grid-template-columns: 1fr; gap: 4px; max-height: 200px; overflow-y: auto;"></div>
+				<div id="selectedValuesMetadata" style="margin-top: 8px; font-size: 10px; color: #888;"></div>
+			</div>
+			<div class="close-hint">Press I to close</div>
+		</div>
+		<!-- ---------- Legend panel (bottom left) - for color scheme and settings ---------- -->
+		<div id="legendMenu" class="menu">
+			<div id="columnInfoContainer">
+				<h4 style="margin: 0 0 8px 0; color: #00ccff;">Current Settings:</h4>
+				<div style="font-size: 11px; margin-bottom: 10px;">
+					<div>Color by: <span id="currentColorBy" style="color: #00ff00;"></span></div>
+					<div>Select by: <span id="currentSelectBy" style="color: #00ff00;"></span></div>
+				</div>
+			</div>
+			<div id="legendContainer">
+				<h4 style="margin: 0 0 8px 0; color: #00ccff;" id="legendHeader">Legend:</h4>
+				<div id="legendGrid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; max-height: 200px; overflow-y: auto;"></div>
+				<div id="legendMetadata" style="margin-top: 8px; font-size: 10px; color: #888;"></div>
+			</div>
+			<div class="close-hint">Press L to close</div>
+		</div>
+		<!-- ---------- Stats menu ---------- -->
+		<div id="statsMenu" class="menu">
+			<div class="stats-group">
+				<h3>Rendering Stats</h3>
+				<p>Points Rendered: <span id="renderedCount">0</span></p>
+				<p>FPS: <span id="fps">na</span></p>
+				<p>Frame Time: <span id="frameTime">na</span></p>
+			</div>
+			<div class="stats-group">
+				<h3>Camera Position</h3>
+				<p>X: <span id="statsPosX">na</span></p>
+				<p>Y: <span id="statsPosY">na</span></p>
+				<p>Z: <span id="statsPosZ">na</span></p>
+			</div>
+			<div class="close-hint">Press J to close</div>
+		</div>
+		<!-- ---------- Navigation bar with navball ---------- -->
+		<div id="navbar" class="menu">
+			<div id="navball-container">
+				<div class="navball-crosshair"></div>
+			</div>
+			<div class="nav-section">
+				<h4>Position</h4>
+				<div class="nav-row">
+					<span>X: <span id="posX">0.0</span></span>
+					<span>Y: <span id="posY">0.0</span></span>
+					<span>Z: <span id="posZ">0.0</span></span>
+				</div>
+			</div>
+		</div>
+		<!-- ---------- bootstrap script ---------- -->
+		<script>
+			document.addEventListener('DOMContentLoaded', async () => {
+				let sp = NOTIF.spinner('Starting up...');
+				await getConfig();
+
+				// Update page title from config
+				document.title = CONFIG.info.title;
+
+				// Update help info section
+				const helpInfoEl = document.getElementById('helpInfo');
+				if (helpInfoEl && CONFIG.info.help) {
+					helpInfoEl.innerHTML = `<p>${CONFIG.info.help}</p>`;
+				}
+
+				const model = await DataModel.load(CONFIG.dataFile, CONFIG.numericalPrefix);
+				const pointCloud = new PointCloud(model);
+				const uiManager = new UIManager(pointCloud);
+				pointCloud.setUIManager(uiManager);
+				sp.complete();
+				NOTIF.success('Ready! Press H for help.');
+			});
+		</script>
+</body>
+
+</html>

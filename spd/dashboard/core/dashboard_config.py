@@ -80,7 +80,7 @@ class ComponentDashboardConfig(BaseConfig):
         description="Number of top samples to collect per component",
     )
     embed_dim: int = Field(
-        default=2,
+        default=3,
         description="Dimensionality of component embeddings",
     )
     hist_bins: int = Field(

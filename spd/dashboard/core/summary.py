@@ -92,15 +92,19 @@ class SubcomponentSummary:
 
     def to_embed_row(self) -> dict[str, Any]:
         """Convert to dict row for embedding visualization page"""
+        # assuming module names like 'model.layers.{i}.{mlp,attn}'
+        module_split: list[str] = self.label.module.split(".")
         return {
             **_prefix_dict(
                 {
+                    "label": self.label.as_str(),
                     "module": self.label.module,
                     "component_index": self.label.index,
-                    "label": self.label.as_str(),
                     "layer": int(
-                        self.label.module.split(".")[2]
+                        module_split[2]
                     ),  # assuming module names like 'model.layers.{i}.*'
+                    "mlp_or_attn": module_split[3],
+                    "module_type": module_split[-1],
                 },
                 prefix="meta",
             ),

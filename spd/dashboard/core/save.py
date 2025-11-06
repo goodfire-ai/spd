@@ -95,13 +95,9 @@ class DashboardData:
 
     config: ComponentDashboardConfig
     activations: Activations
+    index_summaries: IndexSummaries
     trees: DecisionTreesData
     metadata: dict[str, Any]
-
-    @cached_property
-    def index_summaries(self) -> IndexSummaries:
-        """Generate index summaries from activations."""
-        return IndexSummaries.from_activations(self.activations, self.config)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize all dashboard data by calling serialize() on components.
@@ -131,7 +127,7 @@ class DashboardData:
         output_dir: Path = self.config.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         fname: Path = output_dir / f"{self.config.fname}"
-        fname_str: str = fname.as_posix()
+        fname_zanj: Path = fname.with_suffix(".zanj")
 
         z_ = z or ZANJ()
 
@@ -139,16 +135,15 @@ class DashboardData:
         serialized_data: dict[str, Any] = self.serialize()
 
         # Save to ZANJ with threshold for externalization
-        z_.save(serialized_data, f"{fname_str}.zanj")
-
-        print(f"Saved dashboard data to '{fname_str}'")
+        z_.save(serialized_data, fname_zanj)
+        print(f"Saved dashboard data to '{fname_zanj}'")
 
         # Extract if requested
         if extract:
-            extract_dir: Path = output_dir.parent / f"{fname_str}"
+            extract_dir: Path = output_dir / fname
             extract_dir.mkdir(exist_ok=True)
 
-            with zipfile.ZipFile(output_dir, "r") as zip_ref:
+            with zipfile.ZipFile(fname_zanj, "r") as zip_ref:
                 zip_ref.extractall(extract_dir)
 
             print(f"Extracted dashboard data to '{extract_dir}'")
