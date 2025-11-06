@@ -115,8 +115,9 @@ def main(seed: int, name: str, tags: list[str]):
                 "pgd_init_seed": seed,  #  * 1000 + i,
                 "pgd_loss": loss,
                 "micro_batch_size": batch_size,
-                "effective_batch_size": batch_size * grad_accum_steps,
                 "grad_accum_steps": grad_accum_steps,
+                "n_ctx": n_ctx,
+                "effective_batch_size": batch_size * grad_accum_steps * n_ctx,
                 "time_taken": taken,
             }
         )
