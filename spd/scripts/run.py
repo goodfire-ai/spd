@@ -117,7 +117,9 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
 def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
     """Build an MPI prefix for a command."""
     port: int = _choose_master_port(run_id, idx)
-    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} "
+    # `--bind-to none` avoids trying to bind to cores that aren't available.
+    # See: https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
+    return f"MASTER_PORT={port} mpirun --bind-to none -x MASTER_PORT -np {dp} "
 
 
 def generate_commands(
