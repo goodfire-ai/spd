@@ -28,7 +28,6 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
-    ensure_cached_and_call,
     get_world_size,
     is_distributed,
     is_main_process,
