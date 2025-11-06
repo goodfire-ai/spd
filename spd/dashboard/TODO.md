@@ -3,18 +3,28 @@
 # general
 
 - [x] **[BUG]** fix issue with broken histograms
+- [x] embeddings view
+- [x] a view where we can see, for some selected components, their activations (both actual and DT predicted) on a random set of samples -- stacked vertically so that we can compare. kinda like https://attention-motifs.github.io/v1/vis/attnpedia/index.html
 - [ ] not just current token, but true next token and predicted next token when a given component is active
-- [ ] embeddings view
-- [ ] a view where we can see, for some selected components, their activations (both actual and DT predicted) on a random set of samples -- stacked vertically so that we can compare. kinda like https://attention-motifs.github.io/v1/vis/attnpedia/index.html
+- [ ] proper test vs train split for decision trees
 
-# index.html
+## performance
+
+- [ ] parallelize decision tree computation??
+  - memory will be the likely bottleneck here unless we can figure out how to make it read-only shareable
+- [ ] re-compress big files
+  - i.e. any given npy or jsonl file is originally compressed because it's in the zanj file, but we extract
+  - hence, zanj.js should be rewritten to check for `{fname}.zip` first before loading `{fname}`
+
+# interfaces
+
+## index.html
 
 - [ ] link to wandb run
 - [ ] columns with measures of token entropy
 - [ ] fix table csv export
 
-
-# component.html
+## component.html
 
 - [ ] proportion of all tokens that is any given token in table
 - [ ] dists of activations in each sample
@@ -22,45 +32,21 @@
 - [ ] token statistics -- highlight percentages by magnitude
 - [ ] dists of activations per token?
 
-# Dashboard Summary Code Implementation
+## trees.html
 
-## 1. Split conditional_matrices() in compute.py
-
-- [ ] Extract shared _compute_activated_per_token() helper function
-- [ ] Create p_activation_given_token() function (with Laplace smoothing)
-- [ ] Create p_token_given_activation() function
-- [ ] Keep conditional_matrices() as convenience wrapper that calls both efficiently
-
-## 2. Add missing data classes to summary.py
-
-- [ ] Add TopKSample class (token_strs, activations)
-- [ ] Add TokenActivationsSummary class (top_tokens, entropy, concentration_ratio, etc.)
-- [ ] Update SubcomponentSummary.stats type hint to include token_activations
-
-## 3. Implement statistics computation in summary.py
-
-- [ ] Stats dict: mean, std, min, max, median, q05, q25, q75, q95
-- [ ] Histograms dict: all_activations, max_per_sample, mean_per_sample (using existing _make_histogram())
-- [ ] Token stats list: Use hybrid approach:
-  - [ ] Compute both probability matrices once for all components via conditional_matrices()
-  - [ ] Extract per-component probabilities
-  - [ ] Build unified TokenStat list (union of top N by each metric)
-- [ ] Top samples: Find top K by max and mean activation (union, deduplicated)
-- [ ] Token activations summary: Entropy, concentration ratio, top tokens
-
-## 4. Update method signatures to accept config
-
-- [ ] SubcomponentSummary.create() - add config: ComponentDashboardConfig parameter
-- [ ] ActivationsSummary.from_activations() - add config: ComponentDashboardConfig parameter
-- [ ] Use config values: hist_bins, hist_range, token_active_threshold, token_stats_top_n, etc.
-
-## 5. Update ci_dt_min.py to pass config
-
-- [ ] Import ComponentDashboardConfig from dashboard_config.py
-- [ ] Create config instance
-- [ ] Pass config when calling summary methods
-
-**Files to modify:**
-- spd/dashboard/core/compute.py (split conditional_matrices)
-- spd/dashboard/core/summary.py (implement all computation logic, add classes)
-- spd/dashboard/core/ci_dt_min.py (pass config to summary methods)
+- [ ] links to component/tree view for every component in view
+- [ ] also show same-layer components similar to target component
+  - [ ] column for "type" -- i.e. target, same layer, decision tree node
+- [ ] max activating P(active|token) and P(token|active) tokens for each component? or at least target component
+- [ ] ability to expand any of the nodes into its own tree
+- [ ] no separate "leaf" nodes the way we have them now. certain nodes are leaves. Green if node active -> target active, red if node active -> target inactive
+- [ ] ability to reorder rows
+  - [ ] initial ordering should be by depth in tree
+    - [ ] label direction of dependency, right now you have to infer
+- [ ] in table include info on:
+  - [ ] how accurate this node's own decision tree is
+  - [ ] if branch, percentage of samples that reach here, go left, go right
+  - [ ] if leaf, whether leaf predicts active or inactive for target component, and with what probability it's correct
+- [ ] hovering a token should highlight that token in all rows for this column
+- [ ] show distribution of the actual predictions for each token!!
+  - [ ] maybe top few logits even?
