@@ -509,4 +509,15 @@ class Config(BaseConfig):
                 "mask_scope='shared_across_batch'"
             )
 
+        has_multibatch_pgd_subset_loss = any(
+            [
+                loss_cfg.classname == "PGDMultiBatchReconSubsetLoss"
+                for loss_cfg in self.loss_metric_configs
+            ]
+        )
+        if has_multibatch_pgd_subset_loss:
+            assert self.gradient_accumulation_steps == 1, (
+                "cannot use gradient accumulation with PGDMultiBatchReconSubsetLoss"
+            )
+
         return self
