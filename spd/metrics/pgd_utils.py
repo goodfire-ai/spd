@@ -217,6 +217,7 @@ def _multibatch_pgd_fwd_bwd(
             break
         batch = extract_batch_data(batch_item).to(device)
 
+        # NOTE: technically this is duplicated work across PGD steps.
         batch_target_model_output: OutputWithCache = model(batch, cache_type="input")
         batch_ci = model.calc_causal_importances(
             pre_weight_acts=batch_target_model_output.cache,
