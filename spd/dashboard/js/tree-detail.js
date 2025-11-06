@@ -5,7 +5,9 @@ let targetComponentLabel = null;
 let featureComponents = {};  // Map from feature label to component data
 let treeViewer = null;
 let dashboardData = {};
-let sampleIndices = {};  // Track which sample is currently shown for each feature
+let columnSamples = {};  // Track which sample index is shown for each column (shared across all rows)
+let allSamples = [];  // All available samples from activations data
+let fullData = null;  // Store full ZANJ data for accessing activations
 
 async function init() {
     // Get component label from URL
@@ -26,6 +28,7 @@ async function loadData() {
         // Load data via ZANJ
         const loader = new ZanjLoader(CONFIG.data.dataDir);
         const data = await loader.read();
+        fullData = data;  // Store for accessing activations later
 
         dashboardData = await data.metadata;
 
@@ -106,28 +109,25 @@ function convertSklearnTreeToViewerFormat() {
     const tree = treeData.tree_dict;
     const featureLabels = tree.feature_labels;
 
-    // Map from feature index to row index
-    const featureIndexToRowIdx = {};
+    // Get unique features and sort by feature index
     const uniqueFeatures = [...new Set(Object.keys(featureLabels).map(k => parseInt(k)))];
     uniqueFeatures.sort((a, b) => a - b);
-    uniqueFeatures.forEach((featIdx, rowIdx) => {
-        featureIndexToRowIdx[featIdx] = rowIdx;
-    });
 
-    // Add a row for root node (always first)
+    // Create rows - first row is for the target component
     const rows = [{
-        feature: 'Root',
+        feature: targetComponentLabel,
         nodeIds: []
     }];
-    const rootRowIdx = 0;
 
-    // Create rows for each feature
+    // Create rows - one per unique feature
+    const featureIndexToRowIdx = {};
     uniqueFeatures.forEach((featIdx, idx) => {
+        const rowIdx = idx + 1; // +1 because row 0 is the target
+        featureIndexToRowIdx[featIdx] = rowIdx;
         rows.push({
             feature: featureLabels[featIdx],
             nodeIds: []
         });
-        featureIndexToRowIdx[featIdx] = idx + 1;  // Offset by 1 for root row
     });
 
     // Add a row for leaf nodes
@@ -141,6 +141,29 @@ function convertSklearnTreeToViewerFormat() {
     const nodes = [];
     const nodeIdMap = {};  // Map from tree node index to viewer node id
 
+    // Create the target component node
+    const targetNodeId = 'target';
+    const targetNode = {
+        id: targetNodeId,
+        rowIdx: 0,
+        x: CONFIG.treePage.dagWidth / 2,
+        y: CONFIG.treePage.rowHeight / 2 - 8,
+        edges: [{
+            target: 'n0',  // Depends on root node of decision tree
+            type: 'depends',
+            freq: 1.0
+        }],
+        treeNodeIdx: -1,
+        isLeaf: false,
+        isRoot: false,
+        isTarget: true,
+        threshold: null,
+        nSamples: tree.n_node_samples[0]
+    };
+    nodes.push(targetNode);
+    rows[0].nodeIds.push(targetNodeId);
+
+    // Create decision tree nodes
     for (let i = 0; i < tree.feature.length; i++) {
         const nodeId = `n${i}`;
         nodeIdMap[i] = nodeId;
@@ -149,14 +172,8 @@ function convertSklearnTreeToViewerFormat() {
         const isLeaf = featIdx === -2;
         const isRoot = i === 0;
 
-        let rowIdx;
-        if (isRoot) {
-            rowIdx = rootRowIdx;
-        } else if (isLeaf) {
-            rowIdx = leafRowIdx;
-        } else {
-            rowIdx = featureIndexToRowIdx[featIdx];
-        }
+        // Assign row based on feature (add 1 because row 0 is target)
+        const rowIdx = isLeaf ? leafRowIdx : featureIndexToRowIdx[featIdx];
 
         // Calculate initial position
         const x = Math.random() * (CONFIG.treePage.dagWidth - 30) + 10;
@@ -168,9 +185,10 @@ function convertSklearnTreeToViewerFormat() {
             x: x,
             y: y,
             edges: [],
-            treeNodeIdx: i,  // Store original tree node index
+            treeNodeIdx: i,
             isLeaf: isLeaf,
             isRoot: isRoot,
+            isTarget: false,
             threshold: tree.threshold[i],
             nSamples: tree.n_node_samples[i]
         };
@@ -179,25 +197,26 @@ function convertSklearnTreeToViewerFormat() {
         rows[rowIdx].nodeIds.push(nodeId);
     }
 
-    // Create edges
+    // Create edges for decision tree nodes
     for (let i = 0; i < tree.feature.length; i++) {
         const leftChild = tree.children_left[i];
         const rightChild = tree.children_right[i];
+        const nodeIdx = nodes.findIndex(n => n.id === `n${i}`);
 
         if (leftChild !== -1) {
             const targetId = nodeIdMap[leftChild];
-            nodes[i].edges.push({
+            nodes[nodeIdx].edges.push({
                 target: targetId,
-                type: 'false',  // Left child is the "false" branch (feature <= threshold)
+                type: 'false',
                 freq: tree.n_node_samples[leftChild] / tree.n_node_samples[i]
             });
         }
 
         if (rightChild !== -1) {
             const targetId = nodeIdMap[rightChild];
-            nodes[i].edges.push({
+            nodes[nodeIdx].edges.push({
                 target: targetId,
-                type: 'true',  // Right child is the "true" branch (feature > threshold)
+                type: 'true',
                 freq: tree.n_node_samples[rightChild] / tree.n_node_samples[i]
             });
         }
@@ -296,11 +315,12 @@ async function displayFeaturesTable() {
     // Prepare table data
     const tableData = [];
 
-    // First, add the target component (root - what we're predicting)
+    // First, add the target component (what we're predicting)
     const targetComponent = featureComponents[targetComponentLabel];
     if (targetComponent) {
         const rowData = {
-            featureLabel: `[Target] ${targetComponentLabel}`,
+            featureLabel: targetComponentLabel,
+            displayLabel: `[Target] ${targetComponentLabel}`,
             component: targetComponent,
             isTarget: true
         };
@@ -321,9 +341,9 @@ async function displayFeaturesTable() {
     const tree = treeData.tree_dict;
     const sortedFeatures = Object.entries(tree.feature_labels)
         .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))  // Sort by feature index
-        .map(([_, label]) => label);
+        .map(([featIdx, label]) => ({ featIdx: parseInt(featIdx), label }));
 
-    for (const featureLabel of sortedFeatures) {
+    for (const { featIdx, label: featureLabel } of sortedFeatures) {
         const component = featureComponents[featureLabel];
         if (!component) {
             console.warn(`Component not found: ${featureLabel}`);
@@ -332,7 +352,9 @@ async function displayFeaturesTable() {
 
         const rowData = {
             featureLabel: featureLabel,
-            component: component
+            displayLabel: featureLabel,
+            component: component,
+            isRoot: false
         };
 
         // Add sample data for each column
@@ -438,6 +460,53 @@ async function displayFeaturesTable() {
     table.appendChild(tbody);
 
     tableContainer.appendChild(table);
+}
+
+/**
+ * Load sample activations for a specific component from the full activations data.
+ * Returns array of {token_strs, activations} objects.
+ */
+async function loadComponentSamples(componentLabel, maxSamples = 10) {
+    try {
+        // Parse component label
+        const [moduleName, componentIndexStr] = componentLabel.split(':');
+        const componentIndex = parseInt(componentIndexStr);
+
+        // Load activations
+        const activations = await fullData.activations;
+        const moduleData = await activations.data[moduleName];
+        const componentLabels = await activations.component_labels[moduleName];
+        const tokenData = await activations.token_data;
+        const tokens = await tokenData.tokens;
+
+        // Find component position
+        const componentPos = componentLabels.indexOf(componentLabel);
+        if (componentPos === -1) {
+            console.warn(`Component ${componentLabel} not found in module`);
+            return [];
+        }
+
+        // Extract activations (same pattern as cluster-detail.js)
+        const actualData = moduleData.data || moduleData;
+        const [nSeqs, nCtx, nComponents] = moduleData.shape;
+
+        const samples = [];
+        for (let seq = 0; seq < Math.min(nSeqs, maxSamples); seq++) {
+            const seqActivations = [];
+            for (let pos = 0; pos < nCtx; pos++) {
+                const flatIdx = seq * (nCtx * nComponents) + pos * nComponents + componentPos;
+                seqActivations.push(actualData[flatIdx]);
+            }
+            samples.push({
+                token_strs: tokens[seq],
+                activations: seqActivations
+            });
+        }
+        return samples;
+    } catch (error) {
+        console.error(`Error loading samples for ${componentLabel}:`, error);
+        return [];
+    }
 }
 
 function createSampleCell(component, sampleIdx, columnIdx, featureLabel) {

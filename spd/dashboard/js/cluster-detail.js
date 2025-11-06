@@ -393,75 +393,28 @@ async function displaySamples() {
     if (!container) return;
 
     try {
-        // Parse component label: "module.name:123"
-        const [moduleName, componentIndexStr] = currentComponentLabel.split(':');
-        const componentIndex = parseInt(componentIndexStr);
+        // Load samples using utility function
+        const samples = await loadComponentSamples(fullData, currentComponentLabel, 1000);
 
-        // Load activations data
-        const activations = await fullData.activations;
-        const moduleData = await activations.data[moduleName];  // (n_seqs, n_ctx, n_components)
-        const componentLabels = await activations.component_labels[moduleName];  // list[str]
-        const tokenData = await activations.token_data;
-        const tokens = await tokenData.tokens;  // (n_seqs, n_ctx) of strings
-
-        // Find component position in module's component array
-        const componentLabel = `${moduleName}:${componentIndex}`;
-        const componentPos = componentLabels.indexOf(componentLabel);
-
-        if (componentPos === -1) {
-            console.error(`Component ${componentLabel} not found in module. Available:`, componentLabels);
-            container.innerHTML = '<p>Error: Component not found in activation data</p>';
+        if (samples.length === 0) {
+            container.innerHTML = '<p>No samples available</p>';
             return;
         }
 
-        console.log(`Found component ${componentLabel} at position ${componentPos}/${componentLabels.length}`);
+        console.log(`Loaded ${samples.length} samples`);
 
-        // Debug: Check data structure
-        console.log('moduleData type:', typeof moduleData);
-        console.log('moduleData length:', moduleData.length);
-        console.log('moduleData shape:', moduleData.shape);
-        console.log('moduleData keys:', Object.keys(moduleData));
-        console.log('moduleData.data:', moduleData.data);
-        console.log('moduleData constructor:', moduleData.constructor?.name);
-        console.log('tokens length:', tokens.length);
-        console.log('tokens shape:', tokens.shape);
-
-        // Extract this component's activations: (n_seqs, n_ctx)
-        const allSamples = [];
-        // NumPy arrays use .shape instead of .length
-        const nSeqs = moduleData.shape ? moduleData.shape[0] : moduleData.length;
-        const nCtx = moduleData.shape ? moduleData.shape[1] : (moduleData[0]?.length || 0);
-        const nComponents = moduleData.shape ? moduleData.shape[2] : 0;
-
-        console.log(`Processing ${nSeqs} sequences with ${nCtx} context length and ${nComponents} components`);
-
-        // Get the actual data array - NumPy arrays from ZANJ store data in .data property
-        const actualData = moduleData.data || moduleData;
-        console.log('actualData type:', typeof actualData);
-        console.log('actualData length:', actualData?.length);
-
-        for (let seq = 0; seq < nSeqs; seq++) {
-            const seqActivations = [];
-            const seqTokens = tokens[seq];
-
-            // Extract activations for this sequence and component
-            for (let pos = 0; pos < nCtx; pos++) {
-                seqActivations.push(moduleData[seq][pos][componentPos]);
-            }
-
-            const maxAct = Math.max(...seqActivations);
-            const meanAct = seqActivations.reduce((a, b) => a + b, 0) / seqActivations.length;
-
-            allSamples.push({
+        // Add sequence index and compute stats
+        const allSamples = samples.map((sample, seq) => {
+            const maxAct = Math.max(...sample.activations);
+            const meanAct = sample.activations.reduce((a, b) => a + b, 0) / sample.activations.length;
+            return {
                 sequence_index: seq,
                 max_act: maxAct,
                 mean_act: meanAct,
-                token_strs: seqTokens,
-                activations: seqActivations
-            });
-        }
-
-        console.log(`Loaded ${allSamples.length} samples`);
+                token_strs: sample.token_strs,
+                activations: sample.activations
+            };
+        });
 
         // Create sortable DataTable
         new DataTable(container, {

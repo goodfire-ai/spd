@@ -11,8 +11,8 @@ from spd.dashboard.core.trees import DecisionTreesData
 
 CONFIG = ComponentDashboardConfig(
     model_path="wandb:goodfire/spd/runs/lxs77xye",
-    batch_size=4,
-    n_batches=4,
+    batch_size=16,
+    n_batches=64,
     context_length=32,
 )
 
