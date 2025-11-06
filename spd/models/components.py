@@ -173,7 +173,6 @@ class LinearComponents(Components):
 
         # We don't train biases in SPD
         self.register_buffer("bias", bias)
-        self.inner_acts: Float[Tensor, "... C"] | None = None
 
     @property
     @override
@@ -204,7 +203,6 @@ class LinearComponents(Components):
             output: The summed output across all components
         """
         component_acts = self.get_inner_acts(x)
-        self.inner_acts = component_acts
 
         if mask is not None:
             component_acts *= mask
@@ -308,20 +306,6 @@ class ComponentsMaskInfo:
     If "all", all positions are routed to components."""
 
     weight_delta_and_mask: WeightDeltaAndMask | None = None
-
-    def copy(self) -> "ComponentsMaskInfo":
-        return ComponentsMaskInfo(
-            component_mask=self.component_mask.clone(),
-            routing_mask=self.routing_mask.clone()
-            if isinstance(self.routing_mask, Tensor)
-            else self.routing_mask,
-            weight_delta_and_mask=(
-                self.weight_delta_and_mask[0].clone(),
-                self.weight_delta_and_mask[1].clone(),
-            )
-            if self.weight_delta_and_mask is not None
-            else None,
-        )
 
 
 RoutingMasks = dict[str, Bool[Tensor, "..."]] | Literal["all"]
