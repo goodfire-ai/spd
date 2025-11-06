@@ -33,7 +33,7 @@ dependencies = [
     "scikit-learn",
     "scipy>=1.14.1",
     "muutils",
-    "zanj", # for dashboard data saving/loading
+    "zanj>=0.5.2", # for dashboard data saving/loading
 ]
 
 [dependency-groups]

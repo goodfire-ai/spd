@@ -1997,7 +1997,7 @@ requires-dist = [
     { name = "uvicorn" },
     { name = "wandb", specifier = ">=0.20.1" },
     { name = "wandb-workspaces", specifier = "==0.1.12" },
-    { name = "zanj" },
+    { name = "zanj", specifier = ">=0.5.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -2537,14 +2537,14 @@ wheels = [
 
 [[package]]
 name = "zanj"
-version = "0.5.1"
+version = "0.5.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jaxtyping" },
     { name = "muutils" },
     { name = "numpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/aa/20/18e88fad24594b8bacfb36dc824e736ca2ab9a60579fbbee50d72ed39d1d/zanj-0.5.1.tar.gz", hash = "sha256:38250d0e310de84ff0758d56f2cb3e089b2150f6398b79a0bf70ffbc2526cf9d", size = 1245800, upload-time = "2025-05-28T22:55:17.789Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/45/91/aa1237efcf82ec0601854d4919011faa3cfa1651787b1d10c67ab4a058d0/zanj-0.5.2.tar.gz", hash = "sha256:a1dcf61434193b30c11294d9e6e4ca157187ab834d268877dee6f2585c77a12b", size = 1250266, upload-time = "2025-11-06T16:20:28.824Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/b1/e5647fbdc312925005088c3a659fa061bef39bb739ac4ec8f462045d957a/zanj-0.5.1-py3-none-any.whl", hash = "sha256:88ff124186ab258afb383a4f3537ee9bc67bd6bb427888281e60e6d3895b5ceb", size = 32164, upload-time = "2025-05-28T22:55:15.732Z" },
+    { url = "https://files.pythonhosted.org/packages/18/37/377b464c9fa8b24b251a90c2d3265b3dce8a926e9d1086de363dd9adef88/zanj-0.5.2-py3-none-any.whl", hash = "sha256:2b5a8d7791531082a8dd17c3cd5fbd7495b07aa26f6877d2b9ab0ce1b0aeaf1d", size = 32553, upload-time = "2025-11-06T16:20:26.904Z" },
 ]
