@@ -26,10 +26,9 @@ from spd.configs import (
 )
 from spd.data import loop_dataloader
 from spd.eval import evaluate, evaluate_multibatch_pgd
-from spd.experiments.lm.configs import LMTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
-from spd.losses import compute_multibatch_pgd_loss, compute_total_loss
+from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel, OutputWithCache
@@ -224,8 +223,8 @@ def optimize(
     sample_batch = extract_batch_data(next(train_iterator))
     batch_dims = (
         sample_batch.shape[:-1]
-        if config.output_loss_type == "mse" # if mse then input is a vector
-        else sample_batch.shape # else it's a batch of token ids
+        if config.output_loss_type == "mse"  # if mse then input is a vector
+        else sample_batch.shape  # else it's a batch of token ids
     )
     alive_tracker = AliveComponentsTracker(
         target_module_paths=model.target_module_paths,
