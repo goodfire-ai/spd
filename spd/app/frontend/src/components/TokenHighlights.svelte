@@ -6,12 +6,7 @@
         precision?: number;
     }
 
-    let {
-        tokenStrings,
-        tokenCiValues,
-        activePosition = -1,
-        precision = 3
-    }: Props = $props();
+    let { tokenStrings, tokenCiValues, activePosition = -1, precision = 3 }: Props = $props();
 
     const getHighlightColor = (importance: number): string => {
         return `rgba(0, 200, 0, ${importance * 0.5})`;
@@ -33,8 +28,7 @@
             class="token-highlight"
             class:active-token={idx === activePosition}
             style={`background-color:${getHighlightColor(tokenCiValues[idx])};`}
-            data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}
-            >{fmtTokenString(tokenString)}</span
+            data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}>{fmtTokenString(tokenString)}</span
         >
     {/each}
 </span>
