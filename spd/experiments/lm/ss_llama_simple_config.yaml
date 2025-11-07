@@ -5,10 +5,10 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 1500
+C: 1300
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
-ci_fn_hidden_dims: [1400]
+ci_fn_hidden_dims: [1100]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   [
@@ -26,10 +26,10 @@ use_delta_component: true
 loss_metric_configs:
 
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.001
+    coeff: 0.0002
     pnorm: 2.0
     p_anneal_start_frac: 0.0
-    p_anneal_final_p: 0.5
+    p_anneal_final_p: 0.3
     p_anneal_end_frac: 1.0
 
   - classname: "StochasticReconSubsetLoss"
@@ -44,10 +44,10 @@ loss_metric_configs:
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 64
+batch_size: 16
 eval_batch_size: 64
-steps: 200000
-lr: 0.0001
+steps: 400000
+lr: 0.0002
 lr_schedule: cosine
 lr_warmup_pct: 0.0
 lr_exponential_halflife: null
@@ -61,7 +61,7 @@ faithfulness_warmup_weight_decay: 0.0
 # --- Logging & Saving ---
 train_log_freq: 200
 eval_freq: 1000
-slow_eval_freq: 2000
+slow_eval_freq: 10000
 slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
