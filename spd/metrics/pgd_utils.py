@@ -288,10 +288,6 @@ def calc_multibatch_pgd_masked_recon_loss(
         batch_dims=torch.Size(batch_dims),
     )
 
-    assert torch.equal(
-        extract_batch_data(next(create_data_iter())), extract_batch_data(next(create_data_iter()))
-    ), "Data iterator should be deterministic"
-
     for _ in range(pgd_config.n_steps):
         assert adv_sources.grad is None
         _, _, adv_sources_grads = fwd_bwd_fn(data_iter=create_data_iter())
