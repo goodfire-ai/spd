@@ -1,6 +1,7 @@
 """Language Model decomposition script."""
 
 import json
+import os
 from pathlib import Path
 
 import fire
@@ -58,6 +59,10 @@ def main(
                 tags.append(evals_id)
             if sweep_id:
                 tags.append(sweep_id)
+            slurm_job_id = os.getenv("SLURM_JOB_ID", None)
+            if slurm_job_id is not None:
+                logger.info(f"Running on slurm job id: {slurm_job_id}")
+                tags.append(f"slurm-id_{slurm_job_id}")
             config = init_wandb(config, config.wandb_project, tags=tags)
             assert wandb.run
             if config.wandb_run_name:

@@ -231,7 +231,7 @@ def get_activations_data_streaming(
                 component_activation_tokens[module_name][component_idx][token_id] += 1
 
         # Yield progress update
-        logger.info(f"Processed batch {i+1}/{n_batches}")
+        logger.info(f"Processed batch {i + 1}/{n_batches}")
         yield ("progress", i)
 
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
