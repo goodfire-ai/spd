@@ -3,7 +3,6 @@ from typing import Literal
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
-from torch.utils.data import DataLoader
 
 from spd.configs import (
     CIMaskedReconLayerwiseLossConfig,
@@ -37,7 +36,7 @@ from spd.metrics import (
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
 )
-from spd.metrics.pgd_utils import calc_multibatch_pgd_masked_recon_loss
+from spd.metrics.pgd_utils import CreateDataIter, calc_multibatch_pgd_masked_recon_loss
 from spd.models.component_model import CIOutputs, ComponentModel
 
 
@@ -54,8 +53,7 @@ def compute_total_loss(
     use_delta_component: bool,
     n_mask_samples: int,
     output_loss_type: Literal["mse", "kl"],
-    multibatch_pgd_dataloader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    create_data_iter: CreateDataIter,
     batch_dims: tuple[int, ...],
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
@@ -187,7 +185,7 @@ def compute_total_loss(
                     pgd_config=cfg,
                     model=model,
                     weight_deltas=weight_deltas if use_delta_component else None,
-                    dataloader=multibatch_pgd_dataloader,
+                    create_data_iter=create_data_iter,
                     output_loss_type=output_loss_type,
                     routing=routing,
                     sampling=sampling,
