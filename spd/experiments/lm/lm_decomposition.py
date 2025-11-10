@@ -19,6 +19,7 @@ from spd.utils.distributed_utils import (
     get_device,
     init_distributed,
     is_main_process,
+    sync_across_processes,
     with_distributed_cleanup,
 )
 from spd.utils.general_utils import resolve_class, save_pre_run_info, set_seed
@@ -63,7 +64,9 @@ def main(
             if slurm_job_id is not None:
                 logger.info(f"Running on slurm job id: {slurm_job_id}")
                 tags.append(f"slurm-id_{slurm_job_id}")
+            print("initing wandb")
             config = init_wandb(config, config.wandb_project, tags=tags)
+            print("wandb done")
             assert wandb.run
             if config.wandb_run_name:
                 wandb.run.name = config.wandb_run_name
@@ -80,6 +83,12 @@ def main(
     else:
         out_dir = None
 
+    print("out_dir", out_dir)
+
+    # Synchronize all ranks after wandb initialization to prevent deadlock
+    sync_across_processes()
+    print("synced")
+
     device = get_device()
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
 
@@ -88,6 +97,8 @@ def main(
         f"Model class {pretrained_model_class} should have a `from_pretrained` method"
     )
     assert config.pretrained_model_name is not None
+
+    print("pretrained_model_class", pretrained_model_class)
 
     ln_stds: dict[str, float] | None = None
     if config.pretrained_model_class.startswith("simple_stories_train"):
@@ -107,6 +118,7 @@ def main(
             config.pretrained_model_name,
         )
     target_model.eval()
+    print("got target_model")
 
     if is_main_process():
         assert out_dir is not None
@@ -120,6 +132,7 @@ def main(
             task_name=None,
         )
 
+    print("saved pre run info")
     # --- Load Data --- #
     if is_main_process():
         logger.info("Loading dataset...")
