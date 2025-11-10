@@ -66,8 +66,10 @@ class StochasticReconSubsetLossConfig(LossMetricConfig):
 class StochasticReconLayerwiseLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
 
+
 class UnmaskedReconLossConfig(LossMetricConfig):
     classname: Literal["UnmaskedReconLoss"] = "UnmaskedReconLoss"
+
 
 PGDInitStrategy = Literal["random", "ones", "zeroes"]
 
