@@ -24,9 +24,9 @@
         line-height: 1.8;
         color: #333;
         padding: 0.5rem;
-        background: #f8f9fa;
-        border-radius: 4px;
-        border: 1px solid #e9ecef;
+        /* background: white; */
+        /* border-radius: 4px;
+        border: 1px solid #e9ecef; */
         overflow: visible;
     }
 </style>

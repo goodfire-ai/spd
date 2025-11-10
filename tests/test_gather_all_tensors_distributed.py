@@ -3,7 +3,10 @@
 This file can be run in two ways:
 
 1. Directly with mpirun (fastest):
-   mpirun -np 2 python tests/test_gather_all_tensors_distributed.py
+   mpirun --bind-to none -np 2 python tests/test_gather_all_tensors_distributed.py
+   (see:
+   https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
+   for why we need to bind to none)
 
 2. Via pytest (runs mpirun in subprocess):
    pytest tests/test_gather_all_tensors_distributed.py
@@ -220,7 +223,15 @@ class TestGatherAllTensors:
             "OMP_NUM_THREADS": "1",
         }
 
-        cmd = ["mpirun", "-np", "2", sys.executable, str(script_path)]
+        cmd = [
+            "mpirun",
+            "--bind-to",  # avoid trying to bind to cores that aren't available.
+            "none",  #  See: https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
+            "-np",
+            "2",
+            sys.executable,
+            str(script_path),
+        ]
 
         result = subprocess.run(
             cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=120
