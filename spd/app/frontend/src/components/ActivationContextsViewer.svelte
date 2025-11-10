@@ -1,35 +1,56 @@
 <script lang="ts">
-    import { run } from 'svelte/legacy';
-
-    import type { SubcomponentActivationContexts, TokenDensity } from "../lib/api";
-    import ActivationContext from "./ActivationContext.svelte";
+    import type { ComponentDetail, HarvestMetadata } from "../lib/api";
+    import * as api from "../lib/api";
+    import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
 
     interface Props {
-        allLayersData: Record<string, SubcomponentActivationContexts[]>;
+        harvestMetadata: HarvestMetadata;
     }
 
-    let { allLayersData }: Props = $props();
-    if (Object.keys(allLayersData).length === 0) {
+    let { harvestMetadata }: Props = $props();
+    if (Object.keys(harvestMetadata.layers).length === 0) {
         throw new Error("No layers data");
     }
     const LIMIT = 20;
 
     let currentPage = $state(0);
-    let selectedLayer: string = $state(Object.keys(allLayersData)[0]);
-    let metricMode: "recall" | "precision" = $state("recall");
+    let selectedLayer = $derived(Object.keys(harvestMetadata.layers)[0]);
+    let metricMode = $state<"recall" | "precision">("recall");
 
-    // reset selectedLayer to first layer when allLayersData changes
-    run(() => {
-        selectedLayer = Object.keys(allLayersData)[0];
-    });
+    // Display page (1-indexed)
+    let displayPage = $derived(currentPage + 1);
+
+    // Update currentPage when page input changes
+    function handlePageInput(event: Event) {
+        const target = event.target as HTMLInputElement;
+        const value = parseInt(target.value);
+        if (!isNaN(value) && value >= 1 && value <= totalPages) {
+            currentPage = value - 1;
+        }
+        // If invalid, the derived displayPage will show the correct value
+    }
+
+    // Component data cache: key is `${layer}:${componentIdx}`
+    let componentCache = $state<Record<string, ComponentDetail>>({});
+    let loadingComponent = $state(false);
 
     // Derive available layers from the data
-    let availableComponentLayers = $derived(Object.keys(allLayersData));
+    let availableComponentLayers = $derived(Object.keys(harvestMetadata.layers));
 
-    // Derive current data from selections
-    let currentLayerData = $derived(selectedLayer ? allLayersData[selectedLayer] : null);
-    let totalPages = $derived(currentLayerData?.length ?? 0);
-    let currentItem = $derived(currentLayerData?.[currentPage]);
+    // Derive current metadata from selections
+    let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
+    let totalPages = $derived(currentLayerMetadata.length);
+
+    // current page isn't reset to 0 instantly when layer changes, so we must handle the case when,
+    // for a brief moment, the current page is out of bounds.
+    let currentMetadata = $derived<api.SubcomponentMetadata | null>(currentLayerMetadata.at(currentPage) ?? null);
+
+    // Get current component data from cache
+    let currentItem = $derived.by(() => {
+        if (!currentMetadata) return null;
+        const cacheKey = `${selectedLayer}:${currentMetadata.subcomponent_idx}`;
+        return componentCache[cacheKey] ?? null;
+    });
 
     function previousPage() {
         if (currentPage > 0) currentPage--;
@@ -40,14 +61,53 @@
     }
 
     // Reset page when layer changes
-    run(() => {
+    $effect(() => {
         if (selectedLayer) currentPage = 0;
     });
 
-    let densities = $derived(currentItem?.token_densities
-        ?.slice()
-        .sort((a: TokenDensity, b: TokenDensity) => b[metricMode] - a[metricMode])
-        .slice(0, LIMIT));
+    // Lazy-load component data when page or layer changes
+    $effect(() => {
+        // establish dependencies by reading them
+        const meta = currentMetadata;
+        const layer = selectedLayer;
+
+        if (!meta) return;
+
+        const cacheKey = `${layer}:${meta.subcomponent_idx}`;
+
+        // skip if already cached
+        if (componentCache[cacheKey]) return;
+
+        let cancelled = false;
+        loadingComponent = true;
+
+        const load = async () => {
+            try {
+                const detail = await api.getComponentDetail(harvestMetadata.harvest_id, layer, meta.subcomponent_idx);
+
+                if (cancelled) return;
+                componentCache[cacheKey] = detail; // writes to $state
+            } catch (error) {
+                if (!cancelled) console.error("Failed to load component:", error);
+            } finally {
+                if (!cancelled) loadingComponent = false;
+            }
+        };
+
+        load();
+
+        // cleanup if deps change before the async work finishes
+        return () => {
+            cancelled = true;
+        };
+    });
+
+    let densities = $derived(
+        currentItem?.token_prs
+            ?.slice()
+            .sort((a, b) => b[metricMode] - a[metricMode])
+            .slice(0, LIMIT),
+    );
 </script>
 
 <div class="layer-select-section">
@@ -61,33 +121,32 @@
 
 <div class="pagination-controls">
     <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
-    <input type="number" min="0" max={totalPages - 1} bind:value={currentPage} class="page-input" />
-    <span>of {totalPages - 1}</span>
+    <input type="number" min="1" max={totalPages} value={displayPage} oninput={handlePageInput} class="page-input" />
+    <span>of {totalPages}</span>
     <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
 </div>
 
-{#if currentItem}
+{#if loadingComponent}
+    <div class="loading">Loading component data...</div>
+{:else if currentItem && currentMetadata}
     <div class="subcomponent-section-header">
         <h4>
-            Subcomponent {currentItem.subcomponent_idx} (Mean CI: {currentItem.mean_ci < 0.001
-                ? currentItem.mean_ci.toExponential(2)
-                : currentItem.mean_ci.toFixed(3)})
+            Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci < 0.001
+                ? currentMetadata.mean_ci.toExponential(2)
+                : currentMetadata.mean_ci.toFixed(3)})
         </h4>
         {#if densities != null}
             <div class="token-densities">
                 <div class="token-densities-header">
                     <h5>
                         Tokens
-                        {currentItem.token_densities.length > LIMIT
-                            ? `(top ${LIMIT} of ${currentItem.token_densities.length})`
+                        {currentItem.token_prs.length > LIMIT
+                            ? `(top ${LIMIT} of ${currentItem.token_prs.length})`
                             : ""}
                     </h5>
                     <div class="metric-toggle">
                         <div class="toggle-buttons">
-                            <button
-                                class:active={metricMode === "recall"}
-                                onclick={() => (metricMode = "recall")}
-                            >
+                            <button class:active={metricMode === "recall"} onclick={() => (metricMode = "recall")}>
                                 Recall
                                 <span class="math-notation">P(token | firing)</span>
                             </button>
@@ -116,14 +175,7 @@
             </div>
         {/if}
 
-        <div class="subcomponent-section">
-            {currentItem.examples.length > 200
-                ? `Showing top 200 examples of ${currentItem.examples.length} examples`
-                : ""}
-            {#each currentItem.examples.slice(0, 200) as example (example.__id)}
-                <ActivationContext {example} />
-            {/each}
-        </div>
+        <ActivationContextsPagedTable examples={currentItem.examples} />
     </div>
 {/if}
 
@@ -131,8 +183,8 @@
     .layer-select-section {
         display: flex;
         align-items: center;
-        gap: 1rem;
-        padding: 1rem;
+        gap: 0.5rem;
+        padding: 0.5rem;
         background: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #dee2e6;
@@ -165,7 +217,7 @@
     }
 
     .toggle-buttons button {
-        padding: 0.5rem 1rem;
+        padding: 0.5rem 0.5rem;
         border: none;
         background: white;
         cursor: pointer;
@@ -194,17 +246,17 @@
         gap: 0.5rem;
         padding: 0.5rem;
         background: #f8f9fa;
-        border-radius: 8px;
+        border-radius: 6px;
         border: 1px solid #dee2e6;
     }
 
     .pagination-controls button {
-        padding: 0.5rem 1rem;
+        padding: 0.25rem 0.75rem;
         border: 1px solid #dee2e6;
         border-radius: 4px;
         background: white;
         cursor: pointer;
-        font-size: 1rem;
+        font-size: 0.9rem;
     }
 
     .pagination-controls button:disabled {
@@ -212,12 +264,26 @@
         cursor: not-allowed;
     }
 
+    .pagination-controls span {
+        font-size: 0.9rem;
+        color: #495057;
+        white-space: nowrap;
+    }
+
     .page-input {
         width: 60px;
-        padding: 0.5rem;
+        padding: 0.25rem 0.5rem;
         border: 1px solid #dee2e6;
         border-radius: 4px;
         text-align: center;
+        font-size: 0.9rem;
+        appearance: textfield;
+    }
+
+    .page-input::-webkit-inner-spin-button,
+    .page-input::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
     }
 
     .subcomponent-section-header {
@@ -226,15 +292,14 @@
         gap: 0.4rem;
     }
 
-    .subcomponent-section {
-        border-radius: 8px;
-        overflow: visible;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    .subcomponent-section-header h4 {
+        margin: 0;
+        font-size: 1rem;
+        color: #495057;
     }
 
     .token-densities {
-        margin: 1rem 0;
-        padding: 1rem;
+        padding: 0.5rem;
         background: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #dee2e6;
@@ -244,8 +309,8 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 1rem;
-        gap: 1rem;
+        margin-bottom: 0.5rem;
+        gap: 0.5rem;
         flex-wrap: wrap;
     }
 
@@ -303,5 +368,12 @@
         text-align: right;
         color: #495057;
         font-weight: 500;
+    }
+
+    .loading {
+        padding: 2rem;
+        text-align: center;
+        color: #6c757d;
+        font-size: 1rem;
     }
 </style>

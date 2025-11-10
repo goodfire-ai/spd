@@ -51,12 +51,12 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["spd*", "app*"]
+include = ["spd*"]
 
 [tool.ruff]
 line-length = 100
 fix = true
-extend-exclude = ["app/frontend"]
+extend-exclude = ["spd/app/frontend"]
 
 [tool.ruff.lint]
 ignore = [
@@ -87,8 +87,8 @@ docstring-code-format = true
 known-third-party = ["wandb"]
 
 [tool.pyright]
-include = ["spd", "app", "tests"]
-exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py", "app/frontend"]
+include = ["spd", "tests"]
+exclude = ["**/wandb/**", "spd/utils/linear_sum_assignment.py", "spd/app/frontend"]
 stubPath = "typings" # Having type stubs for transformers shaves 10 seconds off basedpyright calls
 
 strictListInference = true
