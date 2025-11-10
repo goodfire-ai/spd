@@ -70,7 +70,9 @@ def flatten_metric_configs(config_dict: dict[str, Any]) -> dict[str, Any]:
 
             classname = config_item["classname"]
             assert isinstance(classname, str), f"{config_list_name} should have a classname"
+            print("[DEBUG] classname", classname)
             short_name = METRIC_CONFIG_SHORT_NAMES[classname]
+            print("[DEBUG] short_name", short_name)
 
             for key, value in config_item.items():
                 if key == "classname":
@@ -153,29 +155,44 @@ def init_wandb[T_config: BaseModel](
     """
     load_dotenv(override=True)
 
+    # Disable wandb service to prevent interference with distributed training
+    os.environ["WANDB_DISABLE_SERVICE"] = "true"
+
+    print("[DEBUG] About to call wandb.init()")
     wandb.init(
         project=project,
         entity=os.getenv("WANDB_ENTITY"),
         name=name,
         tags=tags,
     )
+    print("[DEBUG] wandb.init() completed")
     assert wandb.run is not None
+    print("[DEBUG] About to call wandb.run.log_code()")
     wandb.run.log_code(
         root=str(REPO_ROOT / "spd"), exclude_fn=lambda path: "out" in Path(path).parts
     )
+    print("[DEBUG] log_code() completed")
 
     # Update the config with the hyperparameters for this sweep (if any)
+    print("[DEBUG] About to call replace_pydantic_model()")
     config = replace_pydantic_model(config, wandb.config.as_dict())
+    print("[DEBUG] replace_pydantic_model() completed")
 
+    print("[DEBUG] About to call config.model_dump()")
     config_dict = config.model_dump(mode="json")
+    print("[DEBUG] model_dump() completed")
     # We also want flattened names for easier wandb searchability
+    print("[DEBUG] About to call flatten_metric_configs()")
     flattened_config_dict = flatten_metric_configs(config_dict)
+    print("[DEBUG] flatten_metric_configs() completed")
     # Remove the nested metric configs to avoid duplication (if they exist)
     if "loss_metric_configs" in config_dict:
         del config_dict["loss_metric_configs"]
     if "eval_metric_configs" in config_dict:
         del config_dict["eval_metric_configs"]
+    print("[DEBUG] About to call wandb.config.update()")
     wandb.config.update({**config_dict, **flattened_config_dict})
+    print("[DEBUG] wandb.config.update() completed")
     return config
 
 
