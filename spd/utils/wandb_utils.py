@@ -153,6 +153,9 @@ def init_wandb[T_config: BaseModel](
     """
     load_dotenv(override=True)
 
+    # Disable wandb service to prevent interference with distributed training
+    os.environ["WANDB_DISABLE_SERVICE"] = "true"
+
     wandb.init(
         project=project,
         entity=os.getenv("WANDB_ENTITY"),

@@ -19,6 +19,7 @@ from spd.utils.distributed_utils import (
     get_device,
     init_distributed,
     is_main_process,
+    sync_across_processes,
     with_distributed_cleanup,
 )
 from spd.utils.general_utils import resolve_class, save_pre_run_info, set_seed
@@ -80,6 +81,9 @@ def main(
     else:
         out_dir = None
 
+    # Synchronize all ranks after wandb initialization to prevent deadlock
+    sync_across_processes()
+
     device = get_device()
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
 
@@ -88,6 +92,8 @@ def main(
         f"Model class {pretrained_model_class} should have a `from_pretrained` method"
     )
     assert config.pretrained_model_name is not None
+
+    print("pretrained_model_class", pretrained_model_class)
 
     ln_stds: dict[str, float] | None = None
     if config.pretrained_model_class.startswith("simple_stories_train"):
@@ -107,6 +113,7 @@ def main(
             config.pretrained_model_name,
         )
     target_model.eval()
+    print("got target_model")
 
     if is_main_process():
         assert out_dir is not None
@@ -120,6 +127,7 @@ def main(
             task_name=None,
         )
 
+    print("saved pre run info")
     # --- Load Data --- #
     if is_main_process():
         logger.info("Loading dataset...")
