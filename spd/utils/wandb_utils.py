@@ -153,19 +153,28 @@ def init_wandb[T_config: BaseModel](
     """
     load_dotenv(override=True)
 
+    # Disable wandb service to prevent interference with distributed training
+    os.environ["WANDB_DISABLE_SERVICE"] = "true"
+
+    print("[DEBUG] About to call wandb.init()")
     wandb.init(
         project=project,
         entity=os.getenv("WANDB_ENTITY"),
         name=name,
         tags=tags,
     )
+    print("[DEBUG] wandb.init() completed")
     assert wandb.run is not None
+    print("[DEBUG] About to call wandb.run.log_code()")
     wandb.run.log_code(
         root=str(REPO_ROOT / "spd"), exclude_fn=lambda path: "out" in Path(path).parts
     )
+    print("[DEBUG] log_code() completed")
 
     # Update the config with the hyperparameters for this sweep (if any)
+    print("[DEBUG] About to call replace_pydantic_model()")
     config = replace_pydantic_model(config, wandb.config.as_dict())
+    print("[DEBUG] replace_pydantic_model() completed")
 
     config_dict = config.model_dump(mode="json")
     # We also want flattened names for easier wandb searchability
@@ -175,7 +184,9 @@ def init_wandb[T_config: BaseModel](
         del config_dict["loss_metric_configs"]
     if "eval_metric_configs" in config_dict:
         del config_dict["eval_metric_configs"]
+    print("[DEBUG] About to call wandb.config.update()")
     wandb.config.update({**config_dict, **flattened_config_dict})
+    print("[DEBUG] wandb.config.update() completed")
     return config
 
 
