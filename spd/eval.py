@@ -32,8 +32,10 @@ from spd.configs import (
     StochasticReconLossConfig,
     StochasticReconSubsetCEAndKLConfig,
     StochasticReconSubsetLossConfig,
+    UnmaskedReconLossConfig,
     UVPlotsConfig,
 )
+from spd.metrics import UnmaskedReconLoss
 from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
@@ -254,6 +256,12 @@ def init_metric(
                 sampling=run_config.sampling,
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
+            )
+        case UnmaskedReconLossConfig():
+            metric = UnmaskedReconLoss(
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
             )
     return metric
 
