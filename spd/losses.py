@@ -19,6 +19,7 @@ from spd.configs import (
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
     StochasticReconSubsetLossConfig,
+    UnmaskedReconLossConfig,
 )
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
@@ -33,6 +34,7 @@ from spd.metrics import (
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
+    unmasked_recon_loss,
 )
 from spd.models.component_model import CIOutputs, ComponentModel
 
@@ -169,6 +171,13 @@ def compute_total_loss(
                     pre_weight_acts=pre_weight_acts,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
+                )
+            case UnmaskedReconLossConfig():
+                loss = unmasked_recon_loss(
+                    model=model,
+                    output_loss_type=output_loss_type,
+                    batch=batch,
+                    target_out=target_out,
                 )
 
         terms[f"loss/{cfg.classname}"] = loss.item()
