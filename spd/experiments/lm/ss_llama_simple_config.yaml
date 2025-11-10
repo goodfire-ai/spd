@@ -34,13 +34,16 @@ loss_metric_configs:
 
   - classname: "StochasticReconSubsetLoss"
     coeff: 1.0
+  
+  - classname: "UnmaskedReconLoss"
+    coeff: 0.3
 
 output_loss_type: kl
 
 # --- Training ---
 batch_size: 256
 eval_batch_size: 64
-steps: 200000
+steps: 3000
 lr: 0.0002
 lr_schedule: cosine
 lr_warmup_pct: 0.0
