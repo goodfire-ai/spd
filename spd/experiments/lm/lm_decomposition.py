@@ -19,6 +19,7 @@ from spd.utils.distributed_utils import (
     get_device,
     init_distributed,
     is_main_process,
+    sync_across_processes,
     with_distributed_cleanup,
 )
 from spd.utils.general_utils import resolve_class, save_pre_run_info, set_seed
@@ -79,6 +80,9 @@ def main(
             logger.info(f"Running distributed training with {dist_state.world_size} processes")
     else:
         out_dir = None
+
+    # Synchronize all ranks after wandb initialization to prevent deadlock
+    sync_across_processes()
 
     device = get_device()
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
