@@ -147,8 +147,10 @@ class TestSPDRun:
             # Should be a list of arguments
             assert isinstance(args, list)
             assert args[0] == "NCCL_DEBUG=WARN"
-            assert args[1] == "python"
-            assert "_decomposition.py" in args[2]
+            assert args[1] == "TORCH_NCCL_ASYNC_ERROR_HANDLING=1"
+            assert args[2] == "NCCL_ASYNC_ERROR_HANDLING=1"
+            assert args[3] == "python"
+            assert "_decomposition.py" in args[4]
 
             # Check for required arguments in the command
             cmd_str = " ".join(args)
