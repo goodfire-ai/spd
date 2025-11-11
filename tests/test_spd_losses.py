@@ -16,6 +16,7 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
 )
 from spd.models.component_model import ComponentModel
+from spd.routing import UniformKSubsetRouter
 
 
 class TinyLinearModel(nn.Module):
@@ -383,6 +384,7 @@ class TestCIMaskedReconSubsetLoss:
             batch=batch,
             target_out=target_out,
             ci=ci,
+            router=UniformKSubsetRouter(device=batch.device),
         )
 
         # Subset routing should produce a valid loss
@@ -400,7 +402,12 @@ class TestCIMaskedReconSubsetLoss:
         # Run multiple times
         losses = [
             ci_masked_recon_subset_loss(
-                model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci
+                model=model,
+                output_loss_type="mse",
+                batch=batch,
+                target_out=target_out,
+                ci=ci,
+                router=UniformKSubsetRouter(device=batch.device),
             )
             for _ in range(3)
         ]
@@ -585,6 +592,7 @@ class TestStochasticReconSubsetLoss:
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
+            router=UniformKSubsetRouter(device=batch.device),
         )
 
         assert result >= 0.0
@@ -608,6 +616,7 @@ class TestStochasticReconSubsetLoss:
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
+            router=UniformKSubsetRouter(device=batch.device),
         )
 
         assert result >= 0.0
@@ -632,6 +641,7 @@ class TestStochasticReconSubsetLoss:
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=weight_deltas,
+                router=UniformKSubsetRouter(device=batch.device),
             )
             for _ in range(3)
         ]

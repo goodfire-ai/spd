@@ -45,6 +45,7 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
 
 class CIMaskedReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
+    routing: Literal["uniform_k_subset"] | float = "uniform_k_subset"
 
 
 class CIMaskedReconLayerwiseLossConfig(LossMetricConfig):
@@ -61,6 +62,7 @@ class StochasticReconLossConfig(LossMetricConfig):
 
 class StochasticReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+    routing: Literal["uniform_k_subset"] | float = "uniform_k_subset"
 
 
 class StochasticReconLayerwiseLossConfig(LossMetricConfig):
@@ -85,6 +87,7 @@ class PGDReconLossConfig(PGDConfig):
 
 class PGDReconSubsetLossConfig(PGDConfig):
     classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
+    routing: Literal["uniform_k_subset"] | float = "uniform_k_subset"
 
 
 class PGDReconLayerwiseLossConfig(PGDConfig):

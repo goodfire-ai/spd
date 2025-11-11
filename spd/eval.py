@@ -57,6 +57,7 @@ from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetC
 from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
+from spd.routing import get_router
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import extract_batch_data
 
@@ -149,7 +150,10 @@ def init_metric(
             )
         case CIMaskedReconSubsetLossConfig():
             metric = CIMaskedReconSubsetLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+                router=get_router(cfg.routing, device),
             )
         case CIMaskedReconLayerwiseLossConfig():
             metric = CIMaskedReconLayerwiseLoss(
@@ -205,6 +209,7 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
                 output_loss_type=run_config.output_loss_type,
+                router=get_router(cfg.routing, device),
             )
         case PGDReconLossConfig():
             metric = PGDReconLoss(
@@ -221,6 +226,7 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
                 pgd_config=cfg,
+                router=get_router(cfg.routing, device),
             )
         case PGDReconLayerwiseLossConfig():
             metric = PGDReconLayerwiseLoss(

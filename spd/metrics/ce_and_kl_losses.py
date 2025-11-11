@@ -11,6 +11,7 @@ from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
+from spd.routing import AllRouter
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
@@ -115,7 +116,7 @@ class CEandKLLosses(Metric):
         mask_infos = calc_stochastic_component_mask_info(
             causal_importances=ci,
             component_mask_sampling=self.sampling,
-            routing="all",
+            router=AllRouter(),
             weight_deltas=None,
         )
         stoch_masked_logits = self.model(batch, mask_infos=mask_infos)

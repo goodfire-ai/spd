@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 5 make app)",
+      "Bash(pkill:*)",
+      "Bash(timeout 8 make app)",
+      "Bash(timeout 15 make app)",
+      "Bash(chmod:*)",
+      "Bash(bash:*)",
+      "Bash(timeout -k 3 12 make app)",
+      "Bash(python3:*)",
+      "Bash(git checkout:*)",
+      "Bash(git branch:*)",
+      "Bash(git fetch:*)",
+      "Bash(sacct:*)",
+      "Bash(git add:*)",
+      "Bash(npm run check:*)",
+      "Bash(squeue:*)",
+      "Bash(source:*)",
+      "Bash(python:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

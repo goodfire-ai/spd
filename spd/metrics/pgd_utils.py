@@ -8,10 +8,7 @@ from torch.distributed import ReduceOp
 from spd.configs import PGDConfig, PGDInitStrategy
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
-from spd.utils.component_utils import (
-    RoutingType,
-    sample_uniform_k_subset_routing_masks,
-)
+from spd.routing import Router
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
@@ -24,22 +21,17 @@ def pgd_masked_recon_loss_update(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl"],
-    routing: RoutingType,
+    router: Router,
     pgd_config: PGDConfig,
 ) -> tuple[Float[Tensor, ""], int]:
     """Central implementation of PGD masked reconstruction loss.
 
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
     """
-    match routing:
-        case "all":
-            routing_masks = "all"
-        case "uniform_k-stochastic":
-            routing_masks = sample_uniform_k_subset_routing_masks(
-                mask_shape=next(iter(ci.values())).shape[:-1],
-                module_names=list(ci.keys()),
-                device=batch.device,
-            )
+    routing_masks = router.route(
+        module_names=list(ci.keys()),
+        mask_shape=next(iter(ci.values())).shape[:-1],
+    )
 
     *batch_dims, C = next(iter(ci.values())).shape
     n_layers = len(ci)

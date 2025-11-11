@@ -6,7 +6,7 @@ from torch import Tensor
 from spd.configs import SamplingType
 from spd.metrics import stochastic_recon_subset_loss
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
-from spd.utils.component_utils import RoutingType
+from spd.routing import Router, UniformKSubsetRouter
 from tests.metrics.fixtures import make_one_layer_component_model
 
 
@@ -47,7 +47,7 @@ class TestStochasticReconSubsetLoss:
         def mock_calc_stochastic_component_mask_info(
             causal_importances: dict[str, Tensor],  # pyright: ignore[reportUnusedParameter]
             component_mask_sampling: SamplingType,  # pyright: ignore[reportUnusedParameter]
-            routing: RoutingType,  # pyright: ignore[reportUnusedParameter]
+            router: Router,  # pyright: ignore[reportUnusedParameter]
             weight_deltas: dict[str, Tensor] | None,  # pyright: ignore[reportUnusedParameter]
         ) -> dict[str, ComponentsMaskInfo]:
             idx = call_count[0] % len(sample_data)
@@ -97,6 +97,7 @@ class TestStochasticReconSubsetLoss:
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=None,
+                router=UniformKSubsetRouter(device=batch.device),
             )
 
             assert torch.allclose(actual_loss, torch.tensor(expected_loss), rtol=1e-5), (
