@@ -98,7 +98,6 @@ class DashboardData:
     activations: Activations
     index_summaries: IndexSummaries
     trees: DecisionTreesData
-    metadata: dict[str, Any]
 
     def serialize(self) -> dict[str, Any]:
         """Serialize all dashboard data by calling serialize() on components.
@@ -106,7 +105,6 @@ class DashboardData:
         Returns dict ready for ZANJ storage with proper structure for dashboard consumption.
         """
         data: dict[str, Any] = {
-            "metadata": self.metadata,
             "activations": self.activations.serialize(),
             "index_summaries": self.index_summaries.serialize(),
             "embed_table": self.index_summaries.embed_table(),

@@ -4,7 +4,6 @@ let treeData = null;
 let targetComponentLabel = null;
 let featureComponents = {};  // Map from feature label to component data
 let treeViewer = null;
-let dashboardData = {};
 let columnSamples = {};  // Track which sample index is shown for each column (shared across all rows)
 let allSamples = [];  // All available samples from activations data
 let fullData = null;  // Store full ZANJ data for accessing activations
@@ -30,7 +29,6 @@ async function loadData() {
         const data = await loader.read();
         fullData = data;  // Store for accessing activations later
 
-        dashboardData = await data.metadata;
 
         // Load tree data from all_trees
         // Try direct access first

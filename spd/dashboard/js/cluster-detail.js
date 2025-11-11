@@ -1,7 +1,6 @@
 let componentData = null;
 let allComponents = [];
 let currentComponentLabel = null;
-let dashboardData = {};
 let fullData = null;  // Store full ZANJ data for accessing activations
 // TODO: Re-enable explanations feature
 // let explanations = {};
@@ -32,8 +31,6 @@ async function loadData() {
         const loader = new ZanjLoader(CONFIG.data.dataDir);
         const data = await loader.read();
         fullData = data;  // Store for accessing activations later
-
-        dashboardData = await data.metadata;
 
         // Extract module name from component label (format: "module.name:index")
         const moduleName = currentComponentLabel.split(':')[0];

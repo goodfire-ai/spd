@@ -1,5 +1,4 @@
 let componentData = [];
-let dashboardData = {};
 let dataTable = null;
 // TODO: Re-enable explanations feature
 // let explanations = {};
@@ -512,7 +511,6 @@ async function loadData() {
     const data = await loader.read();
 
     // Extract data
-    dashboardData = await data.metadata;
     const indexSummaries = await data.index_summaries;
     componentData = await indexSummaries.summaries;
 
@@ -702,9 +700,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
 
     // Populate Alpine.js component with loaded dashboard metadata
-    const modelInfoEl = document.getElementById('modelInfo');
-    if (modelInfoEl && Alpine.$data(modelInfoEl)) {
-        Alpine.$data(modelInfoEl).data = dashboardData;
-        Alpine.$data(modelInfoEl).hasData = Object.keys(dashboardData).length > 0;
-    }
+    // const modelInfoEl = document.getElementById('modelInfo');
+    // if (modelInfoEl && Alpine.$data(modelInfoEl)) {
+    //     Alpine.$data(modelInfoEl).data = dashboardData;
+    //     Alpine.$data(modelInfoEl).hasData = Object.keys(dashboardData).length > 0;
+    // }
 });

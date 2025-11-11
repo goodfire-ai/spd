@@ -69,10 +69,6 @@ class ComponentDashboardConfig(BaseConfig):
         default=0.01,
         description="Threshold for component activation (used in causal importance computation)",
     )
-    dead_threshold: float = Field(
-        default=1e-6,
-        description="Components with max activation <= this are considered dead",
-    )
 
     # Analysis parameters
     n_samples: int = Field(
@@ -96,18 +92,6 @@ class ComponentDashboardConfig(BaseConfig):
     token_stats_top_n: int = Field(
         default=5,
         description="Number of top tokens to store in SubcomponentSummary (for index.html)",
-    )
-    token_stats_details_top_n: int = Field(
-        default=50,
-        description="Number of top tokens to store in SubcomponentDetails (for component.html)",
-    )
-    token_activations_summary_top_n: int = Field(
-        default=10,
-        description="Number of top tokens to include in TokenActivationsSummary embedded in stats",
-    )
-    token_active_threshold: float = Field(
-        default=0.01,
-        description="Threshold above which a component is considered active",
     )
 
     # Decision tree parameters
