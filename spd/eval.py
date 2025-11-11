@@ -141,7 +141,7 @@ def init_metric(
                 rounding_threshold=cfg.rounding_threshold,
             )
         case CIHistogramsConfig():
-            metric = CIHistograms(model=model, n_batches_accum=cfg.n_batches_accum)
+            metric = CIHistograms(model=model, n_batches_accum=cfg.n_batches_accum, device=device)
         case CI_L0Config():
             metric = CI_L0(
                 model=model,

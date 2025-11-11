@@ -20,6 +20,7 @@ class CIHistograms(Metric):
     def __init__(
         self,
         model: ComponentModel,
+        device: str | torch.device,
         n_batches_accum: int | None = None,
     ):
         self.n_batches_accum = n_batches_accum
@@ -27,8 +28,12 @@ class CIHistograms(Metric):
 
         # Store histogram counts instead of raw tensors - much smaller memory footprint
         # Each update bins values incrementally, avoiding expensive concatenation
-        self.lower_leaky_hist_counts = defaultdict[str, Tensor](lambda: torch.zeros(self.N_BINS))
-        self.pre_sigmoid_hist_counts = defaultdict[str, Tensor](lambda: torch.zeros(self.N_BINS))
+        self.lower_leaky_hist_counts = defaultdict[str, Tensor](
+            lambda: torch.zeros(self.N_BINS, device=device)
+        )
+        self.pre_sigmoid_hist_counts = defaultdict[str, Tensor](
+            lambda: torch.zeros(self.N_BINS, device=device)
+        )
 
     @override
     def update(self, *, ci: CIOutputs, **_: Any) -> None:
