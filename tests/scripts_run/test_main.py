@@ -161,6 +161,7 @@ class TestSPDRun:
                 assert "--sweep_params_json" in cmd_str
 
         # No wandb functions should be called since use_wandb=False
+
     def test_invalid_experiment_name(self):
         """Test that invalid experiment names raise an error.
 

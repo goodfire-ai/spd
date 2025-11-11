@@ -21,7 +21,7 @@ import yaml
 from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
-from spd.settings import REPO_ROOT
+from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
 from spd.utils.command_utils import run_script_array_local
 from spd.utils.run_utils import (
     ExecutionStamp,
@@ -30,10 +30,6 @@ from spd.utils.run_utils import (
     generate_run_name,
 )
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_script
-from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
-from spd.utils.git_utils import create_git_snapshot, repo_current_branch
-from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
-from spd.utils.slurm_utils import create_slurm_array_script
 from spd.utils.wandb_utils import wandb_setup
 
 
@@ -116,6 +112,12 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
     return base + (h % span)
 
 
+def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
+    """Build an MPI prefix for a command."""
+    port: int = _choose_master_port(run_id, idx)
+    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} "
+
+
 def generate_commands(
     experiments_list: list[str],
     run_id: str,
@@ -153,16 +155,7 @@ def generate_commands(
 
             config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
 
-            cmd_parts = [
-                "python",
-                str(exp_config.decomp_script),
-                "--config_json",
-                config_json,
-                "--sweep_id",
-                run_id,
-                "--evals_id",
-                experiment,
-            ]
+            mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
                 f"NCCL_DEBUG=WARN "
@@ -173,7 +166,7 @@ def generate_commands(
                 f"--evals_id {experiment}"
             )
 
-            commands.append(cmd)
+            commands.append(command)
             task_breakdown[experiment] = "1 task"
             cmd_idx += 1
 
@@ -207,9 +200,11 @@ def generate_commands(
 
                 if dp > 1:
                     port = _choose_master_port(run_id, cmd_idx)
-                    cmd = f'MASTER_PORT={port} mpirun -x "MASTER_PORT" -np {dp} {shlex.join(cmd_parts)}'
+                    cmd = (
+                        f'MASTER_PORT={port} mpirun -x "MASTER_PORT" -np {dp} {shlex.join(command)}'
+                    )
                 else:
-                    cmd = shlex.join(cmd_parts)
+                    cmd = shlex.join(command)
 
                 commands.append(cmd)
                 cmd_idx += 1
