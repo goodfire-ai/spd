@@ -34,6 +34,7 @@ from spd.configs import (
     StochasticReconSubsetLossConfig,
     UVPlotsConfig,
 )
+from spd.log import logger
 from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
@@ -286,7 +287,7 @@ def evaluate(
     # Weight deltas can be computed once per eval since params are frozen
     weight_deltas = model.calc_weight_deltas()
 
-    for _ in range(n_eval_steps):
+    for i in range(n_eval_steps):
         batch_raw = next(eval_iterator)
         batch = extract_batch_data(batch_raw).to(device)
 
@@ -297,7 +298,9 @@ def evaluate(
             sampling=run_config.sampling,
         )
 
+        logger.info(f"step {i} of {n_eval_steps}")
         for metric in metrics:
+            logger.info(f"Updating metric {type(metric).__name__}")
             metric.update(
                 batch=batch,
                 target_out=target_output.output,
@@ -309,6 +312,7 @@ def evaluate(
 
     outputs: MetricOutType = {}
     for metric in metrics:
+        logger.info(f"Computing metric {type(metric).__name__}")
         computed_raw: Any = metric.compute()
         computed = clean_metric_output(
             section=metric.metric_section,

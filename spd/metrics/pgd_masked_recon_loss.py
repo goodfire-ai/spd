@@ -9,7 +9,7 @@ from spd.configs import PGDConfig
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
 from spd.models.component_model import CIOutputs, ComponentModel
-from spd.routing import AllRouter
+from spd.routing import AllLayersRouter
 from spd.utils.distributed_utils import all_reduce
 
 
@@ -30,7 +30,7 @@ def pgd_recon_loss(
         weight_deltas=weight_deltas,
         target_out=target_out,
         output_loss_type=output_loss_type,
-        router=AllRouter(),
+        router=AllLayersRouter(),
         pgd_config=pgd_config,
     )
     return sum_loss / n_examples
@@ -74,7 +74,7 @@ class PGDReconLoss(Metric):
             weight_deltas=weight_deltas if self.use_delta_component else None,
             target_out=target_out,
             output_loss_type=self.output_loss_type,
-            router=AllRouter(),
+            router=AllLayersRouter(),
             pgd_config=self.pgd_config,
         )
         self.sum_loss += sum_loss

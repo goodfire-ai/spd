@@ -28,7 +28,7 @@ class UniformKSubsetRouter(Router):
         return sample_uniform_k_subset_routing_masks(mask_shape, module_names, self.device)
 
 
-class AllRouter(Router):
+class AllLayersRouter(Router):
     @override
     def route(self, module_names: list[str], mask_shape: tuple[int, ...]) -> Literal["all"]:
         return "all"

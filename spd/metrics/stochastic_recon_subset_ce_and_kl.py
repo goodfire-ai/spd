@@ -13,7 +13,7 @@ from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
-from spd.routing import AllRouter
+from spd.routing import AllLayersRouter
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
@@ -150,7 +150,7 @@ class StochasticReconSubsetCEAndKL(Metric):
                 causal_importances=ci,
                 component_mask_sampling=self.sampling,
                 weight_deltas=weight_deltas if self.use_delta_component else None,
-                router=AllRouter(),
+                router=AllLayersRouter(),
             )
             for _ in range(self.n_mask_samples)
         ]
