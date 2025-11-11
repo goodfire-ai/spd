@@ -324,6 +324,7 @@ class ComponentModel(LoadableModule):
     def __call__(self, *args: Any, **kwargs: Any) -> Tensor | OutputWithCache:
         return super().__call__(*args, **kwargs)
 
+    # TODO: why doesnt this have overrides???
     @override
     def forward(
         self,

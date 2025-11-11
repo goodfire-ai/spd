@@ -6,13 +6,20 @@ import json
 import secrets
 import string
 from pathlib import Path
-from typing import Any
+from typing import Any, Final, Literal, NamedTuple
 
 import torch
 import wandb
 import yaml
 
+from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
+from spd.utils.git_utils import (
+    create_git_snapshot,
+    repo_current_branch,
+    repo_current_commit_hash,
+    repo_is_clean,
+)
 
 # Fields that use discriminated union merging: field_name -> discriminator_field
 _DISCRIMINATED_LIST_FIELDS: dict[str, str] = {
@@ -37,6 +44,7 @@ def get_local_run_id() -> str:
     return f"local-{random_suffix}"
 
 
+# TODO: avoid using this function?
 def get_output_dir(use_wandb_id: bool = True) -> Path:
     """Get the output directory for a run.
 
@@ -465,3 +473,89 @@ def generate_run_name(params: dict[str, Any]) -> str:
             parts.append(f"{param}-{value}")
 
     return "-".join(parts)
+
+
+RunType = Literal["spd", "cluster", "ensemble"]
+
+RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {
+    "spd": "s",
+    "cluster": "c",
+    "ensemble": "e",
+}
+
+
+# TODO: This doesnt work in pytest but would in general be nice to enforce. hmm.
+# _CREATED_RUN_ID: bool = False
+
+
+class ExecutionStamp(NamedTuple):
+    run_id: str
+    snapshot_branch: str
+    commit_hash: str
+    run_type: RunType
+
+    @staticmethod
+    def _generate_run_id(run_type: RunType) -> str:
+        """Generate a unique run identifier,
+
+        Format: `{type_abbr}-{random_hex}`
+        """
+        # global _CREATED_RUN_ID
+        # if _CREATED_RUN_ID:
+        #     raise RuntimeError(
+        #         "Run ID has already been generated for this process! You can only call this once."
+        #     )
+        type_abbr: str = RUN_TYPE_ABBREVIATIONS[run_type]
+        random_hex: str = secrets.token_hex(4)
+        # _CREATED_RUN_ID = True
+        return f"{type_abbr}-{random_hex}"
+
+    @classmethod
+    def create(
+        cls,
+        run_type: RunType,
+        create_snapshot: bool,
+    ) -> "ExecutionStamp":
+        """create an execution stamp, possibly including a git snapshot branch"""
+
+        run_id: str = ExecutionStamp._generate_run_id(run_type)
+        snapshot_branch: str
+        commit_hash: str
+
+        if create_snapshot:
+            snapshot_branch, commit_hash = create_git_snapshot(run_id=run_id)
+            logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
+        else:
+            snapshot_branch = repo_current_branch()
+            if repo_is_clean(catch_except_as_false=True):
+                commit_hash = repo_current_commit_hash()
+                logger.info(f"Using current branch: {snapshot_branch} ({commit_hash[:8]})")
+            else:
+                commit_hash = "none"
+                logger.info(
+                    f"Using current branch: {snapshot_branch} (unpushed changes, no commit hash)"
+                )
+
+        return ExecutionStamp(
+            run_id=run_id,
+            snapshot_branch=snapshot_branch,
+            commit_hash=commit_hash,
+            run_type=run_type,
+        )
+
+    @property
+    def out_dir(self) -> Path:
+        """Get the output directory for this execution stamp."""
+        run_dir = SPD_CACHE_DIR / self.run_type / self.run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+
+_NO_ARG_PARSSED_SENTINEL = object()
+
+
+def read_noneable_str(value: str) -> str | None:
+    """Read a string that may be 'None' and convert to None."""
+    if value == "None":
+        return None
+    return value

@@ -11,9 +11,7 @@ import argparse
 import copy
 import json
 import shlex
-import subprocess
 import tempfile
-from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Final
@@ -24,15 +22,15 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
-from spd.utils.git_utils import create_git_snapshot, repo_current_branch
-from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
-from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
+from spd.utils.command_utils import run_script_array_local
+from spd.utils.run_utils import (
+    ExecutionStamp,
+    apply_nested_updates,
+    generate_grid_combinations,
+    generate_run_name,
+)
+from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_script
 from spd.utils.wandb_utils import wandb_setup
-
-
-def generate_run_id() -> str:
-    """Generate a unique run ID based on timestamp."""
-    return f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
 def resolve_sweep_params_path(sweep_params_file: str) -> Path:
@@ -147,7 +145,6 @@ def generate_commands(
     for experiment in experiments_list:
         exp_config = EXPERIMENT_REGISTRY[experiment]
 
-        # Load base config
         base_config = Config.from_file(exp_config.config_path)
 
         if sweep_params_path is None:
@@ -201,7 +198,15 @@ def generate_commands(
                     f"--sweep_params_json '{sweep_params_json}'"
                 )
 
-                commands.append(command)
+                if dp > 1:
+                    port = _choose_master_port(run_id, cmd_idx)
+                    cmd = (
+                        f'MASTER_PORT={port} mpirun -x "MASTER_PORT" -np {dp} {shlex.join(command)}'
+                    )
+                else:
+                    cmd = shlex.join(command)
+
+                commands.append(cmd)
                 cmd_idx += 1
 
                 # Print first combination as example
@@ -213,35 +218,6 @@ def generate_commands(
         logger.values(task_breakdown)
 
     return commands
-
-
-def run_commands_locally(commands: list[str]) -> None:
-    """Execute commands locally in sequence.
-
-    Args:
-        commands: List of shell commands to execute
-    """
-
-    logger.section(f"LOCAL EXECUTION: Running {len(commands)} tasks")
-
-    for i, command in enumerate(commands, 1):
-        # Parse command into arguments
-        args = shlex.split(command)
-
-        # Extract experiment name from script path for cleaner output
-        script_name = args[1].split("/")[-1]
-        logger.section(f"[{i}/{len(commands)}] Executing: {script_name}...")
-
-        result = subprocess.run(args)
-
-        if result.returncode != 0:
-            logger.warning(
-                f"[{i}/{len(commands)}] ⚠️  Warning: Command failed with exit code {result.returncode}"
-            )
-        else:
-            logger.info(f"[{i}/{len(commands)}] ✓ Completed successfully")
-
-    logger.section("LOCAL EXECUTION COMPLETE")
 
 
 def get_experiments(
@@ -345,7 +321,11 @@ def main(
     logger.set_format("console", log_format)
 
     # Determine run id
-    run_id: str = generate_run_id()
+    execution_stamp: ExecutionStamp = ExecutionStamp.create(
+        run_type="spd",
+        create_snapshot=create_snapshot,
+    )
+    run_id: str = execution_stamp.run_id
     logger.info(f"Run ID: {run_id}")
 
     # Determine the sweep parameters file
@@ -372,18 +352,6 @@ def main(
     # ==========================================================================================
 
     if not local or use_wandb:
-        # set up snapshot branch and commit hash
-        snapshot_branch: str
-        commit_hash: str
-
-        if create_snapshot:
-            snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="run")
-            logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
-        else:
-            snapshot_branch = repo_current_branch()
-            commit_hash = "none"
-            logger.info(f"Using current branch: {snapshot_branch}")
-
         # set up wandb
         if use_wandb:
             wandb_setup(
@@ -393,8 +361,8 @@ def main(
                 create_report=create_report,
                 # if `create_report == False`, the rest of the arguments don't matter
                 report_title=report_title,
-                snapshot_branch=snapshot_branch,
-                commit_hash=commit_hash,
+                snapshot_branch=execution_stamp.snapshot_branch,
+                commit_hash=execution_stamp.commit_hash,
                 include_run_comparer=sweep_params_file is not None,
             )
         else:
@@ -417,7 +385,7 @@ def main(
     )
 
     if local:
-        run_commands_locally(commands)
+        run_script_array_local(commands)
     else:
         # Submit to SLURM
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -434,14 +402,13 @@ def main(
                 script_path=array_script,
                 job_name=job_name,
                 commands=commands,
-                # again -- local is false, so snapshot_branch will exist
-                snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
+                snapshot_branch=execution_stamp.snapshot_branch,
                 max_concurrent_tasks=n_agents,
                 n_gpus_per_job=n_gpus_per_job,
                 partition=partition,
             )
 
-            array_job_id = submit_slurm_array(array_script)
+            array_job_id = submit_slurm_script(array_script)
 
             logger.section("Job submitted successfully!")
             logger.values(

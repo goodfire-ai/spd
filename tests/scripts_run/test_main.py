@@ -36,7 +36,7 @@ class TestSPDRun:
             ("tms_5-2", True, 4, None),  # Command count depends on sweep params
         ],
     )
-    @patch("spd.scripts.run.submit_slurm_array")
+    @patch("spd.scripts.run.submit_slurm_script")
     @patch("spd.scripts.run.create_slurm_array_script")
     @patch("spd.scripts.run.load_sweep_params")
     def test_spd_run_not_local_no_sweep(
@@ -179,7 +179,7 @@ class TestSPDRun:
                 **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
             )
 
-    @patch("spd.scripts.run.subprocess.run")
+    @patch("spd.scripts.run.run_script_array_local")
     def test_sweep_params_integration(self, mock_subprocess):
         """Test that sweep parameters are correctly integrated into commands.
 
@@ -197,12 +197,17 @@ class TestSPDRun:
             **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
         )
 
+        # Assert run_script_array_local was called exactly once
+        assert mock_subprocess.call_count == 1
+
+        # Get the commands list
+        commands = mock_subprocess.call_args[0][0]
+
         # Verify multiple commands were generated (sweep should create multiple runs)
-        assert mock_subprocess.call_count > 1
+        assert len(commands) > 1
 
         # Check that sweep parameters are in the commands
-        for call in mock_subprocess.call_args_list:
-            args = call[0][0]
-            cmd_str = " ".join(args)
-            assert "--sweep_params_json" in cmd_str
-            assert "json:" in cmd_str
+        for cmd in commands:
+            assert isinstance(cmd, str)
+            assert "--sweep_params_json" in cmd
+            assert "json:" in cmd
