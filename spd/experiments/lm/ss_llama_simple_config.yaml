@@ -1,6 +1,6 @@
 # --- WandB ---
 wandb_project: spd
-wandb_run_name: null
+wandb_run_name: fast_ci
 wandb_run_name_prefix: ""
 
 # --- General ---
