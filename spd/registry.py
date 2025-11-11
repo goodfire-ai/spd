@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import BaseModel
 
 from spd.settings import REPO_ROOT
 from spd.spd_types import TaskName
@@ -151,3 +152,14 @@ def get_max_expected_runtime(experiments_list: list[str]) -> str:
         EXPERIMENT_REGISTRY[experiment].expected_runtime for experiment in experiments_list
     )
     return f"{max_expected_runtime // 60}h{max_expected_runtime % 60}m"
+
+
+class RegisteredRun(BaseModel):
+    wandb_path: str
+    description: str
+
+
+def get_registered_runs() -> list[RegisteredRun]:
+    run_registry_path = REPO_ROOT / "spd" / "run_registry.yml"
+    run_dicts = yaml.safe_load(run_registry_path.read_text())
+    return [RegisteredRun.model_validate(run_dict) for run_dict in run_dicts]
