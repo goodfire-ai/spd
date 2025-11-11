@@ -117,7 +117,7 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
 def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
     """Build an MPI prefix for a command."""
     port: int = _choose_master_port(run_id, idx)
-    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} "
+    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} --bind-to none "
 
 
 def generate_commands(
@@ -161,7 +161,9 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
-                f"NCCL_DEBUG=WARN "
+                "NCCL_DEBUG=WARN "
+                "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
+                "NCCL_ASYNC_ERROR_HANDLING=1 "
                 f"{mpi_prefix}"
                 f"python {exp_config.decomp_script} "
                 f"--config_json '{config_json}' "
@@ -192,7 +194,9 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
-                    f"NCCL_DEBUG=WARN "
+                    "NCCL_DEBUG=WARN "
+                    "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
+                    "NCCL_ASYNC_ERROR_HANDLING=1 "
                     f"{mpi_prefix}"
                     f"python {exp_config.decomp_script} "
                     f"--config_json '{config_json}' "
@@ -229,7 +233,9 @@ def run_commands_locally(commands: list[str]) -> None:
         args = shlex.split(command)
 
         # Extract experiment name from script path for cleaner output
-        script_name = args[1].split("/")[-1]
+        # Skip environment variables (VAR=value format) to find the python script
+        script_path = next(arg for arg in args if "=" not in arg and arg.endswith(".py"))
+        script_name = script_path.split("/")[-1]
         logger.section(f"[{i}/{len(commands)}] Executing: {script_name}...")
 
         result = subprocess.run(args)

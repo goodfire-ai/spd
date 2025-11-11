@@ -234,7 +234,15 @@ class TestDistributedAliveComponentsTracker:
             "OMP_NUM_THREADS": "1",
         }
 
-        cmd = ["mpirun", "-np", "2", sys.executable, str(script_path)]
+        cmd = [
+            "mpirun",
+            "--bind-to",  # avoid trying to bind to cores that aren't available.
+            "none",  #  See: https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
+            "-np",
+            "2",
+            sys.executable,
+            str(script_path),
+        ]
 
         result = subprocess.run(
             cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=120

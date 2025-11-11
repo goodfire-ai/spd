@@ -3,7 +3,7 @@
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
 
     let loading = $state(false);
-    let allLayersData: api.ModelActivationContexts["layers"] | null = $state(null);
+    let harvestMetadata = $state<api.HarvestMetadata | null>(null);
     let progress = $state<api.ProgressUpdate | null>(null);
 
     // Configuration parameters
@@ -11,11 +11,11 @@
     let batchSize = $state(1);
     let nTokensEitherSide = $state(10);
     let importanceThreshold = $state(0.0);
-    let topkExamples = $state(40);
+    let topkExamples = $state(1000);
 
     async function loadContexts() {
         loading = true;
-        allLayersData = null;
+        harvestMetadata = null;
         progress = null;
         try {
             const data = await api.getSubcomponentActivationContexts(
@@ -28,9 +28,9 @@
                 },
                 (p) => {
                     progress = p;
-                }
+                },
             );
-            allLayersData = data.layers;
+            harvestMetadata = data;
         } catch (error) {
             console.error("Error loading contexts", error);
         } finally {
@@ -124,18 +124,15 @@
                 Processing batch {progress.current + 1} of {progress.total}
             </div>
             <div class="progress-bar">
-                <div
-                    class="progress-fill"
-                    style="width: {((progress.current + 1) / progress.total) * 100}%"
-                ></div>
+                <div class="progress-fill" style="width: {((progress.current + 1) / progress.total) * 100}%"></div>
             </div>
         </div>
     {:else if loading}
         <div class="loading">Loading...</div>
     {/if}
 
-    {#if allLayersData}
-        <ActivationContextsViewer {allLayersData} />
+    {#if harvestMetadata}
+        <ActivationContextsViewer {harvestMetadata} />
     {/if}
 </div>
 
@@ -143,14 +140,13 @@
     .tab-content {
         display: flex;
         flex-direction: column;
-        gap: 1rem;
-        padding: 1rem;
+        gap: 0.5rem;
     }
 
     .controls {
         display: flex;
-        gap: 1rem;
-        padding: 1rem;
+        gap: 0.5rem;
+        padding: 0.5rem;
         background: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #dee2e6;
@@ -160,7 +156,7 @@
     .config-section {
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.5rem;
     }
 
     .config-section h4 {
@@ -172,7 +168,7 @@
     .config-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-        gap: 1rem;
+        gap: 0.5rem;
     }
 
     .config-item {
@@ -218,7 +214,7 @@
     }
 
     .progress-container {
-        padding: 1rem;
+        padding: 0.5rem;
         background: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #dee2e6;
@@ -253,7 +249,7 @@
     }
 
     .loading {
-        padding: 1rem;
+        padding: 0.5rem;
         text-align: center;
         color: #6c757d;
     }
