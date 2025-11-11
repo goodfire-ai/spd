@@ -4,6 +4,7 @@ import torch
 from torch import Tensor
 
 from spd.metrics import ci_masked_recon_subset_loss
+from spd.routing import UniformKSubsetRouter
 from tests.metrics.fixtures import make_one_layer_component_model
 
 
@@ -45,7 +46,7 @@ class TestCIMaskedReconSubsetLoss:
             return routing_masks[idx]
 
         with patch(
-            "spd.metrics.ci_masked_recon_subset_loss.sample_uniform_k_subset_routing_masks",
+            "spd.routing.sample_uniform_k_subset_routing_masks",
             side_effect=mock_sample_uniform_k_subset_routing_masks,
         ):
             # Calculate expected loss manually
@@ -80,6 +81,7 @@ class TestCIMaskedReconSubsetLoss:
                     batch=batch,
                     target_out=target_out,
                     ci=ci,
+                    router=UniformKSubsetRouter(device=batch.device),
                 )
                 actual_losses.append(actual_loss.item())
 

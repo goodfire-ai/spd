@@ -8,6 +8,7 @@ from torch.distributed import ReduceOp
 from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
+from spd.routing import AllLayersRouter
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm, get_obj_device
@@ -33,7 +34,7 @@ def _stochastic_recon_loss_update(
             causal_importances=ci,
             component_mask_sampling=sampling,
             weight_deltas=weight_deltas,
-            routing="all",
+            router=AllLayersRouter(),
         )
         for _ in range(n_mask_samples)
     ]
