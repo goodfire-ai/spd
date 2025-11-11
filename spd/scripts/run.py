@@ -163,7 +163,6 @@ def generate_commands(
             command = (
                 "NCCL_DEBUG=WARN "
                 "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
-                "NCCL_ASYNC_ERROR_HANDLING=1 "
                 f"{mpi_prefix}"
                 f"python {exp_config.decomp_script} "
                 f"--config_json '{config_json}' "
@@ -196,7 +195,6 @@ def generate_commands(
                 command = (
                     "NCCL_DEBUG=WARN "
                     "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
-                    "NCCL_ASYNC_ERROR_HANDLING=1 "
                     f"{mpi_prefix}"
                     f"python {exp_config.decomp_script} "
                     f"--config_json '{config_json}' "
