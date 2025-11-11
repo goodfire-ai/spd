@@ -257,7 +257,7 @@ def _multibatch_pgd_fwd_bwd(
     pgd_step_accum_n_examples = 0
     pgd_step_accum_grads = torch.zeros_like(adv_sources)
 
-    for microbatch_idx in range(pgd_config.gradient_accumulation_steps):
+    for microbatch_idx in range(pgd_config.n_gradient_accumulation_batches):
         try:
             microbatch_item = next(data_iter)
         except StopIteration:

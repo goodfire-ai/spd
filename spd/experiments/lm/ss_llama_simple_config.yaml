@@ -35,6 +35,12 @@ loss_metric_configs:
   - classname: "StochasticReconSubsetLoss"
     coeff: 1.0
 
+  - classname: "PGDMultiBatchReconSubsetLoss"
+    coeff: 1.0
+    step_size: 0.1
+    n_steps: 20
+    n_gradient_accumulation_batches: 4
+
 output_loss_type: kl
 
 # --- Training ---

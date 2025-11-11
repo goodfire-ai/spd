@@ -95,7 +95,7 @@ class PGDMultiBatchConfig(LossMetricConfig):
     init: PGDInitStrategy
     step_size: float
     n_steps: int
-    gradient_accumulation_steps: int
+    n_gradient_accumulation_batches: int
 
 
 class PGDMultiBatchReconLossConfig(PGDMultiBatchConfig):
