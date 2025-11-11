@@ -68,8 +68,12 @@ class CIHistograms(Metric):
             # Sum counts across all ranks
             pre_sigmoid_hist_counts[module_name] = torch.stack(gathered, dim=0).sum(dim=0).long()
 
-        lower_leaky_fig = plot_ci_values_histograms_from_counts(lower_leaky_hist_counts, self.N_BINS)
-        pre_sigmoid_fig = plot_ci_values_histograms_from_counts(pre_sigmoid_hist_counts, self.N_BINS)
+        lower_leaky_fig = plot_ci_values_histograms_from_counts(
+            lower_leaky_hist_counts, self.N_BINS
+        )
+        pre_sigmoid_fig = plot_ci_values_histograms_from_counts(
+            pre_sigmoid_hist_counts, self.N_BINS
+        )
 
         return {
             "causal_importance_values": lower_leaky_fig,
