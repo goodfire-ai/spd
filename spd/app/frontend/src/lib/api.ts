@@ -36,7 +36,7 @@ export type ActivationContext = {
 export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     examples: ActivationContext[];
-    token_densities: TokenDensity[];
+    token_prs: TokenPR[];
     mean_ci: number;
 };
 
@@ -44,7 +44,7 @@ export type ModelActivationContexts = {
     layers: Record<string, SubcomponentActivationContexts[]>;
 };
 
-export type TokenDensity = {
+export type TokenPR = {
     token: string;
     recall: number;
     precision: number;
@@ -63,10 +63,30 @@ export type ProgressUpdate = {
     total: number;
 };
 
+// New types for lazy-loading
+export type SubcomponentMetadata = {
+    subcomponent_idx: number;
+    mean_ci: number;
+};
+
+export type HarvestMetadata = {
+    harvest_id: string;
+    layers: Record<string, SubcomponentMetadata[]>;
+};
+
+// Full component detail (matches SubcomponentActivationContexts on backend)
+export type ComponentDetail = {
+    subcomponent_idx: number;
+    examples: ActivationContext[];
+    token_prs: TokenPR[];
+    mean_ci: number;
+};
+
+// Streaming version with lazy-loading support
 export async function getSubcomponentActivationContexts(
     config: ActivationContextsConfig,
-    onProgress?: (progress: ProgressUpdate) => void
-): Promise<ModelActivationContexts> {
+    onProgress?: (progress: ProgressUpdate) => void,
+): Promise<HarvestMetadata> {
     const url = new URL(`${API_URL}/activation_contexts/subcomponents`);
     for (const [key, value] of Object.entries(config)) {
         url.searchParams.set(key, String(value));
@@ -84,7 +104,7 @@ export async function getSubcomponentActivationContexts(
 
     const decoder = new TextDecoder();
     let buffer = "";
-    let result: ModelActivationContexts | null = null;
+    let result: HarvestMetadata | null = null;
 
     while (true) {
         const { done, value } = await reader.read();
@@ -104,23 +124,43 @@ export async function getSubcomponentActivationContexts(
             if (data.type === "progress" && onProgress) {
                 onProgress({ current: data.current, total: data.total });
             } else if (data.type === "complete") {
-                result = data.result as ModelActivationContexts;
+                result = data.result as HarvestMetadata;
+                // Close the reader early - we got what we need
+                await reader.cancel();
+                break;
             }
         }
+
+        // Break out of outer loop if we got the result
+        if (result) break;
     }
 
     if (!result) {
         throw new Error("No result received from stream");
     }
 
-    // Add IDs to examples
-    for (const layer of Object.keys(result.layers)) {
-        for (const subcomponent of result.layers[layer]) {
-            for (const example of subcomponent.examples) {
-                example.__id = crypto.randomUUID();
-            }
-        }
+    return result;
+}
+
+// Lazy-load individual component data
+export async function getComponentDetail(
+    harvestId: string,
+    layer: string,
+    componentIdx: number,
+): Promise<ComponentDetail> {
+    const url = `${API_URL}/activation_contexts/${encodeURIComponent(harvestId)}/${encodeURIComponent(layer)}/${componentIdx}`;
+    const response = await fetch(url, { method: "GET" });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || `Failed to get component ${componentIdx} for layer ${layer}`);
     }
 
-    return result;
+    const detail = (await response.json()) as ComponentDetail;
+
+    // Add IDs to examples
+    for (const example of detail.examples) {
+        example.__id = crypto.randomUUID();
+    }
+
+    return detail;
 }

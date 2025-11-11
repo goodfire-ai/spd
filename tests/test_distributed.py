@@ -161,6 +161,8 @@ class TestDistributedDeterminicity:
 
         cmd = [
             "mpirun",
+            "--bind-to",  # avoid trying to bind to cores that aren't available.
+            "none",  #  See: https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
             "-np",
             str(n_processes),
             "python",

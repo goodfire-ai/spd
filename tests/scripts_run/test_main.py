@@ -110,7 +110,7 @@ class TestSPDRun:
             ("tms_5-2", True),
         ],
     )
-    @patch("spd.scripts.run.run_script_array_local")
+    @patch("spd.scripts.run.subprocess.run")
     @patch("spd.scripts.run.load_sweep_params")
     def test_spd_run_local_no_sweep(
         self,
@@ -134,34 +134,33 @@ class TestSPDRun:
             **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
         )
 
-        # Calculate expected number of commands
+        # Calculate expected number of subprocess calls
         num_experiments = len(experiments.split(","))
-        expected_num_commands = num_experiments * 2 if sweep else num_experiments
+        expected_calls = num_experiments * 2 if sweep else num_experiments
 
-        # Assert run_script_array_local was called exactly once
-        assert mock_subprocess.call_count == 1
+        # Assert subprocess.run was called the expected number of times
+        assert mock_subprocess.call_count == expected_calls
 
-        # Get the commands list from the call
-        commands = mock_subprocess.call_args[0][0]
-        assert len(commands) == expected_num_commands
+        # Verify each subprocess call
+        for call in mock_subprocess.call_args_list:
+            args = call[0][0]  # Get the command list
 
-        # Verify each command
-        for cmd in commands:
-            # Should be a string
-            assert isinstance(cmd, str)
-            assert "python" in cmd
-            assert "_decomposition.py" in cmd
+            # Should be a list of arguments
+            assert isinstance(args, list)
+            assert args[0] == "NCCL_DEBUG=WARN"
+            assert args[1] == "python"
+            assert "_decomposition.py" in args[2]
 
             # Check for required arguments in the command
-            assert "json:" in cmd
-            assert "--sweep_id" in cmd
-            assert "--evals_id" in cmd
+            cmd_str = " ".join(args)
+            assert "json:" in cmd_str
+            assert "--sweep_id" in cmd_str
+            assert "--evals_id" in cmd_str
 
             if sweep:
-                assert "--sweep_params_json" in cmd
+                assert "--sweep_params_json" in cmd_str
 
         # No wandb functions should be called since use_wandb=False
-
     def test_invalid_experiment_name(self):
         """Test that invalid experiment names raise an error.
 

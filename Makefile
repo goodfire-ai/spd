@@ -91,8 +91,12 @@ clustering-dev:
 
 .PHONY: app
 app:
-	@uv run python app/run_app.py
+	@uv run python spd/app/run_app.py
 
 .PHONY: install-app
 install-app:
-	(cd app/frontend && npm install)
+	(cd spd/app/frontend && npm install)
+
+.PHONY: check-app
+check-app:
+	(cd spd/app/frontend && npm run format && npm run check && npm run lint)
