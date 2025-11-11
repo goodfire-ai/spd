@@ -10,7 +10,7 @@ from torch.distributed import ReduceOp
 from spd.configs import PGDConfig, PGDInitStrategy, PGDMultiBatchConfig, SamplingType
 from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
-from spd.models.components import RoutingMasks, make_mask_infos
+from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.utils.component_utils import RoutingType, sample_uniform_k_subset_routing_masks
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data
@@ -25,7 +25,7 @@ def pgd_masked_recon_loss_update(
     output_loss_type: Literal["mse", "kl"],
     routing: RoutingType,
     pgd_config: PGDConfig,
-) -> tuple[Float[Tensor, ""], int]:
+) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo]]:
     """Central implementation of PGD masked reconstruction loss.
 
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
@@ -73,13 +73,13 @@ def pgd_masked_recon_loss_update(
 
     for _ in range(pgd_config.n_steps):
         assert adv_sources.grad is None
-        _, _, adv_sources_grads = fwd_bwd_fn()
+        _, _, _, adv_sources_grads = fwd_bwd_fn()
         with torch.no_grad():
             adv_sources.add_(pgd_config.step_size * adv_sources_grads.sign())
             adv_sources.clamp_(0.0, 1.0)
 
-    sum_loss, total_n_examples, _ = fwd_bwd_fn()
-    return sum_loss, total_n_examples
+    sum_loss, total_n_examples, pgd_mask_infos, _ = fwd_bwd_fn()
+    return sum_loss, total_n_examples, pgd_mask_infos
 
 
 CreateDataIter = Callable[
@@ -175,7 +175,7 @@ def _pgd_fwd_bwd(
     model: ComponentModel,
     output_loss_type: Literal["mse", "kl"],
     batch_dims: tuple[int, ...],
-) -> tuple[Float[Tensor, ""], int, Float[Tensor, "n_layers *batch_dims C2"]]:
+) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo], Float[Tensor, "n_layers *batch_dims C2"]]:
     """Compute reconstruction loss for given adversarial sources.
 
     Args:
@@ -230,7 +230,7 @@ def _pgd_fwd_bwd(
         all_reduce(torch.tensor(n_examples, device=batch.device), op=ReduceOp.SUM).item()
     )
 
-    return sum_loss, n_examples, adv_sources_grads
+    return sum_loss, n_examples, mask_infos, adv_sources_grads
 
 
 def _multibatch_pgd_fwd_bwd(
@@ -278,7 +278,7 @@ def _multibatch_pgd_fwd_bwd(
         # sampled independently for each example.
         routing_masks = get_routing_masks()
 
-        batch_sum_loss, batch_n_examples, batch_grads = _pgd_fwd_bwd(
+        batch_sum_loss, batch_n_examples, _, batch_grads = _pgd_fwd_bwd(
             adv_sources=adv_sources,
             batch=microbatch,
             ci=ci,

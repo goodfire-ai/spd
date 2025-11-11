@@ -81,7 +81,7 @@ class CIOutputs:
     lower_leaky: dict[str, Float[Tensor, "... C"]]
     upper_leaky: dict[str, Float[Tensor, "... C"]]
     pre_sigmoid: dict[str, Tensor]
-
+    inner_acts: dict[str, Float[Tensor, "... C"]]
 
 class ComponentModel(LoadableModule):
     """Wrapper around an arbitrary pytorch model for running SPD.
@@ -479,7 +479,7 @@ class ComponentModel(LoadableModule):
 
     @classmethod
     @override
-    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel":
+    def from_run_info(cls, run_info: RunInfo[Config], module_patterns: list[str]) -> "ComponentModel":
         """Load a trained ComponentModel checkpoint from a run info object."""
         config = run_info.config
 
@@ -508,7 +508,7 @@ class ComponentModel(LoadableModule):
 
         comp_model = ComponentModel(
             target_model=target_model,
-            target_module_patterns=config.all_module_patterns,
+            target_module_patterns=module_patterns,
             C=config.C,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
@@ -522,7 +522,7 @@ class ComponentModel(LoadableModule):
 
         handle_deprecated_state_dict_keys_(comp_model_weights)
 
-        comp_model.load_state_dict(comp_model_weights)
+        comp_model.load_state_dict(comp_model_weights, strict=False)
         return comp_model
 
     @classmethod
@@ -550,16 +550,19 @@ class ComponentModel(LoadableModule):
         causal_importances_lower_leaky = {}
         causal_importances_upper_leaky = {}
         pre_sigmoid = {}
+        inner_acts = {}
 
         for target_module_name in pre_weight_acts:
             input_activations = pre_weight_acts[target_module_name]
             ci_fn = self.ci_fns[target_module_name]
 
+            this_inner_acts = self.components[target_module_name].get_inner_acts(
+                input_activations
+            )
+            inner_acts[target_module_name] = this_inner_acts
             match ci_fn:
                 case MLPCiFn():
-                    ci_fn_input = self.components[target_module_name].get_inner_acts(
-                        input_activations
-                    )
+                    ci_fn_input = this_inner_acts
                 case VectorMLPCiFn() | VectorSharedMLPCiFn():
                     ci_fn_input = input_activations
                 case _:
@@ -591,6 +594,7 @@ class ComponentModel(LoadableModule):
             lower_leaky=causal_importances_lower_leaky,
             upper_leaky=causal_importances_upper_leaky,
             pre_sigmoid=pre_sigmoid,
+            inner_acts=inner_acts,
         )
 
     def calc_weight_deltas(self) -> dict[str, Float[Tensor, " d_out d_in"]]:
@@ -600,6 +604,35 @@ class ComponentModel(LoadableModule):
             weight_deltas[comp_name] = self.target_weight(comp_name) - components.weight
         return weight_deltas
 
+
+    @contextmanager
+    def cache_modules(self, module_paths: list[str]) -> Generator[tuple[dict[str, Tensor], dict[str, Tensor]]]:
+        """Context manager to cache the inputs to the specified modules."""
+        input_cache: dict[str, Tensor] = {}
+        output_cache: dict[str, Tensor] = {}
+
+        def _make_hook(module_path: str) -> Callable[[nn.Module, tuple[Any, ...], dict[Any, Any], Any], Any]:
+            def _cache_hook(
+                module: nn.Module, args: tuple[Any, ...], kwargs: dict[Any, Any], output: Any
+            ) -> Any:
+                """Hook to cache the input to the module."""
+                assert len(args) > 0, f"Expected at least 1 argument for module {module} path {module_path}"
+                input_cache[module_path] = args[0]
+                output_cache[module_path] = output
+                return output
+
+            return _cache_hook
+
+        handles: list[RemovableHandle] = []
+        for module_path in module_paths:
+            module = self.target_model.get_submodule(module_path)
+            handle = module.register_forward_hook(_make_hook(module_path), with_kwargs=True)
+            handles.append(handle)
+        try:
+            yield input_cache, output_cache
+        finally:
+            for handle in handles:
+                handle.remove()
 
 def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
     """Maps deprecated state dict keys to new state dict keys"""
@@ -626,3 +659,4 @@ def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
         # replace if modified
         if new_key != key:
             state_dict[new_key] = state_dict.pop(key)
+
