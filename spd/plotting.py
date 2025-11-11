@@ -485,3 +485,67 @@ def plot_ci_values_histograms(
     plt.close(fig)
 
     return fig_img
+
+
+def plot_ci_values_histograms_from_counts(hist_counts: dict[str, Tensor], bins: int) -> Image.Image:
+    assert len(hist_counts) > 0, "No histogram counts to plot"
+    n_layers = len(hist_counts)
+    max_rows = 6
+
+    # Calculate grid dimensions
+    n_cols = (n_layers + max_rows - 1) // max_rows  # Ceiling division
+    n_rows = min(n_layers, max_rows)
+
+    # Adjust figure size based on grid dimensions
+    fig_width = 6 * n_cols
+    fig_height = 5 * n_rows
+
+    fig, axs = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(fig_width, fig_height),
+        squeeze=False,
+    )
+    axs = np.array(axs)
+
+    # Ensure axs is always 2D array for consistent indexing
+    if axs.ndim == 1:
+        axs = axs.reshape(n_rows, n_cols)
+
+    # Hide unused subplots
+    for i in range(n_layers, n_rows * n_cols):
+        row = i % n_rows
+        col = i // n_rows
+        axs[row, col].set_visible(False)
+
+    # Create bin edges
+    bin_edges = np.linspace(0.0, 1.0, bins + 1)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+    for i, (layer_name_raw, counts) in enumerate(hist_counts.items()):
+        layer_name = layer_name_raw.replace(".", "_")
+
+        # Calculate position in grid (fill column by column)
+        row = i % n_rows
+        col = i // n_rows
+        ax = axs[row, col]
+
+        # Convert counts to numpy
+        counts_np = counts.cpu().numpy()
+
+        # Plot histogram using bar chart
+        ax.bar(bin_centers, counts_np, width=1.0 / bins, align="center")
+        ax.set_yscale("log")  # Beware, memory leak unless gc.collect() is called after eval loop
+        ax.set_title(f"Causal importances for {layer_name}")
+
+        # Only add x-label to bottom row of each column
+        if row == n_rows - 1 or i == n_layers - 1:
+            ax.set_xlabel("Causal importance value")
+        ax.set_ylabel("Frequency")
+
+    fig.tight_layout()
+
+    fig_img = _render_figure(fig)
+    plt.close(fig)
+
+    return fig_img
