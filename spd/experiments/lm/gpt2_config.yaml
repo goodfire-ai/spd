@@ -6,30 +6,32 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 768
+C: 16000
 n_mask_samples: 1
-ci_fn_type: "vector_mlp"
-ci_fn_hidden_dims: [12]
+ci_fn_type: "shared_mlp"
+ci_fn_hidden_dims: [4000]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["transformer.h.1.attn.c_attn"]
+target_module_patterns: ["transformer.h.1.c_fc, transformer.h.1.c_proj"]
 identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
-  - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0003
-    pnorm: 2.0
-    p_anneal_start_frac: 0.0
-    p_anneal_final_p: 0.3
-    p_anneal_end_frac: 1.0
-  - classname: "StochasticReconLayerwiseLoss"
-    coeff: 2.0
+  - classname: "StochasticReconSubsetLoss"
+    coeff: 0.5
+  - classname: PGDReconSubsetLoss
+    init: "random"
+    step_size: 1.0
+    n_steps: 1
+    mask_scope: "shared_across_batch"
+    coeff: 0.5
+  - classname: FaithfulnessLoss
+    coeff: 1e6
 output_loss_type: kl
 
 # --- Training ---
 batch_size: 2
-steps: 50_000
-lr: 3e-4
+steps: 200_000
+lr: 2e-4
 lr_schedule: cosine
 lr_warmup_pct: 0.01
 lr_exponential_halflife: null
@@ -43,7 +45,7 @@ faithfulness_warmup_weight_decay: 0.1
 # --- Logging & Saving ---
 train_log_freq: 100
 eval_freq: 1000
-slow_eval_freq: 5000
+slow_eval_freq: 10000
 slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
@@ -59,6 +61,11 @@ eval_metric_configs:
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
+  - classname: "PGDReconLoss"
+    init: "random"
+    step_size: 0.1
+    n_steps: 20
+    mask_scope: "shared_across_batch"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.GPT2LMHeadModel
