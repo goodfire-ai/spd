@@ -103,6 +103,10 @@ class ComponentDashboardConfig(BaseConfig):
         default=42,
         description="Random state for decision tree training",
     )
+    n_workers: int = Field(
+        default=1,
+        description="Number of parallel workers for decision tree training. Set to >1 to parallelize.",
+    )
 
     @property
     def stable_hash(self) -> str:

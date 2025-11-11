@@ -57,3 +57,7 @@ def cli() -> None:
 
     # Run main function
     main(config)
+
+
+if __name__ == "__main__":
+    cli()

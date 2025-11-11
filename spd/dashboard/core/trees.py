@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
+from multiprocessing import Pool
 from typing import Any
 
 import numpy as np
@@ -13,6 +14,12 @@ from tqdm import tqdm
 from spd.dashboard.core.acts import ComponentLabel
 from spd.dashboard.core.compute import FlatActivations
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
+from spd.dashboard.core.parallel import (
+    SharedArrayMetadata,
+    attach_shared_array,
+    cleanup_shared_array,
+    create_shared_array,
+)
 
 
 @dataclass
@@ -145,11 +152,47 @@ class DecisionTreesData:
         )
 
 
+def _train_single_tree_worker(
+    args: tuple[dict[str, Any], int, int, int],
+) -> DecisionTreeClassifier:
+    """Worker function to train a single decision tree in parallel.
+
+    Args:
+        args: Tuple of (shared_data_dict, output_index, max_depth, tree_random_state)
+            - shared_data_dict: Contains X_metadata, Y_metadata as dicts
+            - output_index: Which output dimension this tree predicts
+            - max_depth: Maximum tree depth
+            - tree_random_state: Random state for this specific tree
+
+    Returns:
+        Trained DecisionTreeClassifier
+    """
+    shared_data_dict, output_index, max_depth, tree_random_state = args
+
+    # Reconstruct arrays from shared memory
+    X_metadata = SharedArrayMetadata.from_dict(shared_data_dict["X_metadata"])
+    Y_metadata = SharedArrayMetadata.from_dict(shared_data_dict["Y_metadata"])
+
+    X = attach_shared_array(X_metadata)
+    Y = attach_shared_array(Y_metadata)
+
+    # Train tree for this output dimension
+    tree = DecisionTreeClassifier(
+        max_depth=max_depth,
+        min_samples_leaf=1,
+        random_state=tree_random_state,
+    )
+    tree.fit(X.astype(np.uint8), Y[:, output_index].astype(np.uint8))
+
+    return tree
+
+
 def train_decision_trees(
     flat_acts: FlatActivations,
     max_depth: int,
     activation_threshold: float = 0.1,
     random_state: int = 42,
+    n_workers: int = 1,
 ) -> dict[
     str,
     tuple[

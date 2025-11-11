@@ -11,6 +11,7 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from tqdm import tqdm
 from transformers import AutoTokenizer
+from muutils.spinner import SpinnerContext
 
 from spd.configs import Config
 from spd.dashboard.core.dashboard_config import ComponentDashboardConfig
@@ -110,11 +111,11 @@ class Activations:
         config: ComponentDashboardConfig,
     ) -> "Activations":
         # get model
-        print(f"Loading model from {config.model_path}...")
-        spd_run: SPDRunInfo = SPDRunInfo.from_path(path=config.model_path)
-        model: ComponentModel = ComponentModel.from_pretrained(path=spd_run.checkpoint_path)
-        model.to(device=config.device)
-        spd_cfg: Config = spd_run.config
+        with SpinnerContext(message=f"Loading model from {config.model_path}"):
+            spd_run: SPDRunInfo = SPDRunInfo.from_path(path=config.model_path)
+            model: ComponentModel = ComponentModel.from_pretrained(path=spd_run.checkpoint_path)
+            model.to(device=config.device)
+            spd_cfg: Config = spd_run.config
 
         # get dataloader and tokenizer
         assert isinstance(spd_cfg.task_config, LMTaskConfig)
@@ -140,11 +141,10 @@ class Activations:
         )
 
         # compute acts and collect tokens
-        print(f"\nComputing activations for {config.n_batches} batches...")
         all_acts: list[dict[str, Float[Tensor, "batch n_ctx C"]]] = []
         all_tokens: list[Int[Tensor, "batch n_ctx"]] = []
 
-        for _ in tqdm(range(config.n_batches), desc="Batches"):
+        for _ in tqdm(range(config.n_batches), desc="Computing activations"):
             batch: Tensor = next(iter(dataloader))["input_ids"]
             all_tokens.append(batch.cpu())
             with torch.no_grad():
@@ -160,11 +160,11 @@ class Activations:
 
         # Generate token sequence data
         tokenizer = AutoTokenizer.from_pretrained(spd_cfg.pretrained_model_name)
-        print("\nProcessing token sequences...")
-        token_data: TokenSequenceData = TokenSequenceData.from_token_batches(
-            token_batches=all_tokens,
-            tokenizer=tokenizer,
-        )
+        with SpinnerContext(message="Processing token sequences"):
+            token_data: TokenSequenceData = TokenSequenceData.from_token_batches(
+                token_batches=all_tokens,
+                tokenizer=tokenizer,
+            )
 
         # Concatenate batches
         module_keys: list[str] = list(all_acts[0].keys())
@@ -173,36 +173,31 @@ class Activations:
         }
 
         # Convert to boolean and filter constant components
-        print("\nConverting to boolean and filtering constant components...")
-        layers: dict[str, Float[np.ndarray, "n_batches n_ctx n_components"]] = {}
-        varying_component_indices: dict[str, list[int]] = {}
+        with SpinnerContext(message="Converting to boolean and filtering constant components"):
+            layers: dict[str, Float[np.ndarray, "n_batches n_ctx n_components"]] = {}
+            varying_component_indices: dict[str, list[int]] = {}
 
-        for module_name, acts_raw in acts_concat.items():
-            # Keep as 3D: (n_batches, n_ctx, n_components)
-            acts_3d: Float[np.ndarray, "n_batches n_ctx n_components"] = acts_raw.numpy()
+            for module_name, acts_raw in acts_concat.items():
+                # Keep as 3D: (n_batches, n_ctx, n_components)
+                acts_3d: Float[np.ndarray, "n_batches n_ctx n_components"] = acts_raw.numpy()
 
-            # Flatten temporarily for filtering: (n_batches * n_ctx, n_components)
-            acts_flat: Float[np.ndarray, "n_samples n_components"] = acts_3d.reshape(
-                -1, acts_3d.shape[-1]
-            )
+                # Flatten temporarily for filtering: (n_batches * n_ctx, n_components)
+                acts_flat: Float[np.ndarray, "n_samples n_components"] = acts_3d.reshape(
+                    -1, acts_3d.shape[-1]
+                )
 
-            # Threshold to boolean for filtering only
-            acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
-                acts_flat >= config.activation_threshold
-            ).astype(bool)
+                # Threshold to boolean for filtering only
+                acts_bool: Bool[np.ndarray, "n_samples n_components"] = (
+                    acts_flat >= config.activation_threshold
+                ).astype(bool)
 
-            # Filter constant components (always 0 or always 1)
-            varying_mask: Bool[np.ndarray, " n_components"] = acts_bool.var(axis=0) > 0
-            acts_varying_3d = acts_3d[:, :, varying_mask]  # Keep 3D structure, filter components
-            layers[module_name] = acts_varying_3d
+                # Filter constant components (always 0 or always 1)
+                varying_mask: Bool[np.ndarray, " n_components"] = acts_bool.var(axis=0) > 0
+                acts_varying_3d = acts_3d[:, :, varying_mask]  # Keep 3D structure, filter components
+                layers[module_name] = acts_varying_3d
 
-            # Store which original component indices were kept
-            varying_component_indices[module_name] = np.where(varying_mask)[0].tolist()
-
-            print(
-                f"  {module_name}: {acts_varying_3d.shape[0]} batches, "
-                f"{acts_varying_3d.shape[1]} ctx, {acts_varying_3d.shape[2]} varying components"
-            )
+                # Store which original component indices were kept
+                varying_component_indices[module_name] = np.where(varying_mask)[0].tolist()
 
         return Activations(
             data=layers,

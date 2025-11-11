@@ -5,13 +5,23 @@
 - [x] **[BUG]** fix issue with broken histograms
 - [x] embeddings view
 - [x] a view where we can see, for some selected components, their activations (both actual and DT predicted) on a random set of samples -- stacked vertically so that we can compare. kinda like https://attention-motifs.github.io/v1/vis/attnpedia/index.html
-- [ ] not just current token, but true next token and predicted next token when a given component is active
+- [ ] see not just current token, but true next token and predicted next token when a given component is active
 - [ ] proper test vs train split for decision trees
 
 ## performance
 
-- [ ] parallelize decision tree computation??
-  - memory will be the likely bottleneck here unless we can figure out how to make it read-only shareable
+- [ ] parallelize decision tree computation
+  - **Solution**: Parallelize at the module/layer level (not individual trees)
+  - Use `multiprocessing.shared_memory` to share `FlatActivations.activations` array across worker processes (read-only)
+  - Each worker trains all trees for one module: `module_name -> MultiOutputClassifier`
+  - Use `Pool.map()` to process modules in parallel (skip first module which has no previous layers)
+  - Implementation:
+    1. Keep shared memory utilities in `parallel.py` (already created)
+    2. Add `n_workers` config field to `ComponentDashboardConfig` (already added, default=1)
+    3. Modify `train_decision_trees()`: create shared memory for activations, use worker function per module
+    4. Worker function: reconstructs shared array, extracts X/Y for its module, trains MultiOutputClassifier
+    5. Cleanup shared memory after all modules complete
+  - Benefits: N-way parallelism for N modules, single copy of activations in RAM
 - [ ] re-compress big files
   - i.e. any given npy or jsonl file is originally compressed because it's in the zanj file, but we extract
   - hence, zanj.js should be rewritten to check for `{fname}.zip` first before loading `{fname}`
