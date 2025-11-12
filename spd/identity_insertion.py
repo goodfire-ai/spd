@@ -12,9 +12,7 @@ from typing import Any
 import torch.nn as nn
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
-from spd.log import logger
 from spd.models.components import Identity
-from spd.utils.distributed_utils import is_main_process
 from spd.utils.module_utils import get_target_module_paths
 
 
@@ -42,9 +40,6 @@ def insert_identity_operations_(target_model: nn.Module, identity_patterns: list
         identity_patterns: Patterns matching modules to prepend identity ops to
     """
 
-    if is_main_process():
-        logger.info(f"Inserting identity operations before {len(identity_patterns)} modules")
-
     identity_module_paths = get_target_module_paths(target_model, identity_patterns)
 
     # Add identity layers and hooks
@@ -63,6 +58,3 @@ def insert_identity_operations_(target_model: nn.Module, identity_patterns: list
 
         module.pre_identity = Identity(d_in)  # type: ignore
         module.register_forward_pre_hook(pre_id_hook, with_kwargs=True)
-
-        if is_main_process():
-            logger.info(f"  Added identity layer to {module_path} with dimension {d_in}")
