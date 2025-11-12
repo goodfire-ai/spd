@@ -160,9 +160,11 @@ def init_wandb[T_config: BaseModel](
         tags=tags,
     )
     assert wandb.run is not None
-    wandb.run.log_code(
-        root=str(REPO_ROOT / "spd"), exclude_fn=lambda path: "out" in Path(path).parts
-    )
+
+    def exclude_fn(path: str, root: str) -> bool:
+        return os.path.relpath(path, root).startswith("app") or "out" in Path(path).parts
+
+    wandb.run.log_code(root=str(REPO_ROOT / "spd"), exclude_fn=exclude_fn)
 
     # Update the config with the hyperparameters for this sweep (if any)
     config = replace_pydantic_model(config, wandb.config.as_dict())
