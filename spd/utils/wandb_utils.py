@@ -447,3 +447,4 @@ def wandb_setup(
             **({"Aggregated Report": report_url} if report_url else {}),
         },
     )
+
