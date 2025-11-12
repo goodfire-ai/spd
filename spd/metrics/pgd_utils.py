@@ -25,6 +25,7 @@ def pgd_masked_recon_loss_update(
     output_loss_type: Literal["mse", "kl"],
     routing: RoutingType,
     pgd_config: PGDConfig,
+    step_callback: Callable[[Float[Tensor, "n_layers *batch_dims C2"]], None] | None = None,
 ) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo]]:
     """Central implementation of PGD masked reconstruction loss.
 
@@ -77,6 +78,8 @@ def pgd_masked_recon_loss_update(
         with torch.no_grad():
             adv_sources.add_(pgd_config.step_size * adv_sources_grads.sign())
             adv_sources.clamp_(0.0, 1.0)
+            if step_callback is not None:
+                step_callback(adv_sources)
 
     sum_loss, total_n_examples, pgd_mask_infos, _ = fwd_bwd_fn()
     return sum_loss, total_n_examples, pgd_mask_infos

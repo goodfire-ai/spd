@@ -276,7 +276,9 @@ class EmbeddingComponents(Components):
         if weight_delta_and_mask is not None:
             weight_delta, weight_delta_mask = weight_delta_and_mask
             unmasked_delta_out = weight_delta[x]
-            assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape
+            assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape, (
+                f"{unmasked_delta_out.shape} != {weight_delta_mask.shape}"
+            )
             out += einops.einsum(
                 weight_delta_mask, unmasked_delta_out, "..., ... embedding_dim -> ... embedding_dim"
             )
@@ -312,15 +314,20 @@ class ComponentsMaskInfo:
             weight_delta, weight_delta_mask = self.weight_delta_and_mask
             weight_delta_and_mask = (
                 weight_delta.clone(),
-                weight_delta_mask.clone() if isinstance(weight_delta_mask, Tensor) else weight_delta_mask,
+                weight_delta_mask.clone()
+                if isinstance(weight_delta_mask, Tensor)
+                else weight_delta_mask,
             )
         else:
             weight_delta_and_mask = None
         return ComponentsMaskInfo(
             component_mask=self.component_mask.clone(),
-            routing_mask=self.routing_mask.clone() if isinstance(self.routing_mask, Tensor) else self.routing_mask,
+            routing_mask=self.routing_mask.clone()
+            if isinstance(self.routing_mask, Tensor)
+            else self.routing_mask,
             weight_delta_and_mask=weight_delta_and_mask,
         )
+
 
 RoutingMasks = dict[str, Bool[Tensor, "..."]] | Literal["all"]
 
