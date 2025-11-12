@@ -67,6 +67,10 @@ class StochasticReconLayerwiseLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
 
 
+class UnmaskedReconLossConfig(LossMetricConfig):
+    classname: Literal["UnmaskedReconLoss"] = "UnmaskedReconLoss"
+
+
 PGDInitStrategy = Literal["random", "ones", "zeroes"]
 
 MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
@@ -185,7 +189,11 @@ LossMetricConfigType = (
     | PGDReconLayerwiseLossConfig
     # Hidden acts
     | StochasticHiddenActsReconLossConfig
-) | PGDMultiBatchConfigType
+    # Misc
+    | UnmaskedReconLossConfig
+    # Multi-batch
+    | PGDMultiBatchConfigType
+)
 
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig

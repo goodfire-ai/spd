@@ -385,6 +385,7 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PGDMultiBatchReconLoss": "PGDMultiBatchRecon",
     "PGDMultiBatchReconSubsetLoss": "PGDMultiBatchReconSub",
     "StochasticHiddenActsReconLoss": "StochHiddenRecon",
+    "UnmaskedReconLoss": "UnmaskedRecon",
     # Eval metrics
     "CEandKLLosses": "CEandKL",
     "CIHistograms": "CIHist",
