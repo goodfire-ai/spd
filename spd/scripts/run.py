@@ -162,6 +162,7 @@ def generate_commands(
 
             command = (
                 "NCCL_DEBUG=WARN "
+                # "CUDA_LAUNCH_BLOCKING=1 "
                 "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
                 f"{mpi_prefix}"
                 f"python {exp_config.decomp_script} "
