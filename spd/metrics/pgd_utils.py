@@ -93,9 +93,12 @@ def pgd_masked_recon_loss_update(
 
         assert isinstance(adv_sources_grads, tuple) and len(adv_sources_grads) == 1
         reduced_adv_sources_grads = all_reduce(adv_sources_grads[0].clone(), op=ReduceOp.SUM)
+        dbg(reduced_adv_sources_grads, "reduced_adv_sources_grads")
         with torch.no_grad():
             adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
+            dbg(adv_sources, "adv_sources")
             adv_sources.clamp_(0.0, 1.0)
+            dbg(adv_sources, "adv_sources_after_clamp")
 
     total_loss, n_examples = objective_fn(adv_sources=adv_sources.expand(n_layers, *batch_dims, C2))
 
@@ -131,7 +134,13 @@ def _interpolate_component_mask(
     since the change would just give PGD more optimization power, and we already get a very bad
     loss value for it.
     """
-    assert torch.all(adv_sources_components <= 1.0) and torch.all(adv_sources_components >= 0.0)
+    # Be explicit and more informative: catch non-finite first, then range violations.
+    dbg(adv_sources_components, "adv_sources_components")
+
+    assert (adv_sources_components >= 0.0).all() and (adv_sources_components <= 1.0).all(), (
+        "adv_sources_components outside [0,1]"
+    )
+
     assert adv_sources_components.shape[0] == len(ci)
     assert all(ci[k].shape[-1] == adv_sources_components.shape[-1] for k in ci)
     component_masks: dict[str, Float[Tensor, "*batch_dims C"]] = {}
@@ -139,3 +148,14 @@ def _interpolate_component_mask(
         scaled_noise_to_add = (1 - ci[module_name]) * adv_sources_components[i]
         component_masks[module_name] = ci[module_name] + scaled_noise_to_add
     return component_masks
+
+def dbg(t: Tensor, name: str):
+    fin = torch.isfinite(t)
+    isallfinite = fin.all()
+    if isallfinite:
+        return
+    has_inf = torch.isinf(t).any()
+    has_nan = torch.isnan(t).any()
+    raise ValueError(
+        f"{name} has non-finite values ({has_inf=}, {has_nan=})"
+    )
