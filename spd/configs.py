@@ -91,6 +91,24 @@ class PGDReconLayerwiseLossConfig(PGDConfig):
     classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
 
 
+class PGDMultiBatchConfig(LossMetricConfig):
+    init: PGDInitStrategy
+    step_size: float
+    n_steps: int
+    gradient_accumulation_steps: int
+
+
+class PGDMultiBatchReconLossConfig(PGDMultiBatchConfig):
+    classname: Literal["PGDMultiBatchReconLoss"] = "PGDMultiBatchReconLoss"
+
+
+class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
+    classname: Literal["PGDMultiBatchReconSubsetLoss"] = "PGDMultiBatchReconSubsetLoss"
+
+
+PGDMultiBatchConfigType = PGDMultiBatchReconLossConfig | PGDMultiBatchReconSubsetLossConfig
+
+
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
@@ -167,7 +185,8 @@ LossMetricConfigType = (
     | PGDReconLayerwiseLossConfig
     # Hidden acts
     | StochasticHiddenActsReconLossConfig
-)
+) | PGDMultiBatchConfigType
+
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
     | CIHistogramsConfig
@@ -488,6 +507,17 @@ class Config(BaseConfig):
             assert self.gradient_accumulation_steps == 1, (
                 "gradient_accumulation_steps must be 1 if we are using PGD losses with "
                 "mask_scope='shared_across_batch'"
+            )
+
+        has_multibatch_pgd_subset_loss = any(
+            [
+                loss_cfg.classname == "PGDMultiBatchReconSubsetLoss"
+                for loss_cfg in self.loss_metric_configs
+            ]
+        )
+        if has_multibatch_pgd_subset_loss:
+            assert self.gradient_accumulation_steps == 1, (
+                "cannot use gradient accumulation with PGDMultiBatchReconSubsetLoss"
             )
 
         return self
