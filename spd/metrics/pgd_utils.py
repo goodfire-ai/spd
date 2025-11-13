@@ -59,14 +59,14 @@ def pgd_masked_recon_loss_update(
     )
 
     fwd_pass = partial(
-        _pgd_fwd,
-        adv_sources=adv_sources,
+        _forward_with_adv_sources,
+        model=model,
         batch=batch,
+        adv_sources=adv_sources,
         ci=ci,
         weight_deltas=weight_deltas,
         routing_masks=routing_masks,
         target_out=target_out,
-        model=model,
         output_loss_type=output_loss_type,
         batch_dims=batch_dims,
     )
@@ -168,14 +168,14 @@ def calc_multibatch_pgd_masked_recon_loss(
     return final_loss / final_n_examples
 
 
-def _pgd_fwd(
-    adv_sources: Float[Tensor, "n_layers *batch_dim_or_ones C2"],
+def _forward_with_adv_sources(
+    model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+    adv_sources: Float[Tensor, "n_layers *batch_dim_or_ones C2"],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing_masks: RoutingMasks,
     target_out: Float[Tensor, "... vocab"],
-    model: ComponentModel,
     output_loss_type: Literal["mse", "kl"],
     batch_dims: tuple[int, ...],
 ):
@@ -253,14 +253,14 @@ def _multibatch_pgd_fwd_bwd(
         # sampled independently for each example.
         routing_masks = get_routing_masks()
 
-        batch_sum_loss, batch_n_examples = _pgd_fwd(
-            adv_sources=adv_sources,
+        batch_sum_loss, batch_n_examples = _forward_with_adv_sources(
+            model=model,
             batch=microbatch,
+            adv_sources=adv_sources,
             ci=ci,
             weight_deltas=weight_deltas,
             routing_masks=routing_masks,
             target_out=target_model_output.output,
-            model=model,
             output_loss_type=output_loss_type,
             batch_dims=batch_dims,
         )
