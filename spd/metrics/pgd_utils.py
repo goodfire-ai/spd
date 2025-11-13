@@ -25,7 +25,7 @@ def pgd_masked_recon_loss_update(
     output_loss_type: Literal["mse", "kl"],
     routing: RoutingType,
     pgd_config: PGDConfig,
-    step_callback: Callable[[Float[Tensor, "n_layers *batch_dims C2"]], None] | None = None,
+    exp_callback: Callable[[Tensor], Tensor] | None = None,
 ) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo]]:
     """Central implementation of PGD masked reconstruction loss.
 
@@ -70,6 +70,7 @@ def pgd_masked_recon_loss_update(
         model=model,
         output_loss_type=output_loss_type,
         batch_dims=batch_dims,
+        exp_callback=exp_callback,
     )
 
     for _ in range(pgd_config.n_steps):
@@ -78,8 +79,6 @@ def pgd_masked_recon_loss_update(
         with torch.no_grad():
             adv_sources.add_(pgd_config.step_size * adv_sources_grads.sign())
             adv_sources.clamp_(0.0, 1.0)
-            if step_callback is not None:
-                step_callback(adv_sources)
 
     sum_loss, total_n_examples, pgd_mask_infos, _ = fwd_bwd_fn()
     return sum_loss, total_n_examples, pgd_mask_infos
@@ -178,6 +177,7 @@ def _pgd_fwd_bwd(
     model: ComponentModel,
     output_loss_type: Literal["mse", "kl"],
     batch_dims: tuple[int, ...],
+    exp_callback: Callable[[Tensor], Tensor] | None = None,
 ) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo], Float[Tensor, "n_layers *batch_dims C2"]]:
     """Compute reconstruction loss for given adversarial sources.
 
@@ -201,20 +201,22 @@ def _pgd_fwd_bwd(
 
     with torch.enable_grad():
         expanded_adv_sources = adv_sources.expand(n_layers, *batch_dims, C2)
-        adv_sources_components: Float[Tensor, "n_layers *batch_dims C"]
+        if exp_callback is not None:
+            expanded_adv_sources = exp_callback(expanded_adv_sources)
+        # Use non-expanded adv_sources for component masks to keep broadcasting cheap
         match weight_deltas:
             case None:
                 weight_deltas_and_masks = None
-                adv_sources_components = expanded_adv_sources
+                component_adv_sources = adv_sources  # shape: [n_layers, *ones, C]
             case dict():
                 weight_deltas_and_masks = {
                     k: (weight_deltas[k], expanded_adv_sources[i, ..., -1])
                     for i, k in enumerate(weight_deltas)
                 }
-                adv_sources_components = expanded_adv_sources[..., :-1]
+                component_adv_sources = adv_sources[..., :-1]  # drop delta channel for components
 
         mask_infos = make_mask_infos(
-            component_masks=_interpolate_component_mask(ci, adv_sources_components),
+            component_masks=_interpolate_component_mask(ci, component_adv_sources),
             weight_deltas_and_masks=weight_deltas_and_masks,
             routing_masks=routing_masks,
         )
@@ -330,7 +332,12 @@ def _interpolate_component_mask(
     since the change would just give PGD more optimization power, and we already get a very bad
     loss value for it.
     """
-    assert torch.all(adv_sources_components <= 1.0) and torch.all(adv_sources_components >= 0.0)
+    # Cheap sanity check to avoid huge reductions over expanded views
+    with torch.no_grad():
+        if torch.is_floating_point(adv_sources_components):
+            min_val = torch.amin(adv_sources_components)
+            max_val = torch.amax(adv_sources_components)
+            assert (min_val >= 0.0) and (max_val <= 1.0), "adv_sources_components out of [0, 1]"
     assert adv_sources_components.shape[0] == len(ci)
     assert all(ci[k].shape[-1] == adv_sources_components.shape[-1] for k in ci)
     component_masks: dict[str, Float[Tensor, "*batch_dims C"]] = {}

@@ -1,9 +1,12 @@
 # ruff: noqa: E402, I001
 # %%
 
+import einops
+import numpy as np
 from collections import defaultdict
 from collections.abc import Iterator
 from jaxtyping import Float, Int
+from tqdm import tqdm
 from typing import Any
 from dataclasses import dataclass
 import torch
@@ -56,8 +59,6 @@ MLP_UP_0 = "model.layers.0.mlp.up_proj"
 
 model_setups = {path: load_model(path, module_patterns=[MLP_UP_0]) for path in [OLD, NEW]}
 
-# config: Config = model_setup.config
-# device = model_setup.device
 _config = model_setups[OLD].config
 _task_config = _config.task_config
 assert isinstance(_task_config, LMTaskConfig), "task_config not LMTaskConfig"
@@ -85,50 +86,30 @@ data_loader, tokenizer = create_data_loader(
     ddp_rank=0,
     ddp_world_size=1,
 )
+data_loader_iter = iter(data_loader)
 
 device = get_device()
 
-# data_loader_iter = iter(data_loader)
-# batch = extract_batch_data(next(data_loader_iter)).to(device)
 
 # %%
 
-# target_model_outputs = {
-#     path: setup.model(batch, cache_type="input") for path, setup in model_setups.items()
-# }
-
-# ci = {
-#     path: setup.model.calc_causal_importances(
-#         pre_weight_acts=target_model_outputs[path].cache,
-#         detach_inputs=False,
-#         sampling=_config.sampling,
-#     )
-#     for path, setup in model_setups.items()
-# }
-
-# weight_deltas = {path: setup.model.calc_weight_deltas() for path, setup in model_setups.items()}
-
-
 pgd_config = PGDReconLossConfig(
     init="random",
-    step_size=0.1,
-    n_steps=20,
+    step_size=0.04,
+    n_steps=50,
     mask_scope="shared_across_batch",
 )
 
 # %%
 
 
-def catastrophe(
-    setup: ModelSetup,
-    n_batches: int,
-    batch_size: int,
-) -> None:
+def catastrophe(setup: ModelSetup, n_batches: int):
+    B = 1
     assert isinstance(_task_config, LMTaskConfig), "task_config not LMTaskConfig"
 
     data_loader, tokenizer = create_data_loader(
         dataset_config=train_data_config,
-        batch_size=batch_size,
+        batch_size=32,
         buffer_size=_task_config.buffer_size,
         global_seed=_config.seed,
         ddp_rank=0,
@@ -149,6 +130,7 @@ def catastrophe(
             for _ in range(10):
                 print("=" * 100)
             break
+        S = batch.shape[1]
 
         set_seed(i)
 
@@ -172,38 +154,42 @@ def catastrophe(
             routing="all",
             pgd_config=pgd_config,
         )
+        pgd_mask_info = pgd_mask_infos[MLP_UP_0]
 
         # plot the overall pgd loss
         full_pgd_output = setup.model(batch, mask_infos={MLP_UP_0: pgd_mask_infos[MLP_UP_0]})
-        full_pgd_loss = calc_kl_divergence_lm(full_pgd_output, target_output.output, reduce=False)[0]
-        plt.plot(full_pgd_loss.cpu().detach().numpy())
-        plt.title("Overall PGD Loss")
-        plt.xlabel("Sequence Index")
-        plt.ylabel("Loss")
-        plt.show()
-        return
+        full_pgd_loss = calc_kl_divergence_lm(full_pgd_output, target_output.output, reduce=False)[
+            0
+        ]
+        yield full_pgd_loss
+        continue
+        # plt.plot(full_pgd_loss.cpu().detach().numpy())
+        # plt.title("Overall PGD Loss")
+        # plt.xlabel("Sequence Index")
+        # plt.ylabel("Loss")
+        # plt.show()
+        # return
 
         n_cols = 10
         start, stop = 100, 200
         _, axes = plt.subplots(10, 10, sharex=True, figsize=(20, 20), squeeze=False)
         for seq_idx in range(start, stop):
-            pgd_mask = pgd_mask_infos[MLP_UP_0].component_mask
-            surgeried_pgd_mask = torch.ones_like(pgd_mask)
-            surgeried_pgd_mask[0, seq_idx].copy_(pgd_mask[0, seq_idx])
+            routing_mask = torch.zeros(B, S, device=device, dtype=torch.bool)
+            routing_mask[:, seq_idx] = True
 
             mask_w_single_bit_replaced = ComponentsMaskInfo(
-                component_mask=surgeried_pgd_mask,
-                routing_mask="all",
-                weight_delta_and_mask=pgd_mask_infos[MLP_UP_0].weight_delta_and_mask,
+                component_mask=pgd_mask_info.component_mask,
+                routing_mask=routing_mask,
+                weight_delta_and_mask=pgd_mask_info.weight_delta_and_mask,
             )
 
             output = setup.model(batch, mask_infos={MLP_UP_0: mask_w_single_bit_replaced})
-            new_pgd_tw_loss = calc_kl_divergence_lm(output, target_output.output, reduce=False)[0]
+            new_pgd_tw_loss = calc_kl_divergence_lm(output, target_output.output, reduce=False)
 
             ax_idx = seq_idx - start
             row, col = ax_idx // n_cols, ax_idx % n_cols
             ax = axes[row, col]
-            ax.plot(new_pgd_tw_loss.cpu().detach().numpy(), linestyle="--")
+            ax.plot(new_pgd_tw_loss[0].cpu().detach().numpy(), linestyle="--")
             ax.set_ylim(0, 20)
 
         plt.suptitle(f"[{setup.path}] single token mask replaced PGDLoss (toks 100-200)")
@@ -220,14 +206,14 @@ def catastrophe(
 
 # %%
 
-catastrophe(setup=model_setups[OLD], n_batches=1, batch_size=512)
+# catastrophe(setup=model_setups[OLD], n_batches=1)
 
-catastrophe(setup=model_setups[NEW], n_batches=1, batch_size=512)
+for loss in catastrophe(setup=model_setups[NEW], n_batches=10):
+    print(loss.mean().item())
+    # plt.plot(loss.cpu().detach().numpy())
+    # plt.show()
 
 # %%
-
-
-from tqdm import tqdm
 
 
 def which_toks(setup: ModelSetup, n_batches: int, batch_size: int) -> dict[int, list[float]]:
@@ -244,21 +230,12 @@ def which_toks(setup: ModelSetup, n_batches: int, batch_size: int) -> dict[int, 
 
     assert setup.config.use_delta_component
 
-    assert setup.config.use_delta_component
-
     toks_losses = defaultdict(list)
 
     for i in tqdm(range(n_batches)):
         set_seed(i)  # <------------- NOTE THIS
-        try:
-            batch = extract_batch_data(next(data_iter)).to(device)
-        except StopIteration:
-            print("🟥" * 10)
-            print(f"STOPITER at batch {i}")
-            print("🟥" * 10)
-            break
+        batch = extract_batch_data(next(data_iter)).to(device)
 
-        assert setup.config.use_delta_component
 
         target_output = setup.model(batch, cache_type="input")
 
@@ -279,7 +256,7 @@ def which_toks(setup: ModelSetup, n_batches: int, batch_size: int) -> dict[int, 
             pgd_config=pgd_config,
         )
 
-        B, S = batch.shape
+        _, S = batch.shape
         for seq_idx in tqdm(range(S), desc="Sequence index"):
             pgd_mask = pgd_mask_infos[MLP_UP_0].component_mask
             wdm = pgd_mask_infos[MLP_UP_0].weight_delta_and_mask
@@ -305,9 +282,11 @@ def which_toks(setup: ModelSetup, n_batches: int, batch_size: int) -> dict[int, 
 
 # %%
 
-new_toks_losses = which_toks(setup=model_setups[NEW], n_batches=8, batch_size=512)
-
+new_toks_losses = which_toks(setup=model_setups[NEW], n_batches=4, batch_size=32)
 total_n_toks = sum(len(losses) for losses in new_toks_losses.values())
+
+
+# %%
 
 
 # %%
@@ -481,10 +460,6 @@ def fit_linear_regression(
     )
 
 
-import einops
-import numpy as np
-
-
 def do_linear():
     sorted_new = sorted(new_toks_losses.items(), key=lambda x: sum(x[1]) / len(x[1]), reverse=True)
     mean_losses = [sum(losses) / len(losses) for _, losses in sorted_new]
@@ -576,7 +551,6 @@ def plot_ci_against_inner_acts(ci: CIOutputs, title: str) -> None:
 
 
 # %%
-data_loader_iter = iter(data_loader)
 # %%
 plot_ci_against_inner_acts(
     get_many_cis(model_setups[NEW], data_loader_iter, 4), title=model_setups[NEW].path
@@ -653,7 +627,7 @@ def find_catastrophic_positions(
         mask_w_pos_replaced = ComponentsMaskInfo(
             component_mask=one_pgd_idx_mask,
             routing_mask="all",
-            weight_delta_and_mask=full_pgd_mask_info.weight_delta_and_mask,
+            weight_delta_and_mask=None,  # full_pgd_mask_info.weight_delta_and_mask,
         )
 
         patched_output = setup.model(batch, mask_infos={MLP_UP_0: mask_w_pos_replaced})
@@ -662,22 +636,108 @@ def find_catastrophic_positions(
 
 
 # %%
-for i in range(10):
+data_loader, tokenizer = create_data_loader(
+    dataset_config=train_data_config,
+    batch_size=1,
+    buffer_size=_task_config.buffer_size,
+    global_seed=_config.seed,
+    ddp_rank=0,
+    ddp_world_size=1,
+)
+data_loader_iter = iter(data_loader)
+
+loss_means = []
+for _ in tqdm(range(30)):
     batch = extract_batch_data(next(data_loader_iter)).to(device)
-    loss_sets = list(find_catastrophic_positions(model_setups[OLD], batch, 100, 200))
+    loss_means.extend(
+        losses.mean(dim=0).item()
+        for losses in find_catastrophic_positions(model_setups[OLD], batch, 0, 512)
+    )
 
-    _, axes = plt.subplots(10, 10, figsize=(30, 30), sharex=True, sharey=True)
+plt.hist(loss_means, log=True)
+plt.xlabel("Loss")
+plt.ylabel("Frequency")
+plt.title("Mean Loss Distribution")
+plt.show()
 
-    for i, loss in enumerate(loss_sets):
-        row, col = i // 10, i % 10
-        axes[row, col].plot(loss.cpu().detach().numpy())
+# _, axes = plt.subplots(10, 10, figsize=(20, 20), sharex=True, sharey=True)
 
-    plt.show()
+# for i, loss in enumerate(loss_sets):
+#     row, col = i // 10, i % 10
+#     axes[row, col].plot(loss.cpu().detach().numpy())
+
+# plt.show()
+
+
+# %%
+def pgd_without_pos(setup: ModelSetup, batch: Int[Tensor, "1 seq"], pos_idx: int):
+    target_output = setup.model(batch, cache_type="input")
+    ci = setup.model.calc_causal_importances(
+        pre_weight_acts=target_output.cache,
+        detach_inputs=False,
+        sampling=setup.config.sampling,
+    )
+
+    def callback(sources: Tensor) -> None:
+        assert sources.shape == (1, 1, 512, 1201), (
+            f"sources must be of shape (1, 1, 512, 1201), got {sources.shape}"
+        )
+        out = sources.clone()
+        out[0, 0, pos_idx, :] = 1.0
+        return out
+
+    sum_loss, n_ex, _ = pgd_masked_recon_loss_update(
+        model=setup.model,
+        batch=batch,
+        ci=ci.lower_leaky,
+        weight_deltas=setup.model.calc_weight_deltas(),
+        target_out=target_output.output,
+        output_loss_type=setup.config.output_loss_type,
+        routing="all",
+        pgd_config=pgd_config,
+        step_callback=callback,
+    )
+
+    return sum_loss / n_ex
+
+
+# %%
+loss_means = []
+
+bef_aft: list[tuple[float, float]] = []
+
+for _ in tqdm(range(30)):
+    batch = extract_batch_data(next(data_loader_iter)).to(device)
+    for pos_idx, losses in enumerate(
+        find_catastrophic_positions(model_setups[OLD], batch, 0, 512),
+    ):
+        mean_loss = losses.mean(dim=0).item()
+        pos_is_catastrophic = mean_loss > 0.3
+        if not pos_is_catastrophic:
+            continue
+
+        new_mean_loss = pgd_without_pos(model_setups[OLD], batch, pos_idx)
+        print(f"loss: {mean_loss}, excluding pos {pos_idx}: {new_mean_loss}")
+
+        bef_aft.append((mean_loss, new_mean_loss.item()))
 
 # %%
 
+plt.scatter(
+    [bef for bef, _ in bef_aft],
+    [aft for _, aft in bef_aft],
+    alpha=0.1,
+)
+plt.xlabel("Before")
+plt.ylabel("After")
+plt.title("Before and After PGD Loss")
+plt.show()
 
-# def get_layer_outputs(setup: ModelSetup, mask_infos: ComponentsMaskInfo, paths: list[str]) -> dict[str, Tensor]:
+# %%
+
+# def get_layer_outputs(setup: ModelSetup, mask_infos: ComponentsMaskInfo, paths: list[str]) ->
+# dict[str, Tensor]:
+
 #     with model.cache_modules(paths) as (_, output_cache):
 #         model(batch, mask_infos={MLP_UP_0: mask_infos})
 #     layers = {}
