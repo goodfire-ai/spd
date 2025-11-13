@@ -179,9 +179,7 @@ def _pgd_fwd(
     output_loss_type: Literal["mse", "kl"],
     batch_dims: tuple[int, ...],
 ):
-    n_layers = len(ci)
-    C2 = model.C if weight_deltas is None else model.C + 1
-    expanded_adv_sources = adv_sources.expand(n_layers, *batch_dims, C2)
+    expanded_adv_sources = adv_sources.expand(-1, *batch_dims, -1)
     adv_sources_components: Float[Tensor, "n_layers *batch_dims C"]
     match weight_deltas:
         case None:
