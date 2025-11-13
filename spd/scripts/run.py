@@ -169,6 +169,8 @@ def generate_commands(
                 f"--sweep_id {run_id} "
                 f"--evals_id {experiment}"
             )
+            print(command)
+            exit()
 
             commands.append(command)
             task_breakdown[experiment] = "1 task"
