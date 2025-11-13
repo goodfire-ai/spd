@@ -92,16 +92,16 @@ CreateDataIter = Callable[
 
 
 def calc_multibatch_pgd_masked_recon_loss(
-    pgd_config: PGDMultiBatchConfig,  # pyright: ignore[reportUnusedParameter]
-    model: ComponentModel,  # pyright: ignore[reportUnusedParameter]
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,  # pyright: ignore[reportUnusedParameter]
-    create_data_iter: CreateDataIter,  # pyright: ignore[reportUnusedParameter]
-    output_loss_type: Literal["mse", "kl"],  # pyright: ignore[reportUnusedParameter]
-    routing: RoutingType,  # pyright: ignore[reportUnusedParameter]
-    sampling: SamplingType,  # pyright: ignore[reportUnusedParameter]
-    use_delta_component: bool,  # pyright: ignore[reportUnusedParameter]
-    batch_dims: tuple[int, ...],  # pyright: ignore[reportUnusedParameter]
-    device: str,  # pyright: ignore[reportUnusedParameter]
+    pgd_config: PGDMultiBatchConfig,
+    model: ComponentModel,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    create_data_iter: CreateDataIter,
+    output_loss_type: Literal["mse", "kl"],
+    routing: RoutingType,
+    sampling: SamplingType,
+    use_delta_component: bool,
+    batch_dims: tuple[int, ...],
+    device: str,
 ) -> Float[Tensor, ""]:
     """PGD masked reconstruction loss with gradient accumulation over multiple batches.
 
@@ -122,52 +122,50 @@ def calc_multibatch_pgd_masked_recon_loss(
     Returns:
         Final reconstruction loss after PGD optimization
     """
-    raise NotImplementedError()
+    # C2 represents the total number of components including the optional weight delta
+    C2 = model.C if not use_delta_component else model.C + 1
+    n_layers = len(model.target_module_paths)
+    singleton_batch_dims = [1 for _ in batch_dims]
+    adv_source_shape = torch.Size([n_layers] + singleton_batch_dims + [C2])
 
-    # # C2 represents the total number of components including the optional weight delta
-    # C2 = model.C if not use_delta_component else model.C + 1
-    # n_layers = len(model.target_module_paths)
-    # singleton_batch_dims = [1 for _ in batch_dims]
-    # adv_source_shape = torch.Size([n_layers] + singleton_batch_dims + [C2])
+    adv_sources: Float[Tensor, "n_layers *ones C2"] = _get_pgd_init_tensor(
+        init=pgd_config.init, shape=adv_source_shape, device=device
+    ).requires_grad_(True)
 
-    # adv_sources: Float[Tensor, "n_layers *ones C2"] = _get_pgd_init_tensor(
-    #     init=pgd_config.init, shape=adv_source_shape, device=device
-    # ).requires_grad_(True)
+    def get_routing_masks() -> RoutingMasks:
+        match routing:
+            case "all":
+                return "all"
+            case "uniform_k-stochastic":
+                return sample_uniform_k_subset_routing_masks(
+                    mask_shape=batch_dims,
+                    module_names=model.target_module_paths,
+                    device=device,
+                )
 
-    # def get_routing_masks() -> RoutingMasks:
-    #     match routing:
-    #         case "all":
-    #             return "all"
-    #         case "uniform_k-stochastic":
-    #             return sample_uniform_k_subset_routing_masks(
-    #                 mask_shape=batch_dims,
-    #                 module_names=model.target_module_paths,
-    #                 device=device,
-    #             )
+    fwd_bwd_fn = partial(
+        _multibatch_pgd_fwd_bwd,
+        adv_sources=adv_sources,
+        pgd_config=pgd_config,
+        model=model,
+        weight_deltas=weight_deltas,
+        device=device,
+        output_loss_type=output_loss_type,
+        sampling=sampling,
+        get_routing_masks=get_routing_masks,
+        batch_dims=torch.Size(batch_dims),
+    )
 
-    # fwd_bwd_fn = partial(
-    #     _multibatch_pgd_fwd_bwd,
-    #     adv_sources=adv_sources,
-    #     pgd_config=pgd_config,
-    #     model=model,
-    #     weight_deltas=weight_deltas,
-    #     device=device,
-    #     output_loss_type=output_loss_type,
-    #     sampling=sampling,
-    #     get_routing_masks=get_routing_masks,
-    #     batch_dims=torch.Size(batch_dims),
-    # )
+    for _ in range(pgd_config.n_steps):
+        assert adv_sources.grad is None
+        _, _, adv_sources_grads = fwd_bwd_fn(data_iter=create_data_iter())
 
-    # for _ in range(pgd_config.n_steps):
-    #     assert adv_sources.grad is None
-    #     _, _, adv_sources_grads = fwd_bwd_fn(data_iter=create_data_iter())
+        with torch.no_grad():
+            adv_sources.add_(pgd_config.step_size * adv_sources_grads.sign())
+            adv_sources.clamp_(0.0, 1.0)
 
-    #     with torch.no_grad():
-    #         adv_sources.add_(pgd_config.step_size * adv_sources_grads.sign())
-    #         adv_sources.clamp_(0.0, 1.0)
-
-    # final_loss, final_n_examples, _ = fwd_bwd_fn(data_iter=create_data_iter())
-    # return final_loss / final_n_examples
+    final_loss, final_n_examples, _ = fwd_bwd_fn(data_iter=create_data_iter())
+    return final_loss / final_n_examples
 
 
 def _pgd_fwd(
@@ -212,80 +210,74 @@ def _pgd_fwd(
     return sum_loss, n_examples
 
 
-def _multibatch_pgd_fwd_bwd(  # pyright: ignore[reportUnusedFunction]
-    adv_sources: Float[Tensor, "n_layers *ones C2"],  # pyright: ignore[reportUnusedParameter]
-    pgd_config: PGDMultiBatchConfig,  # pyright: ignore[reportUnusedParameter]
-    model: ComponentModel,  # pyright: ignore[reportUnusedParameter]
-    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,  # pyright: ignore[reportUnusedParameter]
-    data_iter: Iterator[Int[Tensor, "..."]]  # pyright: ignore[reportUnusedParameter]
+def _multibatch_pgd_fwd_bwd(
+    adv_sources: Float[Tensor, "n_layers *ones C2"],
+    pgd_config: PGDMultiBatchConfig,
+    model: ComponentModel,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    data_iter: Iterator[Int[Tensor, "..."]]
     | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-    device: torch.device | str,  # pyright: ignore[reportUnusedParameter]
-    output_loss_type: Literal["mse", "kl"],  # pyright: ignore[reportUnusedParameter]
-    get_routing_masks: Callable[[], RoutingMasks],  # pyright: ignore[reportUnusedParameter]
-    sampling: SamplingType,  # pyright: ignore[reportUnusedParameter]
-    batch_dims: tuple[int, ...],  # pyright: ignore[reportUnusedParameter]
+    device: torch.device | str,
+    output_loss_type: Literal["mse", "kl"],
+    get_routing_masks: Callable[[], RoutingMasks],
+    sampling: SamplingType,
+    batch_dims: tuple[int, ...],
 ) -> tuple[Float[Tensor, ""], int, Float[Tensor, "n_layers *batch_dim_or_ones C2"]]:
-    raise NotImplementedError()
-    # """Perform a forward and backward pass over multiple batches with gradient accumulation.
+    """Perform a forward and backward pass over multiple batches with gradient accumulation.
 
-    # Returns:
-    #     - The total loss for the PGD step (only used for the final step)
-    #     - The number of examples used in the PGD step
-    #     - The gradients of the adv_sources
-    # """
-    # pgd_step_accum_sum_loss = torch.tensor(0.0, device=device)
-    # pgd_step_accum_n_examples = 0
-    # pgd_step_accum_grads = torch.zeros_like(adv_sources)
+    Returns:
+        - The total loss for the PGD step (only used for the final step)
+        - The number of examples used in the PGD step
+        - The gradients of the adv_sources
+    """
+    pgd_step_accum_sum_loss = torch.tensor(0.0, device=device)
+    pgd_step_accum_n_examples = 0
+    pgd_step_accum_grads = torch.zeros_like(adv_sources)
 
-    # for microbatch_idx in range(pgd_config.gradient_accumulation_steps):
-    #     try:
-    #         microbatch_item = next(data_iter)
-    #     except StopIteration:
-    #         logger.warning(f"Dataloader exhausted after {microbatch_idx} batches, ending PGD step.")
-    #         break
-    #     microbatch = extract_batch_data(microbatch_item).to(device)
+    for microbatch_idx in range(pgd_config.gradient_accumulation_steps):
+        try:
+            microbatch_item = next(data_iter)
+        except StopIteration:
+            logger.warning(f"Dataloader exhausted after {microbatch_idx} batches, ending PGD step.")
+            break
+        microbatch = extract_batch_data(microbatch_item).to(device)
 
-    #     # NOTE: technically this is duplicated work across PGD steps, but that's the price we pay to
-    #     # enable accumulating gradients over more microbatches than we'd be able to fit CI values in
-    #     # memory for. In other words, you can't fit 100,000 microbatches worth of CI values in memory.
-    #     target_model_output: OutputWithCache = model(microbatch, cache_type="input")
-    #     ci = model.calc_causal_importances(
-    #         pre_weight_acts=target_model_output.cache,
-    #         sampling=sampling,
-    #     ).lower_leaky
+        # NOTE: technically this is duplicated work across PGD steps, but that's the price we pay to
+        # enable accumulating gradients over more microbatches than we'd be able to fit CI values in
+        # memory for. In other words, you can't fit 100,000 microbatches worth of CI values in memory.
+        target_model_output: OutputWithCache = model(microbatch, cache_type="input")
+        ci = model.calc_causal_importances(
+            pre_weight_acts=target_model_output.cache,
+            sampling=sampling,
+        ).lower_leaky
 
-    #     # It's important that we call this every microbatch to ensure stochastic routing masks are
-    #     # sampled independently for each example.
-    #     routing_masks = get_routing_masks()
+        # It's important that we call this every microbatch to ensure stochastic routing masks are
+        # sampled independently for each example.
+        routing_masks = get_routing_masks()
 
-    #     batch_sum_loss, batch_n_examples = _pgd_fwd(
-    #         adv_sources=adv_sources,
-    #         batch=microbatch,
-    #         ci=ci,
-    #         weight_deltas=weight_deltas,
-    #         routing_masks=routing_masks,
-    #         target_out=target_model_output.output,
-    #         model=model,
-    #         output_loss_type=output_loss_type,
-    #         batch_dims=batch_dims,
-    #     )
+        batch_sum_loss, batch_n_examples = _pgd_fwd(
+            adv_sources=adv_sources,
+            batch=microbatch,
+            ci=ci,
+            weight_deltas=weight_deltas,
+            routing_masks=routing_masks,
+            target_out=target_model_output.output,
+            model=model,
+            output_loss_type=output_loss_type,
+            batch_dims=batch_dims,
+        )
 
-    #     sum_loss = all_reduce(batch_sum_loss, op=ReduceOp.SUM)
-    #     pgd_step_accum_sum_loss += batch_sum_loss
+        pgd_step_accum_sum_loss += batch_sum_loss
+        pgd_step_accum_n_examples += batch_n_examples
 
-    #     world_n_examples = int(
-    #         all_reduce(torch.tensor(batch_n_examples, device=device), op=ReduceOp.SUM).item()
-    #     )
-    #     pgd_step_accum_n_examples += world_n_examples
+        # important: take gradient wrt the UNEXPANDED adv_sources, not the expanded ones
+        (adv_sources_grads,) = torch.autograd.grad(batch_sum_loss, adv_sources)
+        adv_sources_grads = all_reduce(adv_sources_grads, op=ReduceOp.SUM)
+        pgd_step_accum_grads += adv_sources_grads.detach()
 
-    #     # important: take gradient wrt the unexpanded adv_sources, not the expanded ones
-    #     (adv_sources_grads,) = torch.autograd.grad(batch_sum_loss, adv_sources)
-    #     adv_sources_grads = all_reduce(adv_sources_grads, op=ReduceOp.SUM)
-    #     pgd_step_accum_grads += adv_sources_grads.detach()
+        del target_model_output, ci
 
-    #     del target_model_output, ci
-
-    # return pgd_step_accum_sum_loss, pgd_step_accum_n_examples, pgd_step_accum_grads
+    return pgd_step_accum_sum_loss, pgd_step_accum_n_examples, pgd_step_accum_grads
 
 
 def _get_pgd_init_tensor(

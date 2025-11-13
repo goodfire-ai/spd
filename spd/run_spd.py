@@ -22,7 +22,8 @@ from spd.configs import (
     LossMetricConfigType,
     MetricConfigType,
     PGDMultiBatchConfig,
-    PGDMultiBatchConfigType,
+    PGDMultiBatchReconLossConfig,
+    PGDMultiBatchReconSubsetLossConfig,
 )
 from spd.data import loop_dataloader
 from spd.eval import evaluate, evaluate_multibatch_pgd
@@ -210,9 +211,9 @@ def optimize(
         loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
     )
 
-    multibatch_pgd_eval_configs: list[PGDMultiBatchConfigType] = [
-        cfg for cfg in eval_metric_configs if isinstance(cfg, PGDMultiBatchConfig)
-    ]
+    multibatch_pgd_eval_configs: list[
+        PGDMultiBatchReconLossConfig | PGDMultiBatchReconSubsetLossConfig
+    ] = [cfg for cfg in eval_metric_configs if isinstance(cfg, PGDMultiBatchConfig)]
 
     eval_metric_configs = [
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
@@ -281,8 +282,6 @@ def optimize(
                 use_delta_component=config.use_delta_component,
                 n_mask_samples=config.n_mask_samples,
                 output_loss_type=config.output_loss_type,
-                create_data_iter=create_pgd_data_iter,
-                batch_dims=batch_dims,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
