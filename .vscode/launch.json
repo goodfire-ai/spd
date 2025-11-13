@@ -10,7 +10,13 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": "${command:pickArgs}"
+            "args": "${command:pickArgs}",
+            "env": {
+                "NCCL_DEBUG": "WARN",
+                "CUDA_LAUNCH_BLOCKING": "1",
+                "TORCH_DISTRIBUTED_DEBUG": "DETAIL",
+                "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1"
+            }
         },
         {
             "name": "Python: Attach",

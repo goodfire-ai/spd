@@ -1,39 +1,55 @@
 # --- WandB ---
 wandb_project: spd
-# wandb_project: null
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 768
+C: 4000
 n_mask_samples: 1
-ci_fn_type: "vector_mlp"
-ci_fn_hidden_dims: [12]
+ci_fn_type: "shared_mlp"
+ci_fn_hidden_dims: [1536]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["transformer.h.1.attn.c_attn"]
+target_module_patterns:
+  [
+    "transformer.h.*.mlp.c_fc",
+    "transformer.h.*.mlp.c_proj",
+    # "transformer.h.*.attn.c_attn",
+    # "transformer.h.*.attn.c_proj"
+  ]
 identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
-  - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0003
-    pnorm: 2.0
-    p_anneal_start_frac: 0.0
-    p_anneal_final_p: 0.3
-    p_anneal_end_frac: 1.0
-  - classname: "StochasticReconLayerwiseLoss"
-    coeff: 2.0
+- coeff: 0.0005
+  classname: ImportanceMinimalityLoss
+  pnorm: 2.0
+  p_anneal_start_frac: 0.0
+  p_anneal_final_p: 0.3
+  p_anneal_end_frac: 1.0
+  eps: 1.0e-12
+- coeff: 0.5
+  classname: StochasticReconSubsetLoss
+- coeff: 0.5
+  init: random
+  step_size: 1.0
+  n_steps: 1
+  mask_scope: shared_across_batch
+  classname: PGDReconSubsetLoss
+- coeff: 1e7
+  classname: FaithfulnessLoss
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 2
-steps: 50_000
-lr: 3e-4
+batch_size: 4 # 32
+eval_batch_size: 2 # 16
+steps: 100000
+lr: 0.0001
 lr_schedule: cosine
-lr_warmup_pct: 0.01
+lr_warmup_pct: 0.0
 lr_exponential_halflife: null
 gradient_accumulation_steps: 1
+
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
@@ -41,24 +57,47 @@ faithfulness_warmup_lr: 0.01
 faithfulness_warmup_weight_decay: 0.1
 
 # --- Logging & Saving ---
-train_log_freq: 100
+train_log_freq: 200
 eval_freq: 1000
-slow_eval_freq: 5000
-slow_eval_on_first_step: true
-n_eval_steps: 5
+slow_eval_freq: 10000
+slow_eval_on_first_step: no
+n_eval_steps: 1
 save_freq: null
 ci_alive_threshold: 0.0
-n_examples_until_dead: 3_276_800  # train_log_freq * batch_size * max_seq_len = 100 * 64 * 512
+n_examples_until_dead: 1368400
 eval_metric_configs:
   - classname: "CIHistograms"
-    n_batches_accum: 5
+    n_batches_accum: 1
   - classname: "ComponentActivationDensity"
   - classname: "CI_L0"
-    groups: null
+    groups:
+      total: ["*"] # Sum of all L0 values
+      layer_0: ["transformer.h.0.*"]
+      layer_1: ["transformer.h.1.*"]
+      layer_2: ["transformer.h.2.*"]
+      layer_3: ["transformer.h.3.*"]
   - classname: "CEandKLLosses"
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
+  - classname: "StochasticReconSubsetCEAndKL"
+    include_patterns:
+      layer_0_only: ["transformer.h.0.*"]
+      layer_1_only: ["transformer.h.1.*"]
+      layer_2_only: ["transformer.h.2.*"]
+      layer_3_only: ["transformer.h.3.*"]
+      # mlp_only: ["transformer.h.*.mlp.*"]
+      # attention_only: ["transformer.h.*.attn.*"]
+    exclude_patterns:
+      all_but_layer_0: ["transformer.h.0.*"]
+      all_but_layer_1: ["transformer.h.1.*"]
+      all_but_layer_2: ["transformer.h.2.*"]
+      all_but_layer_3: ["transformer.h.3.*"]
   - classname: "StochasticHiddenActsReconLoss"
+  - classname: PGDReconLoss
+    init: random
+    step_size: 0.1
+    n_steps: 20
+    mask_scope: shared_across_batch
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.GPT2LMHeadModel
@@ -77,8 +116,7 @@ task_config:
   eval_data_split: "train"  # TODO: handle different seeding for train and eval
 
 
-# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/train_gpt2.py#L165
-  # class GPTConfig:
+ # class GPTConfig:
   #     block_size: int = 1024
   #     vocab_size: int = 50257
   #     n_layer: int = 12
