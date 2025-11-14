@@ -1,6 +1,6 @@
 # ruff: noqa: E402, I001
 # %%
-
+import numpy as np
 from jaxtyping import Int
 from tqdm import tqdm
 from typing import Any
@@ -13,7 +13,7 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
+from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data, set_seed
 from torch import Tensor
 from spd.models.components import ComponentsMaskInfo
 
@@ -51,9 +51,10 @@ def load_model(run_info_path: str, module_patterns: list[str]) -> ModelSetup:
 
 OLD = "wandb:goodfire/spd/runs/lxs77xye"
 NEW = "wandb:goodfire/spd/runs/9gf5ud48"
-MLP_UP_0 = "model.layers.0.mlp.up_proj"
+# MLP_UP_0 = "model.layers.0.mlp.up_proj"
+MLP_DOWN_1 = "model.layers.1.mlp.down_proj"
 
-model_setups = {path: load_model(path, module_patterns=[MLP_UP_0]) for path in [OLD, NEW]}
+model_setups = {path: load_model(path, module_patterns=[MLP_DOWN_1]) for path in [OLD, NEW]}
 
 _config = model_setups[OLD].config
 _task_config = _config.task_config
@@ -89,10 +90,11 @@ device = get_device()
 
 # %%
 
+
 pgd_config = PGDReconLossConfig(
     init="random",
-    step_size=0.04,
-    n_steps=50,
+    step_size=0.1,
+    n_steps=20,
     mask_scope="shared_across_batch",
 )
 
@@ -121,21 +123,21 @@ def get_losses_by_pos(setup: ModelSetup, batch: Int[Tensor, "1 seq"]):
         output_loss_type=setup.config.output_loss_type,
         routing="all",
         pgd_config=pgd_config,
-    )[2][MLP_UP_0]
+    )[2][MLP_DOWN_1]
 
     assert batch.shape[0] == 1, "batch must be of shape (1, seq_len)"
 
     for seq_idx in range(batch.shape[1]):
-        routing_mask = torch.ones_like(batch, dtype=torch.bool)
-        routing_mask[:, seq_idx] = False
+        routing_mask = torch.zeros_like(batch, dtype=torch.bool)
+        routing_mask[:, seq_idx] = True
 
         mask_w_pos_replaced = ComponentsMaskInfo(
             component_mask=full_pgd_mask_info.component_mask,
-            routing_mask="all",
+            routing_mask=routing_mask,
             weight_delta_and_mask=None,  # full_pgd_mask_info.weight_delta_and_mask,
         )
 
-        patched_output = setup.model(batch, mask_infos={MLP_UP_0: mask_w_pos_replaced})
+        patched_output = setup.model(batch, mask_infos={MLP_DOWN_1: mask_w_pos_replaced})
         patched_loss = calc_kl_divergence_lm(patched_output, target_output.output, reduce=False)
         yield patched_loss[0]
 
@@ -177,16 +179,78 @@ def pgd_without_positions(setup: ModelSetup, batch: Int[Tensor, "1 seq"], pos_in
 
 # %%
 
-def vis_loss_dist():
-loss_means = []
-for _ in tqdm(range(30)):
-    batch = extract_batch_data(next(data_loader_iter)).to(device)
-    for losses in get_losses_by_pos(model_setups[OLD], batch):
-        mean_loss = losses.mean(dim=0).item()
-        loss_means.append(mean_loss)
-plt.hist(loss_means, log=True)
+
+def grid_of_line_plots(lines: list[Tensor], width: int = 10, height: int = 10):
+    _, axes = plt.subplots(width, height, sharex=True, sharey=True, figsize=(20, 20))
+    for i, line in enumerate(lines):
+        row, col = i // width, i % width
+        axes[row, col].plot(line.detach().cpu().numpy())
+        # add mean annotation in top left
+        axes[row, col].text(0.02, 0.98, f"{line.mean().item():.2f}", ha="left", va="top", fontsize=8, transform=axes[row, col].transAxes)
+    plt.show()
+
+
+from itertools import islice
+def vis_loss_dist_single(setup: ModelSetup):
+    def generator():
+        for batch in data_loader_iter:
+            batch = extract_batch_data(batch).to(device)
+            assert batch.shape[0] == 1, "batch must be of shape (1, seq_len)"
+            for x in get_losses_by_pos(setup, batch):
+                yield x
+                # if x.mean().item() > 0.03:
+                #     yield x
+    grid_of_line_plots(list(tqdm(islice(generator(), 100))))
+
+vis_loss_dist_single(model_setups[OLD])
+
+# %%
+
+
+def vis_loss_dist(nb: int):
+    new_means: list[tuple[float, int]] = []
+    old_means: list[tuple[float, int]] = []
+    for i in tqdm(range(nb)):
+        set_seed(i)
+        batch = extract_batch_data(next(data_loader_iter)).to(device)
+        assert batch.shape[0] == 1, "batch must be of shape (1, seq_len)"
+        for pos_idx, losses in enumerate(get_losses_by_pos(model_setups[NEW], batch)):
+            mean_loss = losses.mean(dim=0).item()
+            new_means.append((mean_loss, int(batch[0, pos_idx].item())))
+        for pos_idx, losses in enumerate(get_losses_by_pos(model_setups[OLD], batch)):
+            mean_loss = losses.mean(dim=0).item()
+            old_means.append((mean_loss, int(batch[0, pos_idx].item())))
+    return new_means, old_means
+
+
+n, o = vis_loss_dist(20)
+# %%
+
+bins = np.linspace(0, 0.15, 100).tolist()
+
+fst = lambda x: x[0]
+plt.hist(list(map(fst, n)), alpha=0.3, bins=bins)
+plt.hist(list(map(fst, o)), alpha=0.3, bins=bins)
+plt.yscale("log")
+plt.legend(["New", "Old"])
+plt.xlabel("Loss")
+plt.ylabel("Frequency")
+plt.title("Loss Distribution")
 plt.show()
 
+
+# %%
+
+o_t = torch.tensor(list(map(fst, o)), device=device)
+worst_100_idcs = o_t.argsort().tolist()[::-1][:100]
+for idx in worst_100_idcs:
+    print(idx)
+    loss, token_idx = o[idx]
+    print(f"loss: {loss}, token: {tokenizer.decode(token_idx)}")
+
+# %%
+o_top_100
+# %%
 
 loss_means = []
 
