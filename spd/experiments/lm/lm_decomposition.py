@@ -44,6 +44,15 @@ def main(
         config = Config(**json.loads(config_json.removeprefix("json:")))
 
     dist_state = init_distributed()
+    logger.info(
+        "Distributed context - backend=%s world=%s rank=%s local_rank=%s master=%s:%s",
+        dist_state.backend,
+        dist_state.world_size,
+        dist_state.rank,
+        dist_state.local_rank,
+        os.environ.get("MASTER_ADDR", "unset"),
+        os.environ.get("MASTER_PORT", "unset"),
+    )
 
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
@@ -178,6 +187,16 @@ def main(
     )
 
     if is_main_process():
+        logger.values(
+            msg="Batch partitioning",
+            data={
+                "world_size": dist_state.world_size,
+                "global_microbatch": config.microbatch_size,
+                "per_rank_microbatch": train_rank_microbatch_size,
+                "global_eval_batch": config.eval_batch_size,
+                "per_rank_eval_batch": eval_rank_batch_size,
+            },
+        )
         logger.info("Starting optimization...")
 
     optimize(
