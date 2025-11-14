@@ -36,6 +36,7 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
+    get_distributed_state,
     get_world_size,
     is_distributed,
     is_main_process,
@@ -161,8 +162,18 @@ def optimize(
 
     # Wrap model with DDP if distributed
     world_size = get_world_size()
+    dist_state = get_distributed_state()
     wrapped_model: nn.Module = model
     if world_size > 1:
+        logger.values(
+            msg="DDP configuration",
+            data={
+                "world_size": world_size,
+                "rank": dist_state.rank,
+                "local_rank": dist_state.local_rank,
+                "backend": dist_state.backend,
+            },
+        )
         if device.startswith("cuda"):
             # Parse device string to get device id for GPU
             device_id = int(device.split(":")[1]) if ":" in device else 0

@@ -55,6 +55,33 @@ For running hyperparameter sweeps:
 spd-run --experiments <experiment_name> --sweep --n-agents <n-agents> [--cpu]
 ```
 
+#### Data-parallel and multi-node runs
+
+`spd-run` uses `torchrun` behind the scenes when data parallelism is enabled. The CLI exposes two new
+layout knobs that can be combined with `--dp/--dp-world-size`:
+
+```bash
+spd-run --experiments ss_llama_simple \
+        --dp-nodes 2 \
+        --dp-gpus-per-node 4 \
+        --n-agents 1
+```
+
+- `--dp-nodes` controls how many SLURM nodes each array task requests.
+- `--dp-gpus-per-node` sets the number of ranks launched on each node.
+- `--dp/--dp-world-size` can still be provided to force an explicit world size; otherwise we derive
+  it as `dp_nodes * dp_gpus_per_node`.
+
+When running on SLURM, the generated batch script automatically:
+
+- requests the correct `#SBATCH --nodes`/`--gres`/`--ntasks-per-node` directives,
+- discovers the rendezvous address from `$SLURM_NODELIST`,
+- assigns a stable `MASTER_PORT` per sweep command, and
+- exports `SPD_GPUS_PER_NODE` so that `torchrun` can pick up the actual `nproc_per_node`.
+
+For manual multi-host runs outside SLURM, set `MASTER_ADDR` and `MASTER_PORT` once before invoking
+`spd-run`; the launcher will reuse those values.
+
 **Sweep parameters:**
 - Default sweep parameters are loaded from `spd/scripts/sweep_params.yaml`
 - You can specify a custom sweep parameters file by passing its path to `--sweep`
@@ -83,6 +110,15 @@ subdirectories, along with a corresponding config file. E.g.
 ```bash
 python spd/experiments/tms/tms_decomposition.py spd/experiments/tms/tms_5-2_config.yaml
 ```
+
+#### Distributed test checklist
+
+- **Single-node regression:** run `pytest tests/test_distributed.py -k dp` to compare dp=1 vs dp=2
+  behavior before promoting changes.
+- **Multi-node smoke test:** request a short two-node reservation (e.g. on a staging partition) and
+  launch `spd-run --experiments ss_llama_simple --dp-nodes 2 --dp-gpus-per-node 1 --n-agents 1`.
+  Confirm that all ranks rendezvous successfully and that checkpoints/logs are only written on the
+  primary node.
 
 ### Model Comparison
 

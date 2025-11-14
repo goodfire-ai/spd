@@ -45,11 +45,32 @@ def get_distributed_state() -> DistributedState:
     return _state
 
 
+def _detect_rank_from_env() -> tuple[int, int, int] | None:
+    """Inspect common launcher environment variables to infer rank info."""
+    env = os.environ
+
+    if "RANK" in env and "WORLD_SIZE" in env:
+        local_rank = int(env.get("LOCAL_RANK", env.get("SLURM_LOCALID", 0)))
+        return int(env["RANK"]), int(env["WORLD_SIZE"]), local_rank
+
+    if "OMPI_COMM_WORLD_SIZE" in env:
+        return (
+            int(env["OMPI_COMM_WORLD_RANK"]),
+            int(env["OMPI_COMM_WORLD_SIZE"]),
+            int(env.get("OMPI_COMM_WORLD_LOCAL_RANK", 0)),
+        )
+
+    if "SLURM_PROCID" in env:
+        world_size_str = env.get("SLURM_NTASKS") or env.get("SLURM_NPROCS") or "1"
+        local_rank_str = env.get("SLURM_LOCALID") or env.get("LOCAL_RANK") or "0"
+        return int(env["SLURM_PROCID"]), int(world_size_str), int(local_rank_str)
+
+    return None
+
+
 def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> DistributedState:
     global _state
-    """Initialize distributed process group using MPI.
-
-    Supports OpenMPI only.
+    """Initialize distributed process group using torchrun/SLURM/MPI launchers.
 
     Args:
         backend: Distributed backend to use ('nccl' or 'gloo'). If None, uses 'nccl' if CUDA is
@@ -60,40 +81,39 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
     """
     assert not is_distributed(), "Already in a distributed process group"
     backend = backend if backend is not None else _infer_default_backend()
-    # Check if running under MPI (OpenMPI)
-    if "OMPI_COMM_WORLD_SIZE" in os.environ:
-        world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
-        rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
-        local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
-    else:
-        # Not distributed - return single process values
-        world_size = 1
-        rank = 0
-        local_rank = 0
-        # Update cached state and return
-        _state = DistributedState(
-            rank=rank, world_size=world_size, local_rank=local_rank, backend=backend
-        )
+    rank_info = _detect_rank_from_env()
+    if rank_info is None:
+        _state = DistributedState(rank=0, world_size=1, local_rank=0, backend=backend)
         return _state
+
+    rank, world_size, local_rank = rank_info
 
     # Set environment variables that PyTorch expects
     os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", "127.0.0.1")
     os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "29500")
     os.environ["WORLD_SIZE"] = str(world_size)
     os.environ["RANK"] = str(rank)
+    os.environ["LOCAL_RANK"] = str(local_rank)
 
     # Initialize PyTorch distributed
     if not dist.is_initialized():
         assert backend in ["nccl", "gloo"]
+        device: torch.device | None = None
         if backend == "nccl":
-            assert torch.cuda.is_available(), "CUDA is required for NCCL ddp backend"
+            if not torch.cuda.is_available():
+                raise RuntimeError("CUDA is required for the NCCL backend")
+            if local_rank >= torch.cuda.device_count():
+                raise RuntimeError(
+                    f"Requested local rank {local_rank} but only {torch.cuda.device_count()} CUDA devices are available"
+                )
             torch.cuda.set_device(local_rank)
+            device = torch.device(f"cuda:{local_rank}")
         dist.init_process_group(
             backend=backend,
             init_method="env://",
             world_size=world_size,
             rank=rank,
-            device_id=None if backend == "gloo" else torch.device(f"cuda:{local_rank}"),
+            device_id=device,
         )
 
     _state = DistributedState(
