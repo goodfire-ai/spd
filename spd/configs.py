@@ -91,6 +91,21 @@ class PGDReconLayerwiseLossConfig(PGDConfig):
     classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
 
 
+class PGDMultiBatchConfig(LossMetricConfig):
+    init: PGDInitStrategy
+    step_size: float
+    n_steps: int
+    gradient_accumulation_steps: int
+
+
+class PGDMultiBatchReconLossConfig(PGDMultiBatchConfig):
+    classname: Literal["PGDMultiBatchReconLoss"] = "PGDMultiBatchReconLoss"
+
+
+class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
+    classname: Literal["PGDMultiBatchReconSubsetLoss"] = "PGDMultiBatchReconSubsetLoss"
+
+
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
@@ -168,6 +183,7 @@ LossMetricConfigType = (
     # Hidden acts
     | StochasticHiddenActsReconLossConfig
 )
+
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
     | CIHistogramsConfig
@@ -178,6 +194,8 @@ EvalOnlyMetricConfigType = (
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
+    | PGDMultiBatchReconLossConfig
+    | PGDMultiBatchReconSubsetLossConfig
 )
 MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
