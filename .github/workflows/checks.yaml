@@ -16,6 +16,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      packages: read
     container:
       image: ghcr.io/${{ github.repository }}/ci-mpi:latest
     timeout-minutes: 15
