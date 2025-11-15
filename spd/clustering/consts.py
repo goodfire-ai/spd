@@ -5,8 +5,18 @@ from pathlib import Path
 from typing import Literal, NewType
 
 import numpy as np
+import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+
+# TODO: docstrings for all types below
+
+ComponentIndexDtype = np.int32
+ComponentIndexDtypeTorch = torch.int32
+# if you have more than 32k components, change this to np.int32
+# if you have more than 2.1b components, rethink your life choices
+# note 2025-10-29 10:37 -- obviously we will need to handle components in the billions,
+# but this makes the current method infeasible -- we will need to cluster within layers first
 
 # Merge arrays and distances (numpy-based for storage/analysis)
 MergesAtIterArray = Int[np.ndarray, "n_ens n_components"]
