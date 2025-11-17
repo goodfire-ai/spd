@@ -479,7 +479,7 @@ class ComponentModel(LoadableModule):
 
     @classmethod
     @override
-    def from_run_info(cls, run_info: RunInfo[Config], module_patterns: list[str]) -> "ComponentModel":
+    def from_run_info(cls, run_info: RunInfo[Config], module_patterns: list[str] | None = None) -> "ComponentModel":
         """Load a trained ComponentModel checkpoint from a run info object."""
         config = run_info.config
 
@@ -508,7 +508,7 @@ class ComponentModel(LoadableModule):
 
         comp_model = ComponentModel(
             target_model=target_model,
-            target_module_patterns=module_patterns,
+            target_module_patterns=module_patterns or config.all_module_patterns,
             C=config.C,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,

@@ -20,41 +20,22 @@ from spd.models.components import ComponentsMaskInfo
 # %%
 
 
-@dataclass
-class ModelSetup:
-    path: str
-    model: ComponentModel
-    config: Config
-    device: str | torch.device
+device = get_device()
 
-
-def load_model(run_info_path: str, module_patterns: list[str]) -> ModelSetup:
-    """Load model. Call once per model type."""
-    device = get_device()
-
-    # Load run info and validate config
-    run_info = SPDRunInfo.from_path(run_info_path)
-    config = run_info.config
-    task_config = config.task_config
-
-    assert isinstance(task_config, LMTaskConfig), "task_config not LMTaskConfig"
-
-    # Load model
-    model = ComponentModel.from_run_info(run_info, module_patterns=module_patterns)
-    model.to(device)
-    model.target_model.requires_grad_(False)
-
-    return ModelSetup(path=run_info_path, model=model, config=config, device=device)
 
 
 # %%
+
+def run_for_layer(layer: str):
+
+
 
 OLD = "wandb:goodfire/spd/runs/lxs77xye"
 NEW = "wandb:goodfire/spd/runs/9gf5ud48"
 # MLP_UP_0 = "model.layers.0.mlp.up_proj"
 MLP_DOWN_1 = "model.layers.1.mlp.down_proj"
 
-model_setups = {path: load_model(path, module_patterns=[MLP_DOWN_1]) for path in [OLD, NEW]}
+model_setups = {path: load_model(path) for path in [OLD, NEW]}
 
 _config = model_setups[OLD].config
 _task_config = _config.task_config

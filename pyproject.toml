@@ -30,6 +30,8 @@ dependencies = [
     "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
     "fastapi",
     "uvicorn",
+    "plotly>=6.4.0",
+    "nbformat>=5.10.4",
 ]
 
 [dependency-groups]
