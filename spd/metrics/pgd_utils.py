@@ -75,7 +75,18 @@ def pgd_masked_recon_loss_update(
         assert adv_sources.grad is None
         with torch.enable_grad():
             sum_loss, n_examples = fwd_pass()
+            # Ensure n_examples is valid before division
+            if n_examples == 0:
+                raise ValueError(
+                    "n_examples is 0 during PGD step. This should have been caught in fwd_pass()."
+                )
             loss = sum_loss / n_examples
+            # Check for invalid loss values before backward pass
+            if torch.isnan(loss) or torch.isinf(loss):
+                raise ValueError(
+                    f"loss contains invalid values after division: loss={loss}, "
+                    f"sum_loss={sum_loss}, n_examples={n_examples}"
+                )
         (adv_sources_grads,) = torch.autograd.grad(loss, adv_sources)
         adv_sources_grads = all_reduce(adv_sources_grads, op=ReduceOp.SUM)
         with torch.no_grad():
@@ -204,6 +215,20 @@ def _forward_with_adv_sources(
     n_examples = (
         target_out.shape.numel() if output_loss_type == "mse" else target_out.shape[:-1].numel()
     )
+
+    # Defensive checks to prevent division errors
+    if n_examples == 0:
+        raise ValueError(
+            f"n_examples is 0. target_out.shape={target_out.shape}, "
+            f"output_loss_type={output_loss_type}, batch_dims={batch_dims}"
+        )
+
+    # Check for invalid loss values that could cause backward pass errors
+    if torch.isnan(sum_loss) or torch.isinf(sum_loss):
+        logger.warning(
+            f"sum_loss contains invalid values: sum_loss={sum_loss}, "
+            f"target_out.shape={target_out.shape}, output_loss_type={output_loss_type}"
+        )
 
     return sum_loss, n_examples
 
