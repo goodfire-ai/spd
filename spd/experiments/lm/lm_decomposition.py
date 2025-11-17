@@ -61,9 +61,10 @@ def main(
                 tags.append(sweep_id)
             slurm_job_id = os.getenv("SLURM_JOB_ID", None)
             if slurm_job_id is not None:
-                logger.info(f"Running on slurm job id: {slurm_job_id}")
                 tags.append(f"slurm-id_{slurm_job_id}")
             config = init_wandb(config, config.wandb_project, tags=tags)
+            if slurm_job_id is not None:
+                logger.info(f"Running on slurm job id: {slurm_job_id}")
             assert wandb.run
             if config.wandb_run_name:
                 wandb.run.name = config.wandb_run_name
@@ -180,6 +181,8 @@ def main(
     if is_main_process():
         logger.info("Starting optimization...")
 
+    import torch
+    torch.set_anomaly_enabled(True)
     optimize(
         target_model=target_model,
         config=config,
