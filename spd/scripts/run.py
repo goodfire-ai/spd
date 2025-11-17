@@ -161,6 +161,8 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
+                "CUDA_LAUNCH_BLOCKING=1 "
+                "TORCH_DISTRIBUTED_DEBUG=DETAIL "
                 "NCCL_DEBUG=WARN "
                 "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
                 f"{mpi_prefix}"
@@ -193,6 +195,8 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
+                    "CUDA_LAUNCH_BLOCKING=1 "
+                    "TORCH_DISTRIBUTED_DEBUG=DETAIL "
                     "NCCL_DEBUG=WARN "
                     "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
                     f"{mpi_prefix}"
