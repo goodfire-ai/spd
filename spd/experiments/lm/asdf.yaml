@@ -30,15 +30,15 @@ loss_metric_configs:
     classname: StochasticReconSubsetLoss
   - coeff: 0.5
     init: random
-    step_size: 0.33
-    n_steps: 6
+    step_size: 0.5
+    n_steps: 2
     mask_scope: shared_across_batch
     classname: PGDReconSubsetLoss
   - coeff: 100000.0
     classname: FaithfulnessLoss
 output_loss_type: kl
 lr: 0.0002
-steps: 200000
+steps: 400000
 batch_size: 64
 gradient_accumulation_steps: 1
 faithfulness_warmup_steps: 200
