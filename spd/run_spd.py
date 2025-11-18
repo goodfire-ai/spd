@@ -261,6 +261,14 @@ def optimize(
             # sync regardless of whether the parameters are used in this call to wrapped_model.
             target_model_output: OutputWithCache = wrapped_model(microbatch, cache_type="input")
 
+            pre_weight_acts_keys = list(target_model_output.cache.keys())
+            weight_deltas_keys = list(weight_deltas.keys())
+            assert pre_weight_acts_keys == weight_deltas_keys, (
+                f": Key order mismatch between pre_weight_acts and weight_deltas.\n"
+                f"  - pre_weight_acts keys: {pre_weight_acts_keys}\n"
+                f"  - weight_deltas keys: {weight_deltas_keys}"
+            )
+
             ci = component_model.calc_causal_importances(
                 pre_weight_acts=target_model_output.cache,
                 detach_inputs=False,

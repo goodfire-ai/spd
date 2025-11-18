@@ -161,6 +161,8 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
+                # "CUDA_LAUNCH_BLOCKING=1 "
+                # "TORCH_DISTRIBUTED_DEBUG=DETAIL "
                 "NCCL_DEBUG=WARN "
                 "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
                 f"{mpi_prefix}"
@@ -193,6 +195,8 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
+                    # "CUDA_LAUNCH_BLOCKING=1 "
+                    # "TORCH_DISTRIBUTED_DEBUG=DETAIL "
                     "NCCL_DEBUG=WARN "
                     "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
                     f"{mpi_prefix}"
@@ -315,6 +319,7 @@ def main(
     create_snapshot: bool = True,
     use_wandb: bool = True,
     report_title: str | None = None,
+    nodelist: str | None = None,
 ) -> None:
     """SPD runner for experiments with optional parameter sweeps.
 
@@ -341,6 +346,8 @@ def main(
         use_wandb: Use W&B for logging and tracking (default: True).
             If set to false, `create_report` must also be false.
         report_title: Title for the W&B report (default: None). Will be generated if not provided.
+        nodelist: Comma-separated list of node names to restrict jobs to (e.g., "h200-dev-145-040").
+            If None, no restriction (default: None).
 
     """
     # setup
@@ -443,6 +450,7 @@ def main(
                 max_concurrent_tasks=n_agents,
                 n_gpus_per_job=n_gpus_per_job,
                 partition=partition,
+                nodelist=nodelist,
             )
 
             array_job_id = submit_slurm_array(array_script)
@@ -612,6 +620,14 @@ def cli():
         help=f"SLURM partition to use (default: {DEFAULT_PARTITION_NAME})",
     )
 
+    parser.add_argument(
+        "--nodelist",
+        type=str,
+        default=None,
+        help="Comma-separated list of node names to restrict jobs to (e.g., 'h200-dev-145-040'). "
+        "If not specified, jobs can run on any available node.",
+    )
+
     args: argparse.Namespace = parser.parse_args()
 
     # Call main with parsed arguments
@@ -630,6 +646,7 @@ def cli():
         create_snapshot=args.create_snapshot,
         use_wandb=args.use_wandb,
         report_title=args.report_title,
+        nodelist=args.nodelist,
     )
 
 
