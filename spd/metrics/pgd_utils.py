@@ -13,8 +13,7 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.utils.component_utils import RoutingType, sample_uniform_k_subset_routing_masks
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data
-
+from spd.utils.general_utils import calc_kl_divergence_lm, calc_sum_recon_loss_lm, extract_batch_data
 
 def pgd_masked_recon_loss_update(
     model: ComponentModel,
@@ -26,7 +25,7 @@ def pgd_masked_recon_loss_update(
     routing: RoutingType,
     pgd_config: PGDConfig,
     exp_callback: Callable[[Tensor], Tensor] | None = None,
-) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo]]:
+) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo], Float[Tensor, "..."]]:
     """Central implementation of PGD masked reconstruction loss.
 
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
@@ -75,13 +74,13 @@ def pgd_masked_recon_loss_update(
 
     for _ in range(pgd_config.n_steps):
         assert adv_sources.grad is None
-        _, _, _, adv_sources_grads = fwd_bwd_fn()
+        _, _, _, adv_sources_grads, _ = fwd_bwd_fn()
         with torch.no_grad():
             adv_sources.add_(pgd_config.step_size * adv_sources_grads.sign())
             adv_sources.clamp_(0.0, 1.0)
 
-    sum_loss, total_n_examples, pgd_mask_infos, _ = fwd_bwd_fn()
-    return sum_loss, total_n_examples, pgd_mask_infos
+    sum_loss, total_n_examples, pgd_mask_infos, _, loss = fwd_bwd_fn()
+    return sum_loss, total_n_examples, pgd_mask_infos, loss
 
 
 CreateDataIter = Callable[
@@ -178,7 +177,7 @@ def _pgd_fwd_bwd(
     output_loss_type: Literal["mse", "kl"],
     batch_dims: tuple[int, ...],
     exp_callback: Callable[[Tensor], Tensor] | None = None,
-) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo], Float[Tensor, "n_layers *batch_dims C2"]]:
+) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo], Float[Tensor, "n_layers *batch_dims C2"], Float[Tensor, "..."]]:
     """Compute reconstruction loss for given adversarial sources.
 
     Args:
@@ -221,13 +220,14 @@ def _pgd_fwd_bwd(
             routing_masks=routing_masks,
         )
         out = model(batch, mask_infos=mask_infos)
-        sum_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+        loss = calc_kl_divergence_lm(pred=out, target=target_out, reduce=False)
+        # sum_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
 
     # important: take gradient wrt the unexpanded adv_sources, not the expanded ones
-    (adv_sources_grads,) = torch.autograd.grad(sum_loss, adv_sources)
+    (adv_sources_grads,) = torch.autograd.grad(loss.sum(), adv_sources)
     adv_sources_grads = all_reduce(adv_sources_grads, op=ReduceOp.SUM)
 
-    sum_loss = all_reduce(sum_loss, op=ReduceOp.SUM)
+    sum_loss = all_reduce(loss.sum(), op=ReduceOp.SUM)
     n_examples = (
         target_out.shape.numel() if output_loss_type == "mse" else target_out.shape[:-1].numel()
     )
@@ -235,7 +235,7 @@ def _pgd_fwd_bwd(
         all_reduce(torch.tensor(n_examples, device=batch.device), op=ReduceOp.SUM).item()
     )
 
-    return sum_loss, n_examples, mask_infos, adv_sources_grads
+    return sum_loss, n_examples, mask_infos, adv_sources_grads, loss
 
 
 def _multibatch_pgd_fwd_bwd(
@@ -283,7 +283,7 @@ def _multibatch_pgd_fwd_bwd(
         # sampled independently for each example.
         routing_masks = get_routing_masks()
 
-        batch_sum_loss, batch_n_examples, _, batch_grads = _pgd_fwd_bwd(
+        batch_sum_loss, batch_n_examples, _, batch_grads, _ = _pgd_fwd_bwd(
             adv_sources=adv_sources,
             batch=microbatch,
             ci=ci,

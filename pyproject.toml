@@ -32,6 +32,7 @@ dependencies = [
     "uvicorn",
     "plotly>=6.4.0",
     "nbformat>=5.10.4",
+    "circuitsvis>=1.43.3",
 ]
 
 [dependency-groups]
