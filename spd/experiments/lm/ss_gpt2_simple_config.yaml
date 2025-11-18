@@ -2,11 +2,11 @@ wandb_project: null
 wandb_run_name: null
 wandb_run_name_prefix: ""
 seed: 0
-C: 1000
+C: 704
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
-  - 800
+  - 600
 sampling: continuous
 sigmoid_type: leaky_hard
 target_module_patterns:
@@ -30,8 +30,8 @@ loss_metric_configs:
     classname: StochasticReconSubsetLoss
   - coeff: 0.5
     init: random
-    step_size: 0.33
-    n_steps: 6
+    step_size: 0.5
+    n_steps: 4
     mask_scope: shared_across_batch
     classname: PGDReconSubsetLoss
   - coeff: 100000.0
