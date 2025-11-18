@@ -83,6 +83,7 @@ class CIOutputs:
     pre_sigmoid: dict[str, Tensor]
     inner_acts: dict[str, Float[Tensor, "... C"]]
 
+
 class ComponentModel(LoadableModule):
     """Wrapper around an arbitrary pytorch model for running SPD.
 
@@ -479,7 +480,9 @@ class ComponentModel(LoadableModule):
 
     @classmethod
     @override
-    def from_run_info(cls, run_info: RunInfo[Config], module_patterns: list[str] | None = None) -> "ComponentModel":
+    def from_run_info(
+        cls, run_info: RunInfo[Config], module_patterns: list[str] | None = None
+    ) -> "ComponentModel":
         """Load a trained ComponentModel checkpoint from a run info object."""
         config = run_info.config
 
@@ -556,9 +559,7 @@ class ComponentModel(LoadableModule):
             input_activations = pre_weight_acts[target_module_name]
             ci_fn = self.ci_fns[target_module_name]
 
-            this_inner_acts = self.components[target_module_name].get_inner_acts(
-                input_activations
-            )
+            this_inner_acts = self.components[target_module_name].get_inner_acts(input_activations)
             inner_acts[target_module_name] = this_inner_acts
             match ci_fn:
                 case MLPCiFn():
@@ -604,19 +605,24 @@ class ComponentModel(LoadableModule):
             weight_deltas[comp_name] = self.target_weight(comp_name) - components.weight
         return weight_deltas
 
-
     @contextmanager
-    def cache_modules(self, module_paths: list[str]) -> Generator[tuple[dict[str, Tensor], dict[str, Tensor]]]:
+    def cache_modules(
+        self, module_paths: list[str]
+    ) -> Generator[tuple[dict[str, Tensor], dict[str, Tensor]]]:
         """Context manager to cache the inputs to the specified modules."""
         input_cache: dict[str, Tensor] = {}
         output_cache: dict[str, Tensor] = {}
 
-        def _make_hook(module_path: str) -> Callable[[nn.Module, tuple[Any, ...], dict[Any, Any], Any], Any]:
+        def _make_hook(
+            module_path: str,
+        ) -> Callable[[nn.Module, tuple[Any, ...], dict[Any, Any], Any], Any]:
             def _cache_hook(
                 module: nn.Module, args: tuple[Any, ...], kwargs: dict[Any, Any], output: Any
             ) -> Any:
                 """Hook to cache the input to the module."""
-                assert len(args) > 0, f"Expected at least 1 argument for module {module} path {module_path}"
+                assert len(args) > 0, (
+                    f"Expected at least 1 argument for module {module} path {module_path}"
+                )
                 input_cache[module_path] = args[0]
                 output_cache[module_path] = output
                 return output
@@ -633,6 +639,43 @@ class ComponentModel(LoadableModule):
         finally:
             for handle in handles:
                 handle.remove()
+
+    @contextmanager
+    def cache_attn_weights(self) -> Generator[dict[str, Tensor]]:
+        """Context manager to cache the attention weights for the specified layers."""
+        attn_weights_cache: dict[str, Tensor] = {}
+
+        def make_hook(
+            module_path: str,
+        ) -> Callable[[nn.Module, tuple[Any, ...], dict[Any, Any], Any], Any]:
+            def _cache_hook(
+                module: nn.Module, args: tuple[Any, ...], kwargs: dict[Any, Any], output: Any
+            ) -> Any:
+                """Hook to cache the attention weights for the specified layers."""
+                assert isinstance(output, tuple), "Expected output to be a tensor"
+                assert len(output) == 2, "Expected output to be a tuple of length 2"
+                assert isinstance(output[0], Tensor), "Expected output[0] to be a tensor"
+                assert isinstance(output[1], Tensor), "Expected output[1] to be a tensor"
+                _, attn_weights = output
+                print(f"Caching attention weights for module {module_path} with shape {attn_weights.shape}")
+                attn_weights_cache[module_path] = attn_weights.clone().detach()
+                return output
+
+            return _cache_hook
+
+        handles: list[RemovableHandle] = []
+        for layer_idx in range(4):
+            module_path = f"model.layers.{layer_idx}.self_attn"
+            module = self.target_model.get_submodule(module_path)
+            print(f"Registering forward hook for module {module_path} with type {type(module)}")
+            handle = module.register_forward_hook(make_hook(module_path), with_kwargs=True)
+            handles.append(handle)
+        try:
+            yield attn_weights_cache
+        finally:
+            for handle in handles:
+                handle.remove()
+
 
 def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
     """Maps deprecated state dict keys to new state dict keys"""
@@ -659,4 +702,3 @@ def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
         # replace if modified
         if new_key != key:
             state_dict[new_key] = state_dict.pop(key)
-

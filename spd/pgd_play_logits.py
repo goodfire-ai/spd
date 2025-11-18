@@ -113,106 +113,6 @@ def sort_layer(lname: str):
     return (int(lname) * 1000) + 8
 
 
-
-def visualize_seq_layer_metric(
-    vals: dict[str, Tensor],
-    val_name: str,
-    title: str,
-    x_labels: list[str],
-    hover_data: dict[str, list[str]],
-    imshow_kwargs: dict[str, Any],
-    loss_per_position: list[float],
-):
-    """
-    Visualize a matrix of values, with hover data for each token.
-
-    Args:
-        vals: A dictionary of layer names to values.
-        title: The title of the plot.
-        hover_data: A dictionary of layer names to lists of hover data, one string per token.
-        imshow_kwargs: Keyword arguments for the heatmap (e.g., colorscale, zmin, zmax).
-        loss_per_position: Optional PGD loss values (one per token) to show as a line plot
-            aligned with the heatmap x-axis.
-    """
-    sorted_layer_names = sorted(vals.keys(), key=sort_layer)
-    matrix = torch.stack([vals[layer] for layer in sorted_layer_names])
-    matrix_np = matrix.cpu().detach().numpy()
-
-    # Prepare custom hover text if provided
-    customdata = None
-    hovertemplate = None
-
-    # Create a matrix of hover text strings
-    hover_matrix: list[list[str]] = []
-    for layer in sorted_layer_names:
-        assert layer in hover_data
-        hover_matrix.append(hover_data[layer])
-    customdata = hover_matrix
-    hovertemplate = (
-        "<b>Layer:</b> %{y}<br>"
-        "<b>Position:</b> %{x}<br>"
-        f"<b>{val_name}:</b> %{{z:.4f}}<br>"
-        "<br>%{customdata}<extra></extra>"
-    )
-
-    # Extract common imshow kwargs for plotly
-    colorscale = imshow_kwargs.get("cmap", "Viridis") if imshow_kwargs else "Viridis"
-    zmin = imshow_kwargs.get("vmin") if imshow_kwargs else None
-    zmax = imshow_kwargs.get("vmax") if imshow_kwargs else None
-
-    assert len(x_labels) == matrix_np.shape[1], (
-        "x_labels must match the number of columns in the matrix"
-    )
-    assert len(sorted_layer_names) == matrix_np.shape[0], (
-        "layer_names must match the number of rows in the matrix"
-    )
-
-    x_axis_labels = [f"{i}: [{x}]" for i, x in enumerate(x_labels)]
-    heatmap = go.Heatmap(
-        z=matrix_np,
-        y=sorted_layer_names,
-        x=x_axis_labels,
-        colorscale=colorscale,
-        zmin=zmin,
-        zmax=zmax,
-        customdata=customdata,
-        hovertemplate=hovertemplate,
-        hoverongaps=False,
-        showscale=False,
-    )
-
-    assert len(loss_per_position) == len(x_axis_labels), (
-        "loss_per_position must match the number of token positions"
-    )
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.03,
-        row_heights=[0.25, 0.75],
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x_axis_labels,
-            y=loss_per_position,
-            mode="lines+markers",
-            name="PGD Loss",
-        ),
-        row=1,
-        col=1,
-    )
-    fig.add_trace(heatmap, row=2, col=1)
-    fig.update_yaxes(title_text="PGD Loss", row=1, col=1)
-    fig.update_yaxes(title_text="Layer", row=2, col=1)
-    fig.update_xaxes(title_text="Token Position", row=2, col=1)
-    fig.update_layout(
-        title=title,
-        width=12000,
-        height=len(sorted_layer_names) * 40 + 200,
-    )
-    return fig
-
-
 def mse(a: Tensor, b: Tensor) -> Tensor:
     return (a - b).pow(2).mean(dim=-1)
 
@@ -249,12 +149,14 @@ def get_logits_lens_toks_and_projections(
     logits: dict[str, list[list[tuple[int, float]]]] = defaultdict(list)
     for layer, seq_vec in vectors.items():
         for tok_vec in seq_vec:
-            top_logits = runtime_cast(Tensor, tmodel.lm_head(tok_vec)).topk(topk, dim=-1)  # pyright: ignore[reportCallIssue]  # noqa: F821
+            # raise ValueError("check this is correct")
+            top_logits = runtime_cast(Tensor, tmodel.lm_head(tmodel.model.norm(tok_vec))).topk(  # pyright: ignore[reportCallIssue, reportArgumentType]
+                topk, dim=-1
+            )  # pyright: ignore[reportCallIssue, reportArgumentType]  # noqa: F821
             logits[layer].append(
                 list(zip(top_logits.indices.tolist(), top_logits.values.tolist(), strict=True))
             )
     return logits
-
 
 
 def plot_pairwise_heatmap(
@@ -305,8 +207,8 @@ def plot_pairwise_heatmap(
         matrix_np = matrix.detach().cpu().numpy()
         heatmap = go.Heatmap(
             z=matrix_np,
-            x=x_axis_labels,
-            y=y_axis_labels,
+            # x=x_axis_labels,
+            # y=y_axis_labels,
             colorscale=colorscale,
             zmin=zmin,
             zmax=zmax,
@@ -338,7 +240,7 @@ def plot_pairwise_heatmap(
                     row=1,  # pyright: ignore[reportArgumentType]
                     col=col_idx,  # pyright: ignore[reportArgumentType]
                 )
-        columns_for_y = (1, 2, 3) if loss_per_position is not None else (1, 2)
+        columns_for_y = (1, 2, 3)
         for col_idx in columns_for_y:
             for label in eos_y_axis_labels:
                 fig.add_hline(
@@ -351,27 +253,26 @@ def plot_pairwise_heatmap(
                 )
 
     # Add rotated line plot (horizontal) aligned with PGD heatmap rows
-    if loss_per_position is not None:
-        line_trace = go.Scatter(
-            x=loss_per_position,
-            y=y_axis_labels,
-            mode="lines+markers",
-            name="PGD loss",
-            line=dict(color="black"),
-            marker=dict(size=6),
-            hovertemplate="<b>Token:</b> %{y}<br><b>PGD loss:</b> %{x:.4f}<extra></extra>",
-            showlegend=False,
-        )
-        fig.add_trace(line_trace, row=1, col=3)
-        fig.update_yaxes(matches="y1", row=1, col=3, showticklabels=False)
-        fig.update_xaxes(title_text="pgd loss", row=1, col=3)
+    line_trace = go.Scatter(
+        x=loss_per_position,
+        y=y_axis_labels,
+        mode="lines+markers",
+        name="PGD loss",
+        line=dict(color="black"),
+        marker=dict(size=6),
+        hovertemplate="<b>Token:</b> %{y}<br><b>PGD loss:</b> %{x:.4f}<extra></extra>",
+        showlegend=False,
+    )
+    fig.add_trace(line_trace, row=1, col=3)
+    fig.update_yaxes(matches="y1", row=1, col=3, showticklabels=False)
+    fig.update_xaxes(title_text="pgd loss", row=1, col=3)
 
-        fig.update_layout(
-            title=title,
-            width=1600,
-            height=750,
-            margin=dict(l=20, r=20, t=60, b=20),
-        )
+    fig.update_layout(
+        title=title,
+        width=1600,
+        height=750,
+        margin=dict(l=20, r=20, t=60, b=20),
+    )
     fig.show()
 
 
@@ -410,23 +311,16 @@ def get_attn_patterns(model: LlamaModel, q_out: Tensor, k_out: Tensor) -> list[n
 
 
 def get_layer_attn_patterns(
-    layers: list[int], batch: Int[Tensor, "1 seq"], mask_infos: dict[str, ComponentsMaskInfo] | None
-) -> Generator[list[np.ndarray]]:
+    batch: Int[Tensor, "1 seq"],
+    mask_infos: dict[str, ComponentsMaskInfo] | None,
+):
     assert batch.ndim == 2, "batch must be of shape (1, seq_len)"
     assert batch.shape[0] == 1, "batch must be of shape (1, seq_len)"
 
-    necessary_paths = []
-    for layer_idx in layers:
-        necessary_paths.append(f"model.layers.{layer_idx}.self_attn.q_proj")
-        necessary_paths.append(f"model.layers.{layer_idx}.self_attn.k_proj")
+    with model.cache_attn_weights() as attn_weights:
+        model(batch, mask_infos=mask_infos)
 
-    outputs = get_layer_outputs(batch, necessary_paths, mask_infos=mask_infos)
-
-    for layer_idx in layers:
-        q_out = outputs[f"model.layers.{layer_idx}.self_attn.q_proj"]
-        k_out = outputs[f"model.layers.{layer_idx}.self_attn.k_proj"]
-
-        yield get_attn_patterns(cast(LlamaModel, tmodel.model), q_out, k_out)
+    return attn_weights
 
 
 def _attention_heatmap_trace(
@@ -480,31 +374,39 @@ def attention_pattern_grid(
     *,
     tokens: list[str],
     patterns_by_layer: Sequence[Sequence[np.ndarray]],
-    layers: Sequence[int],
+    # layers: Sequence[int],
     title: str,
     max_heads: int | None = 4,
 ):
     assert patterns_by_layer
-    assert len(patterns_by_layer) == len(layers), "layers and patterns must align"
+    # assert len(patterns_by_layer) == len(layers), "layers and patterns must align"
 
     total_heads = len(patterns_by_layer[0])
     heads_to_plot = total_heads if max_heads is None else min(max_heads, total_heads)
+    layer_indices = list(range(len(patterns_by_layer)))
     head_indices = list(range(heads_to_plot))
 
-    num_rows = len(layers)
+    # num_rows = len(layers)
+    num_rows = len(patterns_by_layer)
     num_cols = len(head_indices)
 
     fig = make_subplots(
         rows=num_rows,
         cols=num_cols,
-        subplot_titles=[f"L{layer} · H{head}" for layer in layers for head in head_indices],
+        subplot_titles=[
+            f"L{layer_idx} · H{head}" for layer_idx in layer_indices for head in head_indices
+        ],
         horizontal_spacing=0.03,
         vertical_spacing=0.04,
     )
 
-    for row_idx, (layer, layer_patterns) in enumerate(zip(layers, patterns_by_layer, strict=True)):
+    for row_idx, (layer_idx, layer_patterns) in enumerate(
+        zip(layer_indices, patterns_by_layer, strict=True)
+    ):
         for col_idx, head_idx in enumerate(head_indices):
-            assert head_idx < len(layer_patterns), f"Head {head_idx} not found for layer {layer}"
+            assert head_idx < len(layer_patterns), (
+                f"Head {head_idx} not found for layer {layer_idx}"
+            )
 
             trace = plot_attention_pattern(
                 layer_patterns[head_idx],
@@ -521,7 +423,7 @@ def attention_pattern_grid(
             )
             fig.update_yaxes(
                 showticklabels=False,
-                title_text=f"Layer {layer}" if col_idx == 0 else None,
+                title_text=f"Layer {layer_idx}" if col_idx == 0 else None,
                 row=row_idx + 1,
                 col=col_idx + 1,
             )
@@ -541,11 +443,11 @@ class pw_cfg:
 
 
 def run_batch(
+    batch: Int[Tensor, "1 seq"],
     do_seq_heatmap: bool = False,
     do_pw: pw_cfg | Literal[False] = False,
     do_patterns: bool = False,
 ) -> None:
-    batch = extract_batch_data(next(data_loader_iter)).to(device)[0:1]
     actual_seq_toks = [tokenizer.decode(tok) for tok in batch[0]]
 
     target_output = model(batch, cache_type="input")
@@ -630,28 +532,116 @@ def run_batch(
                     lines.append("")
                 hover_data[layer].append("<br>".join(lines))
 
-        cos_sim_val = {
-            layer: F.cosine_similarity(all_target_outputs[layer], all_pgd_outputs[layer], dim=-1)
-            for layer in resid_paths
-        }
+        # # Create a matrix of hover text strings
+        # hover_matrix: list[list[str]] = []
+        # for layer in sorted_resid_paths:
+        #     assert layer in hover_data
+        #     hover_matrix.append(hover_data[layer])
+        # customdata = hover_matrix
+        # hovertemplate = (
+        #     "<b>Layer:</b> %{y}<br>"
+        #     "<b>Position:</b> %{x}<br>"
+        #     f"<b>{val_name}:</b> %{{z:.4f}}<br>"
+        #     "<br>%{customdata}<extra></extra>"
+        # )
 
-        visualize_seq_layer_metric(
-            vals=cos_sim_val,
-            val_name="cos_similarity",
-            hover_data=hover_data,
-            title="cos_similarity between pgd and target hidden states",
-            imshow_kwargs={"cmap": "RdBu", "vmin": -1, "vmax": 1},
-            x_labels=actual_seq_toks,
-            loss_per_position=pgd_loss_per_token.tolist(),
-        ).show()
+        sorted_resid_paths = sorted(resid_paths, key=sort_layer)
+
+        matrix_np = np.stack(
+            [
+                F.cosine_similarity(all_target_outputs[layer], all_pgd_outputs[layer], dim=-1)
+                .detach()
+                .cpu()
+                .numpy()
+                for layer in sorted_resid_paths
+            ]
+        )
+
+        x_axis_labels = [f"{i}: [{token}]" for i, token in enumerate(actual_seq_toks)]
+        heatmap = go.Heatmap(
+            z=matrix_np,
+            y=sorted_resid_paths,
+            x=x_axis_labels,
+            colorscale="RdBu",
+            zmin=-1,
+            zmax=1,
+            # customdata=customdata,
+            # hovertemplate=hovertemplate,
+            hoverongaps=False,
+            showscale=False,
+        )
+
+        # loss_per_position = pgd_loss_per_token.tolist()
+
+        # add this stuff as line plots at the top
+        attn_weights = get_layer_attn_patterns(batch, mask_infos=None)
+        pgd_attn_weights = get_layer_attn_patterns(batch, mask_infos=pgd_mask_infos)
+
+        top_rows = np.stack(
+            [
+                pgd_loss_per_token,
+                *[
+                    head.mean(dim=0).detach().cpu().numpy()
+                    for _layer, weights in attn_weights.items()
+                    for head in weights[0]  # not sure, 0 or 1?
+                ],
+                *[
+                    head.mean(dim=0).detach().cpu().numpy()
+                    for _layer, weights in pgd_attn_weights.items()
+                    for head in weights[0]  # not sure, 0 or 1?
+                ],
+            ]
+        )
+        print(top_rows.shape)
+
+        top_row_labels = [
+            "pgd loss",
+            *[f"{layer} head {head} attn weight" for layer in attn_weights for head in range(4)],
+            *[
+                f"{layer} head {head} attn weight (pgd)"
+                for layer in pgd_attn_weights
+                for head in range(4)
+            ],
+        ]
+
+        assert top_rows.shape[1] == len(actual_seq_toks)
+
+        fig = make_subplots(
+            rows=len(top_rows) + 1,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.03,
+            row_heights=[(0.75 / len(top_rows)) for _ in range(len(top_rows))] + [0.25],
+        )
+        for idx, (row, label) in enumerate(zip(top_rows, top_row_labels, strict=True)):
+            fig.add_trace(
+                go.Scatter(
+                    x=x_axis_labels,
+                    y=row,
+                    mode="lines+markers",
+                    name=label,
+                ),
+                row=idx + 1,
+                col=1,
+            )
+
+        fig.add_trace(heatmap, row=2, col=1)
+        fig.update_yaxes(title_text="PGD Loss", row=1, col=1)
+        fig.update_yaxes(title_text="Layer", row=2, col=1)
+        fig.update_xaxes(title_text="Token Position", row=2, col=1)
+        fig.update_layout(
+            width=4000,
+            height=2000,
+        )
+
+        fig.show()
 
     pairwise_cos_sim_val = {
         layer: (pw_cos(all_target_outputs[layer]), pw_cos(all_pgd_outputs[layer]))
         for layer in hidden_paths
     }
 
-    stride = 5
-
+    stride = 1
     if do_pw:
         target_matrices = {k: v[::stride, ::stride] for k, (v, _) in pairwise_cos_sim_val.items()}
         pgd_matrices = {k: v[::stride, ::stride] for k, (_, v) in pairwise_cos_sim_val.items()}
@@ -662,7 +652,7 @@ def run_batch(
         for layer in sorted_keys:
             if do_pw.filter_fn is not None and not do_pw.filter_fn(layer):
                 continue
-            
+
             plot_pairwise_heatmap(
                 title=f"Pairwise cos_similarity across sequence - {layer}",
                 target_matrix=target_matrices[layer],
@@ -673,48 +663,62 @@ def run_batch(
             )
 
     if do_patterns:
-        layers = [0, 1, 2, 3]
-        target_attn_patternss = list(get_layer_attn_patterns(layers, batch, mask_infos=None))
-        pgd_attn_patternss = list(get_layer_attn_patterns(layers, batch, mask_infos=pgd_mask_infos))
+        # raise NotImplementedError("Not implemented")
+        target_attn_patternss_d = get_layer_attn_patterns(batch, mask_infos=None)
+        pgd_attn_patternss_d = get_layer_attn_patterns(batch, mask_infos=pgd_mask_infos)
         tokens = [tokenizer.decode(tok) for tok in batch[0]]
 
         start, end = 0, 512
         tokens = tokens[start:end]
         target_attn_patternss = [
-            [pattern[start:end] for pattern in patterns] for patterns in target_attn_patternss
+            [
+                pattern[start:end, start:end].detach().cpu().numpy()
+                for pattern in patterns[0].unbind()
+            ]
+            for _layer, patterns in target_attn_patternss_d.items()
         ]
         pgd_attn_patternss = [
-            [pattern[start:end] for pattern in patterns] for patterns in pgd_attn_patternss
+            [
+                pattern[start:end, start:end].detach().cpu().numpy()
+                for pattern in patterns[0].unbind()
+            ]
+            for _layer, patterns in pgd_attn_patternss_d.items()
         ]
         diff_attn_patternss = [
-            [p - t for p, t in zip(ps, ts, strict=True)]
+            [(p - t) for p, t in zip(ps, ts, strict=True)]
             for ps, ts in zip(pgd_attn_patternss, target_attn_patternss, strict=True)
         ]
 
         attention_pattern_grid(
             tokens=tokens[start:end],
             patterns_by_layer=target_attn_patternss,
-            layers=layers,
             title="Target attention patterns",
         ).show()
 
         attention_pattern_grid(
             tokens=tokens[start:end],
             patterns_by_layer=pgd_attn_patternss,
-            layers=layers,
             title="PGD attention patterns",
         ).show()
 
         attention_pattern_grid(
             tokens=tokens[start:end],
             patterns_by_layer=diff_attn_patternss,
-            layers=layers,
             title="PGD attention patterns",
         ).show()
 
 
 # %%
 
-run_batch(do_seq_heatmap=True, do_pw=pw_cfg(filter_fn=lambda x: "self_attn" in x))
+batch = extract_batch_data(next(data_loader_iter)).to(device)[0:1]
+
+# %%
+
+run_batch(
+    batch=batch,
+    do_seq_heatmap=True,
+    # do_pw=pw_cfg(filter_fn=lambda x: "self_attn" in x),
+    # do_patterns=True,
+)
 
 # %%
