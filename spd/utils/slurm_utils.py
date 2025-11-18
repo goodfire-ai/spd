@@ -31,6 +31,7 @@ def create_slurm_array_script(
     partition: str,
     time_limit: str = "72:00:00",
     max_concurrent_tasks: int | None = None,
+    nodelist: str | None = None,
 ) -> None:
     """Create a SLURM job array script with git snapshot for consistent code.
 
@@ -42,6 +43,7 @@ def create_slurm_array_script(
         n_gpus_per_job: Number of GPUs per job. If 0, use CPU jobs.
         time_limit: Time limit for each job (default: 72:00:00)
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
+        nodelist: Comma-separated list of node names to restrict jobs to (e.g., "h200-dev-145-040"). If None, no restriction.
     """
 
     slurm_logs_dir = Path.home() / "slurm_logs"
@@ -60,6 +62,9 @@ def create_slurm_array_script(
 
     case_block = "\n        ".join(case_statements)
 
+    # Build nodelist directive if specified
+    nodelist_directive = f"#SBATCH --nodelist={nodelist}" if nodelist else ""
+
     script_content = textwrap.dedent(f"""
         #!/bin/bash
         #SBATCH --nodes=1
@@ -70,6 +75,7 @@ def create_slurm_array_script(
         #SBATCH --array={array_range}
         #SBATCH --distribution=pack
         #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
+        {nodelist_directive}
 
         # Create job-specific working directory
         WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"

@@ -4,7 +4,8 @@ import gc
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from time import sleep
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -260,6 +261,14 @@ def optimize(
             # the DDP gradient syncing for all parameters in the component model. Gradients will
             # sync regardless of whether the parameters are used in this call to wrapped_model.
             target_model_output: OutputWithCache = wrapped_model(microbatch, cache_type="input")
+
+            pre_weight_acts_keys = list(target_model_output.cache.keys())
+            weight_deltas_keys = list(weight_deltas.keys())
+            assert pre_weight_acts_keys == weight_deltas_keys, (
+                f": Key order mismatch between pre_weight_acts and weight_deltas.\n"
+                f"  - pre_weight_acts keys: {pre_weight_acts_keys}\n"
+                f"  - weight_deltas keys: {weight_deltas_keys}"
+            )
 
             ci = component_model.calc_causal_importances(
                 pre_weight_acts=target_model_output.cache,
