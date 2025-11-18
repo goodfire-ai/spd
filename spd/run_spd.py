@@ -4,7 +4,8 @@ import gc
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from time import sleep
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -51,6 +52,22 @@ from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 
+base_log = wandb.log
+
+def safe_log(*args: Any, **kwargs: Any) -> None:
+    attempts = 0
+    while attempts < 5:
+        try:
+            base_log(*args, **kwargs)
+            return
+        except Exception as e:
+            attempts += 1
+            logger.warning(f"Failed to log to wandb after {attempts} attempts: {e}")
+            sleep(60)
+    logger.error(f"Failed to log to wandb after {attempts} attempts")
+    raise Exception(f"Failed to log to wandb after {attempts} attempts")
+
+wandb.log = safe_log
 
 def run_faithfulness_warmup(
     component_model: ComponentModel,
