@@ -7,6 +7,9 @@ from pathlib import Path
 from spd.log import logger
 from spd.settings import REPO_ROOT
 
+# unsolved, but this node seems to have a very high error rate
+EXCLUDED_NODE = "h200-dev-145-040"
+
 
 def format_runtime_str(runtime_minutes: int) -> str:
     """Format runtime in minutes to a human-readable string like '2h30m' or '45m'.
@@ -70,6 +73,7 @@ def create_slurm_array_script(
         #SBATCH --array={array_range}
         #SBATCH --distribution=pack
         #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
+        #SBATCH --exclude={EXCLUDED_NODE}
 
         # Create job-specific working directory
         WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
