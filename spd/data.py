@@ -10,6 +10,7 @@ from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from spd.base_config import BaseConfig
 from spd.log import logger
+from spd.utils.distributed_utils import ensure_cached_and_call
 
 
 class DatasetConfig(BaseConfig):
