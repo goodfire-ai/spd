@@ -1,0 +1,8 @@
+# Sweep config for resid_mlp2 with two different seeds
+# Usage: spd-run --experiments resid_mlp2 --sweep resid_mlp2_seed_sweep.yaml --n-agents <n-agents>
+
+# Experiment-specific parameters for resid_mlp2
+resid_mlp2:
+  seed:
+    values: [0, 1]
+
