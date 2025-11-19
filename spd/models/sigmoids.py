@@ -31,9 +31,9 @@ class LowerLeakyHardSigmoidFunction(Function):
 
         # Gradient as if forward pass was alpha * x for x<=0 when the gradient is negative
         grad_input = torch.where(
-            x <= 0,
-            torch.where(grad_output < 0, alpha * grad_output, torch.zeros_like(grad_output)),
-            torch.where(x <= 1, grad_output, torch.zeros_like(grad_output)),
+            grad_output < 0,
+            torch.where(x <= 0, alpha * grad_output, torch.where(x <= 1, grad_output, torch.zeros_like(grad_output))),
+            torch.zeros_like(grad_output),
         )
 
         return grad_input, None  # None for alpha gradient since it's not a tensor
