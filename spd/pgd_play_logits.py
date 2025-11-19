@@ -1,11 +1,11 @@
 # ruff: noqa: E402, I001
 # %%
 from dataclasses import dataclass
+from fnmatch import fnmatch
 import numpy as np
 import einops
 from jaxtyping import Float, Int
-from collections import defaultdict
-from collections.abc import Generator
+
 import torch.nn.functional as F
 import torch
 from typing import Any, Literal, cast
@@ -19,7 +19,7 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.models.components import ComponentsMaskInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import extract_batch_data, runtime_cast
+from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data, runtime_cast
 from torch import Tensor
 from transformers import LlamaForCausalLM
 from transformers.models.llama.modeling_llama import LlamaModel
@@ -35,12 +35,14 @@ device = get_device()
 RUN = "wandb:goodfire/spd/runs/9gf5ud48"
 
 config = SPDRunInfo.from_path(RUN).config
+
 task_config = config.task_config
 assert isinstance(task_config, LMTaskConfig), "task_config not LMTaskConfig"
 
 model = ComponentModel.from_run_info(SPDRunInfo.from_path(RUN))
 model.to(device)
 model.eval()
+model.target_model.config._attn_implementation = "eager"  # pyright: ignore[reportArgumentType, reportAttributeAccessIssue]
 
 # %%
 
@@ -82,6 +84,10 @@ pgd_config = PGDReconLossConfig(
 # %%
 
 
+def detach(t: Tensor) -> np.ndarray:
+    return t.detach().cpu().numpy()
+
+
 def sort_layer(lname: str):
     if lname == "lm_head":
         return 10_000
@@ -107,6 +113,10 @@ def sort_layer(lname: str):
             return (layer * 1000) + 5
         if rest == "post_attention_layernorm":
             return (layer * 1000) + 6
+        if rest == "mlp.up_proj":
+            return (layer * 1000) + 7
+        if rest == "mlp.gate_proj":
+            return (layer * 1000) + 7
         if rest == "mlp.down_proj":
             return (layer * 1000) + 7
 
@@ -142,21 +152,123 @@ def get_layer_outputs(
     return layers
 
 
-def get_logits_lens_toks_and_projections(
-    vectors: dict[str, Float[Tensor, "s d"]], topk: int = 10
-) -> dict[str, list[list[tuple[int, float]]]]:
-    assert next(iter(vectors.values())).ndim == 2, "Expected 2D tensor"
-    logits: dict[str, list[list[tuple[int, float]]]] = defaultdict(list)
-    for layer, seq_vec in vectors.items():
-        for tok_vec in seq_vec:
-            # raise ValueError("check this is correct")
-            top_logits = runtime_cast(Tensor, tmodel.lm_head(tmodel.model.norm(tok_vec))).topk(  # pyright: ignore[reportCallIssue, reportArgumentType]
-                topk, dim=-1
-            )  # pyright: ignore[reportCallIssue, reportArgumentType]  # noqa: F821
-            logits[layer].append(
-                list(zip(top_logits.indices.tolist(), top_logits.values.tolist(), strict=True))
-            )
-    return logits
+# def get_logits_lens_toks_and_projections(
+#     vectors: dict[str, Float[Tensor, "s d"]], topk: int = 10
+# ) -> dict[str, list[list[tuple[int, float]]]]:
+#     assert next(iter(vectors.values())).ndim == 2, "Expected 2D tensor"
+#     logits: dict[str, list[list[tuple[int, float]]]] = defaultdict(list)
+#     for layer, seq_vec in vectors.items():
+#         for tok_vec in seq_vec:
+#             # raise ValueError("check this is correct")
+#             top_logits = runtime_cast(Tensor, tmodel.lm_head(tmodel.model.norm(tok_vec))).topk(  # pyright: ignore[reportCallIssue, reportArgumentType]
+#                 topk, dim=-1
+#             )  # pyright: ignore[reportCallIssue, reportArgumentType]  # noqa: F821
+#             logits[layer].append(
+#                 list(zip(top_logits.indices.tolist(), top_logits.values.tolist(), strict=True))
+#             )
+#     return logits
+
+
+def plot_conjoined_pairwise_heatmap(
+    title: str,
+    target_outputs: Tensor,
+    pgd_outputs: Tensor,
+    labels: list[str],
+    loss_per_position: list[float],
+    # imshow_kwargs: dict[str, Any],
+) -> go.Figure:
+    labels = [f"{idx}: [{tok}]" for idx, tok in enumerate(labels + labels)]  #
+
+    # eos_labels = [
+    #     axis_label
+    #     for axis_label, token in zip(labels, labels, strict=True)
+    #     if "[EOS]" in token.upper()
+    # ]
+
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        column_widths=[0.8, 0.2],
+        specs=[[{"type": "heatmap"}, {"type": "xy"}]],
+        subplot_titles=["conjoined pairwise", "PGD loss"],
+        horizontal_spacing=0.02,
+    )
+
+    assert target_outputs.shape == pgd_outputs.shape
+
+    joined_matrix = torch.cat([target_outputs, pgd_outputs], dim=0)
+    pw_matrix = pw_cos(joined_matrix)
+    px_np = detach(pw_matrix)
+
+    heatmap = go.Heatmap(
+        z=px_np,
+        x=labels,
+        y=labels,
+        colorscale="RdBu",
+        zmin=-1,
+        zmax=1,
+        hovertemplate=(
+            "<b>Row Position:</b> %{y}<br>"
+            "<b>Column Position:</b> %{x}<br>"
+            "<b>Value:</b> %{z:.4f}"
+            "<extra></extra>"
+        ),
+    )
+    fig.add_trace(heatmap, row=1, col=1)
+    # fig.update_xaxes(title_text="Column Position", row=1, col=1)
+    # fig.update_yaxes(
+    #     title_text=f"{name} Row Position" if col_idx == 1 else None,
+    #     showticklabels=(col_idx == 1),
+    #     matches="y1" if col_idx > 1 else None,
+    #     row=1,
+    #     col=col_idx,
+    # )
+
+    # for col_idx in (1, 2):
+    #     for label in eos_x_axis_labels:
+    #         fig.add_vline(
+    #             x=label,
+    #             line_color="orange",
+    #             line_dash="dash",
+    #             line_width=1.5,
+    #             row=1,  # pyright: ignore[reportArgumentType]
+    #             col=col_idx,  # pyright: ignore[reportArgumentType]
+    #         )
+
+    # columns_for_y = (1, 2, 3)
+    # for col_idx in columns_for_y:
+    #     for label in eos_y_axis_labels:
+    #         fig.add_hline(
+    #             y=label,
+    #             line_color="green",
+    #             line_dash="dash",
+    #             line_width=1.5,
+    #             row=1,  # pyright: ignore[reportArgumentType]
+    #             col=col_idx,  # pyright: ignore[reportArgumentType]
+    #         )
+
+    # Add rotated line plot (horizontal) aligned with PGD heatmap rows
+    line_trace = go.Scatter(
+        x=loss_per_position,
+        y=labels,
+        mode="lines+markers",
+        name="PGD loss",
+        line=dict(color="black"),
+        marker=dict(size=6),
+        hovertemplate="<b>Token:</b> %{y}<br><b>PGD loss:</b> %{x:.4f}<extra></extra>",
+        showlegend=False,
+    )
+    fig.add_trace(line_trace, row=1, col=2)
+    fig.update_yaxes(matches="y1", row=1, col=2, showticklabels=False)
+    fig.update_xaxes(title_text="pgd loss", row=1, col=2)
+
+    fig.update_layout(
+        title=title,
+        width=1600,
+        height=750,
+        margin=dict(l=20, r=20, t=60, b=20),
+    )
+    return fig
 
 
 def plot_pairwise_heatmap(
@@ -166,7 +278,7 @@ def plot_pairwise_heatmap(
     loss_per_position: list[float],
     labels: list[str],
     imshow_kwargs: dict[str, Any],
-) -> None:
+) -> go.Figure:
     x_axis_labels = [f"{idx}: [{tok}]" for idx, tok in enumerate(labels)]
     y_axis_labels = [f"{idx}: [{tok}]" for idx, tok in enumerate(labels)]
 
@@ -204,7 +316,7 @@ def plot_pairwise_heatmap(
     )
 
     for col_idx, (name, matrix) in enumerate(matrices_to_plot, start=1):
-        matrix_np = matrix.detach().cpu().numpy()
+        matrix_np = detach(matrix)
         heatmap = go.Heatmap(
             z=matrix_np,
             # x=x_axis_labels,
@@ -229,28 +341,28 @@ def plot_pairwise_heatmap(
             col=col_idx,
         )
 
-    if eos_x_axis_labels or eos_y_axis_labels:
-        for col_idx in (1, 2):
-            for label in eos_x_axis_labels:
-                fig.add_vline(
-                    x=label,
-                    line_color="orange",
-                    line_dash="dash",
-                    line_width=1.5,
-                    row=1,  # pyright: ignore[reportArgumentType]
-                    col=col_idx,  # pyright: ignore[reportArgumentType]
-                )
-        columns_for_y = (1, 2, 3)
-        for col_idx in columns_for_y:
-            for label in eos_y_axis_labels:
-                fig.add_hline(
-                    y=label,
-                    line_color="orange",
-                    line_dash="dash",
-                    line_width=1.5,
-                    row=1,  # pyright: ignore[reportArgumentType]
-                    col=col_idx,  # pyright: ignore[reportArgumentType]
-                )
+    for col_idx in (1, 2):
+        for label in eos_x_axis_labels:
+            fig.add_vline(
+                x=label,
+                line_color="orange",
+                line_dash="dash",
+                line_width=1.5,
+                row=1,  # pyright: ignore[reportArgumentType]
+                col=col_idx,  # pyright: ignore[reportArgumentType]
+            )
+
+    columns_for_y = (1, 2, 3)
+    for col_idx in columns_for_y:
+        for label in eos_y_axis_labels:
+            fig.add_hline(
+                y=label,
+                line_color="green",
+                line_dash="dash",
+                line_width=1.5,
+                row=1,  # pyright: ignore[reportArgumentType]
+                col=col_idx,  # pyright: ignore[reportArgumentType]
+            )
 
     # Add rotated line plot (horizontal) aligned with PGD heatmap rows
     line_trace = go.Scatter(
@@ -273,7 +385,7 @@ def plot_pairwise_heatmap(
         height=750,
         margin=dict(l=20, r=20, t=60, b=20),
     )
-    fig.show()
+    return fig
 
 
 def get_attn_patterns(model: LlamaModel, q_out: Tensor, k_out: Tensor) -> list[np.ndarray]:
@@ -305,7 +417,7 @@ def get_attn_patterns(model: LlamaModel, q_out: Tensor, k_out: Tensor) -> list[n
         attention_scores = attention_scores.masked_fill(causal_mask, float("-inf"))
         attention_weights: Tensor = attention_scores.softmax(dim=-1)
 
-        layer_heads.append(attention_weights.detach().cpu().numpy())
+        layer_heads.append(detach(attention_weights))
 
     return layer_heads
 
@@ -437,44 +549,218 @@ def attention_pattern_grid(
     return fig
 
 
+def pgd_geometry(
+    batch: Int[Tensor, "1 seq"],
+    pgd_mask_infos: dict[str, ComponentsMaskInfo],
+    adv_sources: Float[Tensor, "n_layers *batch_dims C2"],
+    ci: dict[str, Float[Tensor, "*batch_dims C"]],
+) -> None:
+    nlayers = adv_sources.shape[0]
+    fig = make_subplots(
+        rows=nlayers,
+        cols=6,
+        column_widths=[0.45, 0.45, 0.1, 0.1, 0.1, 0.3],
+        subplot_titles=["U", "V", "Source", "Output Mag", "Avg Act"],
+    )
+
+    # populate cache
+    model(batch, mask_infos=pgd_mask_infos)
+
+    for layer_idx, module_name in enumerate(ci):
+        component = model.components[module_name]
+        assert (C := component.C) == model.C
+        u = component.U
+        v = component.V
+        inner_act = runtime_cast(Tensor, component._inner_acts_cache)
+        assert inner_act.shape == (1, 512, C), (
+            f"inner_act must be of shape (1, 1, C), got {inner_act.shape}"
+        )
+
+        source = adv_sources[layer_idx, ..., :-1]
+        assert source.shape == (1, 1, C), f"source must be of shape (1, 1, C), got {source.shape}"
+        source = source[0, 0]
+
+        sorted_indices = source.argsort(dim=0)
+        assert sorted_indices.shape == (C,), "should be sorted across components"
+
+        sorted_u = u[sorted_indices]
+        sorted_v = v.permute(1, 0)[sorted_indices]
+
+        u_pw_cos_sim = pw_cos(sorted_u)
+        v_pw_cos_sim = pw_cos(sorted_v)
+
+        # avg_act = detach(inner_act[0].mean(dim=0)[sorted_indices])
+
+        effective_act = inner_act * u.norm(p=2, dim=-1)
+        output_mags = detach(effective_act[0].mean(dim=0)[sorted_indices])
+
+        plotly_idx = layer_idx + 1
+        u_heatmap = go.Heatmap(z=detach(u_pw_cos_sim.abs()), colorscale="Blues", zmin=0, zmax=1)
+        fig.add_trace(u_heatmap, row=plotly_idx, col=1)
+        fig.update_yaxes(title_text=f"{module_name} U", row=plotly_idx, col=1)
+        v_heatmap = go.Heatmap(z=detach(v_pw_cos_sim.abs()), colorscale="RdBu", zmin=-1, zmax=1)
+        fig.add_trace(v_heatmap, row=plotly_idx, col=2)
+        fig.update_yaxes(title_text=f"{module_name} V", row=plotly_idx, col=2)
+
+        # sources = go.Scatter(
+        #     x=detach(source[sorted_indices]), y=np.arange(C), mode="lines", name="source"
+        # )
+        # fig.add_trace(sources, row=plotly_idx, col=3)
+        # fig.update_yaxes(title_text=f"{module_name} Source", row=plotly_idx, col=3)
+
+        # output_mags = go.Scatter(x=output_mags, y=np.arange(C), mode="lines", name="output_mags")
+        # fig.add_trace(output_mags, row=plotly_idx, col=4)
+        # fig.update_yaxes(title_text=f"{module_name} Output Mag", row=plotly_idx, col=4)
+
+        # avg_act = go.Scatter(x=avg_act, y=np.arange(C), mode="lines", name="avg_act")
+        # fig.add_trace(avg_act, row=plotly_idx, col=5)
+        # fig.update_yaxes(title_text=f"{module_name} Avg Act", row=plotly_idx, col=4)
+
+        # scatter plot effective act vs source:
+        scatter = go.Scatter(
+            x=output_mags, y=detach(source), mode="markers", name="effective_act vs source"
+        )
+        fig.add_trace(scatter, row=plotly_idx, col=6)
+        fig.update_yaxes(title_text="asdf", row=plotly_idx, col=6)
+
+    fig.update_layout(
+        title="Pairwise Cosine Similarities (sorted by pgd mask value)",
+        width=4000,
+        height=1300 * nlayers,
+        showlegend=False,
+    )
+    fig.show(renderer="browser")
+
+
+def pick_keys[V](d: dict[str, V], filter_fn: Callable[[str], bool]) -> dict[str, V]:
+    return {k: v for k, v in d.items() if filter_fn(k)}
+
+
 @dataclass
 class pw_cfg:
     filter_fn: Callable[[str], bool] | None = None
 
 
+@dataclass
+class HeatmapMetrics:
+    name: str
+    z: np.ndarray
+    y: list[str]
+    kwargs: dict[str, Any]
+    highlight_y_labels: Callable[[str], bool] | None = None
+
+
+def visualize_metrics_and_heatmaps(
+    line_metrics: dict[str, np.ndarray],
+    heatmaps: list[HeatmapMetrics],
+    x_labels: list[str],
+    title: str,
+) -> go.Figure:
+    n_heatmaps = len(heatmaps)
+    n_line_plots = 1  # all lines are overlaid
+
+    fig = make_subplots(
+        rows=n_line_plots + n_heatmaps,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        # row_heights=[0.2, 0.4, 0.4],
+    )
+
+    # Add all line metrics to the first subplot
+    for name, val in line_metrics.items():
+        fig.update_yaxes(title_text=name, row=1, col=1)
+        fig.add_trace(
+            go.Scatter(x=x_labels, y=val, mode="lines+markers", name=name),
+            row=1,
+            col=1,
+        )
+
+    for i, heatmap in enumerate(heatmaps, start=2):
+        trace = go.Heatmap(
+            z=heatmap.z,
+            y=heatmap.y,
+            x=x_labels,
+            hoverongaps=False,
+            showscale=False,
+            **heatmap.kwargs,
+        )
+        fig.add_trace(trace, row=i, col=1)
+        if heatmap.highlight_y_labels:
+            for y_label in heatmap.y:
+                if heatmap.highlight_y_labels(y_label):
+                    fig.add_hline(
+                        y=y_label,
+                        line_color="orange",
+                        line_dash="dash",
+                        line_width=1.5,
+                        row=i,  # pyright: ignore[reportArgumentType]
+                        col=1,  # pyright: ignore[reportArgumentType]
+                    )
+        fig.update_yaxes(title_text=heatmap.name, row=i, col=1)
+
+    fig.update_xaxes(title_text="Token Position", row=n_line_plots + n_heatmaps, col=1)
+
+    fig.update_layout(
+        title=title,
+        width=8000,
+        height=2600,
+        showlegend=True,
+    )
+
+    return fig
+
+
+@dataclass
+class DoSeqHeatmap:
+    title: str
+    apply_layer_pgd_mask: Callable[[str], bool] | None = None
+
+
+# Custom colorscale: High fidelity 0.0 -> 0.1 (White -> Blue), then Differentiate 0.1 -> 1.0 (Blue -> Red)
+WBR = [
+    [0.0, "#ffffff"],  # White
+    [0.02, "#d0d1e6"],  # Faint Blue-Purple
+    [0.05, "#a6bddb"],  # Light Blue
+    [0.1, "#0570b0"],  # Strong Blue at 0.1
+    [0.3, "#d7301f"],  # Transition to Red
+    [0.6, "#b30000"],  # Dark Red
+    [1.0, "#7f0000"],  # Deepest Red
+]
+
+INV_COS = [
+    [0.0, "#f04040"],
+    [0.5, "#4040f0"],
+    [1.0, "#ffffff"],
+]
+
+
 def run_batch(
     batch: Int[Tensor, "1 seq"],
-    do_seq_heatmap: bool = False,
-    do_pw: pw_cfg | Literal[False] = False,
+    target_output: Float[Tensor, "1 seq vocab"],
+    pgd_mask_infos: dict[str, ComponentsMaskInfo],
+    do_seq_heatmap: DoSeqHeatmap | Literal[False] = False,
+    do_pw_rep_sim: pw_cfg | Literal[False] = False,
     do_patterns: bool = False,
 ) -> None:
     actual_seq_toks = [tokenizer.decode(tok) for tok in batch[0]]
 
-    target_output = model(batch, cache_type="input")
-    ci = model.calc_causal_importances(
-        pre_weight_acts=target_output.cache,
-        detach_inputs=False,
-        sampling=config.sampling,
-    )
+    pgd_out = model(batch, mask_infos=pgd_mask_infos)
+    pgd_loss = calc_kl_divergence_lm(pgd_out, target_output, reduce=False)
 
-    _, _, pgd_mask_infos, pgd_loss = pgd_masked_recon_loss_update(
-        model=model,
-        batch=batch,
-        ci=ci.lower_leaky,
-        weight_deltas=model.calc_weight_deltas(),
-        target_out=target_output.output,
-        output_loss_type=config.output_loss_type,
-        routing="all",
-        pgd_config=pgd_config,
-    )
     assert pgd_loss.shape == (1, len(actual_seq_toks)), "pgd_loss must be of shape (1, seq_len)"
-    pgd_loss_per_token = pgd_loss[0].detach().cpu().numpy()
+    pgd_loss_np = detach(pgd_loss[0])
 
     resid_paths = get_target_module_paths(
         model.target_model,
         [
-            "model.layers.*.self_attn.o_proj",
+            "model.layers.*.mlp.up_proj",
             "model.layers.*.mlp.down_proj",
+            "model.layers.*.mlp.gate_proj",
+            "model.layers.*.self_attn.q_proj",
+            "model.layers.*.self_attn.k_proj",
+            "model.layers.*.self_attn.v_proj",
+            "model.layers.*.self_attn.o_proj",
             "model.layers.0",
             "model.layers.1",
             "model.layers.2",
@@ -486,7 +772,9 @@ def run_batch(
     hidden_paths = get_target_module_paths(
         model.target_model,
         [
+            "model.layers.*.mlp.up_proj",
             "model.layers.*.mlp.down_proj",
+            "model.layers.*.mlp.gate_proj",
             "model.layers.*.self_attn.q_proj",
             "model.layers.*.self_attn.k_proj",
             "model.layers.*.self_attn.v_proj",
@@ -506,164 +794,115 @@ def run_batch(
     }
 
     if do_seq_heatmap:
-        target_outputs = {layer: all_target_outputs[layer] for layer in resid_paths}
-        target_logits = get_logits_lens_toks_and_projections(target_outputs, topk=5)
-
-        pgd_outputs = {layer: all_pgd_outputs[layer] for layer in resid_paths}
-        pgd_logits = get_logits_lens_toks_and_projections(pgd_outputs, topk=5)
-
-        diffs = {layer: pgd_outputs[layer] - target_outputs[layer] for layer in resid_paths}
-        diff_logits = get_logits_lens_toks_and_projections(diffs, topk=5)
-
-        hover_data = defaultdict[str, list[str]](list)
-        for layer in diff_logits:
-            for diff_data, target_data, pgd_data in zip(
-                diff_logits[layer], target_logits[layer], pgd_logits[layer], strict=False
-            ):
-                lines = []
-                for name, logit_lens_topk in [
-                    ("target", target_data),
-                    ("pgd", pgd_data),
-                    ("diff", diff_data),
-                ]:
-                    lines.append(f"{name}:")
-                    for tok_idx, prob in logit_lens_topk:
-                        lines.append(f"{tokenizer.decode(tok_idx):<10} {prob:.2f}")
-                    lines.append("")
-                hover_data[layer].append("<br>".join(lines))
-
-        # # Create a matrix of hover text strings
-        # hover_matrix: list[list[str]] = []
-        # for layer in sorted_resid_paths:
-        #     assert layer in hover_data
-        #     hover_matrix.append(hover_data[layer])
-        # customdata = hover_matrix
-        # hovertemplate = (
-        #     "<b>Layer:</b> %{y}<br>"
-        #     "<b>Position:</b> %{x}<br>"
-        #     f"<b>{val_name}:</b> %{{z:.4f}}<br>"
-        #     "<br>%{customdata}<extra></extra>"
-        # )
-
         sorted_resid_paths = sorted(resid_paths, key=sort_layer)
 
-        matrix_np = np.stack(
+        cossim_matrix = np.stack(
             [
-                F.cosine_similarity(all_target_outputs[layer], all_pgd_outputs[layer], dim=-1)
-                .detach()
-                .cpu()
-                .numpy()
+                detach(
+                    F.cosine_similarity(all_target_outputs[layer], all_pgd_outputs[layer], dim=-1)
+                )
                 for layer in sorted_resid_paths
             ]
         )
 
-        x_axis_labels = [f"{i}: [{token}]" for i, token in enumerate(actual_seq_toks)]
-        heatmap = go.Heatmap(
-            z=matrix_np,
+        cossim_heatmap = HeatmapMetrics(
+            name="Cosine Similarity (all pgd masks)",
+            z=cossim_matrix,
             y=sorted_resid_paths,
-            x=x_axis_labels,
-            colorscale="RdBu",
-            zmin=-1,
-            zmax=1,
-            # customdata=customdata,
-            # hovertemplate=hovertemplate,
-            hoverongaps=False,
-            showscale=False,
+            kwargs={"colorscale": "RdBu", "zmin": -1, "zmax": 1},
         )
 
-        # loss_per_position = pgd_loss_per_token.tolist()
+        # altered cossim heatmap
+        filtered_pgd_mask_infos = pick_keys(
+            pgd_mask_infos, do_seq_heatmap.apply_layer_pgd_mask or (lambda _: True)
+        )
+        filtered_pgd_outputs = {
+            k: v[0] for k, v in get_layer_outputs(batch, all_paths, filtered_pgd_mask_infos).items()
+        }
 
-        # add this stuff as line plots at the top
-        attn_weights = get_layer_attn_patterns(batch, mask_infos=None)
-        pgd_attn_weights = get_layer_attn_patterns(batch, mask_infos=pgd_mask_infos)
-
-        top_rows = np.stack(
+        filtered_cossim_matrix = np.stack(
             [
-                pgd_loss_per_token,
-                *[
-                    head.mean(dim=0).detach().cpu().numpy()
-                    for _layer, weights in attn_weights.items()
-                    for head in weights[0]  # not sure, 0 or 1?
-                ],
-                *[
-                    head.mean(dim=0).detach().cpu().numpy()
-                    for _layer, weights in pgd_attn_weights.items()
-                    for head in weights[0]  # not sure, 0 or 1?
-                ],
+                detach(
+                    F.cosine_similarity(
+                        all_target_outputs[layer], filtered_pgd_outputs[layer], dim=-1
+                    )
+                )
+                for layer in sorted_resid_paths
             ]
         )
-        print(top_rows.shape)
 
-        top_row_labels = [
-            "pgd loss",
-            *[f"{layer} head {head} attn weight" for layer in attn_weights for head in range(4)],
-            *[
-                f"{layer} head {head} attn weight (pgd)"
-                for layer in pgd_attn_weights
-                for head in range(4)
-            ],
-        ]
-
-        assert top_rows.shape[1] == len(actual_seq_toks)
-
-        fig = make_subplots(
-            rows=len(top_rows) + 1,
-            cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.03,
-            row_heights=[(0.75 / len(top_rows)) for _ in range(len(top_rows))] + [0.25],
-        )
-        for idx, (row, label) in enumerate(zip(top_rows, top_row_labels, strict=True)):
-            fig.add_trace(
-                go.Scatter(
-                    x=x_axis_labels,
-                    y=row,
-                    mode="lines+markers",
-                    name=label,
-                ),
-                row=idx + 1,
-                col=1,
-            )
-
-        fig.add_trace(heatmap, row=2, col=1)
-        fig.update_yaxes(title_text="PGD Loss", row=1, col=1)
-        fig.update_yaxes(title_text="Layer", row=2, col=1)
-        fig.update_xaxes(title_text="Token Position", row=2, col=1)
-        fig.update_layout(
-            width=4000,
-            height=2000,
+        filtered_cossim_heatmap = HeatmapMetrics(
+            name="Cosine Similarity (filtered pgd masks)",
+            z=filtered_cossim_matrix,
+            y=sorted_resid_paths,
+            highlight_y_labels=do_seq_heatmap.apply_layer_pgd_mask,
+            kwargs={"colorscale": "RdBu", "zmin": -1, "zmax": 1},
         )
 
-        fig.show()
+        # Add attention means
+        attn_weights = get_layer_attn_patterns(batch, mask_infos=None)
+
+        pgd_attn_weights = get_layer_attn_patterns(batch, mask_infos=filtered_pgd_mask_infos)
+
+        attn_means_rows = []
+        attn_means_labels = []
+        for layer_path in attn_weights:
+            diff = pgd_attn_weights[layer_path] - attn_weights[layer_path]
+            layer_idx = layer_path.split(".")[2]
+            assert diff.shape[1] == 4, "Expected 4 heads per layer"
+            for h in range(4):
+                attn_means_rows.append(detach(diff[0, h].mean(dim=0)))
+                attn_means_labels.append(f"L{layer_idx}H{h}")
+
+        attn_heatmap = HeatmapMetrics(
+            name="Mean Attention Mass",
+            z=np.stack(attn_means_rows),
+            y=attn_means_labels,
+            kwargs={"colorscale": WBR, "zmin": 0, "zmax": 1},
+        )
+
+        filtered_pgd_out = model(batch, mask_infos=filtered_pgd_mask_infos)
+        filtered_pgd_loss = calc_kl_divergence_lm(filtered_pgd_out, target_output, reduce=False)[0]
+        filtered_pgd_loss_np = detach(filtered_pgd_loss)
+
+        visualize_metrics_and_heatmaps(
+            title=do_seq_heatmap.title,
+            line_metrics={"PGD Loss": pgd_loss_np, "Filtered PGD Loss": filtered_pgd_loss_np},
+            heatmaps=[filtered_cossim_heatmap, attn_heatmap, cossim_heatmap],
+            x_labels=[f"{i}: [{token}]" for i, token in enumerate(actual_seq_toks)],
+        ).show(renderer="browser")
 
     pairwise_cos_sim_val = {
         layer: (pw_cos(all_target_outputs[layer]), pw_cos(all_pgd_outputs[layer]))
         for layer in hidden_paths
     }
 
-    stride = 1
-    if do_pw:
-        target_matrices = {k: v[::stride, ::stride] for k, (v, _) in pairwise_cos_sim_val.items()}
-        pgd_matrices = {k: v[::stride, ::stride] for k, (_, v) in pairwise_cos_sim_val.items()}
-        labels = actual_seq_toks[::stride]
+    if do_pw_rep_sim:
+        target_matrices = {k: v for k, (v, _) in pairwise_cos_sim_val.items()}
+        pgd_matrices = {k: v for k, (_, v) in pairwise_cos_sim_val.items()}
         assert set(target_matrices) == set(pgd_matrices)
         sorted_keys = sorted(target_matrices.keys(), key=sort_layer)
-        loss_per_position = pgd_loss_per_token[::stride].tolist()
+        loss_per_position = pgd_loss_np.tolist()
         for layer in sorted_keys:
-            if do_pw.filter_fn is not None and not do_pw.filter_fn(layer):
+            if do_pw_rep_sim.filter_fn is not None and not do_pw_rep_sim.filter_fn(layer):
                 continue
-
-            plot_pairwise_heatmap(
+            # plot_pairwise_heatmap(
+            #     title=f"Pairwise cos_similarity across sequence - {layer}",
+            #     target_matrix=target_matrices[layer],
+            #     pgd_matrix=pgd_matrices[layer],
+            #     loss_per_position=loss_per_position,
+            #     labels=actual_seq_toks,
+            #     imshow_kwargs={"cmap": "RdBu", "vmin": -1, "vmax": 1},
+            # ).show(renderer="browser")
+            plot_conjoined_pairwise_heatmap(
                 title=f"Pairwise cos_similarity across sequence - {layer}",
-                target_matrix=target_matrices[layer],
-                pgd_matrix=pgd_matrices[layer],
+                target_outputs=all_target_outputs[layer],
+                pgd_outputs=all_pgd_outputs[layer],
+                labels=actual_seq_toks,
                 loss_per_position=loss_per_position,
-                labels=labels,
-                imshow_kwargs={"cmap": "RdBu", "vmin": -1, "vmax": 1},
-            )
+            ).show(renderer="browser")
 
     if do_patterns:
-        # raise NotImplementedError("Not implemented")
         target_attn_patternss_d = get_layer_attn_patterns(batch, mask_infos=None)
         pgd_attn_patternss_d = get_layer_attn_patterns(batch, mask_infos=pgd_mask_infos)
         tokens = [tokenizer.decode(tok) for tok in batch[0]]
@@ -671,17 +910,11 @@ def run_batch(
         start, end = 0, 512
         tokens = tokens[start:end]
         target_attn_patternss = [
-            [
-                pattern[start:end, start:end].detach().cpu().numpy()
-                for pattern in patterns[0].unbind()
-            ]
+            [detach(pattern[start:end, start:end]) for pattern in patterns[0].unbind()]
             for _layer, patterns in target_attn_patternss_d.items()
         ]
         pgd_attn_patternss = [
-            [
-                pattern[start:end, start:end].detach().cpu().numpy()
-                for pattern in patterns[0].unbind()
-            ]
+            [detach(pattern[start:end, start:end]) for pattern in patterns[0].unbind()]
             for _layer, patterns in pgd_attn_patternss_d.items()
         ]
         diff_attn_patternss = [
@@ -705,20 +938,484 @@ def run_batch(
             tokens=tokens[start:end],
             patterns_by_layer=diff_attn_patternss,
             title="PGD attention patterns",
-        ).show()
+        ).show(renderer="browser")
+
+
+def is_qk_layer(x: str) -> bool:
+    return any(fnmatch(x, matcher) for matcher in ["*self_attn.q_proj", "*self_attn.k_proj"])
+
+
+def is_mlp_down_proj_layer(x: str) -> bool:
+    return fnmatch(x, "*mlp.down_proj")
+
+
+def is_attn_layer(x: str) -> bool:
+    return fnmatch(x, "*self_attn*")
+
+
+def inv(f: Callable[[str], bool]) -> Callable[[str], bool]:
+    return lambda x: not f(x)
 
 
 # %%
 
-batch = extract_batch_data(next(data_loader_iter)).to(device)[0:1]
+_batch = extract_batch_data(next(data_loader_iter)).to(device)[0:1]
 
-# %%
+_target_output = model(_batch, cache_type="input")
 
-run_batch(
-    batch=batch,
-    do_seq_heatmap=True,
-    # do_pw=pw_cfg(filter_fn=lambda x: "self_attn" in x),
-    # do_patterns=True,
+_ci = model.calc_causal_importances(
+    pre_weight_acts=_target_output.cache,
+    detach_inputs=False,
+    sampling=config.sampling,
 )
 
+_, _, _pgd_mask_infos, _, _adv_sources = pgd_masked_recon_loss_update(
+    model=model,
+    batch=_batch,
+    ci=_ci.lower_leaky,
+    weight_deltas=model.calc_weight_deltas(),
+    target_out=_target_output.output,
+    output_loss_type=config.output_loss_type,
+    routing="all",
+    pgd_config=pgd_config,
+)
+
+
 # %%
+
+configs = [
+    DoSeqHeatmap(title="all"),
+    DoSeqHeatmap(title="no qk", apply_layer_pgd_mask=inv(is_qk_layer)),
+    # DoSeqHeatmap(title="qk only", apply_layer_pgd_mask=is_qk_layer),
+    # DoSeqHeatmap(title="no mlp down proj", apply_layer_pgd_mask=inv(is_mlp_down_proj_layer)),
+    # DoSeqHeatmap(title="mlp down proj only", apply_layer_pgd_mask=is_mlp_down_proj_layer),
+    # DoSeqHeatmap(title="Attention only", apply_layer_pgd_mask=is_attn_layer),
+    # DoSeqHeatmap(title="No Attention", apply_layer_pgd_mask=inv(is_attn_layer)),
+]
+for s_config in configs:
+    run_batch(
+        batch=_batch,
+        target_output=_target_output.output,
+        pgd_mask_infos=_pgd_mask_infos,
+        do_seq_heatmap=s_config,
+    )
+# %%
+
+
+pgd_geometry(_batch, _pgd_mask_infos, _adv_sources, _ci.lower_leaky)
+# %%
+import plotly.express as px
+
+u_norms = model.components["model.layers.0.self_attn.q_proj"].U.norm(p=2, dim=1)
+v_norms = model.components["model.layers.0.self_attn.q_proj"].V.norm(p=2, dim=0)
+
+px.histogram(detach(u_norms * v_norms), nbins=1000).show(renderer="browser")
+# %%
+
+for _ in range(10):
+    _batch = extract_batch_data(next(data_loader_iter)).to(device)[0:1]
+
+    _target_output = model(_batch, cache_type="input")
+
+    _ci = model.calc_causal_importances(
+        pre_weight_acts=_target_output.cache,
+        detach_inputs=False,
+        sampling=config.sampling,
+    )
+
+    _, _, _pgd_mask_infos, _, _adv_sources = pgd_masked_recon_loss_update(
+        model=model,
+        batch=_batch,
+        ci=_ci.lower_leaky,
+        weight_deltas=model.calc_weight_deltas(),
+        target_out=_target_output.output,
+        output_loss_type=config.output_loss_type,
+        routing="all",
+        pgd_config=pgd_config,
+    )
+
+    run_batch(
+        batch=_batch,
+        target_output=_target_output.output,
+        pgd_mask_infos=_pgd_mask_infos,
+        # do_seq_heatmap=DoSeqHeatmap(title="all"),
+        do_pw_rep_sim=pw_cfg(),
+        # do_patterns=True,
+    )
+    break
+
+# %%
+
+
+_batch = extract_batch_data(next(data_loader_iter)).to(device)[0:1]
+
+_target_output = model(_batch, cache_type="input")
+
+_ci = model.calc_causal_importances(
+    pre_weight_acts=_target_output.cache,
+    detach_inputs=False,
+    sampling=config.sampling,
+)
+
+_, _, _pgd_mask_infos, _, _ = pgd_masked_recon_loss_update(
+    model=model,
+    batch=_batch,
+    ci=_ci.lower_leaky,
+    weight_deltas=model.calc_weight_deltas(),
+    target_out=_target_output.output,
+    output_loss_type=config.output_loss_type,
+    routing="all",
+    pgd_config=pgd_config,
+)
+
+_pgd_outputs = model(_batch, mask_infos=_pgd_mask_infos)
+
+
+# %%
+
+
+def plot_aligned_logit_heatmaps(
+    target_logits: Tensor,
+    pgd_logits: Tensor,
+    batch: Int[Tensor, "1 seq"],
+    tokenizer: Any,
+    title: str = "Top-K Token Logits Comparison",
+    top_k: int = 10,
+) -> go.Figure:
+    target_ids = batch[0, 1:]
+    t_logits_shifted = target_logits[0, :-1]
+    p_logits_shifted = pgd_logits[0, :-1]
+
+    # 1. Get "Correct" Token Logits (Target)
+    # Shape: (seq_len,)
+    t_correct = t_logits_shifted.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
+    p_correct = p_logits_shifted.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
+
+    # Shape: (1, seq_len)
+    t_correct_np = detach(t_correct).reshape(1, -1)
+    p_correct_np = detach(p_correct).reshape(1, -1)
+
+    # 2. Get Top-K Logits
+    t_topk = torch.topk(t_logits_shifted, k=top_k, dim=-1)
+    p_topk = torch.topk(p_logits_shifted, k=top_k, dim=-1)
+
+    # Shape: (top_k, seq_len)
+    t_vals_np = detach(t_topk.values).T
+    p_vals_np = detach(p_topk.values).T
+
+    # 3. Combine Values (Correct row first)
+    t_vals_final = np.vstack([t_correct_np, t_vals_np])
+    p_vals_final = np.vstack([p_correct_np, p_vals_np])
+
+    # 4. Prepare Text Labels
+    # Correct token strings
+    actual_tokens = tokenizer.batch_decode(target_ids)
+    correct_text_row = np.array(actual_tokens).reshape(1, -1)
+
+    # Top-K token strings
+    t_indices = t_topk.indices
+    p_indices = p_topk.indices
+    t_tokens_flat = tokenizer.batch_decode(t_indices.transpose(0, 1).flatten())
+    p_tokens_flat = tokenizer.batch_decode(p_indices.transpose(0, 1).flatten())
+
+    t_text_matrix = np.array(t_tokens_flat).reshape(top_k, -1)
+    p_text_matrix = np.array(p_tokens_flat).reshape(top_k, -1)
+
+    # Combine Text
+    t_text_final = np.vstack([correct_text_row, t_text_matrix])
+    p_text_final = np.vstack([correct_text_row, p_text_matrix])
+
+    # Axis Labels
+    x_labels = [f"{i}: {tok}" for i, tok in enumerate(actual_tokens)]
+    y_labels_topk = [str(i + 1) for i in range(top_k)]
+    y_labels_correct = ["Target", "PGD"]
+
+    # Data for the top heatmap (Correct Logits Comparison)
+    # Row 1: Target Correct Logits
+    # Row 2: PGD Correct Logits
+    correct_vals_combined = np.vstack([t_correct_np, p_correct_np])
+    correct_text_combined = np.vstack([correct_text_row, correct_text_row])
+
+    fig = make_subplots(
+        rows=3,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        # Row 1: Comparison of Correct Logits
+        # Row 2: Target Top-K
+        # Row 3: PGD Top-K
+        subplot_titles=(
+            "Logits of Ground Truth Token (Target vs PGD)",
+            "Target Output Top-K Logits",
+            "PGD Masked Top-K Logits",
+        ),
+        row_heights=[0.15, 0.425, 0.425],
+    )
+
+    # Global min/max for color scaling across all plots if desired,
+    # or specific to each section. Let's use global for consistent color meaning.
+    zmin = min(float(t_vals_final.min()), float(p_vals_final.min()))
+    zmax = max(float(t_vals_final.max()), float(p_vals_final.max()))
+
+    # 1. Correct Logits Heatmap
+    fig.add_trace(
+        go.Heatmap(
+            z=correct_vals_combined,
+            text=correct_text_combined,
+            texttemplate="%{text}",
+            x=x_labels,
+            y=y_labels_correct,
+            zmin=zmin,
+            zmax=zmax,
+            colorscale="Viridis",
+            colorbar=dict(title="Logit", x=1.02, y=0.9, len=0.25),
+        ),
+        row=1,
+        col=1,
+    )
+
+    # 2. Target Top-K Heatmap
+    fig.add_trace(
+        go.Heatmap(
+            z=t_vals_np,
+            text=t_text_matrix,
+            texttemplate="%{text}",
+            x=x_labels,
+            y=y_labels_topk,
+            zmin=zmin,
+            zmax=zmax,
+            colorscale="Viridis",
+            colorbar=dict(title="Logit", x=1.02, y=0.5, len=0.35),
+        ),
+        row=2,
+        col=1,
+    )
+
+    # 3. PGD Top-K Heatmap
+    fig.add_trace(
+        go.Heatmap(
+            z=p_vals_np,
+            text=p_text_matrix,
+            texttemplate="%{text}",
+            x=x_labels,
+            y=y_labels_topk,
+            zmin=zmin,
+            zmax=zmax,
+            colorscale="Viridis",
+            colorbar=dict(title="Logit", x=1.02, y=0.1, len=0.35),
+        ),
+        row=3,
+        col=1,
+    )
+
+    fig.update_layout(
+        title=title,
+        height=max(800, (top_k * 2 + 4) * 40),
+        width=max(1200, len(x_labels) * 30),
+    )
+
+    # Reverse Y-axes
+    fig.update_yaxes(autorange="reversed", row=1, col=1)
+    fig.update_yaxes(autorange="reversed", title_text="Target Rank", row=2, col=1)
+    fig.update_yaxes(autorange="reversed", title_text="PGD Rank", row=3, col=1)
+
+    return fig
+
+
+def analyze_logit_variation(
+    target_logits: Tensor,
+    pgd_logits: Tensor,
+) -> None:
+    """
+    Analyzes the variation of logits across the sequence dimension.
+    Hypothesis: PGD logits are less varied (more static) than target logits.
+    Metrics:
+    1. Mean Variance: Average variance of logit values across sequence (per vocab token).
+    2. Entropy Std: Standard deviation of the entropy of the distribution over time.
+    3. Temporal Smoothness: Mean cosine similarity between adjacent time steps.
+    """
+    # Use logits aligned with the sequence (ignoring the last shift for prediction alignment for now,
+    # just treating them as a stream of vectors)
+    # Shape: (seq, vocab)
+    t_logits = target_logits[0]
+    p_logits = pgd_logits[0]
+
+    print("\n--- Logit Variation Analysis ---")
+
+    # 1. Variance across sequence (averaged over vocabulary)
+    # var(dim=0) gives variance for each token in vocab across the sequence
+    t_seq_var = t_logits.var(dim=0).mean()
+    p_seq_var = p_logits.var(dim=0).mean()
+    print(
+        f"Mean Logit Variance (seq dim):    Target={t_seq_var.item():.4f} | PGD={p_seq_var.item():.4f}"
+    )
+
+    # 2. Entropy Stats
+    t_probs = t_logits.softmax(dim=-1)
+    p_probs = p_logits.softmax(dim=-1)
+    # Entropy = -sum(p * log(p))
+    t_entropy = -(t_probs * t_probs.log()).sum(dim=-1)
+    p_entropy = -(p_probs * p_probs.log()).sum(dim=-1)
+
+    print(
+        f"Entropy Mean:                     Target={t_entropy.mean().item():.4f} | PGD={p_entropy.mean().item():.4f}"
+    )
+    print(
+        f"Entropy Std (Variation over seq): Target={t_entropy.std().item():.4f}  | PGD={p_entropy.std().item():.4f}"
+    )
+
+    # 3. Temporal Cosine Similarity (Auto-correlation lag 1)
+    t_sim = F.cosine_similarity(t_logits[:-1], t_logits[1:], dim=-1).mean()
+    p_sim = F.cosine_similarity(p_logits[:-1], p_logits[1:], dim=-1).mean()
+    print(f"Adjacent Cosine Sim (Smoothness): Target={t_sim.item():.4f} | PGD={p_sim.item():.4f}")
+    print("--------------------------------\n")
+
+    # Plot Entropy and Max Logit trace
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        subplot_titles=("Entropy over Time", "Max Logit Value over Time"),
+    )
+
+    fig.add_trace(
+        go.Scatter(y=detach(t_entropy), name="Target Entropy", line=dict(color="blue")),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(y=detach(p_entropy), name="PGD Entropy", line=dict(color="red")), row=1, col=1
+    )
+
+    t_max = t_logits.max(dim=-1).values
+    p_max = p_logits.max(dim=-1).values
+
+    fig.add_trace(
+        go.Scatter(y=detach(t_max), name="Target Max Logit", line=dict(color="blue", dash="dot")),
+        row=2,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(y=detach(p_max), name="PGD Max Logit", line=dict(color="red", dash="dot")),
+        row=2,
+        col=1,
+    )
+
+    fig.update_layout(title="Logit Dynamics across Sequence", height=600)
+    fig.show(renderer="browser")
+
+
+def plot_top_k_logit_scatter(
+    target_logits: Tensor,
+    pgd_logits: Tensor,
+    batch: Int[Tensor, "1 seq"],
+    top_k: int = 10,
+    normalization: Literal["none", "centered", "softmax", "log_softmax"] = "log_softmax",
+) -> go.Figure:
+    """
+    Scatter plot comparing logits for the Top-K tokens predicted by the Target model.
+    X-axis: Target Logits
+    Y-axis: PGD Logits (for the same tokens)
+
+    normalization:
+        - 'none': Raw logits.
+        - 'centered': Logits minus mean over vocab (default). comparison invariant to shift.
+        - 'softmax': Probabilities.
+        - 'log_softmax': Log-probabilities.
+    """
+    target_ids = batch[0, 1:]
+    t_logits_shifted = target_logits[0, :-1]
+    p_logits_shifted = pgd_logits[0, :-1]
+
+    # Apply normalization
+    if normalization == "centered":
+        t_logits_shifted = t_logits_shifted - t_logits_shifted.mean(dim=-1, keepdim=True)
+        p_logits_shifted = p_logits_shifted - p_logits_shifted.mean(dim=-1, keepdim=True)
+        val_label = "Centered Logits"
+    elif normalization == "softmax":
+        t_logits_shifted = t_logits_shifted.softmax(dim=-1)
+        p_logits_shifted = p_logits_shifted.softmax(dim=-1)
+        val_label = "Probabilities"
+    elif normalization == "log_softmax":
+        t_logits_shifted = t_logits_shifted.log_softmax(dim=-1)
+        p_logits_shifted = p_logits_shifted.log_softmax(dim=-1)
+        val_label = "Log Probabilities"
+    else:
+        val_label = "Raw Logits"
+
+    # 1. Identify Top-K tokens according to Target model
+    # Shape: (seq_len, top_k)
+    t_topk = torch.topk(t_logits_shifted, k=top_k, dim=-1)
+    topk_indices = t_topk.indices
+
+    # 2. Gather logits for these specific tokens from both models
+    # Shape: (seq_len, top_k)
+    target_vals = t_logits_shifted.gather(-1, topk_indices)
+    pgd_vals = p_logits_shifted.gather(-1, topk_indices)
+
+    # 3. Flatten for scatter plot
+    x_vals = detach(target_vals).flatten()
+    y_vals = detach(pgd_vals).flatten()
+
+    # Create colors based on rank (0 to top_k-1 repeated seq_len times)
+    # We want to see if higher ranked tokens (e.g. rank 1) behave differently
+    ranks = np.tile(np.arange(1, top_k + 1), (len(target_ids), 1)).flatten()
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals,
+            y=y_vals,
+            mode="markers",
+            marker=dict(
+                size=6,
+                color=ranks,
+                colorscale="Viridis",
+                showscale=True,
+                colorbar=dict(title="Target Rank"),
+                opacity=0.6,
+            ),
+            text=[f"Rank {r}" for r in ranks],
+            hovertemplate=f"<b>Target {val_label}:</b> %{{x:.4f}}<br><b>PGD {val_label}:</b> %{{y:.4f}}<br><b>Rank:</b> %{{text}}<extra></extra>",
+        )
+    )
+
+    # Add y=x line for reference
+    min_val = min(float(x_vals.min()), float(y_vals.min()))
+    max_val = max(float(x_vals.max()), float(y_vals.max()))
+
+    fig.add_shape(
+        type="line",
+        x0=min_val,
+        y0=min_val,
+        x1=max_val,
+        y1=max_val,
+        line=dict(color="Red", dash="dash"),
+    )
+
+    fig.update_layout(
+        title=f"Top-{top_k} Target Tokens: {val_label} Comparison",
+        xaxis_title=f"Target {val_label}",
+        yaxis_title=f"PGD {val_label}",
+        height=800,
+        width=800,
+    )
+
+    return fig
+
+
+# plot_aligned_logit_heatmaps(
+#     target_logits=_target_output.output,
+#     pgd_logits=_pgd_outputs,
+#     batch=_batch,
+#     tokenizer=tokenizer,
+# ).show(renderer="browser")
+
+# analyze_logit_variation(_target_output.output, _pgd_outputs)
+
+plot_top_k_logit_scatter(
+    target_logits=_target_output.output,
+    pgd_logits=_pgd_outputs,
+    batch=_batch,
+).show(renderer="browser")

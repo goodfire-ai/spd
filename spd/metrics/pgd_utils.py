@@ -13,7 +13,8 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.utils.component_utils import RoutingType, sample_uniform_k_subset_routing_masks
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_kl_divergence_lm, calc_sum_recon_loss_lm, extract_batch_data
+from spd.utils.general_utils import calc_kl_divergence_lm, extract_batch_data
+
 
 def pgd_masked_recon_loss_update(
     model: ComponentModel,
@@ -25,7 +26,7 @@ def pgd_masked_recon_loss_update(
     routing: RoutingType,
     pgd_config: PGDConfig,
     exp_callback: Callable[[Tensor], Tensor] | None = None,
-) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo], Float[Tensor, "..."]]:
+) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo], Float[Tensor, "..."], Float[Tensor, "n_layers *batch_dims C2"]]:
     """Central implementation of PGD masked reconstruction loss.
 
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
@@ -80,7 +81,7 @@ def pgd_masked_recon_loss_update(
             adv_sources.clamp_(0.0, 1.0)
 
     sum_loss, total_n_examples, pgd_mask_infos, _, loss = fwd_bwd_fn()
-    return sum_loss, total_n_examples, pgd_mask_infos, loss
+    return sum_loss, total_n_examples, pgd_mask_infos, loss, adv_sources
 
 
 CreateDataIter = Callable[
@@ -177,7 +178,13 @@ def _pgd_fwd_bwd(
     output_loss_type: Literal["mse", "kl"],
     batch_dims: tuple[int, ...],
     exp_callback: Callable[[Tensor], Tensor] | None = None,
-) -> tuple[Float[Tensor, ""], int, dict[str, ComponentsMaskInfo], Float[Tensor, "n_layers *batch_dims C2"], Float[Tensor, "..."]]:
+) -> tuple[
+    Float[Tensor, ""],
+    int,
+    dict[str, ComponentsMaskInfo],
+    Float[Tensor, "n_layers *batch_dims C2"],
+    Float[Tensor, "..."],
+]:
     """Compute reconstruction loss for given adversarial sources.
 
     Args:

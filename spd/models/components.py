@@ -203,6 +203,7 @@ class LinearComponents(Components):
             output: The summed output across all components
         """
         component_acts = self.get_inner_acts(x)
+        self._inner_acts_cache = component_acts
 
         if mask is not None:
             component_acts *= mask
