@@ -3,17 +3,17 @@
 # Model paths (supports both wandb: and local paths)
 
 # TMS 5-2-id example models:
-current_model_path: "wandb:goodfire/spd/runs/667z2n1b"
-reference_model_path: "wandb:goodfire/spd/runs/vh4yszsd"
+# current_model_path: "wandb:goodfire/spd/runs/667z2n1b"
+# reference_model_path: "wandb:goodfire/spd/runs/vh4yszsd"
 
 # SS LLAMA example models:
-# current_model_path: "wandb:goodfire/spd/runs/4r8yn2zt"
-# reference_model_path: "wandb:goodfire/spd/runs/2lq9dpnb"
+current_model_path: "wandb:goodfire/spd/runs/62wtx0n7"
+reference_model_path: "wandb:goodfire/spd/runs/9gf5ud48"
 
 
 # Analysis parameters
-density_threshold: 0.001  # Minimum activation density for components to be included in comparison
-n_eval_steps: 5  # Number of evaluation steps to compute activation densities
+mean_ci_threshold: 1e-2 # Minimum mean causal importance (0-1) for components to be included
+n_eval_steps: 5  # Number of evaluation steps to compute mean causal importances
 
 # Data loading parameters
 eval_batch_size: 32  # Batch size for evaluation data loading
