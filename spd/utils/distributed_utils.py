@@ -3,6 +3,7 @@
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import timedelta
 from functools import wraps
 from typing import Any, Literal, cast
 
@@ -94,6 +95,7 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
             world_size=world_size,
             rank=rank,
             device_id=None if backend == "gloo" else torch.device(f"cuda:{local_rank}"),
+            timeout=timedelta(minutes=120),
         )
 
     _state = DistributedState(
