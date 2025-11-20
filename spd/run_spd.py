@@ -319,12 +319,13 @@ def optimize(
 
             if is_main_process():
                 tqdm.write(f"--- Step {step} ---")
-                tqdm.write(f"LR: {step_lr:.6f}")
-                for name, value in microbatch_log_data.items():
-                    tqdm.write(f"{name}: {value:.15f}")
+                # tqdm.write(f"LR: {step_lr:.6f}")
+                # for name, value in microbatch_log_data.items():
+                    # tqdm.write(f"{name}: {value:.15f}")
                 if out_dir is not None:
                     local_log(microbatch_log_data, step, out_dir)
                 if config.wandb_project:
+                    print(f"logging to wandb: {microbatch_log_data} at step {step} train")
                     try_wandb(wandb.log, microbatch_log_data, step=step)
 
         # --- Evaluation --- #
@@ -360,8 +361,8 @@ def optimize(
                 dict_safe_update_(metrics, multibatch_pgd_metrics)
 
                 if is_main_process():
-                    for k, v in metrics.items():
-                        tqdm.write(f"eval/{k}: {v}")
+                    # for k, v in metrics.items():
+                    #     tqdm.write(f"eval/{k}: {v}")
                     if out_dir is not None:
                         local_log(metrics, step, out_dir)
                     if config.wandb_project:
@@ -369,6 +370,7 @@ def optimize(
                             f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
                             for k, v in metrics.items()
                         }
+                        print(f"logging to wandb: {wandb_logs} at step {step} eval")
                         try_wandb(wandb.log, wandb_logs, step=step)
 
                 del metrics
