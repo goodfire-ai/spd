@@ -4,11 +4,11 @@ wandb_run_name: null
 wandb_run_name_prefix: ""
 
 # --- General ---
-seed: 0
-C: 1200
+seed: 1
+C: 650
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
-ci_fn_hidden_dims: [1000]
+ci_fn_hidden_dims: [550]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   [
@@ -26,21 +26,32 @@ use_delta_component: true
 loss_metric_configs:
 
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.002
+    coeff: 0.001
     pnorm: 2.0
     p_anneal_start_frac: 0.0
     p_anneal_final_p: 0.3
     p_anneal_end_frac: 1.0
+    eps: 1.0e-12
 
   - classname: "StochasticReconSubsetLoss"
-    coeff: 1.0
+    coeff: 0.5
+
+  - classname: "PGDReconSubsetLoss"
+    coeff: 0.5
+    init: "random"
+    step_size: 1.0
+    n_steps: 1
+    mask_scope: "shared_across_batch"
+
+  - classname: "FaithfulnessLoss"
+    coeff: 1000000.0
 
 output_loss_type: kl
 
 # --- Training ---
-batch_size: 256
+batch_size: 64
 eval_batch_size: 64
-steps: 200000
+steps: 600000
 lr: 0.0002
 lr_schedule: cosine
 lr_warmup_pct: 0.0
@@ -48,17 +59,18 @@ lr_exponential_halflife: null
 gradient_accumulation_steps: 1
 
 # --- Faithfulness Warmup ---
-faithfulness_warmup_steps: 0
+faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
 
 # --- Logging & Saving ---
 train_log_freq: 200
 eval_freq: 1000
-slow_eval_freq: 2000
+slow_eval_freq: 10000
 slow_eval_on_first_step: true
 n_eval_steps: 5
-save_freq: null
+save_freq: 60000
+out_dir: null
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
 eval_metric_configs:
@@ -76,15 +88,17 @@ eval_metric_configs:
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
-  - classname: "PGDReconSubsetLoss"
+  - classname: "PGDReconLoss"
+    coeff: null
     init: "random"
-    step_size: 0.01
+    step_size: 0.1
     n_steps: 20
     mask_scope: "shared_across_batch"
 
 # --- Pretrained model info ---
 pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
-pretrained_model_name: wandb:goodfire/spd/runs/erq48r3w # 100k steps 4019 tok
+pretrained_model_path: null
+pretrained_model_name: wandb:goodfire/spd/runs/zz4armi6
 pretrained_model_output_attr: idx_0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok: TODO: Load from wandb instead
 
