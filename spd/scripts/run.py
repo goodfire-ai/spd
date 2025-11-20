@@ -161,8 +161,8 @@ def generate_commands(
             mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
 
             command = (
-                "NCCL_DEBUG=WARN "
-                "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
+                # "NCCL_DEBUG=WARN "
+                # "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
                 f"{mpi_prefix}"
                 f"python {exp_config.decomp_script} "
                 f"--config_json '{config_json}' "
@@ -193,8 +193,8 @@ def generate_commands(
 
                 mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
                 command = (
-                    "NCCL_DEBUG=WARN "
-                    "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
+                    # "NCCL_DEBUG=WARN "
+                    # "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
                     f"{mpi_prefix}"
                     f"python {exp_config.decomp_script} "
                     f"--config_json '{config_json}' "
@@ -236,6 +236,8 @@ def run_commands_locally(commands: list[str]) -> None:
         script_name = script_path.split("/")[-1]
         logger.section(f"[{i}/{len(commands)}] Executing: {script_name}...")
 
+        # example of `args`:
+        # ['NCCL_DEBUG=WARN', 'TORCH_NCCL_ASYNC_ERROR_HANDLING=1', 'python', 'spd/experiments/tms/tms_decomposition.py', '--config_json', 'json:<json_string>', '--sweep_id', 'run_20251120_152203', '--evals_id', 'tms_5-2']
         result = subprocess.run(args)
 
         if result.returncode != 0:
