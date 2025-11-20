@@ -223,6 +223,7 @@ def run_commands_locally(commands: list[str]) -> None:
     Args:
         commands: List of shell commands to execute
     """
+    breakpoint()
 
     logger.section(f"LOCAL EXECUTION: Running {len(commands)} tasks")
 
