@@ -143,7 +143,8 @@ def main(
     )
     train_rank_microbatch_size = config.microbatch_size // dist_state.world_size
 
-    train_loader, _tokenizer = create_data_loader(
+    train_loader, _tokenizer = ensure_cached_and_call(
+        create_data_loader,
         dataset_config=train_data_config,
         batch_size=train_rank_microbatch_size,
         buffer_size=config.task_config.buffer_size,
@@ -169,7 +170,8 @@ def main(
     )
     eval_rank_batch_size = config.eval_batch_size // dist_state.world_size
 
-    eval_loader, _ = create_data_loader(
+    eval_loader, _ = ensure_cached_and_call(
+        create_data_loader,
         dataset_config=eval_data_config,
         batch_size=eval_rank_batch_size,
         buffer_size=config.task_config.buffer_size,
