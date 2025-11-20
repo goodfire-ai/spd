@@ -236,6 +236,7 @@ def run_commands_locally(commands: list[str]) -> None:
         script_name = script_path.split("/")[-1]
         logger.section(f"[{i}/{len(commands)}] Executing: {script_name}...")
 
+        print(args)
         result = subprocess.run(args)
 
         if result.returncode != 0:
