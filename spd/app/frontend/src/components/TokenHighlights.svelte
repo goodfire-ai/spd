@@ -11,15 +11,6 @@
     const getHighlightColor = (importance: number): string => {
         return `rgba(0, 200, 0, ${importance * 0.5})`;
     };
-
-    function fmtTokenString(s: string): string {
-        // handle wordpieces chunked tokenization
-        if (s.startsWith("##")) {
-            return s.slice(2);
-        } else {
-            return ` ${s}`;
-        }
-    }
 </script>
 
 <span class="token-highlights">
@@ -28,7 +19,7 @@
             class="token-highlight"
             class:active-token={idx === activePosition}
             style={`background-color:${getHighlightColor(tokenCiValues[idx])};`}
-            data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}>{fmtTokenString(tokenString)}</span
+            data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}>{tokenString}</span
         >
     {/each}
 </span>
