@@ -27,7 +27,7 @@ output_loss_type: mse
 # --- Training ---
 batch_size: 4096
 eval_batch_size: 4096
-steps: 10_000
+steps: 2_000
 lr: 1e-3
 lr_schedule: cosine
 lr_warmup_pct: 0.0
@@ -39,7 +39,7 @@ faithfulness_warmup_weight_decay: 0.1
 
 # --- Logging & Saving ---
 train_log_freq: 100
-eval_freq: 1000
+eval_freq: 200
 n_eval_steps: 100
 slow_eval_freq: 5_000
 save_freq: null
