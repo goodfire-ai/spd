@@ -8,37 +8,49 @@ wandb_run_name_prefix: ""
 seed: 0
 C: 400
 n_mask_samples: 1
-ci_fn_type: "mlp"
-ci_fn_hidden_dims: [16]
+ci_fn_type: "shared_mlp"
+ci_fn_hidden_dims: [256]
 sigmoid_type: "leaky_hard"
 target_module_patterns:
   - "layers.*.mlp_in"
   - "layers.*.mlp_out"
+
+sampling: "continuous"
 use_delta_component: true
 
 # --- Loss config ---
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
-    coeff: 3e-5
+    coeff: 1e-5
     pnorm: 2.0
-  - classname: "StochasticReconLayerwiseLoss"
+    # p_anneal_start_frac: 0.0
+    # p_anneal_final_p: 1.0
+    # p_anneal_end_frac: 1.0
+    # eps: 1.0e-12
+  - classname: "StochasticReconSubsetLoss"
     coeff: 1.0
-  - classname: "StochasticReconLoss"
+  - classname: "PGDReconSubsetLoss"
+    coeff: 1.0
+    init: "random"
+    step_size: 1.0
+    n_steps: 1
+    mask_scope: "shared_across_batch"
+  - classname: "FaithfulnessLoss"
     coeff: 1.0
 output_loss_type: mse
 
 # --- Training ---
 batch_size: 2048
 eval_batch_size: 2048
-steps: 20_000
-lr: 1e-3
+steps: 25_000
+lr: 3e-4
 lr_schedule: constant
 lr_warmup_pct: 0.00
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.01
-faithfulness_warmup_weight_decay: 0.1
+faithfulness_warmup_weight_decay: 0.0
 
 # --- Logging & Saving ---
 train_log_freq: 50
@@ -67,6 +79,12 @@ eval_metric_configs:
     groups: null
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
+  - classname: "PGDReconLoss"
+    coeff: null
+    init: "random"
+    step_size: 0.1
+    n_steps: 20
+    mask_scope: "shared_across_batch"
 
 
 # --- Pretrained model info ---
