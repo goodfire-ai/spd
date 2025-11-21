@@ -23,6 +23,7 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
+from spd.utils.command import Command
 from spd.utils.distributed_utils import (
     ComputeEnvironment,
     ComputeStrategy,
@@ -82,14 +83,14 @@ def _generate_commands(
     compute_strategy: ComputeStrategy,
     project: str,
     sweep_params: dict[str, Any] | None,
-) -> list[str]:
+) -> list[Command]:
     """Generate commands for all experiment runs and print task counts.
 
     NOTE: When we convert parameter settings into JSON strings to pass to our decomposition scripts,
     we add a prefix to prevent Fire parsing with ast.literal_eval
     (https://github.com/google/python-fire/issues/332)
     """
-    commands: list[str] = []
+    commands: list[Command] = []
 
     logger.info("Task breakdown by experiment:")
     task_breakdown: dict[str, str] = {}
@@ -156,7 +157,7 @@ def _generate_commands(
     return commands
 
 
-def run_commands_locally(commands: list[str]) -> None:
+def run_commands_locally(commands: list[Command]) -> None:
     """Execute commands locally in sequence.
 
     Args:
@@ -167,7 +168,7 @@ def run_commands_locally(commands: list[str]) -> None:
 
     for i, command in enumerate(commands, 1):
         # Parse command into arguments
-        args = shlex.split(command)
+        args = shlex.split(command.command)
 
         # Extract experiment name from script path for cleaner output
         # Skip environment variables (VAR=value format) to find the python script
@@ -175,7 +176,7 @@ def run_commands_locally(commands: list[str]) -> None:
         script_name = script_path.split("/")[-1]
         logger.section(f"[{i}/{len(commands)}] Executing: {script_name}...")
 
-        result = subprocess.run(command, shell=True)
+        result = subprocess.run(command.command, env=command.env_vars, shell=True)
 
         if result.returncode != 0:
             logger.warning(
@@ -241,13 +242,6 @@ def main(
 
     match compute_env:
         case Local(), compute_strategy:
-            commands = _generate_commands(
-                run_id=run_id,
-                experiments=experiments,
-                compute_strategy=compute_strategy,
-                sweep_params=sweep_params,
-                project=wandb_project,
-            )
             run_commands_locally(commands)
 
         case SlurmPartition(name=partition_name), compute_strategy:
@@ -288,13 +282,13 @@ def main(
 def _build_compute_env(
     cpu: bool,
     local: bool,
-    dp_per_node: int | None,
+    dp: int | None,
     num_nodes: int | None,
     partition_name: str | None,
 ) -> ComputeEnvironment:
     """Construct a compute strategy from CLI arguments."""
     if local or cpu:
-        assert dp_per_node is None and num_nodes is None and partition_name is None, (
+        assert dp is None and num_nodes is None and partition_name is None, (
             "cannot specify both local and dp or num_nodes"
         )
         return (Local(), Cpu())
@@ -303,14 +297,14 @@ def _build_compute_env(
         name=partition_name if partition_name is not None else DEFAULT_PARTITION_NAME
     )
 
-    match num_nodes, dp_per_node:
+    match num_nodes, dp:
         case None, None:
             strategy = SingleNode(n_gpus_per_node=1)
         case None, _:
-            assert dp_per_node > 1, (
+            assert dp > 1, (
                 "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
             )
-            strategy = SingleNode(n_gpus_per_node=dp_per_node)
+            strategy = SingleNode(n_gpus_per_node=dp)
         case _, None:
             assert num_nodes > 1, (
                 "for multi-node runs, num_nodes must be at least 2. Otherwise, pass num_nodes=None."
@@ -363,14 +357,16 @@ def _resolve_sweep_params_path(sweep_params_file: str) -> Path:
 
 
 def _get_sweep_params(sweep: str | bool) -> dict[str, Any] | None:
-    sweep_params_file = "sweep_params.yaml" if isinstance(sweep, bool) else sweep
+    if sweep is False:
+        return None
+    sweep_params_file = "sweep_params.yaml" if sweep is True else sweep
     sweep_params_path = _resolve_sweep_params_path(sweep_params_file)
     with open(sweep_params_path) as f:
         sweep_params = yaml.safe_load(f)
     return sweep_params
 
 
-def cli(
+def _cli(
     experiments: str | None = None,
     sweep: str | bool = False,
     n_agents: int | None = None,
@@ -381,7 +377,7 @@ def cli(
     cpu: bool = False,
     partition: str | None = None,
     num_nodes: int | None = None,
-    dp_per_node: int | None = None,
+    dp: int | None = None,
     project: str = "spd",
     local: bool = False,
     log_format: LogFormat = "default",
@@ -400,8 +396,8 @@ def cli(
         cpu: Use CPU instead of GPU (default: False)
         partition: SLURM partition to use
         num_nodes: Number of nodes for distributed training if desired. If provided, uses torchrun with
-            SLURM rendezvous, requires non-local execution. If dp_per_node is provided, this must be None.
-        dp_per_node: Number of GPUs per node for data parallelism if desired. Only supported for lm experiments.
+            SLURM rendezvous, requires non-local execution. If dp is provided, this must be None.
+        dp: Number of GPUs per node for data parallelism if desired. Only supported for lm experiments.
             Cannot be used with local mode. If num_nodes is provided, this must be None and we assume 8 GPUs per node.
         project: W&B project name (default: "spd"). Will be created if it doesn't exist.
         local: Run locally instead of submitting to SLURM (default: False)
@@ -417,6 +413,7 @@ def cli(
     """
     logger.set_format("console", log_format)
 
+    print(f"experiments: {experiments}")
     experiments_list: list[str] = _get_experiments(experiments)
     logger.info(f"Experiments: {', '.join(experiments_list)}")
 
@@ -429,16 +426,19 @@ def cli(
     compute_env = _build_compute_env(
         cpu=cpu,
         local=local,
-        dp_per_node=dp_per_node,
+        dp=dp,
         num_nodes=num_nodes,
         partition_name=partition,
     )
 
     # Agent count
-    if sweep_params is None:
-        if local:
-            n_agents = len(experiments_list)
+    if sweep_params is not None:
+        if not local:
+            assert n_agents is not None, (
+                "n-agents must be provided if sweep is enabled (unless running with --local)"
+            )
         else:
+            n_agents = len(experiments_list)
             assert n_agents is not None, (
                 "n-agents must be provided if sweep is enabled (unless running with --local)"
             )
@@ -468,12 +468,15 @@ def cli(
         job_suffix=job_suffix,
     )
 
+def cli():
+    print('via entrypoint')
+    fire.Fire(_cli)
 
-if __name__ == "__main__":
-    # fire.Fire(cli)
-    cli(
-        experiments="ss_gpt2_simple",
-        num_nodes=2,
-    )
 
+# if __name__ == "__main__":
+    # print('via main')
+    # _cli(
+    #  experiments="ss_gpt2_simple",
+    #  num_nodes=2,
+    # )
 
