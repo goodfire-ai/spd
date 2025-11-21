@@ -17,6 +17,7 @@ from torch.distributed import ReduceOp
 from torch.types import Number
 
 from spd.configs import Config
+from spd.utils.command import Command
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,7 +297,7 @@ class ComputeStrategy(ABC):
         config: Config,
         experiment: str,
         sweep_params: dict[str, Any] | None = None,
-    ) -> str: ...
+    ) -> Command: ...
 
 
 class Cpu(ComputeStrategy):
@@ -317,11 +318,16 @@ class Cpu(ComputeStrategy):
         config: Config,
         experiment: str,
         sweep_params: dict[str, Any] | None = None,
-    ) -> str:
-        base = f"python {script_path} --config_json '{get_config_json(config)}' --sweep_id {run_id} --evals_id {experiment}"
+    ) -> Command:
+        command = (
+            f"python {script_path} "
+            f"--config_json '{get_config_json(config)}' "
+            f"--sweep_id {run_id} "
+            f"--evals_id {experiment} "
+        )
         if sweep_params is not None:
-            base += f" --sweep_params_json '{json.dumps(sweep_params)}'"
-        return base
+            command += f"--sweep_params_json '{json.dumps(sweep_params)}' "
+        return Command(command=command)
 
 
 class SingleGpu(ComputeStrategy):
@@ -342,11 +348,16 @@ class SingleGpu(ComputeStrategy):
         config: Config,
         experiment: str,
         sweep_params: dict[str, Any] | None = None,
-    ) -> str:
-        base = f"python {script_path} --config_json '{get_config_json(config)}' --sweep_id {run_id} --evals_id {experiment}"
+    ) -> Command:
+        command = (
+            f"python {script_path} "
+            f"--config_json '{get_config_json(config)}' "
+            f"--sweep_id {run_id} "
+            f"--evals_id {experiment} "
+        )
         if sweep_params is not None:
-            base += f" --sweep_params_json '{json.dumps(sweep_params)}'"
-        return base
+            command += f"--sweep_params_json '{json.dumps(sweep_params)}' "
+        return Command(command=command)
 
 
 class SingleNode(ComputeStrategy):
@@ -370,13 +381,16 @@ class SingleNode(ComputeStrategy):
         config: Config,
         experiment: str,
         sweep_params: dict[str, Any] | None = None,
-    ) -> str:
+    ) -> Command:
         port = _choose_master_port(run_id, idx)
         rendezvous_id = f"{run_id}_{idx}"
-        base = (
-            "NCCL_DEBUG=WARN "
-            "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
-            f"MASTER_ADDR=127.0.0.1 MASTER_PORT={port} "
+        env = {
+            "NCCL_DEBUG": "WARN",
+            "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
+            "MASTER_ADDR": "127.0.0.1",
+            "MASTER_PORT": str(port),
+        }
+        command = (
             f"torchrun --standalone --nproc_per_node={self._n_gpus_per_node} --master_port={port} "
             f"--rdzv_id={rendezvous_id} "
             f"{script_path} "
@@ -385,8 +399,8 @@ class SingleNode(ComputeStrategy):
             f"--evals_id {experiment} "
         )
         if sweep_params is not None:
-            base += f" --sweep_params_json '{json.dumps(sweep_params)}'"
-        return base
+            command += f" --sweep_params_json '{json.dumps(sweep_params)}'"
+        return Command(env_vars=env, command=command)
 
 
 class MultiNode(ComputeStrategy):
@@ -412,19 +426,16 @@ class MultiNode(ComputeStrategy):
         config: Config,
         experiment: str,
         sweep_params: dict[str, Any] | None = None,
-    ) -> str:
+    ) -> Command:
         port = _choose_master_port(run_id, idx)
         rendezvous_id = f"{run_id}_{idx}"
-
-        master_addr_expr = (
-            '${MASTER_ADDR:-$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)}'
-        )
-        node_rank_expr = "${NODE_RANK:-${SLURM_PROCID:-0}}"
-        base = (
-            "NCCL_DEBUG=WARN "
-            "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
-            f"MASTER_PORT={port} "
-            f"MASTER_ADDR={master_addr_expr} "
+        env = {
+            "NCCL_DEBUG": "WARN",
+            "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
+            "MASTER_PORT": str(port),
+            "MASTER_ADDR": '${MASTER_ADDR:-$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)}',
+        }
+        command = (
             "torchrun "
             f"--nnodes={self._n_nodes} "
             f"--nproc_per_node={self.N_GPUS_PER_NODE} "
@@ -432,7 +443,7 @@ class MultiNode(ComputeStrategy):
             f"--rdzv_endpoint=${{MASTER_ADDR}}:{port} "
             f"--master_addr=${{MASTER_ADDR}} "
             f"--master_port={port} "
-            f"--node_rank={node_rank_expr} "
+            "--node_rank=${NODE_RANK:-${SLURM_PROCID:-0}} "
             f"--rdzv_id={rendezvous_id} "
             f"{script_path} "
             f"--config_json '{get_config_json(config)}' "
@@ -440,8 +451,8 @@ class MultiNode(ComputeStrategy):
             f"--evals_id {experiment}"
         )
         if sweep_params is not None:
-            base += f" --sweep_params_json '{json.dumps(sweep_params)}'"
-        return base
+            command += f" --sweep_params_json '{json.dumps(sweep_params)}'"
+        return Command(env_vars=env, command=command)
 
 
 def _choose_master_port(run_id_local: str, idx: int) -> int:
