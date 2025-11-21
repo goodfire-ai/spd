@@ -855,10 +855,10 @@ def run_batch(
                 attn_means_labels.append(f"L{layer_idx}H{h}")
 
         attn_heatmap = HeatmapMetrics(
-            name="Mean Attention Mass",
+            name="Difference in mean attention recieved",
             z=np.stack(attn_means_rows),
             y=attn_means_labels,
-            kwargs={"colorscale": WBR, "zmin": 0, "zmax": 1},
+            kwargs={"colorscale": "RdBu", "zmin": -1, "zmax": 1},
         )
 
         filtered_pgd_out = model(batch, mask_infos=filtered_pgd_mask_infos)
@@ -937,7 +937,7 @@ def run_batch(
         attention_pattern_grid(
             tokens=tokens[start:end],
             patterns_by_layer=diff_attn_patternss,
-            title="PGD attention patterns",
+            title="Difference in attention patterns",
         ).show(renderer="browser")
 
 
@@ -945,8 +945,16 @@ def is_qk_layer(x: str) -> bool:
     return any(fnmatch(x, matcher) for matcher in ["*self_attn.q_proj", "*self_attn.k_proj"])
 
 
+def is_ov_layer(x: str) -> bool:
+    return any(fnmatch(x, matcher) for matcher in ["*self_attn.v_proj", "*self_attn.o_proj"])
+
+
 def is_mlp_down_proj_layer(x: str) -> bool:
     return fnmatch(x, "*mlp.down_proj")
+
+
+def is_mlp_layer(x: str) -> bool:
+    return fnmatch(x, "*mlp.*")
 
 
 def is_attn_layer(x: str) -> bool:
@@ -982,10 +990,11 @@ _, _, _pgd_mask_infos, _, _adv_sources = pgd_masked_recon_loss_update(
 
 
 # %%
+# is_qk_layer
 
 configs = [
     DoSeqHeatmap(title="all"),
-    DoSeqHeatmap(title="no qk", apply_layer_pgd_mask=inv(is_qk_layer)),
+    DoSeqHeatmap(title="no qk", apply_layer_pgd_mask=lambda x: is_mlp_layer(x) or is_ov_layer(x)),
     # DoSeqHeatmap(title="qk only", apply_layer_pgd_mask=is_qk_layer),
     # DoSeqHeatmap(title="no mlp down proj", apply_layer_pgd_mask=inv(is_mlp_down_proj_layer)),
     # DoSeqHeatmap(title="mlp down proj only", apply_layer_pgd_mask=is_mlp_down_proj_layer),
@@ -998,6 +1007,7 @@ for s_config in configs:
         target_output=_target_output.output,
         pgd_mask_infos=_pgd_mask_infos,
         do_seq_heatmap=s_config,
+        # do_patterns=True,
     )
 # %%
 
@@ -1043,33 +1053,6 @@ for _ in range(10):
         # do_patterns=True,
     )
     break
-
-# %%
-
-
-_batch = extract_batch_data(next(data_loader_iter)).to(device)[0:1]
-
-_target_output = model(_batch, cache_type="input")
-
-_ci = model.calc_causal_importances(
-    pre_weight_acts=_target_output.cache,
-    detach_inputs=False,
-    sampling=config.sampling,
-)
-
-_, _, _pgd_mask_infos, _, _ = pgd_masked_recon_loss_update(
-    model=model,
-    batch=_batch,
-    ci=_ci.lower_leaky,
-    weight_deltas=model.calc_weight_deltas(),
-    target_out=_target_output.output,
-    output_loss_type=config.output_loss_type,
-    routing="all",
-    pgd_config=pgd_config,
-)
-
-_pgd_outputs = model(_batch, mask_infos=_pgd_mask_infos)
-
 
 # %%
 
@@ -1305,6 +1288,16 @@ def analyze_logit_variation(
     fig.show(renderer="browser")
 
 
+# plot_aligned_logit_heatmaps(
+#     target_logits=_target_output.output,
+#     pgd_logits=_pgd_outputs,
+#     batch=_batch,
+#     tokenizer=tokenizer,
+# ).show(renderer="browser")
+
+# analyze_logit_variation(_target_output.output, _pgd_outputs)
+
+
 def plot_top_k_logit_scatter(
     target_logits: Tensor,
     pgd_logits: Tensor,
@@ -1405,17 +1398,34 @@ def plot_top_k_logit_scatter(
     return fig
 
 
-# plot_aligned_logit_heatmaps(
-#     target_logits=_target_output.output,
-#     pgd_logits=_pgd_outputs,
-#     batch=_batch,
-#     tokenizer=tokenizer,
-# ).show(renderer="browser")
+# %%
 
-# analyze_logit_variation(_target_output.output, _pgd_outputs)
+_batch = extract_batch_data(next(data_loader_iter)).to(device)[0:1]
+
+_target_output = model(_batch, cache_type="input")
+
+_ci = model.calc_causal_importances(
+    pre_weight_acts=_target_output.cache,
+    detach_inputs=False,
+    sampling=config.sampling,
+)
+
+_, _, _pgd_mask_infos, _, _ = pgd_masked_recon_loss_update(
+    model=model,
+    batch=_batch,
+    ci=_ci.lower_leaky,
+    weight_deltas=model.calc_weight_deltas(),
+    target_out=_target_output.output,
+    output_loss_type=config.output_loss_type,
+    routing="all",
+    pgd_config=pgd_config,
+)
+
+_pgd_outputs = model(_batch, mask_infos=_pgd_mask_infos)
 
 plot_top_k_logit_scatter(
     target_logits=_target_output.output,
     pgd_logits=_pgd_outputs,
     batch=_batch,
+    top_k=3,
 ).show(renderer="browser")
