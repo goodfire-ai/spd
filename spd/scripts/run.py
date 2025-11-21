@@ -9,12 +9,10 @@ For full CLI usage and examples, see the bottom of this file (or run `spd-run --
 
 import argparse
 import copy
-import json
 import shlex
 import subprocess
 import tempfile
 from datetime import datetime
-from hashlib import sha256
 from pathlib import Path
 from typing import Any, Final
 
@@ -24,6 +22,7 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
+from spd.utils.distributed_utils import ComputeStrategy, Cpu, MultiNode, SingleNode
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
@@ -102,30 +101,12 @@ def _merge_sweep_params(base: dict[str, Any], override: dict[str, Any]) -> None:
             base[key] = value
 
 
-def _choose_master_port(run_id_local: str, idx: int) -> int:
-    """Choose a unique port per command.
-
-    Uses a stable hash of (run_id, idx) mapped into a high, unprivileged port range so that we can
-    run multiple DDP processes on the same machine.
-    """
-    base: int = 20000
-    span: int = 20000  # ports in [20000, 40000)
-    h: int = int(sha256(f"{run_id_local}:{idx}".encode()).hexdigest(), 16)
-    return base + (h % span)
-
-
-def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
-    """Build an MPI prefix for a command."""
-    port: int = _choose_master_port(run_id, idx)
-    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} --bind-to none "
-
-
 def generate_commands(
     experiments_list: list[str],
     run_id: str,
+    compute_strategy: ComputeStrategy,
     sweep_params_file: str | None = None,
     project: str = "spd",
-    dp: int = 1,
 ) -> list[str]:
     """Generate commands for all experiment runs and print task counts.
 
@@ -156,20 +137,13 @@ def generate_commands(
             base_config_dict["wandb_project"] = project
             config_with_overrides = Config(**base_config_dict)
 
-            config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
-
-            mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
-
-            command = (
-                "NCCL_DEBUG=WARN "
-                "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
-                f"{mpi_prefix}"
-                f"python {exp_config.decomp_script} "
-                f"--config_json '{config_json}' "
-                f"--sweep_id {run_id} "
-                f"--evals_id {experiment}"
+            command = compute_strategy.get_command(
+                run_id=run_id,
+                idx=cmd_idx,
+                script_path=exp_config.decomp_script,
+                config=config_with_overrides,
+                experiment=experiment,
             )
-
             commands.append(command)
             task_breakdown[experiment] = "1 task"
             cmd_idx += 1
@@ -188,21 +162,14 @@ def generate_commands(
                 config_dict_with_overrides["wandb_run_name"] = wandb_run_name
                 config_with_overrides = Config(**config_dict_with_overrides)
 
-                config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
-                sweep_params_json = f"json:{json.dumps(sweep_params)}"
-
-                mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
-                command = (
-                    "NCCL_DEBUG=WARN "
-                    "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
-                    f"{mpi_prefix}"
-                    f"python {exp_config.decomp_script} "
-                    f"--config_json '{config_json}' "
-                    f"--sweep_id {run_id} "
-                    f"--evals_id {experiment} "
-                    f"--sweep_params_json '{sweep_params_json}'"
+                command = compute_strategy.get_command(
+                    run_id=run_id,
+                    idx=cmd_idx,
+                    script_path=exp_config.decomp_script,
+                    config=config_with_overrides,
+                    experiment=experiment,
+                    sweep_params=sweep_params,
                 )
-
                 commands.append(command)
                 cmd_idx += 1
 
@@ -236,7 +203,7 @@ def run_commands_locally(commands: list[str]) -> None:
         script_name = script_path.split("/")[-1]
         logger.section(f"[{i}/{len(commands)}] Executing: {script_name}...")
 
-        result = subprocess.run(args)
+        result = subprocess.run(command, shell=True)
 
         if result.returncode != 0:
             logger.warning(
@@ -279,25 +246,26 @@ def get_experiments(
     return experiments_list
 
 
-def _validate_dp(dp: int, experiments_list: list[str], local: bool, cpu: bool) -> None:
-    if dp < 1 or dp > 8:
-        raise ValueError(f"dp must be between 1 and 8, got {dp}")
-
-    if dp > 1 and local:
-        raise ValueError("DDP (dp > 1) is not supported in local mode")
-
-    if dp > 1:
-        non_lm_experiments = [
-            exp for exp in experiments_list if EXPERIMENT_REGISTRY[exp].task_name != "lm"
-        ]
-        if non_lm_experiments:
-            raise ValueError(
-                f"DDP (dp > 1) is only supported for lm experiments. "
-                f"Non-lm experiments found: {non_lm_experiments}"
+def build_compute_strategy(cpu: bool, dp: int | None, nodes: int | None) -> ComputeStrategy:
+    """Construct a compute strategy from CLI arguments."""
+    match cpu, nodes, dp:
+        case True, _, _:
+            assert dp is None and nodes is None, "cannot specify both cpu and dp or nodes"
+            return Cpu()
+        case False, None, None:
+            return SingleNode(gpus_per_node=1)
+        case False, None, _:
+            assert dp > 1, "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
+            return SingleNode(gpus_per_node=dp)
+        case False, _, None:
+            assert nodes > 1, (
+                "for multi-node runs, nodes must be at least 2. Otherwise, pass nodes=None."
             )
-
-    if dp > 1 and cpu:
-        raise ValueError("Can't have both dp > 1 and cpu")
+            return MultiNode(nodes=nodes)
+        case False, _, _:
+            raise ValueError(
+                "Do not specifiy both nodes and dp. for multi-node runs, assume 8 GPUs per node."
+            )
 
 
 def main(
@@ -308,7 +276,8 @@ def main(
     job_suffix: str | None = None,
     cpu: bool = False,
     partition: str = DEFAULT_PARTITION_NAME,
-    dp: int = 1,
+    dp: int | None = None,
+    nodes: int | None = None,
     project: str = "spd",
     local: bool = False,
     log_format: LogFormat = "default",
@@ -329,8 +298,10 @@ def main(
         job_suffix: Optional suffix for SLURM job names
         cpu: Use CPU instead of GPU (default: False)
         partition: SLURM partition to use (default: "h200-reserved")
-        dp: Number of GPUs for data parallelism (1-8). Only supported for lm experiments.
-            Cannot be used with local mode (default: 1)
+        dp: Number of GPUs per node for data parallelism if desired. Only supported for lm experiments.
+            Cannot be used with local mode. If nodes is provided, this must be None and we assume 8 GPUs per node.
+        nodes: Number of nodes for distributed training if desired. If provided, uses torchrun with
+            SLURM rendezvous, requires non-local execution. If dp is provided, this must be None.
         project: W&B project name (default: "spd"). Will be created if it doesn't exist.
         local: Run locally instead of submitting to SLURM (default: False)
         log_format: Logging format for the script output.
@@ -361,7 +332,7 @@ def main(
     experiments_list: list[str] = get_experiments(experiments)
     logger.info(f"Experiments: {', '.join(experiments_list)}")
 
-    _validate_dp(dp, experiments_list=experiments_list, local=local, cpu=cpu)
+    compute_strategy = build_compute_strategy(cpu=cpu, dp=dp, nodes=nodes)
 
     # Agent count
     if n_agents is None:
@@ -415,9 +386,9 @@ def main(
     commands: list[str] = generate_commands(
         experiments_list=experiments_list,
         run_id=run_id,
+        compute_strategy=compute_strategy,
         sweep_params_file=sweep_params_file,
         project=project,
-        dp=dp,
     )
 
     if local:
@@ -433,15 +404,14 @@ def main(
             else:
                 job_name = f"spd-{job_suffix}"
 
-            n_gpus_per_job = dp if not cpu else 0
             create_slurm_array_script(
                 script_path=array_script,
                 job_name=job_name,
                 commands=commands,
                 # again -- local is false, so snapshot_branch will exist
                 snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
+                job_strategy=compute_strategy,
                 max_concurrent_tasks=n_agents,
-                n_gpus_per_job=n_gpus_per_job,
                 partition=partition,
             )
 
@@ -484,8 +454,11 @@ Examples:
     # Run all experiments on CPU
     spd-run --experiments tms_5-2 --cpu
 
-    # Run with data parallelism over 4 GPUs (only supported for lm experiments)
+    # Run with data parallelism over 4 GPUs on a single node (only supported for lm experiments)
     spd-run --experiments ss_llama_simple --dp 4
+
+    # Run multi-node DDP with 2 nodes and 8 GPUs per node
+    spd-run --experiments ss_llama_simple --nodes 2 --dp 8
 """
 
 
@@ -569,9 +542,19 @@ def cli():
         "--dp",
         "--data-parallelism",
         type=int,
+        nargs="?",
+        const=True,
+        default=None,
+        help="Number of GPUs per node for data parallelism (1-8). Only supported for lm experiments. "
+        "Cannot be used with local mode. If --nodes > 1, this must be 8 (default: None)",
+    )
+
+    parser.add_argument(
+        "--nodes",
+        type=int,
         default=1,
-        help="Number of GPUs for data parallelism (1-8). Only supported for lm experiments. "
-        "Cannot be used with local mode (default: 1)",
+        help="Number of nodes for distributed data parallel runs (default: 1). "
+        "Requires non-local execution. When >1, GPUs per node are fixed to 8.",
     )
 
     parser.add_argument(
@@ -624,6 +607,7 @@ def cli():
         cpu=args.cpu,
         partition=args.partition,
         dp=args.dp,
+        nodes=args.nodes,
         project=args.project,
         local=args.local,
         log_format=args.log_format,

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from spd.log import logger
 from spd.settings import REPO_ROOT
+from spd.utils.distributed_utils import ComputeStrategy
 
 
 def format_runtime_str(runtime_minutes: int) -> str:
@@ -27,7 +28,7 @@ def create_slurm_array_script(
     job_name: str,
     commands: list[str],
     snapshot_branch: str,
-    n_gpus_per_job: int,
+    job_strategy: ComputeStrategy,
     partition: str,
     time_limit: str = "72:00:00",
     max_concurrent_tasks: int | None = None,
@@ -39,7 +40,6 @@ def create_slurm_array_script(
         job_name: Name for the SLURM job array
         commands: List of commands to execute in each array job
         snapshot_branch: Git branch to checkout.
-        n_gpus_per_job: Number of GPUs per job. If 0, use CPU jobs.
         time_limit: Time limit for each job (default: 72:00:00)
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
@@ -56,14 +56,15 @@ def create_slurm_array_script(
     # Create case statement for commands
     case_statements = []
     for i, command in enumerate(commands, 1):
-        case_statements.append(f"{i}) {command} ;;")
+        case_statements.append(f"{i}) $SRUN_PREFIX {command} ;;")
 
     case_block = "\n        ".join(case_statements)
 
     script_content = textwrap.dedent(f"""
         #!/bin/bash
-        #SBATCH --nodes=1
-        #SBATCH --gres=gpu:{n_gpus_per_job}
+        #SBATCH --nodes={job_strategy.n_nodes()}
+        #SBATCH --ntasks-per-node=1
+        #SBATCH --gres=gpu:{job_strategy.n_gpus_per_node()}
         #SBATCH --partition={partition}
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
@@ -92,6 +93,16 @@ def create_slurm_array_script(
         unset VIRTUAL_ENV
         uv sync --no-dev --link-mode copy -q
         source .venv/bin/activate
+
+        # Setup rendezvous defaults for torchrun
+        MASTER_ADDR=${{MASTER_ADDR:-$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)}}
+        MASTER_PORT=${{MASTER_PORT:-29500}}
+        export MASTER_ADDR MASTER_PORT
+
+        SRUN_PREFIX=""
+        if [[ "{job_strategy.n_nodes()}" -gt 1 ]]; then
+            SRUN_PREFIX="srun --ntasks=${{SLURM_NNODES}} --ntasks-per-node=1"
+        fi
 
         # Execute the appropriate command based on array task ID
         case $SLURM_ARRAY_TASK_ID in
