@@ -288,13 +288,13 @@ def main(
 def _build_compute_env(
     cpu: bool,
     local: bool,
-    dp_per_node: int | None,
+    dp: int | None,
     num_nodes: int | None,
     partition_name: str | None,
 ) -> ComputeEnvironment:
     """Construct a compute strategy from CLI arguments."""
     if local or cpu:
-        assert dp_per_node is None and num_nodes is None and partition_name is None, (
+        assert dp is None and num_nodes is None and partition_name is None, (
             "cannot specify both local and dp or num_nodes"
         )
         return (Local(), Cpu())
@@ -303,14 +303,14 @@ def _build_compute_env(
         name=partition_name if partition_name is not None else DEFAULT_PARTITION_NAME
     )
 
-    match num_nodes, dp_per_node:
+    match num_nodes, dp:
         case None, None:
             strategy = SingleNode(n_gpus_per_node=1)
         case None, _:
-            assert dp_per_node > 1, (
+            assert dp > 1, (
                 "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
             )
-            strategy = SingleNode(n_gpus_per_node=dp_per_node)
+            strategy = SingleNode(n_gpus_per_node=dp)
         case _, None:
             assert num_nodes > 1, (
                 "for multi-node runs, num_nodes must be at least 2. Otherwise, pass num_nodes=None."
@@ -363,7 +363,9 @@ def _resolve_sweep_params_path(sweep_params_file: str) -> Path:
 
 
 def _get_sweep_params(sweep: str | bool) -> dict[str, Any] | None:
-    sweep_params_file = "sweep_params.yaml" if isinstance(sweep, bool) else sweep
+    if sweep is False:
+        return None
+    sweep_params_file = "sweep_params.yaml" if sweep is True else sweep
     sweep_params_path = _resolve_sweep_params_path(sweep_params_file)
     with open(sweep_params_path) as f:
         sweep_params = yaml.safe_load(f)
@@ -381,7 +383,7 @@ def cli(
     cpu: bool = False,
     partition: str | None = None,
     num_nodes: int | None = None,
-    dp_per_node: int | None = None,
+    dp: int | None = None,
     project: str = "spd",
     local: bool = False,
     log_format: LogFormat = "default",
@@ -400,8 +402,8 @@ def cli(
         cpu: Use CPU instead of GPU (default: False)
         partition: SLURM partition to use
         num_nodes: Number of nodes for distributed training if desired. If provided, uses torchrun with
-            SLURM rendezvous, requires non-local execution. If dp_per_node is provided, this must be None.
-        dp_per_node: Number of GPUs per node for data parallelism if desired. Only supported for lm experiments.
+            SLURM rendezvous, requires non-local execution. If dp is provided, this must be None.
+        dp: Number of GPUs per node for data parallelism if desired. Only supported for lm experiments.
             Cannot be used with local mode. If num_nodes is provided, this must be None and we assume 8 GPUs per node.
         project: W&B project name (default: "spd"). Will be created if it doesn't exist.
         local: Run locally instead of submitting to SLURM (default: False)
@@ -429,16 +431,19 @@ def cli(
     compute_env = _build_compute_env(
         cpu=cpu,
         local=local,
-        dp_per_node=dp_per_node,
+        dp=dp,
         num_nodes=num_nodes,
         partition_name=partition,
     )
 
     # Agent count
-    if sweep_params is None:
-        if local:
-            n_agents = len(experiments_list)
+    if sweep_params is not None:
+        if not local:
+            assert n_agents is not None, (
+                "n-agents must be provided if sweep is enabled (unless running with --local)"
+            )
         else:
+            n_agents = len(experiments_list)
             assert n_agents is not None, (
                 "n-agents must be provided if sweep is enabled (unless running with --local)"
             )
@@ -472,8 +477,8 @@ def cli(
 if __name__ == "__main__":
     # fire.Fire(cli)
     cli(
-        experiments="ss_gpt2_simple",
-        num_nodes=2,
+     experiments="ss_gpt2_simple",
+     num_nodes=2,
     )
 
 
