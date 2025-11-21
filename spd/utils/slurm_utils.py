@@ -5,6 +5,7 @@ from pathlib import Path
 
 from spd.log import logger
 from spd.settings import REPO_ROOT
+from spd.utils.command import Command
 from spd.utils.distributed_utils import ComputeStrategy
 
 
@@ -24,7 +25,7 @@ def format_runtime_str(runtime_minutes: int) -> str:
 
 def create_slurm_array_script(
     job_name: str,
-    commands: list[str],
+    commands: list[Command],
     snapshot_branch: str,
     job_strategy: ComputeStrategy,
     partition: str,
@@ -58,12 +59,13 @@ def create_slurm_array_script(
             "export MASTER_PORT=${MASTER_PORT:-29500}",
         ]
         statements_block = "\n".join(extra_statements)
-        command_prefix = f"srun --ntasks={job_strategy.n_nodes()} --ntasks-per-node=1"
+        command_prefix = f"srun --ntasks={job_strategy.n_nodes()} --ntasks-per-node=1 "
 
     # Create case statement for commands
     case_statements = []
     for i, command in enumerate(commands, 1):
-        case_statements.append(f"{i}) {command_prefix} {command} ;;")
+
+        case_statements.append(f"{i}) {command_prefix} {command.command}".rstrip() + " ;;")
     case_block = "\n".join(case_statements)
 
     script_content = f"""\
@@ -79,13 +81,16 @@ def create_slurm_array_script(
 #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
 
 # Create job-specific working directory
-WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
+WORK_DIR="$HOME/slurm_workspaces/{job_name}-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
+mkdir -p "$WORK_DIR"
+# Clean up the workspace when the script exits
+trap 'rm -rf "$WORK_DIR"' EXIT
 
 # Clone the repository to the job-specific directory
-git clone {REPO_ROOT} $WORK_DIR
+git clone {REPO_ROOT} "$WORK_DIR"
 
 # Change to the cloned repository directory
-cd $WORK_DIR
+cd "$WORK_DIR"
 
 # Copy the .env file from the original repository for WandB authentication
 cp {REPO_ROOT}/.env .env
