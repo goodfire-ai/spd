@@ -116,8 +116,10 @@ def submit_slurm_array(script_path: Path) -> str:
         Array job ID from submitted job array
     """
     result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
+        ["sbatch", str(script_path)], capture_output=True, text=True, check=False
     )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to submit SLURM job array: {result.stderr}")
     # Extract job ID from sbatch output (format: "Submitted batch job 12345")
     job_id = result.stdout.strip().split()[-1]
     return job_id
