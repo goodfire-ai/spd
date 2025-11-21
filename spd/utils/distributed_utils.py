@@ -427,24 +427,19 @@ class MultiNode(ComputeStrategy):
         experiment: str,
         sweep_params: dict[str, Any] | None = None,
     ) -> Command:
-        port = _choose_master_port(run_id, idx)
-        rendezvous_id = f"{run_id}_{idx}"
         env = {
             "NCCL_DEBUG": "WARN",
             "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
-            "MASTER_PORT": str(port),
-            "MASTER_ADDR": '${MASTER_ADDR:-$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)}',
+            "MASTER_PORT": str(_choose_master_port(run_id, idx)),
+            "MASTER_ADDR": '$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)',
         }
         command = (
             "torchrun "
             f"--nnodes={self._n_nodes} "
             f"--nproc_per_node={self.N_GPUS_PER_NODE} "
             "--rdzv_backend=c10d "
-            f"--rdzv_endpoint=${{MASTER_ADDR}}:{port} "
-            f"--master_addr=${{MASTER_ADDR}} "
-            f"--master_port={port} "
-            "--node_rank=${NODE_RANK:-${SLURM_PROCID:-0}} "
-            f"--rdzv_id={rendezvous_id} "
+            f"--rdzv_endpoint=${{MASTER_ADDR}}:${{MASTER_PORT}} "
+            f"--rdzv_id={f"{run_id}_{idx}"} "
             f"{script_path} "
             f"--config_json '{get_config_json(config)}' "
             f"--sweep_id {run_id} "
