@@ -28,7 +28,7 @@ def create_slurm_array_script(
     commands: list[str],
     snapshot_branch: str,
     job_strategy: ComputeStrategy,
-    time_limit: str = "72:00:00",
+    partition: str,
     max_concurrent_tasks: int | None = None,
 ) -> str:
     """Create a SLURM job array script with git snapshot for consistent code.
@@ -38,7 +38,6 @@ def create_slurm_array_script(
         job_name: Name for the SLURM job array
         commands: List of commands to execute in each array job
         snapshot_branch: Git branch to checkout.
-        time_limit: Time limit for each job (default: 72:00:00)
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
 
@@ -63,8 +62,7 @@ def create_slurm_array_script(
         #SBATCH --nodes={job_strategy.n_nodes()}
         #SBATCH --ntasks-per-node=1
         #SBATCH --gres=gpu:{job_strategy.n_gpus_per_node()}
-        #SBATCH --partition={job_strategy.partition()}
-        #SBATCH --time={time_limit}
+        #SBATCH --partition={partition}
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}
         #SBATCH --distribution=pack

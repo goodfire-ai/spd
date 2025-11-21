@@ -288,9 +288,6 @@ class ComputeStrategy(ABC):
     def n_nodes(self) -> int: ...
 
     @abstractmethod
-    def partition(self) -> str: ...
-
-    @abstractmethod
     def get_command(
         self,
         run_id: str,
@@ -303,9 +300,6 @@ class ComputeStrategy(ABC):
 
 
 class Cpu(ComputeStrategy):
-    def __init__(self, partition: str):
-        self._partition = partition
-
     @override
     def n_gpus_per_node(self) -> int:
         return 0
@@ -313,10 +307,6 @@ class Cpu(ComputeStrategy):
     @override
     def n_nodes(self) -> int:
         return 1
-
-    @override
-    def partition(self) -> str:
-        return self._partition
 
     @override
     def get_command(
@@ -335,10 +325,6 @@ class Cpu(ComputeStrategy):
 
 
 class SingleGpu(ComputeStrategy):
-    def __init__(self, partition: str, local: bool):
-        self._partition = partition
-        self._local = local
-
     @override
     def n_gpus_per_node(self) -> int:
         return 1
@@ -346,10 +332,6 @@ class SingleGpu(ComputeStrategy):
     @override
     def n_nodes(self) -> int:
         return 1
-
-    @override
-    def partition(self) -> str:
-        return self._partition
 
     @override
     def get_command(
@@ -368,9 +350,8 @@ class SingleGpu(ComputeStrategy):
 
 
 class SingleNode(ComputeStrategy):
-    def __init__(self, n_gpus_per_node: int, partition: str):
+    def __init__(self, n_gpus_per_node: int):
         self._n_gpus_per_node = n_gpus_per_node
-        self._partition = partition
 
     @override
     def n_gpus_per_node(self) -> int:
@@ -379,10 +360,6 @@ class SingleNode(ComputeStrategy):
     @override
     def n_nodes(self) -> int:
         return 1
-
-    @override
-    def partition(self) -> str:
-        return self._partition
 
     @override
     def get_command(
@@ -415,9 +392,8 @@ class SingleNode(ComputeStrategy):
 class MultiNode(ComputeStrategy):
     N_GPUS_PER_NODE: ClassVar[int] = 8
 
-    def __init__(self, n_nodes: int, partition: str):
+    def __init__(self, n_nodes: int):
         self._n_nodes = n_nodes
-        self._partition = partition
 
     @override
     def n_gpus_per_node(self) -> int:
@@ -426,10 +402,6 @@ class MultiNode(ComputeStrategy):
     @override
     def n_nodes(self) -> int:
         return self._n_nodes
-
-    @override
-    def partition(self) -> str:
-        return self._partition
 
     @override
     def get_command(
@@ -482,3 +454,16 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
     span: int = 20000  # ports in [20000, 40000)
     h: int = int(sha256(f"{run_id_local}:{idx}".encode()).hexdigest(), 16)
     return base + (h % span)
+
+
+@dataclass()
+class SlurmPartition:
+    name: str
+
+
+class Local: ...
+
+
+ComputeEnvironment = (
+    tuple[SlurmPartition, ComputeStrategy] | tuple[Local, Cpu | SingleGpu | SingleNode]
+)
