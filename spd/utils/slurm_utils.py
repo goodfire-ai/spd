@@ -1,7 +1,6 @@
 """Shared utilities for SLURM job management."""
 
 import subprocess
-import textwrap
 from pathlib import Path
 
 from spd.log import logger
@@ -51,63 +50,63 @@ def create_slurm_array_script(
         array_range = f"1-{len(commands)}"
 
     if job_strategy.n_nodes() == 1:
-        statements_block = ""
-        command_prefix = ""
+        statements_block = None
+        command_prefix = None
     else:
         extra_statements = [
             'export MASTER_ADDR=${MASTER_ADDR:-$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)}',
             "export MASTER_PORT=${MASTER_PORT:-29500}",
         ]
-        statements_block = "\n        ".join(extra_statements)
+        statements_block = "\n".join(extra_statements)
         command_prefix = f"srun --ntasks={job_strategy.n_nodes()} --ntasks-per-node=1"
 
     # Create case statement for commands
     case_statements = []
     for i, command in enumerate(commands, 1):
         case_statements.append(f"{i}) {command_prefix} {command} ;;")
-    case_block = "\n        ".join(case_statements)
+    case_block = "\n".join(case_statements)
 
-    script_content = textwrap.dedent(f"""
-        #!/bin/bash
-        #SBATCH --nodes={job_strategy.n_nodes()}
-        #SBATCH --ntasks-per-node=1
-        #SBATCH --gres=gpu:{job_strategy.n_gpus_per_node()}
-        #SBATCH --partition={partition}
-        #SBATCH --time=72:00:00
-        #SBATCH --job-name={job_name}
-        #SBATCH --array={array_range}
-        #SBATCH --distribution=pack
-        #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
+    script_content = f"""\
+#!/bin/bash
+#SBATCH --nodes={job_strategy.n_nodes()}
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:{job_strategy.n_gpus_per_node()}
+#SBATCH --partition={partition}
+#SBATCH --time=72:00:00
+#SBATCH --job-name={job_name}
+#SBATCH --array={array_range}
+#SBATCH --distribution=pack
+#SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
 
-        # Create job-specific working directory
-        WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
+# Create job-specific working directory
+WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
 
-        # Clone the repository to the job-specific directory
-        git clone {REPO_ROOT} $WORK_DIR
+# Clone the repository to the job-specific directory
+git clone {REPO_ROOT} $WORK_DIR
 
-        # Change to the cloned repository directory
-        cd $WORK_DIR
+# Change to the cloned repository directory
+cd $WORK_DIR
 
-        # Copy the .env file from the original repository for WandB authentication
-        cp {REPO_ROOT}/.env .env
+# Copy the .env file from the original repository for WandB authentication
+cp {REPO_ROOT}/.env .env
 
-        # Checkout the snapshot branch to ensure consistent code
-        git checkout {snapshot_branch}
+# Checkout the snapshot branch to ensure consistent code
+git checkout "{snapshot_branch}"
 
-        # Ensure that dependencies are using the snapshot branch. SLURM might inherit the
-        # parent environment, so we need to deactivate and unset the virtual environment.
-        deactivate 2>/dev/null || true
-        unset VIRTUAL_ENV
-        uv sync --no-dev --link-mode copy -q
-        source .venv/bin/activate
+# Ensure that dependencies are using the snapshot branch. SLURM might inherit the
+# parent environment, so we need to deactivate and unset the virtual environment.
+deactivate 2>/dev/null || true
+unset VIRTUAL_ENV
+uv sync --no-dev --link-mode copy -q
+source .venv/bin/activate
 
-        {statements_block}
+{statements_block or ""}
 
-        # Execute the appropriate command based on array task ID
-        case $SLURM_ARRAY_TASK_ID in
-        {case_block}
-        esac
-    """).strip()
+# Execute the appropriate command based on array task ID
+case $SLURM_ARRAY_TASK_ID in
+{case_block}
+esac
+"""
 
     return script_content
 
